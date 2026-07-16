@@ -26,7 +26,7 @@ import {
   useRoles,
   useSeededRoleReconciliationProposal,
 } from '../../api/hooks';
-import { useT } from '../../i18n';
+import { t as translateNow, useT } from '../../i18n';
 import {
   Badge,
   Button,
@@ -136,14 +136,16 @@ function RoleDriftStatus({ role }: { role: RoleView }) {
   const drift = role.seeded_role_drift;
   if (!drift) return <span className="muted">-</span>;
   if (!drift.requires_manual_review || drift.missing_default_permissions.length === 0) {
-    return <span className="muted">Atual</span>;
+    return <span className="muted">{translateNow('uiLiteral.funcoesSection.atual')}</span>;
   }
   return (
     <span className="row-wrap">
-      <Badge tone="warn">Revisão manual</Badge>
+      <Badge tone="warn">{translateNow('uiLiteral.funcoesSection.revisaoManual')}</Badge>
       <span className="muted">
-        Defaults em falta: {drift.missing_default_permissions.join(', ')}. A reconciliação é
-        guiada por admin e só adiciona estes defaults semeados.
+        {' '}
+        {translateNow('uiLiteral.funcoesSection.defaultsEmFalta')}{' '}
+        {drift.missing_default_permissions.join(', ')}
+        {translateNow('uiLiteral.funcoesSection.aReconciliacaoEGuiadaPorAdminESo')}{' '}
       </span>
     </span>
   );
@@ -251,7 +253,9 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
         ) : reviewedReconciliation ? (
           <span className="row-wrap">
             <span className="muted">
-              Adicionar só: {reviewedReconciliation.missing_default_permissions.join(', ')}
+              {' '}
+              {t('uiLiteral.funcoesSection.adicionarSo')}{' '}
+              {reviewedReconciliation.missing_default_permissions.join(', ')}
             </span>
             <Button
               type="button"
@@ -268,7 +272,8 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
               disabled={reconcile.isPending}
               onClick={applyReconciliation}
             >
-              Aplicar defaults em falta
+              {' '}
+              {t('uiLiteral.funcoesSection.aplicarDefaultsEmFalta')}{' '}
             </GateButton>
           </span>
         ) : (
@@ -291,7 +296,7 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
                 perm="role.manage"
                 variant="secondary"
                 icon={<Icon.Refresh />}
-                label="Rever defaults"
+                label={t('uiLiteral.funcoesSection.reverDefaults')}
                 disabled={reconciliationProposal.isPending || reconcile.isPending}
                 onClick={reviewReconciliation}
               />
@@ -361,7 +366,7 @@ export function FuncoesSection() {
                 <tr>
                   <th>{t('rbac.roles.table.name')}</th>
                   <th>{t('rbac.roles.table.permissions')}</th>
-                  <th>Estado</th>
+                  <th>{t('uiLiteral.funcoesSection.estado')}</th>
                   <th>{t('rbac.roles.table.action')}</th>
                 </tr>
               }

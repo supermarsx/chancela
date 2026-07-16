@@ -269,7 +269,7 @@ function TsaRecordFlags({ record }: { record: TsaRecordView }) {
       <ServiceStatusBadge status={record.status.kind} />
       {record.qualified_timestamp_service ? <Badge tone="accent">QTST</Badge> : null}
       {record.trusted ? (
-        <Badge tone="ok">TSL confiável</Badge>
+        <Badge tone="ok">{t('uiLiteral.trustCatalogPage.tslConfiavel')}</Badge>
       ) : (
         <Badge tone="warn">{t('trust.flag.advisory')}</Badge>
       )}
@@ -867,7 +867,11 @@ function TrustStatusPanel() {
           </div>
           {refresh.error ? <ErrorNote error={refresh.error} /> : null}
 
-          <div className="trust-statusline" role="group" aria-label={t('trust.status.summary.aria')}>
+          <div
+            className="trust-statusline"
+            role="group"
+            aria-label={t('trust.status.summary.aria')}
+          >
             <div className="trust-statusline__item">
               <span className="trust-statusline__label">{t('trust.status.source')}</span>
               <Badge tone={status.data.source.kind === 'Cache' ? 'accent' : 'neutral'}>

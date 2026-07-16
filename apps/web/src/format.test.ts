@@ -15,4 +15,10 @@ describe('formatAtaNumber', () => {
     expect(() => formatAtaNumber(-1, 2026)).toThrow(RangeError);
     expect(() => formatAtaNumber(1.5, 2026)).toThrow(RangeError);
   });
+
+  it('rejects non-positive or non-integer years', () => {
+    expect(() => formatAtaNumber(1, 0)).toThrow(RangeError);
+    expect(() => formatAtaNumber(1, -2026)).toThrow(RangeError);
+    expect(() => formatAtaNumber(1, 2026.5)).toThrow(RangeError);
+  });
 });

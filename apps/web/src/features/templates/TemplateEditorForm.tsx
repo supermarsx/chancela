@@ -34,7 +34,17 @@ import {
 import { useCreateTemplate, useUpdateTemplate } from '../../api/hooks';
 import { ApiError } from '../../api/client';
 import { useT, type MessageKey } from '../../i18n';
-import { Button, Field, FieldHelp, Icon, InlineWarning, Input, Select, TextArea, useToast } from '../../ui';
+import {
+  Button,
+  Field,
+  FieldHelp,
+  Icon,
+  InlineWarning,
+  Input,
+  Select,
+  TextArea,
+  useToast,
+} from '../../ui';
 import { useFocusTrap } from '../../ui/useFocusTrap';
 
 const ENTITY_FAMILIES: readonly EntityFamily[] = [
@@ -148,7 +158,9 @@ export function TemplateEditorForm({ mode, initialSpec, onClose }: TemplateEdito
 
   const busy = createTemplate.isPending || updateTemplate.isPending;
   const canSubmit =
-    spec.id.trim().length > 0 && spec.rule_pack_id.trim().length > 0 && blocksText.trim().length > 0;
+    spec.id.trim().length > 0 &&
+    spec.rule_pack_id.trim().length > 0 &&
+    blocksText.trim().length > 0;
 
   function toggleChannel(channel: MeetingChannel) {
     setSpec((current) => ({
@@ -227,7 +239,7 @@ export function TemplateEditorForm({ mode, initialSpec, onClose }: TemplateEdito
             id="tpl-id"
             value={spec.id}
             disabled={mode === 'edit'}
-            placeholder="user-encosto-ata/v1"
+            placeholder={t('templates.editor.field.id.placeholder')}
             onChange={(event) => setSpec((current) => ({ ...current, id: event.target.value }))}
           />
         </Field>
@@ -361,7 +373,12 @@ export function TemplateEditorForm({ mode, initialSpec, onClose }: TemplateEdito
           <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
             {t('templates.actions.cancel')}
           </Button>
-          <Button type="submit" variant="primary" icon={<Icon.Save />} disabled={busy || !canSubmit}>
+          <Button
+            type="submit"
+            variant="primary"
+            icon={<Icon.Save />}
+            disabled={busy || !canSubmit}
+          >
             {t('templates.actions.save')}
           </Button>
         </div>

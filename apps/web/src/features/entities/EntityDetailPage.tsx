@@ -9,7 +9,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useBooks, useEntity, useUpdateEntity } from '../../api/hooks';
 import { entityFamilyLabels, entityKindLabels } from '../../api/labels';
 import type { Entity } from '../../api/types';
-import { useT } from '../../i18n';
+import { useT, type TFunction } from '../../i18n';
 import {
   Card,
   ErrorNote,
@@ -33,13 +33,8 @@ import { PrintButton } from './PrintButton';
 import { EntityPrintDocument } from './EntityPrintDocument';
 import { entityFieldHelp } from './fieldHelp';
 
-const FISCAL_YEAR_END_FIELD_LABEL = 'Fecho do exercício';
-const FISCAL_YEAR_END_INPUT_LABEL = 'Fecho do exercício (MM-DD)';
-const FISCAL_YEAR_END_HINT = 'Opcional. Vazio mantém o fecho por omissão em 12-31.';
-const FISCAL_YEAR_END_ERROR = 'Use uma data válida no formato MM-DD.';
-
-function displayFiscalYearEnd(value: string | null | undefined) {
-  return value ? value : '12-31 (por omissão)';
+function displayFiscalYearEnd(value: string | null | undefined, t: TFunction) {
+  return value ? value : t('entities.fiscalYearEnd.default');
 }
 
 function HelpTerm({ label, help }: { label: string; help: string }) {
@@ -55,17 +50,18 @@ function normalizeFiscalYearEndInput(input: string): string | null {
   const value = input.trim();
   if (value === '') return null;
   const match = /^(\d{2})-(\d{2})$/.exec(value);
-  if (!match) throw new Error(FISCAL_YEAR_END_ERROR);
+  if (!match) throw new Error('invalid fiscal-year end');
   const month = Number(match[1]);
   const day = Number(match[2]);
   const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
-    throw new Error(FISCAL_YEAR_END_ERROR);
+    throw new Error('invalid fiscal-year end');
   }
   return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 function FiscalYearEndEditor({ entity }: { entity: Entity }) {
+  const t = useT();
   const toast = useToast();
   const update = useUpdateEntity(entity.id);
   const [draft, setDraft] = useState(entity.fiscal_year_end ?? '');
@@ -82,8 +78,8 @@ function FiscalYearEndEditor({ entity }: { entity: Entity }) {
     try {
       fiscalYearEnd = normalizeFiscalYearEndInput(draft);
       setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : FISCAL_YEAR_END_ERROR);
+    } catch {
+      setError(t('entities.fiscalYearEnd.invalid'));
       return;
     }
     update.mutate(
@@ -91,7 +87,7 @@ function FiscalYearEndEditor({ entity }: { entity: Entity }) {
       {
         onSuccess: (saved) => {
           setDraft(saved.fiscal_year_end ?? '');
-          toast.success('Exercício fiscal atualizado.');
+          toast.success(t('entities.fiscalYearEnd.updated'));
         },
         onError: (e) => toast.error(e),
       },
@@ -99,23 +95,26 @@ function FiscalYearEndEditor({ entity }: { entity: Entity }) {
   }
 
   return (
-    <Card title="Exercício fiscal">
+    <Card title={t('entities.fiscalYearEnd.cardTitle')}>
       {update.error ? <ErrorNote error={update.error} /> : null}
       <dl className="deflist">
         <div>
           <dt>
-            <HelpTerm label={FISCAL_YEAR_END_FIELD_LABEL} help={entityFieldHelp.fiscalYearEnd} />
+            <HelpTerm
+              label={t('entities.fiscalYearEnd.fieldLabel')}
+              help={entityFieldHelp.fiscalYearEnd}
+            />
           </dt>
           <dd>
-            <code className="mono">{displayFiscalYearEnd(entity.fiscal_year_end)}</code>
+            <code className="mono">{displayFiscalYearEnd(entity.fiscal_year_end, t)}</code>
           </dd>
         </div>
       </dl>
       <form className="form" onSubmit={submit}>
         <Field
-          label={FISCAL_YEAR_END_INPUT_LABEL}
+          label={t('entities.fiscalYearEnd.inputLabel')}
           htmlFor="entity-fiscal-year-end"
-          hint={FISCAL_YEAR_END_HINT}
+          hint={t('entities.fiscalYearEnd.hint')}
           help={entityFieldHelp.fiscalYearEnd}
           error={error}
         >
@@ -126,7 +125,7 @@ function FiscalYearEndEditor({ entity }: { entity: Entity }) {
               setDraft(e.target.value);
               if (error) setError(null);
             }}
-            placeholder="12-31"
+            placeholder={t('entities.fiscalYearEnd.placeholder')}
             maxLength={5}
           />
         </Field>
@@ -139,7 +138,9 @@ function FiscalYearEndEditor({ entity }: { entity: Entity }) {
             icon={<Icon.Save />}
             disabled={update.isPending}
           >
-            {update.isPending ? 'A guardar' : 'Guardar fecho'}
+            {update.isPending
+              ? t('entities.fiscalYearEnd.saving')
+              : t('entities.fiscalYearEnd.save')}
           </GateButton>
         </div>
       </form>
@@ -214,10 +215,13 @@ export function EntityDetailPage() {
           </div>
           <div>
             <dt>
-              <HelpTerm label={FISCAL_YEAR_END_FIELD_LABEL} help={entityFieldHelp.fiscalYearEnd} />
+              <HelpTerm
+                label={t('entities.fiscalYearEnd.fieldLabel')}
+                help={entityFieldHelp.fiscalYearEnd}
+              />
             </dt>
             <dd>
-              <code className="mono">{displayFiscalYearEnd(ent.fiscal_year_end)}</code>
+              <code className="mono">{displayFiscalYearEnd(ent.fiscal_year_end, t)}</code>
             </dd>
           </div>
         </dl>

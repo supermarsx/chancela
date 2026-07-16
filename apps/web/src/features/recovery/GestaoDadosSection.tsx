@@ -62,7 +62,7 @@ import {
   type SyncHandoffPreflightReport,
 } from '../../api/types';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
-import { useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
+import { t as translateNow, useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
   Button,
@@ -261,9 +261,7 @@ function permissionLabel(check: DataPermissionCheck, t: TFunction): string {
 }
 
 function messageOrText(label: MessageKey | string, t: TFunction): string {
-  return label.startsWith('data.') || label.startsWith('common.')
-    ? t(label as MessageKey)
-    : label;
+  return label.startsWith('data.') || label.startsWith('common.') ? t(label as MessageKey) : label;
 }
 
 function basisLabel(basis: DataUsageBasis, t: TFunction): string {
@@ -466,68 +464,70 @@ function DataDatabaseEncryptionReadiness({
   return (
     <InlineWarning
       tone={gaps.length > 0 || encryption.key_ops_error ? 'warn' : 'info'}
-      title="Prontidão SQLCipher e custódia da chave"
+      title={translateNow('uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave')}
     >
       <div className="stack--tight">
         <p>
-          Sinais locais do backend com segredos redigidos. Não certificam cifragem em repouso de
-          produção, migração plaintext concluída, runbook de custódia ou ciclo legal/GDPR.
+          {' '}
+          {translateNow(
+            'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao',
+          )}{' '}
         </p>
         <dl className="deflist data-status-summary">
           <div>
-            <dt>SQLCipher no build</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.sqlcipherNoBuild')}</dt>
             <dd>
               <StatusBadge value={encryption.sqlcipher_available} t={t} />
             </dd>
           </div>
           <div>
-            <dt>Loja aberta com chave configurada</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada')}</dt>
             <dd>
               <StatusBadge value={encryption.configured} t={t} />
             </dd>
           </div>
           <div>
-            <dt>Backend SQLCipher local</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.backendSqlcipherLocal')}</dt>
             <dd>
               <StatusBadge value={encryption.sqlcipher_backed} t={t} />
             </dd>
           </div>
           <div>
-            <dt>Fonte de chave</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.fonteDeChave')}</dt>
             <dd className="mono">{encryption.key_source}</dd>
           </div>
           <div>
-            <dt>Formato do cabeçalho</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.formatoDoCabecalho')}</dt>
             <dd className="mono">{encryption.database_format ?? '—'}</dd>
           </div>
           <div>
-            <dt>Plano key-ops</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.planoKeyOps')}</dt>
             <dd className="mono">{encryption.key_ops_plan ?? '—'}</dd>
           </div>
           <div>
-            <dt>Configuração da chave</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.configuracaoDaChave')}</dt>
             <dd className="mono">{encryption.key_ops?.key_config ?? '—'}</dd>
           </div>
           <div>
-            <dt>Migração plaintext pendente</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.migracaoPlaintextPendente')}</dt>
             <dd>
               <StatusBadge value={encryption.plaintext_migration_pending} positive={false} t={t} />
             </dd>
           </div>
           <div>
-            <dt>Migração plaintext bloqueada</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada')}</dt>
             <dd>
               <StatusBadge value={encryption.plaintext_migration_blocked} positive={false} t={t} />
             </dd>
           </div>
           <div>
-            <dt>Fallback hardware</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.fallbackHardware')}</dt>
             <dd>
               <span className="mono">{encryption.hardware_derived_fallback.status}</span>
             </dd>
           </div>
           <div>
-            <dt>Fallback falha fechado</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.fallbackFalhaFechado')}</dt>
             <dd>
               <StatusBadge
                 value={encryption.hardware_derived_fallback.fail_closed_if_requested}
@@ -537,7 +537,7 @@ function DataDatabaseEncryptionReadiness({
           </div>
           {migration ? (
             <div className="deflist__wide">
-              <dt>Plano de migração</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.planoDeMigracao')}</dt>
               <dd>
                 <span className="mono">{migration.status}</span>
                 {' · '}
@@ -547,13 +547,13 @@ function DataDatabaseEncryptionReadiness({
           ) : null}
           {encryption.key_ops_error ? (
             <div className="deflist__wide">
-              <dt>Erro key-ops</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.erroKeyOps')}</dt>
               <dd>{encryption.key_ops_error}</dd>
             </div>
           ) : null}
         </dl>
         <div>
-          <h5>Lacunas de prontidão</h5>
+          <h5>{translateNow('uiLiteral.gestaoDadosSection.lacunasDeProntidao')}</h5>
           {gaps.length > 0 ? (
             <ul className="plain-list">
               {gaps.map((gap) => (
@@ -561,12 +561,14 @@ function DataDatabaseEncryptionReadiness({
               ))}
             </ul>
           ) : (
-            <p className="field__hint">Sem lacunas locais reportadas neste estado.</p>
+            <p className="field__hint">
+              {translateNow('uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado')}
+            </p>
           )}
         </div>
         {migration && migration.steps.length > 0 ? (
           <div>
-            <h5>Passos declarados</h5>
+            <h5>{translateNow('uiLiteral.gestaoDadosSection.passosDeclarados')}</h5>
             <ul className="plain-list">
               {migration.steps.map((step) => (
                 <li key={step.order}>
@@ -624,16 +626,16 @@ function IsolatedRestoreVerificationReport({
 
   return (
     <div>
-      <h5>Verificação isolada</h5>
+      <h5>{translateNow('uiLiteral.gestaoDadosSection.verificacaoIsolada')}</h5>
       <dl className="deflist data-status-summary">
         <div>
-          <dt>Estado</dt>
+          <dt>{translateNow('uiLiteral.gestaoDadosSection.estado')}</dt>
           <dd>
             <Badge tone={statusTone}>{verification.status}</Badge>
           </dd>
         </div>
         <div>
-          <dt>Snapshot isolado verificado</dt>
+          <dt>{translateNow('uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado')}</dt>
           <dd>
             <Badge tone={verified ? 'ok' : 'warn'}>
               {verified ? t('common.yes') : t('common.no')}
@@ -651,7 +653,7 @@ function IsolatedRestoreVerificationReport({
           </div>
         ))}
         <div>
-          <dt>SQLCipher verificado</dt>
+          <dt>{translateNow('uiLiteral.gestaoDadosSection.sqlcipherVerificado')}</dt>
           <dd>
             <StatusBadge value={verification.sqlcipher_encryption_verified} t={t} />
           </dd>
@@ -667,15 +669,17 @@ function IsolatedRestoreVerificationReport({
           </div>
         ))}
         <div className="deflist__wide">
-          <dt>Próximo passo</dt>
+          <dt>{translateNow('uiLiteral.gestaoDadosSection.proximoPasso')}</dt>
           <dd>{redactReceiptEvidenceText(verification.next_step)}</dd>
         </div>
       </dl>
 
       <div>
-        <h5>Constatações</h5>
+        <h5>{translateNow('uiLiteral.gestaoDadosSection.constatacoes')}</h5>
         {findings.length === 0 ? (
-          <p className="field__hint">Sem constatações registadas.</p>
+          <p className="field__hint">
+            {translateNow('uiLiteral.gestaoDadosSection.semConstatacoesRegistadas')}
+          </p>
         ) : (
           <ul className="plain-list">
             {findings.map((finding, index) => (
@@ -686,9 +690,11 @@ function IsolatedRestoreVerificationReport({
       </div>
 
       <div>
-        <h5>Erros</h5>
+        <h5>{translateNow('uiLiteral.gestaoDadosSection.erros')}</h5>
         {errors.length === 0 ? (
-          <p className="field__hint">Sem erros registados.</p>
+          <p className="field__hint">
+            {translateNow('uiLiteral.gestaoDadosSection.semErrosRegistados')}
+          </p>
         ) : (
           <ul className="plain-list">
             {errors.map((error, index) => (
@@ -750,102 +756,104 @@ function RecoveryDrillReceiptReport({
         <details className="recovery-evidence">
           <summary>{t('data.status.recoveryDrill.evidenceToggle')}</summary>
           <div className="stack--tight">
-        <dl className="deflist data-status-summary">
-          <div className="deflist__wide">
-            <dt>Arquivo verificado</dt>
-            <dd className="mono">{safeArchiveLabel(receipt.archive)}</dd>
-          </div>
-          <div>
-            <dt>Registado em</dt>
-            <dd>{formatTimestamp(receipt.created_at, locale)}</dd>
-          </div>
-          <div>
-            <dt>Pré-validação OK</dt>
-            <dd>
-              <Badge tone={receipt.preflight_ok ? 'ok' : 'warn'}>
-                {receipt.preflight_ok ? t('common.yes') : t('common.no')}
-              </Badge>
-            </dd>
-          </div>
-          <div>
-            <dt>Pronto para restauro</dt>
-            <dd>
-              <Badge tone={receipt.preflight_ready ? 'ok' : 'warn'}>
-                {receipt.preflight_ready ? t('common.yes') : t('common.no')}
-              </Badge>
-            </dd>
-          </div>
-          <div>
-            <dt>Cifrado</dt>
-            <dd>{yesNo(receipt.encrypted, t)}</dd>
-          </div>
-          <div>
-            <dt>{t('data.status.ledgerVerified')}</dt>
-            <dd>{receipt.ledger_verified ? t('common.yes') : t('common.no')}</dd>
-          </div>
-          {manifest ? (
-            <>
-              <div>
-                <dt>{t('data.status.schemaVersion')}</dt>
-                <dd className="mono">{manifest.schema}</dd>
+            <dl className="deflist data-status-summary">
+              <div className="deflist__wide">
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.arquivoVerificado')}</dt>
+                <dd className="mono">{safeArchiveLabel(receipt.archive)}</dd>
               </div>
               <div>
-                <dt>Esquema da base de dados</dt>
-                <dd className="mono">{manifest.store_schema_version}</dd>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.registadoEm')}</dt>
+                <dd>{formatTimestamp(receipt.created_at, locale)}</dd>
               </div>
               <div>
-                <dt>{t('data.status.ledgerLength')}</dt>
-                <dd className="mono">{manifest.ledger_length}</dd>
-              </div>
-              <div>
-                <dt>Membros no arquivo</dt>
-                <dd className="mono">{manifest.member_count}</dd>
-              </div>
-              <div>
-                <dt>Membros sidecar</dt>
-                <dd className="mono">{manifest.sidecar_member_count}</dd>
-              </div>
-              <div>
-                <dt>Membro da base de dados presente</dt>
-                <dd>{manifest.db_member_present ? t('common.yes') : t('common.no')}</dd>
-              </div>
-              <div>
-                <dt>Total de bytes dos membros</dt>
-                <dd className="mono">{formatBytes(manifest.total_member_bytes, locale)}</dd>
-              </div>
-            </>
-          ) : null}
-          {receipt.custody_location ? (
-            <div className="deflist__wide">
-              <dt>Local de custódia indicado</dt>
-              <dd>{redactReceiptEvidenceText(receipt.custody_location)}</dd>
-            </div>
-          ) : null}
-          {receipt.operator_notes ? (
-            <div className="deflist__wide">
-              <dt>Notas do operador</dt>
-              <dd>{redactReceiptEvidenceText(receipt.operator_notes)}</dd>
-            </div>
-          ) : null}
-        </dl>
-
-        <IsolatedRestoreVerificationReport receipt={receipt} t={t} locale={locale} />
-
-        <div>
-          <h5>Limites do recibo</h5>
-          <dl className="deflist data-status-summary">
-            {limitRows.map((row) => (
-              <div key={row.label}>
-                <dt>{row.label}</dt>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.preValidacaoOk')}</dt>
                 <dd>
-                  <Badge tone={row.confirmed ? 'ok' : 'warn'}>
-                    {row.confirmed ? 'Confirmado' : 'Não confirmado'}
+                  <Badge tone={receipt.preflight_ok ? 'ok' : 'warn'}>
+                    {receipt.preflight_ok ? t('common.yes') : t('common.no')}
                   </Badge>
                 </dd>
               </div>
-            ))}
-          </dl>
-        </div>
+              <div>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.prontoParaRestauro')}</dt>
+                <dd>
+                  <Badge tone={receipt.preflight_ready ? 'ok' : 'warn'}>
+                    {receipt.preflight_ready ? t('common.yes') : t('common.no')}
+                  </Badge>
+                </dd>
+              </div>
+              <div>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.cifrado')}</dt>
+                <dd>{yesNo(receipt.encrypted, t)}</dd>
+              </div>
+              <div>
+                <dt>{t('data.status.ledgerVerified')}</dt>
+                <dd>{receipt.ledger_verified ? t('common.yes') : t('common.no')}</dd>
+              </div>
+              {manifest ? (
+                <>
+                  <div>
+                    <dt>{t('data.status.schemaVersion')}</dt>
+                    <dd className="mono">{manifest.schema}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateNow('uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados')}</dt>
+                    <dd className="mono">{manifest.store_schema_version}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.ledgerLength')}</dt>
+                    <dd className="mono">{manifest.ledger_length}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateNow('uiLiteral.gestaoDadosSection.membrosNoArquivo')}</dt>
+                    <dd className="mono">{manifest.member_count}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateNow('uiLiteral.gestaoDadosSection.membrosSidecar')}</dt>
+                    <dd className="mono">{manifest.sidecar_member_count}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {translateNow('uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente')}
+                    </dt>
+                    <dd>{manifest.db_member_present ? t('common.yes') : t('common.no')}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateNow('uiLiteral.gestaoDadosSection.totalDeBytesDosMembros')}</dt>
+                    <dd className="mono">{formatBytes(manifest.total_member_bytes, locale)}</dd>
+                  </div>
+                </>
+              ) : null}
+              {receipt.custody_location ? (
+                <div className="deflist__wide">
+                  <dt>{translateNow('uiLiteral.gestaoDadosSection.localDeCustodiaIndicado')}</dt>
+                  <dd>{redactReceiptEvidenceText(receipt.custody_location)}</dd>
+                </div>
+              ) : null}
+              {receipt.operator_notes ? (
+                <div className="deflist__wide">
+                  <dt>{translateNow('uiLiteral.gestaoDadosSection.notasDoOperador')}</dt>
+                  <dd>{redactReceiptEvidenceText(receipt.operator_notes)}</dd>
+                </div>
+              ) : null}
+            </dl>
+
+            <IsolatedRestoreVerificationReport receipt={receipt} t={t} locale={locale} />
+
+            <div>
+              <h5>{translateNow('uiLiteral.gestaoDadosSection.limitesDoRecibo')}</h5>
+              <dl className="deflist data-status-summary">
+                {limitRows.map((row) => (
+                  <div key={row.label}>
+                    <dt>{row.label}</dt>
+                    <dd>
+                      <Badge tone={row.confirmed ? 'ok' : 'warn'}>
+                        {row.confirmed ? 'Confirmado' : 'Não confirmado'}
+                      </Badge>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           </div>
         </details>
       </div>
@@ -876,11 +884,14 @@ function RecoveryFreshnessReviewReport({
 }) {
   const warning = freshness.status !== 'fresh';
   return (
-    <InlineWarning tone={warning ? 'warn' : 'info'} title="Política local de recuperação">
+    <InlineWarning
+      tone={warning ? 'warn' : 'info'}
+      title={translateNow('uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao')}
+    >
       <div className="stack--tight">
         <dl className="deflist data-status-summary">
           <div>
-            <dt>Estado do ensaio</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.estadoDoEnsaio')}</dt>
             <dd>
               <Badge tone={warning ? 'warn' : 'ok'}>
                 {recoveryFreshnessLabel(freshness.status)}
@@ -888,19 +899,28 @@ function RecoveryFreshnessReviewReport({
             </dd>
           </div>
           <div>
-            <dt>Idade máxima configurada</dt>
-            <dd>{freshness.policy.max_drill_age_days} dias</dd>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.idadeMaximaConfigurada')}</dt>
+            <dd>
+              {freshness.policy.max_drill_age_days}{' '}
+              {translateNow('uiLiteral.gestaoDadosSection.dias')}
+            </dd>
           </div>
           <div>
-            <dt>RPO alvo declarado</dt>
-            <dd>{freshness.policy.target_rpo_minutes} min</dd>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.rpoAlvoDeclarado')}</dt>
+            <dd>
+              {freshness.policy.target_rpo_minutes}{' '}
+              {translateNow('uiLiteral.gestaoDadosSection.min')}
+            </dd>
           </div>
           <div>
-            <dt>RTO alvo declarado</dt>
-            <dd>{freshness.policy.target_rto_minutes} min</dd>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.rtoAlvoDeclarado')}</dt>
+            <dd>
+              {freshness.policy.target_rto_minutes}{' '}
+              {translateNow('uiLiteral.gestaoDadosSection.min')}
+            </dd>
           </div>
           <div>
-            <dt>Último recibo</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.ultimoRecibo')}</dt>
             <dd>
               {freshness.latest_receipt_at
                 ? formatTimestamp(freshness.latest_receipt_at, locale)
@@ -908,7 +928,7 @@ function RecoveryFreshnessReviewReport({
             </dd>
           </div>
           <div>
-            <dt>Idade do último recibo</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo')}</dt>
             <dd>
               {freshness.latest_receipt_age_days === null
                 ? '—'
@@ -916,18 +936,19 @@ function RecoveryFreshnessReviewReport({
             </dd>
           </div>
           <div>
-            <dt>Pré-validação do último recibo</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo')}</dt>
             <dd>{freshness.latest_receipt_preflight_ready === true ? 'Sim' : 'Não'}</dd>
           </div>
           <div>
-            <dt>Snapshot isolado verificado</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado')}</dt>
             <dd>{freshness.latest_receipt_isolated_restore_verified === true ? 'Sim' : 'Não'}</dd>
           </div>
         </dl>
         <p className="field__hint">
-          Resumo local derivado de recibos de ensaio: sem restauro executado, sem troca da base de
-          dados, sem prova de custódia off-site, sem certificação de RPO/RTO e sem certificação de
-          política de backup de produção.
+          {' '}
+          {translateNow(
+            'uiLiteral.gestaoDadosSection.resumoLocalDerivadoDeRecibosDeEnsaioSem',
+          )}{' '}
         </p>
       </div>
     </InlineWarning>
@@ -1045,17 +1066,17 @@ function SyncHandoffPreflightReportCard({
           <summary>{t('data.status.syncHandoff.evidenceToggle')}</summary>
           <dl className="deflist data-status-summary">
             <div>
-              <dt>Estado</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.estado')}</dt>
               <dd>
                 <Badge tone={readinessTone}>{report.readiness.status}</Badge>
               </dd>
             </div>
             <div>
-              <dt>Gerado em</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.geradoEm')}</dt>
               <dd>{formatTimestamp(report.generated_at, locale)}</dd>
             </div>
             <div>
-              <dt>Candidatos não validados</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.candidatosNaoValidados')}</dt>
               <dd>
                 {new Intl.NumberFormat(locale).format(
                   report.backup.backup_directory.untrusted_candidate_file_count,
@@ -1067,7 +1088,9 @@ function SyncHandoffPreflightReportCard({
               </dd>
             </div>
             <div>
-              <dt>Candidato não validado mais recente</dt>
+              <dt>
+                {translateNow('uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente')}
+              </dt>
               <dd className="mono">
                 {latestCandidate
                   ? `${latestCandidate.file_name} (${formatBytes(latestCandidate.bytes, locale)})`
@@ -1075,7 +1098,7 @@ function SyncHandoffPreflightReportCard({
               </dd>
             </div>
             <div>
-              <dt>Evidência verificada</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.evidenciaVerificada')}</dt>
               <dd>
                 <Badge tone={report.backup.verified_recovery_drill_evidence ? 'ok' : 'warn'}>
                   {report.backup.verified_recovery_drill_evidence ? 'verified' : 'missing'}
@@ -1083,13 +1106,13 @@ function SyncHandoffPreflightReportCard({
               </dd>
             </div>
             <div>
-              <dt>Ensaios de recuperação</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao')}</dt>
               <dd>
                 {new Intl.NumberFormat(locale).format(report.backup.recovery_drill_receipt_count)}
               </dd>
             </div>
             <div>
-              <dt>Último ensaio</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.ultimoEnsaio')}</dt>
               <dd>
                 {latestDrill ? (
                   <Badge tone={latestDrill.verified_manifest_and_isolated_snapshot ? 'ok' : 'warn'}>
@@ -1101,15 +1124,16 @@ function SyncHandoffPreflightReportCard({
               </dd>
             </div>
             <div>
-              <dt>Livros</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.livros')}</dt>
               <dd>
-                {new Intl.NumberFormat(locale).format(report.book_bundles.book_count)} total /{' '}
+                {new Intl.NumberFormat(locale).format(report.book_bundles.book_count)}{' '}
+                {translateNow('uiLiteral.gestaoDadosSection.total')}{' '}
                 {new Intl.NumberFormat(locale).format(report.book_bundles.closed_book_count)}{' '}
-                fechados
+                {translateNow('uiLiteral.gestaoDadosSection.fechados')}{' '}
               </dd>
             </div>
             <div>
-              <dt>Atos preserváveis</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.atosPreservaveis')}</dt>
               <dd>
                 {new Intl.NumberFormat(locale).format(
                   report.archive_dglab.sealed_or_archived_act_count,
@@ -1117,7 +1141,7 @@ function SyncHandoffPreflightReportCard({
               </dd>
             </div>
             <div>
-              <dt>Documentos preservados</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.documentosPreservados')}</dt>
               <dd>
                 {new Intl.NumberFormat(locale).format(
                   report.archive_dglab.preserved_document_count,
@@ -1125,7 +1149,7 @@ function SyncHandoffPreflightReportCard({
               </dd>
             </div>
             <div>
-              <dt>Pré-validação de importação</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.preValidacaoDeImportacao')}</dt>
               <dd>
                 <Badge tone={report.book_bundles.import_preflight_read_only ? 'ok' : 'warn'}>
                   {report.book_bundles.import_preflight_read_only ? 'read-only' : 'mutating'}
@@ -1133,7 +1157,7 @@ function SyncHandoffPreflightReportCard({
               </dd>
             </div>
             <div className="deflist__wide">
-              <dt>Sem alegações</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.semAlegacoes')}</dt>
               <dd>
                 <ul className="plain-list">
                   {noClaimRows.map(([label, claimed]) => (
@@ -1237,7 +1261,7 @@ function DataKeyRotationPreflightReport({
           <dl className="deflist data-status-summary">
             <div>
               <dt>{t('data.status.keyRotation.metadata.provider')}</dt>
-              <dd>SQLCipher</dd>
+              <dd>{translateNow('uiLiteral.gestaoDadosSection.sqlcipher')}</dd>
             </div>
             <div>
               <dt>{t('data.status.keyRotation.metadata.readOnly')}</dt>
@@ -1320,7 +1344,7 @@ function DataKeyRotationExecutionReport({
   return (
     <InlineWarning
       tone={execution.ledger_integrity_verified ? 'info' : 'warn'}
-      title="Resultado da execução SQLCipher"
+      title={translateNow('uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher')}
     >
       <div className="stack--tight">
         <dl className="deflist data-status-summary">
@@ -1331,7 +1355,7 @@ function DataKeyRotationExecutionReport({
             </dd>
           </div>
           <div>
-            <dt>Rekey executado</dt>
+            <dt>{translateNow('uiLiteral.gestaoDadosSection.rekeyExecutado')}</dt>
             <dd>
               <Badge tone={execution.rekey_executed ? 'ok' : 'warn'}>
                 {execution.rekey_executed ? t('common.yes') : t('common.no')}
@@ -1356,7 +1380,7 @@ function DataKeyRotationExecutionReport({
           <h5>{t('data.status.keyRotation.evidence')}</h5>
           <dl className="deflist data-status-summary">
             <div>
-              <dt>Operação</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.operacao')}</dt>
               <dd className="mono">{execution.evidence.operation}</dd>
             </div>
             <div>
@@ -1368,19 +1392,19 @@ function DataKeyRotationExecutionReport({
               <dd>{execution.evidence.sqlcipher_available ? t('common.yes') : t('common.no')}</dd>
             </div>
             <div>
-              <dt>Checkpoint antes</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.checkpointAntes')}</dt>
               <dd>
                 {execution.evidence.checkpointed_before_rekey ? t('common.yes') : t('common.no')}
               </dd>
             </div>
             <div>
-              <dt>Checkpoint depois</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.checkpointDepois')}</dt>
               <dd>
                 {execution.evidence.checkpointed_after_rekey ? t('common.yes') : t('common.no')}
               </dd>
             </div>
             <div>
-              <dt>Integridade pós-rekey</dt>
+              <dt>{translateNow('uiLiteral.gestaoDadosSection.integridadePosRekey')}</dt>
               <dd>
                 {execution.evidence.post_rekey_integrity_checked ? t('common.yes') : t('common.no')}
               </dd>
@@ -1405,19 +1429,23 @@ function DataKeyRotationReceiptSummary({
   const history = summary.history.slice(0, Math.min(summary.history.length, summary.history_limit));
 
   return (
-    <InlineWarning tone={summary.read_error ? 'warn' : 'info'} title="Recibos locais de rotação">
+    <InlineWarning
+      tone={summary.read_error ? 'warn' : 'info'}
+      title={translateNow('uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao')}
+    >
       <div className="stack--tight">
         <p>
-          Evidência operacional local gerada após rekey SQLCipher aceite. Estes recibos não
-          certificam cifragem em repouso, migração de plaintext, eliminação legal ou ciclo de vida
-          GDPR completo.
+          {' '}
+          {translateNow(
+            'uiLiteral.gestaoDadosSection.evidenciaOperacionalLocalGeradaAposRekeySqlcipherAceite',
+          )}{' '}
         </p>
         {summary.read_error ? <p className="field__hint">{summary.read_error}</p> : null}
         {latest ? (
           <>
             <dl className="deflist data-status-summary">
               <div>
-                <dt>Última rotação</dt>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.ultimaRotacao')}</dt>
                 <dd>{formatTimestamp(latest.rotated_at, locale)}</dd>
               </div>
               <div>
@@ -1427,15 +1455,15 @@ function DataKeyRotationReceiptSummary({
                 </dd>
               </div>
               <div>
-                <dt>Modo</dt>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.modo')}</dt>
                 <dd className="mono">{latest.mode}</dd>
               </div>
               <div>
-                <dt>Backend</dt>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.backend')}</dt>
                 <dd className="mono">{latest.backend_family ?? '—'}</dd>
               </div>
               <div>
-                <dt>Utilizador</dt>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.utilizador')}</dt>
                 <dd className="mono">{latest.actor_user_id ?? '—'}</dd>
               </div>
               <div>
@@ -1449,7 +1477,7 @@ function DataKeyRotationReceiptSummary({
                 </dd>
               </div>
               <div>
-                <dt>Histórico guardado</dt>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.historicoGuardado')}</dt>
                 <dd>
                   {new Intl.NumberFormat(locale).format(summary.history_count)} /{' '}
                   {new Intl.NumberFormat(locale).format(summary.history_limit)}
@@ -1458,7 +1486,7 @@ function DataKeyRotationReceiptSummary({
             </dl>
             <dl className="deflist data-status-summary">
               <div>
-                <dt>Operação</dt>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.operacao')}</dt>
                 <dd className="mono">{latest.evidence.operation}</dd>
               </div>
               <div>
@@ -1470,7 +1498,7 @@ function DataKeyRotationReceiptSummary({
                 <dd>{latest.evidence.sqlcipher_available ? t('common.yes') : t('common.no')}</dd>
               </div>
               <div>
-                <dt>Sem chave guardada</dt>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.semChaveGuardada')}</dt>
                 <dd>
                   {!latest.no_claims.current_key_persisted &&
                   !latest.no_claims.replacement_key_persisted &&
@@ -1480,17 +1508,21 @@ function DataKeyRotationReceiptSummary({
                 </dd>
               </div>
               <div>
-                <dt>Sem caminho da BD</dt>
-                <dd>{latest.no_claims.database_path_persisted ? t('common.no') : t('common.yes')}</dd>
+                <dt>{translateNow('uiLiteral.gestaoDadosSection.semCaminhoDaBd')}</dt>
+                <dd>
+                  {latest.no_claims.database_path_persisted ? t('common.no') : t('common.yes')}
+                </dd>
               </div>
             </dl>
           </>
         ) : (
-          <p className="muted">Ainda não há recibos de rotação SQLCipher bem-sucedida.</p>
+          <p className="muted">
+            {translateNow('uiLiteral.gestaoDadosSection.aindaNaoHaRecibosDeRotacaoSqlcipherBem')}
+          </p>
         )}
         {history.length > 1 ? (
           <div>
-            <h5>Histórico recente</h5>
+            <h5>{translateNow('uiLiteral.gestaoDadosSection.historicoRecente')}</h5>
             <ul className="data-status-list">
               {history.map((receipt: DataKeyRotationReceipt) => (
                 <li key={receipt.receipt_id}>
@@ -1640,24 +1672,13 @@ function SqliteLogicalUsageList({
         <UsageList concerns={summaryConcerns} locale={locale} t={t} />
       ) : null}
       {tableConcerns.length > 0 ? (
-        <SqliteTablePayloadList
-          concerns={tableConcerns}
-          ariaLabel={label}
-          locale={locale}
-          t={t}
-        />
+        <SqliteTablePayloadList concerns={tableConcerns} ariaLabel={label} locale={locale} t={t} />
       ) : null}
     </div>
   );
 }
 
-function DataStatusPanel({
-  tab,
-  resetControls,
-}: {
-  tab: GestaoTab;
-  resetControls: ReactNode;
-}) {
+function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls: ReactNode }) {
   const t = useT();
   const locale = useLocale();
   const toast = useToast();
@@ -1875,296 +1896,305 @@ function DataStatusPanel({
             {status.isError ? <ErrorNote error={status.error} /> : null}
             {data ? (
               <div className="data-status">
-          <dl className="deflist data-status-summary">
-            <div>
-              <dt>{t('data.status.mode')}</dt>
-              <dd>
-                <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
-                  {t(MODE_LABEL[data.persistence.mode])}
-                </Badge>
-              </dd>
-            </div>
-            <div>
-              <dt>{t('data.status.generatedAt')}</dt>
-              <dd>{formatTimestamp(data.generated_at, locale)}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.usage.title')}</dt>
-              <dd className="mono">{formatBytes(data.usage.total_bytes, locale)}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.permissions.title')}</dt>
-              <dd>
-                {permissions ? <Badge tone={permissions.tone}>{permissions.label}</Badge> : '—'}
-              </dd>
-            </div>
-            <div>
-              <dt>{t('data.status.durable')}</dt>
-              <dd>
-                <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
-                  {data.persistence.durable_store_open
-                    ? t('data.status.durable.open')
-                    : t('data.status.durable.closed')}
-                </Badge>
-              </dd>
-            </div>
-            <div>
-              <dt>Backend durável</dt>
-              <dd>
-                <Badge tone={data.persistence.active_backend_family ? 'ok' : 'neutral'}>
-                  {data.persistence.active_backend_family ?? '—'}
-                </Badge>
-              </dd>
-            </div>
-            <div>
-              <dt>Sidecars</dt>
-              <dd>
-                <Badge tone={data.persistence.sidecar_storage_mode === 'database' ? 'ok' : 'neutral'}>
-                  {data.persistence.sidecar_storage_mode}
-                </Badge>
-              </dd>
-            </div>
-            <div>
-              <dt>{t('data.status.encryption')}</dt>
-              <dd>
-                <StatusBadge value={data.persistence.database_encryption_configured} t={t} />
-              </dd>
-            </div>
-            <div>
-              <dt>{t('data.status.schemaVersion')}</dt>
-              <dd>{formatOptionalNumber(data.persistence.store_schema_version, locale)}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.ledgerLength')}</dt>
-              <dd>{formatOptionalNumber(data.persistence.ledger_length, locale)}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.ledgerVerified')}</dt>
-              <dd>
-                <StatusBadge value={data.persistence.ledger_verified} t={t} />
-              </dd>
-            </div>
-            <div>
-              <dt>{t('data.status.degraded')}</dt>
-              <dd>
-                <StatusBadge value={data.persistence.degraded} positive={false} t={t} />
-              </dd>
-            </div>
-          </dl>
+                <dl className="deflist data-status-summary">
+                  <div>
+                    <dt>{t('data.status.mode')}</dt>
+                    <dd>
+                      <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
+                        {t(MODE_LABEL[data.persistence.mode])}
+                      </Badge>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.generatedAt')}</dt>
+                    <dd>{formatTimestamp(data.generated_at, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.usage.title')}</dt>
+                    <dd className="mono">{formatBytes(data.usage.total_bytes, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.permissions.title')}</dt>
+                    <dd>
+                      {permissions ? (
+                        <Badge tone={permissions.tone}>{permissions.label}</Badge>
+                      ) : (
+                        '—'
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.durable')}</dt>
+                    <dd>
+                      <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
+                        {data.persistence.durable_store_open
+                          ? t('data.status.durable.open')
+                          : t('data.status.durable.closed')}
+                      </Badge>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('uiLiteral.gestaoDadosSection.backendDuravel')}</dt>
+                    <dd>
+                      <Badge tone={data.persistence.active_backend_family ? 'ok' : 'neutral'}>
+                        {data.persistence.active_backend_family ?? '—'}
+                      </Badge>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('uiLiteral.gestaoDadosSection.sidecars')}</dt>
+                    <dd>
+                      <Badge
+                        tone={
+                          data.persistence.sidecar_storage_mode === 'database' ? 'ok' : 'neutral'
+                        }
+                      >
+                        {data.persistence.sidecar_storage_mode}
+                      </Badge>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.encryption')}</dt>
+                    <dd>
+                      <StatusBadge value={data.persistence.database_encryption_configured} t={t} />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.schemaVersion')}</dt>
+                    <dd>{formatOptionalNumber(data.persistence.store_schema_version, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.ledgerLength')}</dt>
+                    <dd>{formatOptionalNumber(data.persistence.ledger_length, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.ledgerVerified')}</dt>
+                    <dd>
+                      <StatusBadge value={data.persistence.ledger_verified} t={t} />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('data.status.degraded')}</dt>
+                    <dd>
+                      <StatusBadge value={data.persistence.degraded} positive={false} t={t} />
+                    </dd>
+                  </div>
+                </dl>
 
-          <section className="data-status-section" aria-labelledby="data-status-folder">
-            <div className="data-status-section__head">
-              <h4 id="data-status-folder">{t('data.status.dataDir')}</h4>
-              <div className="row-wrap">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  icon={<Icon.Copy />}
-                  disabled={!dataPath}
-                  onClick={() => void copyPath()}
-                >
-                  {t('data.status.copyPath')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  icon={<Icon.ExternalLink />}
-                  disabled
-                  title={t('data.status.openUnavailable')}
-                >
-                  {t('data.status.openFolder')}
-                </Button>
-              </div>
-            </div>
-            <p className="data-status-path mono">
-              {dataPath ?? t('data.status.path.unconfigured')}
-            </p>
-            <p className="field__hint">
-              {t('data.status.folderState', {
-                configured: yesNo(data.persistence.data_dir_configured, t),
-                exists: yesNo(data.data_dir.exists, t),
-                directory: yesNo(data.data_dir.is_directory, t),
-              })}
-            </p>
-            <p className="field__hint">{t('data.status.openUnavailable')}</p>
-          </section>
-
-          <section className="data-status-section" aria-labelledby="data-status-permissions">
-            <div className="data-status-section__head">
-              <h4 id="data-status-permissions">{t('data.status.permissions.title')}</h4>
-            </div>
-            <ul className="data-status-permissions">
-              {PERMISSION_ROWS.map((row) => {
-                const check = data.permissions[row.key];
-                return (
-                  <li
-                    key={row.key}
-                    className={`data-status-probe data-status-probe--${permissionTone(check)}`}
-                  >
-                    <span className="data-status-probe__label">{messageOrText(row.label, t)}</span>
-                    <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
-                    {check.message ? (
-                      <span className="data-status-probe__message">{check.message}</span>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-
-          <section className="data-status-section" aria-labelledby="data-status-usage">
-            <div className="data-status-section__head">
-              <h4 id="data-status-usage">{t('data.status.usage.title')}</h4>
-              <p className="data-status-total">
-                {t('data.status.usage.total')}:{' '}
-                <span className="mono">{formatBytes(data.usage.total_bytes, locale)}</span>
-              </p>
-            </div>
-
-            <div className="data-status-usage-groups data-status-usage-groups--breakdown">
-              <div className="data-status-usage-group">
-                <h5>{t('data.status.usage.filesystem')}</h5>
-                <UsageList concerns={data.usage.filesystem} locale={locale} t={t} />
-              </div>
-              <div className="data-status-usage-group">
-                <h5>{logicalUsageLabel}</h5>
-                <SqliteLogicalUsageList
-                  concerns={logicalUsage}
-                  largestPayloadTable={largestPayloadTable}
-                  label={logicalUsageLabel}
-                  locale={locale}
-                  t={t}
-                />
-              </div>
-              {showSidecars ? (
-                <div className="data-status-usage-group">
-                  <h5>Sidecars duráveis</h5>
-                  <UsageList concerns={data.usage.sidecars} locale={locale} t={t} />
-                </div>
-              ) : null}
-            </div>
-
-            {data.usage.scan_errors.length > 0 ? (
-              <InlineWarning tone="warn" title={t('data.status.scanErrors.title')}>
-                <ul className="plain-list">
-                  {data.usage.scan_errors.map((error) => (
-                    <li key={error}>{error}</li>
-                  ))}
-                </ul>
-              </InlineWarning>
-            ) : null}
-          </section>
-
-          <section className="data-status-section" aria-labelledby="data-status-maintenance">
-            <div className="data-status-section__head">
-              <div>
-                <h4 id="data-status-maintenance">{t('data.status.cleanup.title')}</h4>
-                <p className="data-status-section__hint">{t('data.status.cleanup.body')}</p>
-              </div>
-            </div>
-            <ul className="data-status-cleanups">
-              {CLEANUP_TARGETS.map((target) => {
-                const usage = usageForTarget(data.usage.filesystem, target.target);
-                const isExportsPreview = target.target === 'exports';
-                const isTargetPending =
-                  cleanup.isPending &&
-                  (isExportsPreview ? previewingExports : cleanupTarget === target.target);
-                return (
-                  <li key={target.target} className="data-status-cleanup">
-                    <div className="data-status-cleanup__main">
-                      <h5>
-                        {t(target.title)}{' '}
-                        <FieldHelp
-                          text={t(target.help)}
-                        />
-                      </h5>
-                      <span className="data-status-cleanup__description">
-                        {isExportsPreview ? exportCleanupDescription : t(target.body)}
-                      </span>
-                      {isExportsPreview && hasExportCleanupPreview ? (
-                        <span className="data-status-cleanup__description">
-                          {EXPORT_CLEANUP_CONFIRM_DESCRIPTION}
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="data-status-cleanup__metric">
-                      <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
-                      <span>
-                        {t('data.status.cleanup.items', {
-                          files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),
-                          directories: new Intl.NumberFormat(locale).format(
-                            usage?.directory_count ?? 0,
-                          ),
-                        })}
-                      </span>
-                    </p>
-                    <div className="data-status-cleanup__actions">
-                      <GateButton
-                        perm="settings.manage"
+                <section className="data-status-section" aria-labelledby="data-status-folder">
+                  <div className="data-status-section__head">
+                    <h4 id="data-status-folder">{t('data.status.dataDir')}</h4>
+                    <div className="row-wrap">
+                      <Button
                         type="button"
                         variant="secondary"
-                        icon={isExportsPreview ? <Icon.Search /> : <Icon.Wrench />}
-                        disabled={!canClean || cleanup.isPending}
-                        onClick={() => {
-                          if (isExportsPreview) {
-                            void previewExportsCleanup();
-                            return;
-                          }
-                          setCleanupTarget(target.target);
-                        }}
+                        icon={<Icon.Copy />}
+                        disabled={!dataPath}
+                        onClick={() => void copyPath()}
                       >
-                        {isTargetPending
-                          ? isExportsPreview
-                            ? EXPORT_CLEANUP_PREVIEW_PENDING
-                            : t('data.status.cleanup.pending')
-                          : isExportsPreview
-                            ? EXPORT_CLEANUP_PREVIEW_BUTTON
-                            : t(target.button)}
-                      </GateButton>
-                      {isExportsPreview ? (
-                        <GateButton
-                          perm="settings.manage"
-                          type="button"
-                          variant="secondary"
-                          icon={<Icon.Wrench />}
-                          title={EXPORT_CLEANUP_EXECUTION_TOOLTIP}
-                          disabled={!canClean || cleanup.isPending || !hasExportCleanupPreview}
-                          onClick={() => setCleanupTarget('exports')}
-                        >
-                          {cleanup.isPending && cleanupTarget === 'exports'
-                            ? EXPORT_CLEANUP_EXECUTION_PENDING
-                            : EXPORT_CLEANUP_EXECUTION_BUTTON}
-                        </GateButton>
-                      ) : null}
+                        {t('data.status.copyPath')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.ExternalLink />}
+                        disabled
+                        title={t('data.status.openUnavailable')}
+                      >
+                        {t('data.status.openFolder')}
+                      </Button>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-            {lastCleanup ? (
-              <InlineWarning
-                tone="info"
-                title={
-                  lastCleanup.dry_run
-                    ? EXPORT_CLEANUP_PREVIEW_TITLE
-                    : lastCleanup.target === 'exports'
-                      ? EXPORT_CLEANUP_EXECUTION_TITLE
-                      : t('data.status.cleanup.doneTitle')
-                }
-              >
-                <p>{cleanupSummary(lastCleanup, t, locale)}</p>
-                {lastCleanup.skipped.length > 0 ? (
-                  <ul className="plain-list">
-                    {lastCleanup.skipped.map((item) => (
-                      <li key={item} className="mono">
-                        {item}
-                      </li>
-                    ))}
+                  </div>
+                  <p className="data-status-path mono">
+                    {dataPath ?? t('data.status.path.unconfigured')}
+                  </p>
+                  <p className="field__hint">
+                    {t('data.status.folderState', {
+                      configured: yesNo(data.persistence.data_dir_configured, t),
+                      exists: yesNo(data.data_dir.exists, t),
+                      directory: yesNo(data.data_dir.is_directory, t),
+                    })}
+                  </p>
+                  <p className="field__hint">{t('data.status.openUnavailable')}</p>
+                </section>
+
+                <section className="data-status-section" aria-labelledby="data-status-permissions">
+                  <div className="data-status-section__head">
+                    <h4 id="data-status-permissions">{t('data.status.permissions.title')}</h4>
+                  </div>
+                  <ul className="data-status-permissions">
+                    {PERMISSION_ROWS.map((row) => {
+                      const check = data.permissions[row.key];
+                      return (
+                        <li
+                          key={row.key}
+                          className={`data-status-probe data-status-probe--${permissionTone(check)}`}
+                        >
+                          <span className="data-status-probe__label">
+                            {messageOrText(row.label, t)}
+                          </span>
+                          <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
+                          {check.message ? (
+                            <span className="data-status-probe__message">{check.message}</span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
                   </ul>
-                ) : null}
-              </InlineWarning>
-            ) : null}
-          </section>
+                </section>
+
+                <section className="data-status-section" aria-labelledby="data-status-usage">
+                  <div className="data-status-section__head">
+                    <h4 id="data-status-usage">{t('data.status.usage.title')}</h4>
+                    <p className="data-status-total">
+                      {t('data.status.usage.total')}:{' '}
+                      <span className="mono">{formatBytes(data.usage.total_bytes, locale)}</span>
+                    </p>
+                  </div>
+
+                  <div className="data-status-usage-groups data-status-usage-groups--breakdown">
+                    <div className="data-status-usage-group">
+                      <h5>{t('data.status.usage.filesystem')}</h5>
+                      <UsageList concerns={data.usage.filesystem} locale={locale} t={t} />
+                    </div>
+                    <div className="data-status-usage-group">
+                      <h5>{logicalUsageLabel}</h5>
+                      <SqliteLogicalUsageList
+                        concerns={logicalUsage}
+                        largestPayloadTable={largestPayloadTable}
+                        label={logicalUsageLabel}
+                        locale={locale}
+                        t={t}
+                      />
+                    </div>
+                    {showSidecars ? (
+                      <div className="data-status-usage-group">
+                        <h5>{t('uiLiteral.gestaoDadosSection.sidecarsDuraveis')}</h5>
+                        <UsageList concerns={data.usage.sidecars} locale={locale} t={t} />
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {data.usage.scan_errors.length > 0 ? (
+                    <InlineWarning tone="warn" title={t('data.status.scanErrors.title')}>
+                      <ul className="plain-list">
+                        {data.usage.scan_errors.map((error) => (
+                          <li key={error}>{error}</li>
+                        ))}
+                      </ul>
+                    </InlineWarning>
+                  ) : null}
+                </section>
+
+                <section className="data-status-section" aria-labelledby="data-status-maintenance">
+                  <div className="data-status-section__head">
+                    <div>
+                      <h4 id="data-status-maintenance">{t('data.status.cleanup.title')}</h4>
+                      <p className="data-status-section__hint">{t('data.status.cleanup.body')}</p>
+                    </div>
+                  </div>
+                  <ul className="data-status-cleanups">
+                    {CLEANUP_TARGETS.map((target) => {
+                      const usage = usageForTarget(data.usage.filesystem, target.target);
+                      const isExportsPreview = target.target === 'exports';
+                      const isTargetPending =
+                        cleanup.isPending &&
+                        (isExportsPreview ? previewingExports : cleanupTarget === target.target);
+                      return (
+                        <li key={target.target} className="data-status-cleanup">
+                          <div className="data-status-cleanup__main">
+                            <h5>
+                              {t(target.title)} <FieldHelp text={t(target.help)} />
+                            </h5>
+                            <span className="data-status-cleanup__description">
+                              {isExportsPreview ? exportCleanupDescription : t(target.body)}
+                            </span>
+                            {isExportsPreview && hasExportCleanupPreview ? (
+                              <span className="data-status-cleanup__description">
+                                {EXPORT_CLEANUP_CONFIRM_DESCRIPTION}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="data-status-cleanup__metric">
+                            <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
+                            <span>
+                              {t('data.status.cleanup.items', {
+                                files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),
+                                directories: new Intl.NumberFormat(locale).format(
+                                  usage?.directory_count ?? 0,
+                                ),
+                              })}
+                            </span>
+                          </p>
+                          <div className="data-status-cleanup__actions">
+                            <GateButton
+                              perm="settings.manage"
+                              type="button"
+                              variant="secondary"
+                              icon={isExportsPreview ? <Icon.Search /> : <Icon.Wrench />}
+                              disabled={!canClean || cleanup.isPending}
+                              onClick={() => {
+                                if (isExportsPreview) {
+                                  void previewExportsCleanup();
+                                  return;
+                                }
+                                setCleanupTarget(target.target);
+                              }}
+                            >
+                              {isTargetPending
+                                ? isExportsPreview
+                                  ? EXPORT_CLEANUP_PREVIEW_PENDING
+                                  : t('data.status.cleanup.pending')
+                                : isExportsPreview
+                                  ? EXPORT_CLEANUP_PREVIEW_BUTTON
+                                  : t(target.button)}
+                            </GateButton>
+                            {isExportsPreview ? (
+                              <GateButton
+                                perm="settings.manage"
+                                type="button"
+                                variant="secondary"
+                                icon={<Icon.Wrench />}
+                                title={EXPORT_CLEANUP_EXECUTION_TOOLTIP}
+                                disabled={
+                                  !canClean || cleanup.isPending || !hasExportCleanupPreview
+                                }
+                                onClick={() => setCleanupTarget('exports')}
+                              >
+                                {cleanup.isPending && cleanupTarget === 'exports'
+                                  ? EXPORT_CLEANUP_EXECUTION_PENDING
+                                  : EXPORT_CLEANUP_EXECUTION_BUTTON}
+                              </GateButton>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {lastCleanup ? (
+                    <InlineWarning
+                      tone="info"
+                      title={
+                        lastCleanup.dry_run
+                          ? EXPORT_CLEANUP_PREVIEW_TITLE
+                          : lastCleanup.target === 'exports'
+                            ? EXPORT_CLEANUP_EXECUTION_TITLE
+                            : t('data.status.cleanup.doneTitle')
+                      }
+                    >
+                      <p>{cleanupSummary(lastCleanup, t, locale)}</p>
+                      {lastCleanup.skipped.length > 0 ? (
+                        <ul className="plain-list">
+                          {lastCleanup.skipped.map((item) => (
+                            <li key={item} className="mono">
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </InlineWarning>
+                  ) : null}
+                </section>
               </div>
             ) : null}
           </Card>
@@ -2176,164 +2206,195 @@ function DataStatusPanel({
             {status.isError ? <ErrorNote error={status.error} /> : null}
             {data ? (
               <div className="data-status">
-          <section className="data-status-section" aria-labelledby="data-status-backup">
-            <div className="data-status-section__head">
-              <div>
-                <h4 id="data-status-backup">{t('data.status.backup.title')}</h4>
-                <p className="data-status-section__hint">{t('data.status.backup.body')}</p>
-              </div>
-              <GateButton
-                perm="data.backup"
-                type="button"
-                variant="secondary"
-                icon={<Icon.Archive />}
-                disabled={!data.persistence.durable_store_open || backup.isPending}
-                onClick={() => void createBackup()}
-              >
-                {backup.isPending
-                  ? t('data.status.backup.pending')
-                  : t('data.status.backup.button')}
-              </GateButton>
-            </div>
-            {!data.persistence.durable_store_open ? (
-              <p className="field__hint">{t('data.status.backup.unavailable')}</p>
-            ) : null}
-            {backup.error ? <ErrorNote error={backup.error} /> : null}
-            {lastBackup ? (
-              <BackupManifestReport manifest={lastBackup} t={t} locale={locale} />
-            ) : null}
-          </section>
+                <section className="data-status-section" aria-labelledby="data-status-backup">
+                  <div className="data-status-section__head">
+                    <div>
+                      <h4 id="data-status-backup">{t('data.status.backup.title')}</h4>
+                      <p className="data-status-section__hint">{t('data.status.backup.body')}</p>
+                    </div>
+                    <GateButton
+                      perm="data.backup"
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.Archive />}
+                      disabled={!data.persistence.durable_store_open || backup.isPending}
+                      onClick={() => void createBackup()}
+                    >
+                      {backup.isPending
+                        ? t('data.status.backup.pending')
+                        : t('data.status.backup.button')}
+                    </GateButton>
+                  </div>
+                  {!data.persistence.durable_store_open ? (
+                    <p className="field__hint">{t('data.status.backup.unavailable')}</p>
+                  ) : null}
+                  {backup.error ? <ErrorNote error={backup.error} /> : null}
+                  {lastBackup ? (
+                    <BackupManifestReport manifest={lastBackup} t={t} locale={locale} />
+                  ) : null}
+                </section>
 
-          <section className="data-status-section" aria-labelledby="data-status-recovery-drill">
-            <div className="data-status-section__head">
-              <div>
-                <h4 id="data-status-recovery-drill">Ensaio de recuperação sem restauro</h4>
-                <p className="data-status-section__hint">
-                  Executa a pré-validação existente do backup e grava um recibo de custódia. Não
-                  restaura, não troca a base de dados e não prepara sidecars.{' '}
-                  <FieldHelp text={t('data.status.help.recoveryDrill')} />
-                </p>
-              </div>
-            </div>
-            {recoveryDrills.isLoading ? (
-              <Loading label="A carregar política de recuperação" />
-            ) : null}
-            {recoveryDrills.error ? <ErrorNote error={recoveryDrills.error} /> : null}
-            {recoveryDrills.data ? (
-              <RecoveryFreshnessReviewReport
-                freshness={recoveryDrills.data.freshness}
-                locale={locale}
-              />
-            ) : null}
-            <form className="form" onSubmit={(event) => void submitRecoveryDrill(event)}>
-              <div className="data-status-usage-groups">
-                <Field
-                  label="Arquivo do backup para ensaio"
-                  htmlFor="backup-recovery-drill-archive"
-                  hint="Nome simples em backups/ ou caminho absoluto do arquivo a verificar."
+                <section
+                  className="data-status-section"
+                  aria-labelledby="data-status-recovery-drill"
                 >
-                  <Input
-                    id="backup-recovery-drill-archive"
-                    name="backup-recovery-drill-archive"
-                    value={drillArchive}
-                    placeholder="chancela-backup-….zip"
-                    onChange={(event) => setDrillArchive(event.target.value)}
-                  />
-                </Field>
-                <Field
-                  label="Chave do backup (opcional)"
-                  htmlFor="backup-recovery-drill-passphrase"
-                  hint="Usada só nesta pré-validação; não é guardada no recibo."
-                >
-                  <Input
-                    id="backup-recovery-drill-passphrase"
-                    name="backup-recovery-drill-passphrase"
-                    type="password"
-                    value={drillPassphrase}
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    onChange={(event) => setDrillPassphrase(event.target.value)}
-                  />
-                </Field>
-              </div>
-              <Field
-                label="Local de custódia"
-                htmlFor="backup-recovery-drill-custody"
-                hint="Local indicado pelo operador; isto não comprova custódia off-site."
-              >
-                <Input
-                  id="backup-recovery-drill-custody"
-                  name="backup-recovery-drill-custody"
-                  value={drillCustodyLocation}
-                  onChange={(event) => setDrillCustodyLocation(event.target.value)}
-                />
-              </Field>
-              <Field label="Notas do operador" htmlFor="backup-recovery-drill-notes">
-                <TextArea
-                  id="backup-recovery-drill-notes"
-                  name="backup-recovery-drill-notes"
-                  value={drillNotes}
-                  onChange={(event) => setDrillNotes(event.target.value)}
-                />
-              </Field>
-              {!data.persistence.durable_store_open ? (
-                <p className="field__hint">Requer armazenamento durável em disco.</p>
-              ) : null}
-              <p className="field__hint">
-                Ensaio explícito e iniciado pelo operador: sem restauro ao vivo, sem certificação
-                legal de arquivo, sem prova automática de RPO/RTO ou custódia off-site.
-              </p>
-              {recoveryDrill.error ? <ErrorNote error={recoveryDrill.error} /> : null}
-              <div className="form__actions">
-                <GateButton
-                  perm="ledger.recover"
-                  type="submit"
-                  variant="secondary"
-                  icon={<Icon.Search />}
-                  disabled={
-                    !data.persistence.durable_store_open ||
-                    recoveryDrill.isPending ||
-                    drillArchive.trim().length === 0
-                  }
-                >
-                  {recoveryDrill.isPending ? 'A registar ensaio…' : 'Registar ensaio sem restauro'}
-                </GateButton>
-              </div>
-            </form>
-            {lastDrillReceipt ? (
-              <RecoveryDrillReceiptReport receipt={lastDrillReceipt} t={t} locale={locale} />
-            ) : null}
-          </section>
+                  <div className="data-status-section__head">
+                    <div>
+                      <h4 id="data-status-recovery-drill">
+                        {t('uiLiteral.gestaoDadosSection.ensaioDeRecuperacaoSemRestauro')}
+                      </h4>
+                      <p className="data-status-section__hint">
+                        {' '}
+                        {t(
+                          'uiLiteral.gestaoDadosSection.executaAPreValidacaoExistenteDoBackupE',
+                        )}{' '}
+                        <FieldHelp text={t('data.status.help.recoveryDrill')} />
+                      </p>
+                    </div>
+                  </div>
+                  {recoveryDrills.isLoading ? (
+                    <Loading
+                      label={t('uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao')}
+                    />
+                  ) : null}
+                  {recoveryDrills.error ? <ErrorNote error={recoveryDrills.error} /> : null}
+                  {recoveryDrills.data ? (
+                    <RecoveryFreshnessReviewReport
+                      freshness={recoveryDrills.data.freshness}
+                      locale={locale}
+                    />
+                  ) : null}
+                  <form className="form" onSubmit={(event) => void submitRecoveryDrill(event)}>
+                    <div className="data-status-usage-groups">
+                      <Field
+                        label={t('uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio')}
+                        htmlFor="backup-recovery-drill-archive"
+                        hint={t(
+                          'uiLiteral.gestaoDadosSection.nomeSimplesEmBackupsOuCaminhoAbsolutoDo',
+                        )}
+                      >
+                        <Input
+                          id="backup-recovery-drill-archive"
+                          name="backup-recovery-drill-archive"
+                          value={drillArchive}
+                          placeholder={t('uiLiteral.gestaoDadosSection.chancelaBackupZip')}
+                          onChange={(event) => setDrillArchive(event.target.value)}
+                        />
+                      </Field>
+                      <Field
+                        label={t('uiLiteral.gestaoDadosSection.chaveDoBackupOpcional')}
+                        htmlFor="backup-recovery-drill-passphrase"
+                        hint={t(
+                          'uiLiteral.gestaoDadosSection.usadaSoNestaPreValidacaoNaoEGuardada',
+                        )}
+                      >
+                        <Input
+                          id="backup-recovery-drill-passphrase"
+                          name="backup-recovery-drill-passphrase"
+                          type="password"
+                          value={drillPassphrase}
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          spellCheck={false}
+                          onChange={(event) => setDrillPassphrase(event.target.value)}
+                        />
+                      </Field>
+                    </div>
+                    <Field
+                      label={t('uiLiteral.gestaoDadosSection.localDeCustodia')}
+                      htmlFor="backup-recovery-drill-custody"
+                      hint={t(
+                        'uiLiteral.gestaoDadosSection.localIndicadoPeloOperadorIstoNaoComprovaCustodia',
+                      )}
+                    >
+                      <Input
+                        id="backup-recovery-drill-custody"
+                        name="backup-recovery-drill-custody"
+                        value={drillCustodyLocation}
+                        onChange={(event) => setDrillCustodyLocation(event.target.value)}
+                      />
+                    </Field>
+                    <Field
+                      label={t('uiLiteral.gestaoDadosSection.notasDoOperador')}
+                      htmlFor="backup-recovery-drill-notes"
+                    >
+                      <TextArea
+                        id="backup-recovery-drill-notes"
+                        name="backup-recovery-drill-notes"
+                        value={drillNotes}
+                        onChange={(event) => setDrillNotes(event.target.value)}
+                      />
+                    </Field>
+                    {!data.persistence.durable_store_open ? (
+                      <p className="field__hint">
+                        {t('uiLiteral.gestaoDadosSection.requerArmazenamentoDuravelEmDisco')}
+                      </p>
+                    ) : null}
+                    <p className="field__hint">
+                      {' '}
+                      {t(
+                        'uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro',
+                      )}{' '}
+                    </p>
+                    {recoveryDrill.error ? <ErrorNote error={recoveryDrill.error} /> : null}
+                    <div className="form__actions">
+                      <GateButton
+                        perm="ledger.recover"
+                        type="submit"
+                        variant="secondary"
+                        icon={<Icon.Search />}
+                        disabled={
+                          !data.persistence.durable_store_open ||
+                          recoveryDrill.isPending ||
+                          drillArchive.trim().length === 0
+                        }
+                      >
+                        {recoveryDrill.isPending
+                          ? 'A registar ensaio…'
+                          : 'Registar ensaio sem restauro'}
+                      </GateButton>
+                    </div>
+                  </form>
+                  {lastDrillReceipt ? (
+                    <RecoveryDrillReceiptReport receipt={lastDrillReceipt} t={t} locale={locale} />
+                  ) : null}
+                </section>
 
-          <section className="data-status-section" aria-labelledby="data-status-sync-handoff">
-            <div className="data-status-section__head">
-              <div>
-                <h4 id="data-status-sync-handoff">Pré-validação local de handoff</h4>
-                <p className="data-status-section__hint">
-                  Compõe apenas evidência local: candidatos de backup, ensaios verificados, pacotes
-                  de livros, arquivo e estado do ledger.
-                </p>
-              </div>
-            </div>
-            {syncHandoffPreflight.isLoading ? (
-              <Loading label="A carregar pré-validação local de handoff" />
-            ) : null}
-            {syncHandoffPreflight.error ? <ErrorNote error={syncHandoffPreflight.error} /> : null}
-            {syncHandoffPreflight.data ? (
-              <SyncHandoffPreflightReportCard
-                report={syncHandoffPreflight.data}
-                locale={locale}
-                t={t}
-                savingJson={savingSyncHandoffPreflight}
-                onSaveJson={() =>
-                  void saveSyncHandoffPreflightReport(syncHandoffPreflight.data)
-                }
-              />
-            ) : null}
-          </section>
-
+                <section className="data-status-section" aria-labelledby="data-status-sync-handoff">
+                  <div className="data-status-section__head">
+                    <div>
+                      <h4 id="data-status-sync-handoff">
+                        {t('uiLiteral.gestaoDadosSection.preValidacaoLocalDeHandoff')}
+                      </h4>
+                      <p className="data-status-section__hint">
+                        {' '}
+                        {t(
+                          'uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios',
+                        )}{' '}
+                      </p>
+                    </div>
+                  </div>
+                  {syncHandoffPreflight.isLoading ? (
+                    <Loading
+                      label={t('uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff')}
+                    />
+                  ) : null}
+                  {syncHandoffPreflight.error ? (
+                    <ErrorNote error={syncHandoffPreflight.error} />
+                  ) : null}
+                  {syncHandoffPreflight.data ? (
+                    <SyncHandoffPreflightReportCard
+                      report={syncHandoffPreflight.data}
+                      locale={locale}
+                      t={t}
+                      savingJson={savingSyncHandoffPreflight}
+                      onSaveJson={() =>
+                        void saveSyncHandoffPreflightReport(syncHandoffPreflight.data)
+                      }
+                    />
+                  ) : null}
+                </section>
               </div>
             ) : null}
           </Card>
@@ -2346,143 +2407,170 @@ function DataStatusPanel({
               {status.isError ? <ErrorNote error={status.error} /> : null}
               {data ? (
                 <div className="data-status">
-          <section
-            className="data-status-section"
-            aria-labelledby="data-status-database-encryption-readiness"
-          >
-            <div className="data-status-section__head">
-              <div>
-                <h4 id="data-status-database-encryption-readiness">
-                  Prontidão SQLCipher e custódia da chave
-                </h4>
-                <p className="data-status-section__hint">
-                  Leitura do estado local de persistência; não executa migração, rekey ou validação
-                  de custódia.
-                </p>
-              </div>
-            </div>
-            <DataDatabaseEncryptionReadiness
-              encryption={data.persistence.database_encryption}
-              t={t}
-            />
-          </section>
-          <section className="data-status-section" aria-labelledby="data-status-key-rotation">
-            <div className="data-status-section__head">
-              <div>
-                <h4 id="data-status-key-rotation">{t('data.status.keyRotation.title')}</h4>
-                <p className="data-status-section__hint">
-                  {t('data.status.keyRotation.body')}{' '}
-                  <FieldHelp text={t('data.status.help.keyRotation')} />
-                </p>
-              </div>
-            </div>
-            <DataKeyRotationReceiptSummary summary={data.key_rotation} locale={locale} t={t} />
-            <form className="form" onSubmit={(event) => void submitKeyRotationPreflight(event)}>
-              <div className="data-status-usage-groups">
-                <Field
-                  label={t('data.status.keyRotation.currentKey.label')}
-                  htmlFor="data-key-rotation-current"
-                  hint={t('data.status.keyRotation.currentKey.hint')}
-                >
-                  <Input
-                    id="data-key-rotation-current"
-                    name="data-key-rotation-current"
-                    type="password"
-                    value={currentKey}
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    onChange={(event) => setCurrentKey(event.target.value)}
-                  />
-                </Field>
-                <Field
-                  label={t('data.status.keyRotation.replacementKey.label')}
-                  htmlFor="data-key-rotation-replacement"
-                  hint={t('data.status.keyRotation.replacementKey.hint')}
-                >
-                  <Input
-                    id="data-key-rotation-replacement"
-                    name="data-key-rotation-replacement"
-                    type="password"
-                    value={replacementKey}
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    onChange={(event) => setReplacementKey(event.target.value)}
-                  />
-                </Field>
-              </div>
-              <p className="field__hint">{t('data.status.keyRotation.secretHint')}</p>
-              {!dataPath ? (
-                <p className="field__hint">{t('data.status.keyRotation.unavailable')}</p>
-              ) : null}
-              {keyRotationPreflight.error ? <ErrorNote error={keyRotationPreflight.error} /> : null}
-              <div className="form__actions">
-                <GateButton
-                  perm="settings.manage"
-                  type="submit"
-                  variant="secondary"
-                  icon={<Icon.Search />}
-                  disabled={!dataPath || keyRotationPreflight.isPending}
-                >
-                  {keyRotationPreflight.isPending
-                    ? t('data.status.keyRotation.pending')
-                    : t('data.status.keyRotation.submit')}
-                </GateButton>
-              </div>
-            </form>
-            {lastPreflight ? <DataKeyRotationPreflightReport report={lastPreflight} t={t} /> : null}
-            {lastPreflight?.ready ? (
-              <form
-                className="form"
-                aria-label="Execução da rotação SQLCipher"
-                onSubmit={(event) => void submitKeyRotationExecution(event)}
-              >
-                <Field
-                  label="Nova chave SQLCipher"
-                  htmlFor="data-key-rotation-execution"
-                  hint="Enviada apenas para executar PRAGMA rekey; a resposta devolve só evidência sem segredo."
-                >
-                  <Input
-                    id="data-key-rotation-execution"
-                    name="data-key-rotation-execution"
-                    type="password"
-                    value={executionKey}
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    onChange={(event) => setExecutionKey(event.target.value)}
-                  />
-                </Field>
-                <p className="field__hint">
-                  Executa apenas o rekey SQLCipher na base de dados durável já aberta; não converte
-                  lojas SQLite em plaintext.
-                </p>
-                {keyRotationExecution.error ? (
-                  <ErrorNote error={keyRotationExecution.error} />
-                ) : null}
-                <div className="form__actions">
-                  <GateButton
-                    perm="settings.manage"
-                    type="submit"
-                    variant="primary"
-                    icon={<Icon.Check />}
-                    disabled={!dataPath || keyRotationExecution.isPending}
+                  <section
+                    className="data-status-section"
+                    aria-labelledby="data-status-database-encryption-readiness"
                   >
-                    {keyRotationExecution.isPending
-                      ? 'A executar rekey…'
-                      : 'Executar rekey SQLCipher'}
-                  </GateButton>
-                </div>
-              </form>
-            ) : null}
-            {lastExecution ? (
-              <DataKeyRotationExecutionReport execution={lastExecution} t={t} locale={locale} />
-            ) : null}
-          </section>
+                    <div className="data-status-section__head">
+                      <div>
+                        <h4 id="data-status-database-encryption-readiness">
+                          {' '}
+                          {t(
+                            'uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave',
+                          )}{' '}
+                        </h4>
+                        <p className="data-status-section__hint">
+                          {' '}
+                          {t(
+                            'uiLiteral.gestaoDadosSection.leituraDoEstadoLocalDePersistenciaNaoExecuta',
+                          )}{' '}
+                        </p>
+                      </div>
+                    </div>
+                    <DataDatabaseEncryptionReadiness
+                      encryption={data.persistence.database_encryption}
+                      t={t}
+                    />
+                  </section>
+                  <section
+                    className="data-status-section"
+                    aria-labelledby="data-status-key-rotation"
+                  >
+                    <div className="data-status-section__head">
+                      <div>
+                        <h4 id="data-status-key-rotation">{t('data.status.keyRotation.title')}</h4>
+                        <p className="data-status-section__hint">
+                          {t('data.status.keyRotation.body')}{' '}
+                          <FieldHelp text={t('data.status.help.keyRotation')} />
+                        </p>
+                      </div>
+                    </div>
+                    <DataKeyRotationReceiptSummary
+                      summary={data.key_rotation}
+                      locale={locale}
+                      t={t}
+                    />
+                    <form
+                      className="form"
+                      onSubmit={(event) => void submitKeyRotationPreflight(event)}
+                    >
+                      <div className="data-status-usage-groups">
+                        <Field
+                          label={t('data.status.keyRotation.currentKey.label')}
+                          htmlFor="data-key-rotation-current"
+                          hint={t('data.status.keyRotation.currentKey.hint')}
+                        >
+                          <Input
+                            id="data-key-rotation-current"
+                            name="data-key-rotation-current"
+                            type="password"
+                            value={currentKey}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            onChange={(event) => setCurrentKey(event.target.value)}
+                          />
+                        </Field>
+                        <Field
+                          label={t('data.status.keyRotation.replacementKey.label')}
+                          htmlFor="data-key-rotation-replacement"
+                          hint={t('data.status.keyRotation.replacementKey.hint')}
+                        >
+                          <Input
+                            id="data-key-rotation-replacement"
+                            name="data-key-rotation-replacement"
+                            type="password"
+                            value={replacementKey}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            onChange={(event) => setReplacementKey(event.target.value)}
+                          />
+                        </Field>
+                      </div>
+                      <p className="field__hint">{t('data.status.keyRotation.secretHint')}</p>
+                      {!dataPath ? (
+                        <p className="field__hint">{t('data.status.keyRotation.unavailable')}</p>
+                      ) : null}
+                      {keyRotationPreflight.error ? (
+                        <ErrorNote error={keyRotationPreflight.error} />
+                      ) : null}
+                      <div className="form__actions">
+                        <GateButton
+                          perm="settings.manage"
+                          type="submit"
+                          variant="secondary"
+                          icon={<Icon.Search />}
+                          disabled={!dataPath || keyRotationPreflight.isPending}
+                        >
+                          {keyRotationPreflight.isPending
+                            ? t('data.status.keyRotation.pending')
+                            : t('data.status.keyRotation.submit')}
+                        </GateButton>
+                      </div>
+                    </form>
+                    {lastPreflight ? (
+                      <DataKeyRotationPreflightReport report={lastPreflight} t={t} />
+                    ) : null}
+                    {lastPreflight?.ready ? (
+                      <form
+                        className="form"
+                        aria-label={t('uiLiteral.gestaoDadosSection.execucaoDaRotacaoSqlcipher')}
+                        onSubmit={(event) => void submitKeyRotationExecution(event)}
+                      >
+                        <Field
+                          label={t('uiLiteral.gestaoDadosSection.novaChaveSqlcipher')}
+                          htmlFor="data-key-rotation-execution"
+                          hint={t(
+                            'uiLiteral.gestaoDadosSection.enviadaApenasParaExecutarPragmaRekeyAResposta',
+                          )}
+                        >
+                          <Input
+                            id="data-key-rotation-execution"
+                            name="data-key-rotation-execution"
+                            type="password"
+                            value={executionKey}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            onChange={(event) => setExecutionKey(event.target.value)}
+                          />
+                        </Field>
+                        <p className="field__hint">
+                          {' '}
+                          {t(
+                            'uiLiteral.gestaoDadosSection.executaApenasORekeySqlcipherNaBaseDe',
+                          )}{' '}
+                        </p>
+                        {keyRotationExecution.error ? (
+                          <ErrorNote error={keyRotationExecution.error} />
+                        ) : null}
+                        <div className="form__actions">
+                          <GateButton
+                            perm="settings.manage"
+                            type="submit"
+                            variant="primary"
+                            icon={<Icon.Check />}
+                            disabled={!dataPath || keyRotationExecution.isPending}
+                          >
+                            {keyRotationExecution.isPending
+                              ? 'A executar rekey…'
+                              : 'Executar rekey SQLCipher'}
+                          </GateButton>
+                        </div>
+                      </form>
+                    ) : null}
+                    {lastExecution ? (
+                      <DataKeyRotationExecutionReport
+                        execution={lastExecution}
+                        t={t}
+                        locale={locale}
+                      />
+                    ) : null}
+                  </section>
                 </div>
               ) : null}
             </Card>
@@ -2621,8 +2709,7 @@ export function GestaoDadosSection() {
       <Card title={t('data.destructive.title')}>
         <div className="stack--tight">
           <InlineWarning tone="error" title={t('data.destructive.warnTitle')}>
-            {t('data.destructive.warnBody')}{' '}
-            <FieldHelp text={t('data.status.help.reset')} />
+            {t('data.destructive.warnBody')} <FieldHelp text={t('data.status.help.reset')} />
           </InlineWarning>
           <div className="row-wrap">
             <GateButton

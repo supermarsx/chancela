@@ -44,6 +44,7 @@ import {
   NUMBERING_SCHEMES,
   PASSWORD_POLICY_RULE_CODES,
   PLATFORM_EMITTED_LOG_LEVELS,
+  PERMISSION_SCOPE_KINDS,
   PERMISSION_SOURCES,
   PLATFORM_LOG_LEVELS,
   PLATFORM_SERVICE_ACTIONS,
@@ -3694,6 +3695,8 @@ describe('contract fixtures parse through the real client', () => {
       entity,
       {
         id: true,
+        tenant_id: true,
+        group_id: true,
         name: true,
         nipc: true,
         nipc_validated: true,
@@ -3710,6 +3713,8 @@ describe('contract fixtures parse through the real client', () => {
       'fiscal_year_end',
     );
     expect(entity.id).not.toHaveLength(0);
+    expect(entity.tenant_id).not.toHaveLength(0);
+    expect(entity.group_id === null || entity.group_id.length > 0).toBe(true);
     expect(entity.nipc).toMatch(/^\d{9}$/);
     expect(typeof entity.nipc_validated).toBe('boolean');
     expect(entity.fiscal_year_end, 'Entity.fiscal_year_end should be present').not.toBeUndefined();
@@ -4176,6 +4181,8 @@ describe('contract fixtures parse through the real client', () => {
         acts_awaiting_signature: true,
         acts_sealed: true,
         unresolved_compliance: true,
+        failed_sync_jobs: true,
+        pending_backup_jobs: true,
         ledger_length: true,
         ledger_valid: true,
         current_work: true,
@@ -4616,6 +4623,8 @@ describe('contract fixtures parse through the real client', () => {
         acts_awaiting_signature: true,
         acts_sealed: true,
         unresolved_compliance: true,
+        failed_sync_jobs: true,
+        pending_backup_jobs: true,
         ledger_length: true,
         ledger_valid: true,
         current_work: true,
@@ -7199,8 +7208,9 @@ describe('contract fixtures parse through the real client', () => {
       expect(typeof g.permission, 'grant.permission is a string').toBe('string');
       expect(g.permission.length, 'grant.permission is non-empty').toBeGreaterThan(0);
       inEnum(PERMISSION_SOURCES, g.source, 'SessionView.permissions[].source');
-      // `scope` is the `kind`-tagged union: global carries no id; entity/book carry a uuid.
-      inEnum(['global', 'entity', 'book'], g.scope.kind, 'SessionView.permissions[].scope.kind');
+      // `scope` is the complete frozen `kind`-tagged union: global carries no id;
+      // every resource variant carries its opaque UUID.
+      inEnum(PERMISSION_SCOPE_KINDS, g.scope.kind, 'SessionView.permissions[].scope.kind');
       if (g.scope.kind === 'global') {
         assertExactKeys<{ kind: 'global' }>(g.scope, { kind: true }, 'scope(global)');
       } else {
@@ -7210,6 +7220,22 @@ describe('contract fixtures parse through the real client', () => {
           `scope(${g.scope.kind})`,
         );
         expect(typeof scoped.id, 'scoped grant carries an id').toBe('string');
+      }
+    }
+  });
+
+  it('PermissionScope preserves every frozen ScopeView/ScopeInput wire variant exactly', () => {
+    const scopes: PermissionScope[] = PERMISSION_SCOPE_KINDS.map((kind) =>
+      kind === 'global' ? { kind } : { kind, id: '00000000-0000-0000-0000-000000000001' },
+    );
+
+    expect(scopes.map((scope) => scope.kind)).toEqual(PERMISSION_SCOPE_KINDS);
+    for (const scope of scopes) {
+      if (scope.kind === 'global') {
+        assertExactKeys(scope, { kind: true }, 'PermissionScope(global)');
+      } else {
+        assertExactKeys(scope, { kind: true, id: true }, `PermissionScope(${scope.kind})`);
+        expect(scope.id).toMatch(/^[0-9a-f-]{36}$/);
       }
     }
   });

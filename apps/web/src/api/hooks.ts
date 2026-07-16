@@ -11,6 +11,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type {
+  AdvanceActBody,
   CaeRevision,
   CloseBookBody,
   CloseRetentionExecutionReviewBody,
@@ -784,7 +785,8 @@ export function useDispatchActConvening(id: string) {
 export function useAdvanceAct(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (to: ActState) => api.advanceAct(id, { to }),
+    mutationFn: (input: ActState | AdvanceActBody) =>
+      api.advanceAct(id, typeof input === 'string' ? { to: input } : input),
     onSuccess: (act) => {
       qc.setQueryData(keys.act(id), act);
       void qc.invalidateQueries({ queryKey: keys.compliance(id) });
@@ -898,10 +900,10 @@ export function useActDocumentPreview(id: string, enabled: boolean) {
 }
 
 /**
- * The DOC-03 bundle for a sealed act (`GET /v1/acts/{id}/document/bundle`, t48). 404 until
- * sealed — and 404 for a sealed act whose family has no template (the documented no-document
- * fallback), which the caller renders honestly. Enabled only once sealed; never retried so
- * the 404 resolves immediately to the empty state.
+ * The DOC-03 bundle for the canonical snapshot (`GET /v1/acts/{id}/document/bundle`, t48).
+ * It becomes available when the act atomically enters `Signing` and remains available after
+ * seal/archive. A 404 means no canonical template/snapshot exists; never retried so the caller can
+ * render that state honestly.
  */
 export function useActDocumentBundle(id: string, enabled: boolean) {
   return useQuery({
@@ -1138,8 +1140,8 @@ export function useDownloadActDocumentOffice(id: string) {
 
 /**
  * The act's signature status (`GET /v1/acts/{id}/signature`, t57). Drives the signing
- * panel: unsigned / pending (aguarda-OTP) / signed. Enabled only once sealed (the endpoint
- * is meaningful post-seal); never retried so a transient state resolves immediately.
+ * panel: unsigned / pending (aguarda-OTP) / signed. Enabled from `Signing` onward, after the
+ * canonical snapshot is frozen; never retried so a transient state resolves immediately.
  */
 export function useActSignature(id: string, enabled: boolean) {
   return useQuery({

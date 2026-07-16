@@ -29,6 +29,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 const ENTITY: Entity = {
   id: 'entity-1',
+  tenant_id: 'tenant-1',
+  group_id: null,
   name: 'Encosto Estratégico Lda',
   nipc: '500000000',
   nipc_validated: true,

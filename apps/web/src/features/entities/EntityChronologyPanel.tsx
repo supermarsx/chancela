@@ -7,7 +7,7 @@ import type {
   EntityChronologySealedActProjection,
   EntityChronologyView,
 } from '../../api/types';
-import { useT, type TFunction } from '../../i18n';
+import { t as translateNow, useT, type TFunction } from '../../i18n';
 import { Badge, Button, Card, EmptyState, ErrorNote, Icon, Loading, useToast } from '../../ui';
 
 type MermaidKey = keyof EntityChronologyMermaid;
@@ -29,7 +29,11 @@ function actorsText(actors: string[], t: TFunction) {
 }
 
 function mermaidNodeLabel(value: string): string {
-  const trimmed = value.trim().replace(/;$/, '').replace(/:::[\w-]+$/, '').trim();
+  const trimmed = value
+    .trim()
+    .replace(/;$/, '')
+    .replace(/:::[\w-]+$/, '')
+    .trim();
   const bracket = trimmed.match(/\[\s*"?([^"\]]+)"?\s*\]/);
   if (bracket?.[1]) return bracket[1].trim();
   const paren = trimmed.match(/\(\s*"?([^")]+)"?\s*\)/);
@@ -47,9 +51,7 @@ function mermaidPathRows(value: string): { from: string; to: string }[] {
   const nodeLabels = new Map<string, string>();
 
   for (const line of lines) {
-    const declaration = line.match(
-      /^([A-Za-z_][\w-]*)\s*(\[[^\]]+\]|\([^)]+\)|\{[^}]+\})\s*;?$/,
-    );
+    const declaration = line.match(/^([A-Za-z_][\w-]*)\s*(\[[^\]]+\]|\([^)]+\)|\{[^}]+\})\s*;?$/);
     if (declaration?.[1] && declaration[2]) {
       nodeLabels.set(declaration[1], mermaidNodeLabel(declaration[2]));
     }
@@ -313,30 +315,35 @@ function SealedActProjectionSection({
   projection: EntityChronologySealedActProjection;
 }) {
   return (
-    <section className="chronology-analytics" aria-label="Cronologia local de atos selados">
+    <section
+      className="chronology-analytics"
+      aria-label={translateNow('uiLiteral.entityChronologyPanel.cronologiaLocalDeAtosSelados')}
+    >
       <div className="chronology-analytics__head">
-        <h4>Cronologia local de atos selados</h4>
+        <h4>{translateNow('uiLiteral.entityChronologyPanel.cronologiaLocalDeAtosSelados')}</h4>
         <p className="muted">
-          Projeção técnica local baseada apenas em atas seladas ou arquivadas. Não reclama validade
-          jurídica nem certificação de autoridade.
+          {' '}
+          {translateNow(
+            'uiLiteral.entityChronologyPanel.projecaoTecnicaLocalBaseadaApenasEmAtasSeladas',
+          )}{' '}
         </p>
       </div>
 
       <dl className="chronology-metrics">
         <div>
-          <dt>Eventos locais</dt>
+          <dt>{translateNow('uiLiteral.entityChronologyPanel.eventosLocais')}</dt>
           <dd>{projection.events.length}</dd>
         </div>
         <div>
-          <dt>Nós</dt>
+          <dt>{translateNow('uiLiteral.entityChronologyPanel.nos')}</dt>
           <dd>{projection.graph.nodes.length}</dd>
         </div>
         <div>
-          <dt>Ligações</dt>
+          <dt>{translateNow('uiLiteral.entityChronologyPanel.ligacoes')}</dt>
           <dd>{projection.graph.edges.length}</dd>
         </div>
         <div>
-          <dt>Fontes seladas</dt>
+          <dt>{translateNow('uiLiteral.entityChronologyPanel.fontesSeladas')}</dt>
           <dd>{projection.provenance.length}</dd>
         </div>
       </dl>
@@ -345,11 +352,11 @@ function SealedActProjectionSection({
         <table className="table">
           <thead>
             <tr>
-              <th>Data</th>
-              <th>Tipo</th>
-              <th>Descrição</th>
-              <th>Fonte selada</th>
-              <th>Digest</th>
+              <th>{translateNow('uiLiteral.entityChronologyPanel.data')}</th>
+              <th>{translateNow('uiLiteral.entityChronologyPanel.tipo')}</th>
+              <th>{translateNow('uiLiteral.entityChronologyPanel.descricao')}</th>
+              <th>{translateNow('uiLiteral.entityChronologyPanel.fonteSelada')}</th>
+              <th>{translateNow('uiLiteral.entityChronologyPanel.digest')}</th>
             </tr>
           </thead>
           <tbody>
@@ -383,7 +390,10 @@ function SealedActProjectionSection({
       </div>
 
       {projection.graph.edges.length > 0 ? (
-        <ul className="chronology-analytics__list" aria-label="Proveniência das ligações locais">
+        <ul
+          className="chronology-analytics__list"
+          aria-label={translateNow('uiLiteral.entityChronologyPanel.provenienciaDasLigacoesLocais')}
+        >
           {projection.graph.edges.map((edge) => (
             <li key={edge.id}>
               <code className="mono">{edge.kind}</code> {edge.from} -&gt; {edge.to} ·{' '}

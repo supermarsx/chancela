@@ -44,7 +44,7 @@ interface RawReportSelection {
   sourceFilename: string | null;
 }
 
-function readFileAsText(file: File): Promise<string> {
+export function readExternalValidatorFileAsText(file: File): Promise<string> {
   if (typeof file.text === 'function') return file.text();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -54,7 +54,7 @@ function readFileAsText(file: File): Promise<string> {
   });
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+export function externalValidatorArrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   const chunk = 0x8000;
@@ -64,18 +64,18 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function hex(bytes: ArrayBuffer): string {
+export function externalValidatorHex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
-async function sha256Hex(buffer: ArrayBuffer): Promise<string | null> {
+export async function externalValidatorSha256Hex(buffer: ArrayBuffer): Promise<string | null> {
   if (!globalThis.crypto?.subtle) return null;
-  return hex(await globalThis.crypto.subtle.digest('SHA-256', buffer));
+  return externalValidatorHex(await globalThis.crypto.subtle.digest('SHA-256', buffer));
 }
 
-function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+export function readExternalValidatorFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   if (typeof file.arrayBuffer === 'function') return file.arrayBuffer();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -91,7 +91,7 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   });
 }
 
-function formatBytes(value: number, t: TFunction): string {
+export function formatExternalValidatorBytes(value: number, t: TFunction): string {
   if (!Number.isFinite(value) || value < 0) return t('pdfValidator.size.unknown');
   if (value < 1024) return `${value} bytes`;
   const units = ['KB', 'MB', 'GB'];
@@ -109,12 +109,12 @@ function textValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
-function normalizeRawReportContentType(value: string | undefined): string | null {
+export function normalizeRawReportContentType(value: string | undefined): string | null {
   const mediaType = (value ?? '').split(';')[0].trim().toLowerCase();
   return RAW_REPORT_CONTENT_TYPES.has(mediaType) ? mediaType : null;
 }
 
-function rawReportContentType(file: File): string {
+export function rawReportContentType(file: File): string {
   const declared = normalizeRawReportContentType(file.type);
   if (declared) return declared;
   const name = file.name.toLowerCase();
@@ -125,7 +125,7 @@ function rawReportContentType(file: File): string {
   return 'application/octet-stream';
 }
 
-function safeSourceFilename(value: string): string | null {
+export function safeSourceFilename(value: string): string | null {
   if (!value || value.length > 255 || value.includes('/') || value.includes('\\')) return null;
   for (const character of value) {
     const code = character.charCodeAt(0);
@@ -133,6 +133,12 @@ function safeSourceFilename(value: string): string | null {
   }
   return value;
 }
+
+const readFileAsText = readExternalValidatorFileAsText;
+const arrayBufferToBase64 = externalValidatorArrayBufferToBase64;
+const sha256Hex = externalValidatorSha256Hex;
+const readFileAsArrayBuffer = readExternalValidatorFileAsArrayBuffer;
+const formatBytes = formatExternalValidatorBytes;
 
 function reportCaseId(report: ExternalValidatorReportSummary): string | null {
   return textValue(report.case_id);

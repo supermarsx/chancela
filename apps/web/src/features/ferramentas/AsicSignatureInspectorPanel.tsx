@@ -9,7 +9,7 @@ import type {
   AsicTechnicalSignatureReport,
 } from '../../api/types';
 import { useInspectAsicSignature } from '../../api/hooks';
-import { useT, type TFunction } from '../../i18n';
+import { t as translateNow, useT, type TFunction } from '../../i18n';
 import {
   Badge,
   Button,
@@ -170,7 +170,12 @@ function BlockerList({
 }
 
 function FindingsList({ findings }: { findings: AsicInspectionFinding[] }) {
-  if (!findings.length) return <p className="muted">Sem ocorrências reportadas.</p>;
+  if (!findings.length)
+    return (
+      <p className="muted">
+        {translateNow('uiLiteral.asicSignatureInspectorPanel.semOcorrenciasReportadas')}
+      </p>
+    );
   return (
     <ul className="pdf-validator-findings">
       {findings.map((finding) => (
@@ -192,7 +197,13 @@ function EvidenceIndicatorList({
   indicators: AsicEmbeddedEvidenceIndicatorReport[];
 }) {
   if (!indicators.length) {
-    return <p className="muted">Sem indicadores de evidência embebida reportados.</p>;
+    return (
+      <p className="muted">
+        {translateNow(
+          'uiLiteral.asicSignatureInspectorPanel.semIndicadoresDeEvidenciaEmbebidaReportados',
+        )}
+      </p>
+    );
   }
   return (
     <ul className="pdf-validator-findings">
@@ -214,8 +225,10 @@ function SignatureList({ signatures }: { signatures: AsicTechnicalSignatureRepor
   const t = useT();
   if (!signatures.length) {
     return (
-      <EmptyState title="Sem assinaturas reconhecidas">
-        <p>A inspeção técnica não encontrou membros CAdES ou XAdES reconhecidos no contentor.</p>
+      <EmptyState title={t('uiLiteral.asicSignatureInspectorPanel.semAssinaturasReconhecidas')}>
+        <p>
+          {t('uiLiteral.asicSignatureInspectorPanel.aInspecaoTecnicaNaoEncontrouMembrosCadesOu')}
+        </p>
       </EmptyState>
     );
   }
@@ -321,7 +334,12 @@ function SignatureList({ signatures }: { signatures: AsicTechnicalSignatureRepor
 
 function ArchiveTimestampList({ archives }: { archives: AsicTechnicalArchiveTimestampReport[] }) {
   const t = useT();
-  if (!archives.length) return <p className="muted">Sem timestamps de arquivo ASiC reportados.</p>;
+  if (!archives.length)
+    return (
+      <p className="muted">
+        {t('uiLiteral.asicSignatureInspectorPanel.semTimestampsDeArquivoAsicReportados')}
+      </p>
+    );
   return (
     <ul className="pdf-validator-timestamps">
       {archives.map((archive) => (
@@ -394,7 +412,7 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
     <div className="pdf-validator-report">
       <div className="pdf-validator-summary">
         <div>
-          <p className="field__label">Resultado ASiC</p>
+          <p className="field__label">{t('uiLiteral.asicSignatureInspectorPanel.resultadoAsic')}</p>
           <h3>{report.filename ?? 'Contentor ASiC sem nome'}</h3>
           <p className="muted">{report.legal_notice}</p>
         </div>
@@ -422,7 +440,7 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
 
       <div className="pdf-validator-details">
         <details open>
-          <summary>Perfil do contentor</summary>
+          <summary>{t('uiLiteral.asicSignatureInspectorPanel.perfilDoContentor')}</summary>
           <KeyValueGrid
             rows={[
               { label: 'Tipo ASiC', value: profile.container_kind },
@@ -513,7 +531,7 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
         </details>
 
         <details open>
-          <summary>Limitações explícitas</summary>
+          <summary>{t('uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas')}</summary>
           <KeyValueGrid
             rows={[
               {
@@ -591,12 +609,14 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
         </details>
 
         <details open>
-          <summary>Assinaturas técnicas</summary>
+          <summary>{t('uiLiteral.asicSignatureInspectorPanel.assinaturasTecnicas')}</summary>
           <SignatureList signatures={technical.signatures} />
         </details>
 
         <details open>
-          <summary>Evidência embebida e bloqueadores</summary>
+          <summary>
+            {t('uiLiteral.asicSignatureInspectorPanel.evidenciaEmbebidaEBloqueadores')}
+          </summary>
           <KeyValueGrid
             rows={[
               { label: 'Âmbito da evidência', value: embedded.evidence_scope },
@@ -641,9 +661,9 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
               },
             ]}
           />
-          <h4>Indicadores</h4>
+          <h4>{t('uiLiteral.asicSignatureInspectorPanel.indicadores')}</h4>
           <EvidenceIndicatorList indicators={embedded.indicators} />
-          <h4>Bloqueadores</h4>
+          <h4>{t('uiLiteral.asicSignatureInspectorPanel.bloqueadores')}</h4>
           <BlockerList
             blockers={embedded.blockers}
             emptyLabel="Sem bloqueadores de evidência embebida reportados."
@@ -651,13 +671,13 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
         </details>
 
         <details open>
-          <summary>Timestamps de arquivo</summary>
+          <summary>{t('uiLiteral.asicSignatureInspectorPanel.timestampsDeArquivo')}</summary>
           <ArchiveTimestampList archives={technical.archive_timestamps} />
         </details>
 
         {report.cades ? (
           <details>
-            <summary>Validação CAdES limitada</summary>
+            <summary>{t('uiLiteral.asicSignatureInspectorPanel.validacaoCadesLimitada')}</summary>
             <KeyValueGrid
               rows={[
                 {
@@ -722,14 +742,16 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
         ) : null}
 
         <details>
-          <summary>Diagnóstico de manifestos</summary>
+          <summary>{t('uiLiteral.asicSignatureInspectorPanel.diagnosticoDeManifestos')}</summary>
           {profile.manifest_diagnostics.length ? (
             <ul className="pdf-validator-signatures">
               {profile.manifest_diagnostics.map((manifest) => (
                 <li key={manifest.path}>
                   <div className="pdf-validator-evidence-head">
                     <span>
-                      <Badge tone="neutral">manifesto</Badge>
+                      <Badge tone="neutral">
+                        {translateNow('uiLiteral.asicSignatureInspectorPanel.manifesto')}
+                      </Badge>
                       <code className="mono">{manifest.path}</code>
                     </span>
                     <span className="muted">{formatBytes(manifest.size, t)}</span>
@@ -767,12 +789,16 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
               ))}
             </ul>
           ) : (
-            <p className="muted">Sem diagnósticos de manifesto reportados.</p>
+            <p className="muted">
+              {t('uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeManifestoReportados')}
+            </p>
           )}
         </details>
 
         <details>
-          <summary>Bloqueadores e diagnósticos de assinatura</summary>
+          <summary>
+            {t('uiLiteral.asicSignatureInspectorPanel.bloqueadoresEDiagnosticosDeAssinatura')}
+          </summary>
           <BlockerList blockers={profile.blockers} emptyLabel="Sem bloqueadores de perfil." />
           {profile.signature_diagnostics.length ? (
             <ul className="pdf-validator-signatures">
@@ -803,12 +829,14 @@ function AsicReport({ report }: { report: AsicSignatureInspectionResponse }) {
               ))}
             </ul>
           ) : (
-            <p className="muted">Sem diagnósticos de assinatura reportados.</p>
+            <p className="muted">
+              {t('uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeAssinaturaReportados')}
+            </p>
           )}
         </details>
 
         <details open>
-          <summary>Ocorrências</summary>
+          <summary>{t('uiLiteral.asicSignatureInspectorPanel.ocorrencias')}</summary>
           <FindingsList findings={report.findings} />
         </details>
       </div>
@@ -880,7 +908,7 @@ export function AsicSignatureInspectorPanel() {
 
   return (
     <Card
-      title="Inspetor técnico ASiC"
+      title={t('uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic')}
       actions={
         <Button
           type="button"
@@ -894,14 +922,19 @@ export function AsicSignatureInspectorPanel() {
       }
     >
       <div className="pdf-validator stack">
-        <InlineWarning tone="info" title="Inspeção técnica local">
-          Leia apenas contentores locais .asice/.sce/.zip. Não assina, não guarda artefactos, não
-          chama prestadores e não consulta TSL/TSA/OCSP/CRL ao vivo.
+        <InlineWarning
+          tone="info"
+          title={t('uiLiteral.asicSignatureInspectorPanel.inspecaoTecnicaLocal')}
+        >
+          {' '}
+          {t(
+            'uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao',
+          )}{' '}
         </InlineWarning>
 
         <div className="pdf-validator-upload">
           <Field
-            label="Contentor ASiC"
+            label={t('uiLiteral.asicSignatureInspectorPanel.contentorAsic')}
             htmlFor="asic-signature-inspector-file"
             hint={
               file ? `Selecionado: ${file.name}` : 'Selecione um contentor .asice, .sce ou ZIP.'
@@ -934,14 +967,18 @@ export function AsicSignatureInspectorPanel() {
 
         {isInspecting ? (
           <p className="pdf-validator-status" aria-live="polite">
-            A inspecionar contentor ASiC local...
+            {' '}
+            {t('uiLiteral.asicSignatureInspectorPanel.aInspecionarContentorAsicLocal')}{' '}
           </p>
         ) : null}
         {readError ? <ErrorNote error={readError} /> : null}
         {currentInspectError ? (
           <InlineWarning tone="error" title={t('pdfValidator.failClosed.title')}>
             <p>
-              O endpoint recusou a inspeção; nenhum artefacto foi assinado, guardado ou alterado.
+              {' '}
+              {t(
+                'uiLiteral.asicSignatureInspectorPanel.oEndpointRecusouAInspecaoNenhumArtefactoFoi',
+              )}{' '}
             </p>
             <ErrorNote error={currentInspectError} />
           </InlineWarning>

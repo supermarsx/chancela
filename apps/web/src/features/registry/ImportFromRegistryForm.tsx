@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useImportFromRegistry } from '../../api/hooks';
 import { Badge, Button, Card, Field, Icon, Input, useToast } from '../../ui';
-import { useT } from '../../i18n';
+import { t as translateNow, useT } from '../../i18n';
 import { AccessCodeField } from './AccessCodeField';
 import { RegistryErrorNote } from './RegistryErrorNote';
 import { registryFieldHelp } from './fieldHelp';
@@ -29,9 +29,11 @@ function ImportStatus({
   if (pending) {
     return (
       <aside className="registry-import-state registry-import-state--active" role="status">
-        <p className="field__label">Estado</p>
-        <Badge tone="accent">A consultar</Badge>
-        <p>A certidão está a ser consultada. Mantenha esta página aberta.</p>
+        <p className="field__label">{translateNow('uiLiteral.importFromRegistryForm.estado')}</p>
+        <Badge tone="accent">{translateNow('uiLiteral.importFromRegistryForm.aConsultar')}</Badge>
+        <p>
+          {translateNow('uiLiteral.importFromRegistryForm.aCertidaoEstaASerConsultadaMantenhaEsta')}
+        </p>
       </aside>
     );
   }
@@ -39,16 +41,18 @@ function ImportStatus({
   if (hasError) {
     return (
       <aside className="registry-import-state registry-import-state--error">
-        <p className="field__label">Estado</p>
-        <Badge tone="error">Ação necessária</Badge>
-        <p>Corrija o código ou e-mail e tente novamente.</p>
+        <p className="field__label">{translateNow('uiLiteral.importFromRegistryForm.estado')}</p>
+        <Badge tone="error">
+          {translateNow('uiLiteral.importFromRegistryForm.acaoNecessaria')}
+        </Badge>
+        <p>{translateNow('uiLiteral.importFromRegistryForm.corrijaOCodigoOuEMailETente')}</p>
       </aside>
     );
   }
 
   return (
     <aside className="registry-import-state">
-      <p className="field__label">Estado</p>
+      <p className="field__label">{translateNow('uiLiteral.importFromRegistryForm.estado')}</p>
       <Badge tone={hasCode ? 'ok' : 'neutral'}>{hasCode ? 'Pronto' : 'Aguardando código'}</Badge>
       <p>
         {hasCode
@@ -92,7 +96,9 @@ export function ImportFromRegistryForm() {
       <div className="registry-import-flow">
         <div className="registry-import-flow__main">
           <div className="registry-import-copy">
-            <p className="registry-import-copy__eyebrow">Consulta</p>
+            <p className="registry-import-copy__eyebrow">
+              {t('uiLiteral.importFromRegistryForm.consulta')}
+            </p>
             <p className="muted">{t('registry.import.intro')}</p>
           </div>
           <form className="form registry-import-form" onSubmit={onSubmit}>

@@ -28,7 +28,7 @@ import {
   type LedgerEventView,
   type RegisteredEntityColumn,
 } from '../../api/types';
-import { useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
+import { t as translateNow, useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
   Card,
@@ -207,19 +207,19 @@ function EntityTableCell({
   );
 }
 
-function bookStateTone(state: BookView['state']): 'neutral' | 'accent' | 'ok' {
+export function bookStateTone(state: BookView['state']): 'neutral' | 'accent' | 'ok' {
   if (state === 'Open') return 'ok';
   if (state === 'Closed') return 'neutral';
   return 'accent';
 }
 
-function dateRank(value: string | null): number {
+export function dateRank(value: string | null): number {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? 0 : time;
 }
 
-function selectLastBook(books: BookView[]): BookView | null {
+export function selectLastBook(books: BookView[]): BookView | null {
   if (books.length === 0) return null;
   return [...books].sort((a, b) => {
     const date =
@@ -236,14 +236,14 @@ function selectLastBook(books: BookView[]): BookView | null {
   })[0];
 }
 
-function activityTone(kind: string): 'neutral' | 'accent' | 'ok' {
+export function activityTone(kind: string): 'neutral' | 'accent' | 'ok' {
   if (kind === 'registry.imported') return 'ok';
   if (kind === 'act.sealed' || kind === 'document.signed') return 'ok';
   if (kind === 'entity.statute_updated' || kind === 'act.advanced') return 'accent';
   return 'neutral';
 }
 
-function activityLabel(kind: string): string {
+export function activityLabel(kind: string): string {
   if (kind === 'registry.imported') return 'Registo importado';
   if (kind === 'entity.statute_updated') return 'Entidade atualizada';
   if (kind === 'entity.created') return 'Entidade criada';
@@ -260,7 +260,7 @@ function activityLabel(kind: string): string {
   return kind;
 }
 
-function activityCategory(kind: string): Exclude<ActivityFilter, 'all' | 'none'> | 'other' {
+export function activityCategory(kind: string): Exclude<ActivityFilter, 'all' | 'none'> | 'other' {
   if (kind === 'registry.imported') return 'registry';
   if (kind.startsWith('entity.')) return 'entity';
   if (kind.startsWith('book.')) return 'book';
@@ -269,35 +269,35 @@ function activityCategory(kind: string): Exclude<ActivityFilter, 'all' | 'none'>
   return 'other';
 }
 
-function formatActivityTimestamp(value: string, locale: string): string {
+export function formatActivityTimestamp(value: string, locale: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
-function formatActivityDate(value: string, locale: string): string {
+export function formatActivityDate(value: string, locale: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(date);
 }
 
-function formatDateValue(value: string | null | undefined, fallback = '—'): string {
+export function formatDateValue(value: string | null | undefined, fallback = '—'): string {
   return value ?? fallback;
 }
 
-function caeLabel(cae: EntityRegistrySummary['cae'][number]): string {
+export function caeLabel(cae: EntityRegistrySummary['cae'][number]): string {
   const suffix = cae.role === 'Principal' ? ' principal' : ' secundário';
   return `${cae.code}${suffix}`;
 }
 
-function caeDetails(cae: EntityRegistrySummary['cae'][number]): string {
+export function caeDetails(cae: EntityRegistrySummary['cae'][number]): string {
   const parts = [caeLabel(cae)];
   if (cae.designation) parts.push(cae.designation);
   if (cae.level || cae.revision) parts.push([cae.level, cae.revision].filter(Boolean).join(' · '));
   return parts.join(' — ');
 }
 
-function registryFreshnessTone(
+export function registryFreshnessTone(
   registry: EntityRegistrySummary | null,
 ): 'neutral' | 'accent' | 'ok' | 'warn' {
   if (!registry) return 'neutral';
@@ -306,14 +306,14 @@ function registryFreshnessTone(
   return 'accent';
 }
 
-function registryFreshnessLabel(registry: EntityRegistrySummary | null): string {
+export function registryFreshnessLabel(registry: EntityRegistrySummary | null): string {
   if (!registry) return 'Não importado';
   if (registry.expired === true) return 'Expirado';
   if (registry.expired === false) return 'Dentro da validade';
   return 'Validade desconhecida';
 }
 
-function indexBooksByEntity(books: BookView[] | undefined): Map<string, BookView[]> {
+export function indexBooksByEntity(books: BookView[] | undefined): Map<string, BookView[]> {
   const byEntity = new Map<string, BookView[]>();
   for (const book of books ?? []) {
     const entityBooks = byEntity.get(book.entity_id) ?? [];
@@ -323,32 +323,34 @@ function indexBooksByEntity(books: BookView[] | undefined): Map<string, BookView
   return byEntity;
 }
 
-function bookDateSummary(book: BookView): string {
+export function bookDateSummary(book: BookView): string {
   const opened = book.opening_date ? `Aberto em ${book.opening_date}` : 'Sem data de abertura';
   if (!book.closing_date) return opened;
   return `${opened} · Encerrado em ${book.closing_date}`;
 }
 
-function emptyBookStateCounts(): Record<BookState, number> {
+export function emptyBookStateCounts(): Record<BookState, number> {
   return { Created: 0, Open: 0, Closed: 0 };
 }
 
-function bookStateCountsFromSummary(counts: EntityBookStateCounts): Record<BookState, number> {
+export function bookStateCountsFromSummary(
+  counts: EntityBookStateCounts,
+): Record<BookState, number> {
   return { Created: counts.created, Open: counts.open, Closed: counts.closed };
 }
 
-function bookStateCounts(books: BookView[]): Record<BookState, number> {
+export function bookStateCounts(books: BookView[]): Record<BookState, number> {
   return books.reduce<Record<BookState, number>>(
     (counts, book) => ({ ...counts, [book.state]: counts[book.state] + 1 }),
     emptyBookStateCounts(),
   );
 }
 
-function totalBooksFromCounts(counts: Record<BookState, number>): number {
+export function totalBooksFromCounts(counts: Record<BookState, number>): number {
   return counts.Created + counts.Open + counts.Closed;
 }
 
-function bookStateSummary(counts: Record<BookState, number>): string {
+export function bookStateSummary(counts: Record<BookState, number>): string {
   const totalCount = totalBooksFromCounts(counts);
   if (totalCount === 0) return '0 livros';
   const parts = (['Open', 'Created', 'Closed'] as const)
@@ -429,7 +431,10 @@ function buildSearchText(
   );
 }
 
-function entityMatchesBookFilter(counts: Record<BookState, number>, filter: BookFilter): boolean {
+export function entityMatchesBookFilter(
+  counts: Record<BookState, number>,
+  filter: BookFilter,
+): boolean {
   if (filter === 'all') return true;
   if (filter === 'none') return totalBooksFromCounts(counts) === 0;
   const hasOpen = counts.Open > 0;
@@ -439,18 +444,21 @@ function entityMatchesBookFilter(counts: Record<BookState, number>, filter: Book
   return !hasOpen;
 }
 
-function entityMatchesBookKindFilter(books: BookView[], filter: BookKindFilter): boolean {
+export function entityMatchesBookKindFilter(books: BookView[], filter: BookKindFilter): boolean {
   if (filter === 'all') return true;
   return books.some((book) => book.kind === filter);
 }
 
-function entityMatchesLastBookFilter(lastBook: BookView | null, filter: LastBookFilter): boolean {
+export function entityMatchesLastBookFilter(
+  lastBook: BookView | null,
+  filter: LastBookFilter,
+): boolean {
   if (filter === 'all') return true;
   if (filter === 'none') return lastBook === null;
   return lastBook?.state === filter;
 }
 
-function entityMatchesActivityFilter(
+export function entityMatchesActivityFilter(
   activity: LedgerEventView | null,
   filter: ActivityFilter,
 ): boolean {
@@ -460,7 +468,7 @@ function entityMatchesActivityFilter(
   return activityCategory(activity.kind) === filter;
 }
 
-function entityMatchesActivityKindFilter(
+export function entityMatchesActivityKindFilter(
   activity: LedgerEventView | null,
   filter: string,
 ): boolean {
@@ -469,12 +477,12 @@ function entityMatchesActivityKindFilter(
   return activity?.kind === filter;
 }
 
-function entityMatchesValidationFilter(entity: Entity, filter: ValidationFilter): boolean {
+export function entityMatchesValidationFilter(entity: Entity, filter: ValidationFilter): boolean {
   if (filter === 'all') return true;
   return filter === 'validated' ? entity.nipc_validated : !entity.nipc_validated;
 }
 
-function entityMatchesRegistryImportFilter(
+export function entityMatchesRegistryImportFilter(
   registry: EntityRegistrySummary | null,
   filter: RegistryImportFilter,
 ): boolean {
@@ -482,7 +490,7 @@ function entityMatchesRegistryImportFilter(
   return filter === 'imported' ? !!registry : !registry;
 }
 
-function entityMatchesRegistryFreshnessFilter(
+export function entityMatchesRegistryFreshnessFilter(
   registry: EntityRegistrySummary | null,
   filter: RegistryFreshnessFilter,
 ): boolean {
@@ -614,8 +622,10 @@ function ActivitySummary({
 }) {
   if (!activity) {
     return (
-      <CellLine title="Sem atividade no arquivo">
-        <span className="entity-cell-line__text muted">Sem atividade</span>
+      <CellLine title={translateNow('uiLiteral.entitiesPage.semAtividadeNoArquivo')}>
+        <span className="entity-cell-line__text muted">
+          {translateNow('uiLiteral.entitiesPage.semAtividade')}
+        </span>
       </CellLine>
     );
   }
@@ -635,9 +645,11 @@ function ActivitySummary({
 function RegistryFreshnessSummary({ registry }: { registry: EntityRegistrySummary | null }) {
   if (!registry) {
     return (
-      <CellLine title="Não importado · Sem certidão">
-        <Badge tone="neutral">Não importado</Badge>
-        <span className="entity-cell-line__text muted">Sem certidão</span>
+      <CellLine title={translateNow('uiLiteral.entitiesPage.naoImportadoSemCertidao')}>
+        <Badge tone="neutral">{translateNow('uiLiteral.entitiesPage.naoImportado')}</Badge>
+        <span className="entity-cell-line__text muted">
+          {translateNow('uiLiteral.entitiesPage.semCertidao')}
+        </span>
       </CellLine>
     );
   }

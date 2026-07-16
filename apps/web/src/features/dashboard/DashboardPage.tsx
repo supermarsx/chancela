@@ -42,7 +42,7 @@ type QueueTone = 'neutral' | 'accent' | 'warn' | 'error';
 type ActivityKind = 'act' | 'book' | 'entity';
 type DashboardTab = 'stats' | 'activity' | 'current' | 'dates' | 'queue' | 'events';
 
-interface WorkQueueItem {
+export interface WorkQueueItem {
   id: string;
   priority: number;
   sortTime: number | null;
@@ -67,16 +67,16 @@ interface ActivityItem {
   href?: string;
 }
 
-function lawRefSourcePending(ref: DashboardLawReference): boolean {
+export function lawRefSourcePending(ref: DashboardLawReference): boolean {
   return ref.source_complete === false || ref.verification === 'Pending';
 }
 
-function lawRefMeta(ref: DashboardLawReference): string {
+export function lawRefMeta(ref: DashboardLawReference): string {
   const label = `${ref.diploma_id}:${ref.article}`;
   return lawRefSourcePending(ref) ? `Lei ${label} · fonte pendente` : `Lei ${label}`;
 }
 
-function compareByRecency(a: LedgerEventView, b: LedgerEventView): number {
+export function compareByRecency(a: LedgerEventView, b: LedgerEventView): number {
   const aTime = Date.parse(a.timestamp);
   const bTime = Date.parse(b.timestamp);
   const aValid = !Number.isNaN(aTime);
@@ -97,7 +97,7 @@ function Metric({ label, value, note }: { label: string; value: number | string;
   );
 }
 
-function dashboardTabFromParam(value: string | null): DashboardTab {
+export function dashboardTabFromParam(value: string | null): DashboardTab {
   if (
     value === 'activity' ||
     value === 'current' ||
@@ -110,21 +110,21 @@ function dashboardTabFromParam(value: string | null): DashboardTab {
   return 'stats';
 }
 
-function formatDateTime(value: string, locale: string): string {
+export function formatDashboardDateTime(value: string, locale: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale);
 }
 
-function shortId(value: string): string {
+export function shortDashboardId(value: string): string {
   return value.slice(0, 8);
 }
 
-function idFromScopedValue(value: string, prefix: string): string | undefined {
+export function idFromScopedValue(value: string, prefix: string): string | undefined {
   const marker = `${prefix}:`;
   return value.startsWith(marker) ? value.slice(marker.length).trim() || undefined : undefined;
 }
 
-function firstChainId(event: LedgerEventView, prefix: string): string | undefined {
+export function firstChainId(event: LedgerEventView, prefix: string): string | undefined {
   for (const chain of event.chains) {
     const id = idFromScopedValue(chain, prefix);
     if (id) return id;
@@ -132,7 +132,7 @@ function firstChainId(event: LedgerEventView, prefix: string): string | undefine
   return undefined;
 }
 
-function activityKind(event: LedgerEventView): ActivityKind | null {
+export function dashboardActivityKind(event: LedgerEventView): ActivityKind | null {
   if (event.kind.startsWith('act.') || idFromScopedValue(event.scope, 'act')) return 'act';
   if (
     event.kind.startsWith('book.') ||
@@ -151,7 +151,10 @@ function activityKind(event: LedgerEventView): ActivityKind | null {
   return null;
 }
 
-function routeFromActivity(event: LedgerEventView, kind: ActivityKind): string | undefined {
+export function routeFromDashboardActivity(
+  event: LedgerEventView,
+  kind: ActivityKind,
+): string | undefined {
   if (kind === 'act') {
     const actId = idFromScopedValue(event.scope, 'act');
     return actId ? `/atas/${actId}` : undefined;
@@ -170,51 +173,54 @@ function routeFromActivity(event: LedgerEventView, kind: ActivityKind): string |
   return entityId ? `/entidades/${entityId}` : undefined;
 }
 
-function activityTone(kind: ActivityKind): QueueTone {
+export function dashboardActivityTone(kind: ActivityKind): QueueTone {
   if (kind === 'act') return 'accent';
   if (kind === 'book') return 'neutral';
   return 'warn';
 }
 
-function activityLabel(kind: ActivityKind, t: TFunction): string {
+export function dashboardActivityLabel(kind: ActivityKind, t: TFunction): string {
   if (kind === 'act') return t('dashboard.activity.kind.act');
   if (kind === 'book') return t('dashboard.activity.kind.book');
   return t('dashboard.activity.kind.entity');
 }
 
-function recentActivityItems(events: LedgerEventView[]): ActivityItem[] {
+export function recentActivityItems(events: LedgerEventView[]): ActivityItem[] {
   return events
     .slice()
     .sort(compareByRecency)
     .reduce<ActivityItem[]>((items, event) => {
       if (items.length >= RECENT_EVENTS_LIMIT) return items;
-      const kind = activityKind(event);
+      const kind = dashboardActivityKind(event);
       if (!kind) return items;
-      items.push({ event, kind, href: routeFromActivity(event, kind) });
+      items.push({ event, kind, href: routeFromDashboardActivity(event, kind) });
       return items;
     }, []);
 }
 
-function compactScope(scope: string): string {
+export function compactDashboardScope(scope: string): string {
   const [kind, id] = scope.split(':', 2);
   if (!id) return scope.length > 24 ? `${scope.slice(0, 8)}...` : scope;
-  return `${kind}:${shortId(id)}`;
+  return `${kind}:${shortDashboardId(id)}`;
 }
 
-function reminderTone(reminder: DashboardReminder): 'neutral' | 'accent' | 'warn' {
+export function dashboardReminderTone(reminder: DashboardReminder): 'neutral' | 'accent' | 'warn' {
   if (reminder.status === 'Overdue') return 'warn';
   if (reminder.status === 'DueSoon') return 'accent';
   return 'neutral';
 }
 
-function reminderStatusLabel(status: DashboardReminder['status'], t: TFunction): string {
+export function dashboardReminderStatusLabel(
+  status: DashboardReminder['status'],
+  t: TFunction,
+): string {
   if (status === 'Pending') return t('dashboard.workQueue.status.pending');
   if (status === 'Overdue') return t('dashboard.workQueue.status.overdue');
   if (status === 'DueSoon') return t('dashboard.workQueue.status.dueSoon');
   return t('dashboard.workQueue.status.upcoming');
 }
 
-function parseReminderDate(value: string): number | null {
+export function parseDashboardReminderDate(value: string): number | null {
   const trimmed = value.trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
   if (!match) return null;
@@ -237,28 +243,30 @@ function parseReminderDate(value: string): number | null {
   return time;
 }
 
-function reminderDateLabel(dueDate: string, t: TFunction): string {
+export function dashboardReminderDateLabel(dueDate: string, t: TFunction): string {
   const trimmed = dueDate.trim();
   if (!trimmed) return t('dashboard.workQueue.date.missing');
-  return parseReminderDate(trimmed) === null ? t('dashboard.workQueue.date.invalid') : trimmed;
+  return parseDashboardReminderDate(trimmed) === null
+    ? t('dashboard.workQueue.date.invalid')
+    : trimmed;
 }
 
-function reminderDateMeta(dueDate: string, t: TFunction): string {
-  const label = reminderDateLabel(dueDate, t);
+export function dashboardReminderDateMeta(dueDate: string, t: TFunction): string {
+  const label = dashboardReminderDateLabel(dueDate, t);
   const missing = t('dashboard.workQueue.date.missing');
   const invalid = t('dashboard.workQueue.date.invalid');
   if (label === missing || label === invalid) return label;
   return t('dashboard.workQueue.date.value', { date: label });
 }
 
-function reminderPriority(status: DashboardReminder['status']): number {
+export function dashboardReminderPriority(status: DashboardReminder['status']): number {
   if (status === 'Overdue') return 1;
   if (status === 'Pending') return 3;
   if (status === 'DueSoon') return 3;
   return 4;
 }
 
-function dedupeReminders(reminders: DashboardReminder[]): DashboardReminder[] {
+export function dedupeDashboardReminders(reminders: DashboardReminder[]): DashboardReminder[] {
   const seen = new Set<string>();
   return reminders.filter((reminder) => {
     const key = [
@@ -275,7 +283,7 @@ function dedupeReminders(reminders: DashboardReminder[]): DashboardReminder[] {
   });
 }
 
-function profileCalendarPlanMeta(reminder: DashboardReminder, t: TFunction): string | null {
+export function profileCalendarPlanMeta(reminder: DashboardReminder, t: TFunction): string | null {
   const plan = reminder.profile_calendar_plan;
   if (!plan) return null;
   const support = plan.support_status.trim().toLowerCase();
@@ -296,11 +304,11 @@ function profileCalendarPlanMeta(reminder: DashboardReminder, t: TFunction): str
   return t('dashboard.profileCalendar.meta.unknownAdvisory');
 }
 
-function messageKey(value: string | null | undefined): MessageKey | undefined {
+export function dashboardMessageKey(value: string | null | undefined): MessageKey | undefined {
   return value?.trim() ? (value.trim() as MessageKey) : undefined;
 }
 
-function frontendRouteFromApi(path: string | null | undefined): string | undefined {
+export function dashboardFrontendRouteFromApi(path: string | null | undefined): string | undefined {
   if (!path) return undefined;
   const route = path.trim();
   if (!route) return undefined;
@@ -319,7 +327,9 @@ function frontendRouteFromApi(path: string | null | undefined): string | undefin
   return undefined;
 }
 
-function generatedDispatchDocumentIdFromApi(path: string | null | undefined): string | undefined {
+export function generatedDispatchDocumentIdFromApi(
+  path: string | null | undefined,
+): string | undefined {
   const route = path?.trim();
   if (!route) return undefined;
   const match = /^\/v1\/documents\/generated\/([^/?#]+)\/dispatch-evidence(?:[?#/]|$)/.exec(route);
@@ -331,7 +341,7 @@ function generatedDispatchDocumentIdFromApi(path: string | null | undefined): st
   }
 }
 
-function importedDocumentIdFromApi(path: string | null | undefined): string | undefined {
+export function importedDocumentIdFromApi(path: string | null | undefined): string | undefined {
   const route = path?.trim();
   if (!route) return undefined;
   const match = /^\/v1\/documents\/imported\/([^/?#]+)(?:[?#/]|$)/.exec(route);
@@ -343,7 +353,7 @@ function importedDocumentIdFromApi(path: string | null | undefined): string | un
   }
 }
 
-function generatedDispatchEvidenceRoute(
+export function generatedDispatchEvidenceRoute(
   actRoute: string | undefined,
   documentId: string | undefined,
 ): string | undefined {
@@ -356,7 +366,7 @@ function generatedDispatchEvidenceRoute(
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-function importedDocumentReviewRoute(
+export function importedDocumentReviewRoute(
   actRoute: string | undefined,
   importedDocumentId: string | undefined,
 ): string | undefined {
@@ -369,46 +379,47 @@ function importedDocumentReviewRoute(
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-function reminderActRoute(reminder: DashboardReminder): string | undefined {
+export function dashboardReminderActRoute(reminder: DashboardReminder): string | undefined {
   return (
-    frontendRouteFromApi(reminder.action?.route) ??
-    frontendRouteFromApi(reminder.action?.api_href) ??
+    dashboardFrontendRouteFromApi(reminder.action?.route) ??
+    dashboardFrontendRouteFromApi(reminder.action?.api_href) ??
     (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined)
   );
 }
 
-function isConveningNoticeReminder(reminder: DashboardReminder): boolean {
+export function isConveningNoticeReminder(reminder: DashboardReminder): boolean {
   return (
     reminder.action?.kind === 'open_act_convening_notice' ||
     reminder.source_rule.trim() === 'act-convening-notice'
   );
 }
 
-function routeFromAlert(alert: DashboardAlert): string | undefined {
+export function routeFromDashboardAlert(alert: DashboardAlert): string | undefined {
   const metadataRoute =
-    frontendRouteFromApi(alert.action?.route) ?? frontendRouteFromApi(alert.action?.api_href);
+    dashboardFrontendRouteFromApi(alert.action?.route) ??
+    dashboardFrontendRouteFromApi(alert.action?.api_href);
   if (metadataRoute) return metadataRoute;
   const links = alert.target.links;
   return (
-    frontendRouteFromApi(links.act) ??
+    dashboardFrontendRouteFromApi(links.act) ??
     (alert.target.act_id?.trim() ? `/atas/${alert.target.act_id.trim()}` : undefined) ??
-    frontendRouteFromApi(links.book) ??
+    dashboardFrontendRouteFromApi(links.book) ??
     (alert.target.book_id?.trim() ? `/livros/${alert.target.book_id.trim()}` : undefined) ??
-    frontendRouteFromApi(links.entity) ??
+    dashboardFrontendRouteFromApi(links.entity) ??
     (alert.target.entity_id?.trim() ? `/entidades/${alert.target.entity_id.trim()}` : undefined) ??
-    frontendRouteFromApi(links.ledger)
+    dashboardFrontendRouteFromApi(links.ledger)
   );
 }
 
-function routeFromReminder(reminder: DashboardReminder): string | undefined {
+export function routeFromDashboardReminder(reminder: DashboardReminder): string | undefined {
   if (isConveningNoticeReminder(reminder)) {
-    const route = actConveningGuidanceRoute(reminderActRoute(reminder));
+    const route = actConveningGuidanceRoute(dashboardReminderActRoute(reminder));
     if (route) return route;
   }
 
   if (reminder.action?.kind === 'open_imported_document_review') {
     const actRoute =
-      frontendRouteFromApi(reminder.action.route) ??
+      dashboardFrontendRouteFromApi(reminder.action.route) ??
       (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined);
     const importedDocumentId =
       reminder.params?.imported_document_id?.trim() ??
@@ -422,7 +433,7 @@ function routeFromReminder(reminder: DashboardReminder): string | undefined {
     reminder.action?.kind === 'open_generated_convening_dispatch_evidence'
   ) {
     const actRoute =
-      frontendRouteFromApi(reminder.action.route) ??
+      dashboardFrontendRouteFromApi(reminder.action.route) ??
       (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined);
     const documentId =
       reminder.params?.generated_document_id?.trim() ??
@@ -433,20 +444,21 @@ function routeFromReminder(reminder: DashboardReminder): string | undefined {
   }
 
   const metadataRoute =
-    frontendRouteFromApi(reminder.action?.route) ?? frontendRouteFromApi(reminder.action?.api_href);
+    dashboardFrontendRouteFromApi(reminder.action?.route) ??
+    dashboardFrontendRouteFromApi(reminder.action?.api_href);
   if (metadataRoute) return metadataRoute;
   const entityId = reminder.entity_id.trim();
   return entityId ? `/entidades/${entityId}` : undefined;
 }
 
-function alertTone(alert: DashboardAlert): QueueTone {
+export function dashboardAlertTone(alert: DashboardAlert): QueueTone {
   if (alert.severity === 'Error' || alert.code === 'ledger.integrity.review_required')
     return 'error';
   if (alert.severity === 'Warning' || alert.label === 'ReviewRequired') return 'warn';
   return 'accent';
 }
 
-function alertPriority(alert: DashboardAlert): number {
+export function dashboardAlertPriority(alert: DashboardAlert): number {
   if (alert.code === 'ledger.integrity.review_required') return 0;
   if (alert.label === 'ReviewRequired') return 2;
   return 3;
@@ -523,7 +535,10 @@ const REMINDER_COPY: Partial<Record<string, ReminderCopy>> = {
   },
 };
 
-function reminderHasMissingMeetingDate(reminder: DashboardReminder, sourceRule: string): boolean {
+export function reminderHasMissingMeetingDate(
+  reminder: DashboardReminder,
+  sourceRule: string,
+): boolean {
   if (sourceRule !== 'act-convening-notice') return false;
   const params = reminder.params ?? {};
   const hasMeetingDateParam = Object.prototype.hasOwnProperty.call(params, 'meeting_date');
@@ -538,7 +553,7 @@ function reminderHasMissingMeetingDate(reminder: DashboardReminder, sourceRule: 
   );
 }
 
-function reminderCopyFor(
+export function dashboardReminderCopyFor(
   reminder: DashboardReminder,
   sourceRule: string,
 ): ReminderCopy | undefined {
@@ -553,20 +568,24 @@ function reminderCopyFor(
   return copy;
 }
 
-function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction): WorkQueueItem {
+export function dashboardAlertWorkQueueItem(
+  alert: DashboardAlert,
+  index: number,
+  t: TFunction,
+): WorkQueueItem {
   const code = alert.code.trim();
   const copy = ALERT_COPY[code];
-  const titleKey = messageKey(alert.i18n?.title_key) ?? copy?.title;
-  const bodyKey = messageKey(alert.i18n?.body_key) ?? copy?.body;
+  const titleKey = dashboardMessageKey(alert.i18n?.title_key) ?? copy?.title;
+  const bodyKey = dashboardMessageKey(alert.i18n?.body_key) ?? copy?.body;
   const params: TParams = { ...alert.params, code };
   const lawRefs = (alert.law_refs ?? []).map(lawRefMeta).filter(Boolean);
 
   return {
     id: `alert:${code || 'unknown'}:${index}`,
-    priority: alertPriority(alert),
+    priority: dashboardAlertPriority(alert),
     sortTime: null,
     badge: t('notifications.badge.alert'),
-    tone: alertTone(alert),
+    tone: dashboardAlertTone(alert),
     title: titleKey ? t(titleKey, params) : t('notifications.alert.unknown.title', params),
     detail: bodyKey
       ? t(bodyKey, params)
@@ -575,11 +594,11 @@ function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction):
       ...(alert.source ? [t('notifications.alert.source', { source: alert.source })] : []),
       ...lawRefs,
     ],
-    href: routeFromAlert(alert),
+    href: routeFromDashboardAlert(alert),
   };
 }
 
-function compareQueueItems(a: WorkQueueItem, b: WorkQueueItem): number {
+export function compareDashboardQueueItems(a: WorkQueueItem, b: WorkQueueItem): number {
   if (a.priority !== b.priority) return a.priority - b.priority;
   if (a.sortTime !== null && b.sortTime !== null && a.sortTime !== b.sortTime) {
     return a.sortTime - b.sortTime;
@@ -589,7 +608,7 @@ function compareQueueItems(a: WorkQueueItem, b: WorkQueueItem): number {
   return byTitle || a.id.localeCompare(b.id);
 }
 
-function buildWorkQueue({
+export function buildDashboardWorkQueue({
   ledgerValid,
   unresolvedCompliance,
   alerts,
@@ -605,7 +624,7 @@ function buildWorkQueue({
   const items: WorkQueueItem[] = [];
 
   for (const [index, alert] of alerts.entries()) {
-    items.push(alertWorkQueueItem(alert, index, t));
+    items.push(dashboardAlertWorkQueueItem(alert, index, t));
   }
 
   if (
@@ -625,9 +644,9 @@ function buildWorkQueue({
     });
   }
 
-  for (const reminder of dedupeReminders(reminders)) {
+  for (const reminder of dedupeDashboardReminders(reminders)) {
     const dueDate = reminder.due_date.trim();
-    const sortTime = dueDate ? parseReminderDate(dueDate) : null;
+    const sortTime = dueDate ? parseDashboardReminderDate(dueDate) : null;
     const entityName = reminder.entity_name.trim() || t('dashboard.workQueue.entity.unnamed');
     const entityId = reminder.entity_id.trim();
     const sourceRule = reminder.source_rule.trim() || t('dashboard.workQueue.rule.missing');
@@ -637,14 +656,14 @@ function buildWorkQueue({
     const params: TParams = {
       ...(reminder.params ?? {}),
       entity_name: entityName,
-      due_date: reminderDateLabel(reminder.due_date, t),
+      due_date: dashboardReminderDateLabel(reminder.due_date, t),
       source_rule: sourceRule,
       source_profile: sourceProfile,
       reason,
     };
-    const titleKey = messageKey(reminder.i18n?.title_key);
-    const bodyKey = messageKey(reminder.i18n?.body_key);
-    const copy = reminderCopyFor(reminder, sourceRule);
+    const titleKey = dashboardMessageKey(reminder.i18n?.title_key);
+    const bodyKey = dashboardMessageKey(reminder.i18n?.body_key);
+    const copy = dashboardReminderCopyFor(reminder, sourceRule);
     const effectiveTitleKey = titleKey ?? copy?.title;
     const effectiveBodyKey = bodyKey ?? copy?.body;
     const actionKey = copy?.action;
@@ -652,18 +671,18 @@ function buildWorkQueue({
 
     items.push({
       id: `reminder:${entityId}:${sourceRule}:${sourceProfile}:${dueDate}:${reminder.status}`,
-      priority: reminderPriority(reminder.status),
+      priority: dashboardReminderPriority(reminder.status),
       sortTime,
-      badge: reminderStatusLabel(reminder.status, t),
-      tone: reminderTone(reminder),
+      badge: dashboardReminderStatusLabel(reminder.status, t),
+      tone: dashboardReminderTone(reminder),
       title: effectiveTitleKey ? t(effectiveTitleKey, params) : entityName,
       detail: effectiveBodyKey ? t(effectiveBodyKey, params) : reason,
       meta: [
-        reminderDateMeta(reminder.due_date, t),
+        dashboardReminderDateMeta(reminder.due_date, t),
         t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
         ...(planMeta ? [planMeta] : []),
       ],
-      href: routeFromReminder(reminder),
+      href: routeFromDashboardReminder(reminder),
       actionLabel: actionKey ? t(actionKey, params) : undefined,
     });
   }
@@ -684,7 +703,7 @@ function buildWorkQueue({
     });
   }
 
-  return items.sort(compareQueueItems);
+  return items.sort(compareDashboardQueueItems);
 }
 
 function WorkQueueActionLink({ href, label }: { href: string; label: string }) {
@@ -759,7 +778,9 @@ function RecentActivity({ events }: { events: LedgerEventView[] }) {
             return (
               <li className="dashboard-list__item" key={event.id}>
                 <div className="dashboard-list__head">
-                  <Badge tone={activityTone(kind)}>{activityLabel(kind, t)}</Badge>
+                  <Badge tone={dashboardActivityTone(kind)}>
+                    {dashboardActivityLabel(kind, t)}
+                  </Badge>
                   {href ? (
                     <Link className="dashboard-list__title" to={href}>
                       {title}
@@ -769,10 +790,10 @@ function RecentActivity({ events }: { events: LedgerEventView[] }) {
                   )}
                 </div>
                 <div className="dashboard-list__meta">
-                  <span>{formatDateTime(event.timestamp, locale)}</span>
+                  <span>{formatDashboardDateTime(event.timestamp, locale)}</span>
                   <span>{t('dashboard.activity.actor', { actor: event.actor })}</span>
                   <span title={event.scope}>
-                    {t('dashboard.activity.scope', { scope: compactScope(event.scope) })}
+                    {t('dashboard.activity.scope', { scope: compactDashboardScope(event.scope) })}
                   </span>
                   <span>{t('dashboard.activity.sequence', { seq: event.seq })}</span>
                 </div>
@@ -785,7 +806,7 @@ function RecentActivity({ events }: { events: LedgerEventView[] }) {
   );
 }
 
-function sortedOpenBooks(openBooks: DashboardOpenBook[]): DashboardOpenBook[] {
+export function sortedDashboardOpenBooks(openBooks: DashboardOpenBook[]): DashboardOpenBook[] {
   return openBooks.slice().sort((a, b) => {
     const aTime = a.opening_date ? Date.parse(a.opening_date) : Number.NEGATIVE_INFINITY;
     const bTime = b.opening_date ? Date.parse(b.opening_date) : Number.NEGATIVE_INFINITY;
@@ -799,7 +820,7 @@ function sortedOpenBooks(openBooks: DashboardOpenBook[]): DashboardOpenBook[] {
 
 function OpenBooksSummary({ openBooks }: { openBooks: DashboardOpenBook[] }) {
   const t = useT();
-  const items = sortedOpenBooks(openBooks).slice(0, SUMMARY_LIST_LIMIT);
+  const items = sortedDashboardOpenBooks(openBooks).slice(0, SUMMARY_LIST_LIMIT);
   const hidden = Math.max(0, openBooks.length - items.length);
 
   return (
@@ -811,7 +832,8 @@ function OpenBooksSummary({ openBooks }: { openBooks: DashboardOpenBook[] }) {
           <ol className="dashboard-list" aria-label={t('dashboard.openItems.aria')}>
             {items.map((book) => {
               const title = book.entity_name?.trim() || t('dashboard.openItems.unnamedEntity');
-              const href = frontendRouteFromApi(book.links.book) ?? `/livros/${book.book_id}`;
+              const href =
+                dashboardFrontendRouteFromApi(book.links.book) ?? `/livros/${book.book_id}`;
               return (
                 <li className="dashboard-list__item" key={book.book_id}>
                   <div className="dashboard-list__head">
@@ -993,7 +1015,7 @@ function DashboardHeader({
 }
 
 function reminderSortValue(reminder: DashboardReminder): number {
-  const date = parseReminderDate(reminder.due_date);
+  const date = parseDashboardReminderDate(reminder.due_date);
   if (date !== null) return date;
   if (reminder.status === 'Overdue') return Number.NEGATIVE_INFINITY;
   if (reminder.status === 'Pending') return Number.POSITIVE_INFINITY - 1;
@@ -1002,7 +1024,7 @@ function reminderSortValue(reminder: DashboardReminder): number {
 
 function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] }) {
   const t = useT();
-  const sortedReminders = dedupeReminders(reminders)
+  const sortedReminders = dedupeDashboardReminders(reminders)
     .slice()
     .sort((a, b) => reminderSortValue(a) - reminderSortValue(b));
   const items = sortedReminders.slice(0, SUMMARY_LIST_LIMIT);
@@ -1018,8 +1040,8 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
             {items.map((reminder) => {
               const entityName =
                 reminder.entity_name.trim() || t('dashboard.workQueue.entity.unnamed');
-              const href = routeFromReminder(reminder);
-              const dateLabel = reminderDateLabel(reminder.due_date, t);
+              const href = routeFromDashboardReminder(reminder);
+              const dateLabel = dashboardReminderDateLabel(reminder.due_date, t);
               const planMeta = profileCalendarPlanMeta(reminder, t);
               return (
                 <li
@@ -1027,8 +1049,8 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
                   key={`${reminder.entity_id}:${reminder.source_rule}:${reminder.source_profile}:${reminder.due_date}:${reminder.status}`}
                 >
                   <div className="dashboard-list__head">
-                    <Badge tone={reminderTone(reminder)}>
-                      {reminderStatusLabel(reminder.status, t)}
+                    <Badge tone={dashboardReminderTone(reminder)}>
+                      {dashboardReminderStatusLabel(reminder.status, t)}
                     </Badge>
                     {href ? (
                       <Link className="dashboard-list__title" to={href}>
@@ -1105,7 +1127,7 @@ export function DashboardPage() {
     .slice()
     .sort(compareByRecency)
     .slice(0, RECENT_EVENTS_LIMIT);
-  const workQueueItems = buildWorkQueue({
+  const workQueueItems = buildDashboardWorkQueue({
     ledgerValid: data.ledger_valid,
     unresolvedCompliance: data.unresolved_compliance,
     alerts: data.alerts,

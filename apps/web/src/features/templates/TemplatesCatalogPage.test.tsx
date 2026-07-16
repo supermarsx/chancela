@@ -443,9 +443,7 @@ describe('TemplatesCatalogPage', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
 
     await waitFor(() =>
-      expect(
-        calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/templates')),
-      ).toBe(true),
+      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'))).toBe(true),
     );
     const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'));
     expect(String(post?.body)).toContain('user-encosto-ata/v1');
@@ -475,9 +473,7 @@ describe('TemplatesCatalogPage', () => {
       name: 'Confirmar importação',
     }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
-    expect(
-      calls.some((c) => c.method === 'POST' && c.url.includes('dry_run=true')),
-    ).toBe(true);
+    expect(calls.some((c) => c.method === 'POST' && c.url.includes('dry_run=true'))).toBe(true);
   });
 
   it('deletes a user template through the confirm dialog', async () => {
@@ -495,7 +491,9 @@ describe('TemplatesCatalogPage', () => {
 
     const dialog = await screen.findByRole('dialog');
     expect(
-      within(dialog).getByText('Eliminar o modelo «user-encosto-ata/v1»? Esta ação não pode ser anulada.'),
+      within(dialog).getByText(
+        'Eliminar o modelo «user-encosto-ata/v1»? Esta ação não pode ser anulada.',
+      ),
     ).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Eliminar' }));
 

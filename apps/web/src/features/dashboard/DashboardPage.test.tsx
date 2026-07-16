@@ -18,6 +18,8 @@ const baseDashboard: Dashboard = {
   acts_awaiting_signature: 0,
   acts_sealed: 0,
   unresolved_compliance: 0,
+  failed_sync_jobs: 0,
+  pending_backup_jobs: 0,
   ledger_length: 1,
   ledger_valid: true,
   current_work: {
@@ -1249,13 +1251,9 @@ describe('DashboardPage', () => {
     const dpia = within(queue).getByText('Biometric access DPIA').closest('li');
     expect(dpia).toBeTruthy();
     expect(within(dpia!).getByText('Próximo')).toBeTruthy();
+    expect(within(dpia!).getByText('Fonte privacy-dpia-review / privacy-dpia')).toBeTruthy();
     expect(
-      within(dpia!).getByText('Fonte privacy-dpia-review / privacy-dpia'),
-    ).toBeTruthy();
-    expect(
-      within(dpia!)
-        .getByRole('link', { name: 'Biometric access DPIA' })
-        .getAttribute('href'),
+      within(dpia!).getByRole('link', { name: 'Biometric access DPIA' }).getAttribute('href'),
     ).toBe('/configuracoes?sec=privacidade');
 
     const breach = within(queue).getByText('Supplier token breach playbook').closest('li');
@@ -1747,6 +1745,8 @@ describe('DashboardPage', () => {
     const dashboard: Dashboard = {
       ...baseDashboard,
       unresolved_compliance: 2,
+      failed_sync_jobs: 0,
+      pending_backup_jobs: 0,
       ledger_valid: false,
     };
 

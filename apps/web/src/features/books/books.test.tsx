@@ -34,6 +34,8 @@ import {
 
 const ENTITY: Entity = {
   id: 'ent-1',
+  tenant_id: 'tenant-1',
+  group_id: null,
   name: 'Encosto Estratégico, Lda.',
   nipc: '503004642',
   nipc_validated: true,
@@ -1146,390 +1148,405 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     ).toBe(false);
   });
 
-  it('creates and reviews OCR drafts as auxiliary non-canonical metadata only', async () => {
-    const preserved: PaperBookImportView = {
-      import_id: '33333333-3333-4333-8333-333333333333',
-      entity_ref: 'ent-1',
-      entity_name: 'Encosto Estratégico, Lda.',
-      entity_nipc: '503004642',
-      book_ref: 'book-1',
-      date_from: '1968-01-01',
-      date_to: '1971-12-31',
-      page_count: 240,
-      sha256: 'cd'.repeat(32),
-      size_bytes: 4096,
-      content_type: 'application/pdf',
-      source_filename: 'ag-ocr.pdf',
-      notes: null,
-      imported_at: '2026-07-09T10:00:00Z',
-      imported_by: 'paper.owner',
-      ocr_status: 'completed',
-      ocr_status_notice:
-        'OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.',
-      ocr_text_stored: false,
-      authoritative_text_claimed: false,
-      non_canonical: true,
-      legal_validity_claimed: false,
-      signature_validity_claimed: false,
-      qualified_signature_claimed: false,
-      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
-      bytes_download: '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/bytes',
-    };
-    const createdDraft: PaperBookOcrDraftView = {
-      draft_id: '44444444-4444-4444-8444-444444444444',
-      import_id: preserved.import_id,
-      extracted_text: 'Livro de atas digitalizado.',
-      text_digest: null,
-      page_spans: [{ start_page: 1, end_page: 2 }],
-      confidence: 0.87,
-      engine: { name: 'operator-supplied-ocr', version: null },
-      created_at: '2026-07-10T09:30:00Z',
-      created_by: 'paper.owner',
-      review_status: 'unreviewed',
-      reviewed_at: null,
-      reviewed_by: null,
-      review_note: null,
-      superseded_by: null,
-      draft_notice:
-        'OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.',
-      non_canonical: true,
-      authoritative_text_claimed: false,
-      canonical_minutes_claimed: false,
-      canonical_act_created: false,
-      canonical_document_created: false,
-      signature_created: false,
-      legal_validity_claimed: false,
-      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
-    };
-    const rawArtifactText = 'raw OCR text from a malformed promotion artifact must stay hidden';
-    const artifact = conversionExecutionArtifact(preserved.import_id, createdDraft.draft_id, {
-      artifact_id: '66666666-6666-4666-8666-666666666666',
-      target_act_id: '77777777-7777-4777-8777-777777777777',
-      source_page_spans: [{ start_page: 1, end_page: 2 }],
-    });
-    let drafts: PaperBookOcrDraftView[] = [];
-    const { fn, calls } = bookDetailFetch((url, method) => {
-      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
-        return jsonResponse([preserved]);
-      }
-      if (
-        url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
-        method === 'GET'
-      ) {
-        return jsonResponse(drafts);
-      }
-      if (
-        url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
-        method === 'POST'
-      ) {
-        drafts = [createdDraft];
-        return jsonResponse(createdDraft, 201);
-      }
-      if (
-        url ===
-          '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/review' &&
-        method === 'PATCH'
-      ) {
-        const reviewed = {
-          ...createdDraft,
-          review_status: 'accepted',
-          reviewed_at: '2026-07-10T10:00:00Z',
-          reviewed_by: 'paper.reviewer',
-          review_note: 'Conferido contra o pacote preservado.',
-        } satisfies PaperBookOcrDraftView;
-        drafts = [reviewed];
-        return jsonResponse(reviewed);
-      }
-      if (
-        url ===
-          '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/canonical-draft' &&
-        method === 'POST'
-      ) {
-        return jsonResponse(
-          {
-            import_id: preserved.import_id,
-            draft_id: createdDraft.draft_id,
-            act: {
-              id: '77777777-7777-4777-8777-777777777777',
-              book_id: 'book-1',
-              title: 'Rascunho de ata a partir de OCR do livro em papel (paginas 1-2)',
-              channel: 'Physical',
-              meeting_date: null,
-              meeting_time: null,
-              place: null,
-              mesa: { chair: null, secretaries: [] },
-              agenda: [],
-              attendance_reference: null,
-              members_present: null,
-              members_represented: null,
-              referenced_documents: [],
-              deliberations: 'Livro de atas digitalizado.',
-              deliberation_items: [],
-              telematic_evidence: null,
-              attachments: [],
-              signatories: [],
-              state: 'Draft',
-              ata_number: null,
-              payload_digest: null,
-              seal_event_seq: null,
-              seal_metadata: null,
-              retifies: null,
+  it(
+    'creates and reviews OCR drafts as auxiliary non-canonical metadata only',
+    { timeout: 15_000 },
+    async () => {
+      const preserved: PaperBookImportView = {
+        import_id: '33333333-3333-4333-8333-333333333333',
+        entity_ref: 'ent-1',
+        entity_name: 'Encosto Estratégico, Lda.',
+        entity_nipc: '503004642',
+        book_ref: 'book-1',
+        date_from: '1968-01-01',
+        date_to: '1971-12-31',
+        page_count: 240,
+        sha256: 'cd'.repeat(32),
+        size_bytes: 4096,
+        content_type: 'application/pdf',
+        source_filename: 'ag-ocr.pdf',
+        notes: null,
+        imported_at: '2026-07-09T10:00:00Z',
+        imported_by: 'paper.owner',
+        ocr_status: 'completed',
+        ocr_status_notice:
+          'OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.',
+        ocr_text_stored: false,
+        authoritative_text_claimed: false,
+        non_canonical: true,
+        legal_validity_claimed: false,
+        signature_validity_claimed: false,
+        qualified_signature_claimed: false,
+        legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+        bytes_download: '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/bytes',
+      };
+      const createdDraft: PaperBookOcrDraftView = {
+        draft_id: '44444444-4444-4444-8444-444444444444',
+        import_id: preserved.import_id,
+        extracted_text: 'Livro de atas digitalizado.',
+        text_digest: null,
+        page_spans: [{ start_page: 1, end_page: 2 }],
+        confidence: 0.87,
+        engine: { name: 'operator-supplied-ocr', version: null },
+        created_at: '2026-07-10T09:30:00Z',
+        created_by: 'paper.owner',
+        review_status: 'unreviewed',
+        reviewed_at: null,
+        reviewed_by: null,
+        review_note: null,
+        superseded_by: null,
+        draft_notice:
+          'OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.',
+        non_canonical: true,
+        authoritative_text_claimed: false,
+        canonical_minutes_claimed: false,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        signature_created: false,
+        legal_validity_claimed: false,
+        legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      };
+      const rawArtifactText = 'raw OCR text from a malformed promotion artifact must stay hidden';
+      const artifact = conversionExecutionArtifact(preserved.import_id, createdDraft.draft_id, {
+        artifact_id: '66666666-6666-4666-8666-666666666666',
+        target_act_id: '77777777-7777-4777-8777-777777777777',
+        source_page_spans: [{ start_page: 1, end_page: 2 }],
+      });
+      let drafts: PaperBookOcrDraftView[] = [];
+      const { fn, calls } = bookDetailFetch((url, method) => {
+        if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+          return jsonResponse([preserved]);
+        }
+        if (
+          url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
+          method === 'GET'
+        ) {
+          return jsonResponse(drafts);
+        }
+        if (
+          url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
+          method === 'POST'
+        ) {
+          drafts = [createdDraft];
+          return jsonResponse(createdDraft, 201);
+        }
+        if (
+          url ===
+            '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/review' &&
+          method === 'PATCH'
+        ) {
+          const reviewed = {
+            ...createdDraft,
+            review_status: 'accepted',
+            reviewed_at: '2026-07-10T10:00:00Z',
+            reviewed_by: 'paper.reviewer',
+            review_note: 'Conferido contra o pacote preservado.',
+          } satisfies PaperBookOcrDraftView;
+          drafts = [reviewed];
+          return jsonResponse(reviewed);
+        }
+        if (
+          url ===
+            '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/canonical-draft' &&
+          method === 'POST'
+        ) {
+          return jsonResponse(
+            {
+              import_id: preserved.import_id,
+              draft_id: createdDraft.draft_id,
+              act: {
+                id: '77777777-7777-4777-8777-777777777777',
+                book_id: 'book-1',
+                title: 'Rascunho de ata a partir de OCR do livro em papel (paginas 1-2)',
+                channel: 'Physical',
+                meeting_date: null,
+                meeting_time: null,
+                place: null,
+                mesa: { chair: null, secretaries: [] },
+                agenda: [],
+                attendance_reference: null,
+                members_present: null,
+                members_represented: null,
+                referenced_documents: [],
+                deliberations: 'Livro de atas digitalizado.',
+                deliberation_items: [],
+                telematic_evidence: null,
+                attachments: [],
+                signatories: [],
+                state: 'Draft',
+                ata_number: null,
+                payload_digest: null,
+                seal_event_seq: null,
+                seal_metadata: null,
+                retifies: null,
+              },
+              conversion_execution_artifact: { ...artifact, extracted_text: rawArtifactText },
+              draft_act_created: true,
+              act_state: 'Draft',
+              notice:
+                'Accepted OCR draft text was copied into a new mutable draft act as a drafting aid only. No canonical document, PDF/A, signature, seal, or legal-validity acceptance was created.',
+              ocr_text_copied_to_deliberations: true,
+              ocr_text_in_ledger_event: false,
+              non_canonical: true,
+              authoritative_text_claimed: false,
+              canonical_conversion_claimed: false,
+              canonical_minutes_claimed: false,
+              canonical_act_created: false,
+              canonical_document_created: false,
+              signed_document_created: false,
+              archive_package_created: false,
+              archive_certification_claimed: false,
+              pdfa_created: false,
+              signature_created: false,
+              seal_created: false,
+              legal_validity_claimed: false,
+              legal_notice: preserved.legal_notice,
             },
-            conversion_execution_artifact: { ...artifact, extracted_text: rawArtifactText },
-            draft_act_created: true,
-            act_state: 'Draft',
-            notice:
-              'Accepted OCR draft text was copied into a new mutable draft act as a drafting aid only. No canonical document, PDF/A, signature, seal, or legal-validity acceptance was created.',
-            ocr_text_copied_to_deliberations: true,
-            ocr_text_in_ledger_event: false,
-            non_canonical: true,
-            authoritative_text_claimed: false,
-            canonical_conversion_claimed: false,
-            canonical_minutes_claimed: false,
-            canonical_act_created: false,
-            canonical_document_created: false,
-            signed_document_created: false,
-            archive_package_created: false,
-            archive_certification_claimed: false,
-            pdfa_created: false,
-            signature_created: false,
-            seal_created: false,
-            legal_validity_claimed: false,
-            legal_notice: preserved.legal_notice,
-          },
-          201,
-        );
-      }
-      return null;
-    });
-    vi.stubGlobal('fetch', fn);
+            201,
+          );
+        }
+        return null;
+      });
+      vi.stubGlobal('fetch', fn);
 
-    renderAtBook();
+      renderAtBook();
 
-    expect(await screen.findByText('Rascunhos OCR e revisão auxiliar')).toBeTruthy();
-    expect(await screen.findByText('Sem rascunhos OCR registados')).toBeTruthy();
+      expect(await screen.findByText('Rascunhos OCR e revisão auxiliar')).toBeTruthy();
+      expect(await screen.findByText('Sem rascunhos OCR registados')).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('Texto OCR auxiliar'), {
-      target: { value: 'Livro de atas digitalizado.' },
-    });
-    fireEvent.change(screen.getByLabelText('Página final'), { target: { value: '2' } });
-    fireEvent.change(screen.getByLabelText('Confiança'), { target: { value: '0.87' } });
-    fireEvent.click(screen.getByLabelText(/Confirmo que este rascunho OCR é auxiliar/i));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar rascunho OCR' }));
+      fireEvent.change(screen.getByLabelText('Texto OCR auxiliar'), {
+        target: { value: 'Livro de atas digitalizado.' },
+      });
+      fireEvent.change(screen.getByLabelText('Página final'), { target: { value: '2' } });
+      fireEvent.change(screen.getByLabelText('Confiança'), { target: { value: '0.87' } });
+      fireEvent.click(screen.getByLabelText(/Confirmo que este rascunho OCR é auxiliar/i));
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar rascunho OCR' }));
 
-    expect(
-      await screen.findByText('Rascunho OCR guardado como metadado auxiliar não canónico.'),
-    ).toBeTruthy();
-    expect(await screen.findByText('Livro de atas digitalizado.')).toBeTruthy();
-    expect(screen.getAllByText(/Texto autoritativo: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByRole('button', { name: 'Criar rascunho de ata' })).toBeNull();
-    const createCall = calls.find(
-      (call) =>
-        call.url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
-        call.method === 'POST',
-    );
-    expect(createCall?.body).toMatchObject({
-      extracted_text: 'Livro de atas digitalizado.',
-      page_spans: [{ start_page: 1, end_page: 2 }],
-      confidence: 0.87,
-      engine_name: 'operator-supplied-ocr',
-    });
+      expect(
+        await screen.findByText('Rascunho OCR guardado como metadado auxiliar não canónico.'),
+      ).toBeTruthy();
+      expect(await screen.findByText('Livro de atas digitalizado.')).toBeTruthy();
+      expect(screen.getAllByText(/Texto autoritativo: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByRole('button', { name: 'Criar rascunho de ata' })).toBeNull();
+      const createCall = calls.find(
+        (call) =>
+          call.url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
+          call.method === 'POST',
+      );
+      expect(createCall?.body).toMatchObject({
+        extracted_text: 'Livro de atas digitalizado.',
+        page_spans: [{ start_page: 1, end_page: 2 }],
+        confidence: 0.87,
+        engine_name: 'operator-supplied-ocr',
+      });
 
-    fireEvent.change(screen.getByLabelText('Estado da revisão OCR'), {
-      target: { value: 'accepted' },
-    });
-    fireEvent.change(screen.getByLabelText('Nota da revisão OCR'), {
-      target: { value: 'Conferido contra o pacote preservado.' },
-    });
-    fireEvent.click(screen.getByLabelText(/Confirmo que esta revisão é apenas metadado auxiliar/i));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar revisão OCR' }));
+      fireEvent.change(screen.getByLabelText('Estado da revisão OCR'), {
+        target: { value: 'accepted' },
+      });
+      fireEvent.change(screen.getByLabelText('Nota da revisão OCR'), {
+        target: { value: 'Conferido contra o pacote preservado.' },
+      });
+      fireEvent.click(
+        screen.getByLabelText(/Confirmo que esta revisão é apenas metadado auxiliar/i),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar revisão OCR' }));
 
-    expect(
-      await screen.findByText('Revisão OCR guardada como metadado auxiliar não canónico.'),
-    ).toBeTruthy();
-    expect((await screen.findAllByText('Aceite para referência auxiliar')).length).toBeGreaterThan(
-      0,
-    );
-    expect(await screen.findByRole('button', { name: 'Criar rascunho de ata' })).toBeTruthy();
-    const reviewCall = calls.find(
-      (call) =>
-        call.url ===
-          '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/review' &&
-        call.method === 'PATCH',
-    );
-    expect(reviewCall?.body).toMatchObject({
-      review_status: 'accepted',
-      review_note: 'Conferido contra o pacote preservado.',
-      superseded_by: null,
-    });
+      expect(
+        await screen.findByText('Revisão OCR guardada como metadado auxiliar não canónico.'),
+      ).toBeTruthy();
+      expect(
+        (await screen.findAllByText('Aceite para referência auxiliar')).length,
+      ).toBeGreaterThan(0);
+      expect(await screen.findByRole('button', { name: 'Criar rascunho de ata' })).toBeTruthy();
+      const reviewCall = calls.find(
+        (call) =>
+          call.url ===
+            '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/review' &&
+          call.method === 'PATCH',
+      );
+      expect(reviewCall?.body).toMatchObject({
+        review_status: 'accepted',
+        review_note: 'Conferido contra o pacote preservado.',
+        superseded_by: null,
+      });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Criar rascunho de ata' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Criar rascunho de ata' }));
 
-    expect(
-      await screen.findByText(
-        'Rascunho de ata criado sem documento canónico, PDF/A, assinatura ou selo.',
-      ),
-    ).toBeTruthy();
-    expect(
-      (await screen.findAllByRole('link', { name: 'abrir ata' })).some(
-        (link) => link.getAttribute('href') === '/atas/77777777-7777-4777-8777-777777777777',
-      ),
-    ).toBe(true);
-    const actDraftCall = calls.find(
-      (call) =>
-        call.url ===
-          '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/canonical-draft' &&
-        call.method === 'POST',
-    );
-    expect(actDraftCall).toBeTruthy();
-    const artifactRegion = await screen.findByRole('region', {
-      name: 'Evidência de execução de conversão revista 66666666-6666-4666-8666-666666666666',
-    });
-    expect(
-      within(artifactRegion).getByText('Evidência de promoção para rascunho mutável'),
-    ).toBeTruthy();
-    expect(within(artifactRegion).getByText('Promoção para rascunho mutável')).toBeTruthy();
-    expect(within(artifactRegion).getByText(/ata mutável criada:\s*sim/i)).toBeTruthy();
-    expect(within(artifactRegion).getByText(/conversão canónica:\s*não/i)).toBeTruthy();
-    expect(within(artifactRegion).getByText(/arquivo legal\/pacote:\s*não/i)).toBeTruthy();
-    expect(within(artifactRegion).getByText(/certificação de arquivo:\s*não/i)).toBeTruthy();
-    expect(within(artifactRegion).getByText(/PDF\/UA:\s*não/i)).toBeTruthy();
-    expect(within(artifactRegion).getByText(/No artefacto:\s*não/i)).toBeTruthy();
-    expect(screen.queryByText(rawArtifactText)).toBeNull();
-    expect(screen.getAllByText(/PDF\/A: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/selo: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(calls.some((call) => /\/(document|signature|seal|archive)(\/|$)/.test(call.url))).toBe(
-      false,
-    );
-  });
+      expect(
+        await screen.findByText(
+          'Rascunho de ata criado sem documento canónico, PDF/A, assinatura ou selo.',
+        ),
+      ).toBeTruthy();
+      expect(
+        (await screen.findAllByRole('link', { name: 'abrir ata' })).some(
+          (link) => link.getAttribute('href') === '/atas/77777777-7777-4777-8777-777777777777',
+        ),
+      ).toBe(true);
+      const actDraftCall = calls.find(
+        (call) =>
+          call.url ===
+            '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/canonical-draft' &&
+          call.method === 'POST',
+      );
+      expect(actDraftCall).toBeTruthy();
+      const artifactRegion = await screen.findByRole('region', {
+        name: 'Evidência de execução de conversão revista 66666666-6666-4666-8666-666666666666',
+      });
+      expect(
+        within(artifactRegion).getByText('Evidência de promoção para rascunho mutável'),
+      ).toBeTruthy();
+      expect(within(artifactRegion).getByText('Promoção para rascunho mutável')).toBeTruthy();
+      expect(within(artifactRegion).getByText(/ata mutável criada:\s*sim/i)).toBeTruthy();
+      expect(within(artifactRegion).getByText(/conversão canónica:\s*não/i)).toBeTruthy();
+      expect(within(artifactRegion).getByText(/arquivo legal\/pacote:\s*não/i)).toBeTruthy();
+      expect(within(artifactRegion).getByText(/certificação de arquivo:\s*não/i)).toBeTruthy();
+      expect(within(artifactRegion).getByText(/PDF\/UA:\s*não/i)).toBeTruthy();
+      expect(within(artifactRegion).getByText(/No artefacto:\s*não/i)).toBeTruthy();
+      expect(screen.queryByText(rawArtifactText)).toBeNull();
+      expect(screen.getAllByText(/PDF\/A: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/selo: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(calls.some((call) => /\/(document|signature|seal|archive)(\/|$)/.test(call.url))).toBe(
+        false,
+      );
+    },
+  );
 
-  it('creates a metadata-only conversion dossier for an accepted OCR draft on operator action', async () => {
-    const preserved = preservedPaperImport();
-    const draft = ocrDraft(preserved.import_id);
-    const rawOcrText = 'raw OCR text from a malformed dossier response must stay hidden';
-    const createdDossier = conversionDossier(preserved.import_id, draft.draft_id);
-    let dossiers: PaperBookOcrConversionDossierView[] = [];
-    const { fn, calls } = bookDetailFetch((url, method) => {
-      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
-        return jsonResponse([preserved]);
-      }
-      if (url === `/v1/books/paper-import/${preserved.import_id}/ocr-drafts` && method === 'GET') {
-        return jsonResponse([draft]);
-      }
-      if (
-        url === `/v1/books/paper-import/${preserved.import_id}/conversion-dossiers` &&
-        method === 'GET'
-      ) {
-        return jsonResponse(dossiers);
-      }
-      if (
-        url === `/v1/books/paper-import/${preserved.import_id}/ocr-canonical-rehearsal` &&
-        method === 'GET'
-      ) {
-        const dossier = dossiers[0] ?? null;
-        return jsonResponse(
-          paperBookOcrCanonicalRehearsalReport(preserved.import_id, {
-            status: dossier ? 'local_rehearsal_ready' : 'blocked',
-            blockerCodes: dossier ? [] : ['metadata_only_conversion_dossier_required'],
-            draftId: draft.draft_id,
-            dossierId: dossier?.dossier_id ?? null,
-            draftCount: 1,
-            acceptedDraftCount: 1,
-            dossierCount: dossiers.length,
-          }),
-        );
-      }
-      if (
-        url ===
-          `/v1/books/paper-import/${preserved.import_id}/ocr-drafts/${draft.draft_id}/conversion-dossier` &&
-        method === 'POST'
-      ) {
-        dossiers = [createdDossier];
-        return jsonResponse({ ...createdDossier, extracted_text: rawOcrText }, 201);
-      }
-      return null;
-    });
-    vi.stubGlobal('fetch', fn);
+  it(
+    'creates a metadata-only conversion dossier for an accepted OCR draft on operator action',
+    { timeout: 15_000 },
+    async () => {
+      const preserved = preservedPaperImport();
+      const draft = ocrDraft(preserved.import_id);
+      const rawOcrText = 'raw OCR text from a malformed dossier response must stay hidden';
+      const createdDossier = conversionDossier(preserved.import_id, draft.draft_id);
+      let dossiers: PaperBookOcrConversionDossierView[] = [];
+      const { fn, calls } = bookDetailFetch((url, method) => {
+        if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+          return jsonResponse([preserved]);
+        }
+        if (
+          url === `/v1/books/paper-import/${preserved.import_id}/ocr-drafts` &&
+          method === 'GET'
+        ) {
+          return jsonResponse([draft]);
+        }
+        if (
+          url === `/v1/books/paper-import/${preserved.import_id}/conversion-dossiers` &&
+          method === 'GET'
+        ) {
+          return jsonResponse(dossiers);
+        }
+        if (
+          url === `/v1/books/paper-import/${preserved.import_id}/ocr-canonical-rehearsal` &&
+          method === 'GET'
+        ) {
+          const dossier = dossiers[0] ?? null;
+          return jsonResponse(
+            paperBookOcrCanonicalRehearsalReport(preserved.import_id, {
+              status: dossier ? 'local_rehearsal_ready' : 'blocked',
+              blockerCodes: dossier ? [] : ['metadata_only_conversion_dossier_required'],
+              draftId: draft.draft_id,
+              dossierId: dossier?.dossier_id ?? null,
+              draftCount: 1,
+              acceptedDraftCount: 1,
+              dossierCount: dossiers.length,
+            }),
+          );
+        }
+        if (
+          url ===
+            `/v1/books/paper-import/${preserved.import_id}/ocr-drafts/${draft.draft_id}/conversion-dossier` &&
+          method === 'POST'
+        ) {
+          dossiers = [createdDossier];
+          return jsonResponse({ ...createdDossier, extracted_text: rawOcrText }, 201);
+        }
+        return null;
+      });
+      vi.stubGlobal('fetch', fn);
 
-    renderAtBook();
+      renderAtBook();
 
-    const create = await screen.findByRole('button', {
-      name: 'Criar dossier de conversão só de metadados',
-    });
-    const summary = await screen.findByRole('region', {
-      name: 'Resumo de profundidade OCR e dossier do livro em papel',
-    });
-    expect(within(summary).getByText('Resumo OCR/dossier derivado')).toBeTruthy();
-    expect(
-      within(summary).getByText(/Aceite para referência auxiliar, sem conversão canónica/i),
-    ).toBeTruthy();
-    expect(within(summary).getByText('Dossier só de metadados ainda não registado.')).toBeTruthy();
-    expect(within(summary).getByText(/Texto OCR bruto no dossier/i)).toBeTruthy();
-    expect(within(summary).getByText(/^não$/i)).toBeTruthy();
-    expect(within(summary).getByText(/Só metadados: sim/i)).toBeTruthy();
-    expect(within(summary).getByText(/ata canónica: não/i)).toBeTruthy();
-    expect(within(summary).getByText(/documento canónico: não/i)).toBeTruthy();
-    expect(within(summary).getByText(/pacote de arquivo:\s* não/i)).toBeTruthy();
-    expect(within(summary).getByText(/PDF\/A: não/i)).toBeTruthy();
-    expect(within(summary).getByText(/PDF\/UA: não/i)).toBeTruthy();
-    expect(within(summary).getByText(/validade legal: não/i)).toBeTruthy();
-    expect(within(summary).queryByText(/dossier canónico/i)).toBeNull();
-    expect(within(summary).queryByText(/assinatura válida/i)).toBeNull();
-    expect(within(summary).queryByText(/PDF\/A certificado/i)).toBeNull();
-    const preflight = await screen.findByRole('region', {
-      name: /Relatório OCR\/canónico local/i,
-    });
-    expect(within(preflight).getByText('Relatório OCR/canónico local')).toBeTruthy();
-    expect(
-      within(preflight).getAllByText(/metadata_only_conversion_dossier_required/i).length,
-    ).toBeGreaterThan(0);
-    expect(within(preflight).getByText(draft.draft_id)).toBeTruthy();
-    expect(within(preflight).getByText(/raw_ocr_text_in_report: false/i)).toBeTruthy();
-    expect(within(preflight).getByText(/canonical_conversion_claimed:\s*false/i)).toBeTruthy();
-    expect(within(preflight).getByText(/pdfa_certification_claimed:\s*false/i)).toBeTruthy();
-    expect(
-      calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
-    ).toBe(false);
+      const create = await screen.findByRole('button', {
+        name: 'Criar dossier de conversão só de metadados',
+      });
+      const summary = await screen.findByRole('region', {
+        name: 'Resumo de profundidade OCR e dossier do livro em papel',
+      });
+      expect(within(summary).getByText('Resumo OCR/dossier derivado')).toBeTruthy();
+      expect(
+        within(summary).getByText(/Aceite para referência auxiliar, sem conversão canónica/i),
+      ).toBeTruthy();
+      expect(
+        within(summary).getByText('Dossier só de metadados ainda não registado.'),
+      ).toBeTruthy();
+      expect(within(summary).getByText(/Texto OCR bruto no dossier/i)).toBeTruthy();
+      expect(within(summary).getByText(/^não$/i)).toBeTruthy();
+      expect(within(summary).getByText(/Só metadados: sim/i)).toBeTruthy();
+      expect(within(summary).getByText(/ata canónica: não/i)).toBeTruthy();
+      expect(within(summary).getByText(/documento canónico: não/i)).toBeTruthy();
+      expect(within(summary).getByText(/pacote de arquivo:\s* não/i)).toBeTruthy();
+      expect(within(summary).getByText(/PDF\/A: não/i)).toBeTruthy();
+      expect(within(summary).getByText(/PDF\/UA: não/i)).toBeTruthy();
+      expect(within(summary).getByText(/validade legal: não/i)).toBeTruthy();
+      expect(within(summary).queryByText(/dossier canónico/i)).toBeNull();
+      expect(within(summary).queryByText(/assinatura válida/i)).toBeNull();
+      expect(within(summary).queryByText(/PDF\/A certificado/i)).toBeNull();
+      const preflight = await screen.findByRole('region', {
+        name: /Relatório OCR\/canónico local/i,
+      });
+      expect(within(preflight).getByText('Relatório OCR/canónico local')).toBeTruthy();
+      expect(
+        within(preflight).getAllByText(/metadata_only_conversion_dossier_required/i).length,
+      ).toBeGreaterThan(0);
+      expect(within(preflight).getByText(draft.draft_id)).toBeTruthy();
+      expect(within(preflight).getByText(/raw_ocr_text_in_report: false/i)).toBeTruthy();
+      expect(within(preflight).getByText(/canonical_conversion_claimed:\s*false/i)).toBeTruthy();
+      expect(within(preflight).getByText(/pdfa_certification_claimed:\s*false/i)).toBeTruthy();
+      expect(
+        calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
+      ).toBe(false);
 
-    fireEvent.click(create);
+      fireEvent.click(create);
 
-    await waitFor(() =>
-      expect(calls).toContainEqual({
-        url: `/v1/books/paper-import/${preserved.import_id}/ocr-drafts/${draft.draft_id}/conversion-dossier`,
-        method: 'POST',
-        body: null,
-      }),
-    );
-    expect(
-      await screen.findByText(
-        'Dossier de conversão só de metadados registado; não criou ata, documento, PDF/A, assinatura ou selo.',
-      ),
-    ).toBeTruthy();
-    expect(await screen.findByText('Dossier já registado')).toBeTruthy();
-    expect(
-      within(summary).getByText(
-        `Dossier só de metadados registado (${createdDossier.dossier_id}).`,
-      ),
-    ).toBeTruthy();
-    expect(within(preflight).getByText(createdDossier.dossier_id)).toBeTruthy();
-    expect(within(preflight).queryByText('metadata_only_conversion_dossier_required')).toBeNull();
-    expect(within(preflight).getByText('evidência local reunida')).toBeTruthy();
-    expect(within(preflight).getByText('nenhum bloqueio local no relatório')).toBeTruthy();
-    expect(screen.getByText(/metadata-only, non-canonical/i)).toBeTruthy();
-    expect(screen.getByText(/Ata criada: não/i)).toBeTruthy();
-    expect(screen.getAllByText(/documento canónico: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/PDF\/A: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/selo: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/Na resposta: não/i)).toBeTruthy();
-    expect(screen.queryByText(rawOcrText)).toBeNull();
-    expect(
-      calls.some((call) => /\/(document|signature|seal|archive\/package)(\/|$)/.test(call.url)),
-    ).toBe(false);
-  });
+      await waitFor(() =>
+        expect(calls).toContainEqual({
+          url: `/v1/books/paper-import/${preserved.import_id}/ocr-drafts/${draft.draft_id}/conversion-dossier`,
+          method: 'POST',
+          body: null,
+        }),
+      );
+      expect(
+        await screen.findByText(
+          'Dossier de conversão só de metadados registado; não criou ata, documento, PDF/A, assinatura ou selo.',
+        ),
+      ).toBeTruthy();
+      expect(await screen.findByText('Dossier já registado')).toBeTruthy();
+      expect(
+        within(summary).getByText(
+          `Dossier só de metadados registado (${createdDossier.dossier_id}).`,
+        ),
+      ).toBeTruthy();
+      expect(within(preflight).getByText(createdDossier.dossier_id)).toBeTruthy();
+      expect(within(preflight).queryByText('metadata_only_conversion_dossier_required')).toBeNull();
+      expect(within(preflight).getByText('evidência local reunida')).toBeTruthy();
+      expect(within(preflight).getByText('nenhum bloqueio local no relatório')).toBeTruthy();
+      expect(screen.getByText(/metadata-only, non-canonical/i)).toBeTruthy();
+      expect(screen.getByText(/Ata criada: não/i)).toBeTruthy();
+      expect(screen.getAllByText(/documento canónico: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/PDF\/A: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/selo: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/Na resposta: não/i)).toBeTruthy();
+      expect(screen.queryByText(rawOcrText)).toBeNull();
+      expect(
+        calls.some((call) => /\/(document|signature|seal|archive\/package)(\/|$)/.test(call.url)),
+      ).toBe(false);
+    },
+  );
 
   it('renders an existing conversion dossier without encouraging duplicate creation', async () => {
     const preserved = preservedPaperImport({

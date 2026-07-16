@@ -146,7 +146,7 @@ export default async function globalTeardown(): Promise<void> {
       `Playwright global teardown could not schedule delayed cleanup for ` +
       `CHANCELA_E2E_DATA_DIR at ${dir}.`;
     if (isStrictCleanupEnabled()) {
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
 
     console.warn(`${message}\nSet ${STRICT_CLEANUP_ENV}=1 to make cleanup failures fatal.`);
@@ -161,7 +161,7 @@ export default async function globalTeardown(): Promise<void> {
       `after ${CLEANUP_RETRY_DELAYS_MS.length + 1} attempts: ${formatError(error)}`;
 
     if (isStrictCleanupEnabled()) {
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
 
     const scheduled = schedulePostTeardownCleanup(dir);

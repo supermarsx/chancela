@@ -27,20 +27,16 @@ import {
 } from '../../ui';
 import { entityFieldHelp } from './fieldHelp';
 
-const FISCAL_YEAR_END_LABEL = 'Fecho do exercício (MM-DD)';
-const FISCAL_YEAR_END_HINT = 'Opcional. Vazio mantém o fecho por omissão em 12-31.';
-const FISCAL_YEAR_END_ERROR = 'Use uma data válida no formato MM-DD.';
-
 function normalizeFiscalYearEndInput(input: string): string | null {
   const value = input.trim();
   if (value === '') return null;
   const match = /^(\d{2})-(\d{2})$/.exec(value);
-  if (!match) throw new Error(FISCAL_YEAR_END_ERROR);
+  if (!match) throw new Error('invalid fiscal-year end');
   const month = Number(match[1]);
   const day = Number(match[2]);
   const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
-    throw new Error(FISCAL_YEAR_END_ERROR);
+    throw new Error('invalid fiscal-year end');
   }
   return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
@@ -73,8 +69,8 @@ export function NewEntityPage() {
     try {
       normalizedFiscalYearEnd = normalizeFiscalYearEndInput(fiscalYearEnd);
       setFiscalYearEndError(null);
-    } catch (err) {
-      setFiscalYearEndError(err instanceof Error ? err.message : FISCAL_YEAR_END_ERROR);
+    } catch {
+      setFiscalYearEndError(t('entities.fiscalYearEnd.invalid'));
       return;
     }
     create.mutate(
@@ -168,9 +164,9 @@ export function NewEntityPage() {
             />
           </Field>
           <Field
-            label={FISCAL_YEAR_END_LABEL}
+            label={t('entities.fiscalYearEnd.inputLabel')}
             htmlFor="ent-fiscal-year-end"
-            hint={FISCAL_YEAR_END_HINT}
+            hint={t('entities.fiscalYearEnd.hint')}
             help={entityFieldHelp.fiscalYearEnd}
             error={fiscalYearEndError}
           >
@@ -181,7 +177,7 @@ export function NewEntityPage() {
                 setFiscalYearEnd(e.target.value);
                 if (fiscalYearEndError) setFiscalYearEndError(null);
               }}
-              placeholder="12-31"
+              placeholder={t('entities.fiscalYearEnd.placeholder')}
               maxLength={5}
             />
           </Field>

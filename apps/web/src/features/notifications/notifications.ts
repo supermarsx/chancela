@@ -200,11 +200,13 @@ function parseDate(value: string): number | null {
   return time;
 }
 
-function parseTimestamp(value?: string): number | null {
+export function parseNotificationTimestamp(value?: string): number | null {
   if (!value) return null;
   const time = Date.parse(value);
   return Number.isNaN(time) ? null : time;
 }
+
+const parseTimestamp = parseNotificationTimestamp;
 
 function reminderTone(reminder: DashboardReminder): NotificationTone {
   if (reminder.status === 'Overdue') return 'warn';
@@ -263,7 +265,9 @@ function alertPriorityAndTone(alert: DashboardAlert): { priority: number; tone: 
   return { priority: 3, tone: 'accent' };
 }
 
-function frontendRouteFromApi(path: string | null | undefined): string | undefined {
+export function frontendNotificationRouteFromApi(
+  path: string | null | undefined,
+): string | undefined {
   if (!path) return undefined;
   const route = path.trim();
   if (!route) return undefined;
@@ -283,7 +287,11 @@ function frontendRouteFromApi(path: string | null | undefined): string | undefin
   return undefined;
 }
 
-function generatedDispatchDocumentIdFromApi(path: string | null | undefined): string | undefined {
+const frontendRouteFromApi = frontendNotificationRouteFromApi;
+
+export function generatedDispatchDocumentIdFromApi(
+  path: string | null | undefined,
+): string | undefined {
   const route = path?.trim();
   if (!route) return undefined;
   const match = /^\/v1\/documents\/generated\/([^/?#]+)\/dispatch-evidence(?:[?#/]|$)/.exec(route);
@@ -295,7 +303,7 @@ function generatedDispatchDocumentIdFromApi(path: string | null | undefined): st
   }
 }
 
-function importedDocumentIdFromApi(path: string | null | undefined): string | undefined {
+export function importedDocumentIdFromApi(path: string | null | undefined): string | undefined {
   const route = path?.trim();
   if (!route) return undefined;
   const match = /^\/v1\/documents\/imported\/([^/?#]+)(?:[?#/]|$)/.exec(route);
@@ -378,21 +386,21 @@ function actionFromMetadata(
             (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
         )
       : action.kind === 'open_imported_document_review'
-      ? importedDocumentReviewRoute(
-          frontendRouteFromApi(action.route) ??
-            (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
-          paramText(params, 'imported_document_id') ?? importedDocumentIdFromApi(action.api_href),
-        )
-      : action.kind === 'open_absent_owner_dispatch_evidence' ||
-          action.kind === 'open_generated_convening_dispatch_evidence'
-        ? generatedDispatchEvidenceRoute(
+        ? importedDocumentReviewRoute(
             frontendRouteFromApi(action.route) ??
               (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
-            paramText(params, 'generated_document_id') ??
-              paramText(params, 'document_id') ??
-              generatedDispatchDocumentIdFromApi(action.api_href),
+            paramText(params, 'imported_document_id') ?? importedDocumentIdFromApi(action.api_href),
           )
-        : (frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href));
+        : action.kind === 'open_absent_owner_dispatch_evidence' ||
+            action.kind === 'open_generated_convening_dispatch_evidence'
+          ? generatedDispatchEvidenceRoute(
+              frontendRouteFromApi(action.route) ??
+                (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
+              paramText(params, 'generated_document_id') ??
+                paramText(params, 'document_id') ??
+                generatedDispatchDocumentIdFromApi(action.api_href),
+            )
+          : (frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href));
   const labelKey = messageKey(action.label_key);
   if (!href || !labelKey) return undefined;
   return { href, label: t(labelKey, params) };
@@ -498,12 +506,7 @@ function actionFromReminderTarget(
     const href = isConveningNoticeReminder(reminder)
       ? (actConveningGuidanceRoute(`/atas/${actId}`) ?? `/atas/${actId}`)
       : `/atas/${actId}`;
-    return routeAction(
-      href,
-      preferredLabel ?? 'notifications.action.openAct',
-      t,
-      params,
-    );
+    return routeAction(href, preferredLabel ?? 'notifications.action.openAct', t, params);
   }
 
   const bookId = paramId(reminder.params, 'book_id');
@@ -579,9 +582,9 @@ function buildAlertNotification(
   };
 }
 
-function compareEventsByRecency(a: LedgerEventView, b: LedgerEventView): number {
-  const aTime = parseTimestamp(a.timestamp);
-  const bTime = parseTimestamp(b.timestamp);
+export function compareEventsByRecency(a: LedgerEventView, b: LedgerEventView): number {
+  const aTime = parseNotificationTimestamp(a.timestamp);
+  const bTime = parseNotificationTimestamp(b.timestamp);
   if (aTime !== null && bTime !== null && aTime !== bTime) return bTime - aTime;
   if (aTime !== null || bTime !== null) return aTime === null ? 1 : -1;
   return b.seq - a.seq;

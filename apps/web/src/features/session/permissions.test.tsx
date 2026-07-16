@@ -10,19 +10,30 @@
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient } from '@tanstack/react-query';
 import type { PermissionGrant } from '../../api/types';
 import { ApiError } from '../../api/client';
+import { keys } from '../../api/hooks';
 import { ErrorNote } from '../../ui';
 import {
   GateButton,
   StaticPermissionsProvider,
+  cachedScopeParent,
   grantCoversScope,
+  scopeAct,
+  scopeArchive,
   scopeBook,
   scopeEntity,
+  scopeFolder,
   scopeGlobal,
+  scopeIntegration,
+  scopeRepository,
+  scopeTemplateLibrary,
+  scopeTenant,
   type CanScope,
   type BookEntityResolver,
   type PermissionsContextValue,
+  type ScopeParentResolver,
 } from './permissions';
 
 afterEach(() => cleanup());
@@ -100,6 +111,97 @@ describe('grantCoversScope — narrowing-only (mirrors chancela-authz::scope_cov
     expect(grantCoversScope(g, scopeBook('B1'), noBooks)).toBe(true);
     expect(grantCoversScope(g, scopeBook('B2'), noBooks)).toBe(false);
     expect(grantCoversScope(g, scopeEntity('E1'), noBooks)).toBe(false);
+  });
+
+  it('walks tenant → entity → book → act only through authoritative parents', () => {
+    const parents = new Map<string, CanScope>([
+      ['entity:E1', scopeTenant('T1')],
+      ['book:B1', scopeEntity('E1')],
+      ['act:A1', scopeBook('B1')],
+    ]);
+    const parent: ScopeParentResolver = (scope) =>
+      parents.get(scope.kind === 'global' ? 'global' : `${scope.kind}:${scope.id}`);
+
+    expect(grantCoversScope(grant('x', scopeTenant('T1')), scopeAct('A1'), noBooks, parent)).toBe(
+      true,
+    );
+    expect(grantCoversScope(grant('x', scopeEntity('E1')), scopeAct('A1'), noBooks, parent)).toBe(
+      true,
+    );
+    expect(grantCoversScope(grant('x', scopeBook('B1')), scopeAct('A1'), noBooks, parent)).toBe(
+      true,
+    );
+    expect(grantCoversScope(grant('x', scopeTenant('T2')), scopeAct('A1'), noBooks, parent)).toBe(
+      false,
+    );
+  });
+
+  it('supports every frozen resource leaf and remains narrowing-only', () => {
+    const leaves = [
+      scopeAct('A1'),
+      scopeFolder('F1'),
+      scopeTemplateLibrary('L1'),
+      scopeArchive('AR1'),
+      scopeIntegration('I1'),
+      scopeRepository('R1'),
+    ];
+    for (const leaf of leaves) {
+      expect(grantCoversScope(grant('x', leaf), leaf, noBooks)).toBe(true);
+      const other = { ...leaf, id: `${leaf.id}-other` };
+      expect(grantCoversScope(grant('x', leaf), other, noBooks)).toBe(false);
+      expect(grantCoversScope(grant('x', leaf), scopeGlobal, noBooks)).toBe(false);
+    }
+  });
+
+  it('fails closed for unknown parents, malformed scopes, and cyclic parent graphs', () => {
+    const cycle: ScopeParentResolver = (scope) =>
+      scope.kind === 'folder' && scope.id === 'F1'
+        ? scopeFolder('F2')
+        : scope.kind === 'folder' && scope.id === 'F2'
+          ? scopeFolder('F1')
+          : undefined;
+    expect(grantCoversScope(grant('x', scopeEntity('E1')), scopeFolder('F1'), noBooks, cycle)).toBe(
+      false,
+    );
+    expect(
+      grantCoversScope(
+        grant('x', scopeEntity('E1')),
+        scopeFolder('unknown'),
+        noBooks,
+        () => undefined,
+      ),
+    ).toBe(false);
+
+    const malformedGrant = grant('x', { kind: 'future_scope', id: 'X' } as never);
+    const malformedTarget = { kind: 'act', id: '' } as CanScope;
+    expect(grantCoversScope(malformedGrant, scopeAct('A1'), noBooks)).toBe(false);
+    expect(grantCoversScope(grant('x', scopeGlobal), malformedTarget, noBooks)).toBe(false);
+  });
+});
+
+describe('cachedScopeParent — authoritative query-cache relations', () => {
+  it('resolves single-resource entity, book, and act parent hops', () => {
+    const qc = new QueryClient();
+    qc.setQueryData(keys.entity('E1'), { id: 'E1', tenant_id: 'T1' });
+    qc.setQueryData(keys.book('B1'), { id: 'B1', entity_id: 'E1' });
+    qc.setQueryData(keys.act('A1'), { id: 'A1', book_id: 'B1' });
+
+    expect(cachedScopeParent(qc, scopeEntity('E1'))).toEqual(scopeTenant('T1'));
+    expect(cachedScopeParent(qc, scopeBook('B1'))).toEqual(scopeEntity('E1'));
+    expect(cachedScopeParent(qc, scopeAct('A1'))).toEqual(scopeBook('B1'));
+  });
+
+  it('resolves list DTOs and denies unknown/unsupported resource parents', () => {
+    const qc = new QueryClient();
+    qc.setQueryData(keys.entities, [{ id: 'E2', tenant_id: 'T2' }]);
+    qc.setQueryData(keys.books(), [{ id: 'B2', entity_id: 'E2' }]);
+    qc.setQueryData(keys.bookActs('B2'), [{ id: 'A2', book_id: 'B2' }]);
+
+    expect(cachedScopeParent(qc, scopeEntity('E2'))).toEqual(scopeTenant('T2'));
+    expect(cachedScopeParent(qc, scopeBook('B2'))).toEqual(scopeEntity('E2'));
+    expect(cachedScopeParent(qc, scopeAct('A2'))).toEqual(scopeBook('B2'));
+    expect(cachedScopeParent(qc, scopeBook('missing'))).toBeUndefined();
+    expect(cachedScopeParent(qc, scopeFolder('F1'))).toBeUndefined();
   });
 });
 

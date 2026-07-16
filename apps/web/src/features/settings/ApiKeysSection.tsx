@@ -37,7 +37,7 @@ import {
   useToast,
 } from '../../ui';
 import { GateButton, useCan } from '../session/permissions';
-import { ScopePicker } from '../rbac/ScopePicker';
+import { ScopePicker, scopeKindLabel } from '../rbac/ScopePicker';
 
 const initialScope: PermissionScope = { kind: 'global' };
 
@@ -78,8 +78,7 @@ function formatDateTime(value: string | undefined, locale: string, fallback: str
 
 function scopeText(t: TFunction, scope: PermissionScope): string {
   if (scope.kind === 'global') return t('rbac.scope.global');
-  if (scope.kind === 'entity') return `${t('rbac.scope.entity')}: ${scope.id}`;
-  return `${t('rbac.scope.book')}: ${scope.id}`;
+  return `${scopeKindLabel(t, scope.kind)}: ${scope.id}`;
 }
 
 function grantText(t: TFunction, grant: ApiKeyGrantView): string {
@@ -365,8 +364,9 @@ function SecretPanel({ apiKey, onDone }: { apiKey: ApiKeyCreated; onDone: () => 
 
   // Cancel any pending clipboard wipe when the panel unmounts.
   useEffect(() => {
+    const timerRef = clearTimerRef;
     return () => {
-      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 

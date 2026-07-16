@@ -227,8 +227,7 @@ function ActionCapabilities({ service }: { service: PlatformServiceStatus }) {
   return (
     <div className="platform-control-support">
       <p className="card__label">
-        {t('settings.platform.action')}{' '}
-        <FieldHelp text={t('settings.platform.help.outcomes')} />
+        {t('settings.platform.action')} <FieldHelp text={t('settings.platform.help.outcomes')} />
       </p>
       <ul>
         {service.controllable_actions.map((capability) => (
@@ -537,9 +536,7 @@ export function PlatformOperationsSection({
                       key={field}
                       label={t(`settings.platform.logging.${field}` as MessageKey)}
                       htmlFor={`platform-log-${field}`}
-                      help={
-                        field === 'global' ? t('settings.platform.help.logLevels') : undefined
-                      }
+                      help={field === 'global' ? t('settings.platform.help.logLevels') : undefined}
                     >
                       <Select
                         id={`platform-log-${field}`}

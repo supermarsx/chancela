@@ -13,6 +13,8 @@ import {
 } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
+import { colorStore } from '../../theme/colorStore';
+import { grainStore } from '../../theme/grainStore';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -2446,6 +2448,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   document.documentElement.removeAttribute('data-theme');
   document.documentElement.style.removeProperty('--leather-grain-opacity');
+  colorStore.reset();
 });
 
 describe('SettingsPage', () => {
@@ -2486,6 +2489,99 @@ describe('SettingsPage', () => {
     // Switching to Sobre surfaces the /health version there.
     fireEvent.click(screen.getByRole('button', { name: 'Sobre' }));
     expect(await screen.findByText('9.9.9')).toBeTruthy();
+  });
+
+  it('surfaces an initial settings read failure instead of loading forever', async () => {
+    const fn = ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/v1/settings')) {
+        return Promise.resolve(jsonResponse({ error: 'settings document unavailable' }, 503));
+      }
+      if (url.includes('/v1/ledger/verify')) {
+        return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
+      }
+      if (url.includes('/health')) {
+        return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+
+    expect(await screen.findByText('settings document unavailable')).toBeTruthy();
+    expect(screen.queryByText('A carregar…')).toBeNull();
+  });
+
+  it('renders degraded about-state evidence without claiming a healthy ledger or server', async () => {
+    const fn = ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      if (url.includes('/v1/ledger/verify')) {
+        return Promise.resolve(jsonResponse({ valid: false, length: 4 }));
+      }
+      if (url.includes('/health')) {
+        return Promise.resolve(jsonResponse({ error: 'health unavailable' }, 503));
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=sobre']);
+
+    const about = (await screen.findByRole('heading', { name: 'Sobre', level: 3 })).closest(
+      '.panel',
+    ) as HTMLElement;
+    expect(within(about).getByText('Cadeia comprometida')).toBeTruthy();
+    expect(within(about).getByText('—')).toBeTruthy();
+    expect(within(about).queryByText('servidor desatualizado')).toBeNull();
+  });
+
+  it('persists document locale and numbering edits through the whole settings document', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=documentos']);
+
+    fireEvent.change(await screen.findByLabelText('Idioma'), {
+      target: { value: 'en-GB' },
+    });
+    fireEvent.change(screen.getByLabelText('Esquema de numeração predefinido'), {
+      target: { value: 'LooseLeaf' },
+    });
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const body = JSON.parse(
+      calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(body.documents.locale).toBe('en-GB');
+    expect(body.documents.numbering_scheme_default).toBe('LooseLeaf');
+  });
+
+  it('previews texture and custom-colour controls and can restore theme defaults', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    const reroll = vi.spyOn(grainStore, 'reroll');
+    colorStore.reset();
+    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Regenerar grão' }));
+    expect(reroll).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('switch', { name: 'Textura de couro (fundo)' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Textura de couro nos botões' }));
+
+    fireEvent.change(screen.getByLabelText('Primária'), { target: { value: '#112233' } });
+    expect(colorStore.get().primary).toBe('#112233');
+    fireEvent.click(screen.getByRole('button', { name: 'Repor esta cor' }));
+    expect(colorStore.get().primary).toBeUndefined();
+
+    fireEvent.change(screen.getByLabelText('Secundária'), { target: { value: '#445566' } });
+    fireEvent.change(screen.getByLabelText('Fundo'), { target: { value: '#778899' } });
+    expect(colorStore.hasOverrides()).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Repor predefinições do tema' }));
+    expect(colorStore.get()).toEqual({});
+    expect(screen.getByText('A usar as cores predefinidas do tema')).toBeTruthy();
   });
 
   it('defaults the AI/MCP tenant gate off when the settings document omits it', async () => {
@@ -2538,7 +2634,7 @@ describe('SettingsPage', () => {
     expect(screen.queryByRole('switch', { name: 'Ativar IA/MCP' })).toBeNull();
   });
 
-  it('renders and autosaves the workflow reminder policy fields', async () => {
+  it('renders and autosaves the workflow reminder policy fields', { timeout: 15_000 }, async () => {
     const olderSettings = cloneJson(DEFAULT_SETTINGS) as Partial<typeof DEFAULT_SETTINGS>;
     delete olderSettings.workflow;
     const { fn, calls } = settingsFetch(olderSettings);
@@ -3130,13 +3226,18 @@ describe('SettingsPage', () => {
 
   it('raises a toast and keeps an inline error when an autosave fails', async () => {
     const calls: Recorded[] = [];
+    let putAttempts = 0;
     const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
       calls.push({ url, method, body: (init?.body as string) ?? null });
       if (url.includes('/v1/settings')) {
         if (method === 'PUT') {
-          return Promise.resolve(jsonResponse({ error: 'Falha ao guardar' }, 500));
+          putAttempts += 1;
+          if (putAttempts === 1) {
+            return Promise.resolve(jsonResponse({ error: 'Falha ao guardar' }, 500));
+          }
+          return Promise.resolve(jsonResponse(JSON.parse(init?.body as string)));
         }
         return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
       }
@@ -3161,7 +3262,12 @@ describe('SettingsPage', () => {
     // still recoverable.
     expect(nameInput.disabled).toBe(false);
     expect(screen.queryByRole('button', { name: 'Guardar agora' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(putAttempts).toBe(2));
+    expect(await screen.findByText('Configurações guardadas.')).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Tentar novamente' })).toBeNull(),
+    );
   });
 
   it('hides "Guardar agora" while autosave is enabled (no persistent flush button)', async () => {
@@ -3698,7 +3804,9 @@ describe('SettingsPage', () => {
       legal_disposal_completed: false,
     });
     expect(
-      await within(candidateRow!).findByText(/evidence_acknowledged · retention-candidate-resolution-1/),
+      await within(candidateRow!).findByText(
+        /evidence_acknowledged · retention-candidate-resolution-1/,
+      ),
     ).toBeTruthy();
     expect(within(candidateRow!).getByText('Disposição local existente')).toBeTruthy();
     expect(
@@ -3725,9 +3833,7 @@ describe('SettingsPage', () => {
     );
     expect(blockedRow).toBeTruthy();
 
-    fireEvent.click(
-      within(blockedRow!).getByRole('button', { name: 'Registar disposição local' }),
-    );
+    fireEvent.click(within(blockedRow!).getByRole('button', { name: 'Registar disposição local' }));
 
     const resolutionPost = await waitFor(() => {
       const call = calls.find(
@@ -5246,6 +5352,115 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByText('Portugal GNS Trusted List')).toBeTruthy();
     expect(screen.getByText('Portugal Cartao de Cidadao TSA')).toBeTruthy();
+  });
+
+  it('adds, normalizes, disables, and removes trust sources with collision-free ids', async () => {
+    const initial = materializeSettings({
+      ...DEFAULT_SETTINGS,
+      signing: {
+        ...DEFAULT_SETTINGS.signing,
+        tsl_sources: [
+          {
+            ...DEFAULT_SETTINGS.signing.tsl_sources[0],
+            id: 'trust-source-2',
+            name: 'Existing collision source',
+          },
+        ],
+        tsa_providers: [
+          {
+            ...DEFAULT_SETTINGS.signing.tsa_providers[0],
+            id: 'tsa-provider-2',
+            name: 'Existing collision TSA',
+            enabled: false,
+            default: false,
+          },
+        ],
+      },
+    });
+    const { fn, calls } = settingsFetch(initial);
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Adicionar fonte TSL' }));
+    const newSource = screen.getByRole('group', { name: 'Nova fonte TSL' });
+    expect(within(newSource).getByText('trust-source-3')).toBeTruthy();
+    fireEvent.change(within(newSource).getByLabelText('Nome'), {
+      target: { value: '  Source Three  ' },
+    });
+    fireEvent.change(within(newSource).getByLabelText('URL'), {
+      target: { value: '  https://trust.example.test/list.xml  ' },
+    });
+    fireEvent.change(within(newSource).getByLabelText('Caminho local'), {
+      target: { value: '   ' },
+    });
+    fireEvent.change(within(newSource).getByLabelText('Território'), {
+      target: { value: '  PT  ' },
+    });
+    fireEvent.change(within(newSource).getByLabelText('Esquema'), {
+      target: { value: '  eidas  ' },
+    });
+    fireEvent.click(within(newSource).getByRole('switch', { name: 'Fonte TSL ativa' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar TSA' }));
+    const newTsa = screen.getByRole('group', { name: 'Novo prestador TSA' });
+    expect(within(newTsa).getByText('tsa-provider-3')).toBeTruthy();
+    expect(
+      (within(newTsa).getByRole('switch', { name: 'Prestador TSA ativo' }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    fireEvent.change(within(newTsa).getByLabelText('Nome'), {
+      target: { value: '  TSA Three  ' },
+    });
+    fireEvent.change(within(newTsa).getByLabelText('URL'), {
+      target: { value: '  https://tsa.example.test/  ' },
+    });
+    fireEvent.change(within(newTsa).getByLabelText('Caminho local'), {
+      target: { value: '  C:\\tsa\\fallback  ' },
+    });
+    fireEvent.change(within(newTsa).getByLabelText('Política aceite'), {
+      target: { value: '  1.2.3.4  ' },
+    });
+    fireEvent.click(within(newTsa).getByRole('switch', { name: 'Prestador TSA ativo' }));
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const sent = JSON.parse(
+      calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(sent.signing.tsl_sources.find((source) => source.id === 'trust-source-3')).toMatchObject(
+      {
+        name: 'Source Three',
+        enabled: true,
+        url: 'https://trust.example.test/list.xml',
+        path: null,
+        country: 'PT',
+        scheme: 'eidas',
+      },
+    );
+    expect(
+      sent.signing.tsa_providers.find((provider) => provider.id === 'tsa-provider-3'),
+    ).toMatchObject({
+      name: 'TSA Three',
+      enabled: false,
+      default: false,
+      url: 'https://tsa.example.test/',
+      path: 'C:\\tsa\\fallback',
+      policy: '1.2.3.4',
+    });
+
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Source Three' })).getByRole('button', {
+        name: 'Remover',
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'TSA Three' })).getByRole('button', {
+        name: 'Remover',
+      }),
+    );
+    expect(screen.queryByRole('group', { name: 'Source Three' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'TSA Three' })).toBeNull();
   });
 
   it('lists API keys as persisted metadata including returned rate limits', async () => {

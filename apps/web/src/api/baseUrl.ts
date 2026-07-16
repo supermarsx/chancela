@@ -28,7 +28,9 @@ function stringValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function configBaseUrl(config: ChancelaRuntimeConfig | ChancelaMobileShellConfig | undefined): string {
+function configBaseUrl(
+  config: ChancelaRuntimeConfig | ChancelaMobileShellConfig | undefined,
+): string {
   return stringValue(config?.apiBaseUrl) || stringValue(config?.api_base_url);
 }
 

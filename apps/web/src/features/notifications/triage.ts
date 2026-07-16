@@ -27,7 +27,7 @@ function isStoredStatus(value: unknown): value is NotificationTriageEntry['statu
   return value === 'read' || value === 'dismissed' || value === 'acknowledged';
 }
 
-function normalizeEntries(value: unknown): NotificationTriageEntry[] {
+export function normalizeNotificationTriageEntries(value: unknown): NotificationTriageEntry[] {
   if (!Array.isArray(value)) return [];
   const byId = new Map<string, NotificationTriageEntry>();
   for (const raw of value) {
@@ -59,7 +59,7 @@ function normalizeEntries(value: unknown): NotificationTriageEntry[] {
     .slice(0, LOCAL_MAX_ENTRIES);
 }
 
-function readLocalEntries(): NotificationTriageEntry[] {
+export function readLocalNotificationTriageEntries(): NotificationTriageEntry[] {
   if (typeof window === 'undefined') return [];
   try {
     return normalizeEntries(JSON.parse(window.localStorage.getItem(LOCAL_STORAGE_KEY) ?? '[]'));
@@ -68,7 +68,7 @@ function readLocalEntries(): NotificationTriageEntry[] {
   }
 }
 
-function writeLocalEntries(entries: NotificationTriageEntry[]): void {
+export function writeLocalNotificationTriageEntries(entries: NotificationTriageEntry[]): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalizeEntries(entries)));
@@ -77,7 +77,7 @@ function writeLocalEntries(entries: NotificationTriageEntry[]): void {
   }
 }
 
-function applyStatus(
+export function applyNotificationTriageStatus(
   entries: NotificationTriageEntry[],
   notificationId: string,
   status: NotificationTriageStatus,
@@ -96,7 +96,7 @@ function applyStatus(
   return normalizeEntries(next);
 }
 
-function localPatch(
+export function patchLocalNotificationTriage(
   notificationId: string,
   status: NotificationTriageStatus,
 ): NotificationTriageUpdateResponse {
@@ -109,7 +109,7 @@ function localPatch(
   };
 }
 
-function shouldUseLocalFallback(error: unknown): boolean {
+export function shouldUseLocalNotificationTriageFallback(error: unknown): boolean {
   if (error instanceof ApiError) {
     return (
       error.status === 200 || error.status === 404 || error.status === 405 || error.status === 501
@@ -117,6 +117,13 @@ function shouldUseLocalFallback(error: unknown): boolean {
   }
   return true;
 }
+
+const normalizeEntries = normalizeNotificationTriageEntries;
+const readLocalEntries = readLocalNotificationTriageEntries;
+const writeLocalEntries = writeLocalNotificationTriageEntries;
+const applyStatus = applyNotificationTriageStatus;
+const localPatch = patchLocalNotificationTriage;
+const shouldUseLocalFallback = shouldUseLocalNotificationTriageFallback;
 
 export function triageStatusFor(
   entries: NotificationTriageEntry[],

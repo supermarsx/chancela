@@ -17,13 +17,25 @@ export const nlNL: Catalog = {
   'rbac.delegacoes.tab': 'Delegaties',
   'rbac.scope.label': 'Bereik',
   'rbac.scope.global': 'Globaal (hele instantie)',
+  'rbac.scope.tenant': 'Huurderorganisatie',
   'rbac.scope.entity': 'Entiteit',
   'rbac.scope.book': 'Boek',
+  'rbac.scope.act': 'Akte',
+  'rbac.scope.folder': 'Map',
+  'rbac.scope.templateLibrary': 'Sjabloonbibliotheek',
+  'rbac.scope.archive': 'Archief',
+  'rbac.scope.integration': 'Koppeling',
+  'rbac.scope.repository': 'Opslagplaats',
   'rbac.scope.global.desc': 'Geldt voor de hele instantie.',
+  'rbac.scope.tenant.desc': 'Geldt voor de organisatie en de bronnen die zij bevat.',
   'rbac.scope.entity.desc': 'Geldt voor de entiteit en haar boeken.',
   'rbac.scope.book.desc': 'Geldt alleen voor dit boek.',
+  'rbac.scope.resource.desc':
+    'Geldt voor de opgegeven bron en onderliggende bronnen in de toegestane hiërarchie.',
+  'rbac.scope.tenant.pick': 'Organisatie kiezen',
   'rbac.scope.entity.pick': 'Entiteit kiezen',
   'rbac.scope.book.pick': 'Boek kiezen',
+  'rbac.scope.resource.pick': 'Bronidentificatie',
   'rbac.group.entity': 'Entiteiten',
   'rbac.group.book': 'Boeken',
   'rbac.group.act': 'Akten',
@@ -42,7 +54,7 @@ export const nlNL: Catalog = {
     'U kunt alleen rechten selecteren die u zelf hebt. De rest is uitgeschakeld.',
   'rbac.matrix.selectAll': 'Alles selecteren',
   'rbac.matrix.clear': 'Wissen',
-  'rbac.matrix.meta': 'Meta',
+  'rbac.matrix.meta': 'Doel',
   'rbac.matrix.notHeld': 'U hebt dit recht niet',
   'rbac.role.edit.title': 'Rol bewerken',
   'rbac.role.create.title': 'Nieuwe rol',
@@ -402,7 +414,7 @@ export const nlNL: Catalog = {
   'dashboard.activity.eventTitle': 'Gebeurtenis {kind}',
   'dashboard.activity.actor': 'Actor {actor}',
   'dashboard.activity.scope': 'Bereik {scope}',
-  'dashboard.activity.sequence': 'Seq. {seq}',
+  'dashboard.activity.sequence': 'Volg. {seq}',
   'dashboard.activity.kind.act': 'Notulen',
   'dashboard.activity.kind.book': 'Boek',
   'dashboard.activity.kind.entity': 'Entiteit',
@@ -666,7 +678,7 @@ export const nlNL: Catalog = {
   'registry.address.freguesia': 'Deelgemeente',
   'registry.quota.amount': 'Aandeel',
   'registry.quota.titular': 'Houder',
-  'registry.party.nif': 'NIF / NIPC',
+  'registry.party.nif': 'NIF/NIPC',
   'registry.party.estadoCivil': 'Burgerlijke staat',
   'registry.party.nacionalidade': 'Nationaliteit',
   'registry.party.residencia': 'Woonplaats',
@@ -864,11 +876,12 @@ export const nlNL: Catalog = {
   'acts.attachments': 'Bijlagen',
   'acts.lifecycle': 'Levenscyclus',
   'acts.compliance': 'Naleving',
-  'acts.manualSignature.title': 'Handmatige ondertekening (SIG-03)',
+  'acts.manualSignature.title': 'Alternatieve route: handmatig ondertekend origineel (SIG-03)',
   'acts.manualSignature.body':
-    'Integratie van gekwalificeerde elektronische ondertekening is nog niet beschikbaar. Bij het verzegelen worden de notulen aan het grootboek geketend op basis van een handmatige ondertekening door de aanwezigen — zorg dat de ondertekenaars de fysieke kopie of de PDF hebben ondertekend voordat u doorgaat.',
+    'Er is nog steeds geen technisch bewijs van een ondertekende pdf. U kunt de canonieke kopie hierboven ondertekenen of, als alternatief, de verwijzing naar het ondertekende origineel handmatig opnemen. Deze kopie valideert de handtekening niet en certificeert het bestand niet.',
   'acts.sealing.title': 'Verzegeling',
-  'acts.sealing.ready': 'De notulen zijn conform en in ondertekening — ze kunnen worden verzegeld.',
+  'acts.sealing.ready':
+    'De notulen zijn in overeenstemming en klaar om de handtekening te voltooien voordat deze wordt verzegeld.',
   'acts.sealing.readyWithWarnings':
     'De notulen hebben niet-blokkerende nalevingswaarschuwingen. Controleer en erken ze expliciet voordat u verzegelt.',
   'acts.sealing.warningAck.title': 'Handmatige verzegeling bevestigen',
@@ -994,7 +1007,7 @@ export const nlNL: Catalog = {
   'ledger.filters.clear.aria': 'Archieffilters wissen',
   'ledger.search.placeholder': 'Zoekterm voor archief',
   'ledger.scope.label': 'Filteren op bereik',
-  'ledger.scope.placeholder': 'entity / book / act…',
+  'ledger.scope.placeholder': 'entiteit/boek/handeling…',
   'ledger.kind.label': 'Gebeurtenistype',
   'ledger.kind.placeholder': 'act.sealed, book.opened…',
   'ledger.actor.label': 'Auteur',
@@ -1104,7 +1117,7 @@ export const nlNL: Catalog = {
   'trust.status.current': 'Actueel',
   'trust.status.checkedAt': 'Gecontroleerd op',
   'trust.source.cache': 'Cache',
-  'trust.source.fixture': 'Fixture',
+  'trust.source.fixture': 'Armatuur',
   'trust.signature.Valid': 'Handtekening geldig',
   'trust.signature.Invalid': 'Handtekening ongeldig',
   'trust.explorer.title': 'Vertrouwenscatalogus',
@@ -1245,7 +1258,7 @@ export const nlNL: Catalog = {
   'pdfValidator.section.structure': 'PDF-structuur',
   'pdfValidator.section.signature': 'Handtekening / PAdES',
   'pdfValidator.section.dss': 'DSS, VRI en ingesloten intrekking',
-  'pdfValidator.section.docTimestamp': 'DocTimeStamp',
+  'pdfValidator.section.docTimestamp': 'DocTijdstempel',
   'pdfValidator.section.trust': 'Vertrouwen, intrekking en kwalificatie',
   'pdfValidator.section.findings': 'Bevindingen',
   'pdfValidator.findings.none': 'Geen bevindingen gemeld.',
@@ -1260,13 +1273,13 @@ export const nlNL: Catalog = {
   'pdfValidator.field.byteRangeMarkers': 'ByteRange-markeringen',
   'pdfValidator.field.contentsMarker': 'Contents-markering',
   'pdfValidator.field.signatureTimestamp': 'Tijdstempel van handtekening',
-  'pdfValidator.field.byteRange': 'ByteRange',
+  'pdfValidator.field.byteRange': 'Bytebereik',
   'pdfValidator.field.coverage': 'Dekking',
   'pdfValidator.value.coverage': '{covered} van {total} bytes',
   'pdfValidator.field.laterUpdates': 'Latere incrementele updates',
   'pdfValidator.field.signedRevisionDigest': 'SHA-256 van ondertekende revisie',
   'pdfValidator.field.cades': 'CAdES',
-  'pdfValidator.field.signingCertificate': 'SigningCertificateV2',
+  'pdfValidator.field.signingCertificate': 'OndertekeningscertificaatV2',
   'pdfValidator.field.signerSubject': 'Certificaatonderwerp',
   'pdfValidator.field.signerCertDigest': 'SHA-256 van certificaat',
   'pdfValidator.field.signingTime': 'Ondertekeningstijd',
@@ -1380,7 +1393,7 @@ export const nlNL: Catalog = {
   'externalValidatorReports.table.validatorFamily': 'Validatorfamilie',
   'externalValidatorReports.table.archivePath': 'Archiefpad',
   'externalValidatorReports.table.contentType': 'Contenttype',
-  'externalValidatorReports.table.digest': 'Digest',
+  'externalValidatorReports.table.digest': 'verteren',
   'externalValidatorReports.table.actions': 'Acties',
   'externalValidatorReports.table.metadataOnly': 'Alleen samenvatting van metadata',
   'externalValidatorReports.status':
@@ -1496,7 +1509,7 @@ export const nlNL: Catalog = {
     'Auditidentificatie: kleine letters, cijfers en . _ - (bijv. amelia.marques).',
   'users.field.username.placeholder': 'amelia.marques',
   'users.field.displayName.label': 'Weergavenaam (optioneel)',
-  'users.field.displayName.placeholder': 'Amélia Marques',
+  'users.field.displayName.placeholder': 'Amelia Markies',
   'users.create.submitting': 'Aanmaken…',
   'users.create.submit': 'Gebruiker aanmaken',
   'users.list.cardTitle': 'Gebruikers',
@@ -1532,8 +1545,10 @@ export const nlNL: Catalog = {
   'settings.appearance.intensity.hint': '0 tot 100. Schaalt de korrelopaciteit in realtime.',
   'settings.appearance.reroll': 'Korrel opnieuw genereren',
   'settings.appearance.colors.title': 'Aangepaste kleuren',
-  'settings.appearance.colors.hint': 'Kies je eigen kleuren; laat een staal ongewijzigd om de standaardkleur van het thema te behouden.',
-  'settings.appearance.colors.help': 'Overschrijft de primaire, secundaire, achtergrond- en oppervlaktekleur van de app. Het tekstcontrast wordt automatisch aangepast zodat het leesbaar blijft. Puur cosmetisch — het heeft geen invloed op documenten.',
+  'settings.appearance.colors.hint':
+    'Kies je eigen kleuren; laat een staal ongewijzigd om de standaardkleur van het thema te behouden.',
+  'settings.appearance.colors.help':
+    'Overschrijft de primaire, secundaire, achtergrond- en oppervlaktekleur van de app. Het tekstcontrast wordt automatisch aangepast zodat het leesbaar blijft. Puur cosmetisch — het heeft geen invloed op documenten.',
   'settings.appearance.colors.primary.label': 'Primair',
   'settings.appearance.colors.secondary.label': 'Secundair',
   'settings.appearance.colors.background.label': 'Achtergrond',
@@ -1566,7 +1581,7 @@ export const nlNL: Catalog = {
   'settings.signing.requireQualified.label':
     'Gekwalificeerde handtekening vereisen om te verzegelen',
   'settings.signing.note':
-    'De ondertekeningsvoorkeuren gelden voor de gekwalificeerde elektronische handtekening met Chave Móvel Digital, beschikbaar bij verzegelde notulen.',
+    'Voorkeuren zijn van toepassing op de bevroren canonieke kopie wanneer in de notulen “Onder handtekening” staat, vóór verzegeling.',
   'settings.signing.officialHint': 'Officiële Portugese standaardwaarde.',
   'settings.signing.reset': 'Terugzetten naar standaard',
   'settings.management.cardTitle': 'Beheer',
@@ -1630,7 +1645,7 @@ export const nlNL: Catalog = {
   'settings.platform.logging.cardTitle': 'Logniveaus',
   'settings.platform.logging.hint':
     'Pas het globale niveau en de niveaus per gebied aan. Wijzigingen gebruiken de autosave-stroom van het instellingendocument.',
-  'settings.platform.logging.global': 'Global',
+  'settings.platform.logging.global': 'Globaal',
   'settings.platform.logging.app': 'Applicatie',
   'settings.platform.logging.api': 'API',
   'settings.platform.logging.mcp': 'MCP',
@@ -1640,13 +1655,13 @@ export const nlNL: Catalog = {
   'settings.platform.logging.override.none': 'Geen overschrijving',
   'settings.platform.logging.override.app': 'Applicatie',
   'settings.platform.logging.override.api': 'API',
-  'settings.platform.logging.override.mcp_stdio': 'MCP stdio',
-  'settings.platform.logLevel.trace': 'Trace',
-  'settings.platform.logLevel.debug': 'Debug',
+  'settings.platform.logging.override.mcp_stdio': 'MCP-studio',
+  'settings.platform.logLevel.trace': 'Spoor',
+  'settings.platform.logLevel.debug': 'Foutopsporing',
   'settings.platform.logLevel.info': 'Info',
-  'settings.platform.logLevel.warn': 'Warn',
-  'settings.platform.logLevel.error': 'Error',
-  'settings.platform.logLevel.off': 'Off',
+  'settings.platform.logLevel.warn': 'Waarschuwen',
+  'settings.platform.logLevel.error': 'Fout',
+  'settings.platform.logLevel.off': 'Uit',
   'settings.platform.auditTail': 'Bewerkingenaudit',
   'settings.platform.audit.empty': 'Er zijn geen bewerkingsgebeurtenissen vastgelegd.',
   'settings.platform.logs.cardTitle': 'Door API beheerde gestructureerde logstaart',
@@ -1677,7 +1692,7 @@ export const nlNL: Catalog = {
   'settings.platform.logs.retention.basis.durable': 'Duurzame sidecar',
   'settings.platform.logs.retention.basis.memory': 'In-memory ring',
   'settings.platform.logs.retention.source': 'Bron',
-  'settings.platform.logs.column.seq': 'Seq',
+  'settings.platform.logs.column.seq': 'Volg',
   'settings.platform.logs.column.time': 'Time',
   'settings.platform.logs.column.service': 'Service',
   'settings.platform.logs.column.level': 'Niveau',
@@ -1685,17 +1700,24 @@ export const nlNL: Catalog = {
   'settings.platform.logs.column.message': 'Bericht',
   'settings.platform.logs.context.show': 'Context',
   'settings.platform.logs.context.empty': 'Geen context',
-  "settings.platform.subnav.aria": "Bewerkingssecties",
-  "settings.platform.tab.services": "Diensten",
-  "settings.platform.tab.services.desc": "Beheer van de gewenste status van de API- en MCP-servers, met eerlijke backend-resultaten en een bewerkingsaudit.",
-  "settings.platform.tab.logs": "Logboeken",
-  "settings.platform.tab.logs.desc": "Configuratie van logniveaus en gestructureerde API-logstaart (alleen-lezen).",
-  "settings.platform.serviceDetails": "Beheerdetails en beperkingen",
-  "settings.platform.help.services": "Deze acties leggen de gewenste status van de dienst vast; de interface veronderstelt geen directe procesbesturing (bijvoorbeeld API-zelfherstart of MCP-stdio-start).",
-  "settings.platform.help.outcomes": "Het resultaat geeft aan wat de backend deed: \"Supervisor vereist\" en \"Niet ondersteund\" betekenen dat een externe supervisor moet handelen — de gewenste status is alleen vastgelegd.",
-  "settings.platform.help.logLevels": "Het globale niveau begrenst alle diensten; elk gebied gebruikt het strengste van het globale en het gebiedsniveau. \"Off\" dempt alles.",
-  "settings.platform.help.effective": "Het effectieve niveau per dienst combineert het globale, het gebiedsniveau en een eventuele overschrijving; als het globale \"Off\" is, is alles \"Off\".",
-  "settings.platform.help.overrides": "Een overschrijving per dienst vervangt het gebiedsniveau van die dienst; gebruik dit alleen wanneer een dienst een ander niveau nodig heeft.",
+  'settings.platform.subnav.aria': 'Bewerkingssecties',
+  'settings.platform.tab.services': 'Diensten',
+  'settings.platform.tab.services.desc':
+    'Beheer van de gewenste status van de API- en MCP-servers, met eerlijke backend-resultaten en een bewerkingsaudit.',
+  'settings.platform.tab.logs': 'Logboeken',
+  'settings.platform.tab.logs.desc':
+    'Configuratie van logniveaus en gestructureerde API-logstaart (alleen-lezen).',
+  'settings.platform.serviceDetails': 'Beheerdetails en beperkingen',
+  'settings.platform.help.services':
+    'Deze acties leggen de gewenste status van de dienst vast; de interface veronderstelt geen directe procesbesturing (bijvoorbeeld API-zelfherstart of MCP-stdio-start).',
+  'settings.platform.help.outcomes':
+    'Het resultaat geeft aan wat de backend deed: "Supervisor vereist" en "Niet ondersteund" betekenen dat een externe supervisor moet handelen — de gewenste status is alleen vastgelegd.',
+  'settings.platform.help.logLevels':
+    'Het globale niveau begrenst alle diensten; elk gebied gebruikt het strengste van het globale en het gebiedsniveau. "Off" dempt alles.',
+  'settings.platform.help.effective':
+    'Het effectieve niveau per dienst combineert het globale, het gebiedsniveau en een eventuele overschrijving; als het globale "Off" is, is alles "Off".',
+  'settings.platform.help.overrides':
+    'Een overschrijving per dienst vervangt het gebiedsniveau van die dienst; gebruik dit alleen wanneer een dienst een ander niveau nodig heeft.',
   'settings.reminders.cardTitle': 'Dashboardherinneringen',
   'settings.reminders.enabled.label': 'Lokale herinneringen genereren',
   'settings.reminders.note':
@@ -1919,7 +1941,7 @@ export const nlNL: Catalog = {
   'settings.privacy.retention.column.schedule': 'Schema',
   'settings.privacy.retention.column.disposalAction': 'Geplande actie',
   'settings.privacy.retention.column.execution': 'Uitvoering',
-  'settings.privacy.retention.execution.false': 'destructive_execution_supported: false',
+  'settings.privacy.retention.execution.false': 'destructieve_execution_supported: false',
   'settings.privacy.retention.active.true': 'Actief',
   'settings.privacy.retention.active.false': 'Inactief',
   'settings.privacy.retention.status.all': 'Alle statussen',
@@ -1978,7 +2000,7 @@ export const nlNL: Catalog = {
   'settings.privacy.execution.searchPlaceholder':
     'Beleid, doel, verantwoordelijke, blokkering of volgende stap',
   'settings.privacy.execution.statusFilter': 'Uitvoeringsstatus',
-  "settings.privacy.execution.status.all": "Alle uitvoeringsstatussen",
+  'settings.privacy.execution.status.all': 'Alle uitvoeringsstatussen',
   'settings.about.cardTitle': 'Over',
   'settings.about.serverVersion': 'Serverversie',
   'settings.about.uiVersion': 'Interfaceversie',
@@ -2053,7 +2075,7 @@ export const nlNL: Catalog = {
   'enum.dispatchChannel.Email': 'Email',
   'enum.dispatchChannel.HandDelivery': 'Persoonlijke overhandiging',
   'enum.dispatchChannel.Publication': 'Publicatie',
-  'enum.dispatchChannel.Portal': 'Portal',
+  'enum.dispatchChannel.Portal': 'Portaal',
   'enum.actState.Draft': 'Concept',
   'enum.actState.Review': 'In beoordeling',
   'enum.actState.Convened': 'Bijeengeroepen',
@@ -2494,30 +2516,40 @@ export const nlNL: Catalog = {
   'templates.source.user': 'Door gebruiker gemaakt',
   'templates.editor.title.create': 'Nieuw sjabloon',
   'templates.editor.title.edit': 'Sjabloon bewerken',
-  'templates.editor.intro': 'Een sjabloon is een herbruikbaar notulenskelet: het bepaalt de structuur en de blokken van het document en vormt geen enkele juridische garantie.',
+  'templates.editor.intro':
+    'Een sjabloon is een herbruikbaar notulenskelet: het bepaalt de structuur en de blokken van het document en vormt geen enkele juridische garantie.',
   'templates.editor.field.id.label': 'Identificatie',
-  'templates.editor.field.id.help': 'Versie-identificatie in de vorm user-<naam>/v<n>, bijvoorbeeld user-encosto-ata/v1. Het voorvoegsel user- is voorbehouden aan uw eigen sjablonen.',
+  'templates.editor.field.id.help':
+    'Versie-identificatie in de vorm user-<naam>/v<n>, bijvoorbeeld user-encosto-ata/v1. Het voorvoegsel user- is voorbehouden aan uw eigen sjablonen.',
   'templates.editor.field.family.label': 'Entiteitsfamilie',
-  'templates.editor.field.family.help': 'Het type entiteit waarop het sjabloon van toepassing is (handelsvennootschap, vereniging van eigenaren, vereniging, stichting of coöperatie).',
+  'templates.editor.field.family.help':
+    'Het type entiteit waarop het sjabloon van toepassing is (handelsvennootschap, vereniging van eigenaren, vereniging, stichting of coöperatie).',
   'templates.editor.field.stage.label': 'Notulenfase',
-  'templates.editor.field.stage.help': 'De levenscyclusfase van de notulen waarvoor dit sjabloon is bedoeld.',
+  'templates.editor.field.stage.help':
+    'De levenscyclusfase van de notulen waarvoor dit sjabloon is bedoeld.',
   'templates.editor.field.channels.label': 'Kanalen',
-  'templates.editor.field.channels.help': 'Vergaderkanalen die dit sjabloon ondersteunt (fysiek, op afstand of gemengd).',
+  'templates.editor.field.channels.help':
+    'Vergaderkanalen die dit sjabloon ondersteunt (fysiek, op afstand of gemengd).',
   'templates.editor.field.signaturePolicy.label': 'Ondertekeningsbeleid',
-  'templates.editor.field.signaturePolicy.help': 'De door het sjabloon voorgestelde ondertekeningsvoorkeur. Dit certificeert of garandeert niet de juridische geldigheid van handtekeningen.',
+  'templates.editor.field.signaturePolicy.help':
+    'De door het sjabloon voorgestelde ondertekeningsvoorkeur. Dit certificeert of garandeert niet de juridische geldigheid van handtekeningen.',
   'templates.editor.field.rulePackId.label': 'Regelpakket',
-  'templates.editor.field.rulePackId.help': 'Identificatie van het toepasselijke regelpakket. Wetsverwijzingen worden door het systeem afgeleid en kunnen niet worden bewerkt.',
+  'templates.editor.field.rulePackId.help':
+    'Identificatie van het toepasselijke regelpakket. Wetsverwijzingen worden door het systeem afgeleid en kunnen niet worden bewerkt.',
   'templates.editor.field.locale.label': 'Taal',
-  'templates.editor.field.locale.help': 'Taal van de sjablooninhoud. Momenteel wordt alleen pt-PT ondersteund.',
+  'templates.editor.field.locale.help':
+    'Taal van de sjablooninhoud. Momenteel wordt alleen pt-PT ondersteund.',
   'templates.editor.field.blocks.label': 'Blokken',
-  'templates.editor.field.blocks.help': 'De reeks blokken waaruit het document bestaat (kop, alinea, sleutel-waarde, stemtabel, ondertekeningsblok, pagina-einde of regel). Ten minste één blok is vereist.',
+  'templates.editor.field.blocks.help':
+    'De reeks blokken waaruit het document bestaat (kop, alinea, sleutel-waarde, stemtabel, ondertekeningsblok, pagina-einde of regel). Ten minste één blok is vereist.',
   'templates.import.title': 'Sjabloon importeren',
   'templates.import.pickFile': 'JSON-bestand kiezen',
   'templates.import.preflight': 'Bezig met valideren…',
   'templates.import.valid': 'Het bestand is geldig. U kunt de import bevestigen.',
   'templates.import.invalid': 'Het bestand is ongeldig. Corrigeer de fouten vóór het importeren.',
   'templates.import.confirm': 'Import bevestigen',
-  'templates.delete.confirm': 'Sjabloon “{id}” verwijderen? Deze actie kan niet ongedaan worden gemaakt.',
+  'templates.delete.confirm':
+    'Sjabloon “{id}” verwijderen? Deze actie kan niet ongedaan worden gemaakt.',
   'templates.delete.success': 'Sjabloon verwijderd.',
   'templates.error.too_large': 'Het sjabloonbestand overschrijdt de toegestane grootte.',
   'templates.error.malformed': 'Het sjabloon is onjuist opgemaakt of bevat onbekende velden.',
@@ -2527,7 +2559,8 @@ export const nlNL: Catalog = {
   'templates.error.unknown_threshold': 'Het sjabloon verwijst naar een niet-bestaande drempel.',
   'templates.error.unsupported_locale': 'De opgegeven taal wordt niet ondersteund.',
   'templates.error.conflict': 'Er bestaat al een sjabloon met deze identificatie.',
-  'templates.error.id_mismatch': 'De identificatie van het sjabloon komt niet overeen met die in de koppeling.',
+  'templates.error.id_mismatch':
+    'De identificatie van het sjabloon komt niet overeen met die in de koppeling.',
   'templates.toast.created': 'Sjabloon “{id}” gemaakt.',
   'templates.toast.updated': 'Sjabloon “{id}” bijgewerkt.',
   'templates.toast.deleted': 'Sjabloon “{id}” verwijderd.',
@@ -2537,24 +2570,24 @@ export const nlNL: Catalog = {
   // --- Qualified CMD signing (t57) ------------------------------------------------
   'settings.signing.family.hint': 'Aanbevolen: Chave Móvel Digital.',
   'settings.signing.requireQualified.hint':
-    'Bepaalt alleen de status “afgerond (gekwalificeerd)” van de akte — verzegelen wordt nooit geblokkeerd. Als dit aanstaat, blijft een verzegelde akte “wacht op gekwalificeerde handtekening” totdat er een geldige gekwalificeerde handtekening is.',
-  'settings.signing.cmd.title': 'Chave Móvel Digital (CMD)',
+    'Als deze optie actief is, is voor verzegeling geaccepteerd technisch bewijs van een gekwalificeerde handtekening op de bevroren canonieke kopie vereist.',
+  'settings.signing.cmd.title': 'Digitale mobiele sleutel (CMD)',
   'settings.signing.cmd.intro':
     'Ondertekenen in productie vereist de AMA-inloggegevens (ApplicationId en certificaat), aangeleverd via omgevingsvariabelen. Deze waarden worden alleen ter informatie getoond.',
   'settings.signing.cmd.env': 'Omgeving',
   'settings.signing.cmd.envPreprod': 'Preproductie (AMA)',
   'settings.signing.cmd.envProd': 'Productie (AMA)',
-  'settings.signing.cmd.applicationId': 'ApplicationId',
+  'settings.signing.cmd.applicationId': 'Applicatie-id',
   'settings.signing.cmd.unset': 'Niet ingesteld',
   'settings.signing.cmd.amaCert': 'AMA-certificaat',
   'settings.signing.cmd.configured': 'Geconfigureerd',
   'settings.signing.cmd.notConfigured': 'Niet geconfigureerd',
   'signing.title': 'Gekwalificeerde handtekening',
-  'signing.unsigned.title': 'Notulen nog niet gekwalificeerd ondertekend',
+  'signing.unsigned.title': 'Canonieke kopie nog niet ondertekend',
   'signing.unsigned.body':
-    'De notulen zijn verzegeld. U kunt ze nu ondertekenen met een gekwalificeerde elektronische handtekening via Chave Móvel Digital.',
+    'De notulen zijn “Onder handtekening” en bevroren. Onderteken nu de canonieke kopie voordat u deze verzegelt.',
   'signing.required.body':
-    'Deze instelling vereist een gekwalificeerde handtekening om de akte af te ronden. Onderteken de notulen met Chave Móvel Digital om ze te voltooien.',
+    'Deze configuratie vereist een geaccepteerde handtekening voordat deze wordt verzegeld. Onderteken de canonieke kopie om de handeling te kunnen voltooien.',
   'signing.start': 'Ondertekenen met Chave Móvel Digital',
   'signing.credentials.intro':
     'Voer het mobiele nummer in dat aan de Chave Móvel Digital is gekoppeld en de ondertekenings-PIN. De PIN wordt alleen voor dit verzoek gebruikt en nooit opgeslagen.',
@@ -2587,9 +2620,9 @@ export const nlNL: Catalog = {
   'signing.signed.digest': 'Vingerafdruk van ondertekende PDF',
   'signing.download': 'Ondertekende PDF downloaden',
   'signing.technicalComparison.aria':
-    'Local technical comparison between sealed act and signed PDF',
+    'Lokale technische vergelijking tussen de canonieke kopie en de ondertekende pdf',
   'signing.technicalComparison.kicker': 'Technical comparison',
-  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.title': 'Lokale metadata van de canonieke kopie en ondertekende pdf',
   'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
   'signing.technicalComparison.badge.local': 'Local metadata only',
   'signing.technicalComparison.badge.noClaim': 'No claim',
@@ -2601,14 +2634,13 @@ export const nlNL: Catalog = {
   'signing.technicalComparison.status.notClaimed': 'Not claimed',
   'signing.technicalComparison.status.loading': 'Loading',
   'signing.technicalComparison.row.actId': 'Act ID',
-  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
   'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
   'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
   'signing.technicalComparison.row.signedDocument': 'Signed document',
   'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
   'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
   'signing.technicalComparison.detail.act': 'Act',
-  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.bundle': 'Bundel',
   'signing.technicalComparison.detail.document': 'Document',
   'signing.technicalComparison.detail.signature': 'Signature',
   'signing.technicalComparison.detail.report': 'Report',
@@ -2651,7 +2683,7 @@ export const nlNL: Catalog = {
   'signing.ccBatch.title': 'Lokale Burgerkaart-batch',
   'signing.ccBatch.badge': 'Lokale batch',
   'signing.ccBatch.description':
-    'Ondertekent meerdere verzegelde notulen met de Burgerkaart op deze computer.',
+    'Onderteken meerdere canonieke kopieën van akten in “In handtekening” met de Citizen Card op deze computer.',
   'signing.ccBatch.boundary.title': 'Alleen lokale CC-ondertekening',
   'signing.ccBatch.boundary.body':
     'Deze batch gebruikt het lokale, co-lokale eindpunt van de Burgerkaart. Het is geen CMD, externe CSC of door een aanbieder gecertificeerde batch-ondertekening; de interface toont alleen het bewijs dat de server teruggeeft.',
@@ -2668,7 +2700,7 @@ export const nlNL: Catalog = {
     'Selecteer minstens twee notulen om batch-ondertekening te gebruiken.',
   'signing.ccBatch.add.label': 'Notulen-ID',
   'signing.ccBatch.add.hint':
-    'Voeg ID’s van verzegelde notulen toe wanneer deze weergave geen lijst met meerdere documenten biedt.',
+    "Voeg handelings-ID's toe onder 'Onder handtekening' als dit oppervlak geen lijst met meerdere documenten biedt.",
   'signing.ccBatch.add.action': 'Toevoegen',
   'signing.ccBatch.manual.label': 'Handmatige ID: {id}',
   'signing.ccBatch.maxReached': 'Limiet van {max} notulen bereikt.',
@@ -2880,10 +2912,10 @@ export const nlNL: Catalog = {
   'signing.evidence.renewal.action.addDocumentTimestamp': 'documenttijdstempel toevoegen',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
     'DSS-validatietijd van handtekening vastleggen',
-  'signing.provider.cmd.title': 'Chave Móvel Digital',
+  'signing.provider.cmd.title': 'Digitale mobiele sleutel',
   'signing.provider.cmd.description':
     'Externe stroom in twee stappen: ondertekenings-PIN en SMS-code. Aanbevolen wanneer CMD actief is.',
-  'signing.provider.cc.title': 'Cartão de Cidadão',
+  'signing.provider.cc.title': 'Burgerkaart',
   'signing.provider.cc.description':
     'Lokale ondertekening met een lezer die op de desktopapplicatie is aangesloten. De PIN wordt nooit in de browser gevraagd.',
   'signing.provider.pkcs12.title': 'Lokaal PKCS#12/PFX-certificaat',
@@ -2920,7 +2952,7 @@ export const nlNL: Catalog = {
   'signing.official.provider.label': 'Provider',
   'signing.official.provider.hint':
     'Optioneel. Registreert de door de operator genoemde aanbieder; wordt niet als autoriteit gebruikt.',
-  'signing.official.provider.placeholder': 'Autenticação.gov',
+  'signing.official.provider.placeholder': 'Authenticatie.gov',
   'signing.official.source.label': 'Bron',
   'signing.official.source.hint':
     'Optioneel. Bijvoorbeeld: officiële overdracht, desktoptoepassing, aanbiedersportaal.',
@@ -2959,7 +2991,7 @@ export const nlNL: Catalog = {
   'signing.provider.manifest.environment.unknown': 'environment not locally known',
   'signing.provider.manifest.productionBlocked': 'production blocked',
   'signing.provider.manifest.productionNotBlocked': 'production not blocked by local config',
-  'signing.provider.manifest.authorization.pinOtp': 'PIN/OTP',
+  'signing.provider.manifest.authorization.pinOtp': 'Pincode/OTP',
   'signing.provider.manifest.authorization.service': 'service authorization',
   'signing.provider.manifest.authorization.user': 'user authorization',
   'signing.provider.manifest.authorization.unknown': 'authorization not locally known',
@@ -2978,7 +3010,7 @@ export const nlNL: Catalog = {
   'signing.invites.hint':
     'Registreert een externe levering en een volgtoken. Neemt geen contact op met een aanbieder, ondertekent de PDF niet en wijzigt het bewijsniveau niet.',
   'signing.invites.recipientName': 'Naam van de ondertekenaar',
-  'signing.invites.email': 'Email',
+  'signing.invites.email': 'E-mail',
   'signing.invites.providerHint': 'Aanbieder of referentie',
   'signing.invites.providerHint.placeholder': 'optioneel',
   'signing.invites.expiresAt': 'Verloopt op',
@@ -3189,17 +3221,24 @@ export const nlNL: Catalog = {
   'data.status.recoveryDrill.receiptEyebrow': 'Oefenbewijs vastgelegd',
   'data.status.recoveryDrill.verdictTitleOk': 'Back-up geverifieerd en herstelbaar',
   'data.status.recoveryDrill.verdictTitleFailed': 'Back-up niet geverifieerd',
-  'data.status.recoveryDrill.verdictWhyOk': 'De voorvalidatie en het geïsoleerde herstel zijn beide geslaagd, zonder live herstel.',
-  'data.status.recoveryDrill.verdictWhyFailed': 'De verificatie is niet voltooid – vertrouw niet op deze back-up zonder onderzoek.',
+  'data.status.recoveryDrill.verdictWhyOk':
+    'De voorvalidatie en het geïsoleerde herstel zijn beide geslaagd, zonder live herstel.',
+  'data.status.recoveryDrill.verdictWhyFailed':
+    'De verificatie is niet voltooid – vertrouw niet op deze back-up zonder onderzoek.',
   'data.status.recoveryDrill.evidenceToggle': 'Technisch bewijs',
   'data.status.syncHandoff.eyebrow': 'Lokale overdracht-voorvalidatie',
   'data.status.syncHandoff.verdictTitleReady': 'Lokaal bewijs gereed voor overdrachtscontrole',
-  'data.status.syncHandoff.verdictTitleMissing': 'Onvoldoende lokaal bewijs om de overdracht te controleren',
+  'data.status.syncHandoff.verdictTitleMissing':
+    'Onvoldoende lokaal bewijs om de overdracht te controleren',
   'data.status.syncHandoff.verdictTitleBlocked': 'Lokale overdrachtscontrole geblokkeerd',
-  'data.status.syncHandoff.verdictWhyReady': 'Het verzamelde lokale bewijs is klaar voor controle — er is geen synchronisatie, import of wijziging uitgevoerd.',
-  'data.status.syncHandoff.verdictWhyMissing': 'Er ontbreekt geverifieerd lokaal bewijs om de overdracht te controleren — verzamel wat ontbreekt voordat u doorgaat.',
-  'data.status.syncHandoff.verdictWhyBlocked': 'Blokkades verhinderen de lokale overdrachtscontrole — los ze op voordat u doorgaat.',
-  'data.status.syncHandoff.nonMutating': 'Dit is alleen een lokale voorvalidatie (proefrun): het voert de synchronisatie, de overdracht of enige gegevenswijziging niet uit.',
+  'data.status.syncHandoff.verdictWhyReady':
+    'Het verzamelde lokale bewijs is klaar voor controle — er is geen synchronisatie, import of wijziging uitgevoerd.',
+  'data.status.syncHandoff.verdictWhyMissing':
+    'Er ontbreekt geverifieerd lokaal bewijs om de overdracht te controleren — verzamel wat ontbreekt voordat u doorgaat.',
+  'data.status.syncHandoff.verdictWhyBlocked':
+    'Blokkades verhinderen de lokale overdrachtscontrole — los ze op voordat u doorgaat.',
+  'data.status.syncHandoff.nonMutating':
+    'Dit is alleen een lokale voorvalidatie (proefrun): het voert de synchronisatie, de overdracht of enige gegevenswijziging niet uit.',
   'data.status.syncHandoff.evidenceToggle': 'Technisch bewijs',
   'data.status.syncHandoff.blockers': 'Blokkades',
   'data.status.syncHandoff.missingEvidence': 'Ontbrekend bewijs',
@@ -3280,7 +3319,7 @@ export const nlNL: Catalog = {
     'Herstellen vervangt het hele archief door een geverifieerde back-up. Het herschrijft de geschiedenis nooit, maar gebeurtenissen die na de back-up zijn toegevoegd, gaan verloren.',
   'integrity.restore.archiveLabel': 'Back-up (naam of pad)',
   'integrity.restore.archiveHint': 'Een kale naam wordt opgelost binnen de back-upmap.',
-  'integrity.restore.archivePlaceholder': 'backup-….zip',
+  'integrity.restore.archivePlaceholder': 'back-up-….zip',
   'integrity.restore.keyLabel': 'Back-upsleutel (optioneel)',
   'integrity.restore.keyHint':
     'Wordt alleen verzonden om versleutelde back-ups te verifiëren; wordt niet opgeslagen of teruggegeven.',
@@ -3310,7 +3349,8 @@ export const nlNL: Catalog = {
   'integrity.restore.preflight.totalMemberBytes': 'Totaal aantal bytes van onderdelen',
   'integrity.restore.preflight.nextStep': 'Volgende stap',
   'integrity.restore.preflight.verdictReady': 'Deze back-up is geldig en kan worden hersteld.',
-  'integrity.restore.preflight.verdictBlocked': 'Deze back-up is niet door de controle gekomen – gebruik deze niet om te herstellen.',
+  'integrity.restore.preflight.verdictBlocked':
+    'Deze back-up is niet door de controle gekomen – gebruik deze niet om te herstellen.',
   'integrity.restore.preflight.verdictError': 'Deze back-up kon niet worden geverifieerd.',
   'integrity.restore.preflight.evidenceToggle': 'Technisch bewijs',
   'integrity.restore.preflight.errors': 'Fouten',
@@ -3383,7 +3423,7 @@ export const nlNL: Catalog = {
   'integrity.startOver.openingDateLabel': 'Openingsdatum',
   'integrity.startOver.signatoriesLabel': 'Vereiste ondertekenaars',
   'integrity.startOver.signatoriesHint': 'Scheid namen met komma’s.',
-  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques, …',
+  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques,…',
   'integrity.startOver.numberingLabel': 'Nummeringsschema',
   'integrity.startOver.confirm': 'Opnieuw beginnen',
   'integrity.startOver.pending': 'Bezig met opnieuw beginnen…',
@@ -3834,7 +3874,7 @@ export const nlNL: Catalog = {
     'Voor deze uitnodiging is al een antwoord vastgelegd. Deze status is geen gekwalificeerde handtekening.',
   'externalInvite.technical.title': 'Technisch resultaat',
   'externalInvite.technical.envelope': 'Envelop',
-  'externalInvite.technical.slot': 'Slot',
+  'externalInvite.technical.slot': 'Sleuf',
   'externalInvite.technical.slotStatus': 'Slotstatus',
   'externalInvite.technical.blocked.title': 'Technische slotbijwerking geblokkeerd',
   'externalInvite.technical.artifact.title': 'Bewaard technisch artefact',
@@ -3861,7 +3901,7 @@ export const nlNL: Catalog = {
   'settings.signing.providers.hint':
     'Niet-geheime metadata. De interface verzamelt op deze pagina geen privésleutels, PINs, PKCS#12-wachtwoordzinnen of OTP’s.',
   'settings.signing.providerMode.cmd': 'CMD/SCMD',
-  'settings.signing.providerMode.cc': 'Cartão de Cidadão',
+  'settings.signing.providerMode.cc': 'Burgerkaart',
   'settings.signing.providerMode.cscQtsp': 'CSC/QTSP',
   'settings.signing.providerMode.localPkcs12': 'PKCS#12 lokaal',
   'settings.signing.providerStatus.productionBlocked': 'Geblokkeerd in productie',
@@ -3944,11 +3984,11 @@ export const nlNL: Catalog = {
   'trust.provider.analysis.value':
     '{granted} verleend · {history} met historie · {supply} met punten',
   'trust.provider.duplicateNames': 'Dubbele namen',
-  'trust.tsa.title': 'TSA / RFC 3161',
+  'trust.tsa.title': 'TSA/RFC3161',
   'trust.tsa.summary.aria': 'TSA-samenvatting',
   'trust.tsa.configuredUrl': 'Geconfigureerde URL',
   'trust.tsa.status': 'Status',
-  'trust.tsa.fixture': 'Fixture',
+  'trust.tsa.fixture': 'Armatuur',
   'trust.tsa.trustedRecords': 'Vertrouwde records',
   'trust.tsa.configuration': 'Configuratie',
   'trust.tsa.profile': 'Profiel',
@@ -3983,7 +4023,7 @@ export const nlNL: Catalog = {
   'trust.tsa.statusReady': 'Gereed',
   'trust.tsa.statusUnconfigured': 'Niet geconfigureerd',
   'trust.tsa.statusError': 'Fout',
-  'trust.tsa.probePassed': 'Fixture OK',
+  'trust.tsa.probePassed': 'Armatuur oké',
   'trust.tsa.probeFailed': 'Fixture mislukt',
   'trust.tsa.policyAdvisory': 'Adviserend',
   'trust.tsa.policyTrusted': 'Vertrouwd',
@@ -4261,7 +4301,7 @@ export const nlNL: Catalog = {
     'Referenties worden versleuteld, maar dit is geen volledige vertrouwelijkheid totdat u SQLCipher of OS-verzegeling inschakelt.',
   'settings.providerCredentials.protection.strictBlocked':
     'De strikte modus staat aan: u kunt pas referenties opslaan nadat u vertrouwelijke bescherming hebt ingeschakeld.',
-  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.cmd': 'Digitale mobiele sleutel (CMD)',
   'settings.providerCredentials.mode.csc': 'CSC-QTSP',
   'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
   'settings.providerCredentials.mode.pkcs12': 'Lokale PKCS#12',
@@ -4316,7 +4356,7 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.field.httpBasicPassword': 'HTTP Basic-wachtwoord',
   'settings.providerCredentials.field.amaCertPem': 'AMA-certificaat (PEM)',
   'settings.providerCredentials.field.clientId': 'Client-ID',
-  'settings.providerCredentials.field.clientSecret': 'Client secret',
+  'settings.providerCredentials.field.clientSecret': 'Klantgeheim',
   'settings.providerCredentials.field.accessToken': 'Toegangstoken',
   'settings.providerCredentials.field.secret': 'Geheim',
   'settings.providerCredentials.field.passphrase': 'Wachtwoordzin',
@@ -4333,7 +4373,7 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.field.sandbox': 'Sandbox',
   'settings.providerCredentials.field.environment': 'Omgeving',
   'settings.providerCredentials.field.friendlyName': 'Beschrijvende naam',
-  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.localKeyId': 'Lokale sleutel-ID (hex)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-bestand',
   'settings.providerCredentials.help.mode':
     'Type ondertekeningsprovider dat u wilt configureren. Bijv. CSC/QTSP voor ondertekening op afstand, PKCS#12 voor een lokaal certificaat.',
@@ -4383,11 +4423,14 @@ export const nlNL: Catalog = {
     'Selecteert de identiteit in een .pfx op localKeyId in hexadecimaal. Bijv. „3a7f9c2b”.',
   'settings.privacy.subnav.aria': 'Privacygebieden',
   'settings.privacy.subtab.registers.label': 'Registers',
-  'settings.privacy.subtab.registers.desc': 'Verwerkers, effectbeoordelingen (DPIA), datalek-draaiboeken en doorgiftecontroles.',
+  'settings.privacy.subtab.registers.desc':
+    'Verwerkers, effectbeoordelingen (DPIA), datalek-draaiboeken en doorgiftecontroles.',
   'settings.privacy.subtab.retention.label': 'Bewaring',
-  'settings.privacy.subtab.retention.desc': 'Bewaarbeleid, verlopen kandidaten, simulatie en de wachtrij voor uitvoeringsbeoordeling.',
+  'settings.privacy.subtab.retention.desc':
+    'Bewaarbeleid, verlopen kandidaten, simulatie en de wachtrij voor uitvoeringsbeoordeling.',
   'settings.privacy.subtab.guidance.label': 'Richtlijnen',
-  'settings.privacy.subtab.guidance.desc': 'Lokaal DPIA-sjabloon en notities over de periodieke adviserende beoordeling.',
+  'settings.privacy.subtab.guidance.desc':
+    'Lokaal DPIA-sjabloon en notities over de periodieke adviserende beoordeling.',
   'settings.privacy.status.all': 'Alle statussen',
   'settings.privacy.status.draft': 'Concept',
   'settings.privacy.status.active': 'Actief',
@@ -4409,13 +4452,17 @@ export const nlNL: Catalog = {
   'settings.privacy.evidence.none': 'Geen ontvangst',
   'settings.privacy.evidence.noDetail': 'Geen detail',
   'settings.privacy.evidence.receiptBy': '{kind} door {actor}',
-  'settings.privacy.evidence.dpiaReceiptNote': 'Geen indiening bij autoriteit · Geen nalevingscertificering',
-  'settings.privacy.evidence.breachReceiptNote': 'Geen melding aan autoriteit · Geen melding aan betrokkenen',
+  'settings.privacy.evidence.dpiaReceiptNote':
+    'Geen indiening bij autoriteit · Geen nalevingscertificering',
+  'settings.privacy.evidence.breachReceiptNote':
+    'Geen melding aan autoriteit · Geen melding aan betrokkenen',
   'settings.privacy.evidence.transferReceiptNote': 'Geen goedkeuring · Geen doorgifte-uitvoering',
   'settings.privacy.register.processor.title': 'AVG-verwerkers',
-  'settings.privacy.register.processor.lede': 'Register van verwerkers, subverwerkers en gegevenscategorieën die door derden worden verwerkt.',
+  'settings.privacy.register.processor.lede':
+    'Register van verwerkers, subverwerkers en gegevenscategorieën die door derden worden verwerkt.',
   'settings.privacy.register.dpia.title': 'DPIA’s',
-  'settings.privacy.register.dpia.lede': 'Effectbeoordelingen met doel, rechtsgrond, gegevenscategorieën en huidig risico.',
+  'settings.privacy.register.dpia.lede':
+    'Effectbeoordelingen met doel, rechtsgrond, gegevenscategorieën en huidig risico.',
   'settings.privacy.register.column.processor': 'Verwerker',
   'settings.privacy.register.column.dpia': 'DPIA',
   'settings.privacy.register.column.purpose': 'Doel',
@@ -4423,9 +4470,11 @@ export const nlNL: Catalog = {
   'settings.privacy.register.column.subprocessors': 'Subverwerkers',
   'settings.privacy.register.column.updated': 'Bijgewerkt',
   'settings.privacy.guidance.title': 'Lokaal DPIA-sjabloon',
-  'settings.privacy.guidance.lede': 'Een lokaal/offline pakket met velden, vragen en controles voor een DPIA; het leest of toont geen DPIA-records, verwerkers, betrokkenen, ontvangers, notities, rechtsgronden of geheimen.',
+  'settings.privacy.guidance.lede':
+    'Een lokaal/offline pakket met velden, vragen en controles voor een DPIA; het leest of toont geen DPIA-records, verwerkers, betrokkenen, ontvangers, notities, rechtsgronden of geheimen.',
   'settings.privacy.guidance.empty.title': 'Sjabloon niet beschikbaar',
-  'settings.privacy.guidance.empty.body': 'Het lokale DPIA-pakket is niet door de API geretourneerd.',
+  'settings.privacy.guidance.empty.body':
+    'Het lokale DPIA-pakket is niet door de API geretourneerd.',
   'settings.privacy.guidance.dl.id': 'Identificatie',
   'settings.privacy.guidance.dl.scope': 'Bereik',
   'settings.privacy.guidance.dl.execution': 'Uitvoering',
@@ -4435,33 +4484,51 @@ export const nlNL: Catalog = {
   'settings.privacy.guidance.required': 'vereist: {value}',
   'settings.privacy.guidance.noClaims': 'No-claim-vlaggen',
   'settings.privacy.guidance.operatorActions': 'Operatoracties',
-  'settings.privacy.help.processor': 'Een verwerker verwerkt persoonsgegevens namens de organisatie. Dit register legt vast wie verwerkt, waarvoor, op welke rechtsgrond en welke subverwerkers worden gebruikt.',
-  'settings.privacy.help.dpia': 'Een DPIA (gegevensbeschermingseffectbeoordeling) documenteert de risico’s van een verwerking en de maatregelen om ze te beperken. Dit record is alleen lokaal en adviserend.',
-  'settings.privacy.help.breach': 'Een datalek-draaiboek verzamelt vooraf detectiekanalen, indammingsstappen en wie te melden. Hier vastleggen meldt niemand.',
-  'settings.privacy.help.transfer': 'Een doorgiftecontrole documenteert een gegevensdoorgifte buiten de EER: ontvanger, land, juridisch mechanisme en waarborgen. Vastleggen keurt de doorgifte niet goed en voert deze niet uit.',
-  'settings.privacy.help.retention': 'Een bewaarbeleid bepaalt hoe lang een gegevenscategorie wordt bewaard en de geplande actie aan het einde. Dit gebied legt het beleid vast; het verwijdert geen gegevens.',
-  'settings.privacy.help.dryRun': 'De simulatie toont welke beleidsregels op een bereik/categorie zouden passen, zonder iets uit te voeren. Het toont het effect van een beleid vooraf.',
-  'settings.privacy.help.dueCandidates': 'Een alleen-lezen scan toont records waarvan de bewaartermijn is verstreken, voor bewijsbeoordeling. Het verwijdert, anonimiseert of voltooit geen enkele wettelijke naleving.',
-  'settings.privacy.help.execution': 'De uitvoeringswachtrij bevat opgeslagen bewaarverzoeken voor operationele beoordeling. Een beoordeling sluiten legt de beslissing vast; het wijzigt geen bronrecords.',
-  'settings.privacy.help.legalHold': 'Een legal hold voorkomt verwijdering van records die onder een geschil of bewaarplicht vallen. Dit paneel vat bestaande blokkeringen samen.',
-  'settings.privacy.help.purpose': 'Het doel beschrijft, in gewone taal, waarvoor de gegevens worden verwerkt.',
-  'settings.privacy.help.legalBasis': 'De rechtsgrond is de AVG-grondslag die de verwerking toestaat (bijv. toestemming, overeenkomst, wettelijke plicht).',
-  'settings.privacy.help.risk': 'Het risiconiveau is een kwalitatieve inschatting van de mogelijke impact op betrokkenen.',
-  'settings.privacy.help.status': 'De status geeft aan of het record een concept is, actief, in beoordeling of ingetrokken.',
+  'settings.privacy.help.processor':
+    'Een verwerker verwerkt persoonsgegevens namens de organisatie. Dit register legt vast wie verwerkt, waarvoor, op welke rechtsgrond en welke subverwerkers worden gebruikt.',
+  'settings.privacy.help.dpia':
+    'Een DPIA (gegevensbeschermingseffectbeoordeling) documenteert de risico’s van een verwerking en de maatregelen om ze te beperken. Dit record is alleen lokaal en adviserend.',
+  'settings.privacy.help.breach':
+    'Een datalek-draaiboek verzamelt vooraf detectiekanalen, indammingsstappen en wie te melden. Hier vastleggen meldt niemand.',
+  'settings.privacy.help.transfer':
+    'Een doorgiftecontrole documenteert een gegevensdoorgifte buiten de EER: ontvanger, land, juridisch mechanisme en waarborgen. Vastleggen keurt de doorgifte niet goed en voert deze niet uit.',
+  'settings.privacy.help.retention':
+    'Een bewaarbeleid bepaalt hoe lang een gegevenscategorie wordt bewaard en de geplande actie aan het einde. Dit gebied legt het beleid vast; het verwijdert geen gegevens.',
+  'settings.privacy.help.dryRun':
+    'De simulatie toont welke beleidsregels op een bereik/categorie zouden passen, zonder iets uit te voeren. Het toont het effect van een beleid vooraf.',
+  'settings.privacy.help.dueCandidates':
+    'Een alleen-lezen scan toont records waarvan de bewaartermijn is verstreken, voor bewijsbeoordeling. Het verwijdert, anonimiseert of voltooit geen enkele wettelijke naleving.',
+  'settings.privacy.help.execution':
+    'De uitvoeringswachtrij bevat opgeslagen bewaarverzoeken voor operationele beoordeling. Een beoordeling sluiten legt de beslissing vast; het wijzigt geen bronrecords.',
+  'settings.privacy.help.legalHold':
+    'Een legal hold voorkomt verwijdering van records die onder een geschil of bewaarplicht vallen. Dit paneel vat bestaande blokkeringen samen.',
+  'settings.privacy.help.purpose':
+    'Het doel beschrijft, in gewone taal, waarvoor de gegevens worden verwerkt.',
+  'settings.privacy.help.legalBasis':
+    'De rechtsgrond is de AVG-grondslag die de verwerking toestaat (bijv. toestemming, overeenkomst, wettelijke plicht).',
+  'settings.privacy.help.risk':
+    'Het risiconiveau is een kwalitatieve inschatting van de mogelijke impact op betrokkenen.',
+  'settings.privacy.help.status':
+    'De status geeft aan of het record een concept is, actief, in beoordeling of ingetrokken.',
   'settings.privacy.legalHold.dl.candidates': 'Kandidaten geblokkeerd door legal hold',
   'settings.privacy.legalHold.dl.executions': 'Uitvoeringsrecords geblokkeerd door legal hold',
   'settings.privacy.legalHold.dl.openReviews': 'Geblokkeerde beoordelingen nog open',
   'settings.privacy.legalHold.dl.flags': 'Grensvlaggen',
-  'settings.privacy.legalHold.source': 'Deze cijfers komen uit de GET-scan van verlopen kandidaten en de reeds opgeslagen retentie-uitvoeringswachtrij; dit paneel doet geen wijzigende aanroepen.',
+  'settings.privacy.legalHold.source':
+    'Deze cijfers komen uit de GET-scan van verlopen kandidaten en de reeds opgeslagen retentie-uitvoeringswachtrij; dit paneel doet geen wijzigende aanroepen.',
   'settings.privacy.execution.status.awaitingReview': 'Wacht op beoordeling',
   'settings.privacy.execution.status.blocked': 'Geblokkeerd',
   'settings.privacy.execution.status.executed': 'Uitgevoerd',
-  'settings.privacy.dueCandidates.lede': 'Alleen-lezen GET-scan voor bewijsbeoordeling. Deze sectie verwijdert, anonimiseert of voltooit geen enkele wettelijke naleving.',
-  'settings.privacy.dueCandidates.summary': 'Gegenereerd op {generated} · {scope} / {category} · {active} actieve kandidaat/kandidaten · {suppressed} onderdrukt door begrensd bewijs · {withResolution} kandidaat/kandidaten met lokale afhandeling · {resolutions} afhandelingsrecord(s)',
-  'settings.privacy.dueCandidates.suppressedNote': 'Kandidaten die zijn onderdrukt door begrensd bewijs staan niet in de tabel en krijgen geen actieknoppen; bekijk het bewijs in de uitvoeringswachtrij/-geschiedenis.',
+  'settings.privacy.dueCandidates.lede':
+    'Alleen-lezen GET-scan voor bewijsbeoordeling. Deze sectie verwijdert, anonimiseert of voltooit geen enkele wettelijke naleving.',
+  'settings.privacy.dueCandidates.summary':
+    'Gegenereerd op {generated} · {scope} / {category} · {active} actieve kandidaat/kandidaten · {suppressed} onderdrukt door begrensd bewijs · {withResolution} kandidaat/kandidaten met lokale afhandeling · {resolutions} afhandelingsrecord(s)',
+  'settings.privacy.dueCandidates.suppressedNote':
+    'Kandidaten die zijn onderdrukt door begrensd bewijs staan niet in de tabel en krijgen geen actieknoppen; bekijk het bewijs in de uitvoeringswachtrij/-geschiedenis.',
   'settings.privacy.dueCandidates.suppressedSummary': 'Samenvatting: {note}',
   'settings.privacy.dueCandidates.empty.title': 'Geen verlopen kandidaten',
-  'settings.privacy.dueCandidates.empty.body': 'Er zijn geen verlopen kandidaten uit de alleen-lezen scan.',
+  'settings.privacy.dueCandidates.empty.body':
+    'Er zijn geen verlopen kandidaten uit de alleen-lezen scan.',
   'settings.privacy.dueCandidates.column.record': 'Boek en record',
   'settings.privacy.dueCandidates.column.policy': 'Beleid',
   'settings.privacy.dueCandidates.column.due': 'Vervaldatum en status',
@@ -4476,7 +4543,7 @@ export const nlNL: Catalog = {
   'settings.privacy.dueCandidates.noDueDate': 'Geen datum berekend',
   'settings.privacy.dueCandidates.evidenceState': 'Bewijsstatus',
   'settings.privacy.dueCandidates.evidenceNextStep': 'Volgende bewijsstap',
-  'settings.privacy.dueCandidates.legalHold': 'Legal hold',
+  'settings.privacy.dueCandidates.legalHold': 'juridische greep',
   'settings.privacy.dueCandidates.noLegalHold': 'Geen legal hold-blokkeringen',
   'settings.privacy.dueCandidates.requiredApprovals': 'Vereiste goedkeuringen',
   'settings.privacy.dueCandidates.noApprovals': 'Geen vereiste goedkeuringen',
@@ -4488,8 +4555,10 @@ export const nlNL: Catalog = {
   'settings.privacy.dueCandidates.priorEvidenceNextStep': 'Volgende stap eerder bewijs',
   'settings.privacy.dueCandidates.localDispositionRecorded': 'Lokale afhandeling vastgelegd',
   'settings.privacy.dueCandidates.recordedByOn': 'Vastgelegd door {actor} op {date}',
-  'settings.privacy.dueCandidates.evidenceCountFlags': 'Bewijs: {count} · operationele vlaggen: false',
-  'settings.privacy.dueCandidates.onlyNoActionEvidence': 'Alleen begrensd bewijsrecord zonder actie.',
+  'settings.privacy.dueCandidates.evidenceCountFlags':
+    'Bewijs: {count} · operationele vlaggen: false',
+  'settings.privacy.dueCandidates.onlyNoActionEvidence':
+    'Alleen begrensd bewijsrecord zonder actie.',
   'settings.privacy.dueCandidates.onlyArchiveEvidence': 'Alleen begrensd archiefbewijsrecord.',
   'settings.privacy.dueCandidates.onlyReviewEvidence': 'Alleen bewijsbeoordeling.',
   'settings.privacy.dueCandidates.localDispositionExists': 'Lokale afhandeling bestaat',
@@ -4503,16 +4572,22 @@ export const nlNL: Catalog = {
   'settings.privacy.dueCandidates.recordingArchive': 'Archiefbewijs vastleggen…',
   'settings.privacy.dueCandidates.requestReview': 'Bewijsbeoordeling aanvragen',
   'settings.privacy.dueCandidates.recordingReview': 'Beoordeling vastleggen…',
-  'settings.privacy.dueCandidates.noDuplicate': 'Er wordt geen dubbel verzoek aangemaakt; de scan is alleen-lezen.',
+  'settings.privacy.dueCandidates.noDuplicate':
+    'Er wordt geen dubbel verzoek aangemaakt; de scan is alleen-lezen.',
   'settings.privacy.dueCandidates.requestedAt': 'Aangevraagd op {date}',
   'settings.privacy.dueCandidates.queueEvidenceState': 'Bewijsstatus in wachtrij',
   'settings.privacy.dueCandidates.queueNextStep': 'Volgende stap in wachtrij',
-  'settings.privacy.dueCandidates.noActionHint': 'Legt alleen begrensd geen-actie-bewijs vast; keurt geen verwijdering goed en voert deze niet uit.',
-  'settings.privacy.dueCandidates.archiveHint': 'Legt alleen begrensd archiefbewijs vast; keurt geen verwijdering goed en voert deze niet uit.',
-  'settings.privacy.dueCandidates.reviewHint': 'Legt een review_only-verzoek vast; keurt geen verwijdering goed en voert deze niet uit.',
-  'settings.privacy.execution.lede': 'Opgeslagen retentie-uitvoeringsrecords voor operationele beoordeling.',
+  'settings.privacy.dueCandidates.noActionHint':
+    'Legt alleen begrensd geen-actie-bewijs vast; keurt geen verwijdering goed en voert deze niet uit.',
+  'settings.privacy.dueCandidates.archiveHint':
+    'Legt alleen begrensd archiefbewijs vast; keurt geen verwijdering goed en voert deze niet uit.',
+  'settings.privacy.dueCandidates.reviewHint':
+    'Legt een review_only-verzoek vast; keurt geen verwijdering goed en voert deze niet uit.',
+  'settings.privacy.execution.lede':
+    'Opgeslagen retentie-uitvoeringsrecords voor operationele beoordeling.',
   'settings.privacy.execution.empty.title': 'Geen uitvoeringsrecords',
-  'settings.privacy.execution.empty.body': 'De beoordelingswachtrij heeft nog geen opgeslagen verzoeken.',
+  'settings.privacy.execution.empty.body':
+    'De beoordelingswachtrij heeft nog geen opgeslagen verzoeken.',
   'settings.privacy.execution.column.request': 'Verzoek',
   'settings.privacy.execution.column.blockers': 'Blokkeringen en goedkeuringen',
   'settings.privacy.execution.column.nextStep': 'Volgende stap',
@@ -4530,28 +4605,492 @@ export const nlNL: Catalog = {
   'settings.privacy.toast.archiveEvidenceRecorded': 'Begrensd archiefbewijs vastgelegd.',
   'settings.privacy.toast.noActionEvidenceRecorded': 'Begrensd geen-actie-bewijs vastgelegd.',
   'settings.privacy.toast.reviewRequestRecorded': 'Verzoek om bewijsbeoordeling vastgelegd.',
-  'settings.privacy.toast.archiveEvidenceSent': 'Verzoek om archiefbewijs verzonden; geen record geretourneerd.',
-  'settings.privacy.toast.noActionEvidenceSent': 'Verzoek om geen-actie-bewijs verzonden; geen record geretourneerd.',
-  'settings.privacy.toast.reviewRequestSent': 'Beoordelingsverzoek verzonden; geen uitvoeringsrecord geretourneerd.',
+  'settings.privacy.toast.archiveEvidenceSent':
+    'Verzoek om archiefbewijs verzonden; geen record geretourneerd.',
+  'settings.privacy.toast.noActionEvidenceSent':
+    'Verzoek om geen-actie-bewijs verzonden; geen record geretourneerd.',
+  'settings.privacy.toast.reviewRequestSent':
+    'Beoordelingsverzoek verzonden; geen uitvoeringsrecord geretourneerd.',
   'settings.privacy.toast.dispositionRecorded': 'Lokale bewijsafhandeling vastgelegd.',
   'settings.privacy.advisory.detail.noReceipt': 'Geen lokale beoordelings-/oefeningsontvangst.',
-  'settings.privacy.advisory.detail.underReview': 'Lokale status in beoordeling, geen juridische conclusie.',
+  'settings.privacy.advisory.detail.underReview':
+    'Lokale status in beoordeling, geen juridische conclusie.',
   'settings.privacy.advisory.detail.nextReview': 'Volgende lokale beoordeling: {date}.',
   'settings.privacy.advisory.detail.lastEvidence': 'Laatste bewijs: {date}.',
-  'settings.privacy.advisory.detail.noClaims': 'Geen melding, goedkeuring, uitvoering of certificering.',
-  'settings.privacy.help.guidance': 'Een lokaal, offline pakket met velden, vragen en controles om een DPIA te begeleiden; het is alleen richtlijn en vervangt geen juridische beoordeling.',
+  'settings.privacy.advisory.detail.noClaims':
+    'Geen melding, goedkeuring, uitvoering of certificering.',
+  'settings.privacy.help.guidance':
+    'Een lokaal, offline pakket met velden, vragen en controles om een DPIA te begeleiden; het is alleen richtlijn en vervangt geen juridische beoordeling.',
   'data.status.subnav.aria': 'Subsecties van gegevensbeheer',
   'data.status.tab.storage': 'Opslag',
-  'data.status.tab.storage.desc': 'Ruimtegebruik, machtigingen van de gegevensmap en opschoning van lokale bestanden.',
+  'data.status.tab.storage.desc':
+    'Ruimtegebruik, machtigingen van de gegevensmap en opschoning van lokale bestanden.',
   'data.status.tab.backup': 'Back-ups en herstel',
-  'data.status.tab.backup.desc': 'Operationele back-up, hersteloefeningen en voorcontroles voor herstel en handoff.',
+  'data.status.tab.backup.desc':
+    'Operationele back-up, hersteloefeningen en voorcontroles voor herstel en handoff.',
   'data.status.tab.keys': 'Sleutels en herstel',
-  'data.status.tab.keys.desc': 'Rotatie van de databaseversleutelingssleutel en reset- of opnieuw-beginnen-bewerkingen.',
-  'data.status.help.recoveryDrill': 'Een hersteloefening controleert en registreert of een back-upkopie in een gecontroleerde lokale oefening kan worden geopend en gelezen. De oefening voert geen echt herstel uit, garandeert geen toekomstige bruikbaarheid en valideert geen bewaring buiten de locatie.',
-  'data.status.help.keyRotation': 'Rotatie vervangt de SQLCipher-versleutelingssleutel van de duurzame database met behoud van de gegevens. De voorcontrole is alleen-lezen; de uitvoering past de rekey toe.',
-  'data.status.help.exportCleanup': 'Verwijdert alleen oude lokale exportbestanden volgens het geconfigureerde beleid. Het is geen wettelijke wissing, AVG-afronding of archiefverwijdering.',
-  'data.status.help.crashCleanup': 'Verwijdert oude lokale crashdiagnostiek die op schijf is opgeslagen. Het raakt het grootboek en de domeingegevens niet aan.',
-  'data.status.help.platformLogsCleanup': 'Verwijdert alleen de lokale platformlogrij in platform-logs.json. Verwijdert geen stdout/stderr, SIEM, grootboek of auditketen.',
-  'data.status.help.startOver': 'Opnieuw beginnen archiveert de huidige geschiedenis en gaat verder met lege domeingegevens, met behoud van gebruikers en instellingen. Een reset wist gegevens daarentegen destructief.',
-  'data.status.help.reset': 'Gegevens wissen verwijdert domeingegevens maar behoudt het grootboek; een fabrieksreset wist alles naar een nieuwe instantie. Alle vereisen de exacte zin en herauthenticatie.',
+  'data.status.tab.keys.desc':
+    'Rotatie van de databaseversleutelingssleutel en reset- of opnieuw-beginnen-bewerkingen.',
+  'data.status.help.recoveryDrill':
+    'Een hersteloefening controleert en registreert of een back-upkopie in een gecontroleerde lokale oefening kan worden geopend en gelezen. De oefening voert geen echt herstel uit, garandeert geen toekomstige bruikbaarheid en valideert geen bewaring buiten de locatie.',
+  'data.status.help.keyRotation':
+    'Rotatie vervangt de SQLCipher-versleutelingssleutel van de duurzame database met behoud van de gegevens. De voorcontrole is alleen-lezen; de uitvoering past de rekey toe.',
+  'data.status.help.exportCleanup':
+    'Verwijdert alleen oude lokale exportbestanden volgens het geconfigureerde beleid. Het is geen wettelijke wissing, AVG-afronding of archiefverwijdering.',
+  'data.status.help.crashCleanup':
+    'Verwijdert oude lokale crashdiagnostiek die op schijf is opgeslagen. Het raakt het grootboek en de domeingegevens niet aan.',
+  'data.status.help.platformLogsCleanup':
+    'Verwijdert alleen de lokale platformlogrij in platform-logs.json. Verwijdert geen stdout/stderr, SIEM, grootboek of auditketen.',
+  'data.status.help.startOver':
+    'Opnieuw beginnen archiveert de huidige geschiedenis en gaat verder met lege domeingegevens, met behoud van gebruikers en instellingen. Een reset wist gegevens daarentegen destructief.',
+  'data.status.help.reset':
+    'Gegevens wissen verwijdert domeingegevens maar behoudt het grootboek; een fabrieksreset wist alles naar een nieuwe instantie. Alle vereisen de exacte zin en herauthenticatie.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.convening.advisory.title': 'Lokale kennisgeving van wettelijke oproep',
+  'acts.convening.advisory.missingMeetingDate':
+    'Registreer de vergaderdatum om de lokale aankondigingsdatum te berekenen.',
+  'acts.convening.advisory.missingEvidence':
+    'Noteer de datum/wijze van verzending, de daadwerkelijke voorafgaande kennisgeving en de referentie van het bewaarde bewijsmateriaal.',
+  'acts.convening.advisory.noClaims':
+    'Alleen lokale metadata; beweert geen juridische toereikendheid, geldige externe levering of voltooiing van de workflow.',
+  'acts.convening.recipients.title': 'Ontvangers bellen',
+  'acts.convening.recipients.hint':
+    'Lokale gegevens die worden gebruikt als bewijs van verzending. Naamloze regels worden niet opgeslagen.',
+  'acts.convening.recipients.add': 'Ontvanger toevoegen',
+  'acts.convening.recipients.empty':
+    'Geen geregistreerde ontvangers. Voeg ten minste één ontvanger toe voordat u lokaal verzendbewijs registreert.',
+  'acts.convening.recipients.rowLabel': 'Ontvanger {number}',
+  'acts.convening.recipients.name': 'Naam',
+  'acts.convening.recipients.contact': 'Contact',
+  'acts.convening.recipients.contactPlaceholder':
+    'Bijvoorbeeld: e-mailadres, adres, account of intern contact',
+  'acts.convening.recipients.channel': 'Nogal',
+  'acts.convening.recipients.dispatchedAt': 'Binnen verzonden',
+  'acts.convening.recipients.reference': 'Verzendreferentie',
+  'acts.convening.recipients.referencePlaceholder':
+    'Bijv.: RR123456789PT, ontvangstbewijs, bericht-ID',
+  'acts.convening.recipients.remove': 'Ontvanger verwijderen',
+  'acts.convening.evidence.aria': 'Lokaal bewijs van uitgifte van de dagvaarding',
+  'acts.convening.evidence.boundary':
+    'Registreert alleen lokaal bewijs van verzending en herkomst in het grootboek. Verstuurt geen e-mail/SMS, bevestigt geen externe levering, beweert geen wettelijke toereikendheid, voltooiing van de workflow, aanvaarding door registratie/DRE of aanvaarding door een aanbieder.',
+  'acts.convening.evidence.ready':
+    'Markeer {count} bestaande ontvanger(s) met de aangegeven datum en, indien ingevuld, het medium en de lokale referentie.',
+  'acts.convening.evidence.saveRecipients':
+    'Bewaar de notulen om de ontvangers vast te leggen voordat u lokaal bewijs van verzending opneemt.',
+  'acts.convening.evidence.requirements':
+    'Vereist reeds bestaande ontvangers in de kennisgeving en een ingevulde verzenddatum.',
+  'acts.convening.evidence.recording': 'Plaatselijk bewijsmateriaal vastleggen',
+  'acts.convening.evidence.record': 'Lokale verzending registreren',
+  'acts.convening.evidence.recorded': 'Lokaal bewijs van verzending geregistreerd.',
+  'templates.editor.field.id.placeholder': 'user-backrest-ata/v1',
+  'entities.fiscalYearEnd.cardTitle': 'Boekjaar',
+  'entities.fiscalYearEnd.fieldLabel': 'Het afsluiten van de oefening',
+  'entities.fiscalYearEnd.inputLabel': 'Het jaar afsluiten (MM-DD)',
+  'entities.fiscalYearEnd.hint': 'Optioneel. Leeg houdt het slot standaard op 12-31.',
+  'entities.fiscalYearEnd.invalid': 'Gebruik een geldige datum in MM-DD-formaat.',
+  'entities.fiscalYearEnd.placeholder': '12-31',
+  'entities.fiscalYearEnd.updated': 'Bijgewerkt boekjaar.',
+  'entities.fiscalYearEnd.saving': 'Om op te slaan',
+  'entities.fiscalYearEnd.save': 'Zip opslaan',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'uiLiteral.actDocumentPanel.gereConvocatoriasEAposOSeloCertidoesE':
+    'Genereer mededelingen en, na verzegeling, certificaten en uittreksels zonder de canonieke PDF/A te vervangen.',
+  'uiLiteral.actDocumentPanel.minutasGeradas': 'Gegenereerde minuten',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecaoTecnicaNaoEncontrouMembrosCadesOu':
+    'Bij de technische inspectie zijn in de container geen erkende CAdES- of XAdES-leden aangetroffen.',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecionarContentorAsicLocal':
+    'Lokale ASiC-container inspecteren...',
+  'uiLiteral.asicSignatureInspectorPanel.assinaturasTecnicas': 'Technische abonnementen',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadores': 'Blokkers',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadoresEDiagnosticosDeAssinatura':
+    'Handtekeningblokkers en diagnostiek',
+  'uiLiteral.asicSignatureInspectorPanel.contentorAsic': 'ASiC-container',
+  'uiLiteral.asicSignatureInspectorPanel.diagnosticoDeManifestos': 'Duidelijke diagnose',
+  'uiLiteral.asicSignatureInspectorPanel.evidenciaEmbebidaEBloqueadores':
+    'Ingebed bewijs en blokkers',
+  'uiLiteral.asicSignatureInspectorPanel.indicadores': 'Indicatoren',
+  'uiLiteral.asicSignatureInspectorPanel.inspecaoTecnicaLocal': 'Technische inspectie ter plaatse',
+  'uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic': 'ASiC technisch inspecteur',
+  'uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao':
+    'Lees alleen lokale .asice/.sce/.zip-containers. Ondertekent niet, bewaart geen artefacten, belt geen providers en raadpleegt TSL/TSA/OCSP/CRL niet live.',
+  'uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas': 'Expliciete beperkingen',
+  'uiLiteral.asicSignatureInspectorPanel.ocorrencias': 'Voorvallen',
+  'uiLiteral.asicSignatureInspectorPanel.oEndpointRecusouAInspecaoNenhumArtefactoFoi':
+    'Het eindpunt weigerde inspectie; er zijn geen artefacten ondertekend, bewaard of gewijzigd.',
+  'uiLiteral.asicSignatureInspectorPanel.perfilDoContentor': 'Containerprofiel',
+  'uiLiteral.asicSignatureInspectorPanel.resultadoAsic': 'ASiC-resultaat',
+  'uiLiteral.asicSignatureInspectorPanel.semAssinaturasReconhecidas': 'Geen handtekeningen herkend',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeAssinaturaReportados':
+    'Er zijn geen handtekeningdiagnostiek gerapporteerd.',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeManifestoReportados':
+    'Er zijn geen manifeste diagnoses gemeld.',
+  'uiLiteral.asicSignatureInspectorPanel.semTimestampsDeArquivoAsicReportados':
+    'Er zijn geen tijdstempels van ASiC-bestanden gerapporteerd.',
+  'uiLiteral.asicSignatureInspectorPanel.timestampsDeArquivo': 'Tijdstempels van bestanden',
+  'uiLiteral.asicSignatureInspectorPanel.validacaoCadesLimitada': 'Beperkte CADES-validatie',
+  'uiLiteral.bookDetailPage.a': 'de',
+  'uiLiteral.bookDetailPage.abrirAta': 'geopende notulen',
+  'uiLiteral.bookDetailPage.aceiteParaReferenciaAuxiliar': 'Accepteer voor aanvullende referentie',
+  'uiLiteral.bookDetailPage.aceites': '· geaccepteerd',
+  'uiLiteral.bookDetailPage.aEntidadeEOLivroSaoPreenchidosA':
+    'De entiteit en het boek worden gevuld op basis van dit detail:',
+  'uiLiteral.bookDetailPage.aImportacaoPreservadaAindaNaoDevolveuRelatorioOcr':
+    'De bewaarde import heeft nog geen lokaal OCR/canoniek rapport geretourneerd.',
+  'uiLiteral.bookDetailPage.ambito': 'Domein',
+  'uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras':
+    'Wettelijke bewaring blokkeert verwijdering door middel van bewaarregels zolang deze actief is. Dit paneel toont lokaal bewijs van de status/revisie en keurt verwijdering niet goed en verklaart ook niet dat het aan de wettelijke voorschriften voldoet.',
+  'uiLiteral.bookDetailPage.arquivoLegalPacote': '· juridisch dossier/pakket:',
+  'uiLiteral.bookDetailPage.artefacto': 'Artefact',
+  'uiLiteral.bookDetailPage.artefactos': 'Artefacten',
+  'uiLiteral.bookDetailPage.assinatura': '· handtekening:',
+  'uiLiteral.bookDetailPage.ataCanonica': '· canonieke notulen:',
+  'uiLiteral.bookDetailPage.ataCanonicaCriada': '· canonieke handeling gecreëerd:',
+  'uiLiteral.bookDetailPage.ataCanonicaDocumentoCanonicoPacoteDeArquivoAssinatura':
+    'Canonieke handeling, canoniek document, bestandspakket, handtekening, zegel, PDF/A, PDF/UA en rechtsgeldigheid.',
+  'uiLiteral.bookDetailPage.ataCanonicaReclamada': '· canonieke handeling geclaimd:',
+  'uiLiteral.bookDetailPage.ataCriada': 'Gemaakte minuten:',
+  'uiLiteral.bookDetailPage.ataMutavelCriada': '· veranderlijke minuten gemaakt:',
+  'uiLiteral.bookDetailPage.ataMutavelDeDestino': 'Veranderlijke minuten van bestemming',
+  'uiLiteral.bookDetailPage.ator': 'Acteur',
+  'uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte': 'Blokken negeren beoordeling',
+  'uiLiteral.bookDetailPage.bloqueios': 'Sloten',
+  'uiLiteral.bookDetailPage.certificacaoDeArquivo': 'bestandscertificering:',
+  'uiLiteral.bookDetailPage.confirmoQueEstaRevisaoEApenasMetadadoAuxiliar':
+    'Ik bevestig dat deze herziening slechts aanvullende OCR-metagegevens betreft en geen canonieke handeling, canoniek document, handtekening of rechtsgeldigheid creëert.',
+  'uiLiteral.bookDetailPage.confirmoQueEsteRascunhoOcrEAuxiliarNao':
+    'Ik bevestig dat dit OCR-concept aanvullend en niet-canoniek is en geen notulen, documenten, handtekeningen of juridische geldigheid creëert.',
+  'uiLiteral.bookDetailPage.contexto': 'Context',
+  'uiLiteral.bookDetailPage.conversaoCanonica': 'canonieke conversie:',
+  'uiLiteral.bookDetailPage.criado': 'Gemaakt',
+  'uiLiteral.bookDetailPage.criaOuDevolveUmDossierSoComMetadados':
+    'Maak of retourneer een dossier met alleen metagegevens, verteer en bekijk het bewijsmateriaal van het geaccepteerde OCR-concept. Er worden geen notulen, documenten, PDF/A, handtekening, zegel, bestandspakket of rechtsgeldigheid aangemaakt.',
+  'uiLiteral.bookDetailPage.definidaEm': 'Instellen',
+  'uiLiteral.bookDetailPage.desconhecidos': '· onbekend',
+  'uiLiteral.bookDetailPage.digestDaFonteOcr': 'OCR-lettertypeoverzicht',
+  'uiLiteral.bookDetailPage.digestPresente': 'huidige spijsvertering:',
+  'uiLiteral.bookDetailPage.disposalApproved': '· verwijdering_goedgekeurd:',
+  'uiLiteral.bookDetailPage.documentoAssinado': '· ondertekend document:',
+  'uiLiteral.bookDetailPage.documentoCanonico': '· canoniek document:',
+  'uiLiteral.bookDetailPage.dossier': 'Dossier',
+  'uiLiteral.bookDetailPage.dossierAssociado': 'Bijbehorend dossier',
+  'uiLiteral.bookDetailPage.dossierJaRegistado': 'Dossier is al geregistreerd',
+  'uiLiteral.bookDetailPage.draftMutavel': 'veranderlijke diepgang:',
+  'uiLiteral.bookDetailPage.estaAcaoNaoCriaAtaCanonicaDocumentoCanonico':
+    'Deze actie creëert geen canonieke handeling, canoniek document, PDF/A, handtekening of rechtsgeldigheid.',
+  'uiLiteral.bookDetailPage.estado': 'Staat',
+  'uiLiteral.bookDetailPage.estado.1528o1': '· staat',
+  'uiLiteral.bookDetailPage.estado.kzwel3': 'Staat:',
+  'uiLiteral.bookDetailPage.estadoDeRevisaoOcrDigestDeTextoQuando':
+    "OCR-beoordelingsstatus, tekstoverzicht indien aangegeven, herziene pagina's, OCR-engine en dossiermetagegevens indien beschikbaar.",
+  'uiLiteral.bookDetailPage.estaImportacaoPreservadaAindaNaoTemOcrAuxiliar':
+    'Deze bewaarde import beschikt nog niet over aanvullende OCR ter beoordeling.',
+  'uiLiteral.bookDetailPage.estesPacotesPreservamCopiasDeLivrosEmPapel':
+    'In deze pakketten worden papieren exemplaren van boeken bewaard ter referentie. Ze vervangen de canonieke digitale notulen niet en verklaren geen rechtsgeldigheid, PDF/A, handtekeninggeldigheid of gekwalificeerde handtekening.',
+  'uiLiteral.bookDetailPage.evidenciaDeExecucaoDeConversaoRevista':
+    'Bewijs van herziene conversie-uitvoering',
+  'uiLiteral.bookDetailPage.evidenciaRevista': 'Beoordeeld bewijsmateriaal',
+  'uiLiteral.bookDetailPage.exclui': 'Exclusief',
+  'uiLiteral.bookDetailPage.execucoesLigadas': 'gekoppelde uitvoeringen:',
+  'uiLiteral.bookDetailPage.ficheiro': 'Bestand',
+  'uiLiteral.bookDetailPage.flagsSemExecucao': 'Niet-uitvoerende vlaggen',
+  'uiLiteral.bookDetailPage.flagsSemReivindicacao': 'Vlaggen zonder claim',
+  'uiLiteral.bookDetailPage.fluxoOperador': 'Operatorstroom',
+  'uiLiteral.bookDetailPage.importacaoPreservada': 'Import behouden',
+  'uiLiteral.bookDetailPage.inclui': 'Inclusief',
+  'uiLiteral.bookDetailPage.legalComplianceClaimed': 'legal_compliance_claimed:',
+  'uiLiteral.bookDetailPage.limitesDoDossier': 'Dossierlimieten',
+  'uiLiteral.bookDetailPage.metadados': '· metagegevens:',
+  'uiLiteral.bookDetailPage.minutasCanonicas': '· canonieke notulen:',
+  'uiLiteral.bookDetailPage.naoCanonico': 'Niet-canoniek',
+  'uiLiteral.bookDetailPage.naoHaPacotesDeLivroEmPapelPreservados':
+    'Er zijn geen papieren boekpakketten bewaard gebleven voor deze boekreferentie.',
+  'uiLiteral.bookDetailPage.naResposta': 'In het antwoord:',
+  'uiLiteral.bookDetailPage.noArtefacto': 'In het artefact:',
+  'uiLiteral.bookDetailPage.noEventoDeLedger': '· in de grootboekgebeurtenis:',
+  'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
+    'Het lokale DGLAB-manifest is een JSON-scaffold die is afgeleid van het interne pakket. Het is geen officiële DGLAB-export, overheidsinzending, wettelijke archiefcertificering, PDF/A-, PAdES- of PDF-UA-certificering, noch een record van destructieve verwijdering.',
+  'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':
+    'Het resultaat is een niet-canonieke aanvullende OCR-versie ter beoordeling van de bewaarde import.',
+  'uiLiteral.bookDetailPage.pacoteDeArquivo': '· bestandspakket:',
+  'uiLiteral.bookDetailPage.paginas': "pagina's",
+  'uiLiteral.bookDetailPage.paginasDaFonte': "Bronpagina's",
+  'uiLiteral.bookDetailPage.pdfA': '· PDF/A:',
+  'uiLiteral.bookDetailPage.pdfUa': '· PDF/UA:',
+  'uiLiteral.bookDetailPage.promocaoParaRascunhoMutavel': 'Promotie voor veranderlijke diepgang',
+  'uiLiteral.bookDetailPage.proximoPasso': 'Volgende stap',
+  'uiLiteral.bookDetailPage.rascunhoAceite': 'Concept geaccepteerd',
+  'uiLiteral.bookDetailPage.rascunhoOcrAceite': 'Concept-OCR geaccepteerd',
+  'uiLiteral.bookDetailPage.rascunhoRevisto': 'Herzien ontwerp',
+  'uiLiteral.bookDetailPage.rascunhosOcr': 'OCR-concepten',
+  'uiLiteral.bookDetailPage.rehearsalLocalCalculadoAPartirDeMetadadosPreservados':
+    'Lokale repetitie berekend op basis van bewaarde metadata. Voert geen OCR uit, creëert geen canonieke documenten, ondertekent niet en valideert niet juridisch.',
+  'uiLiteral.bookDetailPage.relatorioLocalIndisponivel': 'Lokaal rapport niet beschikbaar',
+  'uiLiteral.bookDetailPage.relatorioOcrCanonicoLocal': 'Lokaal OCR/canoniek rapport',
+  'uiLiteral.bookDetailPage.resumoOcrDossierDerivado': 'OCR-samenvatting/afgeleid dossier',
+  'uiLiteral.bookDetailPage.revisaoDeOrigem': 'Bronoverzicht',
+  'uiLiteral.bookDetailPage.revisaoEFixidez': 'Review en vastheid',
+  'uiLiteral.bookDetailPage.selo': '· stempel:',
+  'uiLiteral.bookDetailPage.semReivindicacao': 'Geen claim',
+  'uiLiteral.bookDetailPage.soMetadados': 'Alleen metadata',
+  'uiLiteral.bookDetailPage.soMetadadosSimAtaCanonicaNaoDocumentoCanonico':
+    'Alleen metadata: ja · canonieke handeling: nee · canoniek document: nee · archiefpakket: nee · handtekening: nee · zegel: nee · PDF/A: nee · PDF/UA: nee · rechtsgeldigheid: nee.',
+  'uiLiteral.bookDetailPage.textoOcrBruto': 'Ruwe OCR-tekst',
+  'uiLiteral.bookDetailPage.textoOcrBrutoNoDossier': 'Ruwe OCR-tekst in het dossier',
+  'uiLiteral.bookDetailPage.validadeLegal': '· rechtsgeldigheid:',
+  'uiLiteral.bookDetailPage.validadeLegalDeclaradaNao': '. Verklaarde rechtsgeldigheid: nee.',
+  'uiLiteral.bookDetailPage.valideDatasContagemDePaginasFixidezEContexto':
+    "Valideer datums, aantal pagina's, vastheid en boekcontext voordat u deze bewaart. De hier getoonde link is alleen contextueel: er worden geen ketens van minuten gecreëerd of gewijzigd, en de import wordt ook niet omgezet in een canoniek digitaal document.",
+  'uiLiteral.funcoesSection.adicionarSo': 'Alleen toevoegen:',
+  'uiLiteral.funcoesSection.aplicarDefaultsEmFalta': 'Pas ontbrekende standaardwaarden toe',
+  'uiLiteral.funcoesSection.estado': 'Staat',
+  'uiLiteral.funcoesSection.reverDefaults': 'Bekijk de standaardinstellingen',
+  'uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao': 'Herstelbeleid laden',
+  'uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff':
+    'Pre-validatie van lokale overdracht laden',
+  'uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio': 'Back-upbestand voor testen',
+  'uiLiteral.gestaoDadosSection.backendDuravel': 'Duurzame backend',
+  'uiLiteral.gestaoDadosSection.chancelaBackupZip': 'kansela-back-up-….zip',
+  'uiLiteral.gestaoDadosSection.chaveDoBackupOpcional': 'Back-upsleutel (optioneel)',
+  'uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios':
+    'Stelt alleen lokaal bewijsmateriaal samen: back-upkandidaten, geverifieerde essays, boekpakketten, bestands- en grootboekstatus.',
+  'uiLiteral.gestaoDadosSection.ensaioDeRecuperacaoSemRestauro': 'Hersteltest zonder restauratie',
+  'uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro':
+    'Expliciete, door de operator geïnitieerde tests: geen live herstel, geen wettelijke archiefcertificering, geen automatisch bewijs van RPO/RTO of externe bewaring.',
+  'uiLiteral.gestaoDadosSection.enviadaApenasParaExecutarPragmaRekeyAResposta':
+    'Alleen verzonden om PRAGMA-rekey uit te voeren; het antwoord levert alleen bewijsmateriaal op zonder geheimhouding.',
+  'uiLiteral.gestaoDadosSection.execucaoDaRotacaoSqlcipher': 'SQLCipher-rotatie uitvoeren',
+  'uiLiteral.gestaoDadosSection.executaApenasORekeySqlcipherNaBaseDe':
+    'Voer de SQLCipher-rekey alleen uit op de reeds geopende duurzame database; converteert SQLite-winkels niet naar platte tekst.',
+  'uiLiteral.gestaoDadosSection.executaAPreValidacaoExistenteDoBackupE':
+    'Voert bestaande pre-validatie van de back-up uit en registreert een borgbewijs. Herstelt niet, wijzigt de database niet en bereidt geen zijspannen voor.',
+  'uiLiteral.gestaoDadosSection.leituraDoEstadoLocalDePersistenciaNaoExecuta':
+    'Het lezen van de lokale staat van volharding; voert geen migratie-, hersleutel- of bewaringsvalidatie uit.',
+  'uiLiteral.gestaoDadosSection.localDeCustodia': 'Plaats van bewaring',
+  'uiLiteral.gestaoDadosSection.localIndicadoPeloOperadorIstoNaoComprovaCustodia':
+    'Locatie aangegeven door de exploitant; dit bewijst niet dat er sprake is van bewaring buiten de locatie.',
+  'uiLiteral.gestaoDadosSection.nomeSimplesEmBackupsOuCaminhoAbsolutoDo':
+    'Eenvoudige naam in back-ups/of absoluut pad van het te controleren bestand.',
+  'uiLiteral.gestaoDadosSection.notasDoOperador': 'Opmerkingen van de operator',
+  'uiLiteral.gestaoDadosSection.novaChaveSqlcipher': 'Nieuwe SQLCipher-sleutel',
+  'uiLiteral.gestaoDadosSection.preValidacaoLocalDeHandoff': 'Pre-validatie van lokale overdracht',
+  'uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave':
+    'SQLCipher-gereedheid en sleutelbewaring',
+  'uiLiteral.gestaoDadosSection.requerArmazenamentoDuravelEmDisco':
+    'Vereist duurzame schijfopslag.',
+  'uiLiteral.gestaoDadosSection.sidecars': 'Zijspannen',
+  'uiLiteral.gestaoDadosSection.sidecarsDuraveis': 'Duurzame zijspannen',
+  'uiLiteral.gestaoDadosSection.usadaSoNestaPreValidacaoNaoEGuardada':
+    'Alleen gebruikt bij deze pre-validatie; wordt niet op de kassabon opgeslagen.',
+  'uiLiteral.importFromRegistryForm.consulta': 'Overleg',
+  'uiLiteral.registryImportPanel.aConsultaAindaNaoFoiExecutada': 'De query is nog niet uitgevoerd.',
+  'uiLiteral.registryImportPanel.consulta': 'Overleg',
+  'uiLiteral.registryImportPanel.proximoPasso': 'Volgende stap',
+  'uiLiteral.registryImportPanel.resultado': 'Resultaat',
+  'uiLiteral.registryImportPanel.resumo': 'Samenvatting',
+  'uiLiteral.registryImportPanel.resumoDaImportacao': 'Samenvatting importeren',
+  'uiLiteral.registryImportPanel.semAlteracoes': 'Geen wijzigingen',
+  'uiLiteral.signingPanel.token': 'Token',
+  'uiLiteral.trustCatalogPage.tslConfiavel': 'Betrouwbare TSL',
+  'uiLiteral.asicSignatureInspectorPanel.semIndicadoresDeEvidenciaEmbebidaReportados':
+    'Er zijn geen indicatoren van ingebed bewijsmateriaal gerapporteerd.',
+  'uiLiteral.asicSignatureInspectorPanel.semOcorrenciasReportadas':
+    'Geen gerapporteerde voorvallen.',
+  'uiLiteral.bookDetailPage.ambitoDeArquivoPaperBookImport': 'Bestandsbereik: papieren boekimport:',
+  'uiLiteral.bookDetailPage.criaUmaAtaEmEstadoDraftComO':
+    'Maakt notulen in conceptstatus met de OCR-tekst als ondersteuning voor de beraadslagingen. Er ontstaat geen canoniek document, PDF/A, handtekening, zegel of aanvaarding van rechtsgeldigheid.',
+  'uiLiteral.bookDetailPage.digestDoTexto': 'Tekstoverzicht',
+  'uiLiteral.bookDetailPage.documentoCanonico.19tw3h': '. Canoniek document:',
+  'uiLiteral.bookDetailPage.entidade': '· Entiteit:',
+  'uiLiteral.bookDetailPage.intervalo': 'Interval:',
+  'uiLiteral.bookDetailPage.limites': 'Grenzen',
+  'uiLiteral.bookDetailPage.livro': 'Boek:',
+  'uiLiteral.bookDetailPage.motor': 'Motor',
+  'uiLiteral.bookDetailPage.nota': 'Kennisgeving',
+  'uiLiteral.bookDetailPage.ocrMetadadoApenasTextoArmazenado':
+    'OCR: alleen metagegevens; opgeslagen tekst:',
+  'uiLiteral.bookDetailPage.paginasRevistas': "Herziene pagina's",
+  'uiLiteral.bookDetailPage.rascunhoCriado': 'Concept gemaakt:',
+  'uiLiteral.bookDetailPage.revisto': 'Beoordeeld',
+  'uiLiteral.bookDetailPage.textoAutoritativo': 'Gezaghebbende tekst:',
+  'uiLiteral.bookDetailPage.textoAutoritativo.9xkq63': '; gezaghebbende tekst:',
+  'uiLiteral.bookDetailPage.textoExtraido': 'Geëxtraheerde tekst',
+  'uiLiteral.compliancePanel.limitesDoAviso': 'Waarschuwingslimieten',
+  'uiLiteral.compliancePanel.orientacaoLocalDaConvocatoria': 'Lokale oriëntatie van de oproep',
+  'uiLiteral.compliancePanel.proximoRegistoLocal': 'Volgende lokale registratie',
+  'uiLiteral.editUserPage.acao': 'Actie',
+  'uiLiteral.editUserPage.aindaNaoHaPedidosDsrRegistadosParaEste':
+    'Er zijn nog geen DSR-verzoeken geregistreerd voor deze gebruiker.',
+  'uiLiteral.editUserPage.concluido': 'Voltooid',
+  'uiLiteral.editUserPage.criado': 'Gemaakt',
+  'uiLiteral.editUserPage.criadoPor': 'Gemaakt door',
+  'uiLiteral.editUserPage.estado': 'Staat',
+  'uiLiteral.editUserPage.marcarConcluido': 'Markeer voltooid',
+  'uiLiteral.editUserPage.pedidosDsrPrivacidade': 'DSR/Privacyverzoeken',
+  'uiLiteral.editUserPage.registaOCicloDeVidaDosPedidosDsr':
+    'Registreert de levenscyclus van DSR-verzoeken van gebruikers en downloadt niet-geheime JSON voor reactie. De exportinhoud wordt niet op het scherm weergegeven.',
+  'uiLiteral.editUserPage.semPedidosDsr': 'Geen DSR-bestellingen',
+  'uiLiteral.editUserPage.tipo': 'Type',
+  'uiLiteral.editUserPage.tipoDePedido': 'Besteltype',
+  'uiLiteral.entitiesPage.naoImportado': 'Niet geïmporteerd',
+  'uiLiteral.entitiesPage.naoImportadoSemCertidao': 'Niet geïmporteerd · Geen certificaat',
+  'uiLiteral.entitiesPage.semAtividade': 'Geen activiteit',
+  'uiLiteral.entitiesPage.semAtividadeNoArquivo': 'Geen activiteit in het bestand',
+  'uiLiteral.entitiesPage.semCertidao': 'Geen certificaat',
+  'uiLiteral.entityChronologyPanel.cronologiaLocalDeAtosSelados':
+    'Lokale chronologie van verzegelde akten',
+  'uiLiteral.entityChronologyPanel.data': 'Datum',
+  'uiLiteral.entityChronologyPanel.descricao': 'Beschrijving',
+  'uiLiteral.entityChronologyPanel.digest': 'verteren',
+  'uiLiteral.entityChronologyPanel.eventosLocais': 'Lokale evenementen',
+  'uiLiteral.entityChronologyPanel.fonteSelada': 'Bron verzegeld',
+  'uiLiteral.entityChronologyPanel.fontesSeladas': 'Verzegelde bronnen',
+  'uiLiteral.entityChronologyPanel.ligacoes': 'Verbindingen',
+  'uiLiteral.entityChronologyPanel.nos': 'Ons',
+  'uiLiteral.entityChronologyPanel.projecaoTecnicaLocalBaseadaApenasEmAtasSeladas':
+    'Lokale technische projectie uitsluitend gebaseerd op verzegelde of gearchiveerde notulen. Het maakt geen aanspraak op juridische geldigheid of certificering van autoriteit.',
+  'uiLiteral.entityChronologyPanel.provenienciaDasLigacoesLocais': 'Herkomst van lokale links',
+  'uiLiteral.entityChronologyPanel.tipo': 'Type',
+  'uiLiteral.funcoesSection.aReconciliacaoEGuiadaPorAdminESo':
+    '. Afstemming wordt door de beheerder aangestuurd en voegt alleen deze geplaatste standaardwaarden toe.',
+  'uiLiteral.funcoesSection.atual': 'Huidig',
+  'uiLiteral.funcoesSection.defaultsEmFalta': 'Ontbrekende standaardwaarden:',
+  'uiLiteral.funcoesSection.revisaoManual': 'Handmatige beoordeling',
+  'uiLiteral.gestaoDadosSection.aindaNaoHaRecibosDeRotacaoSqlcipherBem':
+    'Er zijn nog steeds geen ontvangstbewijzen voor een succesvolle SQLCipher-rotatie.',
+  'uiLiteral.gestaoDadosSection.arquivoVerificado': 'Geverifieerd bestand',
+  'uiLiteral.gestaoDadosSection.atosPreservaveis': 'Bewaarbare handelingen',
+  'uiLiteral.gestaoDadosSection.backend': 'Achterkant',
+  'uiLiteral.gestaoDadosSection.backendSqlcipherLocal': 'Lokale SQLCipher-backend',
+  'uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente':
+    'Meest recente niet-gevalideerde kandidaat',
+  'uiLiteral.gestaoDadosSection.candidatosNaoValidados': 'Niet-gevalideerde kandidaten',
+  'uiLiteral.gestaoDadosSection.checkpointAntes': 'Controlepunt eerder',
+  'uiLiteral.gestaoDadosSection.checkpointDepois': 'Controlepunt na',
+  'uiLiteral.gestaoDadosSection.cifrado': 'Gecodeerd',
+  'uiLiteral.gestaoDadosSection.configuracaoDaChave': 'Sleutelconfiguratie',
+  'uiLiteral.gestaoDadosSection.constatacoes': 'Bevindingen',
+  'uiLiteral.gestaoDadosSection.documentosPreservados': 'Bewaarde documenten',
+  'uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao': 'Hersteltesten',
+  'uiLiteral.gestaoDadosSection.erroKeyOps': 'Key-ops-fout',
+  'uiLiteral.gestaoDadosSection.erros': 'Fouten',
+  'uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados': 'Databaseschema',
+  'uiLiteral.gestaoDadosSection.estado': 'Staat',
+  'uiLiteral.gestaoDadosSection.estadoDoEnsaio': 'Teststatus',
+  'uiLiteral.gestaoDadosSection.evidenciaOperacionalLocalGeradaAposRekeySqlcipherAceite':
+    'Lokaal operationeel bewijsmateriaal gegenereerd nadat de nieuwe sleutel van SQLCipher is geaccepteerd. Deze ontvangstbewijzen bevestigen niet de versleuteling in rust, de migratie van platte tekst, de wettelijke verwijdering of de volledige AVG-levenscyclus.',
+  'uiLiteral.gestaoDadosSection.evidenciaVerificada': 'Geverifieerd bewijs',
+  'uiLiteral.gestaoDadosSection.fallbackFalhaFechado': 'Terugval mislukt gesloten',
+  'uiLiteral.gestaoDadosSection.fallbackHardware': 'Hardware-terugval',
+  'uiLiteral.gestaoDadosSection.fonteDeChave': 'Belangrijke bron',
+  'uiLiteral.gestaoDadosSection.formatoDoCabecalho': 'Koptekstformaat',
+  'uiLiteral.gestaoDadosSection.geradoEm': 'Gegenereerd binnen',
+  'uiLiteral.gestaoDadosSection.historicoGuardado': 'Opgeslagen geschiedenis',
+  'uiLiteral.gestaoDadosSection.historicoRecente': 'Recente geschiedenis',
+  'uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo': 'Leeftijd van de laatste kassabon',
+  'uiLiteral.gestaoDadosSection.idadeMaximaConfigurada': 'Geconfigureerde maximale leeftijd',
+  'uiLiteral.gestaoDadosSection.integridadePosRekey': 'Integriteit na rekey',
+  'uiLiteral.gestaoDadosSection.lacunasDeProntidao': 'Gereedheidslacunes',
+  'uiLiteral.gestaoDadosSection.limitesDoRecibo': 'Ontvangstlimieten',
+  'uiLiteral.gestaoDadosSection.livros': 'Boeken',
+  'uiLiteral.gestaoDadosSection.localDeCustodiaIndicado': 'Aangegeven plaats van bewaring',
+  'uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada':
+    'Winkel openen met geconfigureerde sleutel',
+  'uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente': 'Databaselid aanwezig',
+  'uiLiteral.gestaoDadosSection.membrosNoArquivo': 'Leden in dossier',
+  'uiLiteral.gestaoDadosSection.membrosSidecar': 'Zijspanleden',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada':
+    'Migratie van platte tekst geblokkeerd',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextPendente':
+    'In afwachting van migratie van platte tekst',
+  'uiLiteral.gestaoDadosSection.modo': 'Modus',
+  'uiLiteral.gestaoDadosSection.operacao': 'Operatie',
+  'uiLiteral.gestaoDadosSection.passosDeclarados': 'Opgegeven stappen',
+  'uiLiteral.gestaoDadosSection.planoDeMigracao': 'Migratieplan',
+  'uiLiteral.gestaoDadosSection.planoKeyOps': 'Key-ops-plan',
+  'uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao': 'Lokaal herstelbeleid',
+  'uiLiteral.gestaoDadosSection.preValidacaoDeImportacao': 'Pre-validatie importeren',
+  'uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo':
+    'Pre-validatie van de laatste kassabon',
+  'uiLiteral.gestaoDadosSection.preValidacaoOk': 'Pre-validatie OK',
+  'uiLiteral.gestaoDadosSection.prontoParaRestauro': 'Klaar voor restauratie',
+  'uiLiteral.gestaoDadosSection.proximoPasso': 'Volgende stap',
+  'uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao': 'Lokale rotatiebewijzen',
+  'uiLiteral.gestaoDadosSection.registadoEm': 'Ingeschreven',
+  'uiLiteral.gestaoDadosSection.rekeyExecutado': 'Rekey uitgevoerd',
+  'uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher': 'Resultaat van SQLCipher-uitvoering',
+  'uiLiteral.gestaoDadosSection.resumoLocalDerivadoDeRecibosDeEnsaioSem':
+    'Lokaal overzicht afgeleid van testbewijzen: geen herstel uitgevoerd, geen database-uitwisseling, geen bewijs van externe bewaring, geen RPO/RTO-certificering en geen certificering van het productieback-upbeleid.',
+  'uiLiteral.gestaoDadosSection.rpoAlvoDeclarado': 'Gedeclareerde doel-RPO',
+  'uiLiteral.gestaoDadosSection.rtoAlvoDeclarado': 'Doel-RTO verklaard',
+  'uiLiteral.gestaoDadosSection.semAlegacoes': 'Geen beschuldigingen',
+  'uiLiteral.gestaoDadosSection.semCaminhoDaBd': 'Geen BD-pad',
+  'uiLiteral.gestaoDadosSection.semChaveGuardada': 'Geen sleutel opgeslagen',
+  'uiLiteral.gestaoDadosSection.semConstatacoesRegistadas': 'Geen bevindingen vastgelegd.',
+  'uiLiteral.gestaoDadosSection.semErrosRegistados': 'Geen fouten geregistreerd.',
+  'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
+    'Er zijn geen lokale hiaten gerapporteerd in deze staat.',
+  'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
+    'Backend lokale signalen met geredigeerde geheimen. Ze certificeren geen versleuteling van productieresten, voltooide migratie van platte tekst, bewaarrunbook of juridische cyclus/AVG.',
+  'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado':
+    'Geverifieerde geïsoleerde momentopname',
+  'uiLiteral.gestaoDadosSection.sqlcipher': 'SQLCijfer',
+  'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher in build',
+  'uiLiteral.gestaoDadosSection.sqlcipherVerificado': 'Geverifieerde SQLCipher',
+  'uiLiteral.gestaoDadosSection.total': 'totaal /',
+  'uiLiteral.gestaoDadosSection.totalDeBytesDosMembros': 'Totaal aantal bytes van leden',
+  'uiLiteral.gestaoDadosSection.ultimaRotacao': 'Laatste rotatie',
+  'uiLiteral.gestaoDadosSection.ultimoEnsaio': 'Laatste repetitie',
+  'uiLiteral.gestaoDadosSection.ultimoRecibo': 'Laatste ontvangst',
+  'uiLiteral.gestaoDadosSection.utilizador': 'Gebruiker',
+  'uiLiteral.gestaoDadosSection.verificacaoIsolada': 'Geïsoleerde cheque',
+  'uiLiteral.importFromRegistryForm.acaoNecessaria': 'Actie vereist',
+  'uiLiteral.importFromRegistryForm.aCertidaoEstaASerConsultadaMantenhaEsta':
+    'Het certificaat wordt geraadpleegd. Houd deze pagina open.',
+  'uiLiteral.importFromRegistryForm.aConsultar': 'Te raadplegen',
+  'uiLiteral.importFromRegistryForm.corrijaOCodigoOuEMailETente':
+    'Corrigeer de code of e-mail en probeer het opnieuw.',
+  'uiLiteral.importFromRegistryForm.estado': 'Staat',
+  'uiLiteral.registryImportPanel.acaoNecessaria': 'Actie vereist',
+  'uiLiteral.registryImportPanel.aCertidaoEstaASerConsultadaOsValores':
+    'Het certificaat wordt geraadpleegd. Huidige waarden veranderen pas als het resultaat arriveert.',
+  'uiLiteral.registryImportPanel.aConsultar': 'Te raadplegen',
+  'uiLiteral.registryImportPanel.corrijaOCodigoOuEMailETente':
+    'Corrigeer de code of e-mail en probeer het opnieuw.',
+  'uiLiteral.registryImportPanel.estado': 'Staat',
+  'uiLiteral.asicSignatureInspectorPanel.manifesto': 'manifest',
+  'uiLiteral.bookDetailPage.em': 'in',
+  'uiLiteral.bookDetailPage.por': 'neerzetten',
+  'uiLiteral.bookDetailPage.total': 'totaal',
+  'uiLiteral.gestaoDadosSection.dias': 'dagen',
+  'uiLiteral.gestaoDadosSection.fechados': 'gesloten',
+  'uiLiteral.gestaoDadosSection.min': 'min',
+  'uiLiteral.privacyComplianceSection.overdue': 'verlopen:',
+  'uiLiteral.bookDetailPage.acceptedWithoutCanonicalConversion':
+    'Geaccepteerd als aanvullende referentie, zonder canonieke conversie.',
+  'uiLiteral.bookDetailPage.noAcceptedOcrDraft': 'Geen geaccepteerd OCR-concept.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.signingSnapshot.title': 'Canonieke kopie bevroren voor ondertekening',
+  'acts.signingSnapshot.body':
+    'Bij het invoeren van «Onder handtekening» werden de notulen bevroren. Abonnementsacties gebruiken deze canonieke kopie en genereren of vervangen deze niet opnieuw.',
+  'acts.sealing.signedReady':
+    'Er is technisch bewijs van een ondertekende pdf voor de canonieke kopie. Controleer het voordat u het verzegelt.',
+  'acts.sealing.signatureRequired':
+    'Onderteken de canonieke kopie of gebruik de alternatieve kopie van het handmatig ondertekende origineel voordat u deze verzegelt.',
+  'acts.sealing.signedAck.title': 'Bevestig de verzegeling na ondertekening',
+  'acts.sealing.signedAck.body':
+    'Bij de verzegeling wordt gebruik gemaakt van de reeds ondertekende canonieke kopie. Bekijk het technische bewijsmateriaal en de nalevingskennisgevingen voordat u verdergaat.',
+  'acts.sealing.signedAck.checkbox':
+    'Ik bevestig dat ik het technische bewijs van de handtekening heb bekeken en de notulen wil verzegelen.',
+  'acts.sealing.signedAck.checkboxWithWarnings':
+    'Ik bevestig dat ik het technische bewijsmateriaal van de handtekening en de conformiteitsverklaringen heb bekeken en dat ik de notulen wil verzegelen.',
+  'signing.closed.title': 'Abonnement beëindigd',
+  'signing.closed.body':
+    'De notulen zijn nu «Onder ondertekening». Abonnementsacties zijn gesloten; bestaand bewijsmateriaal blijft beschikbaar voor raadpleging.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'signing.technicalComparison.row.signingSnapshotDigest':
+    'Samenvatting van de bevroren canonieke kopie',
 };

@@ -141,7 +141,8 @@ export function applyColorOverrides(
 
   // Primary → the strong accent (primary buttons, current stepper), with a readable label.
   setOrClear('--accent-strong', overrides.primary);
-  if (isHexColor(overrides.primary)) style.setProperty('--on-accent', readableInk(overrides.primary));
+  if (isHexColor(overrides.primary))
+    style.setProperty('--on-accent', readableInk(overrides.primary));
   else style.removeProperty('--on-accent');
 
   // Secondary → the accent used for links, focus ring and badges.

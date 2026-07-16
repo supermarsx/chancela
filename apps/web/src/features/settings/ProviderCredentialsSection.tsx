@@ -79,40 +79,112 @@ interface SelectorFieldSpec {
 /** Per-mode encrypted (write-only) secret fields. `pfx_der` is handled separately (file → base64). */
 const SECRET_FIELDS: Record<CredentialMode, SecretFieldSpec[]> = {
   cmd: [
-    { name: 'application_id', labelKey: 'settings.providerCredentials.field.applicationId', password: false },
-    { name: 'http_basic_username', labelKey: 'settings.providerCredentials.field.httpBasicUsername', password: false },
-    { name: 'http_basic_password', labelKey: 'settings.providerCredentials.field.httpBasicPassword', password: true },
-    { name: 'ama_cert_pem', labelKey: 'settings.providerCredentials.field.amaCertPem', password: true },
+    {
+      name: 'application_id',
+      labelKey: 'settings.providerCredentials.field.applicationId',
+      password: false,
+    },
+    {
+      name: 'http_basic_username',
+      labelKey: 'settings.providerCredentials.field.httpBasicUsername',
+      password: false,
+    },
+    {
+      name: 'http_basic_password',
+      labelKey: 'settings.providerCredentials.field.httpBasicPassword',
+      password: true,
+    },
+    {
+      name: 'ama_cert_pem',
+      labelKey: 'settings.providerCredentials.field.amaCertPem',
+      password: true,
+    },
   ],
   csc: [
     { name: 'client_id', labelKey: 'settings.providerCredentials.field.clientId', password: false },
-    { name: 'client_secret', labelKey: 'settings.providerCredentials.field.clientSecret', password: true },
-    { name: 'access_token', labelKey: 'settings.providerCredentials.field.accessToken', password: true },
-    { name: 'http_basic_username', labelKey: 'settings.providerCredentials.field.httpBasicUsername', password: false },
-    { name: 'http_basic_password', labelKey: 'settings.providerCredentials.field.httpBasicPassword', password: true },
+    {
+      name: 'client_secret',
+      labelKey: 'settings.providerCredentials.field.clientSecret',
+      password: true,
+    },
+    {
+      name: 'access_token',
+      labelKey: 'settings.providerCredentials.field.accessToken',
+      password: true,
+    },
+    {
+      name: 'http_basic_username',
+      labelKey: 'settings.providerCredentials.field.httpBasicUsername',
+      password: false,
+    },
+    {
+      name: 'http_basic_password',
+      labelKey: 'settings.providerCredentials.field.httpBasicPassword',
+      password: true,
+    },
   ],
   scap: [
-    { name: 'application_id', labelKey: 'settings.providerCredentials.field.applicationId', password: false },
+    {
+      name: 'application_id',
+      labelKey: 'settings.providerCredentials.field.applicationId',
+      password: false,
+    },
     { name: 'secret', labelKey: 'settings.providerCredentials.field.secret', password: true },
-    { name: 'http_basic_username', labelKey: 'settings.providerCredentials.field.httpBasicUsername', password: false },
-    { name: 'http_basic_password', labelKey: 'settings.providerCredentials.field.httpBasicPassword', password: true },
+    {
+      name: 'http_basic_username',
+      labelKey: 'settings.providerCredentials.field.httpBasicUsername',
+      password: false,
+    },
+    {
+      name: 'http_basic_password',
+      labelKey: 'settings.providerCredentials.field.httpBasicPassword',
+      password: true,
+    },
   ],
-  pkcs12: [{ name: 'passphrase', labelKey: 'settings.providerCredentials.field.passphrase', password: true }],
+  pkcs12: [
+    {
+      name: 'passphrase',
+      labelKey: 'settings.providerCredentials.field.passphrase',
+      password: true,
+    },
+  ],
 };
 
 /** Per-mode NON-secret selectors, persisted plainly and returned in responses. */
 const SELECTOR_FIELDS: Record<CredentialMode, SelectorFieldSpec[]> = {
   cmd: [{ name: 'env', labelKey: 'settings.providerCredentials.field.env', kind: 'env' }],
   csc: [
-    { name: 'authorization', labelKey: 'settings.providerCredentials.field.authorization', kind: 'authorization' },
-    { name: 'credential_id', labelKey: 'settings.providerCredentials.field.credentialId', kind: 'text' },
+    {
+      name: 'authorization',
+      labelKey: 'settings.providerCredentials.field.authorization',
+      kind: 'authorization',
+    },
+    {
+      name: 'credential_id',
+      labelKey: 'settings.providerCredentials.field.credentialId',
+      kind: 'text',
+    },
     { name: 'scope', labelKey: 'settings.providerCredentials.field.scope', kind: 'text' },
     { name: 'sandbox', labelKey: 'settings.providerCredentials.field.sandbox', kind: 'toggle' },
   ],
-  scap: [{ name: 'environment', labelKey: 'settings.providerCredentials.field.environment', kind: 'env' }],
+  scap: [
+    {
+      name: 'environment',
+      labelKey: 'settings.providerCredentials.field.environment',
+      kind: 'env',
+    },
+  ],
   pkcs12: [
-    { name: 'friendly_name', labelKey: 'settings.providerCredentials.field.friendlyName', kind: 'text' },
-    { name: 'local_key_id_hex', labelKey: 'settings.providerCredentials.field.localKeyId', kind: 'text' },
+    {
+      name: 'friendly_name',
+      labelKey: 'settings.providerCredentials.field.friendlyName',
+      kind: 'text',
+    },
+    {
+      name: 'local_key_id_hex',
+      labelKey: 'settings.providerCredentials.field.localKeyId',
+      kind: 'text',
+    },
   ],
 };
 
@@ -150,7 +222,10 @@ function ProtectionBanner({
   const blocked = strict && level !== 'confidential';
   if (level === 'confidential') {
     return (
-      <InlineWarning tone="info" title={t('settings.providerCredentials.protection.confidential.title')}>
+      <InlineWarning
+        tone="info"
+        title={t('settings.providerCredentials.protection.confidential.title')}
+      >
         {t('settings.providerCredentials.protection.confidential.body')}
       </InlineWarning>
     );
@@ -226,7 +301,10 @@ function EntryForm({
     return base;
   });
 
-  const needsProviderId = MULTI_INSTANCE_MODES.includes(mode);
+  // A top-level create form may switch credential modes. Existing groups and
+  // entries remain pinned to the mode supplied by their parent card.
+  const effectiveMode = providerId === undefined && !existing ? form.mode : mode;
+  const needsProviderId = MULTI_INSTANCE_MODES.includes(effectiveMode);
   const resolvedProviderId = providerId ?? (needsProviderId ? form.providerId.trim() : '');
   const pending = create.isPending || update.isPending;
 
@@ -238,18 +316,18 @@ function EntryForm({
   /** The write-only `set` payload from non-empty secret inputs (+ PKCS#12 file). */
   const buildSet = (): Record<string, string> => {
     const set: Record<string, string> = {};
-    for (const spec of SECRET_FIELDS[mode]) {
+    for (const spec of SECRET_FIELDS[effectiveMode]) {
       const value = form.secrets[spec.name];
       if (value && value.length > 0) set[spec.name] = value;
     }
-    if (mode === 'pkcs12' && form.pfxBase64) set.pfx_der = form.pfxBase64;
+    if (effectiveMode === 'pkcs12' && form.pfxBase64) set.pfx_der = form.pfxBase64;
     return set;
   };
 
   /** Non-secret selectors, dropping empty values so an unset selector is not persisted blank. */
   const buildSelectors = (): Record<string, string> => {
     const out: Record<string, string> = {};
-    for (const spec of SELECTOR_FIELDS[mode]) {
+    for (const spec of SELECTOR_FIELDS[effectiveMode]) {
       const value = form.selectors[spec.name];
       if (value !== undefined && value !== '') out[spec.name] = value;
     }
@@ -259,7 +337,8 @@ function EntryForm({
   const providerIdReady = !needsProviderId || resolvedProviderId.length > 0;
   const set = buildSet();
   // A NEW entry must carry at least one secret; an edit may be metadata-only.
-  const canSubmit = providerIdReady && (isEdit || Object.keys(set).length > 0) && !pending && !disabled;
+  const canSubmit =
+    providerIdReady && (isEdit || Object.keys(set).length > 0) && !pending && !disabled;
 
   function clearSecrets() {
     setForm((f) => ({ ...f, secrets: {}, pfxBase64: '', pfxName: '' }));
@@ -268,7 +347,10 @@ function EntryForm({
   function submit() {
     if (!canSubmit) return;
     const selectors = buildSelectors();
-    const endpoint = ENDPOINT_MODES.includes(mode) && form.endpoint.trim() ? form.endpoint.trim() : undefined;
+    const endpoint =
+      ENDPOINT_MODES.includes(effectiveMode) && form.endpoint.trim()
+        ? form.endpoint.trim()
+        : undefined;
     if (isEdit && existing) {
       const body: UpdateProviderCredentialEntryBody = {
         label: form.label.trim() || undefined,
@@ -278,7 +360,7 @@ function EntryForm({
         set: Object.keys(set).length > 0 ? set : undefined,
       };
       update.mutate(
-        { mode, providerId: resolvedProviderId, entryId: existing.entry_id, body },
+        { mode: effectiveMode, providerId: resolvedProviderId, entryId: existing.entry_id, body },
         {
           onSuccess: () => {
             clearSecrets();
@@ -299,7 +381,7 @@ function EntryForm({
       set,
     };
     create.mutate(
-      { mode, providerId: resolvedProviderId, body },
+      { mode: effectiveMode, providerId: resolvedProviderId, body },
       {
         onSuccess: () => {
           clearSecrets();
@@ -312,7 +394,7 @@ function EntryForm({
     );
   }
 
-  const idBase = `pc-${mode}-${existing?.entry_id ?? 'new'}`;
+  const idBase = `pc-${effectiveMode}-${existing?.entry_id ?? 'new'}`;
   const mutation = isEdit ? update : create;
 
   return (
@@ -386,7 +468,7 @@ function EntryForm({
           onChange={(enabled) => setForm((f) => ({ ...f, enabled }))}
         />
 
-        {ENDPOINT_MODES.includes(mode) ? (
+        {ENDPOINT_MODES.includes(effectiveMode) ? (
           <Field
             label={t('settings.providerCredentials.form.endpoint')}
             htmlFor={`${idBase}-endpoint`}
@@ -403,7 +485,7 @@ function EntryForm({
           </Field>
         ) : null}
 
-        {SELECTOR_FIELDS[mode].map((spec) => {
+        {SELECTOR_FIELDS[effectiveMode].map((spec) => {
           const id = `${idBase}-sel-${spec.name}`;
           const value = form.selectors[spec.name] ?? '';
           const help = providerCredentialFieldHelp(spec.name);
@@ -414,7 +496,12 @@ function EntryForm({
                 label={
                   <>
                     {t(spec.labelKey)}
-                    {help ? <> <FieldHelp text={help} /></> : null}
+                    {help ? (
+                      <>
+                        {' '}
+                        <FieldHelp text={help} />
+                      </>
+                    ) : null}
                   </>
                 }
                 checked={value === 'true'}
@@ -427,13 +514,25 @@ function EntryForm({
               spec.kind === 'env'
                 ? [
                     { value: '', label: t('settings.providerCredentials.field.env.unset') },
-                    { value: 'preprod', label: t('settings.providerCredentials.field.env.preprod') },
+                    {
+                      value: 'preprod',
+                      label: t('settings.providerCredentials.field.env.preprod'),
+                    },
                     { value: 'prod', label: t('settings.providerCredentials.field.env.prod') },
                   ]
                 : [
-                    { value: '', label: t('settings.providerCredentials.field.authorization.unset') },
-                    { value: 'service', label: t('settings.providerCredentials.field.authorization.service') },
-                    { value: 'user', label: t('settings.providerCredentials.field.authorization.user') },
+                    {
+                      value: '',
+                      label: t('settings.providerCredentials.field.authorization.unset'),
+                    },
+                    {
+                      value: 'service',
+                      label: t('settings.providerCredentials.field.authorization.service'),
+                    },
+                    {
+                      value: 'user',
+                      label: t('settings.providerCredentials.field.authorization.user'),
+                    },
                   ];
             return (
               <Field key={spec.name} label={t(spec.labelKey)} htmlFor={id} help={help}>
@@ -458,9 +557,12 @@ function EntryForm({
           );
         })}
 
-        {mode === 'pkcs12' ? (
+        {effectiveMode === 'pkcs12' ? (
           <>
-            <InlineWarning tone="warn" title={t('settings.providerCredentials.form.pfxWarning.title')}>
+            <InlineWarning
+              tone="warn"
+              title={t('settings.providerCredentials.form.pfxWarning.title')}
+            >
               {t('settings.providerCredentials.form.pfxWarning.body')}
             </InlineWarning>
             <Field
@@ -493,7 +595,7 @@ function EntryForm({
         ) : null}
 
         <p className="field__hint">{t('settings.providerCredentials.form.secretHint')}</p>
-        {SECRET_FIELDS[mode].map((spec) => {
+        {SECRET_FIELDS[effectiveMode].map((spec) => {
           const id = `${idBase}-secret-${spec.name}`;
           return (
             <Field
@@ -568,7 +670,9 @@ function EntryRow({
       },
     );
   }
-  const orderedIds = [...group.entries].sort((a, b) => a.priority - b.priority).map((e) => e.entry_id);
+  const orderedIds = [...group.entries]
+    .sort((a, b) => a.priority - b.priority)
+    .map((e) => e.entry_id);
 
   function move(direction: -1 | 1) {
     const from = orderedIds.indexOf(entry.entry_id);

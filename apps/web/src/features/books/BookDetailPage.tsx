@@ -56,7 +56,7 @@ import {
   numberingSchemeLabels,
   signatoryCapacityLabels,
 } from '../../api/labels';
-import { useT } from '../../i18n';
+import { t as translateNow, useT } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
@@ -401,13 +401,12 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
                   : t('books.detail.legalHold.stateNone')
               }
             >
-              A retenção legal bloqueia o descarte por regras de retenção enquanto estiver ativa.
-              Este painel mostra evidência local de estado/revisão e não aprova descarte nem declara
-              cumprimento legal.
+              {' '}
+              {t('uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras')}{' '}
             </InlineWarning>
             <dl className="deflist">
               <div>
-                <dt>Estado</dt>
+                <dt>{t('uiLiteral.bookDetailPage.estado')}</dt>
                 <dd>
                   <Badge tone={active ? 'warn' : 'neutral'}>
                     {active ? 'Retenção legal ativa' : 'Sem retenção legal'}
@@ -416,36 +415,38 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
               </div>
               {hold.data?.actor ? (
                 <div>
-                  <dt>Ator</dt>
+                  <dt>{t('uiLiteral.bookDetailPage.ator')}</dt>
                   <dd>{hold.data.actor}</dd>
                 </div>
               ) : null}
               {hold.data?.set_at ? (
                 <div>
-                  <dt>Definida em</dt>
+                  <dt>{t('uiLiteral.bookDetailPage.definidaEm')}</dt>
                   <dd>{hold.data.set_at}</dd>
                 </div>
               ) : null}
               {workflow ? (
                 <>
                   <div>
-                    <dt>Fluxo operador</dt>
+                    <dt>{t('uiLiteral.bookDetailPage.fluxoOperador')}</dt>
                     <dd>{workflow.status}</dd>
                   </div>
                   <div>
-                    <dt>Bloqueia revisão de descarte</dt>
+                    <dt>{t('uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte')}</dt>
                     <dd>{String(workflow.disposal_review_blocked)}</dd>
                   </div>
                   <div>
-                    <dt>Próximo passo</dt>
+                    <dt>{t('uiLiteral.bookDetailPage.proximoPasso')}</dt>
                     <dd>{workflow.next_step}</dd>
                   </div>
                   <div>
-                    <dt>Flags sem execução</dt>
+                    <dt>{t('uiLiteral.bookDetailPage.flagsSemExecucao')}</dt>
                     <dd>
                       destructive_disposal_completed:{' '}
-                      {String(workflow.destructive_disposal_completed)} · disposal_approved:{' '}
-                      {String(workflow.disposal_approved)} · legal_compliance_claimed:{' '}
+                      {String(workflow.destructive_disposal_completed)}{' '}
+                      {t('uiLiteral.bookDetailPage.disposalApproved')}{' '}
+                      {String(workflow.disposal_approved)}{' '}
+                      {t('uiLiteral.bookDetailPage.legalComplianceClaimed')}{' '}
                       {String(workflow.legal_compliance_claimed)}
                     </dd>
                   </div>
@@ -589,9 +590,8 @@ function PaperBookOcrDraftReviewForm({
           type="checkbox"
           checked={acknowledged}
           onChange={(event) => setAcknowledged(event.target.checked)}
-        />
-        Confirmo que esta revisão é apenas metadado auxiliar de OCR e não cria ata canónica,
-        documento canónico, assinatura ou validade legal.
+        />{' '}
+        {t('uiLiteral.bookDetailPage.confirmoQueEstaRevisaoEApenasMetadadoAuxiliar')}{' '}
       </label>
       {review.error ? <ErrorNote error={review.error} /> : null}
       <GateButton
@@ -620,12 +620,14 @@ function PaperBookOcrConversionExecutionArtifactPanel({
     >
       <div className="row-wrap">
         <Badge tone={artifact.reviewed_conversion_execution_artifact ? 'ok' : 'warn'}>
-          Evidência revista
+          {' '}
+          {t('uiLiteral.bookDetailPage.evidenciaRevista')}{' '}
         </Badge>
         <Badge tone={artifact.mutable_draft_act_created ? 'neutral' : 'warn'}>
-          Promoção para rascunho mutável
+          {' '}
+          {t('uiLiteral.bookDetailPage.promocaoParaRascunhoMutavel')}{' '}
         </Badge>
-        <Badge tone="warn">Não canónico</Badge>
+        <Badge tone="warn">{t('uiLiteral.bookDetailPage.naoCanonico')}</Badge>
       </div>
       <InlineWarning tone="info" title={t('books.detail.ocrArtifact.promotionTitle')}>
         <p>{artifact.artifact_notice}</p>
@@ -633,32 +635,35 @@ function PaperBookOcrConversionExecutionArtifactPanel({
       </InlineWarning>
       <dl className="deflist deflist--tight">
         <div>
-          <dt>Artefacto</dt>
+          <dt>{t('uiLiteral.bookDetailPage.artefacto')}</dt>
           <dd>
             <span className="mono">{artifact.artifact_id}</span>
           </dd>
         </div>
         <div>
-          <dt>Rascunho OCR aceite</dt>
+          <dt>{t('uiLiteral.bookDetailPage.rascunhoOcrAceite')}</dt>
           <dd>
             <span className="mono">{artifact.draft_id}</span>
           </dd>
         </div>
         <div>
-          <dt>Dossier associado</dt>
+          <dt>{t('uiLiteral.bookDetailPage.dossierAssociado')}</dt>
           <dd>{artifact.dossier_id ? <span className="mono">{artifact.dossier_id}</span> : '—'}</dd>
         </div>
         <div>
-          <dt>Ata mutável de destino</dt>
+          <dt>{t('uiLiteral.bookDetailPage.ataMutavelDeDestino')}</dt>
           <dd>
-            <Link to={`/atas/${artifact.target_act_id}`}>abrir ata</Link> ·{' '}
-            <span className="mono">{artifact.target_act_id}</span> · estado{' '}
-            {artifact.target_act_state} · ata mutável criada:{' '}
+            <Link to={`/atas/${artifact.target_act_id}`}>
+              {t('uiLiteral.bookDetailPage.abrirAta')}
+            </Link>{' '}
+            · <span className="mono">{artifact.target_act_id}</span>{' '}
+            {t('uiLiteral.bookDetailPage.estado.1528o1')} {artifact.target_act_state}{' '}
+            {t('uiLiteral.bookDetailPage.ataMutavelCriada')}{' '}
             {noClaimLabel(artifact.mutable_draft_act_created)}
           </dd>
         </div>
         <div>
-          <dt>Digest da fonte OCR</dt>
+          <dt>{t('uiLiteral.bookDetailPage.digestDaFonteOcr')}</dt>
           <dd>
             {artifact.source_text_digest ? (
               <span className="mono">{artifact.source_text_digest}</span>
@@ -668,55 +673,68 @@ function PaperBookOcrConversionExecutionArtifactPanel({
           </dd>
         </div>
         <div>
-          <dt>Páginas da fonte</dt>
+          <dt>{t('uiLiteral.bookDetailPage.paginasDaFonte')}</dt>
           <dd>{paperBookOcrArtifactPageSpansLabel(artifact)}</dd>
         </div>
         <div>
-          <dt>Revisão de origem</dt>
+          <dt>{t('uiLiteral.bookDetailPage.revisaoDeOrigem')}</dt>
           <dd>
             {paperBookOcrReviewStatusLabel(artifact.source_review_status)}
             {artifact.source_reviewed_at ? (
               <>
                 {' '}
-                em{' '}
+                {t('uiLiteral.bookDetailPage.em')}{' '}
                 <time className="mono" dateTime={artifact.source_reviewed_at}>
                   {artifact.source_reviewed_at}
                 </time>{' '}
-                por {artifact.source_reviewed_by ?? '—'}
+                {t('uiLiteral.bookDetailPage.por')} {artifact.source_reviewed_by ?? '—'}
               </>
             ) : null}
           </dd>
         </div>
         <div>
-          <dt>Criado</dt>
+          <dt>{t('uiLiteral.bookDetailPage.criado')}</dt>
           <dd>
             <time className="mono" dateTime={artifact.created_at}>
               {artifact.created_at}
             </time>{' '}
-            por {artifact.created_by}
+            {t('uiLiteral.bookDetailPage.por')} {artifact.created_by}
           </dd>
         </div>
         <div>
-          <dt>Flags sem reivindicação</dt>
+          <dt>{t('uiLiteral.bookDetailPage.flagsSemReivindicacao')}</dt>
           <dd>
-            conversão canónica: {noClaimLabel(artifact.canonical_conversion_claimed)} · minutas
-            canónicas: {noClaimLabel(artifact.canonical_minutes_claimed)} · ata canónica:{' '}
-            {noClaimLabel(artifact.canonical_act_created)} · documento canónico:{' '}
-            {noClaimLabel(artifact.canonical_document_created)} · documento assinado:{' '}
-            {noClaimLabel(artifact.signed_document_created)} · arquivo legal/pacote:{' '}
-            {noClaimLabel(artifact.archive_package_created)} · certificação de arquivo:{' '}
-            {noClaimLabel(artifact.archive_certification_claimed)} · PDF/A:{' '}
-            {noClaimLabel(artifact.pdfa_created)} · PDF/UA: {noClaimLabel(artifact.pdfua_created)} ·
-            assinatura: {noClaimLabel(artifact.signature_created)} · selo:{' '}
-            {noClaimLabel(artifact.seal_created)} · validade legal:{' '}
+            {' '}
+            {t('uiLiteral.bookDetailPage.conversaoCanonica')}{' '}
+            {noClaimLabel(artifact.canonical_conversion_claimed)}{' '}
+            {t('uiLiteral.bookDetailPage.minutasCanonicas')}{' '}
+            {noClaimLabel(artifact.canonical_minutes_claimed)}{' '}
+            {t('uiLiteral.bookDetailPage.ataCanonica')}{' '}
+            {noClaimLabel(artifact.canonical_act_created)}{' '}
+            {t('uiLiteral.bookDetailPage.documentoCanonico')}{' '}
+            {noClaimLabel(artifact.canonical_document_created)}{' '}
+            {t('uiLiteral.bookDetailPage.documentoAssinado')}{' '}
+            {noClaimLabel(artifact.signed_document_created)}{' '}
+            {t('uiLiteral.bookDetailPage.arquivoLegalPacote')}{' '}
+            {noClaimLabel(artifact.archive_package_created)}{' '}
+            {t('uiLiteral.bookDetailPage.certificacaoDeArquivo')}{' '}
+            {noClaimLabel(artifact.archive_certification_claimed)}{' '}
+            {t('uiLiteral.bookDetailPage.pdfA')} {noClaimLabel(artifact.pdfa_created)}{' '}
+            {t('uiLiteral.bookDetailPage.pdfUa')} {noClaimLabel(artifact.pdfua_created)}{' '}
+            {t('uiLiteral.bookDetailPage.assinatura')} {noClaimLabel(artifact.signature_created)}{' '}
+            {t('uiLiteral.bookDetailPage.selo')} {noClaimLabel(artifact.seal_created)}{' '}
+            {t('uiLiteral.bookDetailPage.validadeLegal')}{' '}
             {noClaimLabel(artifact.legal_validity_claimed)}
           </dd>
         </div>
         <div>
-          <dt>Texto OCR bruto</dt>
+          <dt>{t('uiLiteral.bookDetailPage.textoOcrBruto')}</dt>
           <dd>
-            No artefacto: {noClaimLabel(artifact.source_extracted_text_in_artifact)} · no evento de
-            ledger: {noClaimLabel(artifact.source_extracted_text_in_ledger_event)}
+            {' '}
+            {t('uiLiteral.bookDetailPage.noArtefacto')}{' '}
+            {noClaimLabel(artifact.source_extracted_text_in_artifact)}{' '}
+            {t('uiLiteral.bookDetailPage.noEventoDeLedger')}{' '}
+            {noClaimLabel(artifact.source_extracted_text_in_ledger_event)}
           </dd>
         </div>
       </dl>
@@ -749,9 +767,9 @@ function PaperBookOcrConversionDossierPanel({
         aria-label={t('books.detail.ocrDossier.sectionLabel', { id: dossier.dossier_id })}
       >
         <div className="row-wrap">
-          <Badge tone="ok">Dossier já registado</Badge>
-          <Badge tone="warn">Só metadados</Badge>
-          <Badge tone="warn">Não canónico</Badge>
+          <Badge tone="ok">{t('uiLiteral.bookDetailPage.dossierJaRegistado')}</Badge>
+          <Badge tone="warn">{t('uiLiteral.bookDetailPage.soMetadados')}</Badge>
+          <Badge tone="warn">{t('uiLiteral.bookDetailPage.naoCanonico')}</Badge>
         </div>
         <InlineWarning tone="info" title={t('books.detail.ocrDossier.metadataTitle')}>
           <p>{dossier.dossier_notice}</p>
@@ -759,13 +777,13 @@ function PaperBookOcrConversionDossierPanel({
         </InlineWarning>
         <dl className="deflist deflist--tight">
           <div>
-            <dt>Dossier</dt>
+            <dt>{t('uiLiteral.bookDetailPage.dossier')}</dt>
             <dd>
               <span className="mono">{dossier.dossier_id}</span>
             </dd>
           </div>
           <div>
-            <dt>Digest da fonte OCR</dt>
+            <dt>{t('uiLiteral.bookDetailPage.digestDaFonteOcr')}</dt>
             <dd>
               {dossier.source_text_digest ? (
                 <span className="mono">{dossier.source_text_digest}</span>
@@ -775,54 +793,64 @@ function PaperBookOcrConversionDossierPanel({
             </dd>
           </div>
           <div>
-            <dt>Páginas da fonte</dt>
+            <dt>{t('uiLiteral.bookDetailPage.paginasDaFonte')}</dt>
             <dd>{paperBookOcrDossierPageSpansLabel(dossier)}</dd>
           </div>
           <div>
-            <dt>Revisão de origem</dt>
+            <dt>{t('uiLiteral.bookDetailPage.revisaoDeOrigem')}</dt>
             <dd>
               {paperBookOcrReviewStatusLabel(dossier.source_review_status)}
               {dossier.source_reviewed_at ? (
                 <>
                   {' '}
-                  em{' '}
+                  {t('uiLiteral.bookDetailPage.em')}{' '}
                   <time className="mono" dateTime={dossier.source_reviewed_at}>
                     {dossier.source_reviewed_at}
                   </time>{' '}
-                  por {dossier.source_reviewed_by ?? '—'}
+                  {t('uiLiteral.bookDetailPage.por')} {dossier.source_reviewed_by ?? '—'}
                 </>
               ) : null}
             </dd>
           </div>
           <div>
-            <dt>Criado</dt>
+            <dt>{t('uiLiteral.bookDetailPage.criado')}</dt>
             <dd>
               <time className="mono" dateTime={dossier.created_at}>
                 {dossier.created_at}
               </time>{' '}
-              por {dossier.created_by}
+              {t('uiLiteral.bookDetailPage.por')} {dossier.created_by}
             </dd>
           </div>
           <div>
-            <dt>Limites do dossier</dt>
+            <dt>{t('uiLiteral.bookDetailPage.limitesDoDossier')}</dt>
             <dd>
-              Ata criada: {noClaimLabel(dossier.act_created)} · ata canónica criada:{' '}
-              {noClaimLabel(dossier.canonical_act_created)} · ata canónica reclamada:{' '}
-              {noClaimLabel(dossier.canonical_minutes_claimed)} · documento canónico:{' '}
-              {noClaimLabel(dossier.canonical_document_created)} · documento assinado:{' '}
-              {noClaimLabel(dossier.signed_document_created)} · pacote de arquivo:{' '}
-              {noClaimLabel(dossier.archive_package_created)} · PDF/A:{' '}
-              {noClaimLabel(dossier.pdfa_created)} · PDF/UA: {noClaimLabel(dossier.pdfua_created)} ·
-              assinatura: {noClaimLabel(dossier.signature_created)} · selo:{' '}
-              {noClaimLabel(dossier.seal_created)} · validade legal:{' '}
+              {' '}
+              {t('uiLiteral.bookDetailPage.ataCriada')} {noClaimLabel(dossier.act_created)}{' '}
+              {t('uiLiteral.bookDetailPage.ataCanonicaCriada')}{' '}
+              {noClaimLabel(dossier.canonical_act_created)}{' '}
+              {t('uiLiteral.bookDetailPage.ataCanonicaReclamada')}{' '}
+              {noClaimLabel(dossier.canonical_minutes_claimed)}{' '}
+              {t('uiLiteral.bookDetailPage.documentoCanonico')}{' '}
+              {noClaimLabel(dossier.canonical_document_created)}{' '}
+              {t('uiLiteral.bookDetailPage.documentoAssinado')}{' '}
+              {noClaimLabel(dossier.signed_document_created)}{' '}
+              {t('uiLiteral.bookDetailPage.pacoteDeArquivo')}{' '}
+              {noClaimLabel(dossier.archive_package_created)} {t('uiLiteral.bookDetailPage.pdfA')}{' '}
+              {noClaimLabel(dossier.pdfa_created)} {t('uiLiteral.bookDetailPage.pdfUa')}{' '}
+              {noClaimLabel(dossier.pdfua_created)} {t('uiLiteral.bookDetailPage.assinatura')}{' '}
+              {noClaimLabel(dossier.signature_created)} {t('uiLiteral.bookDetailPage.selo')}{' '}
+              {noClaimLabel(dossier.seal_created)} {t('uiLiteral.bookDetailPage.validadeLegal')}{' '}
               {noClaimLabel(dossier.legal_validity_claimed)}
             </dd>
           </div>
           <div>
-            <dt>Texto OCR bruto</dt>
+            <dt>{t('uiLiteral.bookDetailPage.textoOcrBruto')}</dt>
             <dd>
-              Na resposta: {noClaimLabel(dossier.source_extracted_text_in_response)} · no evento de
-              ledger: {noClaimLabel(dossier.source_extracted_text_in_ledger_event)}
+              {' '}
+              {t('uiLiteral.bookDetailPage.naResposta')}{' '}
+              {noClaimLabel(dossier.source_extracted_text_in_response)}{' '}
+              {t('uiLiteral.bookDetailPage.noEventoDeLedger')}{' '}
+              {noClaimLabel(dossier.source_extracted_text_in_ledger_event)}
             </dd>
           </div>
         </dl>
@@ -831,7 +859,9 @@ function PaperBookOcrConversionDossierPanel({
             className="stack--tight"
             aria-label={t('books.detail.ocrDossier.artifactsLabel', { id: dossier.dossier_id })}
           >
-            <p className="card__label">Evidência de execução de conversão revista</p>
+            <p className="card__label">
+              {t('uiLiteral.bookDetailPage.evidenciaDeExecucaoDeConversaoRevista')}
+            </p>
             {dossier.conversion_execution_artifacts.map((artifact) => (
               <PaperBookOcrConversionExecutionArtifactPanel
                 key={artifact.artifact_id}
@@ -852,9 +882,8 @@ function PaperBookOcrConversionDossierPanel({
       aria-label={t('books.detail.ocrDossier.createSectionLabel', { id: draft.draft_id })}
     >
       <InlineWarning tone="info" title={t('books.detail.ocrDossier.metadataTitle')}>
-        Cria ou devolve um dossier só com metadados, digest e evidência de revisão do rascunho OCR
-        aceite. Não cria ata, documento, PDF/A, assinatura, selo, pacote de arquivo ou validade
-        legal.
+        {' '}
+        {t('uiLiteral.bookDetailPage.criaOuDevolveUmDossierSoComMetadados')}{' '}
       </InlineWarning>
       {loading ? (
         <Skeleton height="3rem" />
@@ -908,10 +937,10 @@ function PaperBookOcrDossierReviewSummary({
 
   return (
     <section className="stack--tight" aria-label={t('books.detail.ocrSummary.sectionLabel')}>
-      <p className="card__label">Resumo OCR/dossier derivado</p>
+      <p className="card__label">{t('uiLiteral.bookDetailPage.resumoOcrDossierDerivado')}</p>
       <dl className="deflist deflist--tight">
         <div>
-          <dt>Rascunho revisto</dt>
+          <dt>{t('uiLiteral.bookDetailPage.rascunhoRevisto')}</dt>
           <dd>
             {reviewedDraft ? (
               <>
@@ -924,20 +953,17 @@ function PaperBookOcrDossierReviewSummary({
           </dd>
         </div>
         <div>
-          <dt>Rascunho aceite</dt>
+          <dt>{t('uiLiteral.bookDetailPage.rascunhoAceite')}</dt>
           <dd>
-            {acceptedDraft ? (
-              <>
-                Aceite para referência auxiliar
-                {acceptedWithoutCanonicalConversion ? ', sem conversão canónica' : ''}.
-              </>
-            ) : (
-              'Sem rascunho OCR aceite.'
-            )}
+            {acceptedDraft
+              ? acceptedWithoutCanonicalConversion
+                ? t('uiLiteral.bookDetailPage.acceptedWithoutCanonicalConversion')
+                : t('uiLiteral.bookDetailPage.aceiteParaReferenciaAuxiliar')
+              : t('uiLiteral.bookDetailPage.noAcceptedOcrDraft')}
           </dd>
         </div>
         <div>
-          <dt>Dossier</dt>
+          <dt>{t('uiLiteral.bookDetailPage.dossier')}</dt>
           <dd>
             {loading
               ? 'A carregar metadados de dossier.'
@@ -949,29 +975,25 @@ function PaperBookOcrDossierReviewSummary({
           </dd>
         </div>
         <div>
-          <dt>Texto OCR bruto no dossier</dt>
+          <dt>{t('uiLiteral.bookDetailPage.textoOcrBrutoNoDossier')}</dt>
           <dd>{noRawOcrTextInDossier ? 'não' : 'sim'}</dd>
         </div>
         <div>
-          <dt>Inclui</dt>
+          <dt>{t('uiLiteral.bookDetailPage.inclui')}</dt>
+          <dd> {t('uiLiteral.bookDetailPage.estadoDeRevisaoOcrDigestDeTextoQuando')} </dd>
+        </div>
+        <div>
+          <dt>{t('uiLiteral.bookDetailPage.exclui')}</dt>
           <dd>
-            Estado de revisão OCR, digest de texto quando indicado, páginas revistas, motor OCR e
-            metadados de dossier quando existirem.
+            {' '}
+            {t(
+              'uiLiteral.bookDetailPage.ataCanonicaDocumentoCanonicoPacoteDeArquivoAssinatura',
+            )}{' '}
           </dd>
         </div>
         <div>
-          <dt>Exclui</dt>
-          <dd>
-            Ata canónica, documento canónico, pacote de arquivo, assinatura, selo, PDF/A, PDF/UA e
-            validade legal.
-          </dd>
-        </div>
-        <div>
-          <dt>Flags sem reivindicação</dt>
-          <dd>
-            Só metadados: sim · ata canónica: não · documento canónico: não · pacote de arquivo: não
-            · assinatura: não · selo: não · PDF/A: não · PDF/UA: não · validade legal: não.
-          </dd>
+          <dt>{t('uiLiteral.bookDetailPage.flagsSemReivindicacao')}</dt>
+          <dd> {t('uiLiteral.bookDetailPage.soMetadadosSimAtaCanonicaNaoDocumentoCanonico')} </dd>
         </div>
       </dl>
     </section>
@@ -997,10 +1019,10 @@ function PaperBookOcrCanonicalRehearsalPanel({
       className="stack--tight"
       aria-label={t('books.detail.preflight.sectionLabel', { id: importId })}
     >
-      <p className="card__label">Relatório OCR/canónico local</p>
+      <p className="card__label">{t('uiLiteral.bookDetailPage.relatorioOcrCanonicoLocal')}</p>
       <InlineWarning tone="info" title={t('books.detail.preflight.metadataOnlyTitle')}>
-        Rehearsal local calculado a partir de metadados preservados. Não executa OCR, não cria
-        documentos canónicos, não assina e não valida legalmente.
+        {' '}
+        {t('uiLiteral.bookDetailPage.rehearsalLocalCalculadoAPartirDeMetadadosPreservados')}{' '}
       </InlineWarning>
       {loading ? (
         <SkeletonDeflist rows={6} />
@@ -1009,27 +1031,30 @@ function PaperBookOcrCanonicalRehearsalPanel({
       ) : report ? (
         <dl className="deflist deflist--tight">
           <div>
-            <dt>Estado</dt>
+            <dt>{t('uiLiteral.bookDetailPage.estado')}</dt>
             <dd>{paperBookRehearsalStatusLabel(report.readiness.status)}</dd>
           </div>
           <div>
-            <dt>Âmbito</dt>
+            <dt>{t('uiLiteral.bookDetailPage.ambito')}</dt>
             <dd>{report.rehearsal_scope}</dd>
           </div>
           <div>
-            <dt>Importação preservada</dt>
+            <dt>{t('uiLiteral.bookDetailPage.importacaoPreservada')}</dt>
             <dd>
-              <span className="mono">{report.import_id}</span> · páginas{' '}
-              {report.source_import.source_page_range.from} a{' '}
-              {report.source_import.source_page_range.to} · digest presente:{' '}
+              <span className="mono">{report.import_id}</span>{' '}
+              {t('uiLiteral.bookDetailPage.paginas')} {report.source_import.source_page_range.from}{' '}
+              {t('uiLiteral.bookDetailPage.a')} {report.source_import.source_page_range.to}{' '}
+              {t('uiLiteral.bookDetailPage.digestPresente')}{' '}
               {noClaimLabel(report.source_import.package_digest_present)}
             </dd>
           </div>
           <div>
-            <dt>Rascunhos OCR</dt>
+            <dt>{t('uiLiteral.bookDetailPage.rascunhosOcr')}</dt>
             <dd>
-              total {report.ocr_evidence.draft_count} · aceites{' '}
-              {report.ocr_evidence.accepted_draft_count} · desconhecidos{' '}
+              {' '}
+              {t('uiLiteral.bookDetailPage.total')} {report.ocr_evidence.draft_count}{' '}
+              {t('uiLiteral.bookDetailPage.aceites')} {report.ocr_evidence.accepted_draft_count}{' '}
+              {t('uiLiteral.bookDetailPage.desconhecidos')}{' '}
               {report.ocr_evidence.confidence_buckets.unknown_count}
               {report.ocr_evidence.selected_accepted_draft_id ? (
                 <>
@@ -1040,9 +1065,11 @@ function PaperBookOcrCanonicalRehearsalPanel({
             </dd>
           </div>
           <div>
-            <dt>Dossier</dt>
+            <dt>{t('uiLiteral.bookDetailPage.dossier')}</dt>
             <dd>
-              total {report.dossier_evidence.dossier_count} · metadados:{' '}
+              {' '}
+              {t('uiLiteral.bookDetailPage.total')} {report.dossier_evidence.dossier_count}{' '}
+              {t('uiLiteral.bookDetailPage.metadados')}{' '}
               {noClaimLabel(report.dossier_evidence.metadata_only_dossier_present)}
               {report.dossier_evidence.selected_dossier_id ? (
                 <>
@@ -1053,25 +1080,29 @@ function PaperBookOcrCanonicalRehearsalPanel({
             </dd>
           </div>
           <div>
-            <dt>Artefactos</dt>
+            <dt>{t('uiLiteral.bookDetailPage.artefactos')}</dt>
             <dd>
-              draft mutável:{' '}
+              {' '}
+              {t('uiLiteral.bookDetailPage.draftMutavel')}{' '}
               {noClaimLabel(report.dossier_evidence.mutable_draft_act_artifact_present)}
-              {' · '}execuções ligadas: {report.dossier_evidence.bound_execution_artifact_count}
+              {' · '}
+              {t('uiLiteral.bookDetailPage.execucoesLigadas')}{' '}
+              {report.dossier_evidence.bound_execution_artifact_count}
             </dd>
           </div>
           <div>
-            <dt>Bloqueios</dt>
+            <dt>{t('uiLiteral.bookDetailPage.bloqueios')}</dt>
             <dd>{blockers.length ? blockers.join(', ') : 'nenhum bloqueio local no relatório'}</dd>
           </div>
           <div>
-            <dt>Sem reivindicação</dt>
+            <dt>{t('uiLiteral.bookDetailPage.semReivindicacao')}</dt>
             <dd>{paperBookRehearsalNoClaimText(report.no_claims)}</dd>
           </div>
         </dl>
       ) : (
-        <EmptyState title="Relatório local indisponível">
-          A importação preservada ainda não devolveu relatório OCR/canónico local.
+        <EmptyState title={t('uiLiteral.bookDetailPage.relatorioLocalIndisponivel')}>
+          {' '}
+          {t('uiLiteral.bookDetailPage.aImportacaoPreservadaAindaNaoDevolveuRelatorioOcr')}{' '}
         </EmptyState>
       )}
     </section>
@@ -1308,9 +1339,8 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
             type="checkbox"
             checked={acknowledged}
             onChange={(event) => setAcknowledged(event.target.checked)}
-          />
-          Confirmo que este rascunho OCR é auxiliar, não canónico e não cria ata, documento,
-          assinatura ou validade legal.
+          />{' '}
+          {t('uiLiteral.bookDetailPage.confirmoQueEsteRascunhoOcrEAuxiliarNao')}{' '}
         </label>
         {formError ? <ErrorNote error={formError} /> : null}
         <GateButton
@@ -1330,7 +1360,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
         <ErrorNote error={drafts.error} />
       ) : rows.length === 0 ? (
         <EmptyState title={t('books.detail.ocrDraft.emptyTitle')}>
-          <p>Esta importação preservada ainda não tem OCR auxiliar para revisão.</p>
+          <p>{t('uiLiteral.bookDetailPage.estaImportacaoPreservadaAindaNaoTemOcrAuxiliar')}</p>
         </EmptyState>
       ) : (
         <ul className="plain-list" aria-label={t('books.detail.ocrDraft.listLabel')}>
@@ -1338,7 +1368,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
             <li key={draft.draft_id} className="chainrow">
               <div className="stack--tight">
                 <div className="row-wrap">
-                  <Badge tone="warn">Não canónico</Badge>
+                  <Badge tone="warn">{translateNow('uiLiteral.bookDetailPage.naoCanonico')}</Badge>
                   <Badge tone={paperBookOcrReviewTone(draft.review_status)}>
                     {paperBookOcrReviewStatusLabel(draft.review_status)}
                   </Badge>
@@ -1349,21 +1379,21 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                 </InlineWarning>
                 <dl className="deflist deflist--tight">
                   <div>
-                    <dt>Texto extraído</dt>
+                    <dt>{translateNow('uiLiteral.bookDetailPage.textoExtraido')}</dt>
                     <dd>{paperBookOcrTextPreview(draft)}</dd>
                   </div>
                   <div>
-                    <dt>Digest do texto</dt>
+                    <dt>{translateNow('uiLiteral.bookDetailPage.digestDoTexto')}</dt>
                     <dd>
                       {draft.text_digest ? <span className="mono">{draft.text_digest}</span> : '—'}
                     </dd>
                   </div>
                   <div>
-                    <dt>Páginas revistas</dt>
+                    <dt>{translateNow('uiLiteral.bookDetailPage.paginasRevistas')}</dt>
                     <dd>{paperBookOcrPageSpansLabel(draft)}</dd>
                   </div>
                   <div>
-                    <dt>Motor</dt>
+                    <dt>{translateNow('uiLiteral.bookDetailPage.motor')}</dt>
                     <dd>
                       {draft.engine.name}
                       {draft.engine.version ? ` ${draft.engine.version}` : ''}
@@ -1371,23 +1401,23 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                     </dd>
                   </div>
                   <div>
-                    <dt>Criado</dt>
+                    <dt>{translateNow('uiLiteral.bookDetailPage.criado')}</dt>
                     <dd>
                       <time className="mono" dateTime={draft.created_at}>
                         {draft.created_at}
                       </time>{' '}
-                      por {draft.created_by}
+                      {translateNow('uiLiteral.bookDetailPage.por')} {draft.created_by}
                     </dd>
                   </div>
                   <div>
-                    <dt>Revisto</dt>
+                    <dt>{translateNow('uiLiteral.bookDetailPage.revisto')}</dt>
                     <dd>
                       {draft.reviewed_at ? (
                         <>
                           <time className="mono" dateTime={draft.reviewed_at}>
                             {draft.reviewed_at}
                           </time>{' '}
-                          por {draft.reviewed_by ?? '—'}
+                          {translateNow('uiLiteral.bookDetailPage.por')} {draft.reviewed_by ?? '—'}
                         </>
                       ) : (
                         '—'
@@ -1395,16 +1425,22 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                     </dd>
                   </div>
                   <div>
-                    <dt>Nota</dt>
+                    <dt>{translateNow('uiLiteral.bookDetailPage.nota')}</dt>
                     <dd>{draft.review_note ?? '—'}</dd>
                   </div>
                   <div>
-                    <dt>Limites</dt>
+                    <dt>{translateNow('uiLiteral.bookDetailPage.limites')}</dt>
                     <dd>
-                      Texto autoritativo: {draft.authoritative_text_claimed ? 'sim' : 'não'} · ata
-                      canónica: {draft.canonical_act_created ? 'sim' : 'não'} · documento canónico:{' '}
-                      {draft.canonical_document_created ? 'sim' : 'não'} · assinatura:{' '}
-                      {draft.signature_created ? 'sim' : 'não'} · validade legal:{' '}
+                      {' '}
+                      {translateNow('uiLiteral.bookDetailPage.textoAutoritativo')}{' '}
+                      {draft.authoritative_text_claimed ? 'sim' : 'não'}{' '}
+                      {translateNow('uiLiteral.bookDetailPage.ataCanonica')}{' '}
+                      {draft.canonical_act_created ? 'sim' : 'não'}{' '}
+                      {translateNow('uiLiteral.bookDetailPage.documentoCanonico')}{' '}
+                      {draft.canonical_document_created ? 'sim' : 'não'}{' '}
+                      {translateNow('uiLiteral.bookDetailPage.assinatura')}{' '}
+                      {draft.signature_created ? 'sim' : 'não'}{' '}
+                      {translateNow('uiLiteral.bookDetailPage.validadeLegal')}{' '}
                       {draft.legal_validity_claimed ? 'sim' : 'não'}
                     </dd>
                   </div>
@@ -1421,25 +1457,28 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                 {draft.review_status === 'accepted' ? (
                   <div className="stack--tight">
                     <InlineWarning tone="info" title={t('books.detail.ocrDraft.createActTitle')}>
-                      Cria uma ata em estado Draft com o texto OCR como apoio de deliberações. Não
-                      cria documento canónico, PDF/A, assinatura, selo nem aceitação de validade
-                      legal.
+                      {' '}
+                      {translateNow('uiLiteral.bookDetailPage.criaUmaAtaEmEstadoDraftComO')}{' '}
                     </InlineWarning>
                     {createdActDrafts[draft.draft_id] ? (
                       <p className="muted">
-                        Rascunho criado:{' '}
+                        {' '}
+                        {translateNow('uiLiteral.bookDetailPage.rascunhoCriado')}{' '}
                         <Link to={`/atas/${createdActDrafts[draft.draft_id].act.id}`}>
-                          abrir ata
-                        </Link>
-                        . Documento canónico:{' '}
+                          {' '}
+                          {translateNow('uiLiteral.bookDetailPage.abrirAta')}{' '}
+                        </Link>{' '}
+                        {translateNow('uiLiteral.bookDetailPage.documentoCanonico.19tw3h')}{' '}
                         {createdActDrafts[draft.draft_id].canonical_document_created
                           ? 'sim'
                           : 'não'}{' '}
-                        · PDF/A: {createdActDrafts[draft.draft_id].pdfa_created ? 'sim' : 'não'} ·
-                        assinatura:{' '}
-                        {createdActDrafts[draft.draft_id].signature_created ? 'sim' : 'não'} · selo:{' '}
-                        {createdActDrafts[draft.draft_id].seal_created ? 'sim' : 'não'} · validade
-                        legal:{' '}
+                        {translateNow('uiLiteral.bookDetailPage.pdfA')}{' '}
+                        {createdActDrafts[draft.draft_id].pdfa_created ? 'sim' : 'não'}{' '}
+                        {translateNow('uiLiteral.bookDetailPage.assinatura')}{' '}
+                        {createdActDrafts[draft.draft_id].signature_created ? 'sim' : 'não'}{' '}
+                        {translateNow('uiLiteral.bookDetailPage.selo')}{' '}
+                        {createdActDrafts[draft.draft_id].seal_created ? 'sim' : 'não'}{' '}
+                        {translateNow('uiLiteral.bookDetailPage.validadeLegal')}{' '}
                         {createdActDrafts[draft.draft_id].legal_validity_claimed ? 'sim' : 'não'}
                       </p>
                     ) : null}
@@ -1628,14 +1667,8 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
           title={t('books.detail.imports.runOcrTitle')}
           intro={
             <div className="stack--tight">
-              <p>
-                O resultado será um rascunho OCR auxiliar não canónico para revisão da importação
-                preservada.
-              </p>
-              <p>
-                Esta ação não cria ata canónica, documento canónico, PDF/A, assinatura ou validade
-                legal.
-              </p>
+              <p> {t('uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao')} </p>
+              <p> {t('uiLiteral.bookDetailPage.estaAcaoNaoCriaAtaCanonicaDocumentoCanonico')} </p>
             </div>
           }
           confirmLabel={t('books.detail.imports.runOcrConfirm')}
@@ -1644,14 +1677,12 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
           onConfirm={confirmRunLocalOcr}
         />
         <InlineWarning tone="warn" title={t('books.detail.imports.nonCanonicalTitle')}>
-          Estes pacotes preservam cópias de livros em papel para consulta. Não substituem atas
-          digitais canónicas e não declaram validade legal, PDF/A, validade de assinatura ou
-          assinatura qualificada.
+          {' '}
+          {t('uiLiteral.bookDetailPage.estesPacotesPreservamCopiasDeLivrosEmPapel')}{' '}
         </InlineWarning>
         <InlineWarning tone="info" title={t('books.detail.imports.reviewGuidanceTitle')}>
-          Valide datas, contagem de páginas, fixidez e contexto do livro antes de preservar. A
-          ligação exibida aqui é apenas contextual: não cria nem altera cadeias de atas, nem
-          transforma a importação em ata digital canónica.
+          {' '}
+          {t('uiLiteral.bookDetailPage.valideDatasContagemDePaginasFixidezEContexto')}{' '}
         </InlineWarning>
 
         <form className="form">
@@ -1739,7 +1770,8 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
             />
           </Field>
           <p className="field__hint">
-            A entidade e o livro são preenchidos a partir deste detalhe: {entityName || '—'} ·{' '}
+            {' '}
+            {t('uiLiteral.bookDetailPage.aEntidadeEOLivroSaoPreenchidosA')} {entityName || '—'} ·{' '}
             {entityNipc || '—'} · {book.id}
           </p>
           <div className="form__actions">
@@ -1770,8 +1802,10 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
           <InlineWarning tone="info" title={t('books.detail.imports.reportTitle')}>
             <p>{report.legal_notice}</p>
             <p>
-              Estado: {report.candidate_classification.preservation_status}. Validade legal
-              declarada: não.
+              {' '}
+              {t('uiLiteral.bookDetailPage.estado.kzwel3')}{' '}
+              {report.candidate_classification.preservation_status}
+              {t('uiLiteral.bookDetailPage.validadeLegalDeclaradaNao')}{' '}
             </p>
           </InlineWarning>
         ) : null}
@@ -1782,15 +1816,15 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
           <ErrorNote error={imports.error} />
         ) : rows.length === 0 ? (
           <EmptyState title={t('books.detail.imports.emptyTitle')}>
-            <p>Não há pacotes de livro em papel preservados para esta referência de livro.</p>
+            <p>{t('uiLiteral.bookDetailPage.naoHaPacotesDeLivroEmPapelPreservados')}</p>
           </EmptyState>
         ) : (
           <Table
             head={
               <tr>
-                <th>Ficheiro</th>
-                <th>Contexto</th>
-                <th>Revisão e fixidez</th>
+                <th>{t('uiLiteral.bookDetailPage.ficheiro')}</th>
+                <th>{t('uiLiteral.bookDetailPage.contexto')}</th>
+                <th>{t('uiLiteral.bookDetailPage.revisaoEFixidez')}</th>
                 <th />
               </tr>
             }
@@ -1803,22 +1837,30 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                       <span>{row.source_filename ?? row.import_id}</span>
                       <span className="muted">
                         {formatBytes(row.size_bytes)} · {row.content_type} · {row.page_count}{' '}
-                        páginas
+                        {translateNow('uiLiteral.bookDetailPage.paginas')}{' '}
                       </span>
                     </div>
                   </td>
                   <td>
                     <div className="stack--tight">
                       <span>
-                        {row.date_from} a {row.date_to}
-                      </span>
-                      <span className="muted">Intervalo: {paperBookPageRange(row)}</span>
-                      <span className="muted">
-                        Livro: <Link to={`/livros/${row.book_ref}`}>{row.book_ref}</Link> ·
-                        Entidade: {row.entity_name || row.entity_ref}
+                        {row.date_from} {translateNow('uiLiteral.bookDetailPage.a')} {row.date_to}
                       </span>
                       <span className="muted">
-                        Âmbito de arquivo: paper-book-import:{row.import_id}
+                        {translateNow('uiLiteral.bookDetailPage.intervalo')}{' '}
+                        {paperBookPageRange(row)}
+                      </span>
+                      <span className="muted">
+                        {' '}
+                        {translateNow('uiLiteral.bookDetailPage.livro')}{' '}
+                        <Link to={`/livros/${row.book_ref}`}>{row.book_ref}</Link>{' '}
+                        {translateNow('uiLiteral.bookDetailPage.entidade')}{' '}
+                        {row.entity_name || row.entity_ref}
+                      </span>
+                      <span className="muted">
+                        {' '}
+                        {translateNow('uiLiteral.bookDetailPage.ambitoDeArquivoPaperBookImport')}
+                        {row.import_id}
                       </span>
                     </div>
                   </td>
@@ -1834,8 +1876,12 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                         {paperBookOcrStatusLabel(row.ocr_status)}
                       </Badge>
                       <span className="muted">
-                        OCR: metadado apenas; texto armazenado:{' '}
-                        {row.ocr_text_stored ? 'sim' : 'não'}; texto autoritativo:{' '}
+                        {' '}
+                        {translateNow(
+                          'uiLiteral.bookDetailPage.ocrMetadadoApenasTextoArmazenado',
+                        )}{' '}
+                        {row.ocr_text_stored ? 'sim' : 'não'}
+                        {translateNow('uiLiteral.bookDetailPage.textoAutoritativo.9xkq63')}{' '}
                         {row.authoritative_text_claimed ? 'sim' : 'não'}
                       </span>
                       <span className="mono">{row.sha256.slice(0, 16)}...</span>
@@ -2014,9 +2060,8 @@ export function BookDetailPage() {
       />
 
       <InlineWarning tone="info" title={t('books.detail.dglab.warningTitle')}>
-        O manifesto DGLAB local é um scaffold JSON derivado do pacote interno. Não é exportação
-        oficial DGLAB, submissão governamental, certificação arquivística legal, certificação PDF/A,
-        PAdES ou PDF-UA, nem registo de descarte destrutivo.
+        {' '}
+        {t('uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson')}{' '}
       </InlineWarning>
 
       <Card title={t('books.termoAbertura')}>

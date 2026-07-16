@@ -90,9 +90,7 @@ describe('checkServerVersion', () => {
 
   it('swallows a non-2xx health response (typed ApiError) without warning', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(healthResponse({ error: 'unavailable' }, 503));
+    const fetchMock = vi.fn().mockResolvedValue(healthResponse({ error: 'unavailable' }, 503));
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(checkServerVersion()).resolves.toBeUndefined();

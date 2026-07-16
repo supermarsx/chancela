@@ -132,7 +132,9 @@ describe('CloseBookForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /encerrar livro/i }));
 
     // Inline ErrorNote (close.error) and the error toast both surface the server message.
-    expect((await screen.findAllByText('livro já se encontra encerrado')).length).toBeGreaterThanOrEqual(1);
+    expect(
+      (await screen.findAllByText('livro já se encontra encerrado')).length,
+    ).toBeGreaterThanOrEqual(1);
     expect(onClosed).not.toHaveBeenCalled();
     // The submit returns to its idle, enabled state after the failure.
     const submit = screen.getByRole('button', { name: /encerrar livro/i }) as HTMLButtonElement;

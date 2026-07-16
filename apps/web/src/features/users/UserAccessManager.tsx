@@ -162,8 +162,9 @@ export function UserAccessManager({ user }: { user: UserView }) {
 
   // Cancel any pending recovery-phrase clipboard wipe when this manager unmounts.
   useEffect(() => {
+    const timerRef = recClearTimerRef;
     return () => {
-      if (recClearTimerRef.current) clearTimeout(recClearTimerRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 

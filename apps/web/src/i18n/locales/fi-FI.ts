@@ -19,13 +19,25 @@ export const fiFI: Catalog = {
   'rbac.delegacoes.tab': 'Delegoinnit',
   'rbac.scope.label': 'Laajuus',
   'rbac.scope.global': 'Globaali (koko instanssi)',
+  'rbac.scope.tenant': 'Vuokraajaorganisaatio',
   'rbac.scope.entity': 'Yhteisö',
   'rbac.scope.book': 'Kirja',
+  'rbac.scope.act': 'Pöytäkirja',
+  'rbac.scope.folder': 'Kansio',
+  'rbac.scope.templateLibrary': 'Mallikirjasto',
+  'rbac.scope.archive': 'Arkisto',
+  'rbac.scope.integration': 'Liitäntä',
+  'rbac.scope.repository': 'Tietovarasto',
   'rbac.scope.global.desc': 'Koskee koko instanssia.',
+  'rbac.scope.tenant.desc': 'Koskee organisaatiota ja sen sisältämiä resursseja.',
   'rbac.scope.entity.desc': 'Koskee yhteisöä ja sen kirjoja.',
   'rbac.scope.book.desc': 'Koskee vain tätä kirjaa.',
+  'rbac.scope.resource.desc':
+    'Koskee määritettyä resurssia ja sen alaisia resursseja sallitussa hierarkiassa.',
+  'rbac.scope.tenant.pick': 'Valitse organisaatio',
   'rbac.scope.entity.pick': 'Valitse yhteisö',
   'rbac.scope.book.pick': 'Valitse kirja',
+  'rbac.scope.resource.pick': 'Resurssin tunniste',
   'rbac.group.entity': 'Yhteisöt',
   'rbac.group.book': 'Kirjat',
   'rbac.group.act': 'Pöytäkirjat',
@@ -44,7 +56,7 @@ export const fiFI: Catalog = {
     'Voit valita vain omistamiasi käyttöoikeuksia. Muut näkyvät poissa käytöstä.',
   'rbac.matrix.selectAll': 'Valitse kaikki',
   'rbac.matrix.clear': 'Tyhjennä',
-  'rbac.matrix.meta': 'Meta',
+  'rbac.matrix.meta': 'Maali',
   'rbac.matrix.notHeld': 'Sinulla ei ole tätä käyttöoikeutta',
   'rbac.role.edit.title': 'Muokkaa roolia',
   'rbac.role.create.title': 'Uusi rooli',
@@ -863,12 +875,13 @@ export const fiFI: Catalog = {
   'acts.attachments': 'Liitteet',
   'acts.lifecycle': 'Elinkaari',
   'acts.compliance': 'Vaatimustenmukaisuus',
-  'acts.manualSignature.title': 'Manuaalinen allekirjoitus (SIG-03)',
+  'acts.manualSignature.title':
+    'Vaihtoehtoinen reitti: manuaalisesti allekirjoitettu alkuperäinen (SIG-03)',
   'acts.manualSignature.body':
-    'Hyväksytyn sähköisen allekirjoituksen integraatiota ei ole vielä käytettävissä. Sinetöitäessä pöytäkirja ketjutetaan lokiin läsnäolijoiden manuaalisen allekirjoituksen perusteella — varmista, että allekirjoittajat ovat allekirjoittaneet paperiversion tai PDF-tiedoston ennen jatkamista.',
+    'Allekirjoitetusta PDF-tiedostosta ei vieläkään ole teknisiä todisteita. Voit allekirjoittaa yllä olevan kanonisen kopion tai vaihtoehtoisesti tallentaa viittauksen allekirjoitettuun alkuperäiskappaleeseen manuaalisesti. Tämä kopio ei vahvista allekirjoitusta tai sertifioi tiedostoa.',
   'acts.sealing.title': 'Sinetöinti',
   'acts.sealing.ready':
-    'Pöytäkirja on vaatimustenmukainen ja allekirjoitettavana — se voidaan sinetöidä.',
+    'Pöytäkirja on sääntöjen mukainen ja valmis allekirjoittamaan ennen sinetöimistä.',
   'acts.sealing.readyWithWarnings':
     'Pöytäkirjassa on ei-estäviä vaatimustenmukaisuusvaroituksia. Tarkista ja kuittaa ne nimenomaisesti ennen sinetöintiä.',
   'acts.sealing.warningAck.title': 'Vahvista manuaalinen sinetöinti',
@@ -995,7 +1008,7 @@ export const fiFI: Catalog = {
   'ledger.filters.clear.aria': 'Tyhjennä arkistosuodattimet',
   'ledger.search.placeholder': 'Arkiston hakusana',
   'ledger.scope.label': 'Suodata soveltamisalan mukaan',
-  'ledger.scope.placeholder': 'entity / book / act…',
+  'ledger.scope.placeholder': 'entiteetti/kirja/toimi…',
   'ledger.kind.label': 'Tapahtumatyyppi',
   'ledger.kind.placeholder': 'act.sealed, book.opened…',
   'ledger.actor.label': 'Tekijä',
@@ -1263,7 +1276,7 @@ export const fiFI: Catalog = {
   'pdfValidator.field.laterUpdates': 'Myöhemmät inkrementaaliset päivitykset',
   'pdfValidator.field.signedRevisionDigest': 'Allekirjoitetun revision SHA-256',
   'pdfValidator.field.cades': 'CAdES',
-  'pdfValidator.field.signingCertificate': 'SigningCertificateV2',
+  'pdfValidator.field.signingCertificate': 'AllekirjoitussertifikaattiV2',
   'pdfValidator.field.signerSubject': 'Varmenteen kohde',
   'pdfValidator.field.signerCertDigest': 'Varmenteen SHA-256',
   'pdfValidator.field.signingTime': 'Allekirjoitusaika',
@@ -1491,7 +1504,7 @@ export const fiFI: Catalog = {
     'Tarkastustunniste: pieniä kirjaimia, numeroita ja . _ - (esim. amelia.marques).',
   'users.field.username.placeholder': 'amelia.marques',
   'users.field.displayName.label': 'Näyttönimi (valinnainen)',
-  'users.field.displayName.placeholder': 'Amélia Marques',
+  'users.field.displayName.placeholder': 'Amelia Marques',
   'users.create.submitting': 'Luodaan…',
   'users.create.submit': 'Luo käyttäjä',
   'users.list.cardTitle': 'Käyttäjät',
@@ -1527,8 +1540,10 @@ export const fiFI: Catalog = {
   'settings.appearance.intensity.hint': '0–100. Skaalaa rakeen peittävyyttä reaaliaikaisesti.',
   'settings.appearance.reroll': 'Luo rae uudelleen',
   'settings.appearance.colors.title': 'Mukautetut värit',
-  'settings.appearance.colors.hint': 'Valitse omat värisi; jätä näyte koskematta säilyttääksesi teeman oletusvärin.',
-  'settings.appearance.colors.help': 'Korvaa sovelluksen ensisijaisen, toissijaisen, tausta- ja pintavärin. Tekstin kontrastia säädetään automaattisesti luettavuuden säilyttämiseksi. Puhtaasti ulkoasuun liittyvä — ei vaikuta asiakirjoihin.',
+  'settings.appearance.colors.hint':
+    'Valitse omat värisi; jätä näyte koskematta säilyttääksesi teeman oletusvärin.',
+  'settings.appearance.colors.help':
+    'Korvaa sovelluksen ensisijaisen, toissijaisen, tausta- ja pintavärin. Tekstin kontrastia säädetään automaattisesti luettavuuden säilyttämiseksi. Puhtaasti ulkoasuun liittyvä — ei vaikuta asiakirjoihin.',
   'settings.appearance.colors.primary.label': 'Ensisijainen',
   'settings.appearance.colors.secondary.label': 'Toissijainen',
   'settings.appearance.colors.background.label': 'Tausta',
@@ -1560,7 +1575,7 @@ export const fiFI: Catalog = {
   'settings.signing.tslUrl.placeholder': 'https://…',
   'settings.signing.requireQualified.label': 'Vaadi hyväksytty allekirjoitus sinetöintiin',
   'settings.signing.note':
-    'Allekirjoitusasetukset koskevat hyväksyttyä sähköistä allekirjoitusta Chave Móvel Digitalilla, joka on käytettävissä sinetöidyissä pöytäkirjoissa.',
+    'Asetukset koskevat jäädytettyä kanonista kopiota, kun pöytäkirjaan merkitään "allekirjoituksen alla" ennen sinetöintiä.',
   'settings.signing.officialHint': 'Virallinen portugalilainen oletus.',
   'settings.signing.reset': 'Palauta oletus',
   'settings.management.cardTitle': 'Hallinta',
@@ -1633,13 +1648,13 @@ export const fiFI: Catalog = {
   'settings.platform.logging.override.none': 'Ei ohitusta',
   'settings.platform.logging.override.app': 'Sovellus',
   'settings.platform.logging.override.api': 'API',
-  'settings.platform.logging.override.mcp_stdio': 'MCP stdio',
-  'settings.platform.logLevel.trace': 'Trace',
+  'settings.platform.logging.override.mcp_stdio': 'MCP studio',
+  'settings.platform.logLevel.trace': 'Jäljittää',
   'settings.platform.logLevel.debug': 'Debug',
-  'settings.platform.logLevel.info': 'Info',
-  'settings.platform.logLevel.warn': 'Warn',
-  'settings.platform.logLevel.error': 'Error',
-  'settings.platform.logLevel.off': 'Off',
+  'settings.platform.logLevel.info': 'Tiedot',
+  'settings.platform.logLevel.warn': 'Varoittaa',
+  'settings.platform.logLevel.error': 'Virhe',
+  'settings.platform.logLevel.off': 'Pois',
   'settings.platform.auditTail': 'Toimintojen tarkastus',
   'settings.platform.audit.empty': 'Toimintatapahtumia ei ole kirjattu.',
   'settings.platform.logs.cardTitle': 'API:n omistama jäsennelty lokihäntä',
@@ -1678,17 +1693,24 @@ export const fiFI: Catalog = {
   'settings.platform.logs.column.message': 'Viesti',
   'settings.platform.logs.context.show': 'Konteksti',
   'settings.platform.logs.context.empty': 'Ei kontekstia',
-  "settings.platform.subnav.aria": "Toimintojen osiot",
-  "settings.platform.tab.services": "Palvelut",
-  "settings.platform.tab.services.desc": "API- ja MCP-palvelinten halutun tilan hallinta rehellisin taustajärjestelmän tuloksin ja toimintojen auditointi.",
-  "settings.platform.tab.logs": "Lokit",
-  "settings.platform.tab.logs.desc": "Lokitasojen määritys ja API:n jäsennelty lokihäntä (vain luku).",
-  "settings.platform.serviceDetails": "Hallinnan tiedot ja rajoitukset",
-  "settings.platform.help.services": "Nämä toiminnot kirjaavat palvelun halutun tilan; käyttöliittymä ei oleta suoraa prosessinhallintaa (esimerkiksi API:n itsekäynnistystä tai MCP:n stdio-käynnistystä).",
-  "settings.platform.help.outcomes": "Tulos kertoo, mitä taustajärjestelmä teki: \"Valvoja vaaditaan\" ja \"Ei tuettu\" tarkoittavat, että ulkoisen valvojan on toimittava — haluttu tila vain kirjattiin.",
-  "settings.platform.help.logLevels": "Globaali taso rajoittaa kaikkia palveluita; kukin alue käyttää globaalin ja alueen tasoista tiukempaa. \"Off\" vaimentaa kaiken.",
-  "settings.platform.help.effective": "Palvelukohtainen tehollinen taso yhdistää globaalin, alueen ja mahdollisen ohituksen; jos globaali on \"Off\", kaikki on \"Off\".",
-  "settings.platform.help.overrides": "Palvelukohtainen ohitus korvaa kyseisen palvelun aluetason; käytä vain, kun palvelu tarvitsee eri tason.",
+  'settings.platform.subnav.aria': 'Toimintojen osiot',
+  'settings.platform.tab.services': 'Palvelut',
+  'settings.platform.tab.services.desc':
+    'API- ja MCP-palvelinten halutun tilan hallinta rehellisin taustajärjestelmän tuloksin ja toimintojen auditointi.',
+  'settings.platform.tab.logs': 'Lokit',
+  'settings.platform.tab.logs.desc':
+    'Lokitasojen määritys ja API:n jäsennelty lokihäntä (vain luku).',
+  'settings.platform.serviceDetails': 'Hallinnan tiedot ja rajoitukset',
+  'settings.platform.help.services':
+    'Nämä toiminnot kirjaavat palvelun halutun tilan; käyttöliittymä ei oleta suoraa prosessinhallintaa (esimerkiksi API:n itsekäynnistystä tai MCP:n stdio-käynnistystä).',
+  'settings.platform.help.outcomes':
+    'Tulos kertoo, mitä taustajärjestelmä teki: "Valvoja vaaditaan" ja "Ei tuettu" tarkoittavat, että ulkoisen valvojan on toimittava — haluttu tila vain kirjattiin.',
+  'settings.platform.help.logLevels':
+    'Globaali taso rajoittaa kaikkia palveluita; kukin alue käyttää globaalin ja alueen tasoista tiukempaa. "Off" vaimentaa kaiken.',
+  'settings.platform.help.effective':
+    'Palvelukohtainen tehollinen taso yhdistää globaalin, alueen ja mahdollisen ohituksen; jos globaali on "Off", kaikki on "Off".',
+  'settings.platform.help.overrides':
+    'Palvelukohtainen ohitus korvaa kyseisen palvelun aluetason; käytä vain, kun palvelu tarvitsee eri tason.',
   'settings.reminders.cardTitle': 'Koontinäytön muistutukset',
   'settings.reminders.enabled.label': 'Luo paikallisia muistutuksia',
   'settings.reminders.note':
@@ -1970,7 +1992,7 @@ export const fiFI: Catalog = {
   'settings.privacy.execution.searchPlaceholder':
     'Käytäntö, kohde, vastuuhenkilö, este tai seuraava vaihe',
   'settings.privacy.execution.statusFilter': 'Suorituksen tila',
-  "settings.privacy.execution.status.all": "Kaikki suorituksen tilat",
+  'settings.privacy.execution.status.all': 'Kaikki suorituksen tilat',
   'settings.about.cardTitle': 'Tietoja',
   'settings.about.serverVersion': 'Palvelimen versio',
   'settings.about.uiVersion': 'Käyttöliittymän versio',
@@ -2486,23 +2508,32 @@ export const fiFI: Catalog = {
   'templates.source.user': 'Käyttäjän luoma',
   'templates.editor.title.create': 'Uusi malli',
   'templates.editor.title.edit': 'Muokkaa mallia',
-  'templates.editor.intro': 'Malli on uudelleenkäytettävä pöytäkirjan runko: se määrittää asiakirjan rakenteen ja lohkot eikä ole mikään oikeudellinen takuu.',
+  'templates.editor.intro':
+    'Malli on uudelleenkäytettävä pöytäkirjan runko: se määrittää asiakirjan rakenteen ja lohkot eikä ole mikään oikeudellinen takuu.',
   'templates.editor.field.id.label': 'Tunniste',
-  'templates.editor.field.id.help': 'Versioitu tunniste muodossa user-<nimi>/v<n>, esimerkiksi user-encosto-ata/v1. Etuliite user- on varattu omille malleillesi.',
+  'templates.editor.field.id.help':
+    'Versioitu tunniste muodossa user-<nimi>/v<n>, esimerkiksi user-encosto-ata/v1. Etuliite user- on varattu omille malleillesi.',
   'templates.editor.field.family.label': 'Yhteisön tyyppi',
-  'templates.editor.field.family.help': 'Yhteisötyyppi, jota malli koskee (kauppayhtiö, taloyhtiö, yhdistys, säätiö tai osuuskunta).',
+  'templates.editor.field.family.help':
+    'Yhteisötyyppi, jota malli koskee (kauppayhtiö, taloyhtiö, yhdistys, säätiö tai osuuskunta).',
   'templates.editor.field.stage.label': 'Pöytäkirjan vaihe',
-  'templates.editor.field.stage.help': 'Pöytäkirjan elinkaaren vaihe, johon tämä malli on tarkoitettu.',
+  'templates.editor.field.stage.help':
+    'Pöytäkirjan elinkaaren vaihe, johon tämä malli on tarkoitettu.',
   'templates.editor.field.channels.label': 'Kanavat',
-  'templates.editor.field.channels.help': 'Kokouskanavat, joita tämä malli tukee (paikan päällä, etänä tai yhdistelmä).',
+  'templates.editor.field.channels.help':
+    'Kokouskanavat, joita tämä malli tukee (paikan päällä, etänä tai yhdistelmä).',
   'templates.editor.field.signaturePolicy.label': 'Allekirjoituskäytäntö',
-  'templates.editor.field.signaturePolicy.help': 'Mallin ehdottama allekirjoitusvalinta. Se ei varmenna eikä takaa allekirjoitusten oikeudellista pätevyyttä.',
+  'templates.editor.field.signaturePolicy.help':
+    'Mallin ehdottama allekirjoitusvalinta. Se ei varmenna eikä takaa allekirjoitusten oikeudellista pätevyyttä.',
   'templates.editor.field.rulePackId.label': 'Sääntöpaketti',
-  'templates.editor.field.rulePackId.help': 'Sovellettavan sääntöpaketin tunniste. Järjestelmä johtaa lakiviittaukset, eikä niitä voi muokata.',
+  'templates.editor.field.rulePackId.help':
+    'Sovellettavan sääntöpaketin tunniste. Järjestelmä johtaa lakiviittaukset, eikä niitä voi muokata.',
   'templates.editor.field.locale.label': 'Kieli',
-  'templates.editor.field.locale.help': 'Mallin sisällön kieli. Tällä hetkellä vain pt-PT on tuettu.',
+  'templates.editor.field.locale.help':
+    'Mallin sisällön kieli. Tällä hetkellä vain pt-PT on tuettu.',
   'templates.editor.field.blocks.label': 'Lohkot',
-  'templates.editor.field.blocks.help': 'Asiakirjan muodostavien lohkojen sarja (otsikko, kappale, avain-arvo, äänestystaulukko, allekirjoituslohko, sivunvaihto tai sääntö). Vähintään yksi lohko vaaditaan.',
+  'templates.editor.field.blocks.help':
+    'Asiakirjan muodostavien lohkojen sarja (otsikko, kappale, avain-arvo, äänestystaulukko, allekirjoituslohko, sivunvaihto tai sääntö). Vähintään yksi lohko vaaditaan.',
   'templates.import.title': 'Tuo malli',
   'templates.import.pickFile': 'Valitse JSON-tiedosto',
   'templates.import.preflight': 'Vahvistetaan…',
@@ -2529,8 +2560,8 @@ export const fiFI: Catalog = {
   // --- Qualified CMD signing (t57) ------------------------------------------------
   'settings.signing.family.hint': 'Suositus: Chave Móvel Digital.',
   'settings.signing.requireQualified.hint':
-    'Ohjaa vain asiakirjan tilaa ”valmis (hyväksytty)” — ei koskaan estä sinetöintiä. Kun tämä on käytössä, sinetöity asiakirja pysyy tilassa ”odottaa hyväksyttyä allekirjoitusta”, kunnes voimassa oleva hyväksytty allekirjoitus on olemassa.',
-  'settings.signing.cmd.title': 'Chave Móvel Digital (CMD)',
+    'Kun tämä vaihtoehto on käytössä, sinetöinti edellyttää hyväksytyn teknisen todisteen hyväksytystä allekirjoituksesta jäädytetyssä kanonisessa kopiossa.',
+  'settings.signing.cmd.title': 'Digitaalinen mobiiliavain (CMD)',
   'settings.signing.cmd.intro':
     'Tuotannon allekirjoitus vaatii AMA:n tunnistetiedot (ApplicationId ja varmenne), jotka toimitetaan ympäristömuuttujilla. Nämä arvot näytetään vain tiedoksi.',
   'settings.signing.cmd.env': 'Ympäristö',
@@ -2542,11 +2573,11 @@ export const fiFI: Catalog = {
   'settings.signing.cmd.configured': 'Määritetty',
   'settings.signing.cmd.notConfigured': 'Ei määritetty',
   'signing.title': 'Hyväksytty allekirjoitus',
-  'signing.unsigned.title': 'Pöytäkirjaa ei ole vielä allekirjoitettu hyväksytysti',
+  'signing.unsigned.title': 'Kanonista kopiota ei ole vielä allekirjoitettu',
   'signing.unsigned.body':
-    'Pöytäkirja on sinetöity. Voit nyt allekirjoittaa sen hyväksytyllä sähköisellä allekirjoituksella Chave Móvel Digitalin kautta.',
+    'Pöytäkirja on "allekirjoituksen alla" ja jäädytetty. Allekirjoita kanoninen kopio nyt ennen sen sinetöimistä.',
   'signing.required.body':
-    'Tämä asetus vaatii hyväksytyn allekirjoituksen asiakirjan viimeistelemiseksi. Allekirjoita pöytäkirja Chave Móvel Digitalilla sen valmiiksi saattamiseksi.',
+    'Tämä kokoonpano vaatii hyväksytyn allekirjoituksen ennen sulkemista. Allekirjoita kanoninen kopio voidaksesi suorittaa teon.',
   'signing.start': 'Allekirjoita Chave Móvel Digitalilla',
   'signing.credentials.intro':
     'Anna Chave Móvel Digitaliin liitetty matkapuhelinnumero ja allekirjoituksen PIN-koodi. PIN-koodia käytetään vain tähän pyyntöön, eikä sitä koskaan tallenneta.',
@@ -2578,9 +2609,10 @@ export const fiFI: Catalog = {
   'signing.signed.digest': 'Allekirjoitetun PDF:n tiiviste',
   'signing.download': 'Lataa allekirjoitettu PDF',
   'signing.technicalComparison.aria':
-    'Local technical comparison between sealed act and signed PDF',
+    'Paikallinen tekninen vertailu kanonisen kopion ja allekirjoitetun PDF-tiedoston välillä',
   'signing.technicalComparison.kicker': 'Technical comparison',
-  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.title':
+    'Kanonisen kopion ja allekirjoitetun PDF-tiedoston paikalliset metatiedot',
   'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
   'signing.technicalComparison.badge.local': 'Local metadata only',
   'signing.technicalComparison.badge.noClaim': 'No claim',
@@ -2592,14 +2624,13 @@ export const fiFI: Catalog = {
   'signing.technicalComparison.status.notClaimed': 'Not claimed',
   'signing.technicalComparison.status.loading': 'Loading',
   'signing.technicalComparison.row.actId': 'Act ID',
-  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
   'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
   'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
   'signing.technicalComparison.row.signedDocument': 'Signed document',
   'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
   'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
   'signing.technicalComparison.detail.act': 'Act',
-  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.bundle': 'Nippu',
   'signing.technicalComparison.detail.document': 'Document',
   'signing.technicalComparison.detail.signature': 'Signature',
   'signing.technicalComparison.detail.report': 'Report',
@@ -2642,7 +2673,7 @@ export const fiFI: Catalog = {
   'signing.ccBatch.title': 'Paikallinen Kansalaiskortti-erä',
   'signing.ccBatch.badge': 'Paikallinen erä',
   'signing.ccBatch.description':
-    'Allekirjoittaa useita sinetöityjä pöytäkirjoja Kansalaiskortilla tällä tietokoneella.',
+    'Allekirjoita useita kanonisia kopioita säädöksistä "Allekirjoituksessa" tämän tietokoneen kansalaiskortilla.',
   'signing.ccBatch.boundary.title': 'Vain paikallinen CC-allekirjoitus',
   'signing.ccBatch.boundary.body':
     'Tämä erä käyttää paikallista, samassa laitteessa olevaa Kansalaiskortti-päätepistettä. Se ei ole CMD, etä-CSC tai palveluntarjoajan sertifioima eräallekirjoitus; käyttöliittymä näyttää vain palvelimen palauttaman näytön.',
@@ -2659,7 +2690,7 @@ export const fiFI: Catalog = {
     'Valitse vähintään kaksi pöytäkirjaa käyttääksesi eräallekirjoitusta.',
   'signing.ccBatch.add.label': 'Pöytäkirjan tunnus',
   'signing.ccBatch.add.hint':
-    'Lisää sinetöityjen pöytäkirjojen tunnuksia, kun tämä näkymä ei tarjoa moniasiakirjaluetteloa.',
+    'Lisää toimitunnukset Allekirjoituksen alla, kun tämä pinta ei tarjoa usean asiakirjan luetteloa.',
   'signing.ccBatch.add.action': 'Lisää',
   'signing.ccBatch.manual.label': 'Manuaalinen tunnus: {id}',
   'signing.ccBatch.maxReached': 'Enimmäismäärä {max} pöytäkirjaa saavutettu.',
@@ -2873,10 +2904,10 @@ export const fiFI: Catalog = {
   'signing.evidence.renewal.action.addDocumentTimestamp': 'lisää asiakirjan aikaleima',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
     'kirjaa allekirjoituksen DSS-validointiaika',
-  'signing.provider.cmd.title': 'Chave Móvel Digital',
+  'signing.provider.cmd.title': 'Digitaalinen mobiiliavain',
   'signing.provider.cmd.description':
     'Etäprosessi kahdessa vaiheessa: allekirjoituksen PIN ja SMS-koodi. Suositellaan, kun CMD on aktiivinen.',
-  'signing.provider.cc.title': 'Cartão de Cidadão',
+  'signing.provider.cc.title': 'Kansalaiskortti',
   'signing.provider.cc.description':
     'Paikallinen allekirjoitus työpöytäsovellukseen kytketyllä lukijalla. PIN-koodia ei koskaan pyydetä selaimessa.',
   'signing.provider.pkcs12.title': 'Paikallinen PKCS#12/PFX-varmenne',
@@ -2911,7 +2942,7 @@ export const fiFI: Catalog = {
   'signing.official.provider.label': 'Palveluntarjoaja',
   'signing.official.provider.hint':
     'Valinnainen. Kirjaa käyttäjän nimeämän palveluntarjoajan; sitä ei käytetä arvovaltana.',
-  'signing.official.provider.placeholder': 'Autenticação.gov',
+  'signing.official.provider.placeholder': 'Authentication.gov',
   'signing.official.source.label': 'Lähde',
   'signing.official.source.hint':
     'Valinnainen. Esimerkiksi: virallinen luovutus, työpöytäsovellus, palveluntarjoajan portaali.',
@@ -3178,17 +3209,25 @@ export const fiFI: Catalog = {
   'data.status.recoveryDrill.receiptEyebrow': 'Harjoituskuitti tallennettu',
   'data.status.recoveryDrill.verdictTitleOk': 'Varmuuskopio vahvistettu ja palautettavissa',
   'data.status.recoveryDrill.verdictTitleFailed': 'Varmuuskopiota ei vahvistettu',
-  'data.status.recoveryDrill.verdictWhyOk': 'Esitarkistus ja eristetty palautus onnistuivat molemmat ilman todellista palautusta.',
-  'data.status.recoveryDrill.verdictWhyFailed': 'Vahvistus ei valmistunut – älä luota tähän varmuuskopioon tutkimatta asiaa.',
+  'data.status.recoveryDrill.verdictWhyOk':
+    'Esitarkistus ja eristetty palautus onnistuivat molemmat ilman todellista palautusta.',
+  'data.status.recoveryDrill.verdictWhyFailed':
+    'Vahvistus ei valmistunut – älä luota tähän varmuuskopioon tutkimatta asiaa.',
   'data.status.recoveryDrill.evidenceToggle': 'Tekniset todisteet',
   'data.status.syncHandoff.eyebrow': 'Paikallinen luovutuksen esitarkistus',
-  'data.status.syncHandoff.verdictTitleReady': 'Paikallinen näyttö valmis luovutuksen tarkistukseen',
-  'data.status.syncHandoff.verdictTitleMissing': 'Paikallista näyttöä ei ole riittävästi luovutuksen tarkistamiseen',
+  'data.status.syncHandoff.verdictTitleReady':
+    'Paikallinen näyttö valmis luovutuksen tarkistukseen',
+  'data.status.syncHandoff.verdictTitleMissing':
+    'Paikallista näyttöä ei ole riittävästi luovutuksen tarkistamiseen',
   'data.status.syncHandoff.verdictTitleBlocked': 'Paikallinen luovutuksen tarkistus estetty',
-  'data.status.syncHandoff.verdictWhyReady': 'Kerätty paikallinen näyttö on valmis tarkistettavaksi — synkronointia, tuontia tai muutosta ei suoritettu.',
-  'data.status.syncHandoff.verdictWhyMissing': 'Luovutuksen tarkistamiseen puuttuu vahvistettua paikallista näyttöä — kerää puuttuva ennen jatkamista.',
-  'data.status.syncHandoff.verdictWhyBlocked': 'Esteet estävät paikallisen luovutuksen tarkistuksen — ratkaise ne ennen jatkamista.',
-  'data.status.syncHandoff.nonMutating': 'Tämä on vain paikallinen esitarkistus (koeajo): se ei suorita synkronointia, luovutusta eikä mitään tietojen muutosta.',
+  'data.status.syncHandoff.verdictWhyReady':
+    'Kerätty paikallinen näyttö on valmis tarkistettavaksi — synkronointia, tuontia tai muutosta ei suoritettu.',
+  'data.status.syncHandoff.verdictWhyMissing':
+    'Luovutuksen tarkistamiseen puuttuu vahvistettua paikallista näyttöä — kerää puuttuva ennen jatkamista.',
+  'data.status.syncHandoff.verdictWhyBlocked':
+    'Esteet estävät paikallisen luovutuksen tarkistuksen — ratkaise ne ennen jatkamista.',
+  'data.status.syncHandoff.nonMutating':
+    'Tämä on vain paikallinen esitarkistus (koeajo): se ei suorita synkronointia, luovutusta eikä mitään tietojen muutosta.',
   'data.status.syncHandoff.evidenceToggle': 'Tekninen näyttö',
   'data.status.syncHandoff.blockers': 'Esteet',
   'data.status.syncHandoff.missingEvidence': 'Puuttuva näyttö',
@@ -3268,7 +3307,7 @@ export const fiFI: Catalog = {
     'Palautus korvaa koko arkiston vahvistetulla varmuuskopiolla. Se ei koskaan kirjoita historiaa uudelleen, mutta varmuuskopion jälkeen lisätyt tapahtumat menetetään.',
   'integrity.restore.archiveLabel': 'Varmuuskopio (nimi tai polku)',
   'integrity.restore.archiveHint': 'Pelkkä nimi ratkaistaan varmuuskopiokansiossa.',
-  'integrity.restore.archivePlaceholder': 'backup-….zip',
+  'integrity.restore.archivePlaceholder': 'varmuuskopio-….zip',
   'integrity.restore.keyLabel': 'Varmuuskopion avain (valinnainen)',
   'integrity.restore.keyHint':
     'Lähetetään vain salattujen varmuuskopioiden todentamiseen; sitä ei tallenneta tai palauteta.',
@@ -3297,8 +3336,10 @@ export const fiFI: Catalog = {
   'integrity.restore.preflight.storeSchemaVersion': 'Tallennuksen skeema',
   'integrity.restore.preflight.totalMemberBytes': 'Jäsenten tavut yhteensä',
   'integrity.restore.preflight.nextStep': 'Seuraava vaihe',
-  'integrity.restore.preflight.verdictReady': 'Tämä varmuuskopio on kelvollinen ja voidaan palauttaa.',
-  'integrity.restore.preflight.verdictBlocked': 'Tämä varmuuskopio ei läpäissyt tarkistusta – älä käytä sitä palautukseen.',
+  'integrity.restore.preflight.verdictReady':
+    'Tämä varmuuskopio on kelvollinen ja voidaan palauttaa.',
+  'integrity.restore.preflight.verdictBlocked':
+    'Tämä varmuuskopio ei läpäissyt tarkistusta – älä käytä sitä palautukseen.',
   'integrity.restore.preflight.verdictError': 'Tätä varmuuskopiota ei voitu vahvistaa.',
   'integrity.restore.preflight.evidenceToggle': 'Tekniset todisteet',
   'integrity.restore.preflight.errors': 'Virheet',
@@ -3371,7 +3412,7 @@ export const fiFI: Catalog = {
   'integrity.startOver.openingDateLabel': 'Avauspäivä',
   'integrity.startOver.signatoriesLabel': 'Vaaditut allekirjoittajat',
   'integrity.startOver.signatoriesHint': 'Erota nimet pilkuilla.',
-  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques, …',
+  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques,…',
   'integrity.startOver.numberingLabel': 'Numerointimalli',
   'integrity.startOver.confirm': 'Aloita alusta',
   'integrity.startOver.pending': 'Aloitetaan alusta…',
@@ -3846,7 +3887,7 @@ export const fiFI: Catalog = {
   'settings.signing.providers.hint':
     'Ei-salaiset metatiedot. Käyttöliittymä ei kerää yksityisiä avaimia, PIN-koodeja, PKCS#12-tunnuslauseita tai OTP-koodeja tällä sivulla.',
   'settings.signing.providerMode.cmd': 'CMD/SCMD',
-  'settings.signing.providerMode.cc': 'Cartão de Cidadão',
+  'settings.signing.providerMode.cc': 'Kansalaiskortti',
   'settings.signing.providerMode.cscQtsp': 'CSC/QTSP',
   'settings.signing.providerMode.localPkcs12': 'Paikallinen PKCS#12',
   'settings.signing.providerStatus.productionBlocked': 'Estetty tuotannossa',
@@ -3929,7 +3970,7 @@ export const fiFI: Catalog = {
   'trust.provider.analysis.value':
     '{granted} myönnetty · {history} historian kanssa · {supply} pisteiden kanssa',
   'trust.provider.duplicateNames': 'Kaksoisnimet',
-  'trust.tsa.title': 'TSA / RFC 3161',
+  'trust.tsa.title': 'TSA/RFC 3161',
   'trust.tsa.summary.aria': 'TSA-yhteenveto',
   'trust.tsa.configuredUrl': 'Määritetty URL',
   'trust.tsa.status': 'Tila',
@@ -4236,7 +4277,7 @@ export const fiFI: Catalog = {
     'Tunnistetiedot salataan, mutta tämä ei ole täyttä luottamuksellisuutta ennen kuin otat käyttöön SQLCipherin tai käyttöjärjestelmän sinetöinnin.',
   'settings.providerCredentials.protection.strictBlocked':
     'Tiukka tila on päällä: voit tallentaa tunnistetietoja vasta otettuasi käyttöön luottamuksellisen suojauksen.',
-  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.cmd': 'Digitaalinen mobiiliavain (CMD)',
   'settings.providerCredentials.mode.csc': 'CSC-QTSP',
   'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
   'settings.providerCredentials.mode.pkcs12': 'Paikallinen PKCS#12',
@@ -4308,7 +4349,8 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.field.sandbox': 'Hiekkalaatikko (sandbox)',
   'settings.providerCredentials.field.environment': 'Ympäristö',
   'settings.providerCredentials.field.friendlyName': 'Kuvaava nimi',
-  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.localKeyId':
+    'Paikallisen avaimen tunnus (heksadesimaaliluku)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-tiedosto',
   'settings.providerCredentials.help.mode':
     'Määritettävän allekirjoituspalvelun tyyppi. Esim. CSC/QTSP etäallekirjoitukseen, PKCS#12 paikalliseen varmenteeseen.',
@@ -4358,11 +4400,14 @@ export const fiFI: Catalog = {
     'Valitsee identiteetin .pfx-tiedostosta localKeyId:n perusteella heksadesimaalina. Esim. ”3a7f9c2b”.',
   'settings.privacy.subnav.aria': 'Tietosuoja-alueet',
   'settings.privacy.subtab.registers.label': 'Rekisterit',
-  'settings.privacy.subtab.registers.desc': 'Käsittelijät, vaikutustenarvioinnit (DPIA), tietomurto-ohjeet ja siirtovalvonnat.',
+  'settings.privacy.subtab.registers.desc':
+    'Käsittelijät, vaikutustenarvioinnit (DPIA), tietomurto-ohjeet ja siirtovalvonnat.',
   'settings.privacy.subtab.retention.label': 'Säilytys',
-  'settings.privacy.subtab.retention.desc': 'Säilytyskäytännöt, erääntyneet ehdokkaat, simulointi ja suoritusten tarkistusjono.',
+  'settings.privacy.subtab.retention.desc':
+    'Säilytyskäytännöt, erääntyneet ehdokkaat, simulointi ja suoritusten tarkistusjono.',
   'settings.privacy.subtab.guidance.label': 'Ohjeistus',
-  'settings.privacy.subtab.guidance.desc': 'Paikallinen DPIA-malli ja huomioita säännöllisestä neuvoa-antavasta tarkistuksesta.',
+  'settings.privacy.subtab.guidance.desc':
+    'Paikallinen DPIA-malli ja huomioita säännöllisestä neuvoa-antavasta tarkistuksesta.',
   'settings.privacy.status.all': 'Kaikki tilat',
   'settings.privacy.status.draft': 'Luonnos',
   'settings.privacy.status.active': 'Aktiivinen',
@@ -4384,13 +4429,17 @@ export const fiFI: Catalog = {
   'settings.privacy.evidence.none': 'Ei kuittausta',
   'settings.privacy.evidence.noDetail': 'Ei tietoja',
   'settings.privacy.evidence.receiptBy': '{kind}: {actor}',
-  'settings.privacy.evidence.dpiaReceiptNote': 'Ei viranomaisilmoitusta · Ei vaatimustenmukaisuustodistusta',
-  'settings.privacy.evidence.breachReceiptNote': 'Ei viranomaisilmoitusta · Ei ilmoitusta rekisteröidyille',
+  'settings.privacy.evidence.dpiaReceiptNote':
+    'Ei viranomaisilmoitusta · Ei vaatimustenmukaisuustodistusta',
+  'settings.privacy.evidence.breachReceiptNote':
+    'Ei viranomaisilmoitusta · Ei ilmoitusta rekisteröidyille',
   'settings.privacy.evidence.transferReceiptNote': 'Ei hyväksyntää · Ei siirron suoritusta',
   'settings.privacy.register.processor.title': 'GDPR-käsittelijät',
-  'settings.privacy.register.processor.lede': 'Rekisteri käsittelijöistä, alikäsittelijöistä ja kolmansien osapuolten käsittelemistä tietoluokista.',
+  'settings.privacy.register.processor.lede':
+    'Rekisteri käsittelijöistä, alikäsittelijöistä ja kolmansien osapuolten käsittelemistä tietoluokista.',
   'settings.privacy.register.dpia.title': 'DPIA-arviot',
-  'settings.privacy.register.dpia.lede': 'Vaikutustenarvioinnit, joissa käyttötarkoitus, oikeusperuste, tietoluokat ja nykyinen riski.',
+  'settings.privacy.register.dpia.lede':
+    'Vaikutustenarvioinnit, joissa käyttötarkoitus, oikeusperuste, tietoluokat ja nykyinen riski.',
   'settings.privacy.register.column.processor': 'Käsittelijä',
   'settings.privacy.register.column.dpia': 'DPIA',
   'settings.privacy.register.column.purpose': 'Käyttötarkoitus',
@@ -4398,7 +4447,8 @@ export const fiFI: Catalog = {
   'settings.privacy.register.column.subprocessors': 'Alikäsittelijät',
   'settings.privacy.register.column.updated': 'Päivitetty',
   'settings.privacy.guidance.title': 'Paikallinen DPIA-malli',
-  'settings.privacy.guidance.lede': 'Paikallinen/offline-paketti DPIA:n kentistä, kysymyksistä ja tarkistuksista; se ei lue eikä näytä DPIA-tietueita, käsittelijöitä, rekisteröityjä, vastaanottajia, muistiinpanoja, oikeusperusteita tai salaisuuksia.',
+  'settings.privacy.guidance.lede':
+    'Paikallinen/offline-paketti DPIA:n kentistä, kysymyksistä ja tarkistuksista; se ei lue eikä näytä DPIA-tietueita, käsittelijöitä, rekisteröityjä, vastaanottajia, muistiinpanoja, oikeusperusteita tai salaisuuksia.',
   'settings.privacy.guidance.empty.title': 'Malli ei saatavilla',
   'settings.privacy.guidance.empty.body': 'API ei palauttanut paikallista DPIA-pakettia.',
   'settings.privacy.guidance.dl.id': 'Tunniste',
@@ -4410,33 +4460,50 @@ export const fiFI: Catalog = {
   'settings.privacy.guidance.required': 'pakollinen: {value}',
   'settings.privacy.guidance.noClaims': 'Ilman väitettä -liput',
   'settings.privacy.guidance.operatorActions': 'Operaattorin toimet',
-  'settings.privacy.help.processor': 'Käsittelijä käsittelee henkilötietoja organisaation puolesta. Tämä rekisteri kirjaa kuka käsittelee, mihin, millä oikeusperusteella ja mitä alikäsittelijöitä käytetään.',
-  'settings.privacy.help.dpia': 'DPIA (tietosuojaa koskeva vaikutustenarviointi) dokumentoi käsittelyn riskit ja niiden pienentämiskeinot. Tämä tietue on vain paikallinen ja neuvoa-antava.',
-  'settings.privacy.help.breach': 'Tietomurron toimintaohje kokoaa etukäteen havaintokanavat, rajoittamistoimet ja ketä ilmoitetaan. Kirjaaminen tähän ei ilmoita kenellekään.',
-  'settings.privacy.help.transfer': 'Siirtovalvonta dokumentoi tietojen siirron ETA:n ulkopuolelle: vastaanottaja, maa, oikeudellinen mekanismi ja suojatoimet. Kirjaaminen ei hyväksy eikä suorita siirtoa.',
-  'settings.privacy.help.retention': 'Säilytyskäytäntö määrittää, kuinka kauan tietoluokkaa säilytetään ja mikä toimi lopuksi on suunniteltu. Tämä alue kirjaa käytännön; se ei poista tietoja.',
-  'settings.privacy.help.dryRun': 'Simulointi näyttää, mitkä käytännöt vastaisivat laajuutta/luokkaa suorittamatta mitään. Se esikatselee käytännön vaikutuksen.',
-  'settings.privacy.help.dueCandidates': 'Vain luku -haku listaa tietueet, joiden säilytysaika on umpeutunut, näytön tarkistusta varten. Se ei poista, anonymisoi eikä täytä oikeudellisia velvoitteita.',
-  'settings.privacy.help.execution': 'Suoritusjono säilyttää tallennetut säilytyspyynnöt operatiivista tarkistusta varten. Tarkistuksen sulkeminen kirjaa päätöksen; se ei muuta lähdetietueita.',
-  'settings.privacy.help.legalHold': 'Legal hold estää oikeudenkäynnin tai säilytysvelvoitteen alaisten tietueiden hävittämisen. Tämä paneeli tiivistää olemassa olevat estot.',
+  'settings.privacy.help.processor':
+    'Käsittelijä käsittelee henkilötietoja organisaation puolesta. Tämä rekisteri kirjaa kuka käsittelee, mihin, millä oikeusperusteella ja mitä alikäsittelijöitä käytetään.',
+  'settings.privacy.help.dpia':
+    'DPIA (tietosuojaa koskeva vaikutustenarviointi) dokumentoi käsittelyn riskit ja niiden pienentämiskeinot. Tämä tietue on vain paikallinen ja neuvoa-antava.',
+  'settings.privacy.help.breach':
+    'Tietomurron toimintaohje kokoaa etukäteen havaintokanavat, rajoittamistoimet ja ketä ilmoitetaan. Kirjaaminen tähän ei ilmoita kenellekään.',
+  'settings.privacy.help.transfer':
+    'Siirtovalvonta dokumentoi tietojen siirron ETA:n ulkopuolelle: vastaanottaja, maa, oikeudellinen mekanismi ja suojatoimet. Kirjaaminen ei hyväksy eikä suorita siirtoa.',
+  'settings.privacy.help.retention':
+    'Säilytyskäytäntö määrittää, kuinka kauan tietoluokkaa säilytetään ja mikä toimi lopuksi on suunniteltu. Tämä alue kirjaa käytännön; se ei poista tietoja.',
+  'settings.privacy.help.dryRun':
+    'Simulointi näyttää, mitkä käytännöt vastaisivat laajuutta/luokkaa suorittamatta mitään. Se esikatselee käytännön vaikutuksen.',
+  'settings.privacy.help.dueCandidates':
+    'Vain luku -haku listaa tietueet, joiden säilytysaika on umpeutunut, näytön tarkistusta varten. Se ei poista, anonymisoi eikä täytä oikeudellisia velvoitteita.',
+  'settings.privacy.help.execution':
+    'Suoritusjono säilyttää tallennetut säilytyspyynnöt operatiivista tarkistusta varten. Tarkistuksen sulkeminen kirjaa päätöksen; se ei muuta lähdetietueita.',
+  'settings.privacy.help.legalHold':
+    'Legal hold estää oikeudenkäynnin tai säilytysvelvoitteen alaisten tietueiden hävittämisen. Tämä paneeli tiivistää olemassa olevat estot.',
   'settings.privacy.help.purpose': 'Käyttötarkoitus kuvaa selkeästi, mihin tietoja käsitellään.',
-  'settings.privacy.help.legalBasis': 'Oikeusperuste on GDPR-peruste, joka sallii käsittelyn (esim. suostumus, sopimus, lakisääteinen velvoite).',
-  'settings.privacy.help.risk': 'Riskitaso on laadullinen arvio mahdollisesta vaikutuksesta rekisteröityihin.',
-  'settings.privacy.help.status': 'Tila kertoo, onko tietue luonnos, aktiivinen, tarkistuksessa vai poistettu käytöstä.',
+  'settings.privacy.help.legalBasis':
+    'Oikeusperuste on GDPR-peruste, joka sallii käsittelyn (esim. suostumus, sopimus, lakisääteinen velvoite).',
+  'settings.privacy.help.risk':
+    'Riskitaso on laadullinen arvio mahdollisesta vaikutuksesta rekisteröityihin.',
+  'settings.privacy.help.status':
+    'Tila kertoo, onko tietue luonnos, aktiivinen, tarkistuksessa vai poistettu käytöstä.',
   'settings.privacy.legalHold.dl.candidates': 'Legal holdin estämät ehdokkaat',
   'settings.privacy.legalHold.dl.executions': 'Legal holdin estämät suoritustietueet',
   'settings.privacy.legalHold.dl.openReviews': 'Estetyt tarkistukset yhä auki',
   'settings.privacy.legalHold.dl.flags': 'Rajaliput',
-  'settings.privacy.legalHold.source': 'Nämä luvut tulevat erääntyneiden ehdokkaiden GET-hausta ja jo tallennetusta säilytyksen suoritusjonosta; tämä paneeli ei tee muuttavia kutsuja.',
+  'settings.privacy.legalHold.source':
+    'Nämä luvut tulevat erääntyneiden ehdokkaiden GET-hausta ja jo tallennetusta säilytyksen suoritusjonosta; tämä paneeli ei tee muuttavia kutsuja.',
   'settings.privacy.execution.status.awaitingReview': 'Odottaa tarkistusta',
   'settings.privacy.execution.status.blocked': 'Estetty',
   'settings.privacy.execution.status.executed': 'Suoritettu',
-  'settings.privacy.dueCandidates.lede': 'Vain luku -GET-haku näytön tarkistusta varten. Tämä osio ei poista, anonymisoi eikä täytä oikeudellisia velvoitteita.',
-  'settings.privacy.dueCandidates.summary': 'Luotu {generated} · {scope} / {category} · {active} aktiivista ehdokasta · {suppressed} rajatun näytön vuoksi piilotettu · {withResolution} ehdokasta paikallisella ratkaisulla · {resolutions} ratkaisutietuetta',
-  'settings.privacy.dueCandidates.suppressedNote': 'Rajatun näytön vuoksi piilotettuja ehdokkaita ei näytetä taulukossa eikä niillä ole toimintopainikkeita; tarkista näyttö suoritusjonosta/-historiasta.',
+  'settings.privacy.dueCandidates.lede':
+    'Vain luku -GET-haku näytön tarkistusta varten. Tämä osio ei poista, anonymisoi eikä täytä oikeudellisia velvoitteita.',
+  'settings.privacy.dueCandidates.summary':
+    'Luotu {generated} · {scope} / {category} · {active} aktiivista ehdokasta · {suppressed} rajatun näytön vuoksi piilotettu · {withResolution} ehdokasta paikallisella ratkaisulla · {resolutions} ratkaisutietuetta',
+  'settings.privacy.dueCandidates.suppressedNote':
+    'Rajatun näytön vuoksi piilotettuja ehdokkaita ei näytetä taulukossa eikä niillä ole toimintopainikkeita; tarkista näyttö suoritusjonosta/-historiasta.',
   'settings.privacy.dueCandidates.suppressedSummary': 'Yhteenveto: {note}',
   'settings.privacy.dueCandidates.empty.title': 'Ei erääntyneitä ehdokkaita',
-  'settings.privacy.dueCandidates.empty.body': 'Vain luku -haku ei tuottanut erääntyneitä ehdokkaita.',
+  'settings.privacy.dueCandidates.empty.body':
+    'Vain luku -haku ei tuottanut erääntyneitä ehdokkaita.',
   'settings.privacy.dueCandidates.column.record': 'Kirja ja tietue',
   'settings.privacy.dueCandidates.column.policy': 'Käytäntö',
   'settings.privacy.dueCandidates.column.due': 'Erääntyminen ja tila',
@@ -4451,7 +4518,7 @@ export const fiFI: Catalog = {
   'settings.privacy.dueCandidates.noDueDate': 'Ei laskettua päivämäärää',
   'settings.privacy.dueCandidates.evidenceState': 'Näytön tila',
   'settings.privacy.dueCandidates.evidenceNextStep': 'Näytön seuraava vaihe',
-  'settings.privacy.dueCandidates.legalHold': 'Legal hold',
+  'settings.privacy.dueCandidates.legalHold': 'laillinen pito',
   'settings.privacy.dueCandidates.noLegalHold': 'Ei legal hold -estoja',
   'settings.privacy.dueCandidates.requiredApprovals': 'Vaaditut hyväksynnät',
   'settings.privacy.dueCandidates.noApprovals': 'Ei vaadittuja hyväksyntöjä',
@@ -4463,7 +4530,8 @@ export const fiFI: Catalog = {
   'settings.privacy.dueCandidates.priorEvidenceNextStep': 'Aiemman näytön seuraava vaihe',
   'settings.privacy.dueCandidates.localDispositionRecorded': 'Paikallinen ratkaisu kirjattu',
   'settings.privacy.dueCandidates.recordedByOn': 'Kirjannut {actor} {date}',
-  'settings.privacy.dueCandidates.evidenceCountFlags': 'Näyttöä: {count} · operatiiviset liput: false',
+  'settings.privacy.dueCandidates.evidenceCountFlags':
+    'Näyttöä: {count} · operatiiviset liput: false',
   'settings.privacy.dueCandidates.onlyNoActionEvidence': 'Vain rajattu ei-toimintanäyttö.',
   'settings.privacy.dueCandidates.onlyArchiveEvidence': 'Vain rajattu arkistonäyttö.',
   'settings.privacy.dueCandidates.onlyReviewEvidence': 'Vain näytön tarkistus.',
@@ -4482,10 +4550,14 @@ export const fiFI: Catalog = {
   'settings.privacy.dueCandidates.requestedAt': 'Pyydetty {date}',
   'settings.privacy.dueCandidates.queueEvidenceState': 'Näytön tila jonossa',
   'settings.privacy.dueCandidates.queueNextStep': 'Seuraava vaihe jonossa',
-  'settings.privacy.dueCandidates.noActionHint': 'Kirjaa vain rajatun ei-toimintanäytön; ei hyväksy eikä suorita hävittämistä.',
-  'settings.privacy.dueCandidates.archiveHint': 'Kirjaa vain rajatun arkistonäytön; ei hyväksy eikä suorita hävittämistä.',
-  'settings.privacy.dueCandidates.reviewHint': 'Kirjaa review_only-pyynnön; ei hyväksy eikä suorita hävittämistä.',
-  'settings.privacy.execution.lede': 'Tallennetut säilytyksen suoritustietueet operatiivista tarkistusta varten.',
+  'settings.privacy.dueCandidates.noActionHint':
+    'Kirjaa vain rajatun ei-toimintanäytön; ei hyväksy eikä suorita hävittämistä.',
+  'settings.privacy.dueCandidates.archiveHint':
+    'Kirjaa vain rajatun arkistonäytön; ei hyväksy eikä suorita hävittämistä.',
+  'settings.privacy.dueCandidates.reviewHint':
+    'Kirjaa review_only-pyynnön; ei hyväksy eikä suorita hävittämistä.',
+  'settings.privacy.execution.lede':
+    'Tallennetut säilytyksen suoritustietueet operatiivista tarkistusta varten.',
   'settings.privacy.execution.empty.title': 'Ei suoritustietueita',
   'settings.privacy.execution.empty.body': 'Tarkistusjonossa ei ole vielä tallennettuja pyyntöjä.',
   'settings.privacy.execution.column.request': 'Pyyntö',
@@ -4505,28 +4577,487 @@ export const fiFI: Catalog = {
   'settings.privacy.toast.archiveEvidenceRecorded': 'Rajattu arkistonäyttö kirjattu.',
   'settings.privacy.toast.noActionEvidenceRecorded': 'Rajattu ei-toimintanäyttö kirjattu.',
   'settings.privacy.toast.reviewRequestRecorded': 'Näytön tarkistuspyyntö kirjattu.',
-  'settings.privacy.toast.archiveEvidenceSent': 'Arkistonäyttöpyyntö lähetetty; tietuetta ei palautettu.',
-  'settings.privacy.toast.noActionEvidenceSent': 'Ei-toimintanäytön pyyntö lähetetty; tietuetta ei palautettu.',
-  'settings.privacy.toast.reviewRequestSent': 'Tarkistuspyyntö lähetetty; suoritustietuetta ei palautettu.',
+  'settings.privacy.toast.archiveEvidenceSent':
+    'Arkistonäyttöpyyntö lähetetty; tietuetta ei palautettu.',
+  'settings.privacy.toast.noActionEvidenceSent':
+    'Ei-toimintanäytön pyyntö lähetetty; tietuetta ei palautettu.',
+  'settings.privacy.toast.reviewRequestSent':
+    'Tarkistuspyyntö lähetetty; suoritustietuetta ei palautettu.',
   'settings.privacy.toast.dispositionRecorded': 'Paikallinen näytön ratkaisu kirjattu.',
   'settings.privacy.advisory.detail.noReceipt': 'Ei paikallista tarkistus-/harjoituskuittausta.',
-  'settings.privacy.advisory.detail.underReview': 'Paikallinen tila tarkistuksessa, ei oikeudellista päätelmää.',
+  'settings.privacy.advisory.detail.underReview':
+    'Paikallinen tila tarkistuksessa, ei oikeudellista päätelmää.',
   'settings.privacy.advisory.detail.nextReview': 'Seuraava paikallinen tarkistus: {date}.',
   'settings.privacy.advisory.detail.lastEvidence': 'Viimeisin näyttö: {date}.',
-  'settings.privacy.advisory.detail.noClaims': 'Ei ilmoitusta, hyväksyntää, suoritusta tai sertifiointia.',
-  'settings.privacy.help.guidance': 'Paikallinen, offline-paketti kenttiä, kysymyksiä ja tarkistuksia DPIA:n ohjaamiseen; se on vain ohjeistus eikä korvaa oikeudellista arviointia.',
+  'settings.privacy.advisory.detail.noClaims':
+    'Ei ilmoitusta, hyväksyntää, suoritusta tai sertifiointia.',
+  'settings.privacy.help.guidance':
+    'Paikallinen, offline-paketti kenttiä, kysymyksiä ja tarkistuksia DPIA:n ohjaamiseen; se on vain ohjeistus eikä korvaa oikeudellista arviointia.',
   'data.status.subnav.aria': 'Tiedonhallinnan alaosiot',
   'data.status.tab.storage': 'Tallennustila',
-  'data.status.tab.storage.desc': 'Tilankäyttö, datakansion käyttöoikeudet ja paikallisten tiedostojen siivous.',
+  'data.status.tab.storage.desc':
+    'Tilankäyttö, datakansion käyttöoikeudet ja paikallisten tiedostojen siivous.',
   'data.status.tab.backup': 'Varmuuskopiot ja palautus',
-  'data.status.tab.backup.desc': 'Toiminnallinen varmuuskopio, palautusharjoitukset sekä palautuksen ja handoffin esitarkistukset.',
+  'data.status.tab.backup.desc':
+    'Toiminnallinen varmuuskopio, palautusharjoitukset sekä palautuksen ja handoffin esitarkistukset.',
   'data.status.tab.keys': 'Avaimet ja nollaus',
-  'data.status.tab.keys.desc': 'Tietokannan salausavaimen kierto sekä nollaus- tai uudelleenaloitustoiminnot.',
-  'data.status.help.recoveryDrill': 'Palautusharjoitus tarkistaa ja kirjaa, voiko varmuuskopion avata ja lukea hallitussa paikallisessa harjoituksessa. Se ei suorita todellista palautusta, takaa tulevaa käyttökelpoisuutta eikä varmista ulkoista säilytystä.',
-  'data.status.help.keyRotation': 'Kierto korvaa pysyvän tietokannan SQLCipher-salausavaimen säilyttäen tiedot. Esitarkistus on vain luku; suoritus soveltaa rekeyn.',
-  'data.status.help.exportCleanup': 'Poistaa vain vanhoja paikallisia vientitiedostoja määritetyn käytännön mukaan. Tämä ei ole laillinen poisto, GDPR-täyttymys eikä arkiston poisto.',
-  'data.status.help.crashCleanup': 'Poistaa vanhoja paikallisia kaatumisdiagnostiikkoja levyltä. Se ei vaikuta ledgeriin eikä toimialuedataan.',
-  'data.status.help.platformLogsCleanup': 'Poistaa vain paikallisen alustan lokijonon tiedostosta platform-logs.json. Ei poista stdout/stderr-, SIEM-, ledger- tai auditointiketjutietoja.',
-  'data.status.help.startOver': 'Aloita alusta arkistoi nykyisen historian ja jatkaa tyhjällä toimialuedatalla säilyttäen käyttäjät ja asetukset. Nollaus sen sijaan poistaa tiedot tuhoavasti.',
-  'data.status.help.reset': 'Tyhjennä tiedot poistaa toimialuedatan mutta säilyttää ledgerin; tehdasnollaus pyyhkii kaiken uuteen instanssiin. Kaikki vaativat tarkan lauseen ja uudelleentodennuksen.',
+  'data.status.tab.keys.desc':
+    'Tietokannan salausavaimen kierto sekä nollaus- tai uudelleenaloitustoiminnot.',
+  'data.status.help.recoveryDrill':
+    'Palautusharjoitus tarkistaa ja kirjaa, voiko varmuuskopion avata ja lukea hallitussa paikallisessa harjoituksessa. Se ei suorita todellista palautusta, takaa tulevaa käyttökelpoisuutta eikä varmista ulkoista säilytystä.',
+  'data.status.help.keyRotation':
+    'Kierto korvaa pysyvän tietokannan SQLCipher-salausavaimen säilyttäen tiedot. Esitarkistus on vain luku; suoritus soveltaa rekeyn.',
+  'data.status.help.exportCleanup':
+    'Poistaa vain vanhoja paikallisia vientitiedostoja määritetyn käytännön mukaan. Tämä ei ole laillinen poisto, GDPR-täyttymys eikä arkiston poisto.',
+  'data.status.help.crashCleanup':
+    'Poistaa vanhoja paikallisia kaatumisdiagnostiikkoja levyltä. Se ei vaikuta ledgeriin eikä toimialuedataan.',
+  'data.status.help.platformLogsCleanup':
+    'Poistaa vain paikallisen alustan lokijonon tiedostosta platform-logs.json. Ei poista stdout/stderr-, SIEM-, ledger- tai auditointiketjutietoja.',
+  'data.status.help.startOver':
+    'Aloita alusta arkistoi nykyisen historian ja jatkaa tyhjällä toimialuedatalla säilyttäen käyttäjät ja asetukset. Nollaus sen sijaan poistaa tiedot tuhoavasti.',
+  'data.status.help.reset':
+    'Tyhjennä tiedot poistaa toimialuedatan mutta säilyttää ledgerin; tehdasnollaus pyyhkii kaiken uuteen instanssiin. Kaikki vaativat tarkan lauseen ja uudelleentodennuksen.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.convening.advisory.title': 'Paikallinen ilmoitus lakisääteisestä kutsusta',
+  'acts.convening.advisory.missingMeetingDate':
+    'Kirjaa kokouspäivä muistiin paikallisen irtisanomispäivän laskemiseksi.',
+  'acts.convening.advisory.missingEvidence':
+    'Merkitse muistiin lähetyspäivä/lähetystapa, varsinainen ennakkoilmoitus ja viite säilytetyistä todisteista.',
+  'acts.convening.advisory.noClaims':
+    'Vain paikalliset metatiedot; ei vaadi oikeudellista riittävyyttä, voimassa olevaa ulkoista toimitusta tai työnkulun loppuun saattamista.',
+  'acts.convening.recipients.title': 'Puhelun vastaanottajat',
+  'acts.convening.recipients.hint':
+    'Paikalliset asiakirjat, joita käytetään todisteena lähettämisestä. Nimeämättömiä rivejä ei tallenneta.',
+  'acts.convening.recipients.add': 'Lisää vastaanottaja',
+  'acts.convening.recipients.empty':
+    'Ei rekisteröityjä vastaanottajia. Lisää vähintään yksi vastaanottaja ennen kuin tallennat paikallisen toimitustodistuksen.',
+  'acts.convening.recipients.rowLabel': 'Vastaanottaja {number}',
+  'acts.convening.recipients.name': 'Nimi',
+  'acts.convening.recipients.contact': 'Ota yhteyttä',
+  'acts.convening.recipients.contactPlaceholder':
+    'Esimerkiksi: sähköpostiosoite, osoite, tili tai sisäinen yhteyshenkilö',
+  'acts.convening.recipients.channel': 'Melko',
+  'acts.convening.recipients.dispatchedAt': 'Lähetetty sisään',
+  'acts.convening.recipients.reference': 'Toimitusviittaus',
+  'acts.convening.recipients.referencePlaceholder': 'Esim.: RR123456789PT, kuitti, viestin tunnus',
+  'acts.convening.recipients.remove': 'Poista vastaanottaja',
+  'acts.convening.evidence.aria': 'Paikalliset todisteet haasteen antamisesta',
+  'acts.convening.evidence.boundary':
+    'Kirjaa pääkirjaan vain paikalliset todisteet lähettämisestä ja alkuperästä. Ei lähetä sähköpostia/tekstiviestiä, ei vahvista ulkopuolista toimitusta, ei vakuuta oikeudellista riittävyyttä, työnkulun valmistumista, hyväksyntää rekisteröinnillä/DRE:llä tai palveluntarjoajan hyväksyntää.',
+  'acts.convening.evidence.ready':
+    'Merkitse {count} olemassa oleva(t) vastaanottaja(t) ilmoitetulla päivämäärällä ja, jos se on valmis, väline ja paikallinen viite.',
+  'acts.convening.evidence.saveRecipients':
+    'Säilytä pöytäkirja vastaanottajille ennen kuin tallennat paikalliset todisteet lähettämisestä.',
+  'acts.convening.evidence.requirements':
+    'Vaatii jo olemassa olevat vastaanottajat ilmoituksessa ja valmiin toimituspäivämäärän.',
+  'acts.convening.evidence.recording': 'Paikallisten todisteiden tallentaminen',
+  'acts.convening.evidence.record': 'Rekisteröi paikallinen toimitus',
+  'acts.convening.evidence.recorded': 'Paikalliset todisteet lähettämisestä on tallennettu.',
+  'templates.editor.field.id.placeholder': 'user-backrest-ata/v1',
+  'entities.fiscalYearEnd.cardTitle': 'Tilivuosi',
+  'entities.fiscalYearEnd.fieldLabel': 'Harjoituksen sulkeminen',
+  'entities.fiscalYearEnd.inputLabel': 'Vuoden päätös (KK-PP)',
+  'entities.fiscalYearEnd.hint': 'Valinnainen. Tyhjä pitää lukon oletuksena 12-31.',
+  'entities.fiscalYearEnd.invalid': 'Käytä kelvollista päivämäärää muodossa KK-PP.',
+  'entities.fiscalYearEnd.placeholder': '12-31',
+  'entities.fiscalYearEnd.updated': 'Päivitetty tilikausi.',
+  'entities.fiscalYearEnd.saving': 'säästääksesi',
+  'entities.fiscalYearEnd.save': 'Tallenna zip',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'uiLiteral.actDocumentPanel.gereConvocatoriasEAposOSeloCertidoesE':
+    'Luo ilmoituksia ja sinetöimisen jälkeen varmenteita ja otteita korvaamatta kanonista PDF/A:ta.',
+  'uiLiteral.actDocumentPanel.minutasGeradas': 'Minuutit luotu',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecaoTecnicaNaoEncontrouMembrosCadesOu':
+    'Teknisessä tarkastuksessa säiliöstä ei löytynyt tunnistettuja CAdES- tai XAdES-jäseniä.',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecionarContentorAsicLocal':
+    'Tarkastetaan paikallista ASiC-säiliötä...',
+  'uiLiteral.asicSignatureInspectorPanel.assinaturasTecnicas': 'Tekniset tilaukset',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadores': 'Salpaajat',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadoresEDiagnosticosDeAssinatura':
+    'Allekirjoituksen esto ja diagnostiikka',
+  'uiLiteral.asicSignatureInspectorPanel.contentorAsic': 'ASiC-säiliö',
+  'uiLiteral.asicSignatureInspectorPanel.diagnosticoDeManifestos': 'Ilmeinen diagnoosi',
+  'uiLiteral.asicSignatureInspectorPanel.evidenciaEmbebidaEBloqueadores':
+    'Upotetut todisteet ja estoaineet',
+  'uiLiteral.asicSignatureInspectorPanel.indicadores': 'Indikaattorit',
+  'uiLiteral.asicSignatureInspectorPanel.inspecaoTecnicaLocal': 'Tekninen katsastus paikan päällä',
+  'uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic': 'ASiC:n tekninen tarkastaja',
+  'uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao':
+    'Lue vain paikallisia .asice/.sce/.zip-säilöjä. Ei allekirjoita, ei tallenna esineitä, ei soita palveluntarjoajille eikä ota yhteyttä TSL/TSA/OCSP/CRL:ään livenä.',
+  'uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas': 'Selkeät rajoitukset',
+  'uiLiteral.asicSignatureInspectorPanel.ocorrencias': 'Tapahtumia',
+  'uiLiteral.asicSignatureInspectorPanel.oEndpointRecusouAInspecaoNenhumArtefactoFoi':
+    'Päätepiste kieltäytyi tarkastuksesta; mitään esineitä ei allekirjoitettu, tallennettu tai muutettu.',
+  'uiLiteral.asicSignatureInspectorPanel.perfilDoContentor': 'Säiliön profiili',
+  'uiLiteral.asicSignatureInspectorPanel.resultadoAsic': 'ASiC-tulos',
+  'uiLiteral.asicSignatureInspectorPanel.semAssinaturasReconhecidas':
+    'Allekirjoituksia ei tunnistettu',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeAssinaturaReportados':
+    'Allekirjoituksen diagnostiikkaa ei raportoitu.',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeManifestoReportados':
+    'Ilmeisiä diagnooseja ei raportoitu.',
+  'uiLiteral.asicSignatureInspectorPanel.semTimestampsDeArquivoAsicReportados':
+    'ASiC-tiedostojen aikaleimoja ei raportoitu.',
+  'uiLiteral.asicSignatureInspectorPanel.timestampsDeArquivo': 'Tiedoston aikaleimat',
+  'uiLiteral.asicSignatureInspectorPanel.validacaoCadesLimitada': 'Rajoitettu CAdES-validointi',
+  'uiLiteral.bookDetailPage.a': 'the',
+  'uiLiteral.bookDetailPage.abrirAta': 'avoimet minuutit',
+  'uiLiteral.bookDetailPage.aceiteParaReferenciaAuxiliar': 'Hyväksy apuviitteeksi',
+  'uiLiteral.bookDetailPage.aceites': '· hyväksytty',
+  'uiLiteral.bookDetailPage.aEntidadeEOLivroSaoPreenchidosA':
+    'Entiteetti ja kirja täytetään tästä tiedosta:',
+  'uiLiteral.bookDetailPage.aImportacaoPreservadaAindaNaoDevolveuRelatorioOcr':
+    'Säilytetty tuonti ei ole vielä palauttanut paikallista OCR/ensisijaista raporttia.',
+  'uiLiteral.bookDetailPage.ambito': 'Laajuus',
+  'uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras':
+    'Laillinen säilytys estää hävittämisen säilytyssääntöjen mukaan sen ollessa aktiivinen. Tämä paneeli näyttää paikalliset todisteet tilasta/muutoksesta, eikä se hyväksy hävittämistä tai vakuuta lainmukaisuutta.',
+  'uiLiteral.bookDetailPage.arquivoLegalPacote': '· laillinen tiedosto/paketti:',
+  'uiLiteral.bookDetailPage.artefacto': 'Artefakti',
+  'uiLiteral.bookDetailPage.artefactos': 'Artefaktit',
+  'uiLiteral.bookDetailPage.assinatura': '· allekirjoitus:',
+  'uiLiteral.bookDetailPage.ataCanonica': '· kanoniset minuutit:',
+  'uiLiteral.bookDetailPage.ataCanonicaCriada': '· luotu kanoninen asiakirja:',
+  'uiLiteral.bookDetailPage.ataCanonicaDocumentoCanonicoPacoteDeArquivoAssinatura':
+    'Kanoninen asiakirja, kanoninen asiakirja, tiedostopaketti, allekirjoitus, sinetti, PDF/A, PDF/UA ja laillinen pätevyys.',
+  'uiLiteral.bookDetailPage.ataCanonicaReclamada': '· väitetty kanoninen teko:',
+  'uiLiteral.bookDetailPage.ataCriada': 'Pöytäkirjat luotu:',
+  'uiLiteral.bookDetailPage.ataMutavelCriada': '· luotu vaihtuva minuutti:',
+  'uiLiteral.bookDetailPage.ataMutavelDeDestino': 'Vaihdettavat minuutit määränpäästä',
+  'uiLiteral.bookDetailPage.ator': 'Näyttelijä',
+  'uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte': 'Estää hylkäämisen tarkistuksen',
+  'uiLiteral.bookDetailPage.bloqueios': 'Lukot',
+  'uiLiteral.bookDetailPage.certificacaoDeArquivo': 'tiedoston varmenne:',
+  'uiLiteral.bookDetailPage.confirmoQueEstaRevisaoEApenasMetadadoAuxiliar':
+    'Vahvistan, että tämä versio on vain OCR-sisällönkuvaustietoja, eikä se luo kanonista säädöstä, kanonista asiakirjaa, allekirjoitusta tai laillista pätevyyttä.',
+  'uiLiteral.bookDetailPage.confirmoQueEsteRascunhoOcrEAuxiliarNao':
+    'Vahvistan, että tämä OCR-luonnos on apuväline, ei-kanoninen eikä luo pöytäkirjaa, asiakirjoja, allekirjoituksia tai laillista pätevyyttä.',
+  'uiLiteral.bookDetailPage.contexto': 'Konteksti',
+  'uiLiteral.bookDetailPage.conversaoCanonica': 'kanoninen muunnos:',
+  'uiLiteral.bookDetailPage.criado': 'Luotu',
+  'uiLiteral.bookDetailPage.criaOuDevolveUmDossierSoComMetadados':
+    'Luo tai palauta aineisto, jossa on vain metatiedot, tiivistelmä ja todisteet hyväksytystä OCR-luonnoksesta. Se ei luo pöytäkirjaa, asiakirjoja, PDF/A:ta, allekirjoitusta, sinettiä, tiedostopakettia tai laillista pätevyyttä.',
+  'uiLiteral.bookDetailPage.definidaEm': 'Aseta sisään',
+  'uiLiteral.bookDetailPage.desconhecidos': '· tuntematon',
+  'uiLiteral.bookDetailPage.digestDaFonteOcr': 'OCR-fontin tiivistelmä',
+  'uiLiteral.bookDetailPage.digestPresente': 'nykyinen ruoansulatus:',
+  'uiLiteral.bookDetailPage.disposalApproved': '· disposal_approved:',
+  'uiLiteral.bookDetailPage.documentoAssinado': '· allekirjoitettu asiakirja:',
+  'uiLiteral.bookDetailPage.documentoCanonico': '· Kanoninen asiakirja:',
+  'uiLiteral.bookDetailPage.dossier': 'Asiakirja',
+  'uiLiteral.bookDetailPage.dossierAssociado': 'Asiaan liittyvä asiakirja',
+  'uiLiteral.bookDetailPage.dossierJaRegistado': 'Asiakirja on jo rekisteröity',
+  'uiLiteral.bookDetailPage.draftMutavel': 'vaihtuva luonnos:',
+  'uiLiteral.bookDetailPage.estaAcaoNaoCriaAtaCanonicaDocumentoCanonico':
+    'Tämä toiminto ei luo kanonista asiakirjaa, kanonista asiakirjaa, PDF/A-tiedostoa, allekirjoitusta tai laillista pätevyyttä.',
+  'uiLiteral.bookDetailPage.estado': 'Osavaltio',
+  'uiLiteral.bookDetailPage.estado.1528o1': '· tila',
+  'uiLiteral.bookDetailPage.estado.kzwel3': 'Osavaltio:',
+  'uiLiteral.bookDetailPage.estadoDeRevisaoOcrDigestDeTextoQuando':
+    'OCR-tarkistuksen tila, tekstitiivistelmä, kun se on ilmoitettu, tarkistetut sivut, OCR-moottori ja aineiston metatiedot, jos saatavilla.',
+  'uiLiteral.bookDetailPage.estaImportacaoPreservadaAindaNaoTemOcrAuxiliar':
+    'Tässä säilytetyssä tuonnissa ei vielä ole ylimääräistä tekstintunnistusta tarkistettavaksi.',
+  'uiLiteral.bookDetailPage.estesPacotesPreservamCopiasDeLivrosEmPapel':
+    'Nämä pakkaukset säilyttävät kirjojen paperikopiot viitteeksi. Ne eivät korvaa kanonista digitaalista pöytäkirjaa eivätkä vakuuta laillista pätevyyttä, PDF/A:ta, allekirjoituksen kelvollisuutta tai hyväksyttyä allekirjoitusta.',
+  'uiLiteral.bookDetailPage.evidenciaDeExecucaoDeConversaoRevista':
+    'Todisteet tarkistetusta muuntamisen suorittamisesta',
+  'uiLiteral.bookDetailPage.evidenciaRevista': 'Tarkistettu todiste',
+  'uiLiteral.bookDetailPage.exclui': 'Ei sisällä',
+  'uiLiteral.bookDetailPage.execucoesLigadas': 'linkitetyt teloitukset:',
+  'uiLiteral.bookDetailPage.ficheiro': 'Tiedosto',
+  'uiLiteral.bookDetailPage.flagsSemExecucao': 'Toimimattomat liput',
+  'uiLiteral.bookDetailPage.flagsSemReivindicacao': 'Liput ilman vaatimuksia',
+  'uiLiteral.bookDetailPage.fluxoOperador': 'Operaattorin virtaus',
+  'uiLiteral.bookDetailPage.importacaoPreservada': 'Tuonti säilytetty',
+  'uiLiteral.bookDetailPage.inclui': 'Sisältää',
+  'uiLiteral.bookDetailPage.legalComplianceClaimed': 'legal_compliance_claimed:',
+  'uiLiteral.bookDetailPage.limitesDoDossier': 'Asiakirjojen rajat',
+  'uiLiteral.bookDetailPage.metadados': '· metatiedot:',
+  'uiLiteral.bookDetailPage.minutasCanonicas': '· kanoniset minuutit:',
+  'uiLiteral.bookDetailPage.naoCanonico': 'Ei-kanoninen',
+  'uiLiteral.bookDetailPage.naoHaPacotesDeLivroEmPapelPreservados':
+    'Tätä kirjaviittausta varten ei ole säilytetty paperipakkauksia.',
+  'uiLiteral.bookDetailPage.naResposta': 'Vastauksessa:',
+  'uiLiteral.bookDetailPage.noArtefacto': 'Artefaktissa:',
+  'uiLiteral.bookDetailPage.noEventoDeLedger': '· pääkirjatapahtumassa:',
+  'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
+    'Paikallinen DGLAB-luettelo on JSON-teline, joka on johdettu sisäisestä paketista. Se ei ole virallinen DGLAB-vienti, viranomainen, laillinen arkistointitodistus, PDF/A-, PAdES- tai PDF-UA-sertifikaatti eikä tietue tuhoavasta hävityksestä.',
+  'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':
+    'Tuloksena on ei-kanoninen OCR-apuluonnos säilytetyn tuonnin tarkistamista varten.',
+  'uiLiteral.bookDetailPage.pacoteDeArquivo': '· tiedostopaketti:',
+  'uiLiteral.bookDetailPage.paginas': 'sivuja',
+  'uiLiteral.bookDetailPage.paginasDaFonte': 'Lähdesivut',
+  'uiLiteral.bookDetailPage.pdfA': '· PDF/A:',
+  'uiLiteral.bookDetailPage.pdfUa': '· PDF/UA:',
+  'uiLiteral.bookDetailPage.promocaoParaRascunhoMutavel': 'Tarjous vaihdettavalle luonnokselle',
+  'uiLiteral.bookDetailPage.proximoPasso': 'Seuraava askel',
+  'uiLiteral.bookDetailPage.rascunhoAceite': 'Luonnos hyväksytty',
+  'uiLiteral.bookDetailPage.rascunhoOcrAceite': 'OCR-luonnos hyväksytty',
+  'uiLiteral.bookDetailPage.rascunhoRevisto': 'Tarkistettu luonnos',
+  'uiLiteral.bookDetailPage.rascunhosOcr': 'OCR-luonnokset',
+  'uiLiteral.bookDetailPage.rehearsalLocalCalculadoAPartirDeMetadadosPreservados':
+    'Paikallinen harjoitus laskettu säilytetyistä metatiedoista. Ei suorita tekstintunnistusta, ei luo kanonisia asiakirjoja, ei allekirjoita eikä validoi laillisesti.',
+  'uiLiteral.bookDetailPage.relatorioLocalIndisponivel': 'Paikallinen raportti ei ole saatavilla',
+  'uiLiteral.bookDetailPage.relatorioOcrCanonicoLocal': 'Paikallinen OCR/ensisijainen raportti',
+  'uiLiteral.bookDetailPage.resumoOcrDossierDerivado': 'OCR-yhteenveto/johdettu aineisto',
+  'uiLiteral.bookDetailPage.revisaoDeOrigem': 'Lähdearvostelu',
+  'uiLiteral.bookDetailPage.revisaoEFixidez': 'Katsaus ja korjaus',
+  'uiLiteral.bookDetailPage.selo': '· leima:',
+  'uiLiteral.bookDetailPage.semReivindicacao': 'Ei väitettä',
+  'uiLiteral.bookDetailPage.soMetadados': 'Vain metatiedot',
+  'uiLiteral.bookDetailPage.soMetadadosSimAtaCanonicaNaoDocumentoCanonico':
+    'Vain metatiedot: kyllä ​​· kanoninen asiakirja: ei · kanoninen asiakirja: ei · arkistopaketti: ei · allekirjoitus: ei · sinetti: ei · PDF/A: ei · PDF/UA: ei · laillinen pätevyys: ei.',
+  'uiLiteral.bookDetailPage.textoOcrBruto': 'Raaka OCR-teksti',
+  'uiLiteral.bookDetailPage.textoOcrBrutoNoDossier': 'Raaka OCR-teksti aineistossa',
+  'uiLiteral.bookDetailPage.validadeLegal': '· laillinen pätevyys:',
+  'uiLiteral.bookDetailPage.validadeLegalDeclaradaNao': '. Ilmoitettu lainvoimaisuus: ei.',
+  'uiLiteral.bookDetailPage.valideDatasContagemDePaginasFixidezEContexto':
+    'Tarkista päivämäärät, sivumäärä, fiksuus ja kirjan konteksti ennen säilyttämistä. Tässä näkyvä linkki on vain kontekstuaalinen: se ei luo tai muuta minuuttiketjuja, eikä se muuta tuontia kanoniseksi digitaaliseksi tietueeksi.',
+  'uiLiteral.funcoesSection.adicionarSo': 'Lisää vain:',
+  'uiLiteral.funcoesSection.aplicarDefaultsEmFalta': 'Käytä puuttuvia oletusasetuksia',
+  'uiLiteral.funcoesSection.estado': 'Osavaltio',
+  'uiLiteral.funcoesSection.reverDefaults': 'Tarkista oletusasetukset',
+  'uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao': 'Ladataan palautuskäytäntöä',
+  'uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff':
+    'Ladataan paikallista kanavanvaihdon esivahvistusta',
+  'uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio': 'Varmuuskopiotiedosto testausta varten',
+  'uiLiteral.gestaoDadosSection.backendDuravel': 'Kestävä tausta',
+  'uiLiteral.gestaoDadosSection.chancelaBackupZip': 'Chancela-backup-….zip',
+  'uiLiteral.gestaoDadosSection.chaveDoBackupOpcional': 'Vara-avain (valinnainen)',
+  'uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios':
+    'Kokoaa vain paikallisia todisteita: varmuuskopioehdokkaat, tarkistetut esseet, kirjapaketit, tiedostojen ja pääkirjan tilan.',
+  'uiLiteral.gestaoDadosSection.ensaioDeRecuperacaoSemRestauro': 'Palautumistesti ilman palautusta',
+  'uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro':
+    'Selkeä, operaattorin käynnistämä testaus: ei reaaliaikaista palautusta, ei laillista arkiston sertifiointia, ei automaattista todistetta RPO/RTO:sta tai muusta säilytyksestä.',
+  'uiLiteral.gestaoDadosSection.enviadaApenasParaExecutarPragmaRekeyAResposta':
+    'Lähetetään vain suorittamaan PRAGMA-uudelleenavaimen; vastaus palauttaa vain todisteet ilman salassapitoa.',
+  'uiLiteral.gestaoDadosSection.execucaoDaRotacaoSqlcipher': 'Suoritetaan SQLCipher-kierto',
+  'uiLiteral.gestaoDadosSection.executaApenasORekeySqlcipherNaBaseDe':
+    'Suorita SQLCipher-uudelleenavain vain jo avoimessa kestävässä tietokannassa; ei muunna SQLite-kauppoja tavalliseksi tekstiksi.',
+  'uiLiteral.gestaoDadosSection.executaAPreValidacaoExistenteDoBackupE':
+    'Suorittaa varmuuskopion olemassa olevan esivahvistuksen ja tallentaa escrow-kuitin. Ei palauta, ei muuta tietokantaa eikä valmistele sivuvaunuja.',
+  'uiLiteral.gestaoDadosSection.leituraDoEstadoLocalDePersistenciaNaoExecuta':
+    'Paikallisen pysyvyyden tilan lukeminen; ei suorita siirtoa, uudelleenavainta tai säilytystilan vahvistusta.',
+  'uiLiteral.gestaoDadosSection.localDeCustodia': 'Säilytyspaikka',
+  'uiLiteral.gestaoDadosSection.localIndicadoPeloOperadorIstoNaoComprovaCustodia':
+    'Operaattorin ilmoittama sijainti; tämä ei todista laitoksen ulkopuolista huoltajuutta.',
+  'uiLiteral.gestaoDadosSection.nomeSimplesEmBackupsOuCaminhoAbsolutoDo':
+    'Yksinkertainen nimi varmuuskopioissa/ tai tarkistettavan tiedoston absoluuttinen polku.',
+  'uiLiteral.gestaoDadosSection.notasDoOperador': 'Käyttäjän huomautukset',
+  'uiLiteral.gestaoDadosSection.novaChaveSqlcipher': 'Uusi SQLCipher-avain',
+  'uiLiteral.gestaoDadosSection.preValidacaoLocalDeHandoff':
+    'Paikallinen yhteysvastuun esivahvistus',
+  'uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave':
+    'SQLCipher-valmius ja avainten säilytys',
+  'uiLiteral.gestaoDadosSection.requerArmazenamentoDuravelEmDisco': 'Vaatii kestävää levytilaa.',
+  'uiLiteral.gestaoDadosSection.sidecars': 'Sivuvaunut',
+  'uiLiteral.gestaoDadosSection.sidecarsDuraveis': 'Kestävät sivuvaunut',
+  'uiLiteral.gestaoDadosSection.usadaSoNestaPreValidacaoNaoEGuardada':
+    'Käytetään vain tässä esivahvistuksessa; ei ole tallennettu kuittiin.',
+  'uiLiteral.importFromRegistryForm.consulta': 'Konsultointi',
+  'uiLiteral.registryImportPanel.aConsultaAindaNaoFoiExecutada': 'Kyselyä ei ole vielä suoritettu.',
+  'uiLiteral.registryImportPanel.consulta': 'Konsultointi',
+  'uiLiteral.registryImportPanel.proximoPasso': 'Seuraava askel',
+  'uiLiteral.registryImportPanel.resultado': 'Tulos',
+  'uiLiteral.registryImportPanel.resumo': 'Yhteenveto',
+  'uiLiteral.registryImportPanel.resumoDaImportacao': 'Tuo yhteenveto',
+  'uiLiteral.registryImportPanel.semAlteracoes': 'Ei muutoksia',
+  'uiLiteral.signingPanel.token': 'Token',
+  'uiLiteral.trustCatalogPage.tslConfiavel': 'Luotettava TSL',
+  'uiLiteral.asicSignatureInspectorPanel.semIndicadoresDeEvidenciaEmbebidaReportados':
+    'Upotetuista todisteista ei ole raportoitu indikaattoreita.',
+  'uiLiteral.asicSignatureInspectorPanel.semOcorrenciasReportadas': 'Ei raportoituja tapahtumia.',
+  'uiLiteral.bookDetailPage.ambitoDeArquivoPaperBookImport':
+    'Tiedoston laajuus: paperi-kirja-tuonti:',
+  'uiLiteral.bookDetailPage.criaUmaAtaEmEstadoDraftComO':
+    'Luo luonnos-tilassa olevat pöytäkirjat, joissa on OCR-teksti pohdinnan tukena. Se ei luo kanonista asiakirjaa, PDF/A:ta, allekirjoitusta, sinettiä tai laillisen pätevyyden hyväksymistä.',
+  'uiLiteral.bookDetailPage.digestDoTexto': 'Tekstitiivistelmä',
+  'uiLiteral.bookDetailPage.documentoCanonico.19tw3h': '. Kanoninen asiakirja:',
+  'uiLiteral.bookDetailPage.entidade': '· Entiteetti:',
+  'uiLiteral.bookDetailPage.intervalo': 'Aikaväli:',
+  'uiLiteral.bookDetailPage.limites': 'Rajoitukset',
+  'uiLiteral.bookDetailPage.livro': 'Kirja:',
+  'uiLiteral.bookDetailPage.motor': 'Moottori',
+  'uiLiteral.bookDetailPage.nota': 'Huomaa',
+  'uiLiteral.bookDetailPage.ocrMetadadoApenasTextoArmazenado':
+    'OCR: vain metatiedot; tallennettu teksti:',
+  'uiLiteral.bookDetailPage.paginasRevistas': 'Päivitetyt sivut',
+  'uiLiteral.bookDetailPage.rascunhoCriado': 'Luonnos luotu:',
+  'uiLiteral.bookDetailPage.revisto': 'Tarkistettu',
+  'uiLiteral.bookDetailPage.textoAutoritativo': 'Virallinen teksti:',
+  'uiLiteral.bookDetailPage.textoAutoritativo.9xkq63': '; arvovaltainen teksti:',
+  'uiLiteral.bookDetailPage.textoExtraido': 'Poimittu teksti',
+  'uiLiteral.compliancePanel.limitesDoAviso': 'Varoitusrajat',
+  'uiLiteral.compliancePanel.orientacaoLocalDaConvocatoria': 'Puhelun paikallinen suunta',
+  'uiLiteral.compliancePanel.proximoRegistoLocal': 'Seuraava paikallinen ilmoittautuminen',
+  'uiLiteral.editUserPage.acao': 'Toiminta',
+  'uiLiteral.editUserPage.aindaNaoHaPedidosDsrRegistadosParaEste':
+    'Tälle käyttäjälle ei ole vielä rekisteröity DSR-pyyntöjä.',
+  'uiLiteral.editUserPage.concluido': 'Valmis',
+  'uiLiteral.editUserPage.criado': 'Luotu',
+  'uiLiteral.editUserPage.criadoPor': 'Luonut',
+  'uiLiteral.editUserPage.estado': 'Osavaltio',
+  'uiLiteral.editUserPage.marcarConcluido': 'Merkitse valmiiksi',
+  'uiLiteral.editUserPage.pedidosDsrPrivacidade': 'DSR/tietosuojapyynnöt',
+  'uiLiteral.editUserPage.registaOCicloDeVidaDosPedidosDsr':
+    'Tallentaa käyttäjien DSR-pyyntöjen elinkaaren ja lataa ei-salaisen JSON-tiedoston vastausta varten. Vietyä sisältöä ei näytetä näytöllä.',
+  'uiLiteral.editUserPage.semPedidosDsr': 'Ei DSR-tilauksia',
+  'uiLiteral.editUserPage.tipo': 'Tyyppi',
+  'uiLiteral.editUserPage.tipoDePedido': 'Tilaustyyppi',
+  'uiLiteral.entitiesPage.naoImportado': 'Ei tuotu',
+  'uiLiteral.entitiesPage.naoImportadoSemCertidao': 'Ei tuotu · Ei sertifikaattia',
+  'uiLiteral.entitiesPage.semAtividade': 'Ei toimintaa',
+  'uiLiteral.entitiesPage.semAtividadeNoArquivo': 'Ei toimintaa tiedostossa',
+  'uiLiteral.entitiesPage.semCertidao': 'Ei todistusta',
+  'uiLiteral.entityChronologyPanel.cronologiaLocalDeAtosSelados':
+    'Sinetöityjen tekojen paikallinen kronologia',
+  'uiLiteral.entityChronologyPanel.data': 'Päivämäärä',
+  'uiLiteral.entityChronologyPanel.descricao': 'Kuvaus',
+  'uiLiteral.entityChronologyPanel.digest': 'sulattaa',
+  'uiLiteral.entityChronologyPanel.eventosLocais': 'Paikallisia tapahtumia',
+  'uiLiteral.entityChronologyPanel.fonteSelada': 'Lähde suljettu',
+  'uiLiteral.entityChronologyPanel.fontesSeladas': 'Suljetut lähteet',
+  'uiLiteral.entityChronologyPanel.ligacoes': 'Liitännät',
+  'uiLiteral.entityChronologyPanel.nos': 'Meille',
+  'uiLiteral.entityChronologyPanel.projecaoTecnicaLocalBaseadaApenasEmAtasSeladas':
+    'Paikallinen tekninen projektio perustuu vain sinetöityihin tai arkistoituihin pöytäkirjaan. Se ei vaadi laillista pätevyyttä tai valtuutuksen todistusta.',
+  'uiLiteral.entityChronologyPanel.provenienciaDasLigacoesLocais': 'Paikallisten linkkien alkuperä',
+  'uiLiteral.entityChronologyPanel.tipo': 'Tyyppi',
+  'uiLiteral.funcoesSection.aReconciliacaoEGuiadaPorAdminESo':
+    '. Täsmäytys on järjestelmänvalvojan ohjaama ja lisää vain nämä siemennetyt oletusasetukset.',
+  'uiLiteral.funcoesSection.atual': 'Nykyinen',
+  'uiLiteral.funcoesSection.defaultsEmFalta': 'Puuttuvat oletusasetukset:',
+  'uiLiteral.funcoesSection.revisaoManual': 'Manuaalinen tarkistus',
+  'uiLiteral.gestaoDadosSection.aindaNaoHaRecibosDeRotacaoSqlcipherBem':
+    'Onnistuneesta SQLCipher-kierrosta ei ole vieläkään kuitteja.',
+  'uiLiteral.gestaoDadosSection.arquivoVerificado': 'Vahvistettu tiedosto',
+  'uiLiteral.gestaoDadosSection.atosPreservaveis': 'Säilytettävät teot',
+  'uiLiteral.gestaoDadosSection.backend': 'Backend',
+  'uiLiteral.gestaoDadosSection.backendSqlcipherLocal': 'Paikallinen SQLCipher-taustajärjestelmä',
+  'uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente': 'Viimeisin vahvistamaton ehdokas',
+  'uiLiteral.gestaoDadosSection.candidatosNaoValidados': 'Vahvistamattomat ehdokkaat',
+  'uiLiteral.gestaoDadosSection.checkpointAntes': 'Tarkistuspiste ennen',
+  'uiLiteral.gestaoDadosSection.checkpointDepois': 'Tarkastuspiste jälkeen',
+  'uiLiteral.gestaoDadosSection.cifrado': 'Salattu',
+  'uiLiteral.gestaoDadosSection.configuracaoDaChave': 'Avaimen konfigurointi',
+  'uiLiteral.gestaoDadosSection.constatacoes': 'Havainnot',
+  'uiLiteral.gestaoDadosSection.documentosPreservados': 'Säilötyt asiakirjat',
+  'uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao': 'Palautusmääritykset',
+  'uiLiteral.gestaoDadosSection.erroKeyOps': 'Näppäintoimintovirhe',
+  'uiLiteral.gestaoDadosSection.erros': 'Virheet',
+  'uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados': 'Tietokantaskeema',
+  'uiLiteral.gestaoDadosSection.estado': 'Osavaltio',
+  'uiLiteral.gestaoDadosSection.estadoDoEnsaio': 'Määrityksen tila',
+  'uiLiteral.gestaoDadosSection.evidenciaOperacionalLocalGeradaAposRekeySqlcipherAceite':
+    'Paikallinen toiminnallinen näyttö, joka on luotu SQLCipher-uudelleenavaimen hyväksymisen jälkeen. Nämä kuitit eivät takaa salausta levossa, pelkkätekstisiirtoa, laillista poistamista tai koko GDPR-elinkaaria.',
+  'uiLiteral.gestaoDadosSection.evidenciaVerificada': 'Varmennettu todiste',
+  'uiLiteral.gestaoDadosSection.fallbackFalhaFechado': 'Varatoimivika sulkeutuu',
+  'uiLiteral.gestaoDadosSection.fallbackHardware': 'Laitteistovaraus',
+  'uiLiteral.gestaoDadosSection.fonteDeChave': 'Avainlähde',
+  'uiLiteral.gestaoDadosSection.formatoDoCabecalho': 'Otsikon muoto',
+  'uiLiteral.gestaoDadosSection.geradoEm': 'Luotu sisään',
+  'uiLiteral.gestaoDadosSection.historicoGuardado': 'Tallennettu historia',
+  'uiLiteral.gestaoDadosSection.historicoRecente': 'Lähihistoria',
+  'uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo': 'Viimeisen kuitin ikä',
+  'uiLiteral.gestaoDadosSection.idadeMaximaConfigurada': 'Määritetty enimmäisikä',
+  'uiLiteral.gestaoDadosSection.integridadePosRekey': 'Uudelleenavaimen jälkeinen eheys',
+  'uiLiteral.gestaoDadosSection.lacunasDeProntidao': 'Valmiusaukot',
+  'uiLiteral.gestaoDadosSection.limitesDoRecibo': 'Kuittirajat',
+  'uiLiteral.gestaoDadosSection.livros': 'Kirjat',
+  'uiLiteral.gestaoDadosSection.localDeCustodiaIndicado': 'Ilmoitettu säilytyspaikka',
+  'uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada':
+    'Avaa myymälä määritetyllä avaimella',
+  'uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente': 'Tietokannan jäsen paikalla',
+  'uiLiteral.gestaoDadosSection.membrosNoArquivo': 'Jäsenet tiedoissa',
+  'uiLiteral.gestaoDadosSection.membrosSidecar': 'Sivuvaunun jäsenet',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada': 'Pelkän tekstin siirto estetty',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextPendente': 'Odottaa selkeän tekstin siirtoa',
+  'uiLiteral.gestaoDadosSection.modo': 'tila',
+  'uiLiteral.gestaoDadosSection.operacao': 'Toiminta',
+  'uiLiteral.gestaoDadosSection.passosDeclarados': 'Ilmoitetut vaiheet',
+  'uiLiteral.gestaoDadosSection.planoDeMigracao': 'Muuttosuunnitelma',
+  'uiLiteral.gestaoDadosSection.planoKeyOps': 'Key-ops suunnitelma',
+  'uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao': 'Paikallinen palautuspolitiikka',
+  'uiLiteral.gestaoDadosSection.preValidacaoDeImportacao': 'Tuo esivahvistus',
+  'uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo': 'Viimeisen kuitin ennakkovahvistus',
+  'uiLiteral.gestaoDadosSection.preValidacaoOk': 'Esivahvistus OK',
+  'uiLiteral.gestaoDadosSection.prontoParaRestauro': 'Valmiina kunnostukseen',
+  'uiLiteral.gestaoDadosSection.proximoPasso': 'Seuraava askel',
+  'uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao': 'Paikalliset kiertokuitit',
+  'uiLiteral.gestaoDadosSection.registadoEm': 'Rekisteröity sisään',
+  'uiLiteral.gestaoDadosSection.rekeyExecutado': 'Rekey suoritettu',
+  'uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher': 'SQLCipher-suorituksen tulos',
+  'uiLiteral.gestaoDadosSection.resumoLocalDerivadoDeRecibosDeEnsaioSem':
+    'Paikallinen yhteenveto, joka on saatu testikuitteista: palautusta ei suoritettu, tietokannan vaihtoa ei suoritettu, ei todisteita muualta säilytyksestä, ei RPO/RTO-sertifiointia eikä tuotannon varmuuskopiointikäytäntöjen sertifiointia.',
+  'uiLiteral.gestaoDadosSection.rpoAlvoDeclarado': 'Ilmoitettu kohde-RPO',
+  'uiLiteral.gestaoDadosSection.rtoAlvoDeclarado': 'Ilmoitettu tavoite RTO',
+  'uiLiteral.gestaoDadosSection.semAlegacoes': 'Ei syytöksiä',
+  'uiLiteral.gestaoDadosSection.semCaminhoDaBd': 'Ei BD-polkua',
+  'uiLiteral.gestaoDadosSection.semChaveGuardada': 'Avainta ei ole tallennettu',
+  'uiLiteral.gestaoDadosSection.semConstatacoesRegistadas': 'Havaintoja ei ole tallennettu.',
+  'uiLiteral.gestaoDadosSection.semErrosRegistados': 'Ei tallennettuja virheitä.',
+  'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
+    'Tässä osavaltiossa ei ole raportoitu paikallisia puutteita.',
+  'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
+    'Taustaa paikalliset signaalit muokatuilla salaisuuksilla. Ne eivät sertifioi tuotannon loppusalausta, suoritettua selkeän tekstin siirtoa, säilytysohjekirjaa tai laillista sykliä/GDPR:ää.',
+  'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado': 'Vahvistettu eristetty tilannekuva',
+  'uiLiteral.gestaoDadosSection.sqlcipher': 'SQLCipher',
+  'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher on rakennettu',
+  'uiLiteral.gestaoDadosSection.sqlcipherVerificado': 'Vahvistettu SQLCipher',
+  'uiLiteral.gestaoDadosSection.total': 'yhteensä /',
+  'uiLiteral.gestaoDadosSection.totalDeBytesDosMembros': 'Jäsentavut yhteensä',
+  'uiLiteral.gestaoDadosSection.ultimaRotacao': 'Viimeinen kierto',
+  'uiLiteral.gestaoDadosSection.ultimoEnsaio': 'Viimeinen harjoitus',
+  'uiLiteral.gestaoDadosSection.ultimoRecibo': 'Viimeinen kuitti',
+  'uiLiteral.gestaoDadosSection.utilizador': 'Käyttäjä',
+  'uiLiteral.gestaoDadosSection.verificacaoIsolada': 'Eristetty shekki',
+  'uiLiteral.importFromRegistryForm.acaoNecessaria': 'Toimia vaaditaan',
+  'uiLiteral.importFromRegistryForm.aCertidaoEstaASerConsultadaMantenhaEsta':
+    'Todistusta kuullaan. Pidä tämä sivu auki.',
+  'uiLiteral.importFromRegistryForm.aConsultar': 'On kuultava',
+  'uiLiteral.importFromRegistryForm.corrijaOCodigoOuEMailETente':
+    'Korjaa koodi tai sähköposti ja yritä uudelleen.',
+  'uiLiteral.importFromRegistryForm.estado': 'Osavaltio',
+  'uiLiteral.registryImportPanel.acaoNecessaria': 'Toimia vaaditaan',
+  'uiLiteral.registryImportPanel.aCertidaoEstaASerConsultadaOsValores':
+    'Todistusta kuullaan. Nykyiset arvot muuttuvat vasta kun tulos saapuu.',
+  'uiLiteral.registryImportPanel.aConsultar': 'On kuultava',
+  'uiLiteral.registryImportPanel.corrijaOCodigoOuEMailETente':
+    'Korjaa koodi tai sähköposti ja yritä uudelleen.',
+  'uiLiteral.registryImportPanel.estado': 'Osavaltio',
+  'uiLiteral.asicSignatureInspectorPanel.manifesto': 'selvä',
+  'uiLiteral.bookDetailPage.em': 'sisään',
+  'uiLiteral.bookDetailPage.por': 'laittaa',
+  'uiLiteral.bookDetailPage.total': 'kokonais-',
+  'uiLiteral.gestaoDadosSection.dias': 'päivää',
+  'uiLiteral.gestaoDadosSection.fechados': 'suljettu',
+  'uiLiteral.gestaoDadosSection.min': 'min',
+  'uiLiteral.privacyComplianceSection.overdue': 'myöhässä:',
+  'uiLiteral.bookDetailPage.acceptedWithoutCanonicalConversion':
+    'Hyväksytty täydentäväksi viitteeksi ilman kanonista muunnosta.',
+  'uiLiteral.bookDetailPage.noAcceptedOcrDraft': 'Ei hyväksyttyä OCR-luonnosta.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.signingSnapshot.title': 'Kanoninen kopio jäädytetty allekirjoitusta varten',
+  'acts.signingSnapshot.body':
+    'Kun syötettiin "allekirjoitus", pöytäkirjat jäädytettiin. Tilaustoiminnot käyttävät tätä ensisijaista kopiota eivätkä luo tai korvaa sitä uudelleen.',
+  'acts.sealing.signedReady':
+    'Kanonisen kopion allekirjoitetusta PDF-tiedostosta on teknisiä todisteita. Tarkista se ennen sulkemista.',
+  'acts.sealing.signatureRequired':
+    'Allekirjoita kanoninen kopio tai käytä vaihtoehtoista kopiota manuaalisesti allekirjoitetusta alkuperäiskappaleesta ennen sinetöimistä.',
+  'acts.sealing.signedAck.title': 'Vahvista sinetöinti allekirjoituksen jälkeen',
+  'acts.sealing.signedAck.body':
+    'Sinetissä käytetään jo allekirjoitettua kanonista kopiota. Tarkista tekniset todisteet ja vaatimustenmukaisuusilmoitukset ennen kuin jatkat.',
+  'acts.sealing.signedAck.checkbox':
+    'Vahvistan, että olen tarkastanut allekirjoituksen tekniset todisteet ja haluan sinetöidä pöytäkirjan.',
+  'acts.sealing.signedAck.checkboxWithWarnings':
+    'Vahvistan, että olen tarkastanut allekirjoituksen tekniset todisteet ja vaatimustenmukaisuusilmoitukset ja haluan sinetöidä pöytäkirjan.',
+  'signing.closed.title': 'Tilaus päättyi',
+  'signing.closed.body':
+    'Pöytäkirja on nyt "allekirjoituksen alla". Tilaustoiminnot on suljettu; olemassa olevat todisteet ovat edelleen saatavilla kuulemista varten.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'signing.technicalComparison.row.signingSnapshotDigest':
+    'Tiivistelmä jäädytetystä kanonisesta kopiosta',
 };

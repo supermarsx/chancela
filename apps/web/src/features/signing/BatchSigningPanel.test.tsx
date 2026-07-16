@@ -24,7 +24,7 @@ const sealedAct: ActView = {
   telematic_evidence: null,
   attachments: [],
   signatories: [],
-  state: 'Sealed',
+  state: 'Signing',
   ata_number: 1,
   payload_digest: null,
   seal_event_seq: null,

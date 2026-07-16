@@ -19,13 +19,25 @@ export const enUS: Catalog = {
   'rbac.delegacoes.tab': 'Delegations',
   'rbac.scope.label': 'Scope',
   'rbac.scope.global': 'Global (whole instance)',
+  'rbac.scope.tenant': 'Tenant',
   'rbac.scope.entity': 'Entity',
   'rbac.scope.book': 'Book',
+  'rbac.scope.act': 'Act',
+  'rbac.scope.folder': 'Folder',
+  'rbac.scope.templateLibrary': 'Template library',
+  'rbac.scope.archive': 'Archive',
+  'rbac.scope.integration': 'Integration',
+  'rbac.scope.repository': 'Repository',
   'rbac.scope.global.desc': 'Applies across the whole instance.',
+  'rbac.scope.tenant.desc': 'Applies to the tenant and the resources it contains.',
   'rbac.scope.entity.desc': 'Applies to the entity and its books.',
   'rbac.scope.book.desc': 'Applies to this book only.',
+  'rbac.scope.resource.desc':
+    'Applies to the identified resource and resources beneath it in the authorized hierarchy.',
+  'rbac.scope.tenant.pick': 'Choose tenant',
   'rbac.scope.entity.pick': 'Choose entity',
   'rbac.scope.book.pick': 'Choose book',
+  'rbac.scope.resource.pick': 'Resource identifier',
   'rbac.group.entity': 'Entities',
   'rbac.group.book': 'Books',
   'rbac.group.act': 'Acts',
@@ -44,7 +56,7 @@ export const enUS: Catalog = {
     'You can only select permissions you hold yourself. The rest are shown disabled.',
   'rbac.matrix.selectAll': 'Select all',
   'rbac.matrix.clear': 'Clear',
-  'rbac.matrix.meta': 'Meta',
+  'rbac.matrix.meta': 'Goal',
   'rbac.matrix.notHeld': 'You do not hold this permission',
   'rbac.role.edit.title': 'Edit role',
   'rbac.role.create.title': 'New role',
@@ -860,11 +872,12 @@ export const enUS: Catalog = {
   'acts.attachments': 'Attachments',
   'acts.lifecycle': 'Lifecycle',
   'acts.compliance': 'Compliance',
-  'acts.manualSignature.title': 'Manual signature (SIG-03)',
+  'acts.manualSignature.title': 'Alternative route: manually signed original (SIG-03)',
   'acts.manualSignature.body':
-    'Qualified electronic signature integration is not yet available. On sealing, the minute is chained in the ledger on the basis of a manual signature by those present — make sure the signatories have signed the physical copy or the PDF before proceeding.',
+    'There is still no technical evidence of a signed PDF. You may sign the canonical copy above or, alternatively, record the reference to the signed original manually. This copy does not validate the signature or certify the file.',
   'acts.sealing.title': 'Sealing',
-  'acts.sealing.ready': 'The minute is compliant and in signing — it can be sealed.',
+  'acts.sealing.ready':
+    'The minutes are in compliance and ready to complete the signature before sealing.',
   'acts.sealing.readyWithWarnings':
     'The minute has non-blocking compliance warnings. Review and explicitly acknowledge them before sealing.',
   'acts.sealing.warningAck.title': 'Confirm manual sealing',
@@ -987,7 +1000,7 @@ export const enUS: Catalog = {
   'ledger.filters.clear.aria': 'Clear archive filters',
   'ledger.search.placeholder': 'Archive search term',
   'ledger.scope.label': 'Filter by scope',
-  'ledger.scope.placeholder': 'entity / book / act…',
+  'ledger.scope.placeholder': 'entity/book/act…',
   'ledger.kind.label': 'Event type',
   'ledger.kind.placeholder': 'act.sealed, book.opened…',
   'ledger.actor.label': 'Author',
@@ -1246,7 +1259,7 @@ export const enUS: Catalog = {
   'pdfValidator.field.isPdf': 'Is PDF',
   'pdfValidator.field.version': 'Version',
   'pdfValidator.field.headerOffset': 'Header offset',
-  'pdfValidator.field.eof': 'Marcador %%EOF',
+  'pdfValidator.field.eof': '%%EOF marker',
   'pdfValidator.field.startxref': 'startxref',
   'pdfValidator.field.validationPerformed': 'Validation performed',
   'pdfValidator.field.pades': 'PAdES profile',
@@ -1370,7 +1383,7 @@ export const enUS: Catalog = {
   'externalValidatorReports.table.validatorFamily': 'Validator family',
   'externalValidatorReports.table.archivePath': 'Archive path',
   'externalValidatorReports.table.contentType': 'Content type',
-  'externalValidatorReports.table.digest': 'Digest',
+  'externalValidatorReports.table.digest': 'digest',
   'externalValidatorReports.table.actions': 'Actions',
   'externalValidatorReports.table.metadataOnly': 'Metadata summary only',
   'externalValidatorReports.status':
@@ -1485,7 +1498,7 @@ export const enUS: Catalog = {
     'Audit identifier: lowercase, digits and . _ - (e.g. amelia.marques).',
   'users.field.username.placeholder': 'amelia.marques',
   'users.field.displayName.label': 'Display name (optional)',
-  'users.field.displayName.placeholder': 'Amélia Marques',
+  'users.field.displayName.placeholder': 'Amelia Marques',
   'users.create.submitting': 'Creating…',
   'users.create.submit': 'Create user',
   'users.list.cardTitle': 'Users',
@@ -1521,8 +1534,10 @@ export const enUS: Catalog = {
   'settings.appearance.intensity.hint': '0 to 100. Scales the grain opacity in real time.',
   'settings.appearance.reroll': 'Regenerate grain',
   'settings.appearance.colors.title': 'Custom colors',
-  'settings.appearance.colors.hint': 'Pick your own colors; leave a swatch untouched to keep the theme default.',
-  'settings.appearance.colors.help': "Override the app's primary, secondary, background and surface colors. Text contrast is adjusted automatically to stay legible. Purely cosmetic — it does not affect documents.",
+  'settings.appearance.colors.hint':
+    'Pick your own colors; leave a swatch untouched to keep the theme default.',
+  'settings.appearance.colors.help':
+    "Override the app's primary, secondary, background and surface colors. Text contrast is adjusted automatically to stay legible. Purely cosmetic — it does not affect documents.",
   'settings.appearance.colors.primary.label': 'Primary',
   'settings.appearance.colors.secondary.label': 'Secondary',
   'settings.appearance.colors.background.label': 'Background',
@@ -1554,7 +1569,7 @@ export const enUS: Catalog = {
   'settings.signing.tslUrl.placeholder': 'https://…',
   'settings.signing.requireQualified.label': 'Require a qualified signature to seal',
   'settings.signing.note':
-    'Signing preferences apply to the qualified electronic signature with Chave Móvel Digital, available on sealed minutes.',
+    'Preferences apply to the frozen canonical copy when the minutes enter “Under signature”, before sealing.',
   'settings.signing.officialHint': 'Official Portuguese default.',
   'settings.signing.reset': 'Reset to default',
   'settings.management.cardTitle': 'Management',
@@ -1627,7 +1642,7 @@ export const enUS: Catalog = {
   'settings.platform.logging.override.none': 'No override',
   'settings.platform.logging.override.app': 'Application',
   'settings.platform.logging.override.api': 'API',
-  'settings.platform.logging.override.mcp_stdio': 'MCP stdio',
+  'settings.platform.logging.override.mcp_stdio': 'MCP studio',
   'settings.platform.logLevel.trace': 'Trace',
   'settings.platform.logLevel.debug': 'Debug',
   'settings.platform.logLevel.info': 'Info',
@@ -1672,17 +1687,24 @@ export const enUS: Catalog = {
   'settings.platform.logs.column.message': 'Message',
   'settings.platform.logs.context.show': 'Context',
   'settings.platform.logs.context.empty': 'No context',
-  "settings.platform.subnav.aria": "Operations sections",
-  "settings.platform.tab.services": "Services",
-  "settings.platform.tab.services.desc": "Desired-state control of the API and MCP servers, with honest backend outcomes and an operations audit.",
-  "settings.platform.tab.logs": "Logs",
-  "settings.platform.tab.logs.desc": "Log-level configuration and the structured API log tail (read-only).",
-  "settings.platform.serviceDetails": "Control details and limitations",
-  "settings.platform.help.services": "These actions record the desired state of the service; the UI does not assume direct process control (for example, API self-restart or MCP stdio start).",
-  "settings.platform.help.outcomes": "The outcome states what the backend did: \"Supervisor required\" and \"Unsupported\" mean an external supervisor must act — the desired state was only recorded.",
-  "settings.platform.help.logLevels": "The global level caps every service; each area uses the stricter of the global and area levels. \"Off\" silences everything.",
-  "settings.platform.help.effective": "The effective per-service level combines the global, area and any override; if the global is \"Off\", everything is \"Off\".",
-  "settings.platform.help.overrides": "A per-service override replaces the area level for that service; use it only when a service needs a different level.",
+  'settings.platform.subnav.aria': 'Operations sections',
+  'settings.platform.tab.services': 'Services',
+  'settings.platform.tab.services.desc':
+    'Desired-state control of the API and MCP servers, with honest backend outcomes and an operations audit.',
+  'settings.platform.tab.logs': 'Logs',
+  'settings.platform.tab.logs.desc':
+    'Log-level configuration and the structured API log tail (read-only).',
+  'settings.platform.serviceDetails': 'Control details and limitations',
+  'settings.platform.help.services':
+    'These actions record the desired state of the service; the UI does not assume direct process control (for example, API self-restart or MCP stdio start).',
+  'settings.platform.help.outcomes':
+    'The outcome states what the backend did: "Supervisor required" and "Unsupported" mean an external supervisor must act — the desired state was only recorded.',
+  'settings.platform.help.logLevels':
+    'The global level caps every service; each area uses the stricter of the global and area levels. "Off" silences everything.',
+  'settings.platform.help.effective':
+    'The effective per-service level combines the global, area and any override; if the global is "Off", everything is "Off".',
+  'settings.platform.help.overrides':
+    'A per-service override replaces the area level for that service; use it only when a service needs a different level.',
   'settings.reminders.cardTitle': 'Dashboard reminders',
   'settings.reminders.enabled.label': 'Generate local reminders',
   'settings.reminders.note':
@@ -1959,7 +1981,7 @@ export const enUS: Catalog = {
   'settings.privacy.execution.title': 'Execution review queue',
   'settings.privacy.execution.searchPlaceholder': 'Policy, target, actor, blocker, or next step',
   'settings.privacy.execution.statusFilter': 'Execution status',
-  "settings.privacy.execution.status.all": "All execution statuses",
+  'settings.privacy.execution.status.all': 'All execution statuses',
   'settings.about.cardTitle': 'About',
   'settings.about.serverVersion': 'Server version',
   'settings.about.uiVersion': 'Interface version',
@@ -2474,23 +2496,32 @@ export const enUS: Catalog = {
   'templates.source.user': 'User-authored',
   'templates.editor.title.create': 'New template',
   'templates.editor.title.edit': 'Edit template',
-  'templates.editor.intro': 'A template is a reusable minutes skeleton: it defines the document structure and blocks, and is not any kind of legal guarantee.',
+  'templates.editor.intro':
+    'A template is a reusable minutes skeleton: it defines the document structure and blocks, and is not any kind of legal guarantee.',
   'templates.editor.field.id.label': 'Identifier',
-  'templates.editor.field.id.help': 'Versioned identifier in the form user-<name>/v<n>, for example user-encosto-ata/v1. The user- prefix is reserved for your own templates.',
+  'templates.editor.field.id.help':
+    'Versioned identifier in the form user-<name>/v<n>, for example user-encosto-ata/v1. The user- prefix is reserved for your own templates.',
   'templates.editor.field.family.label': 'Entity family',
-  'templates.editor.field.family.help': 'The type of entity the template applies to (commercial company, condominium, association, foundation or cooperative).',
+  'templates.editor.field.family.help':
+    'The type of entity the template applies to (commercial company, condominium, association, foundation or cooperative).',
   'templates.editor.field.stage.label': 'Minutes stage',
-  'templates.editor.field.stage.help': 'The lifecycle stage of the minutes this template is meant for.',
+  'templates.editor.field.stage.help':
+    'The lifecycle stage of the minutes this template is meant for.',
   'templates.editor.field.channels.label': 'Channels',
-  'templates.editor.field.channels.help': 'Meeting channels this template supports (in person, remote or mixed).',
+  'templates.editor.field.channels.help':
+    'Meeting channels this template supports (in person, remote or mixed).',
   'templates.editor.field.signaturePolicy.label': 'Signature policy',
-  'templates.editor.field.signaturePolicy.help': 'The signature preference suggested by the template. It does not certify or guarantee the legal validity of signatures.',
+  'templates.editor.field.signaturePolicy.help':
+    'The signature preference suggested by the template. It does not certify or guarantee the legal validity of signatures.',
   'templates.editor.field.rulePackId.label': 'Rule pack',
-  'templates.editor.field.rulePackId.help': 'Identifier of the applicable rule pack. Law references are derived by the system and cannot be edited.',
+  'templates.editor.field.rulePackId.help':
+    'Identifier of the applicable rule pack. Law references are derived by the system and cannot be edited.',
   'templates.editor.field.locale.label': 'Language',
-  'templates.editor.field.locale.help': 'Language of the template content. Only pt-PT is currently supported.',
+  'templates.editor.field.locale.help':
+    'Language of the template content. Only pt-PT is currently supported.',
   'templates.editor.field.blocks.label': 'Blocks',
-  'templates.editor.field.blocks.help': 'The sequence of blocks that make up the document (heading, paragraph, key-value, vote table, signature block, page break or rule). At least one block is required.',
+  'templates.editor.field.blocks.help':
+    'The sequence of blocks that make up the document (heading, paragraph, key-value, vote table, signature block, page break or rule). At least one block is required.',
   'templates.import.title': 'Import template',
   'templates.import.pickFile': 'Choose JSON file',
   'templates.import.preflight': 'Validating…',
@@ -2517,8 +2548,8 @@ export const enUS: Catalog = {
   // --- Qualified CMD signing (t57) ------------------------------------------------
   'settings.signing.family.hint': 'Recommended: Chave Móvel Digital.',
   'settings.signing.requireQualified.hint':
-    'Gates only the act’s “finalized (qualified)” status — it never blocks sealing. With this on, a sealed act stays “awaiting qualified signature” until a valid qualified signature is present.',
-  'settings.signing.cmd.title': 'Chave Móvel Digital (CMD)',
+    'With this option active, sealing requires accepted technical evidence of a qualified signature on the frozen canonical copy.',
+  'settings.signing.cmd.title': 'Digital Mobile Key (CMD)',
   'settings.signing.cmd.intro':
     'Production signing requires the AMA credentials (ApplicationId and certificate), supplied through environment variables. These values are shown for reference only.',
   'settings.signing.cmd.env': 'Environment',
@@ -2530,11 +2561,11 @@ export const enUS: Catalog = {
   'settings.signing.cmd.configured': 'Configured',
   'settings.signing.cmd.notConfigured': 'Not configured',
   'signing.title': 'Qualified signature',
-  'signing.unsigned.title': 'Minutes not yet qualified-signed',
+  'signing.unsigned.title': 'Canonical copy not yet signed',
   'signing.unsigned.body':
-    'The minutes are sealed. You can now sign them with a qualified electronic signature via Chave Móvel Digital.',
+    'The minutes are “Under signature” and frozen. Sign the canonical copy now before sealing it.',
   'signing.required.body':
-    'This setting requires a qualified signature to finalize the act. Sign the minutes with Chave Móvel Digital to complete them.',
+    'This configuration requires an accepted signature before sealing. Sign the canonical copy to be able to complete the act.',
   'signing.start': 'Sign with Chave Móvel Digital',
   'signing.credentials.intro':
     'Enter the mobile number tied to the Chave Móvel Digital and the signing PIN. The PIN is used only for this request and is never stored.',
@@ -2564,9 +2595,9 @@ export const enUS: Catalog = {
   'signing.signed.digest': 'Signed PDF fingerprint',
   'signing.download': 'Download signed PDF',
   'signing.technicalComparison.aria':
-    'Local technical comparison between sealed act and signed PDF',
+    'Local technical comparison between the canonical copy and the signed PDF',
   'signing.technicalComparison.kicker': 'Technical comparison',
-  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.title': 'Local metadata of the canonical copy and signed PDF',
   'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
   'signing.technicalComparison.badge.local': 'Local metadata only',
   'signing.technicalComparison.badge.noClaim': 'No claim',
@@ -2578,7 +2609,6 @@ export const enUS: Catalog = {
   'signing.technicalComparison.status.notClaimed': 'Not claimed',
   'signing.technicalComparison.status.loading': 'Loading',
   'signing.technicalComparison.row.actId': 'Act ID',
-  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
   'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
   'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
   'signing.technicalComparison.row.signedDocument': 'Signed document',
@@ -2628,7 +2658,7 @@ export const enUS: Catalog = {
   'signing.ccBatch.title': 'Local Citizen Card batch',
   'signing.ccBatch.badge': 'Local batch',
   'signing.ccBatch.description':
-    'Signs several sealed acts with the Citizen Card on this computer.',
+    'Sign several canonical copies of acts in “In signature” with the Citizen Card on this computer.',
   'signing.ccBatch.boundary.title': 'Local CC signing only',
   'signing.ccBatch.boundary.body':
     'This batch uses the local, co-located Citizen Card endpoint. It is not CMD, remote CSC, or provider-certified batch signing; the interface shows only evidence returned by the server.',
@@ -2644,7 +2674,7 @@ export const enUS: Catalog = {
   'signing.ccBatch.selection.needMore': 'Select at least two acts to use batch signing.',
   'signing.ccBatch.add.label': 'Act ID',
   'signing.ccBatch.add.hint':
-    'Add sealed act IDs when this surface does not provide a multi-document list.',
+    'Add act IDs under “Under signature” when this surface does not provide a multi-document list.',
   'signing.ccBatch.add.action': 'Add',
   'signing.ccBatch.manual.label': 'Manual ID: {id}',
   'signing.ccBatch.maxReached': 'Limit of {max} acts reached.',
@@ -2850,7 +2880,7 @@ export const enUS: Catalog = {
   'signing.evidence.renewal.action.addDocumentTimestamp': 'add document timestamp',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
     'record signature DSS validation time',
-  'signing.provider.cmd.title': 'Chave Móvel Digital',
+  'signing.provider.cmd.title': 'Digital Mobile Key',
   'signing.provider.cmd.description':
     'Two-step remote flow: signing PIN and SMS code. Recommended when CMD is active.',
   'signing.provider.cc.title': 'Citizen Card',
@@ -2888,7 +2918,7 @@ export const enUS: Catalog = {
   'signing.official.provider.label': 'Provider',
   'signing.official.provider.hint':
     'Optional. Records the provider named by the operator; it is not used as authority.',
-  'signing.official.provider.placeholder': 'Autenticação.gov',
+  'signing.official.provider.placeholder': 'Authentication.gov',
   'signing.official.source.label': 'Source',
   'signing.official.source.hint':
     'Optional. For example: official handoff, desktop application, provider portal.',
@@ -2945,7 +2975,7 @@ export const enUS: Catalog = {
   'signing.invites.hint':
     'Records an external delivery and tracking token. It does not contact a provider, sign the PDF, or change the evidence level.',
   'signing.invites.recipientName': 'Signer name',
-  'signing.invites.email': 'Email',
+  'signing.invites.email': 'E-mail',
   'signing.invites.providerHint': 'Provider or reference',
   'signing.invites.providerHint.placeholder': 'optional',
   'signing.invites.expiresAt': 'Expires at',
@@ -3153,17 +3183,23 @@ export const enUS: Catalog = {
   'data.status.recoveryDrill.receiptEyebrow': 'Drill receipt recorded',
   'data.status.recoveryDrill.verdictTitleOk': 'Backup verified and restorable',
   'data.status.recoveryDrill.verdictTitleFailed': 'Backup not verified',
-  'data.status.recoveryDrill.verdictWhyOk': 'Pre-validation and the isolated restore both succeeded, with no live restore performed.',
-  'data.status.recoveryDrill.verdictWhyFailed': 'Verification did not complete — do not rely on this backup without investigating.',
+  'data.status.recoveryDrill.verdictWhyOk':
+    'Pre-validation and the isolated restore both succeeded, with no live restore performed.',
+  'data.status.recoveryDrill.verdictWhyFailed':
+    'Verification did not complete — do not rely on this backup without investigating.',
   'data.status.recoveryDrill.evidenceToggle': 'Technical evidence',
   'data.status.syncHandoff.eyebrow': 'Local handoff pre-validation',
   'data.status.syncHandoff.verdictTitleReady': 'Local evidence ready for handoff review',
   'data.status.syncHandoff.verdictTitleMissing': 'Not enough local evidence to review the handoff',
   'data.status.syncHandoff.verdictTitleBlocked': 'Local handoff review blocked',
-  'data.status.syncHandoff.verdictWhyReady': 'The local evidence gathered is ready for review — no sync, import or change was performed.',
-  'data.status.syncHandoff.verdictWhyMissing': 'Verified local evidence is missing to review the handoff — gather what is missing before proceeding.',
-  'data.status.syncHandoff.verdictWhyBlocked': 'Blockers are preventing the local handoff review — resolve them before proceeding.',
-  'data.status.syncHandoff.nonMutating': 'This is a local pre-validation only (dry run): it does not perform the sync, the handoff or any data change.',
+  'data.status.syncHandoff.verdictWhyReady':
+    'The local evidence gathered is ready for review — no sync, import or change was performed.',
+  'data.status.syncHandoff.verdictWhyMissing':
+    'Verified local evidence is missing to review the handoff — gather what is missing before proceeding.',
+  'data.status.syncHandoff.verdictWhyBlocked':
+    'Blockers are preventing the local handoff review — resolve them before proceeding.',
+  'data.status.syncHandoff.nonMutating':
+    'This is a local pre-validation only (dry run): it does not perform the sync, the handoff or any data change.',
   'data.status.syncHandoff.evidenceToggle': 'Technical evidence',
   'data.status.syncHandoff.blockers': 'Blockers',
   'data.status.syncHandoff.missingEvidence': 'Missing evidence',
@@ -3273,7 +3309,8 @@ export const enUS: Catalog = {
   'integrity.restore.preflight.totalMemberBytes': 'Total member bytes',
   'integrity.restore.preflight.nextStep': 'Next step',
   'integrity.restore.preflight.verdictReady': 'This backup is valid and can be restored.',
-  'integrity.restore.preflight.verdictBlocked': 'This backup failed verification — do not use it to restore.',
+  'integrity.restore.preflight.verdictBlocked':
+    'This backup failed verification — do not use it to restore.',
   'integrity.restore.preflight.verdictError': 'This backup could not be verified.',
   'integrity.restore.preflight.evidenceToggle': 'Technical evidence',
   'integrity.restore.preflight.errors': 'Errors',
@@ -3346,7 +3383,7 @@ export const enUS: Catalog = {
   'integrity.startOver.openingDateLabel': 'Opening date',
   'integrity.startOver.signatoriesLabel': 'Required signatories',
   'integrity.startOver.signatoriesHint': 'Separate names with commas.',
-  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques, …',
+  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques,…',
   'integrity.startOver.numberingLabel': 'Numbering scheme',
   'integrity.startOver.confirm': 'Start over',
   'integrity.startOver.pending': 'Starting over…',
@@ -3819,7 +3856,7 @@ export const enUS: Catalog = {
   'settings.signing.providers.hint':
     'Non-secret metadata. The interface does not collect private keys, PINs, PKCS#12 passphrases, or OTPs on this page.',
   'settings.signing.providerMode.cmd': 'CMD/SCMD',
-  'settings.signing.providerMode.cc': 'Cartão de Cidadão',
+  'settings.signing.providerMode.cc': 'Citizen Card',
   'settings.signing.providerMode.cscQtsp': 'CSC/QTSP',
   'settings.signing.providerMode.localPkcs12': 'Local PKCS#12',
   'settings.signing.providerStatus.productionBlocked': 'Blocked in production',
@@ -3902,7 +3939,7 @@ export const enUS: Catalog = {
   'trust.provider.analysis.value':
     '{granted} granted · {history} with history · {supply} with points',
   'trust.provider.duplicateNames': 'Duplicate names',
-  'trust.tsa.title': 'TSA / RFC 3161',
+  'trust.tsa.title': 'TSA/RFC 3161',
   'trust.tsa.summary.aria': 'TSA summary',
   'trust.tsa.configuredUrl': 'Configured URL',
   'trust.tsa.status': 'Status',
@@ -4199,7 +4236,7 @@ export const enUS: Catalog = {
     'Credentials are encrypted, but this is not full confidentiality until you enable SQLCipher or OS sealing.',
   'settings.providerCredentials.protection.strictBlocked':
     'Strict mode is on: you can only store credentials after enabling confidential protection.',
-  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.cmd': 'Digital Mobile Key (CMD)',
   'settings.providerCredentials.mode.csc': 'CSC QTSP',
   'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
   'settings.providerCredentials.mode.pkcs12': 'Local PKCS#12',
@@ -4320,11 +4357,14 @@ export const enUS: Catalog = {
     'Selects the identity inside a .pfx by localKeyId in hexadecimal. E.g. “3a7f9c2b”.',
   'settings.privacy.subnav.aria': 'Privacy areas',
   'settings.privacy.subtab.registers.label': 'Registers',
-  'settings.privacy.subtab.registers.desc': 'Processors, impact assessments (DPIA), breach playbooks and transfer controls.',
+  'settings.privacy.subtab.registers.desc':
+    'Processors, impact assessments (DPIA), breach playbooks and transfer controls.',
   'settings.privacy.subtab.retention.label': 'Retention',
-  'settings.privacy.subtab.retention.desc': 'Retention policies, due candidates, simulation and the execution review queue.',
+  'settings.privacy.subtab.retention.desc':
+    'Retention policies, due candidates, simulation and the execution review queue.',
   'settings.privacy.subtab.guidance.label': 'Guidance',
-  'settings.privacy.subtab.guidance.desc': 'Local DPIA template and notes on the periodic advisory review.',
+  'settings.privacy.subtab.guidance.desc':
+    'Local DPIA template and notes on the periodic advisory review.',
   'settings.privacy.status.all': 'All statuses',
   'settings.privacy.status.draft': 'Draft',
   'settings.privacy.status.active': 'Active',
@@ -4347,12 +4387,15 @@ export const enUS: Catalog = {
   'settings.privacy.evidence.noDetail': 'No detail',
   'settings.privacy.evidence.receiptBy': '{kind} by {actor}',
   'settings.privacy.evidence.dpiaReceiptNote': 'No authority filing · No compliance certification',
-  'settings.privacy.evidence.breachReceiptNote': 'No authority notification · No data-subject notification',
+  'settings.privacy.evidence.breachReceiptNote':
+    'No authority notification · No data-subject notification',
   'settings.privacy.evidence.transferReceiptNote': 'No approval · No transfer execution',
   'settings.privacy.register.processor.title': 'GDPR processors',
-  'settings.privacy.register.processor.lede': 'Register of processors, subprocessors and data categories handled by third parties.',
+  'settings.privacy.register.processor.lede':
+    'Register of processors, subprocessors and data categories handled by third parties.',
   'settings.privacy.register.dpia.title': 'DPIAs',
-  'settings.privacy.register.dpia.lede': 'Impact assessments with purpose, legal basis, data categories and current risk.',
+  'settings.privacy.register.dpia.lede':
+    'Impact assessments with purpose, legal basis, data categories and current risk.',
   'settings.privacy.register.column.processor': 'Processor',
   'settings.privacy.register.column.dpia': 'DPIA',
   'settings.privacy.register.column.purpose': 'Purpose',
@@ -4360,7 +4403,8 @@ export const enUS: Catalog = {
   'settings.privacy.register.column.subprocessors': 'Subprocessors',
   'settings.privacy.register.column.updated': 'Updated',
   'settings.privacy.guidance.title': 'Local DPIA template',
-  'settings.privacy.guidance.lede': 'A local/offline pack of fields, prompts and checks for a DPIA; it does not read or show DPIA records, processors, data subjects, recipients, notes, legal bases or secrets.',
+  'settings.privacy.guidance.lede':
+    'A local/offline pack of fields, prompts and checks for a DPIA; it does not read or show DPIA records, processors, data subjects, recipients, notes, legal bases or secrets.',
   'settings.privacy.guidance.empty.title': 'Template unavailable',
   'settings.privacy.guidance.empty.body': 'The local DPIA pack was not returned by the API.',
   'settings.privacy.guidance.dl.id': 'Identifier',
@@ -4372,33 +4416,51 @@ export const enUS: Catalog = {
   'settings.privacy.guidance.required': 'required: {value}',
   'settings.privacy.guidance.noClaims': 'No-claim flags',
   'settings.privacy.guidance.operatorActions': 'Operator actions',
-  'settings.privacy.help.processor': 'A processor handles personal data on the organisation’s behalf. This register records who processes it, for what, on which legal basis and which subprocessors are used.',
-  'settings.privacy.help.dpia': 'A DPIA (data protection impact assessment) documents the risks of a processing activity and the measures to reduce them. This record is local and advisory only.',
-  'settings.privacy.help.breach': 'A breach response playbook gathers, in advance, detection channels, containment steps and who to notify. Recording one here does not notify anyone.',
-  'settings.privacy.help.transfer': 'A transfer control documents a data transfer outside the EEA: recipient, country, legal mechanism and safeguards. Recording it neither approves nor executes the transfer.',
-  'settings.privacy.help.retention': 'A retention policy sets how long a data category is kept and the action planned at the end. This area records the policy; it does not delete data.',
-  'settings.privacy.help.dryRun': 'The simulation shows which policies would match a scope/category, without executing anything. It previews the effect of a policy.',
-  'settings.privacy.help.dueCandidates': 'A read-only scan lists records whose retention period has lapsed, for evidence review. It does not delete, anonymise or complete any legal compliance.',
-  'settings.privacy.help.execution': 'The execution queue holds persisted retention requests for operational review. Closing a review records the decision; it does not change source records.',
-  'settings.privacy.help.legalHold': 'A legal hold prevents disposal of records subject to litigation or a preservation duty. This panel summarises existing blocks.',
-  'settings.privacy.help.purpose': 'The purpose describes, in plain language, what the data is processed for.',
-  'settings.privacy.help.legalBasis': 'The legal basis is the GDPR ground that authorises the processing (e.g. consent, contract, legal obligation).',
-  'settings.privacy.help.risk': 'The risk level is a qualitative judgement of the potential impact on data subjects.',
-  'settings.privacy.help.status': 'The status indicates whether the record is a draft, active, under review or retired.',
+  'settings.privacy.help.processor':
+    'A processor handles personal data on the organisation’s behalf. This register records who processes it, for what, on which legal basis and which subprocessors are used.',
+  'settings.privacy.help.dpia':
+    'A DPIA (data protection impact assessment) documents the risks of a processing activity and the measures to reduce them. This record is local and advisory only.',
+  'settings.privacy.help.breach':
+    'A breach response playbook gathers, in advance, detection channels, containment steps and who to notify. Recording one here does not notify anyone.',
+  'settings.privacy.help.transfer':
+    'A transfer control documents a data transfer outside the EEA: recipient, country, legal mechanism and safeguards. Recording it neither approves nor executes the transfer.',
+  'settings.privacy.help.retention':
+    'A retention policy sets how long a data category is kept and the action planned at the end. This area records the policy; it does not delete data.',
+  'settings.privacy.help.dryRun':
+    'The simulation shows which policies would match a scope/category, without executing anything. It previews the effect of a policy.',
+  'settings.privacy.help.dueCandidates':
+    'A read-only scan lists records whose retention period has lapsed, for evidence review. It does not delete, anonymise or complete any legal compliance.',
+  'settings.privacy.help.execution':
+    'The execution queue holds persisted retention requests for operational review. Closing a review records the decision; it does not change source records.',
+  'settings.privacy.help.legalHold':
+    'A legal hold prevents disposal of records subject to litigation or a preservation duty. This panel summarises existing blocks.',
+  'settings.privacy.help.purpose':
+    'The purpose describes, in plain language, what the data is processed for.',
+  'settings.privacy.help.legalBasis':
+    'The legal basis is the GDPR ground that authorises the processing (e.g. consent, contract, legal obligation).',
+  'settings.privacy.help.risk':
+    'The risk level is a qualitative judgement of the potential impact on data subjects.',
+  'settings.privacy.help.status':
+    'The status indicates whether the record is a draft, active, under review or retired.',
   'settings.privacy.legalHold.dl.candidates': 'Candidates blocked by legal hold',
   'settings.privacy.legalHold.dl.executions': 'Execution records blocked by legal hold',
   'settings.privacy.legalHold.dl.openReviews': 'Blocked reviews still open',
   'settings.privacy.legalHold.dl.flags': 'Boundary flags',
-  'settings.privacy.legalHold.source': 'These figures come from the GET scan of due candidates and the already-persisted retention execution queue; this panel makes no mutating calls.',
+  'settings.privacy.legalHold.source':
+    'These figures come from the GET scan of due candidates and the already-persisted retention execution queue; this panel makes no mutating calls.',
   'settings.privacy.execution.status.awaitingReview': 'Awaiting review',
   'settings.privacy.execution.status.blocked': 'Blocked',
   'settings.privacy.execution.status.executed': 'Executed',
-  'settings.privacy.dueCandidates.lede': 'Read-only GET scan for evidence review. This section does not delete, anonymise or complete any legal compliance.',
-  'settings.privacy.dueCandidates.summary': 'Generated at {generated} · {scope} / {category} · {active} active candidate(s) · {suppressed} suppressed by bounded evidence · {withResolution} candidate(s) with local disposition · {resolutions} disposition record(s)',
-  'settings.privacy.dueCandidates.suppressedNote': 'Candidates suppressed by bounded evidence are not listed in the table and get no action buttons; review the evidence in the execution queue/history.',
+  'settings.privacy.dueCandidates.lede':
+    'Read-only GET scan for evidence review. This section does not delete, anonymise or complete any legal compliance.',
+  'settings.privacy.dueCandidates.summary':
+    'Generated at {generated} · {scope} / {category} · {active} active candidate(s) · {suppressed} suppressed by bounded evidence · {withResolution} candidate(s) with local disposition · {resolutions} disposition record(s)',
+  'settings.privacy.dueCandidates.suppressedNote':
+    'Candidates suppressed by bounded evidence are not listed in the table and get no action buttons; review the evidence in the execution queue/history.',
   'settings.privacy.dueCandidates.suppressedSummary': 'Summary: {note}',
   'settings.privacy.dueCandidates.empty.title': 'No due candidates',
-  'settings.privacy.dueCandidates.empty.body': 'There are no due candidates from the read-only scan.',
+  'settings.privacy.dueCandidates.empty.body':
+    'There are no due candidates from the read-only scan.',
   'settings.privacy.dueCandidates.column.record': 'Book and record',
   'settings.privacy.dueCandidates.column.policy': 'Policy',
   'settings.privacy.dueCandidates.column.due': 'Due and status',
@@ -4413,7 +4475,7 @@ export const enUS: Catalog = {
   'settings.privacy.dueCandidates.noDueDate': 'No date calculated',
   'settings.privacy.dueCandidates.evidenceState': 'Evidence state',
   'settings.privacy.dueCandidates.evidenceNextStep': 'Evidence next step',
-  'settings.privacy.dueCandidates.legalHold': 'Legal hold',
+  'settings.privacy.dueCandidates.legalHold': 'legal hold',
   'settings.privacy.dueCandidates.noLegalHold': 'No legal hold blocks',
   'settings.privacy.dueCandidates.requiredApprovals': 'Required approvals',
   'settings.privacy.dueCandidates.noApprovals': 'No required approvals',
@@ -4425,7 +4487,8 @@ export const enUS: Catalog = {
   'settings.privacy.dueCandidates.priorEvidenceNextStep': 'Prior evidence next step',
   'settings.privacy.dueCandidates.localDispositionRecorded': 'Local disposition recorded',
   'settings.privacy.dueCandidates.recordedByOn': 'Recorded by {actor} on {date}',
-  'settings.privacy.dueCandidates.evidenceCountFlags': 'Evidence: {count} · operational flags: false',
+  'settings.privacy.dueCandidates.evidenceCountFlags':
+    'Evidence: {count} · operational flags: false',
   'settings.privacy.dueCandidates.onlyNoActionEvidence': 'Bounded no-action evidence record only.',
   'settings.privacy.dueCandidates.onlyArchiveEvidence': 'Bounded archive evidence record only.',
   'settings.privacy.dueCandidates.onlyReviewEvidence': 'Evidence review only.',
@@ -4440,14 +4503,19 @@ export const enUS: Catalog = {
   'settings.privacy.dueCandidates.recordingArchive': 'Recording archive evidence',
   'settings.privacy.dueCandidates.requestReview': 'Request evidence review',
   'settings.privacy.dueCandidates.recordingReview': 'Recording review',
-  'settings.privacy.dueCandidates.noDuplicate': 'No duplicate request is created; the scan is read-only.',
+  'settings.privacy.dueCandidates.noDuplicate':
+    'No duplicate request is created; the scan is read-only.',
   'settings.privacy.dueCandidates.requestedAt': 'Requested at {date}',
   'settings.privacy.dueCandidates.queueEvidenceState': 'Queue evidence state',
   'settings.privacy.dueCandidates.queueNextStep': 'Queue next step',
-  'settings.privacy.dueCandidates.noActionHint': 'Records bounded no-action evidence only; it neither approves nor executes disposal.',
-  'settings.privacy.dueCandidates.archiveHint': 'Records bounded archive evidence only; it neither approves nor executes disposal.',
-  'settings.privacy.dueCandidates.reviewHint': 'Records a review_only request; it neither approves nor executes disposal.',
-  'settings.privacy.execution.lede': 'Persisted retention execution records for operational review.',
+  'settings.privacy.dueCandidates.noActionHint':
+    'Records bounded no-action evidence only; it neither approves nor executes disposal.',
+  'settings.privacy.dueCandidates.archiveHint':
+    'Records bounded archive evidence only; it neither approves nor executes disposal.',
+  'settings.privacy.dueCandidates.reviewHint':
+    'Records a review_only request; it neither approves nor executes disposal.',
+  'settings.privacy.execution.lede':
+    'Persisted retention execution records for operational review.',
   'settings.privacy.execution.empty.title': 'No execution records',
   'settings.privacy.execution.empty.body': 'The review queue has no persisted requests yet.',
   'settings.privacy.execution.column.request': 'Request',
@@ -4467,28 +4535,481 @@ export const enUS: Catalog = {
   'settings.privacy.toast.archiveEvidenceRecorded': 'Bounded archive evidence recorded.',
   'settings.privacy.toast.noActionEvidenceRecorded': 'Bounded no-action evidence recorded.',
   'settings.privacy.toast.reviewRequestRecorded': 'Evidence review request recorded.',
-  'settings.privacy.toast.archiveEvidenceSent': 'Archive evidence request sent; no record returned.',
-  'settings.privacy.toast.noActionEvidenceSent': 'No-action evidence request sent; no record returned.',
+  'settings.privacy.toast.archiveEvidenceSent':
+    'Archive evidence request sent; no record returned.',
+  'settings.privacy.toast.noActionEvidenceSent':
+    'No-action evidence request sent; no record returned.',
   'settings.privacy.toast.reviewRequestSent': 'Review request sent; no execution record returned.',
   'settings.privacy.toast.dispositionRecorded': 'Local evidence disposition recorded.',
   'settings.privacy.advisory.detail.noReceipt': 'No local review/drill receipt.',
   'settings.privacy.advisory.detail.underReview': 'Local state under review, no legal conclusion.',
   'settings.privacy.advisory.detail.nextReview': 'Next local review: {date}.',
   'settings.privacy.advisory.detail.lastEvidence': 'Last evidence: {date}.',
-  'settings.privacy.advisory.detail.noClaims': 'No notification, approval, execution or certification.',
-  'settings.privacy.help.guidance': 'A local, offline pack of fields, prompts and checks to guide a DPIA; it is guidance only and does not replace legal assessment.',
+  'settings.privacy.advisory.detail.noClaims':
+    'No notification, approval, execution or certification.',
+  'settings.privacy.help.guidance':
+    'A local, offline pack of fields, prompts and checks to guide a DPIA; it is guidance only and does not replace legal assessment.',
   'data.status.subnav.aria': 'Data management sub-sections',
   'data.status.tab.storage': 'Storage',
   'data.status.tab.storage.desc': 'Space usage, data folder permissions and local file cleanup.',
   'data.status.tab.backup': 'Backups and recovery',
-  'data.status.tab.backup.desc': 'Operational backup, recovery drills and restore/handoff preflights.',
+  'data.status.tab.backup.desc':
+    'Operational backup, recovery drills and restore/handoff preflights.',
   'data.status.tab.keys': 'Keys and reset',
-  'data.status.tab.keys.desc': 'Database encryption key rotation and reset or start-over operations.',
-  'data.status.help.recoveryDrill': 'A recovery drill checks and records whether a backup copy can be opened and read in a controlled local drill. It does not perform a live restore, guarantee future usability, or validate off-site custody.',
-  'data.status.help.keyRotation': 'Rotation replaces the durable database’s SQLCipher encryption key while keeping the data. The preflight is read-only; execution applies the rekey.',
-  'data.status.help.exportCleanup': 'Removes only old local export files per the configured policy. It is not legal erasure, GDPR completion or archive deletion.',
-  'data.status.help.crashCleanup': 'Removes old local crash diagnostics stored on disk. It does not touch the ledger or domain data.',
-  'data.status.help.platformLogsCleanup': 'Removes only the local platform log tail stored in platform-logs.json. It does not remove stdout/stderr, SIEM, ledger or audit-chain records.',
-  'data.status.help.startOver': 'Start over archives the current history and continues with empty domain data, keeping users and settings. A reset, by contrast, erases data destructively.',
-  'data.status.help.reset': 'Clearing data erases domain data but preserves the ledger; a factory reset wipes everything to a fresh instance. All require the exact phrase and re-authentication.',
+  'data.status.tab.keys.desc':
+    'Database encryption key rotation and reset or start-over operations.',
+  'data.status.help.recoveryDrill':
+    'A recovery drill checks and records whether a backup copy can be opened and read in a controlled local drill. It does not perform a live restore, guarantee future usability, or validate off-site custody.',
+  'data.status.help.keyRotation':
+    'Rotation replaces the durable database’s SQLCipher encryption key while keeping the data. The preflight is read-only; execution applies the rekey.',
+  'data.status.help.exportCleanup':
+    'Removes only old local export files per the configured policy. It is not legal erasure, GDPR completion or archive deletion.',
+  'data.status.help.crashCleanup':
+    'Removes old local crash diagnostics stored on disk. It does not touch the ledger or domain data.',
+  'data.status.help.platformLogsCleanup':
+    'Removes only the local platform log tail stored in platform-logs.json. It does not remove stdout/stderr, SIEM, ledger or audit-chain records.',
+  'data.status.help.startOver':
+    'Start over archives the current history and continues with empty domain data, keeping users and settings. A reset, by contrast, erases data destructively.',
+  'data.status.help.reset':
+    'Clearing data erases domain data but preserves the ledger; a factory reset wipes everything to a fresh instance. All require the exact phrase and re-authentication.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.convening.advisory.title': 'Local notice of statutory call',
+  'acts.convening.advisory.missingMeetingDate':
+    'Record the meeting date to calculate the local notice date.',
+  'acts.convening.advisory.missingEvidence':
+    'Record the date/means of dispatch, actual advance notice and reference of the evidence kept.',
+  'acts.convening.advisory.noClaims':
+    'Local metadata only; does not assert legal sufficiency, valid external delivery or workflow completion.',
+  'acts.convening.recipients.title': 'Call recipients',
+  'acts.convening.recipients.hint':
+    'Local records used for evidence of dispatch. Unnamed lines are not saved.',
+  'acts.convening.recipients.add': 'Add recipient',
+  'acts.convening.recipients.empty':
+    'No registered recipients. Add at least one recipient before recording local shipping evidence.',
+  'acts.convening.recipients.rowLabel': 'Recipient {number}',
+  'acts.convening.recipients.name': 'Name',
+  'acts.convening.recipients.contact': 'Contact',
+  'acts.convening.recipients.contactPlaceholder':
+    'E.g.: email, address, account or internal contact',
+  'acts.convening.recipients.channel': 'Quite',
+  'acts.convening.recipients.dispatchedAt': 'Shipped in',
+  'acts.convening.recipients.reference': 'Shipping reference',
+  'acts.convening.recipients.referencePlaceholder': 'Ex.: RR123456789PT, receipt, message id',
+  'acts.convening.recipients.remove': 'Remove recipient',
+  'acts.convening.evidence.aria': 'Local evidence of issuance of the summons',
+  'acts.convening.evidence.boundary':
+    'Only records local evidence of dispatch and provenance in the ledger. Does not send email/SMS, does not confirm external delivery, does not assert legal sufficiency, completion of the workflow, acceptance by registration/DRE or acceptance by a provider.',
+  'acts.convening.evidence.ready':
+    'Mark {count} existing recipient(s) with the indicated date and, if completed, the medium and local reference.',
+  'acts.convening.evidence.saveRecipients':
+    'Keep the minutes to persist the recipients before recording local evidence of dispatch.',
+  'acts.convening.evidence.requirements':
+    'Requires already existing recipients in the notice and a completed shipping date.',
+  'acts.convening.evidence.recording': 'Recording local evidence',
+  'acts.convening.evidence.record': 'Register local shipping',
+  'acts.convening.evidence.recorded': 'Local evidence of dispatch recorded.',
+  'templates.editor.field.id.placeholder': 'user-backrest-ata/v1',
+  'entities.fiscalYearEnd.cardTitle': 'Fiscal year',
+  'entities.fiscalYearEnd.fieldLabel': 'Closing the exercise',
+  'entities.fiscalYearEnd.inputLabel': 'Closing the year (MM-DD)',
+  'entities.fiscalYearEnd.hint': 'Optional. Empty keeps the lock by default at 12-31.',
+  'entities.fiscalYearEnd.invalid': 'Use a valid date in MM-DD format.',
+  'entities.fiscalYearEnd.placeholder': '12-31',
+  'entities.fiscalYearEnd.updated': 'Updated fiscal year.',
+  'entities.fiscalYearEnd.saving': 'To save',
+  'entities.fiscalYearEnd.save': 'Save zip',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'uiLiteral.actDocumentPanel.gereConvocatoriasEAposOSeloCertidoesE':
+    'Generate notices and, after sealing, certificates and extracts without replacing the canonical PDF/A.',
+  'uiLiteral.actDocumentPanel.minutasGeradas': 'Minutes generated',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecaoTecnicaNaoEncontrouMembrosCadesOu':
+    'The technical inspection found no recognized CAdES or XAdES members in the container.',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecionarContentorAsicLocal':
+    'Inspecting local ASiC container...',
+  'uiLiteral.asicSignatureInspectorPanel.assinaturasTecnicas': 'Technical subscriptions',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadores': 'Blockers',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadoresEDiagnosticosDeAssinatura':
+    'Signature blockers and diagnostics',
+  'uiLiteral.asicSignatureInspectorPanel.contentorAsic': 'ASiC container',
+  'uiLiteral.asicSignatureInspectorPanel.diagnosticoDeManifestos': 'Manifest diagnosis',
+  'uiLiteral.asicSignatureInspectorPanel.evidenciaEmbebidaEBloqueadores':
+    'Embedded evidence and blockers',
+  'uiLiteral.asicSignatureInspectorPanel.indicadores': 'Indicators',
+  'uiLiteral.asicSignatureInspectorPanel.inspecaoTecnicaLocal': 'On-site technical inspection',
+  'uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic': 'ASiC technical inspector',
+  'uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao':
+    'Read only local .asice/.sce/.zip containers. Does not sign, does not store artifacts, does not call providers and does not consult TSL/TSA/OCSP/CRL live.',
+  'uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas': 'Explicit limitations',
+  'uiLiteral.asicSignatureInspectorPanel.ocorrencias': 'Occurrences',
+  'uiLiteral.asicSignatureInspectorPanel.oEndpointRecusouAInspecaoNenhumArtefactoFoi':
+    'The endpoint refused inspection; no artefacts were signed, saved or altered.',
+  'uiLiteral.asicSignatureInspectorPanel.perfilDoContentor': 'Container profile',
+  'uiLiteral.asicSignatureInspectorPanel.resultadoAsic': 'ASiC Result',
+  'uiLiteral.asicSignatureInspectorPanel.semAssinaturasReconhecidas': 'No signatures recognized',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeAssinaturaReportados':
+    'No signature diagnostics reported.',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeManifestoReportados':
+    'No manifest diagnoses reported.',
+  'uiLiteral.asicSignatureInspectorPanel.semTimestampsDeArquivoAsicReportados':
+    'No ASiC file timestamps reported.',
+  'uiLiteral.asicSignatureInspectorPanel.timestampsDeArquivo': 'File timestamps',
+  'uiLiteral.asicSignatureInspectorPanel.validacaoCadesLimitada': 'Limited CAdES validation',
+  'uiLiteral.bookDetailPage.a': 'the',
+  'uiLiteral.bookDetailPage.abrirAta': 'open minutes',
+  'uiLiteral.bookDetailPage.aceiteParaReferenciaAuxiliar': 'Accept for auxiliary reference',
+  'uiLiteral.bookDetailPage.aceites': '· accepted',
+  'uiLiteral.bookDetailPage.aEntidadeEOLivroSaoPreenchidosA':
+    'The entity and book are populated from this detail:',
+  'uiLiteral.bookDetailPage.aImportacaoPreservadaAindaNaoDevolveuRelatorioOcr':
+    'The preserved import has not yet returned local OCR/canonical report.',
+  'uiLiteral.bookDetailPage.ambito': 'Scope',
+  'uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras':
+    'Legal hold blocks disposal by retention rules while it is active. This panel shows local evidence of status/revision and does not approve disposal or declare legal compliance.',
+  'uiLiteral.bookDetailPage.arquivoLegalPacote': '· legal file/package:',
+  'uiLiteral.bookDetailPage.artefacto': 'Artifact',
+  'uiLiteral.bookDetailPage.artefactos': 'Artifacts',
+  'uiLiteral.bookDetailPage.assinatura': '· signature:',
+  'uiLiteral.bookDetailPage.ataCanonica': '· canonical minutes:',
+  'uiLiteral.bookDetailPage.ataCanonicaCriada': '· canonical act created:',
+  'uiLiteral.bookDetailPage.ataCanonicaDocumentoCanonicoPacoteDeArquivoAssinatura':
+    'Canonical act, canonical document, file package, signature, seal, PDF/A, PDF/UA and legal validity.',
+  'uiLiteral.bookDetailPage.ataCanonicaReclamada': '· canonical act claimed:',
+  'uiLiteral.bookDetailPage.ataCriada': 'Minutes created:',
+  'uiLiteral.bookDetailPage.ataMutavelCriada': '· mutable minutes created:',
+  'uiLiteral.bookDetailPage.ataMutavelDeDestino': 'Changeable minutes of destination',
+  'uiLiteral.bookDetailPage.ator': 'Actor',
+  'uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte': 'Blocks discard review',
+  'uiLiteral.bookDetailPage.bloqueios': 'Locks',
+  'uiLiteral.bookDetailPage.certificacaoDeArquivo': 'file certification:',
+  'uiLiteral.bookDetailPage.confirmoQueEstaRevisaoEApenasMetadadoAuxiliar':
+    'I confirm that this revision is only auxiliary OCR metadata and does not create a canonical act, canonical document, signature, or legal validity.',
+  'uiLiteral.bookDetailPage.confirmoQueEsteRascunhoOcrEAuxiliarNao':
+    'I confirm that this OCR draft is auxiliary, non-canonical and does not create minutes, documents, signatures or legal validity.',
+  'uiLiteral.bookDetailPage.contexto': 'Context',
+  'uiLiteral.bookDetailPage.conversaoCanonica': 'canonical conversion:',
+  'uiLiteral.bookDetailPage.criado': 'Created',
+  'uiLiteral.bookDetailPage.criaOuDevolveUmDossierSoComMetadados':
+    'Create or return a dossier with only metadata, digest and review evidence of the accepted OCR draft. It does not create minutes, documents, PDF/A, signature, seal, file package or legal validity.',
+  'uiLiteral.bookDetailPage.definidaEm': 'Set in',
+  'uiLiteral.bookDetailPage.desconhecidos': '· unknown',
+  'uiLiteral.bookDetailPage.digestDaFonteOcr': 'OCR font digest',
+  'uiLiteral.bookDetailPage.digestPresente': 'present digestion:',
+  'uiLiteral.bookDetailPage.disposalApproved': '· disposal_approved:',
+  'uiLiteral.bookDetailPage.documentoAssinado': '· signed document:',
+  'uiLiteral.bookDetailPage.documentoCanonico': '· canonical document:',
+  'uiLiteral.bookDetailPage.dossier': 'Dossier',
+  'uiLiteral.bookDetailPage.dossierAssociado': 'Associated dossier',
+  'uiLiteral.bookDetailPage.dossierJaRegistado': 'Dossier already registered',
+  'uiLiteral.bookDetailPage.draftMutavel': 'mutable draft:',
+  'uiLiteral.bookDetailPage.estaAcaoNaoCriaAtaCanonicaDocumentoCanonico':
+    'This action does not create a canonical act, canonical document, PDF/A, signature or legal validity.',
+  'uiLiteral.bookDetailPage.estado': 'State',
+  'uiLiteral.bookDetailPage.estado.1528o1': '· state',
+  'uiLiteral.bookDetailPage.estado.kzwel3': 'State:',
+  'uiLiteral.bookDetailPage.estadoDeRevisaoOcrDigestDeTextoQuando':
+    'OCR review status, text digest when indicated, revised pages, OCR engine and dossier metadata when available.',
+  'uiLiteral.bookDetailPage.estaImportacaoPreservadaAindaNaoTemOcrAuxiliar':
+    'This preserved import does not yet have auxiliary OCR for review.',
+  'uiLiteral.bookDetailPage.estesPacotesPreservamCopiasDeLivrosEmPapel':
+    'These packages preserve paper copies of books for reference. They do not replace canonical digital minutes and do not declare legal validity, PDF/A, signature validity or qualified signature.',
+  'uiLiteral.bookDetailPage.evidenciaDeExecucaoDeConversaoRevista':
+    'Evidence of Revised Conversion Execution',
+  'uiLiteral.bookDetailPage.evidenciaRevista': 'Reviewed evidence',
+  'uiLiteral.bookDetailPage.exclui': 'Excludes',
+  'uiLiteral.bookDetailPage.execucoesLigadas': 'linked executions:',
+  'uiLiteral.bookDetailPage.ficheiro': 'File',
+  'uiLiteral.bookDetailPage.flagsSemExecucao': 'Non-executing flags',
+  'uiLiteral.bookDetailPage.flagsSemReivindicacao': 'Flags without claim',
+  'uiLiteral.bookDetailPage.fluxoOperador': 'Operator flow',
+  'uiLiteral.bookDetailPage.importacaoPreservada': 'Import preserved',
+  'uiLiteral.bookDetailPage.inclui': 'Includes',
+  'uiLiteral.bookDetailPage.legalComplianceClaimed': 'legal_compliance_claimed:',
+  'uiLiteral.bookDetailPage.limitesDoDossier': 'Dossier limits',
+  'uiLiteral.bookDetailPage.metadados': '· metadata:',
+  'uiLiteral.bookDetailPage.minutasCanonicas': '· canonical minutes:',
+  'uiLiteral.bookDetailPage.naoCanonico': 'Non-canonical',
+  'uiLiteral.bookDetailPage.naoHaPacotesDeLivroEmPapelPreservados':
+    'There are no paper book packages preserved for this book reference.',
+  'uiLiteral.bookDetailPage.naResposta': 'In the answer:',
+  'uiLiteral.bookDetailPage.noArtefacto': 'In the artifact:',
+  'uiLiteral.bookDetailPage.noEventoDeLedger': '· in the ledger event:',
+  'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
+    'The local DGLAB manifest is a JSON scaffold derived from the internal package. It is not an official DGLAB export, government submission, legal archival certification, PDF/A, PAdES or PDF-UA certification, nor a record of destructive disposal.',
+  'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':
+    'The result will be a non-canonical auxiliary OCR draft for review of the preserved import.',
+  'uiLiteral.bookDetailPage.pacoteDeArquivo': '· file package:',
+  'uiLiteral.bookDetailPage.paginas': 'pages',
+  'uiLiteral.bookDetailPage.paginasDaFonte': 'Source pages',
+  'uiLiteral.bookDetailPage.pdfA': '· PDF/A:',
+  'uiLiteral.bookDetailPage.pdfUa': '· PDF/UA:',
+  'uiLiteral.bookDetailPage.promocaoParaRascunhoMutavel': 'Promotion for changeable draft',
+  'uiLiteral.bookDetailPage.proximoPasso': 'Next step',
+  'uiLiteral.bookDetailPage.rascunhoAceite': 'Draft accepted',
+  'uiLiteral.bookDetailPage.rascunhoOcrAceite': 'Draft OCR accepted',
+  'uiLiteral.bookDetailPage.rascunhoRevisto': 'Revised draft',
+  'uiLiteral.bookDetailPage.rascunhosOcr': 'OCR Drafts',
+  'uiLiteral.bookDetailPage.rehearsalLocalCalculadoAPartirDeMetadadosPreservados':
+    'Local rehearsal calculated from preserved metadata. Does not perform OCR, does not create canonical documents, does not sign and does not validate legally.',
+  'uiLiteral.bookDetailPage.relatorioLocalIndisponivel': 'Local report unavailable',
+  'uiLiteral.bookDetailPage.relatorioOcrCanonicoLocal': 'Local OCR/canonical report',
+  'uiLiteral.bookDetailPage.resumoOcrDossierDerivado': 'OCR summary/derived dossier',
+  'uiLiteral.bookDetailPage.revisaoDeOrigem': 'Source review',
+  'uiLiteral.bookDetailPage.revisaoEFixidez': 'Review and fixity',
+  'uiLiteral.bookDetailPage.selo': '· stamp:',
+  'uiLiteral.bookDetailPage.semReivindicacao': 'No claim',
+  'uiLiteral.bookDetailPage.soMetadados': 'Metadata only',
+  'uiLiteral.bookDetailPage.soMetadadosSimAtaCanonicaNaoDocumentoCanonico':
+    'Metadata only: yes · canonical act: no · canonical document: no · archive package: no · signature: no · seal: no · PDF/A: no · PDF/UA: no · legal validity: no.',
+  'uiLiteral.bookDetailPage.textoOcrBruto': 'Raw OCR text',
+  'uiLiteral.bookDetailPage.textoOcrBrutoNoDossier': 'Raw OCR text in the dossier',
+  'uiLiteral.bookDetailPage.validadeLegal': '· legal validity:',
+  'uiLiteral.bookDetailPage.validadeLegalDeclaradaNao': '. Declared legal validity: no.',
+  'uiLiteral.bookDetailPage.valideDatasContagemDePaginasFixidezEContexto':
+    'Validate dates, page count, fixity, and book context before preserving. The link shown here is only contextual: it does not create or alter chains of minutes, nor does it transform the import into a canonical digital record.',
+  'uiLiteral.funcoesSection.adicionarSo': 'Add only:',
+  'uiLiteral.funcoesSection.aplicarDefaultsEmFalta': 'Apply missing defaults',
+  'uiLiteral.funcoesSection.estado': 'State',
+  'uiLiteral.funcoesSection.reverDefaults': 'Review defaults',
+  'uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao': 'Loading recovery policy',
+  'uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff':
+    'Loading local handoff pre-validation',
+  'uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio': 'Backup file for testing',
+  'uiLiteral.gestaoDadosSection.backendDuravel': 'Durable backend',
+  'uiLiteral.gestaoDadosSection.chancelaBackupZip': 'chancela-backup-….zip',
+  'uiLiteral.gestaoDadosSection.chaveDoBackupOpcional': 'Backup key (optional)',
+  'uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios':
+    'Composes only local evidence: backup candidates, verified essays, book packages, file and ledger status.',
+  'uiLiteral.gestaoDadosSection.ensaioDeRecuperacaoSemRestauro':
+    'Recovery test without restoration',
+  'uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro':
+    'Explicit, operator-initiated testing: no live restore, no legal archive certification, no automatic proof of RPO/RTO or off-site custody.',
+  'uiLiteral.gestaoDadosSection.enviadaApenasParaExecutarPragmaRekeyAResposta':
+    'Sent only to execute PRAGMA rekey; the answer returns only evidence without secrecy.',
+  'uiLiteral.gestaoDadosSection.execucaoDaRotacaoSqlcipher': 'Performing SQLCipher rotation',
+  'uiLiteral.gestaoDadosSection.executaApenasORekeySqlcipherNaBaseDe':
+    'Only execute the SQLCipher rekey on the already open durable database; does not convert SQLite stores to plaintext.',
+  'uiLiteral.gestaoDadosSection.executaAPreValidacaoExistenteDoBackupE':
+    'Performs existing pre-validation of the backup and records an escrow receipt. Does not restore, does not change the database and does not prepare sidecars.',
+  'uiLiteral.gestaoDadosSection.leituraDoEstadoLocalDePersistenciaNaoExecuta':
+    'Reading the local state of persistence; does not perform migration, rekey or custody validation.',
+  'uiLiteral.gestaoDadosSection.localDeCustodia': 'Place of custody',
+  'uiLiteral.gestaoDadosSection.localIndicadoPeloOperadorIstoNaoComprovaCustodia':
+    'Location indicated by the operator; this does not prove off-site custody.',
+  'uiLiteral.gestaoDadosSection.nomeSimplesEmBackupsOuCaminhoAbsolutoDo':
+    'Simple name in backups/ or absolute path of the file to check.',
+  'uiLiteral.gestaoDadosSection.notasDoOperador': 'Operator Notes',
+  'uiLiteral.gestaoDadosSection.novaChaveSqlcipher': 'New SQLCipher key',
+  'uiLiteral.gestaoDadosSection.preValidacaoLocalDeHandoff': 'Local handoff pre-validation',
+  'uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave':
+    'SQLCipher Readiness and Key Custody',
+  'uiLiteral.gestaoDadosSection.requerArmazenamentoDuravelEmDisco':
+    'Requires durable disk storage.',
+  'uiLiteral.gestaoDadosSection.sidecars': 'Sidecars',
+  'uiLiteral.gestaoDadosSection.sidecarsDuraveis': 'Durable sidecars',
+  'uiLiteral.gestaoDadosSection.usadaSoNestaPreValidacaoNaoEGuardada':
+    'Used only in this pre-validation; is not saved on the receipt.',
+  'uiLiteral.importFromRegistryForm.consulta': 'Consultation',
+  'uiLiteral.registryImportPanel.aConsultaAindaNaoFoiExecutada':
+    'The query has not yet been executed.',
+  'uiLiteral.registryImportPanel.consulta': 'Consultation',
+  'uiLiteral.registryImportPanel.proximoPasso': 'Next step',
+  'uiLiteral.registryImportPanel.resultado': 'Result',
+  'uiLiteral.registryImportPanel.resumo': 'Summary',
+  'uiLiteral.registryImportPanel.resumoDaImportacao': 'Import summary',
+  'uiLiteral.registryImportPanel.semAlteracoes': 'No changes',
+  'uiLiteral.signingPanel.token': 'Token',
+  'uiLiteral.trustCatalogPage.tslConfiavel': 'Reliable TSL',
+  'uiLiteral.asicSignatureInspectorPanel.semIndicadoresDeEvidenciaEmbebidaReportados':
+    'No indicators of embedded evidence reported.',
+  'uiLiteral.asicSignatureInspectorPanel.semOcorrenciasReportadas': 'No reported occurrences.',
+  'uiLiteral.bookDetailPage.ambitoDeArquivoPaperBookImport': 'File scope: paper-book-import:',
+  'uiLiteral.bookDetailPage.criaUmaAtaEmEstadoDraftComO':
+    'Creates minutes in Draft status with the OCR text as support for deliberations. It does not create a canonical document, PDF/A, signature, seal or acceptance of legal validity.',
+  'uiLiteral.bookDetailPage.digestDoTexto': 'Text digest',
+  'uiLiteral.bookDetailPage.documentoCanonico.19tw3h': '. Canonical document:',
+  'uiLiteral.bookDetailPage.entidade': '· Entity:',
+  'uiLiteral.bookDetailPage.intervalo': 'Interval:',
+  'uiLiteral.bookDetailPage.limites': 'Limits',
+  'uiLiteral.bookDetailPage.livro': 'Book:',
+  'uiLiteral.bookDetailPage.motor': 'Engine',
+  'uiLiteral.bookDetailPage.nota': 'Notice',
+  'uiLiteral.bookDetailPage.ocrMetadadoApenasTextoArmazenado': 'OCR: metadata only; stored text:',
+  'uiLiteral.bookDetailPage.paginasRevistas': 'Revised pages',
+  'uiLiteral.bookDetailPage.rascunhoCriado': 'Draft created:',
+  'uiLiteral.bookDetailPage.revisto': 'Revised',
+  'uiLiteral.bookDetailPage.textoAutoritativo': 'Authoritative text:',
+  'uiLiteral.bookDetailPage.textoAutoritativo.9xkq63': '; authoritative text:',
+  'uiLiteral.bookDetailPage.textoExtraido': 'Extracted text',
+  'uiLiteral.compliancePanel.limitesDoAviso': 'Warning limits',
+  'uiLiteral.compliancePanel.orientacaoLocalDaConvocatoria': 'Local orientation of the call',
+  'uiLiteral.compliancePanel.proximoRegistoLocal': 'Next local registration',
+  'uiLiteral.editUserPage.acao': 'Action',
+  'uiLiteral.editUserPage.aindaNaoHaPedidosDsrRegistadosParaEste':
+    'There are no DSR requests registered for this user yet.',
+  'uiLiteral.editUserPage.concluido': 'Completed',
+  'uiLiteral.editUserPage.criado': 'Created',
+  'uiLiteral.editUserPage.criadoPor': 'Created by',
+  'uiLiteral.editUserPage.estado': 'State',
+  'uiLiteral.editUserPage.marcarConcluido': 'Mark completed',
+  'uiLiteral.editUserPage.pedidosDsrPrivacidade': 'DSR/Privacy Requests',
+  'uiLiteral.editUserPage.registaOCicloDeVidaDosPedidosDsr':
+    'Records the lifecycle of user DSR requests and downloads non-secret JSON for response. The export content is not displayed on the screen.',
+  'uiLiteral.editUserPage.semPedidosDsr': 'No DSR orders',
+  'uiLiteral.editUserPage.tipo': 'Type',
+  'uiLiteral.editUserPage.tipoDePedido': 'Order type',
+  'uiLiteral.entitiesPage.naoImportado': 'Not imported',
+  'uiLiteral.entitiesPage.naoImportadoSemCertidao': 'Not imported · No certificate',
+  'uiLiteral.entitiesPage.semAtividade': 'No activity',
+  'uiLiteral.entitiesPage.semAtividadeNoArquivo': 'No activity on the file',
+  'uiLiteral.entitiesPage.semCertidao': 'No certificate',
+  'uiLiteral.entityChronologyPanel.cronologiaLocalDeAtosSelados': 'Local chronology of sealed acts',
+  'uiLiteral.entityChronologyPanel.data': 'Date',
+  'uiLiteral.entityChronologyPanel.descricao': 'Description',
+  'uiLiteral.entityChronologyPanel.digest': 'digest',
+  'uiLiteral.entityChronologyPanel.eventosLocais': 'Local events',
+  'uiLiteral.entityChronologyPanel.fonteSelada': 'Source sealed',
+  'uiLiteral.entityChronologyPanel.fontesSeladas': 'Sealed Sources',
+  'uiLiteral.entityChronologyPanel.ligacoes': 'Connections',
+  'uiLiteral.entityChronologyPanel.nos': 'Us',
+  'uiLiteral.entityChronologyPanel.projecaoTecnicaLocalBaseadaApenasEmAtasSeladas':
+    'Local technical projection based only on sealed or archived minutes. It does not claim legal validity or certification of authority.',
+  'uiLiteral.entityChronologyPanel.provenienciaDasLigacoesLocais': 'Provenance of local links',
+  'uiLiteral.entityChronologyPanel.tipo': 'Type',
+  'uiLiteral.funcoesSection.aReconciliacaoEGuiadaPorAdminESo':
+    '. Reconciliation is admin driven and only adds these seeded defaults.',
+  'uiLiteral.funcoesSection.atual': 'Current',
+  'uiLiteral.funcoesSection.defaultsEmFalta': 'Missing defaults:',
+  'uiLiteral.funcoesSection.revisaoManual': 'Manual review',
+  'uiLiteral.gestaoDadosSection.aindaNaoHaRecibosDeRotacaoSqlcipherBem':
+    'There are still no receipts for successful SQLCipher rotation.',
+  'uiLiteral.gestaoDadosSection.arquivoVerificado': 'Verified file',
+  'uiLiteral.gestaoDadosSection.atosPreservaveis': 'Preservable acts',
+  'uiLiteral.gestaoDadosSection.backend': 'Backend',
+  'uiLiteral.gestaoDadosSection.backendSqlcipherLocal': 'Local SQLCipher backend',
+  'uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente':
+    'Most recent unvalidated candidate',
+  'uiLiteral.gestaoDadosSection.candidatosNaoValidados': 'Unvalidated candidates',
+  'uiLiteral.gestaoDadosSection.checkpointAntes': 'Checkpoint before',
+  'uiLiteral.gestaoDadosSection.checkpointDepois': 'Checkpoint after',
+  'uiLiteral.gestaoDadosSection.cifrado': 'Encrypted',
+  'uiLiteral.gestaoDadosSection.configuracaoDaChave': 'Key configuration',
+  'uiLiteral.gestaoDadosSection.constatacoes': 'Findings',
+  'uiLiteral.gestaoDadosSection.documentosPreservados': 'Preserved documents',
+  'uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao': 'Recovery assays',
+  'uiLiteral.gestaoDadosSection.erroKeyOps': 'Key-ops error',
+  'uiLiteral.gestaoDadosSection.erros': 'Errors',
+  'uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados': 'Database schema',
+  'uiLiteral.gestaoDadosSection.estado': 'State',
+  'uiLiteral.gestaoDadosSection.estadoDoEnsaio': 'Assay status',
+  'uiLiteral.gestaoDadosSection.evidenciaOperacionalLocalGeradaAposRekeySqlcipherAceite':
+    'Local operational evidence generated after SQLCipher rekey accepted. These receipts do not certify encryption at rest, plaintext migration, legal deletion, or full GDPR lifecycle.',
+  'uiLiteral.gestaoDadosSection.evidenciaVerificada': 'Verified evidence',
+  'uiLiteral.gestaoDadosSection.fallbackFalhaFechado': 'Fallback fails closed',
+  'uiLiteral.gestaoDadosSection.fallbackHardware': 'Hardware fallback',
+  'uiLiteral.gestaoDadosSection.fonteDeChave': 'Key Source',
+  'uiLiteral.gestaoDadosSection.formatoDoCabecalho': 'Header format',
+  'uiLiteral.gestaoDadosSection.geradoEm': 'Generated in',
+  'uiLiteral.gestaoDadosSection.historicoGuardado': 'Saved history',
+  'uiLiteral.gestaoDadosSection.historicoRecente': 'Recent history',
+  'uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo': 'Age of last receipt',
+  'uiLiteral.gestaoDadosSection.idadeMaximaConfigurada': 'Configured maximum age',
+  'uiLiteral.gestaoDadosSection.integridadePosRekey': 'Post-rekey integrity',
+  'uiLiteral.gestaoDadosSection.lacunasDeProntidao': 'Readiness Gaps',
+  'uiLiteral.gestaoDadosSection.limitesDoRecibo': 'Receipt limits',
+  'uiLiteral.gestaoDadosSection.livros': 'Books',
+  'uiLiteral.gestaoDadosSection.localDeCustodiaIndicado': 'Indicated place of custody',
+  'uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada': 'Open store with configured key',
+  'uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente': 'Database member present',
+  'uiLiteral.gestaoDadosSection.membrosNoArquivo': 'Members on file',
+  'uiLiteral.gestaoDadosSection.membrosSidecar': 'Sidecar members',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada': 'Plaintext migration blocked',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextPendente': 'Pending plaintext migration',
+  'uiLiteral.gestaoDadosSection.modo': 'Mode',
+  'uiLiteral.gestaoDadosSection.operacao': 'Operation',
+  'uiLiteral.gestaoDadosSection.passosDeclarados': 'Stated steps',
+  'uiLiteral.gestaoDadosSection.planoDeMigracao': 'Migration plan',
+  'uiLiteral.gestaoDadosSection.planoKeyOps': 'Key-ops plan',
+  'uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao': 'Local recovery policy',
+  'uiLiteral.gestaoDadosSection.preValidacaoDeImportacao': 'Import pre-validation',
+  'uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo': 'Pre-validation of the last receipt',
+  'uiLiteral.gestaoDadosSection.preValidacaoOk': 'Pre-validation OK',
+  'uiLiteral.gestaoDadosSection.prontoParaRestauro': 'Ready for restoration',
+  'uiLiteral.gestaoDadosSection.proximoPasso': 'Next step',
+  'uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao': 'Local Rotation Receipts',
+  'uiLiteral.gestaoDadosSection.registadoEm': 'Registered in',
+  'uiLiteral.gestaoDadosSection.rekeyExecutado': 'Rekey executed',
+  'uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher': 'SQLCipher execution result',
+  'uiLiteral.gestaoDadosSection.resumoLocalDerivadoDeRecibosDeEnsaioSem':
+    'Local summary derived from test receipts: no restore performed, no database exchange, no proof of off-site custody, no RPO/RTO certification, and no production backup policy certification.',
+  'uiLiteral.gestaoDadosSection.rpoAlvoDeclarado': 'Declared target RPO',
+  'uiLiteral.gestaoDadosSection.rtoAlvoDeclarado': 'Declared target RTO',
+  'uiLiteral.gestaoDadosSection.semAlegacoes': 'No allegations',
+  'uiLiteral.gestaoDadosSection.semCaminhoDaBd': 'No BD path',
+  'uiLiteral.gestaoDadosSection.semChaveGuardada': 'No key saved',
+  'uiLiteral.gestaoDadosSection.semConstatacoesRegistadas': 'No findings recorded.',
+  'uiLiteral.gestaoDadosSection.semErrosRegistados': 'No errors recorded.',
+  'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
+    'No local gaps reported in this state.',
+  'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
+    'Backend local signals with redacted secrets. They do not certify production rest encryption, completed plaintext migration, custodial runbook, or legal cycle/GDPR.',
+  'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado': 'Verified Isolated Snapshot',
+  'uiLiteral.gestaoDadosSection.sqlcipher': 'SQLCipher',
+  'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher in build',
+  'uiLiteral.gestaoDadosSection.sqlcipherVerificado': 'Verified SQLCipher',
+  'uiLiteral.gestaoDadosSection.total': 'total /',
+  'uiLiteral.gestaoDadosSection.totalDeBytesDosMembros': 'Total member bytes',
+  'uiLiteral.gestaoDadosSection.ultimaRotacao': 'Last rotation',
+  'uiLiteral.gestaoDadosSection.ultimoEnsaio': 'Last rehearsal',
+  'uiLiteral.gestaoDadosSection.ultimoRecibo': 'Last receipt',
+  'uiLiteral.gestaoDadosSection.utilizador': 'User',
+  'uiLiteral.gestaoDadosSection.verificacaoIsolada': 'Isolated check',
+  'uiLiteral.importFromRegistryForm.acaoNecessaria': 'Action required',
+  'uiLiteral.importFromRegistryForm.aCertidaoEstaASerConsultadaMantenhaEsta':
+    'The certificate is being consulted. Keep this page open.',
+  'uiLiteral.importFromRegistryForm.aConsultar': 'To be consulted',
+  'uiLiteral.importFromRegistryForm.corrijaOCodigoOuEMailETente':
+    'Correct the code or email and try again.',
+  'uiLiteral.importFromRegistryForm.estado': 'State',
+  'uiLiteral.registryImportPanel.acaoNecessaria': 'Action required',
+  'uiLiteral.registryImportPanel.aCertidaoEstaASerConsultadaOsValores':
+    'The certificate is being consulted. Current values ​​only change when the result arrives.',
+  'uiLiteral.registryImportPanel.aConsultar': 'To be consulted',
+  'uiLiteral.registryImportPanel.corrijaOCodigoOuEMailETente':
+    'Correct the code or email and try again.',
+  'uiLiteral.registryImportPanel.estado': 'State',
+  'uiLiteral.asicSignatureInspectorPanel.manifesto': 'manifest',
+  'uiLiteral.bookDetailPage.em': 'in',
+  'uiLiteral.bookDetailPage.por': 'put',
+  'uiLiteral.bookDetailPage.total': 'total',
+  'uiLiteral.gestaoDadosSection.dias': 'days',
+  'uiLiteral.gestaoDadosSection.fechados': 'closed',
+  'uiLiteral.gestaoDadosSection.min': 'min',
+  'uiLiteral.privacyComplianceSection.overdue': 'overdue:',
+  'uiLiteral.bookDetailPage.acceptedWithoutCanonicalConversion':
+    'Accepted for auxiliary reference, without canonical conversion.',
+  'uiLiteral.bookDetailPage.noAcceptedOcrDraft': 'No accepted OCR draft.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.signingSnapshot.title': 'Canonical copy frozen for signature',
+  'acts.signingSnapshot.body':
+    'When entering «Under signature», the minutes were frozen. Subscription actions use this canonical copy and do not regenerate or replace it.',
+  'acts.sealing.signedReady':
+    'There is technical evidence of a signed PDF for the canonical copy. Review it before sealing.',
+  'acts.sealing.signatureRequired':
+    'Sign the canonical copy or use the alternative copy of the manually signed original before sealing.',
+  'acts.sealing.signedAck.title': 'Confirm sealing after signature',
+  'acts.sealing.signedAck.body':
+    'The sealing will use the already signed canonical copy. Review the technical evidence and compliance notices before proceeding.',
+  'acts.sealing.signedAck.checkbox':
+    'I confirm that I have reviewed the technical evidence of the signature and want to seal the minutes.',
+  'acts.sealing.signedAck.checkboxWithWarnings':
+    'I confirm that I have reviewed the technical evidence of the signature and the compliance notices and want to seal the minutes.',
+  'signing.closed.title': 'Subscription ended',
+  'signing.closed.body':
+    'The minutes are now «Under signature». Subscription actions are closed; existing evidence remains available for consultation.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'signing.technicalComparison.row.signingSnapshotDigest': 'Digest of the frozen canonical copy',
 };

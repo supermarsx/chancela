@@ -117,20 +117,14 @@ describe('RegistryAutoUpdateSection', () => {
   it('renders the card, schedule controls, and the loaded due plan', async () => {
     vi.stubGlobal('fetch', registryFetch().fn);
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
-    expect(
-      screen.getByText('Atualização automática da certidão permanente'),
-    ).toBeTruthy();
+    expect(screen.getByText('Atualização automática da certidão permanente')).toBeTruthy();
     // Interval cadence (the default) → the "hours between runs" input branch is shown.
     const cadenceSelect = screen.getByLabelText('Periodicidade') as HTMLSelectElement;
     expect(cadenceSelect.value).toBe('interval_hours');
     expect(screen.getByLabelText('Horas entre execuções')).toBeTruthy();
-    expect(
-      screen.getByRole('switch', { name: 'Ativar trabalhador de atualização' }),
-    ).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Ativar trabalhador de atualização' })).toBeTruthy();
 
     // The plan resolves and the due entity row (plus the attempt button) appears.
     expect(await screen.findByText('Encosto Estratégico Lda')).toBeTruthy();
@@ -140,9 +134,7 @@ describe('RegistryAutoUpdateSection', () => {
   it('toggles the enabled flag through onChange', async () => {
     vi.stubGlobal('fetch', registryFetch().fn);
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
     fireEvent.click(screen.getByRole('switch', { name: 'Ativar trabalhador de atualização' }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ enabled: true }));
@@ -151,9 +143,7 @@ describe('RegistryAutoUpdateSection', () => {
   it('changes the schedule interval field through onChange', async () => {
     vi.stubGlobal('fetch', registryFetch().fn);
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
     fireEvent.change(screen.getByLabelText('Horas entre execuções'), {
       target: { value: '48' },
@@ -166,9 +156,7 @@ describe('RegistryAutoUpdateSection', () => {
   it('switches the cadence kind to daily with sensible defaults', async () => {
     vi.stubGlobal('fetch', registryFetch().fn);
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
     fireEvent.change(screen.getByLabelText('Periodicidade'), { target: { value: 'daily' } });
     expect(onChange).toHaveBeenCalledWith(
@@ -218,9 +206,7 @@ describe('RegistryAutoUpdateSection', () => {
   it('toggles an entity profile through onChange', async () => {
     vi.stubGlobal('fetch', registryFetch().fn);
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
     // With no explicit profiles selected, "all profiles" is checked; unchecking a specific
     // profile narrows the selection away from "all".
@@ -241,9 +227,7 @@ describe('RegistryAutoUpdateSection', () => {
   it('disables the attempt button and shows the pending label while the mutation is in flight', async () => {
     vi.stubGlobal('fetch', registryFetch({ hangAttempt: true }).fn);
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Pedir tentativa' }));
 
@@ -256,9 +240,7 @@ describe('RegistryAutoUpdateSection', () => {
   it('records a successful attempt with a success toast and result panel', async () => {
     vi.stubGlobal('fetch', registryFetch({ attempt: attemptView({ accepted: true }) }).fn);
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Pedir tentativa' }));
 
@@ -275,9 +257,7 @@ describe('RegistryAutoUpdateSection', () => {
       }).fn,
     );
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Pedir tentativa' }));
 
@@ -291,9 +271,7 @@ describe('RegistryAutoUpdateSection', () => {
       registryFetch({ plan: { error: 'Falha ao carregar o plano.' }, planStatus: 500 }).fn,
     );
     const onChange = vi.fn();
-    renderWithProviders(
-      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
-    );
+    renderWithProviders(<RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />);
 
     expect(await screen.findByText('Falha ao carregar o plano.')).toBeTruthy();
   });

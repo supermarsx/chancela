@@ -137,80 +137,82 @@ function RestorePreflightReport({
               <Badge tone={ready ? 'ok' : 'warn'}>{status}</Badge>
             </dd>
           </div>
-        <div>
-          <dt>{t('integrity.restore.preflight.encrypted')}</dt>
-          <dd>{report.encrypted ? t('common.yes') : t('common.no')}</dd>
-        </div>
-        <div>
-          <dt>{t('integrity.restore.preflight.ledgerVerified')}</dt>
-          <dd>
-            {report.ledger_verified && manifest?.ledger_verified ? t('common.yes') : t('common.no')}
-          </dd>
-        </div>
-        {manifest ? (
-          <>
-            <div>
-              <dt>{t('integrity.restore.preflight.ledgerLength')}</dt>
-              <dd className="mono">{manifest.ledger_length}</dd>
-            </div>
-            <div>
-              <dt>{t('integrity.restore.preflight.memberCount')}</dt>
-              <dd className="mono">{manifest.member_count}</dd>
-            </div>
-            <div>
-              <dt>{t('integrity.restore.preflight.sidecarMemberCount')}</dt>
-              <dd className="mono">{manifest.sidecar_member_count}</dd>
-            </div>
-            <div>
-              <dt>{t('integrity.restore.preflight.dbMemberPresent')}</dt>
-              <dd>{manifest.db_member_present ? t('common.yes') : t('common.no')}</dd>
-            </div>
-            <div>
-              <dt>{t('integrity.restore.preflight.schemaVersion')}</dt>
-              <dd className="mono">{manifest.schema ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>{t('integrity.restore.preflight.storeSchemaVersion')}</dt>
-              <dd className="mono">{manifest.store_schema_version ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>{t('integrity.restore.preflight.totalMemberBytes')}</dt>
-              <dd className="mono">{manifest.total_member_bytes}</dd>
-            </div>
-          </>
-        ) : null}
+          <div>
+            <dt>{t('integrity.restore.preflight.encrypted')}</dt>
+            <dd>{report.encrypted ? t('common.yes') : t('common.no')}</dd>
+          </div>
+          <div>
+            <dt>{t('integrity.restore.preflight.ledgerVerified')}</dt>
+            <dd>
+              {report.ledger_verified && manifest?.ledger_verified
+                ? t('common.yes')
+                : t('common.no')}
+            </dd>
+          </div>
+          {manifest ? (
+            <>
+              <div>
+                <dt>{t('integrity.restore.preflight.ledgerLength')}</dt>
+                <dd className="mono">{manifest.ledger_length}</dd>
+              </div>
+              <div>
+                <dt>{t('integrity.restore.preflight.memberCount')}</dt>
+                <dd className="mono">{manifest.member_count}</dd>
+              </div>
+              <div>
+                <dt>{t('integrity.restore.preflight.sidecarMemberCount')}</dt>
+                <dd className="mono">{manifest.sidecar_member_count}</dd>
+              </div>
+              <div>
+                <dt>{t('integrity.restore.preflight.dbMemberPresent')}</dt>
+                <dd>{manifest.db_member_present ? t('common.yes') : t('common.no')}</dd>
+              </div>
+              <div>
+                <dt>{t('integrity.restore.preflight.schemaVersion')}</dt>
+                <dd className="mono">{manifest.schema ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{t('integrity.restore.preflight.storeSchemaVersion')}</dt>
+                <dd className="mono">{manifest.store_schema_version ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{t('integrity.restore.preflight.totalMemberBytes')}</dt>
+                <dd className="mono">{manifest.total_member_bytes}</dd>
+              </div>
+            </>
+          ) : null}
         </dl>
         <div className="stack--tight">
-        {errors.length > 0 ? (
-          <>
-            <h5>{t('integrity.restore.preflight.errors')}</h5>
+          {errors.length > 0 ? (
+            <>
+              <h5>{t('integrity.restore.preflight.errors')}</h5>
+              <ul className="plain-list">
+                {errors.map((item, index) => (
+                  <li key={`error-${index}`}>{redactSensitiveText(item)}</li>
+                ))}
+              </ul>
+              {hiddenErrors > 0 ? (
+                <p className="field__hint">
+                  {t('integrity.restore.preflight.errors.more', { count: hiddenErrors })}
+                </p>
+              ) : null}
+            </>
+          ) : null}
+          <h5>{t('integrity.restore.preflight.findings')}</h5>
+          {findings.length === 0 ? (
+            <p className="field__hint">{t('integrity.restore.preflight.findings.none')}</p>
+          ) : (
             <ul className="plain-list">
-              {errors.map((item, index) => (
-                <li key={`error-${index}`}>{redactSensitiveText(item)}</li>
+              {findings.map((finding, index) => (
+                <li key={`finding-${index}`}>{redactSensitiveText(finding)}</li>
               ))}
             </ul>
-            {hiddenErrors > 0 ? (
-              <p className="field__hint">
-                {t('integrity.restore.preflight.errors.more', { count: hiddenErrors })}
-              </p>
-            ) : null}
-          </>
-        ) : null}
-        <h5>{t('integrity.restore.preflight.findings')}</h5>
-        {findings.length === 0 ? (
-          <p className="field__hint">{t('integrity.restore.preflight.findings.none')}</p>
-        ) : (
-          <ul className="plain-list">
-            {findings.map((finding, index) => (
-              <li key={`finding-${index}`}>{redactSensitiveText(finding)}</li>
-            ))}
-          </ul>
-        )}
-        {hiddenFindings > 0 ? (
-          <p className="field__hint">
-            {t('integrity.restore.preflight.findings.more', { count: hiddenFindings })}
-          </p>
-        ) : null}
+          )}
+          {hiddenFindings > 0 ? (
+            <p className="field__hint">
+              {t('integrity.restore.preflight.findings.more', { count: hiddenFindings })}
+            </p>
+          ) : null}
         </div>
       </details>
     </InlineWarning>

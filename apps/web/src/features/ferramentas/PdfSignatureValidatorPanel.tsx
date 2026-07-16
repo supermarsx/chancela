@@ -24,7 +24,7 @@ import {
   useToast,
 } from '../../ui';
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+export function pdfValidatorArrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   const chunk = 0x8000;
@@ -34,18 +34,18 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function hex(bytes: ArrayBuffer): string {
+export function pdfValidatorHex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
-async function sha256Hex(buffer: ArrayBuffer): Promise<string | null> {
+export async function pdfValidatorSha256Hex(buffer: ArrayBuffer): Promise<string | null> {
   if (!globalThis.crypto?.subtle) return null;
-  return hex(await globalThis.crypto.subtle.digest('SHA-256', buffer));
+  return pdfValidatorHex(await globalThis.crypto.subtle.digest('SHA-256', buffer));
 }
 
-function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+export function readPdfValidatorFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   if (typeof file.arrayBuffer === 'function') return file.arrayBuffer();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -61,7 +61,7 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   });
 }
 
-function formatBytes(value: number, t: TFunction): string {
+export function formatPdfValidatorBytes(value: number, t: TFunction): string {
   if (!Number.isFinite(value) || value < 0) return t('pdfValidator.size.unknown');
   if (value < 1024) return `${value} bytes`;
   const units = ['KB', 'MB', 'GB'];
@@ -75,31 +75,33 @@ function formatBytes(value: number, t: TFunction): string {
   return `${amount.toFixed(amount < 10 ? 1 : 0)} ${unit}`;
 }
 
-function boolText(value: boolean, t: TFunction): string {
+export function pdfValidatorBoolText(value: boolean, t: TFunction): string {
   return value ? t('common.yes') : t('common.no');
 }
 
-function statusTone(status: PdfValidationStatus): 'neutral' | 'ok' | 'warn' | 'error' {
+export function pdfValidationStatusTone(
+  status: PdfValidationStatus,
+): 'neutral' | 'ok' | 'warn' | 'error' {
   if (status === 'valid') return 'ok';
   if (status === 'invalid') return 'error';
   if (status === 'indeterminate') return 'warn';
   return 'neutral';
 }
 
-function statusLabel(status: PdfValidationStatus, t: TFunction): string {
+export function pdfValidationStatusLabel(status: PdfValidationStatus, t: TFunction): string {
   if (status === 'valid') return t('pdfValidator.status.valid');
   if (status === 'invalid') return t('pdfValidator.status.invalid');
   if (status === 'indeterminate') return t('pdfValidator.status.indeterminate');
   return t('pdfValidator.status.unsigned');
 }
 
-function findingTone(severity: string): 'neutral' | 'warn' | 'error' {
+export function pdfValidationFindingTone(severity: string): 'neutral' | 'warn' | 'error' {
   if (severity === 'error') return 'error';
   if (severity === 'warning') return 'warn';
   return 'neutral';
 }
 
-function evidenceTone(status: string): 'neutral' | 'ok' | 'warn' | 'error' {
+export function pdfValidationEvidenceTone(status: string): 'neutral' | 'ok' | 'warn' | 'error' {
   const normalized = status.toLowerCase();
   if (normalized === 'valid' || normalized === 'available') return 'ok';
   if (normalized.includes('invalid') || normalized.includes('failed')) return 'error';
@@ -108,11 +110,11 @@ function evidenceTone(status: string): 'neutral' | 'ok' | 'warn' | 'error' {
   return 'neutral';
 }
 
-function reportJson(report: PdfSignatureValidationResponse): string {
+export function pdfValidationReportJson(report: PdfSignatureValidationResponse): string {
   return `${JSON.stringify(report, null, 2)}\n`;
 }
 
-function reportFilename(report: PdfSignatureValidationResponse): string {
+export function pdfValidationReportFilename(report: PdfSignatureValidationResponse): string {
   const base = (report.filename ?? 'pdf')
     .replace(/\.pdf$/i, '')
     .normalize('NFKD')
@@ -122,6 +124,18 @@ function reportFilename(report: PdfSignatureValidationResponse): string {
     .toLowerCase();
   return `${base || 'pdf'}-validation-report.json`;
 }
+
+const arrayBufferToBase64 = pdfValidatorArrayBufferToBase64;
+const sha256Hex = pdfValidatorSha256Hex;
+const readFileAsArrayBuffer = readPdfValidatorFileAsArrayBuffer;
+const formatBytes = formatPdfValidatorBytes;
+const boolText = pdfValidatorBoolText;
+const statusTone = pdfValidationStatusTone;
+const statusLabel = pdfValidationStatusLabel;
+const findingTone = pdfValidationFindingTone;
+const evidenceTone = pdfValidationEvidenceTone;
+const reportJson = pdfValidationReportJson;
+const reportFilename = pdfValidationReportFilename;
 
 function ValidationReportActions({ report }: { report: PdfSignatureValidationResponse }) {
   const t = useT();

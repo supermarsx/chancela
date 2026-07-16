@@ -10,14 +10,12 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
 import { EntityRegistryImportPage } from './EntityRegistryImportPage';
-import type {
-  Entity,
-  RegistryExtractView,
-  RegistryImportReport,
-} from '../../api/types';
+import type { Entity, RegistryExtractView, RegistryImportReport } from '../../api/types';
 
 const ENTITY: Entity = {
   id: 'new-ent-1',
+  tenant_id: 'tenant-1',
+  group_id: null,
   name: 'Encosto Estratégico, Lda.',
   nipc: '503004642',
   nipc_validated: true,
@@ -91,9 +89,7 @@ interface Recorded {
  * Stub GET /v1/entities/:id (crumb + panel refetch after import) and route the import
  * POST through `handleImport`, recording every call so the body can be asserted.
  */
-function installFetch(
-  handleImport: () => Response | Promise<Response>,
-): Recorded[] {
+function installFetch(handleImport: () => Response | Promise<Response>): Recorded[] {
   const calls: Recorded[] = [];
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -150,7 +146,9 @@ describe('EntityRegistryImportPage', () => {
     renderPage();
 
     const code = await screen.findByLabelText('Código da certidão permanente');
-    const submit = screen.getByRole('button', { name: 'Consultar e importar' }) as HTMLButtonElement;
+    const submit = screen.getByRole('button', {
+      name: 'Consultar e importar',
+    }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
     fireEvent.change(code, { target: { value: '1234-5678-9012' } });
@@ -184,9 +182,9 @@ describe('EntityRegistryImportPage', () => {
     // Inline RegistryErrorNote (query error state) + toast (onError) both carry the server
     // message (the R7 spine); they commit in separate ticks, so wait for both.
     await waitFor(() =>
-      expect(
-        screen.getAllByText('código de acesso inválido ou certidão incompleta'),
-      ).toHaveLength(2),
+      expect(screen.getAllByText('código de acesso inválido ou certidão incompleta')).toHaveLength(
+        2,
+      ),
     );
     expect(screen.getByText('Ação necessária')).toBeTruthy();
   });

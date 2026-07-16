@@ -621,7 +621,9 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
 
     // The authentic vendored text is shown as normal body — never inside the "Texto por verificar"
     // marker warning, and never the [NÃO VERIFICADO] placeholder.
-    expect(screen.getByText(/reconhecidos para efeitos da autenticação transfronteiriça/)).toBeTruthy();
+    expect(
+      screen.getByText(/reconhecidos para efeitos da autenticação transfronteiriça/),
+    ).toBeTruthy();
     expect(screen.queryByText('Texto por verificar')).toBeNull();
     expect(screen.queryByText('[NÃO VERIFICADO / fonte pendente]')).toBeNull();
 

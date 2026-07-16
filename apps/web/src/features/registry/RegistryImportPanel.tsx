@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useImportEntityRegistry } from '../../api/hooks';
 import { registryFieldLabel } from '../../api/labels';
 import type { RegistryExtractView, RegistryImportReport } from '../../api/types';
-import { useT } from '../../i18n';
+import { t as translateNow, useT } from '../../i18n';
 import {
   Badge,
   Button,
@@ -85,7 +85,7 @@ function RegistryExtractSummary({ extract }: { extract: RegistryExtractView }) {
   const formaJuridica = extract.forma_juridica ?? extract.legal_form;
   return (
     <div className="registry-result-box">
-      <p className="field__label">Resumo</p>
+      <p className="field__label">{t('uiLiteral.registryImportPanel.resumo')}</p>
       <dl className="deflist deflist--pairs registry-result-summary">
         <SummaryRow
           term={t('registry.field.firma')}
@@ -172,10 +172,11 @@ function ImportStatus({
   if (pending) {
     return (
       <aside className="registry-import-state registry-import-state--active" role="status">
-        <p className="field__label">Estado</p>
-        <Badge tone="accent">A consultar</Badge>
+        <p className="field__label">{translateNow('uiLiteral.registryImportPanel.estado')}</p>
+        <Badge tone="accent">{translateNow('uiLiteral.registryImportPanel.aConsultar')}</Badge>
         <p>
-          A certidão está a ser consultada. Os valores atuais só mudam quando o resultado chegar.
+          {' '}
+          {translateNow('uiLiteral.registryImportPanel.aCertidaoEstaASerConsultadaOsValores')}{' '}
         </p>
       </aside>
     );
@@ -184,9 +185,9 @@ function ImportStatus({
   if (hasError) {
     return (
       <aside className="registry-import-state registry-import-state--error">
-        <p className="field__label">Estado</p>
-        <Badge tone="error">Ação necessária</Badge>
-        <p>Corrija o código ou e-mail e tente novamente.</p>
+        <p className="field__label">{translateNow('uiLiteral.registryImportPanel.estado')}</p>
+        <Badge tone="error">{translateNow('uiLiteral.registryImportPanel.acaoNecessaria')}</Badge>
+        <p>{translateNow('uiLiteral.registryImportPanel.corrijaOCodigoOuEMailETente')}</p>
       </aside>
     );
   }
@@ -196,7 +197,7 @@ function ImportStatus({
     const changed = report.applied.length > 0;
     return (
       <aside className="registry-import-state">
-        <p className="field__label">Estado</p>
+        <p className="field__label">{translateNow('uiLiteral.registryImportPanel.estado')}</p>
         <Badge tone={hasConflicts ? 'warn' : changed ? 'ok' : 'neutral'}>
           {hasConflicts ? 'Rever divergências' : changed ? 'Atualizada' : 'Sem alterações'}
         </Badge>
@@ -211,7 +212,7 @@ function ImportStatus({
 
   return (
     <aside className="registry-import-state">
-      <p className="field__label">Estado</p>
+      <p className="field__label">{translateNow('uiLiteral.registryImportPanel.estado')}</p>
       <Badge tone={hasCode ? 'ok' : 'neutral'}>{hasCode ? 'Pronto' : 'Aguardando código'}</Badge>
       <p>
         {hasCode
@@ -252,8 +253,10 @@ function ImportReport({
     <section className="stack--tight registry-report" aria-live="polite">
       <div className="registry-report__head">
         <div>
-          <p className="registry-import-copy__eyebrow">Resultado</p>
-          <h4>Resumo da importação</h4>
+          <p className="registry-import-copy__eyebrow">
+            {t('uiLiteral.registryImportPanel.resultado')}
+          </p>
+          <h4>{t('uiLiteral.registryImportPanel.resumoDaImportacao')}</h4>
         </div>
         <Badge tone={outcomeTone}>
           {hasConflicts ? 'Requer confirmação' : hasChanges ? 'Importada' : 'Sem alterações'}
@@ -327,7 +330,7 @@ function ImportReport({
           </div>
         </div>
       ) : !hasConflicts ? (
-        <InlineWarning tone="info" title="Sem alterações">
+        <InlineWarning tone="info" title={t('uiLiteral.registryImportPanel.semAlteracoes')}>
           {t('registry.import.alreadyConform')}
         </InlineWarning>
       ) : null}
@@ -341,7 +344,7 @@ function ImportReport({
 
       {!hasConflicts ? (
         <div className="registry-next-actions">
-          <p className="field__label">Próximo passo</p>
+          <p className="field__label">{t('uiLiteral.registryImportPanel.proximoPasso')}</p>
           <ButtonLink
             to={`/entidades/${report.entity.id}`}
             variant="primary"
@@ -404,7 +407,9 @@ export function RegistryImportPanel({ entityId }: { entityId: string }) {
       <div className="registry-import-flow">
         <div className="registry-import-flow__main">
           <div className="registry-import-copy">
-            <p className="registry-import-copy__eyebrow">Consulta</p>
+            <p className="registry-import-copy__eyebrow">
+              {t('uiLiteral.registryImportPanel.consulta')}
+            </p>
             <p className="muted">{t('registry.enrich.intro')}</p>
           </div>
           <form className="form registry-import-form" onSubmit={onSubmit}>
@@ -455,8 +460,10 @@ export function RegistryImportPanel({ entityId }: { entityId: string }) {
         />
       ) : !importEntity.error ? (
         <div className="registry-report registry-report--empty" aria-live="polite">
-          <p className="field__label">Resultado</p>
-          <p className="muted">A consulta ainda não foi executada.</p>
+          <p className="field__label">{t('uiLiteral.registryImportPanel.resultado')}</p>
+          <p className="muted">
+            {t('uiLiteral.registryImportPanel.aConsultaAindaNaoFoiExecutada')}
+          </p>
         </div>
       ) : null}
     </Card>

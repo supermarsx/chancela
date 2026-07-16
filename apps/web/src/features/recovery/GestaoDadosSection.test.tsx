@@ -666,7 +666,9 @@ describe('GestaoDadosSection', () => {
     renderWithProviders(<GestaoDadosSection />);
     await selectTab(TAB_BACKUP);
 
-    expect(await screen.findByText('Evidência local insuficiente para rever o handoff')).toBeTruthy();
+    expect(
+      await screen.findByText('Evidência local insuficiente para rever o handoff'),
+    ).toBeTruthy();
     const callsBeforeSave = calls.length;
     fireEvent.click(await screen.findByRole('button', { name: 'Guardar JSON' }));
 

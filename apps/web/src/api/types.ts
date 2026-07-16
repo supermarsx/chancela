@@ -232,6 +232,10 @@ export interface EntityRegistrySummary {
 
 export interface Entity {
   id: string;
+  /** Owning tenant boundary; always present on entity reads. */
+  tenant_id: string;
+  /** Optional company-group membership; `null` means the entity is currently ungrouped. */
+  group_id: string | null;
   name: string;
   nipc: string;
   /** `false` ⇒ the NIPC failed control-digit validation and was stored via the override (t25). */
@@ -606,6 +610,12 @@ export interface ActSealMetadata {
   family: EntityFamily;
   profile: EntityKind;
   manual_signature_original_reference?: ActManualSignatureOriginalReference | null;
+  /** Digest of the canonical Ata PDF/A frozen when the act entered `Signing`. */
+  signing_snapshot_digest?: string | null;
+  /** Digest of the signed PDF accepted as electronic signing evidence, when present. */
+  signed_pdf_digest?: string | null;
+  /** Digest of the local technical validation report bound at seal, when present. */
+  signature_validation_report_digest?: string | null;
 }
 
 export type WrittenResolutionReviewStatus = 'reviewed' | 'needs_follow_up';
@@ -2010,6 +2020,10 @@ export interface Dashboard {
   acts_awaiting_signature: number;
   acts_sealed: number;
   unresolved_compliance: number;
+  /** Failed connector sync jobs visible to the globally authorized operator. */
+  failed_sync_jobs: number;
+  /** Queued/running/retryable durable backup jobs visible to the globally authorized operator. */
+  pending_backup_jobs: number;
   ledger_length: number;
   ledger_valid: boolean;
   current_work: DashboardCurrentWork;
@@ -3039,21 +3053,42 @@ export interface UpdateUserBody {
 // The web half of the frozen `chancela-api::session` permission DTOs. A grant is one
 // `(permission, scope)` pair the signed-in principal effectively holds, tagged by how it
 // arrived (`role` ∪ `delegation`). `scope` is a serde-`kind`-tagged union: `global` covers
-// everything, `entity` covers that entity (and its books), `book` covers that one book —
-// so `can(perm, scope)` maps to the server's `has_permission` semantics. These mirror the
-// server views byte-for-byte and are consumed both by the `GET /v1/session/permissions`
-// endpoint (`SessionPermissions`) and by the first-paint `SessionView.permissions` embed.
+// everything while each resource scope carries its opaque id. Wider grants cover narrower
+// resources only through authoritative parent relations, so `can(perm, scope)` maps to the
+// server's `has_permission` semantics without widening. These mirror the server views
+// byte-for-byte and are consumed both by the `GET /v1/session/permissions` endpoint
+// (`SessionPermissions`) and by the first-paint `SessionView.permissions` embed.
 
 /** A grant's provenance: a role assignment or a delegation (t64-E3). */
 export const PERMISSION_SOURCES = ['role', 'delegation'] as const;
 export type PermissionSource = (typeof PERMISSION_SOURCES)[number];
 
+/** Frozen scope discriminants accepted and returned by the authorization API. */
+export const PERMISSION_SCOPE_KINDS = [
+  'global',
+  'tenant',
+  'entity',
+  'book',
+  'act',
+  'folder',
+  'template_library',
+  'archive',
+  'integration',
+  'repository',
+] as const;
+export type PermissionScopeKind = (typeof PERMISSION_SCOPE_KINDS)[number];
+export type ResourcePermissionScopeKind = Exclude<PermissionScopeKind, 'global'>;
+
 /**
- * The scope a grant/assignment is held at — a `kind`-tagged union mirroring the server's
- * `ScopeView` (t64-E3). `global` carries no id; `entity`/`book` carry the target uuid.
+ * The scope a grant/assignment is held at — the complete `kind`-tagged union mirroring the
+ * server's `ScopeView`/`ScopeInput`. `global` carries no id; every resource scope carries its
+ * opaque UUID. The original global/entity/book wire variants remain unchanged.
  */
 export type PermissionScope =
-  { kind: 'global' } | { kind: 'entity'; id: string } | { kind: 'book'; id: string };
+  | { kind: 'global' }
+  | {
+      [Kind in ResourcePermissionScopeKind]: { kind: Kind; id: string };
+    }[ResourcePermissionScopeKind];
 
 /**
  * One effective grant: a dotted permission id (e.g. `entity.read`), the scope it is held
@@ -3092,7 +3127,7 @@ export interface SessionPermissions {
 // mirror the server views byte-for-byte.
 //
 // `ScopeInput` (the write shape) is IDENTICAL to `PermissionScope` (the read shape): a
-// serde-`kind`-tagged union `{"kind":"global"|"entity"|"book","id"?}`. We reuse
+// serde-`kind`-tagged union `{"kind":"global"|<resource kind>,"id"?}`. We reuse
 // `PermissionScope` for both so the scope picker maps directly onto the wire.
 
 /** Read-only seeded-role drift diagnostics from `GET /v1/roles`. */
@@ -4471,6 +4506,8 @@ export interface UpdateActBody {
 export interface AdvanceActBody {
   to: ActState;
   actor?: string;
+  /** Optional Ata template selected only while atomically entering `Signing`. */
+  template_id?: string;
 }
 
 export type HumanVerificationDecision = 'accept' | 'reject';
@@ -4484,7 +4521,10 @@ export interface VerifyAiHumanReviewBody {
 export interface SealActBody {
   actor?: string;
   acknowledge_warnings?: boolean;
-  manual_signature_original_reference: ActManualSignatureOriginalReference;
+  /** Explicit alternate evidence when no accepted signed PDF is present. */
+  manual_signature_original_reference?: ActManualSignatureOriginalReference;
+  /** Optional assertion that must match the already-frozen Signing snapshot template. */
+  template_id?: string;
 }
 
 export type FollowUpStatus = 'Open' | 'Completed';
@@ -4891,14 +4931,15 @@ export interface PlatformLogsResponse {
 // --- Qualified CMD signing (§ t57) ----------------------------------------------
 //
 // The two-phase Chave Móvel Digital signing flow (frozen `chancela-api::signature`
-// DTOs, t57-S3). A sealed act's unsigned PDF/A is turned into a **qualified** CMD-signed
-// PDF across two requests: `initiate` (phone + PIN → dispatches the SMS OTP) then
+// DTOs, t57-S3). A Signing act's frozen PDF/A is turned into a CMD-signed PDF across two
+// requests: `initiate` (phone + PIN → dispatches the SMS OTP) then
 // `confirm` (session_id + OTP → the signed PDF). The PIN and OTP are transient secrets
 // carried ONLY in the request body — never persisted or echoed back on any of these types.
 
-/** The act's derived finalization status (server-owned; the seal is never blocked). */
+/** The act's derived finalization status (server-owned). */
 export const FINALIZATION_STATUSES = [
   'rascunho',
+  'em_assinatura',
   'finalizado',
   'aguarda_assinatura_qualificada',
   'finalizado_qualificado',

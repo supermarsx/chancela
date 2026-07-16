@@ -69,7 +69,7 @@ import {
   type RetentionReviewClosureDecision,
   type TransferControlView,
 } from '../../api/types';
-import { useT, type MessageKey, type TFunction } from '../../i18n';
+import { t as translateNow, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
   Button,
@@ -302,7 +302,10 @@ function riskFilterOptions(t: TFunction) {
 }
 
 function statusSelectOptionsFor(t: TFunction) {
-  return PRIVACY_RECORD_STATUSES.map((status) => ({ value: status, label: statusLabel(t, status) }));
+  return PRIVACY_RECORD_STATUSES.map((status) => ({
+    value: status,
+    label: statusLabel(t, status),
+  }));
 }
 
 function riskSelectOptionsFor(t: TFunction) {
@@ -1136,7 +1139,11 @@ function RegisterForm({
       <Field
         label={primaryLabel}
         htmlFor={`${idPrefix}-primary`}
-        help={kind === 'processor' ? t('settings.privacy.help.processor') : t('settings.privacy.help.dpia')}
+        help={
+          kind === 'processor'
+            ? t('settings.privacy.help.processor')
+            : t('settings.privacy.help.dpia')
+        }
       >
         <Input
           id={`${idPrefix}-primary`}
@@ -1395,7 +1402,10 @@ function RegisterPanel({
                 onChange={(e) => setSearch(e.target.value)}
               />
             </Field>
-            <Field label={t('settings.privacy.field.status')} htmlFor={`privacy-${kind}-status-filter`}>
+            <Field
+              label={t('settings.privacy.field.status')}
+              htmlFor={`privacy-${kind}-status-filter`}
+            >
               <Select
                 id={`privacy-${kind}-status-filter`}
                 value={statusFilter}
@@ -2750,7 +2760,9 @@ function RetentionDueCandidatesPanel({
                         {candidate.due_date ?? t('settings.privacy.dueCandidates.noDueDate')}
                       </span>
                       <Badge tone={candidate.overdue ? 'warn' : 'neutral'}>
-                        overdue: {String(candidate.overdue)}
+                        {' '}
+                        {translateNow('uiLiteral.privacyComplianceSection.overdue')}{' '}
+                        {String(candidate.overdue)}
                       </Badge>
                       <span>
                         {candidate.status} · {candidate.outcome}
@@ -3695,7 +3707,9 @@ export function PrivacyComplianceSection() {
               error={dpias.error}
               saving={createDpia.isPending || patchDpia.isPending}
               onCreate={(body) => createDpia.mutateAsync(body as CreateDpiaRecordBody)}
-              onPatch={(id, body) => patchDpia.mutateAsync({ id, body: body as PatchDpiaRecordBody })}
+              onPatch={(id, body) =>
+                patchDpia.mutateAsync({ id, body: body as PatchDpiaRecordBody })
+              }
             />
 
             <BreachPlaybookPanel

@@ -209,7 +209,6 @@ describe('SubNav', () => {
     expect(cancel).toHaveBeenCalledWith(1);
 
     const frame = nextFrame as unknown as FrameRequestCallback | null;
-    nextFrame = null;
     act(() => {
       if (frame) frame(16);
     });

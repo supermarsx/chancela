@@ -19,13 +19,25 @@ export const itIT: Catalog = {
   'rbac.delegacoes.tab': 'Deleghe',
   'rbac.scope.label': 'Ambito',
   'rbac.scope.global': 'Globale (intera istanza)',
+  'rbac.scope.tenant': 'Organizzazione tenant',
   'rbac.scope.entity': 'Entità',
   'rbac.scope.book': 'Libro',
+  'rbac.scope.act': 'Atto',
+  'rbac.scope.folder': 'Cartella',
+  'rbac.scope.templateLibrary': 'Raccolta di modelli',
+  'rbac.scope.archive': 'Archivio',
+  'rbac.scope.integration': 'Connettore',
+  'rbac.scope.repository': 'Deposito',
   'rbac.scope.global.desc': 'Si applica all’intera istanza.',
+  'rbac.scope.tenant.desc': 'Si applica all’organizzazione e alle risorse che contiene.',
   'rbac.scope.entity.desc': 'Si applica all’entità e ai suoi libri.',
   'rbac.scope.book.desc': 'Si applica solo a questo libro.',
+  'rbac.scope.resource.desc':
+    'Si applica alla risorsa indicata e alle risorse sottostanti nella gerarchia autorizzata.',
+  'rbac.scope.tenant.pick': 'Scegli organizzazione',
   'rbac.scope.entity.pick': 'Scegli entità',
   'rbac.scope.book.pick': 'Scegli libro',
+  'rbac.scope.resource.pick': 'Identificativo risorsa',
   'rbac.group.entity': 'Entità',
   'rbac.group.book': 'Libri',
   'rbac.group.act': 'Atti',
@@ -44,7 +56,7 @@ export const itIT: Catalog = {
     'Puoi selezionare solo le autorizzazioni che possiedi. Le altre sono disattivate.',
   'rbac.matrix.selectAll': 'Seleziona tutto',
   'rbac.matrix.clear': 'Cancella',
-  'rbac.matrix.meta': 'Meta',
+  'rbac.matrix.meta': 'Obiettivo',
   'rbac.matrix.notHeld': 'Non possiedi questa autorizzazione',
   'rbac.role.edit.title': 'Modifica ruolo',
   'rbac.role.create.title': 'Nuovo ruolo',
@@ -326,7 +338,7 @@ export const itIT: Catalog = {
   'error.unexpectedResponse':
     'Risposta del server imprevista ({detail}){suffix} — la versione del server potrebbe non essere aggiornata. Riavvia l’applicazione/il server. (stato {status})',
   'error.detail.html': 'HTML invece di JSON',
-  'error.detail.type': 'tipo «{contentType}»',
+  'error.detail.type': 'digita «{contentType}»',
   'error.detail.unknownType': 'sconosciuto',
   'error.pathSuffix': ' in {path}',
   'error.invalidJson': 'La risposta del server non è JSON valido{suffix} (stato {status}).',
@@ -444,11 +456,11 @@ export const itIT: Catalog = {
   'entities.emptyBody.after': ', oppure importala da un certificato permanente.',
   'entities.th.name': 'Denominazione',
   'entities.th.nipc': 'NIPC',
-  'entities.th.seat': 'Sede',
+  'entities.th.seat': 'Sete',
   'entities.th.form': 'Forma',
   'entities.columns.name': 'Denominazione',
   'entities.columns.nipc': 'NIPC',
-  'entities.columns.seat': 'Sede',
+  'entities.columns.seat': 'Sete',
   'entities.columns.type': 'Tipo',
   'entities.columns.matricula': 'Matricola',
   'entities.columns.constitution': 'Costituzione',
@@ -513,12 +525,12 @@ export const itIT: Catalog = {
     'Modifica la ricerca o i filtri per visualizzare di nuovo le entità.',
   'entities.identificationCard': 'Identificazione',
   'entities.field.nipc': 'NIPC',
-  'entities.field.seat': 'Sede',
+  'entities.field.seat': 'Sete',
   'entities.field.legalForm': 'Forma giuridica',
   'entities.field.family': 'Famiglia',
   'entities.registrySection': 'Registro delle imprese',
   'entities.booksCard': 'Libri',
-  'entities.chronology.title': 'Cronologia e grafo',
+  'entities.chronology.title': 'Cronologia e grafico',
   'entities.chronology.loading': 'Caricamento cronologia...',
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
@@ -565,7 +577,7 @@ export const itIT: Catalog = {
   'entities.form.nipc': 'NIPC',
   'entities.form.nipcHint': '9 cifre con cifra di controllo valida',
   'entities.form.nipcPlaceholder': '500000000',
-  'entities.form.seat': 'Sede',
+  'entities.form.seat': 'Sete',
   'entities.form.seatPlaceholder': 'Lisbona',
   'entities.form.legalForm': 'Forma giuridica',
   'entities.form.creating': 'Creazione…',
@@ -638,7 +650,7 @@ export const itIT: Catalog = {
   'registry.field.legalForm': 'Forma giuridica',
   'registry.field.dataConstituicao': 'Data di costituzione',
   'registry.field.capital': 'Capitale',
-  'registry.field.sede': 'Sede',
+  'registry.field.sede': 'Sete',
   'registry.field.objeto': 'Oggetto',
   'registry.field.cae': 'CAE',
   'registry.cae.uncatalogued': 'non catalogato',
@@ -669,9 +681,9 @@ export const itIT: Catalog = {
   'registry.address.distrito': 'Distretto',
   'registry.address.concelho': 'Comune',
   'registry.address.freguesia': 'Frazione',
-  'registry.quota.amount': 'Quota',
+  'registry.quota.amount': 'Condividere',
   'registry.quota.titular': 'Titolare',
-  'registry.party.nif': 'NIF / NIPC',
+  'registry.party.nif': 'NIF/NIPC',
   'registry.party.estadoCivil': 'Stato civile',
   'registry.party.nacionalidade': 'Nazionalità',
   'registry.party.residencia': 'Residenza',
@@ -682,7 +694,7 @@ export const itIT: Catalog = {
   'registry.provenance.expired': 'Certificato scaduto',
   'registry.provenance.valid': 'Certificato valido',
   'registry.anotacoes.title': 'Annotazioni',
-  'registry.anotacoes.item': 'An. {number}',
+  'registry.anotacoes.item': 'UN. {number}',
   'registry.anotacoes.publication': 'Pubblicazione',
   'registry.warnings.title': "Avvisi dell'importazione",
 
@@ -870,11 +882,12 @@ export const itIT: Catalog = {
   'acts.attachments': 'Allegati',
   'acts.lifecycle': 'Ciclo di vita',
   'acts.compliance': 'Conformità',
-  'acts.manualSignature.title': 'Firma manuale (SIG-03)',
+  'acts.manualSignature.title': 'Percorso alternativo: originale firmato manualmente (SIG-03)',
   'acts.manualSignature.body':
-    'L’integrazione della firma elettronica qualificata non è ancora disponibile. Al momento del sigillo, il verbale viene concatenato nel registro sulla base di una firma manuale dei presenti — assicurati che i firmatari abbiano firmato la copia fisica o il PDF prima di procedere.',
+    "Non esiste ancora alcuna prova tecnica di un PDF firmato. Puoi firmare la copia canonica qui sopra o, in alternativa, registrare manualmente il riferimento all'originale firmato. Questa copia non convalida la firma né certifica il file.",
   'acts.sealing.title': 'Sigillatura',
-  'acts.sealing.ready': 'Il verbale è conforme e in firma — può essere sigillato.',
+  'acts.sealing.ready':
+    'I verbali sono conformi e pronti per completare la firma prima della sigillatura.',
   'acts.sealing.readyWithWarnings':
     'Il verbale contiene avvisi di conformità non bloccanti. Rivedili e riconoscili esplicitamente prima di sigillare.',
   'acts.sealing.warningAck.title': 'Conferma la sigillatura manuale',
@@ -896,10 +909,10 @@ export const itIT: Catalog = {
   'acts.manualSignature.custodian.label': 'Custode',
   'acts.manualSignature.custodian.hint': 'Persona, team o servizio responsabile, se applicabile.',
   'acts.manualSignature.custodian.displayLabel': 'Custode',
-  'acts.manualSignature.note.label': 'Nota',
+  'acts.manualSignature.note.label': 'Avviso',
   'acts.manualSignature.note.hint':
     'Contesto locale facoltativo; non registrare una validazione legale.',
-  'acts.manualSignature.note.displayLabel': 'Nota',
+  'acts.manualSignature.note.displayLabel': 'Avviso',
   'acts.sealing.unavailableState': 'La sigillatura è disponibile solo nello stato «In firma».',
   'acts.sealing.fixErrors': 'Correggi gli errori di conformità per poter sigillare.',
   'acts.sealing.sealing': 'Sigillatura…',
@@ -976,7 +989,7 @@ export const itIT: Catalog = {
   'compliance.errors.other': '{count} errori',
   'compliance.warnings.one': '{count} avviso',
   'compliance.warnings.other': '{count} avvisi',
-  'compliance.conforme': 'Conforme',
+  'compliance.conforme': 'Secondo',
   'compliance.noIssues': 'Nessun problema di conformità',
   'compliance.sealBlocked':
     'La sigillatura è bloccata finché sono presenti errori. Correggi il contenuto del verbale e salva di nuovo.',
@@ -1108,7 +1121,7 @@ export const itIT: Catalog = {
   'trust.status.current': 'Aggiornata',
   'trust.status.checkedAt': 'Verificata il',
   'trust.source.cache': 'Cache',
-  'trust.source.fixture': 'Fixture',
+  'trust.source.fixture': 'Apparecchio',
   'trust.signature.Valid': 'Firma valida',
   'trust.signature.Invalid': 'Firma non valida',
   'trust.explorer.title': 'Catalogo di fiducia',
@@ -1268,8 +1281,8 @@ export const itIT: Catalog = {
   'pdfValidator.value.coverage': '{covered} di {total} byte',
   'pdfValidator.field.laterUpdates': 'Aggiornamenti incrementali successivi',
   'pdfValidator.field.signedRevisionDigest': 'SHA-256 della revisione firmata',
-  'pdfValidator.field.cades': 'CAdES',
-  'pdfValidator.field.signingCertificate': 'SigningCertificateV2',
+  'pdfValidator.field.cades': 'CADES',
+  'pdfValidator.field.signingCertificate': 'Certificato di firma V2',
   'pdfValidator.field.signerSubject': 'Soggetto del certificato',
   'pdfValidator.field.signerCertDigest': 'SHA-256 del certificato',
   'pdfValidator.field.signingTime': 'Ora di firma',
@@ -1280,7 +1293,7 @@ export const itIT: Catalog = {
   'pdfValidator.field.ocsp': 'OCSP',
   'pdfValidator.field.crl': 'CRL',
   'pdfValidator.field.revocationEvidence': 'Evidenze di revoca',
-  'pdfValidator.field.present': 'Presente',
+  'pdfValidator.field.present': 'Regalo',
   'pdfValidator.field.count': 'Conteggio',
   'pdfValidator.field.tokens': 'Token',
   'pdfValidator.field.imprints': 'Imprints validi',
@@ -1383,7 +1396,7 @@ export const itIT: Catalog = {
   'externalValidatorReports.table.validatorFamily': 'Famiglia del validatore',
   'externalValidatorReports.table.archivePath': 'Percorso archivio',
   'externalValidatorReports.table.contentType': 'Tipo di contenuto',
-  'externalValidatorReports.table.digest': 'Digest',
+  'externalValidatorReports.table.digest': 'digerire',
   'externalValidatorReports.table.actions': 'Azioni',
   'externalValidatorReports.table.metadataOnly': 'Solo riepilogo dei metadati',
   'externalValidatorReports.status':
@@ -1499,7 +1512,7 @@ export const itIT: Catalog = {
     'Identificatore di controllo: minuscole, cifre e . _ - (es. amelia.marques).',
   'users.field.username.placeholder': 'amelia.marques',
   'users.field.displayName.label': 'Nome visualizzato (facoltativo)',
-  'users.field.displayName.placeholder': 'Amélia Marques',
+  'users.field.displayName.placeholder': 'Amelia Marche',
   'users.create.submitting': 'Creazione…',
   'users.create.submit': 'Crea utente',
   'users.list.cardTitle': 'Utenti',
@@ -1535,8 +1548,10 @@ export const itIT: Catalog = {
   'settings.appearance.intensity.hint': 'Da 0 a 100. Regola l’opacità della grana in tempo reale.',
   'settings.appearance.reroll': 'Rigenera la grana',
   'settings.appearance.colors.title': 'Colori personalizzati',
-  'settings.appearance.colors.hint': 'Scegli i tuoi colori; lascia un campione intatto per mantenere le impostazioni predefinite del tema.',
-  'settings.appearance.colors.help': "Sostituisce i colori primario, secondario, di sfondo e di superficie dell'applicazione. Il contrasto del testo viene regolato automaticamente per restare leggibile. Puramente estetico — non influisce sui documenti.",
+  'settings.appearance.colors.hint':
+    'Scegli i tuoi colori; lascia un campione intatto per mantenere le impostazioni predefinite del tema.',
+  'settings.appearance.colors.help':
+    "Sostituisce i colori primario, secondario, di sfondo e di superficie dell'applicazione. Il contrasto del testo viene regolato automaticamente per restare leggibile. Puramente estetico — non influisce sui documenti.",
   'settings.appearance.colors.primary.label': 'Primario',
   'settings.appearance.colors.secondary.label': 'Secondario',
   'settings.appearance.colors.background.label': 'Sfondo',
@@ -1568,7 +1583,7 @@ export const itIT: Catalog = {
   'settings.signing.tslUrl.placeholder': 'https://…',
   'settings.signing.requireQualified.label': 'Richiedi una firma qualificata per sigillare',
   'settings.signing.note':
-    'Le preferenze di firma si applicano alla firma elettronica qualificata con Chave Móvel Digital, disponibile per i verbali sigillati.',
+    'Le preferenze si applicano alla copia canonica congelata quando il verbale inserisce “Sotto firma”, prima della sigillatura.',
   'settings.signing.officialHint': 'Impostazione predefinita ufficiale portoghese.',
   'settings.signing.reset': 'Ripristina i valori predefiniti',
   'settings.management.cardTitle': 'Gestione',
@@ -1643,13 +1658,13 @@ export const itIT: Catalog = {
   'settings.platform.logging.override.none': 'Nessuna sostituzione',
   'settings.platform.logging.override.app': 'Applicazione',
   'settings.platform.logging.override.api': 'API',
-  'settings.platform.logging.override.mcp_stdio': 'MCP stdio',
-  'settings.platform.logLevel.trace': 'Trace',
+  'settings.platform.logging.override.mcp_stdio': 'Studio MCP',
+  'settings.platform.logLevel.trace': 'Traccia',
   'settings.platform.logLevel.debug': 'Debug',
-  'settings.platform.logLevel.info': 'Info',
-  'settings.platform.logLevel.warn': 'Warn',
-  'settings.platform.logLevel.error': 'Error',
-  'settings.platform.logLevel.off': 'Off',
+  'settings.platform.logLevel.info': 'Informazioni',
+  'settings.platform.logLevel.warn': 'Avvisare',
+  'settings.platform.logLevel.error': 'Errore',
+  'settings.platform.logLevel.off': 'Spento',
   'settings.platform.auditTail': 'Audit delle operazioni',
   'settings.platform.audit.empty': 'Non è stato registrato alcun evento operativo.',
   'settings.platform.logs.cardTitle': 'Coda dei log strutturati gestiti dall’API',
@@ -1688,17 +1703,24 @@ export const itIT: Catalog = {
   'settings.platform.logs.column.message': 'Messaggio',
   'settings.platform.logs.context.show': 'Contesto',
   'settings.platform.logs.context.empty': 'Nessun contesto',
-  "settings.platform.subnav.aria": "Sezioni delle operazioni",
-  "settings.platform.tab.services": "Servizi",
-  "settings.platform.tab.services.desc": "Controllo dello stato desiderato dei server API e MCP, con esiti onesti del backend e un audit delle operazioni.",
-  "settings.platform.tab.logs": "Log",
-  "settings.platform.tab.logs.desc": "Configurazione dei livelli di log e coda strutturata dei log dell'API (sola lettura).",
-  "settings.platform.serviceDetails": "Dettagli di controllo e limitazioni",
-  "settings.platform.help.services": "Queste azioni registrano lo stato desiderato del servizio; l'interfaccia non presuppone il controllo diretto del processo (ad esempio il riavvio automatico dell'API o l'avvio stdio dell'MCP).",
-  "settings.platform.help.outcomes": "L'esito indica cosa ha fatto il backend: \"Supervisore necessario\" e \"Non supportato\" significano che deve intervenire un supervisore esterno — lo stato desiderato è stato solo registrato.",
-  "settings.platform.help.logLevels": "Il livello globale limita tutti i servizi; ogni area usa il più restrittivo tra il livello globale e quello dell'area. \"Off\" silenzia tutto.",
-  "settings.platform.help.effective": "Il livello effettivo per servizio combina quello globale, quello dell'area e un'eventuale sostituzione; se il globale è \"Off\", tutto è \"Off\".",
-  "settings.platform.help.overrides": "Una sostituzione per servizio sostituisce il livello dell'area di quel servizio; usala solo quando un servizio richiede un livello diverso.",
+  'settings.platform.subnav.aria': 'Sezioni delle operazioni',
+  'settings.platform.tab.services': 'Servizi',
+  'settings.platform.tab.services.desc':
+    'Controllo dello stato desiderato dei server API e MCP, con esiti onesti del backend e un audit delle operazioni.',
+  'settings.platform.tab.logs': 'Log',
+  'settings.platform.tab.logs.desc':
+    "Configurazione dei livelli di log e coda strutturata dei log dell'API (sola lettura).",
+  'settings.platform.serviceDetails': 'Dettagli di controllo e limitazioni',
+  'settings.platform.help.services':
+    "Queste azioni registrano lo stato desiderato del servizio; l'interfaccia non presuppone il controllo diretto del processo (ad esempio il riavvio automatico dell'API o l'avvio stdio dell'MCP).",
+  'settings.platform.help.outcomes':
+    'L\'esito indica cosa ha fatto il backend: "Supervisore necessario" e "Non supportato" significano che deve intervenire un supervisore esterno — lo stato desiderato è stato solo registrato.',
+  'settings.platform.help.logLevels':
+    'Il livello globale limita tutti i servizi; ogni area usa il più restrittivo tra il livello globale e quello dell\'area. "Off" silenzia tutto.',
+  'settings.platform.help.effective':
+    'Il livello effettivo per servizio combina quello globale, quello dell\'area e un\'eventuale sostituzione; se il globale è "Off", tutto è "Off".',
+  'settings.platform.help.overrides':
+    "Una sostituzione per servizio sostituisce il livello dell'area di quel servizio; usala solo quando un servizio richiede un livello diverso.",
   'settings.reminders.cardTitle': 'Promemoria del pannello',
   'settings.reminders.enabled.label': 'Genera promemoria locali',
   'settings.reminders.note':
@@ -1921,7 +1943,7 @@ export const itIT: Catalog = {
   'settings.privacy.retention.column.schedule': 'Piano',
   'settings.privacy.retention.column.disposalAction': 'Azione pianificata',
   'settings.privacy.retention.column.execution': 'Esecuzione',
-  'settings.privacy.retention.execution.false': 'destructive_execution_supported: false',
+  'settings.privacy.retention.execution.false': 'distruttivo_execution_supported: falso',
   'settings.privacy.retention.active.true': 'Attivo',
   'settings.privacy.retention.active.false': 'Inattivo',
   'settings.privacy.retention.status.all': 'Tutti gli stati',
@@ -1979,7 +2001,7 @@ export const itIT: Catalog = {
   'settings.privacy.execution.searchPlaceholder':
     'Criterio, destinazione, responsabile, blocco o passaggio successivo',
   'settings.privacy.execution.statusFilter': 'Stato dell’esecuzione',
-  "settings.privacy.execution.status.all": "Tutti gli stati di esecuzione",
+  'settings.privacy.execution.status.all': 'Tutti gli stati di esecuzione',
   'settings.about.cardTitle': 'Informazioni',
   'settings.about.serverVersion': 'Versione del server',
   'settings.about.uiVersion': 'Versione dell’interfaccia',
@@ -2115,7 +2137,7 @@ export const itIT: Catalog = {
   'enum.legalForm.Associacao': 'Associazione',
   // Registry cross-check field labels
   'enum.registryField.name': 'Denominazione',
-  'enum.registryField.seat': 'Sede',
+  'enum.registryField.seat': 'Sete',
   'enum.registryField.nipc': 'NIPC',
   'enum.registryField.kind': 'Forma giuridica',
   // Locale display names
@@ -2496,40 +2518,52 @@ export const itIT: Catalog = {
   'templates.source.user': 'Creato dall’utente',
   'templates.editor.title.create': 'Nuovo modello',
   'templates.editor.title.edit': 'Modifica modello',
-  'templates.editor.intro': 'Un modello è uno scheletro di verbale riutilizzabile: definisce la struttura e i blocchi del documento e non costituisce alcuna garanzia legale.',
+  'templates.editor.intro':
+    'Un modello è uno scheletro di verbale riutilizzabile: definisce la struttura e i blocchi del documento e non costituisce alcuna garanzia legale.',
   'templates.editor.field.id.label': 'Identificatore',
-  'templates.editor.field.id.help': 'Identificatore con versione nel formato user-<nome>/v<n>, ad esempio user-encosto-ata/v1. Il prefisso user- è riservato ai tuoi modelli.',
+  'templates.editor.field.id.help':
+    'Identificatore con versione nel formato user-<nome>/v<n>, ad esempio user-encosto-ata/v1. Il prefisso user- è riservato ai tuoi modelli.',
   'templates.editor.field.family.label': 'Famiglia dell’entità',
-  'templates.editor.field.family.help': 'Tipo di entità a cui si applica il modello (società commerciale, condominio, associazione, fondazione o cooperativa).',
+  'templates.editor.field.family.help':
+    'Tipo di entità a cui si applica il modello (società commerciale, condominio, associazione, fondazione o cooperativa).',
   'templates.editor.field.stage.label': 'Fase del verbale',
-  'templates.editor.field.stage.help': 'Fase del ciclo di vita del verbale a cui è destinato questo modello.',
+  'templates.editor.field.stage.help':
+    'Fase del ciclo di vita del verbale a cui è destinato questo modello.',
   'templates.editor.field.channels.label': 'Canali',
-  'templates.editor.field.channels.help': 'Canali di riunione supportati da questo modello (in presenza, a distanza o misto).',
+  'templates.editor.field.channels.help':
+    'Canali di riunione supportati da questo modello (in presenza, a distanza o misto).',
   'templates.editor.field.signaturePolicy.label': 'Politica di firma',
-  'templates.editor.field.signaturePolicy.help': 'Preferenza di firma suggerita dal modello. Non certifica né garantisce la validità legale delle firme.',
+  'templates.editor.field.signaturePolicy.help':
+    'Preferenza di firma suggerita dal modello. Non certifica né garantisce la validità legale delle firme.',
   'templates.editor.field.rulePackId.label': 'Pacchetto di regole',
-  'templates.editor.field.rulePackId.help': 'Identificatore del pacchetto di regole applicabile. I riferimenti normativi sono derivati dal sistema e non sono modificabili.',
+  'templates.editor.field.rulePackId.help':
+    'Identificatore del pacchetto di regole applicabile. I riferimenti normativi sono derivati dal sistema e non sono modificabili.',
   'templates.editor.field.locale.label': 'Lingua',
-  'templates.editor.field.locale.help': 'Lingua del contenuto del modello. Attualmente è supportato solo pt-PT.',
+  'templates.editor.field.locale.help':
+    'Lingua del contenuto del modello. Attualmente è supportato solo pt-PT.',
   'templates.editor.field.blocks.label': 'Blocchi',
-  'templates.editor.field.blocks.help': 'Sequenza di blocchi che compongono il documento (intestazione, paragrafo, chiave-valore, tabella di voto, blocco firma, interruzione di pagina o regola). È richiesto almeno un blocco.',
+  'templates.editor.field.blocks.help':
+    'Sequenza di blocchi che compongono il documento (intestazione, paragrafo, chiave-valore, tabella di voto, blocco firma, interruzione di pagina o regola). È richiesto almeno un blocco.',
   'templates.import.title': 'Importa modello',
   'templates.import.pickFile': 'Scegli file JSON',
   'templates.import.preflight': 'Convalida in corso…',
   'templates.import.valid': 'Il file è valido. Puoi confermare l’importazione.',
   'templates.import.invalid': 'Il file non è valido. Correggi gli errori prima di importare.',
   'templates.import.confirm': 'Conferma importazione',
-  'templates.delete.confirm': 'Eliminare il modello «{id}»? Questa azione non può essere annullata.',
+  'templates.delete.confirm':
+    'Eliminare il modello «{id}»? Questa azione non può essere annullata.',
   'templates.delete.success': 'Modello eliminato.',
   'templates.error.too_large': 'Il file del modello supera la dimensione massima consentita.',
   'templates.error.malformed': 'Il modello è malformato o contiene campi non riconosciuti.',
   'templates.error.invalid_id': 'L’identificatore non è valido. Usa il formato user-<nome>/v<n>.',
   'templates.error.no_blocks': 'Il modello deve contenere almeno un blocco.',
-  'templates.error.bad_template': 'Uno dei blocchi contiene un errore di espressione nel contenuto.',
+  'templates.error.bad_template':
+    'Uno dei blocchi contiene un errore di espressione nel contenuto.',
   'templates.error.unknown_threshold': 'Il modello fa riferimento a una soglia inesistente.',
   'templates.error.unsupported_locale': 'La lingua indicata non è supportata.',
   'templates.error.conflict': 'Esiste già un modello con questo identificatore.',
-  'templates.error.id_mismatch': 'L’identificatore del modello non corrisponde a quello del collegamento.',
+  'templates.error.id_mismatch':
+    'L’identificatore del modello non corrisponde a quello del collegamento.',
   'templates.toast.created': 'Modello «{id}» creato.',
   'templates.toast.updated': 'Modello «{id}» aggiornato.',
   'templates.toast.deleted': 'Modello «{id}» eliminato.',
@@ -2539,24 +2573,24 @@ export const itIT: Catalog = {
   // --- Qualified CMD signing (t57) ------------------------------------------------
   'settings.signing.family.hint': 'Consigliata: Chave Móvel Digital.',
   'settings.signing.requireQualified.hint':
-    'Regola solo lo stato «finalizzato (qualificato)» dell’atto: non blocca mai la sigillatura. Se attiva, un atto sigillato resta «in attesa di firma qualificata» finché non è presente una firma qualificata valida.',
-  'settings.signing.cmd.title': 'Chave Móvel Digital (CMD)',
+    'Con questa opzione attiva, il sigillo richiede la prova tecnica accettata di una firma qualificata sulla copia canonica congelata.',
+  'settings.signing.cmd.title': 'Chiave mobile digitale (CMD)',
   'settings.signing.cmd.intro':
     'La firma in produzione richiede le credenziali AMA (ApplicationId e certificato), fornite tramite variabili d’ambiente. Questi valori sono mostrati solo a scopo informativo.',
   'settings.signing.cmd.env': 'Ambiente',
   'settings.signing.cmd.envPreprod': 'Preproduzione (AMA)',
   'settings.signing.cmd.envProd': 'Produzione (AMA)',
-  'settings.signing.cmd.applicationId': 'ApplicationId',
+  'settings.signing.cmd.applicationId': 'ID applicazione',
   'settings.signing.cmd.unset': 'Non impostato',
   'settings.signing.cmd.amaCert': 'Certificato AMA',
   'settings.signing.cmd.configured': 'Configurato',
   'settings.signing.cmd.notConfigured': 'Non configurato',
   'signing.title': 'Firma qualificata',
-  'signing.unsigned.title': 'Verbale non ancora firmato in modo qualificato',
+  'signing.unsigned.title': 'Copia canonica non ancora firmata',
   'signing.unsigned.body':
-    'Il verbale è sigillato. Ora puoi firmarlo con una firma elettronica qualificata tramite Chave Móvel Digital.',
+    'I verbali sono “Sotto firma” e congelati. Firma ora la copia canonica prima di sigillarla.',
   'signing.required.body':
-    'Questa impostazione richiede una firma qualificata per finalizzare l’atto. Firma il verbale con Chave Móvel Digital per completarlo.',
+    "Questa configurazione richiede una firma accettata prima della sigillatura. Firmare la copia canonica per poter completare l'atto.",
   'signing.start': 'Firma con Chave Móvel Digital',
   'signing.credentials.intro':
     'Inserisci il numero di cellulare associato alla Chave Móvel Digital e il PIN di firma. Il PIN è usato solo per questa richiesta e non viene mai memorizzato.',
@@ -2582,14 +2616,14 @@ export const itIT: Catalog = {
   'signing.signed.signingTime': 'Data e ora della firma',
   'signing.signed.trustedList': 'Stato nell’Elenco di fiducia',
   'signing.signed.timestamp': 'Marca temporale',
-  'signing.signed.timestampPresent': 'Presente',
+  'signing.signed.timestampPresent': 'Regalo',
   'signing.signed.timestampAbsent': 'Assente',
   'signing.signed.digest': 'Impronta del PDF firmato',
   'signing.download': 'Scarica PDF firmato',
   'signing.technicalComparison.aria':
-    'Local technical comparison between sealed act and signed PDF',
+    'Confronto tecnico locale tra la copia canonica e il PDF firmato',
   'signing.technicalComparison.kicker': 'Technical comparison',
-  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.title': 'Metadati locali della copia canonica e del PDF firmato',
   'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
   'signing.technicalComparison.badge.local': 'Local metadata only',
   'signing.technicalComparison.badge.noClaim': 'No claim',
@@ -2601,14 +2635,13 @@ export const itIT: Catalog = {
   'signing.technicalComparison.status.notClaimed': 'Not claimed',
   'signing.technicalComparison.status.loading': 'Loading',
   'signing.technicalComparison.row.actId': 'Act ID',
-  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
   'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
   'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
   'signing.technicalComparison.row.signedDocument': 'Signed document',
   'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
   'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
   'signing.technicalComparison.detail.act': 'Act',
-  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.bundle': 'Fascio',
   'signing.technicalComparison.detail.document': 'Document',
   'signing.technicalComparison.detail.signature': 'Signature',
   'signing.technicalComparison.detail.report': 'Report',
@@ -2651,7 +2684,7 @@ export const itIT: Catalog = {
   'signing.ccBatch.title': 'Blocco locale con Carta di Cittadino',
   'signing.ccBatch.badge': 'Blocco locale',
   'signing.ccBatch.description':
-    'Firma più verbali sigillati con la Carta di Cittadino su questo computer.',
+    'Firma più copie canoniche di atti in “In firma” con la Carta del Cittadino su questo computer.',
   'signing.ccBatch.boundary.title': 'Solo firma CC locale',
   'signing.ccBatch.boundary.body':
     'Questo blocco usa l’endpoint locale e co-localizzato della Carta di Cittadino. Non è una firma in blocco CMD, CSC remota o certificata da un prestatore; l’interfaccia mostra solo l’evidenza restituita dal server.',
@@ -2668,7 +2701,7 @@ export const itIT: Catalog = {
     'Seleziona almeno due verbali per usare la firma in blocco.',
   'signing.ccBatch.add.label': 'ID del verbale',
   'signing.ccBatch.add.hint':
-    'Aggiungi gli ID dei verbali sigillati quando questa schermata non fornisce un elenco multi-documento.',
+    'Aggiungi gli ID atto in "Sotto firma" quando questa superficie non fornisce un elenco di più documenti.',
   'signing.ccBatch.add.action': 'Aggiungi',
   'signing.ccBatch.manual.label': 'ID manuale: {id}',
   'signing.ccBatch.maxReached': 'Raggiunto il limite di {max} verbali.',
@@ -2878,10 +2911,10 @@ export const itIT: Catalog = {
   'signing.evidence.renewal.action.addDocumentTimestamp': 'aggiungi marca temporale del documento',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
     'registra l’ora di validazione DSS della firma',
-  'signing.provider.cmd.title': 'Chave Móvel Digital',
+  'signing.provider.cmd.title': 'Chiave mobile digitale',
   'signing.provider.cmd.description':
     'Flusso remoto in due passaggi: PIN di firma e codice SMS. Consigliato quando la CMD è attiva.',
-  'signing.provider.cc.title': 'Cartão de Cidadão',
+  'signing.provider.cc.title': 'Carta del cittadino',
   'signing.provider.cc.description':
     'Firma locale con lettore collegato all’applicazione desktop. Il PIN non viene mai richiesto nel browser.',
   'signing.provider.pkcs12.title': 'Certificato locale PKCS#12/PFX',
@@ -2916,7 +2949,7 @@ export const itIT: Catalog = {
   'signing.official.provider.label': 'Prestatore',
   'signing.official.provider.hint':
     'Facoltativo. Registra il prestatore indicato dall’operatore; non viene usato come autorità.',
-  'signing.official.provider.placeholder': 'Autenticação.gov',
+  'signing.official.provider.placeholder': 'Authentication.gov',
   'signing.official.source.label': 'Fonte',
   'signing.official.source.hint':
     'Facoltativo. Ad esempio: consegna ufficiale, applicazione desktop, portale del prestatore.',
@@ -2974,7 +3007,7 @@ export const itIT: Catalog = {
   'signing.invites.hint':
     'Registra una consegna esterna e un token di monitoraggio. Non contatta un prestatore, non firma il PDF e non modifica il livello di evidenza.',
   'signing.invites.recipientName': 'Nome del firmatario',
-  'signing.invites.email': 'Email',
+  'signing.invites.email': 'E-mail',
   'signing.invites.providerHint': 'Prestatore o riferimento',
   'signing.invites.providerHint.placeholder': 'facoltativo',
   'signing.invites.expiresAt': 'Scade il',
@@ -3181,20 +3214,27 @@ export const itIT: Catalog = {
   'data.status.backup.pending': 'Creazione del backup…',
   'data.status.backup.done': 'Backup creato.',
   'data.status.backup.doneTitle': 'Backup creato',
-  'data.status.recoveryDrill.receiptEyebrow': 'Ricevuta dell\'esercitazione registrata',
+  'data.status.recoveryDrill.receiptEyebrow': "Ricevuta dell'esercitazione registrata",
   'data.status.recoveryDrill.verdictTitleOk': 'Backup verificato e ripristinabile',
   'data.status.recoveryDrill.verdictTitleFailed': 'Backup non verificato',
-  'data.status.recoveryDrill.verdictWhyOk': 'La pre-convalida e il ripristino isolato sono riusciti entrambi, senza alcun ripristino reale.',
-  'data.status.recoveryDrill.verdictWhyFailed': 'La verifica non è stata completata: non fare affidamento su questo backup senza indagare.',
+  'data.status.recoveryDrill.verdictWhyOk':
+    'La pre-convalida e il ripristino isolato sono riusciti entrambi, senza alcun ripristino reale.',
+  'data.status.recoveryDrill.verdictWhyFailed':
+    'La verifica non è stata completata: non fare affidamento su questo backup senza indagare.',
   'data.status.recoveryDrill.evidenceToggle': 'Prove tecniche',
   'data.status.syncHandoff.eyebrow': 'Prevalidazione locale del passaggio',
   'data.status.syncHandoff.verdictTitleReady': 'Prove locali pronte per la revisione del passaggio',
-  'data.status.syncHandoff.verdictTitleMissing': 'Prove locali insufficienti per rivedere il passaggio',
+  'data.status.syncHandoff.verdictTitleMissing':
+    'Prove locali insufficienti per rivedere il passaggio',
   'data.status.syncHandoff.verdictTitleBlocked': 'Revisione locale del passaggio bloccata',
-  'data.status.syncHandoff.verdictWhyReady': 'Le prove locali raccolte sono pronte per la revisione: non è stata eseguita alcuna sincronizzazione, importazione o modifica.',
-  'data.status.syncHandoff.verdictWhyMissing': 'Mancano prove locali verificate per rivedere il passaggio: raccogli ciò che manca prima di procedere.',
-  'data.status.syncHandoff.verdictWhyBlocked': 'Alcuni blocchi impediscono la revisione locale del passaggio: risolvili prima di procedere.',
-  'data.status.syncHandoff.nonMutating': 'Questa è solo una prevalidazione locale (simulazione): non esegue la sincronizzazione, il passaggio né alcuna modifica dei dati.',
+  'data.status.syncHandoff.verdictWhyReady':
+    'Le prove locali raccolte sono pronte per la revisione: non è stata eseguita alcuna sincronizzazione, importazione o modifica.',
+  'data.status.syncHandoff.verdictWhyMissing':
+    'Mancano prove locali verificate per rivedere il passaggio: raccogli ciò che manca prima di procedere.',
+  'data.status.syncHandoff.verdictWhyBlocked':
+    'Alcuni blocchi impediscono la revisione locale del passaggio: risolvili prima di procedere.',
+  'data.status.syncHandoff.nonMutating':
+    'Questa è solo una prevalidazione locale (simulazione): non esegue la sincronizzazione, il passaggio né alcuna modifica dei dati.',
   'data.status.syncHandoff.evidenceToggle': 'Prove tecniche',
   'data.status.syncHandoff.blockers': 'Blocchi',
   'data.status.syncHandoff.missingEvidence': 'Prove mancanti',
@@ -3306,7 +3346,8 @@ export const itIT: Catalog = {
   'integrity.restore.preflight.totalMemberBytes': 'Byte totali dei membri',
   'integrity.restore.preflight.nextStep': 'Passo successivo',
   'integrity.restore.preflight.verdictReady': 'Questo backup è valido e può essere ripristinato.',
-  'integrity.restore.preflight.verdictBlocked': 'Questo backup non ha superato la verifica: non usarlo per il ripristino.',
+  'integrity.restore.preflight.verdictBlocked':
+    'Questo backup non ha superato la verifica: non usarlo per il ripristino.',
   'integrity.restore.preflight.verdictError': 'Impossibile verificare questo backup.',
   'integrity.restore.preflight.evidenceToggle': 'Prove tecniche',
   'integrity.restore.preflight.errors': 'Errori',
@@ -3381,7 +3422,7 @@ export const itIT: Catalog = {
   'integrity.startOver.openingDateLabel': 'Data di apertura',
   'integrity.startOver.signatoriesLabel': 'Firmatari obbligatori',
   'integrity.startOver.signatoriesHint': 'Separa i nomi con virgole.',
-  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques, …',
+  'integrity.startOver.signatoriesPlaceholder': 'Amelia Marchese,…',
   'integrity.startOver.numberingLabel': 'Schema di numerazione',
   'integrity.startOver.confirm': 'Ricomincia',
   'integrity.startOver.pending': 'Riavvio…',
@@ -3822,7 +3863,7 @@ export const itIT: Catalog = {
   'externalInvite.document.id': 'Documento',
   'externalInvite.document.template': 'Modello',
   'externalInvite.document.profile': 'Profilo',
-  'externalInvite.document.digest': 'Digest PDF/A',
+  'externalInvite.document.digest': 'Digerire PDF/A',
   'externalInvite.workingCopy.title': 'Copia di lavoro',
   'externalInvite.workingCopy.body':
     'L’anteprima disponibile è Markdown non canonico. Il PDF/A conservato e qualsiasi PDF firmato non sono resi disponibili da questo invito.',
@@ -3835,7 +3876,7 @@ export const itIT: Catalog = {
     'È già stata registrata una risposta per questo invito. Questo stato non è una firma qualificata.',
   'externalInvite.technical.title': 'Risultato tecnico',
   'externalInvite.technical.envelope': 'Busta',
-  'externalInvite.technical.slot': 'Slot',
+  'externalInvite.technical.slot': 'Scanalatura',
   'externalInvite.technical.slotStatus': 'Stato dello slot',
   'externalInvite.technical.blocked.title': 'Aggiornamento tecnico dello slot bloccato',
   'externalInvite.technical.artifact.title': 'Artefatto tecnico conservato',
@@ -3862,7 +3903,7 @@ export const itIT: Catalog = {
   'settings.signing.providers.hint':
     'Metadati non segreti. L’interfaccia non raccoglie chiavi private, PIN, passphrase PKCS#12 o OTP in questa pagina.',
   'settings.signing.providerMode.cmd': 'CMD/SCMD',
-  'settings.signing.providerMode.cc': 'Cartão de Cidadão',
+  'settings.signing.providerMode.cc': 'Carta del cittadino',
   'settings.signing.providerMode.cscQtsp': 'CSC/QTSP',
   'settings.signing.providerMode.localPkcs12': 'PKCS#12 locale',
   'settings.signing.providerStatus.productionBlocked': 'Bloccato in produzione',
@@ -3945,17 +3986,17 @@ export const itIT: Catalog = {
   'trust.provider.analysis.value':
     '{granted} concessi · {history} con cronologia · {supply} con punti',
   'trust.provider.duplicateNames': 'Nomi duplicati',
-  'trust.tsa.title': 'TSA / RFC 3161',
+  'trust.tsa.title': 'TSA/RFC 3161',
   'trust.tsa.summary.aria': 'Riepilogo TSA',
   'trust.tsa.configuredUrl': 'URL configurato',
   'trust.tsa.status': 'Stato',
-  'trust.tsa.fixture': 'Fixture',
+  'trust.tsa.fixture': 'Apparecchio',
   'trust.tsa.trustedRecords': 'Record affidabili',
   'trust.tsa.configuration': 'Configurazione',
   'trust.tsa.profile': 'Profilo',
   'trust.tsa.acceptedHash': 'Hash accettato',
   'trust.tsa.acceptedHash.aria': 'Hash accettato completo: {digest}',
-  'trust.tsa.fixtureProof': 'Fixture e prova',
+  'trust.tsa.fixtureProof': 'Appuntamento e prova',
   'trust.tsa.timestampToken': 'Token di timestamp',
   'trust.tsa.policySerial': 'Politica / serie',
   'trust.tsa.policyAnalysis': 'Analisi della politica',
@@ -3984,11 +4025,11 @@ export const itIT: Catalog = {
   'trust.tsa.statusReady': 'Pronto',
   'trust.tsa.statusUnconfigured': 'Non configurato',
   'trust.tsa.statusError': 'Errore',
-  'trust.tsa.probePassed': 'Fixture OK',
+  'trust.tsa.probePassed': 'Apparecchio OK',
   'trust.tsa.probeFailed': 'Fixture non riuscito',
   'trust.tsa.policyAdvisory': 'Consultiva',
   'trust.tsa.policyTrusted': 'Affidabile',
-  'trust.tsa.token': 'Token',
+  'trust.tsa.token': 'Gettone',
   'trust.tsa.tokenBytes': '{bytes} byte',
   'trust.tsa.type.all': 'Tutti i TSA',
   'trust.tsa.type.qtst': 'Qualificato QTST',
@@ -4044,7 +4085,7 @@ export const itIT: Catalog = {
   'signing.asic.level.label': 'Livello XAdES',
   'signing.asic.role.label': 'Tipo di firma',
   'signing.asic.role.xades': 'XAdES',
-  'signing.asic.role.cades': 'CAdES',
+  'signing.asic.role.cades': 'CADES',
   'signing.asic.role.hint': 'Si applica solo ad ASiC-E; ASiC-S è sempre XAdES.',
   'signing.asic.archiveTimestamp.label': 'Manifesto d’archivio con marca temporale',
   'signing.asic.archiveTimestamp.hint': 'Solo ASiC-E; richiede un prestatore TSA configurato.',
@@ -4110,7 +4151,7 @@ export const itIT: Catalog = {
     'Nessuna ricevuta di revisione della delibera per iscritto registrata.',
   'acts.writtenResolution.receipt.reviewedEvidence': 'Evidenza revisionata',
   'acts.writtenResolution.receipt.notRecorded': 'Non registrato',
-  'acts.writtenResolution.receipt.note': 'Nota',
+  'acts.writtenResolution.receipt.note': 'Avviso',
   'acts.writtenResolution.receipt.noNote': 'Nessuna nota registrata',
   'acts.writtenResolution.receipt.boundaryFlags': 'Indicatori di limite',
   'acts.writtenResolution.form.label': 'Aggiungi ricevuta di delibera per iscritto',
@@ -4257,8 +4298,8 @@ export const itIT: Catalog = {
     'Le credenziali sono cifrate, ma non è riservatezza completa finché non attivi SQLCipher o il sigillo del sistema operativo.',
   'settings.providerCredentials.protection.strictBlocked':
     'La modalità rigorosa è attiva: puoi memorizzare le credenziali solo dopo aver attivato una protezione riservata.',
-  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
-  'settings.providerCredentials.mode.csc': 'QTSP CSC',
+  'settings.providerCredentials.mode.cmd': 'Chiave mobile digitale (CMD)',
+  'settings.providerCredentials.mode.csc': 'QTSPCSC',
   'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
   'settings.providerCredentials.mode.pkcs12': 'PKCS#12 locale',
   'settings.providerCredentials.createdToast': 'Voce creata.',
@@ -4312,8 +4353,8 @@ export const itIT: Catalog = {
   'settings.providerCredentials.field.httpBasicUsername': 'Nome utente HTTP Basic',
   'settings.providerCredentials.field.httpBasicPassword': 'Password HTTP Basic',
   'settings.providerCredentials.field.amaCertPem': 'Certificato AMA (PEM)',
-  'settings.providerCredentials.field.clientId': 'Client ID',
-  'settings.providerCredentials.field.clientSecret': 'Client secret',
+  'settings.providerCredentials.field.clientId': 'ID cliente',
+  'settings.providerCredentials.field.clientSecret': 'Segreto del cliente',
   'settings.providerCredentials.field.accessToken': 'Token di accesso',
   'settings.providerCredentials.field.secret': 'Segreto',
   'settings.providerCredentials.field.passphrase': 'Passphrase',
@@ -4330,7 +4371,7 @@ export const itIT: Catalog = {
   'settings.providerCredentials.field.sandbox': 'Sandbox',
   'settings.providerCredentials.field.environment': 'Ambiente',
   'settings.providerCredentials.field.friendlyName': 'Nome descrittivo',
-  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.localKeyId': 'ID chiave locale (esadecimale)',
   'settings.providerCredentials.field.pfx': 'File PKCS#12/PFX',
   'settings.providerCredentials.help.mode':
     'Tipo di fornitore di firma da configurare. Es.: CSC/QTSP per la firma remota, PKCS#12 per un certificato locale.',
@@ -4380,11 +4421,14 @@ export const itIT: Catalog = {
     'Seleziona l’identità in un .pfx in base al localKeyId in esadecimale. Es.: «3a7f9c2b».',
   'settings.privacy.subnav.aria': 'Aree della privacy',
   'settings.privacy.subtab.registers.label': 'Registri',
-  'settings.privacy.subtab.registers.desc': 'Responsabili, valutazioni d’impatto (DPIA), manuali di violazione e controlli di trasferimento.',
+  'settings.privacy.subtab.registers.desc':
+    'Responsabili, valutazioni d’impatto (DPIA), manuali di violazione e controlli di trasferimento.',
   'settings.privacy.subtab.retention.label': 'Conservazione',
-  'settings.privacy.subtab.retention.desc': 'Criteri di conservazione, candidati scaduti, simulazione e coda di revisione delle esecuzioni.',
+  'settings.privacy.subtab.retention.desc':
+    'Criteri di conservazione, candidati scaduti, simulazione e coda di revisione delle esecuzioni.',
   'settings.privacy.subtab.guidance.label': 'Guida',
-  'settings.privacy.subtab.guidance.desc': 'Modello DPIA locale e note sulla revisione consultiva periodica.',
+  'settings.privacy.subtab.guidance.desc':
+    'Modello DPIA locale e note sulla revisione consultiva periodica.',
   'settings.privacy.status.all': 'Tutti gli stati',
   'settings.privacy.status.draft': 'Bozza',
   'settings.privacy.status.active': 'Attivo',
@@ -4406,13 +4450,18 @@ export const itIT: Catalog = {
   'settings.privacy.evidence.none': 'Nessuna ricevuta',
   'settings.privacy.evidence.noDetail': 'Nessun dettaglio',
   'settings.privacy.evidence.receiptBy': '{kind} da {actor}',
-  'settings.privacy.evidence.dpiaReceiptNote': 'Nessun deposito all’autorità · Nessuna certificazione di conformità',
-  'settings.privacy.evidence.breachReceiptNote': 'Nessuna notifica all’autorità · Nessuna notifica agli interessati',
-  'settings.privacy.evidence.transferReceiptNote': 'Nessuna approvazione · Nessuna esecuzione del trasferimento',
+  'settings.privacy.evidence.dpiaReceiptNote':
+    'Nessun deposito all’autorità · Nessuna certificazione di conformità',
+  'settings.privacy.evidence.breachReceiptNote':
+    'Nessuna notifica all’autorità · Nessuna notifica agli interessati',
+  'settings.privacy.evidence.transferReceiptNote':
+    'Nessuna approvazione · Nessuna esecuzione del trasferimento',
   'settings.privacy.register.processor.title': 'Responsabili GDPR',
-  'settings.privacy.register.processor.lede': 'Registro dei responsabili, sub-responsabili e categorie di dati trattati da terzi.',
+  'settings.privacy.register.processor.lede':
+    'Registro dei responsabili, sub-responsabili e categorie di dati trattati da terzi.',
   'settings.privacy.register.dpia.title': 'DPIA',
-  'settings.privacy.register.dpia.lede': 'Valutazioni d’impatto con finalità, base giuridica, categorie di dati e rischio attuale.',
+  'settings.privacy.register.dpia.lede':
+    'Valutazioni d’impatto con finalità, base giuridica, categorie di dati e rischio attuale.',
   'settings.privacy.register.column.processor': 'Responsabile',
   'settings.privacy.register.column.dpia': 'DPIA',
   'settings.privacy.register.column.purpose': 'Finalità',
@@ -4420,9 +4469,11 @@ export const itIT: Catalog = {
   'settings.privacy.register.column.subprocessors': 'Sub-responsabili',
   'settings.privacy.register.column.updated': 'Aggiornato',
   'settings.privacy.guidance.title': 'Modello DPIA locale',
-  'settings.privacy.guidance.lede': 'Un pacchetto locale/offline di campi, domande e controlli per una DPIA; non legge né mostra record DPIA, responsabili, interessati, destinatari, note, basi giuridiche o segreti.',
+  'settings.privacy.guidance.lede':
+    'Un pacchetto locale/offline di campi, domande e controlli per una DPIA; non legge né mostra record DPIA, responsabili, interessati, destinatari, note, basi giuridiche o segreti.',
   'settings.privacy.guidance.empty.title': 'Modello non disponibile',
-  'settings.privacy.guidance.empty.body': 'Il pacchetto DPIA locale non è stato restituito dall’API.',
+  'settings.privacy.guidance.empty.body':
+    'Il pacchetto DPIA locale non è stato restituito dall’API.',
   'settings.privacy.guidance.dl.id': 'Identificatore',
   'settings.privacy.guidance.dl.scope': 'Ambito',
   'settings.privacy.guidance.dl.execution': 'Esecuzione',
@@ -4432,33 +4483,51 @@ export const itIT: Catalog = {
   'settings.privacy.guidance.required': 'obbligatorio: {value}',
   'settings.privacy.guidance.noClaims': 'Flag senza attestazione',
   'settings.privacy.guidance.operatorActions': 'Azioni dell’operatore',
-  'settings.privacy.help.processor': 'Un responsabile tratta dati personali per conto dell’organizzazione. Questo registro documenta chi tratta, per cosa, con quale base giuridica e quali sub-responsabili usa.',
-  'settings.privacy.help.dpia': 'Una DPIA (valutazione d’impatto sulla protezione dei dati) documenta i rischi di un trattamento e le misure per ridurli. Questo record è solo locale e consultivo.',
-  'settings.privacy.help.breach': 'Un manuale di risposta alle violazioni raccoglie in anticipo i canali di rilevamento, i passi di contenimento e chi notificare. Registrarlo qui non notifica nessuno.',
-  'settings.privacy.help.transfer': 'Un controllo di trasferimento documenta un trasferimento di dati fuori dallo SEE: destinatario, paese, meccanismo giuridico e garanzie. Registrarlo non approva né esegue il trasferimento.',
-  'settings.privacy.help.retention': 'Un criterio di conservazione stabilisce per quanto tempo una categoria di dati è conservata e l’azione prevista alla fine. Quest’area registra il criterio; non elimina dati.',
-  'settings.privacy.help.dryRun': 'La simulazione mostra quali criteri corrisponderebbero a un ambito/categoria, senza eseguire nulla. Anticipa l’effetto di un criterio.',
-  'settings.privacy.help.dueCandidates': 'Una scansione di sola lettura elenca i record con periodo di conservazione scaduto, per la revisione delle prove. Non elimina, anonimizza né conclude alcuna conformità legale.',
-  'settings.privacy.help.execution': 'La coda di esecuzione conserva le richieste di conservazione persistite per la revisione operativa. Chiudere una revisione registra la decisione; non modifica i record di origine.',
-  'settings.privacy.help.legalHold': 'Un blocco legale impedisce l’eliminazione di record soggetti a contenzioso o obbligo di conservazione. Questo pannello riepiloga i blocchi esistenti.',
-  'settings.privacy.help.purpose': 'La finalità descrive, in linguaggio semplice, per cosa i dati sono trattati.',
-  'settings.privacy.help.legalBasis': 'La base giuridica è il fondamento del GDPR che autorizza il trattamento (es. consenso, contratto, obbligo legale).',
-  'settings.privacy.help.risk': 'Il livello di rischio è una valutazione qualitativa dell’impatto potenziale sugli interessati.',
-  'settings.privacy.help.status': 'Lo stato indica se il record è una bozza, attivo, in revisione o ritirato.',
+  'settings.privacy.help.processor':
+    'Un responsabile tratta dati personali per conto dell’organizzazione. Questo registro documenta chi tratta, per cosa, con quale base giuridica e quali sub-responsabili usa.',
+  'settings.privacy.help.dpia':
+    'Una DPIA (valutazione d’impatto sulla protezione dei dati) documenta i rischi di un trattamento e le misure per ridurli. Questo record è solo locale e consultivo.',
+  'settings.privacy.help.breach':
+    'Un manuale di risposta alle violazioni raccoglie in anticipo i canali di rilevamento, i passi di contenimento e chi notificare. Registrarlo qui non notifica nessuno.',
+  'settings.privacy.help.transfer':
+    'Un controllo di trasferimento documenta un trasferimento di dati fuori dallo SEE: destinatario, paese, meccanismo giuridico e garanzie. Registrarlo non approva né esegue il trasferimento.',
+  'settings.privacy.help.retention':
+    'Un criterio di conservazione stabilisce per quanto tempo una categoria di dati è conservata e l’azione prevista alla fine. Quest’area registra il criterio; non elimina dati.',
+  'settings.privacy.help.dryRun':
+    'La simulazione mostra quali criteri corrisponderebbero a un ambito/categoria, senza eseguire nulla. Anticipa l’effetto di un criterio.',
+  'settings.privacy.help.dueCandidates':
+    'Una scansione di sola lettura elenca i record con periodo di conservazione scaduto, per la revisione delle prove. Non elimina, anonimizza né conclude alcuna conformità legale.',
+  'settings.privacy.help.execution':
+    'La coda di esecuzione conserva le richieste di conservazione persistite per la revisione operativa. Chiudere una revisione registra la decisione; non modifica i record di origine.',
+  'settings.privacy.help.legalHold':
+    'Un blocco legale impedisce l’eliminazione di record soggetti a contenzioso o obbligo di conservazione. Questo pannello riepiloga i blocchi esistenti.',
+  'settings.privacy.help.purpose':
+    'La finalità descrive, in linguaggio semplice, per cosa i dati sono trattati.',
+  'settings.privacy.help.legalBasis':
+    'La base giuridica è il fondamento del GDPR che autorizza il trattamento (es. consenso, contratto, obbligo legale).',
+  'settings.privacy.help.risk':
+    'Il livello di rischio è una valutazione qualitativa dell’impatto potenziale sugli interessati.',
+  'settings.privacy.help.status':
+    'Lo stato indica se il record è una bozza, attivo, in revisione o ritirato.',
   'settings.privacy.legalHold.dl.candidates': 'Candidati bloccati da blocco legale',
   'settings.privacy.legalHold.dl.executions': 'Record di esecuzione bloccati da blocco legale',
   'settings.privacy.legalHold.dl.openReviews': 'Revisioni bloccate ancora aperte',
   'settings.privacy.legalHold.dl.flags': 'Flag di confine',
-  'settings.privacy.legalHold.source': 'Questi numeri provengono dalla scansione GET dei candidati scaduti e dalla coda di esecuzione della conservazione già persistita; questo pannello non effettua chiamate di mutazione.',
+  'settings.privacy.legalHold.source':
+    'Questi numeri provengono dalla scansione GET dei candidati scaduti e dalla coda di esecuzione della conservazione già persistita; questo pannello non effettua chiamate di mutazione.',
   'settings.privacy.execution.status.awaitingReview': 'In attesa di revisione',
   'settings.privacy.execution.status.blocked': 'Bloccato',
   'settings.privacy.execution.status.executed': 'Eseguito',
-  'settings.privacy.dueCandidates.lede': 'Scansione GET di sola lettura per la revisione delle prove. Questa sezione non elimina, anonimizza né conclude alcuna conformità legale.',
-  'settings.privacy.dueCandidates.summary': 'Generato il {generated} · {scope} / {category} · {active} candidato/i attivo/i · {suppressed} soppresso/i da evidenza delimitata · {withResolution} candidato/i con disposizione locale · {resolutions} record di disposizione',
-  'settings.privacy.dueCandidates.suppressedNote': 'I candidati soppressi da evidenza delimitata non sono elencati nella tabella e non hanno pulsanti di azione; esamina l’evidenza nella coda/cronologia di esecuzione.',
+  'settings.privacy.dueCandidates.lede':
+    'Scansione GET di sola lettura per la revisione delle prove. Questa sezione non elimina, anonimizza né conclude alcuna conformità legale.',
+  'settings.privacy.dueCandidates.summary':
+    'Generato il {generated} · {scope} / {category} · {active} candidato/i attivo/i · {suppressed} soppresso/i da evidenza delimitata · {withResolution} candidato/i con disposizione locale · {resolutions} record di disposizione',
+  'settings.privacy.dueCandidates.suppressedNote':
+    'I candidati soppressi da evidenza delimitata non sono elencati nella tabella e non hanno pulsanti di azione; esamina l’evidenza nella coda/cronologia di esecuzione.',
   'settings.privacy.dueCandidates.suppressedSummary': 'Riepilogo: {note}',
   'settings.privacy.dueCandidates.empty.title': 'Nessun candidato scaduto',
-  'settings.privacy.dueCandidates.empty.body': 'Non ci sono candidati scaduti dalla scansione di sola lettura.',
+  'settings.privacy.dueCandidates.empty.body':
+    'Non ci sono candidati scaduti dalla scansione di sola lettura.',
   'settings.privacy.dueCandidates.column.record': 'Libro e record',
   'settings.privacy.dueCandidates.column.policy': 'Criterio',
   'settings.privacy.dueCandidates.column.due': 'Scadenza e stato',
@@ -4486,8 +4555,10 @@ export const itIT: Catalog = {
   'settings.privacy.dueCandidates.localDispositionRecorded': 'Disposizione locale registrata',
   'settings.privacy.dueCandidates.recordedByOn': 'Registrato da {actor} il {date}',
   'settings.privacy.dueCandidates.evidenceCountFlags': 'Evidenze: {count} · flag operativi: false',
-  'settings.privacy.dueCandidates.onlyNoActionEvidence': 'Solo record delimitato di evidenza senza azione.',
-  'settings.privacy.dueCandidates.onlyArchiveEvidence': 'Solo record delimitato di evidenza di archiviazione.',
+  'settings.privacy.dueCandidates.onlyNoActionEvidence':
+    'Solo record delimitato di evidenza senza azione.',
+  'settings.privacy.dueCandidates.onlyArchiveEvidence':
+    'Solo record delimitato di evidenza di archiviazione.',
   'settings.privacy.dueCandidates.onlyReviewEvidence': 'Solo revisione dell’evidenza.',
   'settings.privacy.dueCandidates.localDispositionExists': 'Disposizione locale esistente',
   'settings.privacy.dueCandidates.recordDisposition': 'Registra disposizione locale',
@@ -4500,16 +4571,22 @@ export const itIT: Catalog = {
   'settings.privacy.dueCandidates.recordingArchive': 'Registrazione evidenza di archiviazione',
   'settings.privacy.dueCandidates.requestReview': 'Richiedi revisione dell’evidenza',
   'settings.privacy.dueCandidates.recordingReview': 'Registrazione revisione',
-  'settings.privacy.dueCandidates.noDuplicate': 'Non viene creata alcuna richiesta duplicata; la scansione è di sola lettura.',
+  'settings.privacy.dueCandidates.noDuplicate':
+    'Non viene creata alcuna richiesta duplicata; la scansione è di sola lettura.',
   'settings.privacy.dueCandidates.requestedAt': 'Richiesto il {date}',
   'settings.privacy.dueCandidates.queueEvidenceState': 'Stato evidenza in coda',
   'settings.privacy.dueCandidates.queueNextStep': 'Prossimo passo in coda',
-  'settings.privacy.dueCandidates.noActionHint': 'Registra solo evidenza delimitata senza azione; non approva né esegue lo smaltimento.',
-  'settings.privacy.dueCandidates.archiveHint': 'Registra solo evidenza delimitata di archiviazione; non approva né esegue lo smaltimento.',
-  'settings.privacy.dueCandidates.reviewHint': 'Registra una richiesta review_only; non approva né esegue lo smaltimento.',
-  'settings.privacy.execution.lede': 'Record di esecuzione della conservazione persistiti per la revisione operativa.',
+  'settings.privacy.dueCandidates.noActionHint':
+    'Registra solo evidenza delimitata senza azione; non approva né esegue lo smaltimento.',
+  'settings.privacy.dueCandidates.archiveHint':
+    'Registra solo evidenza delimitata di archiviazione; non approva né esegue lo smaltimento.',
+  'settings.privacy.dueCandidates.reviewHint':
+    'Registra una richiesta review_only; non approva né esegue lo smaltimento.',
+  'settings.privacy.execution.lede':
+    'Record di esecuzione della conservazione persistiti per la revisione operativa.',
   'settings.privacy.execution.empty.title': 'Nessun record di esecuzione',
-  'settings.privacy.execution.empty.body': 'La coda di revisione non ha ancora richieste persistite.',
+  'settings.privacy.execution.empty.body':
+    'La coda di revisione non ha ancora richieste persistite.',
   'settings.privacy.execution.column.request': 'Richiesta',
   'settings.privacy.execution.column.blockers': 'Blocchi e approvazioni',
   'settings.privacy.execution.column.nextStep': 'Prossimo passo',
@@ -4524,31 +4601,499 @@ export const itIT: Catalog = {
   'settings.privacy.execution.recordReview': 'Registra revisione operativa',
   'settings.privacy.execution.recordingReview': 'Registrazione revisione',
   'settings.privacy.execution.toast.reviewed': 'Revisione operativa registrata.',
-  'settings.privacy.toast.archiveEvidenceRecorded': 'Evidenza delimitata di archiviazione registrata.',
+  'settings.privacy.toast.archiveEvidenceRecorded':
+    'Evidenza delimitata di archiviazione registrata.',
   'settings.privacy.toast.noActionEvidenceRecorded': 'Evidenza delimitata senza azione registrata.',
-  'settings.privacy.toast.reviewRequestRecorded': 'Richiesta di revisione dell’evidenza registrata.',
-  'settings.privacy.toast.archiveEvidenceSent': 'Richiesta di evidenza di archiviazione inviata; nessun record restituito.',
-  'settings.privacy.toast.noActionEvidenceSent': 'Richiesta di evidenza senza azione inviata; nessun record restituito.',
-  'settings.privacy.toast.reviewRequestSent': 'Richiesta di revisione inviata; nessun record di esecuzione restituito.',
+  'settings.privacy.toast.reviewRequestRecorded':
+    'Richiesta di revisione dell’evidenza registrata.',
+  'settings.privacy.toast.archiveEvidenceSent':
+    'Richiesta di evidenza di archiviazione inviata; nessun record restituito.',
+  'settings.privacy.toast.noActionEvidenceSent':
+    'Richiesta di evidenza senza azione inviata; nessun record restituito.',
+  'settings.privacy.toast.reviewRequestSent':
+    'Richiesta di revisione inviata; nessun record di esecuzione restituito.',
   'settings.privacy.toast.dispositionRecorded': 'Disposizione locale dell’evidenza registrata.',
-  'settings.privacy.advisory.detail.noReceipt': 'Nessuna ricevuta locale di revisione/esercitazione.',
-  'settings.privacy.advisory.detail.underReview': 'Stato locale in revisione, nessuna conclusione legale.',
+  'settings.privacy.advisory.detail.noReceipt':
+    'Nessuna ricevuta locale di revisione/esercitazione.',
+  'settings.privacy.advisory.detail.underReview':
+    'Stato locale in revisione, nessuna conclusione legale.',
   'settings.privacy.advisory.detail.nextReview': 'Prossima revisione locale: {date}.',
   'settings.privacy.advisory.detail.lastEvidence': 'Ultima evidenza: {date}.',
-  'settings.privacy.advisory.detail.noClaims': 'Nessuna notifica, approvazione, esecuzione o certificazione.',
-  'settings.privacy.help.guidance': 'Un pacchetto locale e offline di campi, domande e controlli per guidare una DPIA; è solo una guida e non sostituisce la valutazione legale.',
+  'settings.privacy.advisory.detail.noClaims':
+    'Nessuna notifica, approvazione, esecuzione o certificazione.',
+  'settings.privacy.help.guidance':
+    'Un pacchetto locale e offline di campi, domande e controlli per guidare una DPIA; è solo una guida e non sostituisce la valutazione legale.',
   'data.status.subnav.aria': 'Sottosezioni della gestione dei dati',
   'data.status.tab.storage': 'Archiviazione',
-  'data.status.tab.storage.desc': 'Utilizzo dello spazio, permessi della cartella dati e pulizia dei file locali.',
+  'data.status.tab.storage.desc':
+    'Utilizzo dello spazio, permessi della cartella dati e pulizia dei file locali.',
   'data.status.tab.backup': 'Copie e ripristino',
-  'data.status.tab.backup.desc': 'Backup operativo, esercitazioni di ripristino e pre-verifiche di ripristino e handoff.',
+  'data.status.tab.backup.desc':
+    'Backup operativo, esercitazioni di ripristino e pre-verifiche di ripristino e handoff.',
   'data.status.tab.keys': 'Chiavi e reimpostazione',
-  'data.status.tab.keys.desc': 'Rotazione della chiave di cifratura del database e operazioni di reimpostazione o riavvio.',
-  'data.status.help.recoveryDrill': 'Un’esercitazione di ripristino controlla e registra se una copia di backup può essere aperta e letta in una prova locale controllata. Non esegue un ripristino reale, non garantisce l’utilizzabilità futura né valida la custodia off-site.',
-  'data.status.help.keyRotation': 'La rotazione sostituisce la chiave di cifratura SQLCipher del database durevole mantenendo i dati. La pre-verifica è di sola lettura; l’esecuzione applica il rekey.',
-  'data.status.help.exportCleanup': 'Rimuove solo i vecchi file di esportazione locali secondo la politica configurata. Non è cancellazione legale, completamento GDPR né eliminazione di archivio.',
-  'data.status.help.crashCleanup': 'Rimuove le vecchie diagnostiche di crash locali salvate su disco. Non tocca il ledger né i dati di dominio.',
-  'data.status.help.platformLogsCleanup': 'Rimuove solo la coda locale dei log di piattaforma salvata in platform-logs.json. Non rimuove stdout/stderr, SIEM, ledger o catena di audit.',
-  'data.status.help.startOver': 'Ricomincia archivia la cronologia attuale e prosegue con dati di dominio vuoti, mantenendo utenti e impostazioni. Una reimpostazione, invece, cancella i dati in modo distruttivo.',
-  'data.status.help.reset': 'Cancella dati elimina i dati di dominio ma preserva il ledger; un ripristino di fabbrica cancella tutto in un’istanza nuova. Tutte richiedono la frase esatta e la riautenticazione.',
+  'data.status.tab.keys.desc':
+    'Rotazione della chiave di cifratura del database e operazioni di reimpostazione o riavvio.',
+  'data.status.help.recoveryDrill':
+    'Un’esercitazione di ripristino controlla e registra se una copia di backup può essere aperta e letta in una prova locale controllata. Non esegue un ripristino reale, non garantisce l’utilizzabilità futura né valida la custodia off-site.',
+  'data.status.help.keyRotation':
+    'La rotazione sostituisce la chiave di cifratura SQLCipher del database durevole mantenendo i dati. La pre-verifica è di sola lettura; l’esecuzione applica il rekey.',
+  'data.status.help.exportCleanup':
+    'Rimuove solo i vecchi file di esportazione locali secondo la politica configurata. Non è cancellazione legale, completamento GDPR né eliminazione di archivio.',
+  'data.status.help.crashCleanup':
+    'Rimuove le vecchie diagnostiche di crash locali salvate su disco. Non tocca il ledger né i dati di dominio.',
+  'data.status.help.platformLogsCleanup':
+    'Rimuove solo la coda locale dei log di piattaforma salvata in platform-logs.json. Non rimuove stdout/stderr, SIEM, ledger o catena di audit.',
+  'data.status.help.startOver':
+    'Ricomincia archivia la cronologia attuale e prosegue con dati di dominio vuoti, mantenendo utenti e impostazioni. Una reimpostazione, invece, cancella i dati in modo distruttivo.',
+  'data.status.help.reset':
+    'Cancella dati elimina i dati di dominio ma preserva il ledger; un ripristino di fabbrica cancella tutto in un’istanza nuova. Tutte richiedono la frase esatta e la riautenticazione.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.convening.advisory.title': 'Avviso locale di convocazione legale',
+  'acts.convening.advisory.missingMeetingDate':
+    'Registrare la data della riunione per calcolare la data di avviso locale.',
+  'acts.convening.advisory.missingEvidence':
+    "Registrare la data/il mezzo di spedizione, l'effettivo preavviso e il riferimento delle prove conservate.",
+  'acts.convening.advisory.noClaims':
+    'Solo metadati locali; non afferma la sufficienza legale, la consegna esterna valida o il completamento del flusso di lavoro.',
+  'acts.convening.recipients.title': 'Destinatari della chiamata',
+  'acts.convening.recipients.hint':
+    'Documenti locali utilizzati come prova della spedizione. Le righe senza nome non vengono salvate.',
+  'acts.convening.recipients.add': 'Aggiungi destinatario',
+  'acts.convening.recipients.empty':
+    'Nessun destinatario registrato. Aggiungi almeno un destinatario prima di registrare la prova di spedizione locale.',
+  'acts.convening.recipients.rowLabel': 'Destinatario {number}',
+  'acts.convening.recipients.name': 'Nome',
+  'acts.convening.recipients.contact': 'Contatto',
+  'acts.convening.recipients.contactPlaceholder':
+    'Ad esempio: email, indirizzo, account o contatto interno',
+  'acts.convening.recipients.channel': 'Abbastanza',
+  'acts.convening.recipients.dispatchedAt': 'Spedito',
+  'acts.convening.recipients.reference': 'Riferimento di spedizione',
+  'acts.convening.recipients.referencePlaceholder': 'Es.: RR123456789PT, ricevuta, ID messaggio',
+  'acts.convening.recipients.remove': 'Rimuovi destinatario',
+  'acts.convening.evidence.aria': "Prova locale dell'emissione della citazione",
+  'acts.convening.evidence.boundary':
+    "Registra solo le prove locali di spedizione e provenienza nel registro. Non invia e-mail/SMS, non conferma la consegna esterna, non afferma la sufficienza giuridica, il completamento del flusso di lavoro, l'accettazione tramite registrazione/DRE o l'accettazione da parte di un fornitore.",
+  'acts.convening.evidence.ready':
+    'Contrassegnare {count} destinatario/i esistente/i con la data indicata e, se completato, il mezzo e il riferimento locale.',
+  'acts.convening.evidence.saveRecipients':
+    "Conservare i verbali per persistere i destinatari prima di registrare la prova locale dell'invio.",
+  'acts.convening.evidence.requirements':
+    "Richiede destinatari già esistenti nell'avviso e una data di spedizione completata.",
+  'acts.convening.evidence.recording': 'Registrazione di prove locali',
+  'acts.convening.evidence.record': 'Registra la spedizione locale',
+  'acts.convening.evidence.recorded': 'Registrata la prova locale della spedizione.',
+  'templates.editor.field.id.placeholder': 'utente-schienale-ata/v1',
+  'entities.fiscalYearEnd.cardTitle': 'Anno fiscale',
+  'entities.fiscalYearEnd.fieldLabel': "Chiusura dell'esercizio",
+  'entities.fiscalYearEnd.inputLabel': "Chiusura dell'anno (MM-GG)",
+  'entities.fiscalYearEnd.hint':
+    'Opzionale. Vuoto mantiene il blocco per impostazione predefinita su 12-31.',
+  'entities.fiscalYearEnd.invalid': 'Utilizza una data valida nel formato MM-GG.',
+  'entities.fiscalYearEnd.placeholder': '12-31',
+  'entities.fiscalYearEnd.updated': 'Anno fiscale aggiornato.',
+  'entities.fiscalYearEnd.saving': 'Per salvare',
+  'entities.fiscalYearEnd.save': 'Salva zip',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'uiLiteral.actDocumentPanel.gereConvocatoriasEAposOSeloCertidoesE':
+    'Genera avvisi e, dopo la sigillatura, certificati ed estratti senza sostituire il canonico PDF/A.',
+  'uiLiteral.actDocumentPanel.minutasGeradas': 'Minuti generati',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecaoTecnicaNaoEncontrouMembrosCadesOu':
+    "L'ispezione tecnica non ha rilevato membri CAdES o XAdES riconosciuti nel container.",
+  'uiLiteral.asicSignatureInspectorPanel.aInspecionarContentorAsicLocal':
+    'Ispezione del contenitore ASiC locale in corso...',
+  'uiLiteral.asicSignatureInspectorPanel.assinaturasTecnicas': 'Abbonamenti tecnici',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadores': 'Bloccanti',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadoresEDiagnosticosDeAssinatura':
+    'Blocchi e diagnostica delle firme',
+  'uiLiteral.asicSignatureInspectorPanel.contentorAsic': 'Contenitore ASiC',
+  'uiLiteral.asicSignatureInspectorPanel.diagnosticoDeManifestos': 'Diagnosi manifesta',
+  'uiLiteral.asicSignatureInspectorPanel.evidenciaEmbebidaEBloqueadores':
+    'Prove incorporate e bloccanti',
+  'uiLiteral.asicSignatureInspectorPanel.indicadores': 'Indicatori',
+  'uiLiteral.asicSignatureInspectorPanel.inspecaoTecnicaLocal': 'Sopralluogo tecnico in loco',
+  'uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic': 'Ispettore tecnico ASiC',
+  'uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao':
+    'Legge solo i contenitori .anice/.sce/.zip locali. Non firma, non memorizza artefatti, non chiama i provider e non consulta in tempo reale TSL/TSA/OCSP/CRL.',
+  'uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas': 'Limitazioni esplicite',
+  'uiLiteral.asicSignatureInspectorPanel.ocorrencias': 'Occorrenze',
+  'uiLiteral.asicSignatureInspectorPanel.oEndpointRecusouAInspecaoNenhumArtefactoFoi':
+    "L'endpoint ha rifiutato l'ispezione; nessun manufatto è stato firmato, salvato o alterato.",
+  'uiLiteral.asicSignatureInspectorPanel.perfilDoContentor': 'Profilo del contenitore',
+  'uiLiteral.asicSignatureInspectorPanel.resultadoAsic': 'Risultato ASiC',
+  'uiLiteral.asicSignatureInspectorPanel.semAssinaturasReconhecidas': 'Nessuna firma riconosciuta',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeAssinaturaReportados':
+    'Nessuna diagnostica della firma segnalata.',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeManifestoReportados':
+    'Nessuna diagnosi manifesta riportata.',
+  'uiLiteral.asicSignatureInspectorPanel.semTimestampsDeArquivoAsicReportados':
+    'Nessun timestamp del file ASiC riportato.',
+  'uiLiteral.asicSignatureInspectorPanel.timestampsDeArquivo': 'Timestamp dei file',
+  'uiLiteral.asicSignatureInspectorPanel.validacaoCadesLimitada': 'Convalida CAdES limitata',
+  'uiLiteral.bookDetailPage.a': 'IL',
+  'uiLiteral.bookDetailPage.abrirAta': 'verbali aperti',
+  'uiLiteral.bookDetailPage.aceiteParaReferenciaAuxiliar': 'Accettare per riferimento ausiliario',
+  'uiLiteral.bookDetailPage.aceites': '· accettato',
+  'uiLiteral.bookDetailPage.aEntidadeEOLivroSaoPreenchidosA':
+    "L'entità e il libro vengono popolati da questi dettagli:",
+  'uiLiteral.bookDetailPage.aImportacaoPreservadaAindaNaoDevolveuRelatorioOcr':
+    "L'importazione conservata non ha ancora restituito il rapporto OCR/canonico locale.",
+  'uiLiteral.bookDetailPage.ambito': 'Ambito',
+  'uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras':
+    "La conservazione a fini giudiziari blocca l'eliminazione in base alle regole di conservazione mentre è attiva. Questo pannello mostra prove locali di stato/revisione e non approva lo smaltimento né dichiara la conformità legale.",
+  'uiLiteral.bookDetailPage.arquivoLegalPacote': '· fascicolo/pacchetto legale:',
+  'uiLiteral.bookDetailPage.artefacto': 'Artefatto',
+  'uiLiteral.bookDetailPage.artefactos': 'Artefatti',
+  'uiLiteral.bookDetailPage.assinatura': '· firma:',
+  'uiLiteral.bookDetailPage.ataCanonica': '· verbali canonici:',
+  'uiLiteral.bookDetailPage.ataCanonicaCriada': '· atto canonico creato:',
+  'uiLiteral.bookDetailPage.ataCanonicaDocumentoCanonicoPacoteDeArquivoAssinatura':
+    'Atto canonico, documento canonico, pacchetto file, firma, sigillo, PDF/A, PDF/UA e validità legale.',
+  'uiLiteral.bookDetailPage.ataCanonicaReclamada': "· l'atto canonico affermava:",
+  'uiLiteral.bookDetailPage.ataCriada': 'Minuti creati:',
+  'uiLiteral.bookDetailPage.ataMutavelCriada': '· minuti mutabili creati:',
+  'uiLiteral.bookDetailPage.ataMutavelDeDestino': 'Minuti di destinazione variabili',
+  'uiLiteral.bookDetailPage.ator': 'Attore',
+  'uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte': 'Blocca la revisione degli scarti',
+  'uiLiteral.bookDetailPage.bloqueios': 'Serrature',
+  'uiLiteral.bookDetailPage.certificacaoDeArquivo': 'certificazione del file:',
+  'uiLiteral.bookDetailPage.confirmoQueEstaRevisaoEApenasMetadadoAuxiliar':
+    'Confermo che questa revisione è solo metadata OCR ausiliaria e non crea un atto canonico, un documento canonico, una firma o una validità legale.',
+  'uiLiteral.bookDetailPage.confirmoQueEsteRascunhoOcrEAuxiliarNao':
+    "Confermo che la presente bozza dell'OCR è ausiliaria, non canonica e non crea verbali, documenti, firme o validità legale.",
+  'uiLiteral.bookDetailPage.contexto': 'Contesto',
+  'uiLiteral.bookDetailPage.conversaoCanonica': 'conversione canonica:',
+  'uiLiteral.bookDetailPage.criado': 'Creato',
+  'uiLiteral.bookDetailPage.criaOuDevolveUmDossierSoComMetadados':
+    'Crea o restituisci un dossier contenente solo metadati, sintetizza e rivedi le prove della bozza OCR accettata. Non crea verbali, documenti, PDF/A, firma, sigillo, pacchetto di file o validità legale.',
+  'uiLiteral.bookDetailPage.definidaEm': 'Sistemati',
+  'uiLiteral.bookDetailPage.desconhecidos': '· sconosciuto',
+  'uiLiteral.bookDetailPage.digestDaFonteOcr': 'Raccolta dei caratteri OCR',
+  'uiLiteral.bookDetailPage.digestPresente': 'digestione presente:',
+  'uiLiteral.bookDetailPage.disposalApproved': '· smaltimento_approvato:',
+  'uiLiteral.bookDetailPage.documentoAssinado': '· documento firmato:',
+  'uiLiteral.bookDetailPage.documentoCanonico': '· documento canonico:',
+  'uiLiteral.bookDetailPage.dossier': 'Fascicolo',
+  'uiLiteral.bookDetailPage.dossierAssociado': 'Dossier associato',
+  'uiLiteral.bookDetailPage.dossierJaRegistado': 'Dossier già registrato',
+  'uiLiteral.bookDetailPage.draftMutavel': 'bozza mutevole:',
+  'uiLiteral.bookDetailPage.estaAcaoNaoCriaAtaCanonicaDocumentoCanonico':
+    'Questa azione non crea un atto canonico, un documento canonico, un PDF/A, una firma o una validità legale.',
+  'uiLiteral.bookDetailPage.estado': 'Stato',
+  'uiLiteral.bookDetailPage.estado.1528o1': '· stato',
+  'uiLiteral.bookDetailPage.estado.kzwel3': 'Stato:',
+  'uiLiteral.bookDetailPage.estadoDeRevisaoOcrDigestDeTextoQuando':
+    'Stato di revisione OCR, sintesi del testo quando indicato, pagine revisionate, motore OCR e metadati del fascicolo quando disponibili.',
+  'uiLiteral.bookDetailPage.estaImportacaoPreservadaAindaNaoTemOcrAuxiliar':
+    'Questa importazione conservata non dispone ancora di OCR ausiliario per la revisione.',
+  'uiLiteral.bookDetailPage.estesPacotesPreservamCopiasDeLivrosEmPapel':
+    'Questi pacchetti conservano copie cartacee di libri come riferimento. Non sostituiscono i canonici verbali digitali e non dichiarano validità legale, PDF/A, validità di firma o firma qualificata.',
+  'uiLiteral.bookDetailPage.evidenciaDeExecucaoDeConversaoRevista':
+    "Prova dell'esecuzione della conversione rivista",
+  'uiLiteral.bookDetailPage.evidenciaRevista': 'Prove riviste',
+  'uiLiteral.bookDetailPage.exclui': 'Esclude',
+  'uiLiteral.bookDetailPage.execucoesLigadas': 'esecuzioni collegate:',
+  'uiLiteral.bookDetailPage.ficheiro': 'File',
+  'uiLiteral.bookDetailPage.flagsSemExecucao': 'Flag di non esecuzione',
+  'uiLiteral.bookDetailPage.flagsSemReivindicacao': 'Bandiere senza pretesa',
+  'uiLiteral.bookDetailPage.fluxoOperador': 'Flusso degli operatori',
+  'uiLiteral.bookDetailPage.importacaoPreservada': 'Importazione conservata',
+  'uiLiteral.bookDetailPage.inclui': 'Include',
+  'uiLiteral.bookDetailPage.legalComplianceClaimed': 'legal_compliance_claimed:',
+  'uiLiteral.bookDetailPage.limitesDoDossier': 'Limiti del fascicolo',
+  'uiLiteral.bookDetailPage.metadados': '· metadati:',
+  'uiLiteral.bookDetailPage.minutasCanonicas': '· verbali canonici:',
+  'uiLiteral.bookDetailPage.naoCanonico': 'Non canonico',
+  'uiLiteral.bookDetailPage.naoHaPacotesDeLivroEmPapelPreservados':
+    'Non sono presenti pacchetti di libri cartacei conservati per questo riferimento al libro.',
+  'uiLiteral.bookDetailPage.naResposta': 'Nella risposta:',
+  'uiLiteral.bookDetailPage.noArtefacto': 'Nel manufatto:',
+  'uiLiteral.bookDetailPage.noEventoDeLedger': "· nell'evento contabile:",
+  'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
+    "Il manifest DGLAB locale è un'impalcatura JSON derivata dal pacchetto interno. Non si tratta di un'esportazione ufficiale DGLAB, di una presentazione governativa, di una certificazione di archiviazione legale, di una certificazione PDF/A, PAdES o PDF-UA, né di una registrazione di smaltimento distruttivo.",
+  'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':
+    "Il risultato sarà una bozza OCR ausiliaria non canonica per la revisione dell'importazione conservata.",
+  'uiLiteral.bookDetailPage.pacoteDeArquivo': '· pacchetto di file:',
+  'uiLiteral.bookDetailPage.paginas': 'pagine',
+  'uiLiteral.bookDetailPage.paginasDaFonte': 'Pagine di origine',
+  'uiLiteral.bookDetailPage.pdfA': '· PDF/A:',
+  'uiLiteral.bookDetailPage.pdfUa': '· PDF/UA:',
+  'uiLiteral.bookDetailPage.promocaoParaRascunhoMutavel': 'Promozione per bozza modificabile',
+  'uiLiteral.bookDetailPage.proximoPasso': 'Prossimo passo',
+  'uiLiteral.bookDetailPage.rascunhoAceite': 'Bozza accettata',
+  'uiLiteral.bookDetailPage.rascunhoOcrAceite': 'Bozza OCR accettata',
+  'uiLiteral.bookDetailPage.rascunhoRevisto': 'Bozza rivista',
+  'uiLiteral.bookDetailPage.rascunhosOcr': 'Bozze OCR',
+  'uiLiteral.bookDetailPage.rehearsalLocalCalculadoAPartirDeMetadadosPreservados':
+    'Prove locali calcolate dai metadati conservati. Non esegue OCR, non crea documenti canonici, non firma e non convalida legalmente.',
+  'uiLiteral.bookDetailPage.relatorioLocalIndisponivel': 'Rapporto locale non disponibile',
+  'uiLiteral.bookDetailPage.relatorioOcrCanonicoLocal': 'Rapporto OCR/canonico locale',
+  'uiLiteral.bookDetailPage.resumoOcrDossierDerivado': 'Riepilogo OCR/fascicolo derivato',
+  'uiLiteral.bookDetailPage.revisaoDeOrigem': 'Revisione della fonte',
+  'uiLiteral.bookDetailPage.revisaoEFixidez': 'Revisione e fissità',
+  'uiLiteral.bookDetailPage.selo': '· timbro:',
+  'uiLiteral.bookDetailPage.semReivindicacao': 'Nessuna pretesa',
+  'uiLiteral.bookDetailPage.soMetadados': 'Solo metadati',
+  'uiLiteral.bookDetailPage.soMetadadosSimAtaCanonicaNaoDocumentoCanonico':
+    'Solo metadati: sì · atto canonico: no · documento canonico: no · pacchetto archivio: no · firma: no · sigillo: no · PDF/A: no · PDF/UA: no · validità legale: no.',
+  'uiLiteral.bookDetailPage.textoOcrBruto': 'Testo OCR grezzo',
+  'uiLiteral.bookDetailPage.textoOcrBrutoNoDossier': 'Testo OCR non elaborato nel dossier',
+  'uiLiteral.bookDetailPage.validadeLegal': '· validità legale:',
+  'uiLiteral.bookDetailPage.validadeLegalDeclaradaNao': '. Validità legale dichiarata: no.',
+  'uiLiteral.bookDetailPage.valideDatasContagemDePaginasFixidezEContexto':
+    "Convalida le date, il conteggio delle pagine, la fissità e il contesto del libro prima di conservarlo. Il collegamento qui riportato è solo contestuale: non crea né altera catene di minuti, né trasforma l'importazione in un canonico record digitale.",
+  'uiLiteral.funcoesSection.adicionarSo': 'Aggiungi solo:',
+  'uiLiteral.funcoesSection.aplicarDefaultsEmFalta': 'Applica le impostazioni predefinite mancanti',
+  'uiLiteral.funcoesSection.estado': 'Stato',
+  'uiLiteral.funcoesSection.reverDefaults': 'Esaminare le impostazioni predefinite',
+  'uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao':
+    'Caricamento della policy di ripristino',
+  'uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff':
+    "Caricamento della preconvalida dell'handoff locale",
+  'uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio': 'File di backup per il test',
+  'uiLiteral.gestaoDadosSection.backendDuravel': 'Backend durevole',
+  'uiLiteral.gestaoDadosSection.chancelaBackupZip': 'chancela-backup-….zip',
+  'uiLiteral.gestaoDadosSection.chaveDoBackupOpcional': 'Chiave di backup (facoltativa)',
+  'uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios':
+    'Compone solo prove locali: candidati di backup, saggi verificati, pacchetti di libri, stato di file e registro.',
+  'uiLiteral.gestaoDadosSection.ensaioDeRecuperacaoSemRestauro': 'Prova di recupero senza restauro',
+  'uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro':
+    "Test espliciti avviati dall'operatore: nessun ripristino in tempo reale, nessuna certificazione legale dell'archivio, nessuna prova automatica di RPO/RTO o custodia fuori sede.",
+  'uiLiteral.gestaoDadosSection.enviadaApenasParaExecutarPragmaRekeyAResposta':
+    'Inviato solo per eseguire la rekey PRAGMA; la risposta restituisce solo prove senza segretezza.',
+  'uiLiteral.gestaoDadosSection.execucaoDaRotacaoSqlcipher': 'Esecuzione della rotazione SQLCipher',
+  'uiLiteral.gestaoDadosSection.executaApenasORekeySqlcipherNaBaseDe':
+    'Esegui la rekey SQLCipher solo sul database durevole già aperto; non converte gli archivi SQLite in testo normale.',
+  'uiLiteral.gestaoDadosSection.executaAPreValidacaoExistenteDoBackupE':
+    'Esegue la preconvalida esistente del backup e registra una ricevuta di deposito a garanzia. Non ripristina, non modifica il database e non prepara sidecar.',
+  'uiLiteral.gestaoDadosSection.leituraDoEstadoLocalDePersistenciaNaoExecuta':
+    'Lettura dello stato di persistenza locale; non esegue la migrazione, la nuova chiave o la convalida della custodia.',
+  'uiLiteral.gestaoDadosSection.localDeCustodia': 'Luogo di custodia',
+  'uiLiteral.gestaoDadosSection.localIndicadoPeloOperadorIstoNaoComprovaCustodia':
+    "Luogo indicato dall'operatore; ciò non dimostra la custodia fuori sede.",
+  'uiLiteral.gestaoDadosSection.nomeSimplesEmBackupsOuCaminhoAbsolutoDo':
+    'Nome semplice nei backup/o percorso assoluto del file da verificare.',
+  'uiLiteral.gestaoDadosSection.notasDoOperador': "Note per l'operatore",
+  'uiLiteral.gestaoDadosSection.novaChaveSqlcipher': 'Nuova chiave SQLCipher',
+  'uiLiteral.gestaoDadosSection.preValidacaoLocalDeHandoff': "Preconvalida dell'handoff locale",
+  'uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave':
+    'Preparazione SQLCipher e custodia delle chiavi',
+  'uiLiteral.gestaoDadosSection.requerArmazenamentoDuravelEmDisco':
+    "Richiede un'archiviazione su disco durevole.",
+  'uiLiteral.gestaoDadosSection.sidecars': 'Sidecar',
+  'uiLiteral.gestaoDadosSection.sidecarsDuraveis': 'Sidecar durevoli',
+  'uiLiteral.gestaoDadosSection.usadaSoNestaPreValidacaoNaoEGuardada':
+    'Utilizzato solo in questa pre-convalida; non viene salvato sulla ricevuta.',
+  'uiLiteral.importFromRegistryForm.consulta': 'Consultazione',
+  'uiLiteral.registryImportPanel.aConsultaAindaNaoFoiExecutada':
+    'La query non è stata ancora eseguita.',
+  'uiLiteral.registryImportPanel.consulta': 'Consultazione',
+  'uiLiteral.registryImportPanel.proximoPasso': 'Prossimo passo',
+  'uiLiteral.registryImportPanel.resultado': 'Risultato',
+  'uiLiteral.registryImportPanel.resumo': 'Riepilogo',
+  'uiLiteral.registryImportPanel.resumoDaImportacao': "Riepilogo dell'importazione",
+  'uiLiteral.registryImportPanel.semAlteracoes': 'Nessun cambiamento',
+  'uiLiteral.signingPanel.token': 'Gettone',
+  'uiLiteral.trustCatalogPage.tslConfiavel': 'TSL affidabile',
+  'uiLiteral.asicSignatureInspectorPanel.semIndicadoresDeEvidenciaEmbebidaReportados':
+    'Non sono stati riportati indicatori di prove integrate.',
+  'uiLiteral.asicSignatureInspectorPanel.semOcorrenciasReportadas': 'Nessun evento segnalato.',
+  'uiLiteral.bookDetailPage.ambitoDeArquivoPaperBookImport':
+    'Ambito del file: importazione di libri cartacei:',
+  'uiLiteral.bookDetailPage.criaUmaAtaEmEstadoDraftComO':
+    'Crea verbali in stato Bozza con il testo OCR come supporto alle deliberazioni. Non crea un documento canonico, PDF/A, firma, sigillo o accettazione di validità legale.',
+  'uiLiteral.bookDetailPage.digestDoTexto': 'Riepilogo del testo',
+  'uiLiteral.bookDetailPage.documentoCanonico.19tw3h': '. Documento canonico:',
+  'uiLiteral.bookDetailPage.entidade': '· Entità:',
+  'uiLiteral.bookDetailPage.intervalo': 'Intervallo:',
+  'uiLiteral.bookDetailPage.limites': 'Limiti',
+  'uiLiteral.bookDetailPage.livro': 'Libro:',
+  'uiLiteral.bookDetailPage.motor': 'Motore',
+  'uiLiteral.bookDetailPage.nota': 'Avviso',
+  'uiLiteral.bookDetailPage.ocrMetadadoApenasTextoArmazenado':
+    'OCR: solo metadati; testo memorizzato:',
+  'uiLiteral.bookDetailPage.paginasRevistas': 'Pagine riviste',
+  'uiLiteral.bookDetailPage.rascunhoCriado': 'Bozza creata:',
+  'uiLiteral.bookDetailPage.revisto': 'Revisionato',
+  'uiLiteral.bookDetailPage.textoAutoritativo': 'Testo autorevole:',
+  'uiLiteral.bookDetailPage.textoAutoritativo.9xkq63': '; testo autorevole:',
+  'uiLiteral.bookDetailPage.textoExtraido': 'Testo estratto',
+  'uiLiteral.compliancePanel.limitesDoAviso': 'Limiti di avviso',
+  'uiLiteral.compliancePanel.orientacaoLocalDaConvocatoria': 'Orientamento locale della chiamata',
+  'uiLiteral.compliancePanel.proximoRegistoLocal': 'Prossima registrazione locale',
+  'uiLiteral.editUserPage.acao': 'Azione',
+  'uiLiteral.editUserPage.aindaNaoHaPedidosDsrRegistadosParaEste':
+    'Non sono ancora presenti richieste DSR registrate per questo utente.',
+  'uiLiteral.editUserPage.concluido': 'Completato',
+  'uiLiteral.editUserPage.criado': 'Creato',
+  'uiLiteral.editUserPage.criadoPor': 'Creato da',
+  'uiLiteral.editUserPage.estado': 'Stato',
+  'uiLiteral.editUserPage.marcarConcluido': 'Segna completato',
+  'uiLiteral.editUserPage.pedidosDsrPrivacidade': 'Richieste DSR/Privacy',
+  'uiLiteral.editUserPage.registaOCicloDeVidaDosPedidosDsr':
+    "Registra il ciclo di vita delle richieste DSR dell'utente e scarica JSON non segreto per la risposta. Il contenuto dell'esportazione non viene visualizzato sullo schermo.",
+  'uiLiteral.editUserPage.semPedidosDsr': 'Nessun ordine DSR',
+  'uiLiteral.editUserPage.tipo': 'Tipo',
+  'uiLiteral.editUserPage.tipoDePedido': 'Tipo di ordine',
+  'uiLiteral.entitiesPage.naoImportado': 'Non importato',
+  'uiLiteral.entitiesPage.naoImportadoSemCertidao': 'Non importato · Nessun certificato',
+  'uiLiteral.entitiesPage.semAtividade': 'Nessuna attività',
+  'uiLiteral.entitiesPage.semAtividadeNoArquivo': 'Nessuna attività sul file',
+  'uiLiteral.entitiesPage.semCertidao': 'Nessun certificato',
+  'uiLiteral.entityChronologyPanel.cronologiaLocalDeAtosSelados':
+    'Cronologia locale degli atti sigillati',
+  'uiLiteral.entityChronologyPanel.data': 'Data',
+  'uiLiteral.entityChronologyPanel.descricao': 'Descrizione',
+  'uiLiteral.entityChronologyPanel.digest': 'digerire',
+  'uiLiteral.entityChronologyPanel.eventosLocais': 'Eventi locali',
+  'uiLiteral.entityChronologyPanel.fonteSelada': 'Sorgente sigillata',
+  'uiLiteral.entityChronologyPanel.fontesSeladas': 'Fonti sigillate',
+  'uiLiteral.entityChronologyPanel.ligacoes': 'Connessioni',
+  'uiLiteral.entityChronologyPanel.nos': 'Noi',
+  'uiLiteral.entityChronologyPanel.projecaoTecnicaLocalBaseadaApenasEmAtasSeladas':
+    'Proiezione tecnica locale basata solo su verbali sigillati o archiviati. Non rivendica validità legale o certificazione di autorità.',
+  'uiLiteral.entityChronologyPanel.provenienciaDasLigacoesLocais':
+    'Provenienza dei collegamenti locali',
+  'uiLiteral.entityChronologyPanel.tipo': 'Tipo',
+  'uiLiteral.funcoesSection.aReconciliacaoEGuiadaPorAdminESo':
+    ". La riconciliazione è gestita dall'amministratore e aggiunge solo queste impostazioni predefinite.",
+  'uiLiteral.funcoesSection.atual': 'Attuale',
+  'uiLiteral.funcoesSection.defaultsEmFalta': 'Impostazioni predefinite mancanti:',
+  'uiLiteral.funcoesSection.revisaoManual': 'Revisione manuale',
+  'uiLiteral.gestaoDadosSection.aindaNaoHaRecibosDeRotacaoSqlcipherBem':
+    'Non ci sono ancora ricevute per la rotazione SQLCipher riuscita.',
+  'uiLiteral.gestaoDadosSection.arquivoVerificado': 'File verificato',
+  'uiLiteral.gestaoDadosSection.atosPreservaveis': 'Atti conservabili',
+  'uiLiteral.gestaoDadosSection.backend': 'Backend',
+  'uiLiteral.gestaoDadosSection.backendSqlcipherLocal': 'Backend SQLCipher locale',
+  'uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente':
+    'Candidato non convalidato più recente',
+  'uiLiteral.gestaoDadosSection.candidatosNaoValidados': 'Candidati non validi',
+  'uiLiteral.gestaoDadosSection.checkpointAntes': 'Punto di controllo prima',
+  'uiLiteral.gestaoDadosSection.checkpointDepois': 'Punto di controllo dopo',
+  'uiLiteral.gestaoDadosSection.cifrado': 'Crittografato',
+  'uiLiteral.gestaoDadosSection.configuracaoDaChave': 'Configurazione chiave',
+  'uiLiteral.gestaoDadosSection.constatacoes': 'Risultati',
+  'uiLiteral.gestaoDadosSection.documentosPreservados': 'Documenti conservati',
+  'uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao': 'Saggi di recupero',
+  'uiLiteral.gestaoDadosSection.erroKeyOps': 'Errore operazioni chiave',
+  'uiLiteral.gestaoDadosSection.erros': 'Errori',
+  'uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados': 'Schema della banca dati',
+  'uiLiteral.gestaoDadosSection.estado': 'Stato',
+  'uiLiteral.gestaoDadosSection.estadoDoEnsaio': 'Stato del test',
+  'uiLiteral.gestaoDadosSection.evidenciaOperacionalLocalGeradaAposRekeySqlcipherAceite':
+    "Evidenze operative locali generate dopo l'accettazione della nuova chiave SQLCipher. Queste ricevute non certificano la crittografia dei dati inattivi, la migrazione del testo non crittografato, l'eliminazione legale o l'intero ciclo di vita del GDPR.",
+  'uiLiteral.gestaoDadosSection.evidenciaVerificada': 'Prove verificate',
+  'uiLiteral.gestaoDadosSection.fallbackFalhaFechado': 'Il fallback non riesce a chiudersi',
+  'uiLiteral.gestaoDadosSection.fallbackHardware': 'Ripiego hardware',
+  'uiLiteral.gestaoDadosSection.fonteDeChave': 'Fonte chiave',
+  'uiLiteral.gestaoDadosSection.formatoDoCabecalho': "Formato dell'intestazione",
+  'uiLiteral.gestaoDadosSection.geradoEm': 'Generato in',
+  'uiLiteral.gestaoDadosSection.historicoGuardado': 'Cronologia salvata',
+  'uiLiteral.gestaoDadosSection.historicoRecente': 'Storia recente',
+  'uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo': "Età dell'ultimo scontrino",
+  'uiLiteral.gestaoDadosSection.idadeMaximaConfigurada': 'Età massima configurata',
+  'uiLiteral.gestaoDadosSection.integridadePosRekey': 'Integrità post-rekey',
+  'uiLiteral.gestaoDadosSection.lacunasDeProntidao': 'Lacune nella preparazione',
+  'uiLiteral.gestaoDadosSection.limitesDoRecibo': 'Limiti delle ricevute',
+  'uiLiteral.gestaoDadosSection.livros': 'Libri',
+  'uiLiteral.gestaoDadosSection.localDeCustodiaIndicado': 'Luogo di custodia indicato',
+  'uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada':
+    'Negozio aperto con chiave configurata',
+  'uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente': 'Membro del database presente',
+  'uiLiteral.gestaoDadosSection.membrosNoArquivo': 'Membri in archivio',
+  'uiLiteral.gestaoDadosSection.membrosSidecar': 'Membri del sidecar',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada':
+    'Migrazione del testo non crittografato bloccata',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextPendente':
+    'In attesa di migrazione del testo non crittografato',
+  'uiLiteral.gestaoDadosSection.modo': 'Modalità',
+  'uiLiteral.gestaoDadosSection.operacao': 'Operazione',
+  'uiLiteral.gestaoDadosSection.passosDeclarados': 'Passi dichiarati',
+  'uiLiteral.gestaoDadosSection.planoDeMigracao': 'Piano di migrazione',
+  'uiLiteral.gestaoDadosSection.planoKeyOps': 'Piano operativo chiave',
+  'uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao': 'Politica di recupero locale',
+  'uiLiteral.gestaoDadosSection.preValidacaoDeImportacao': "Preconvalida dell'importazione",
+  'uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo': "Pre-convalida dell'ultima ricevuta",
+  'uiLiteral.gestaoDadosSection.preValidacaoOk': 'Preconvalida OK',
+  'uiLiteral.gestaoDadosSection.prontoParaRestauro': 'Pronto per il restauro',
+  'uiLiteral.gestaoDadosSection.proximoPasso': 'Prossimo passo',
+  'uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao': 'Ricevute di rotazione locale',
+  'uiLiteral.gestaoDadosSection.registadoEm': 'Registrato a',
+  'uiLiteral.gestaoDadosSection.rekeyExecutado': 'Riprogrammazione eseguita',
+  'uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher':
+    "Risultato dell'esecuzione di SQLCipher",
+  'uiLiteral.gestaoDadosSection.resumoLocalDerivadoDeRecibosDeEnsaioSem':
+    'Riepilogo locale derivato dalle ricevute dei test: nessun ripristino eseguito, nessuno scambio di database, nessuna prova di custodia fuori sede, nessuna certificazione RPO/RTO e nessuna certificazione della policy di backup della produzione.',
+  'uiLiteral.gestaoDadosSection.rpoAlvoDeclarado': 'RPO target dichiarato',
+  'uiLiteral.gestaoDadosSection.rtoAlvoDeclarado': 'RTO target dichiarato',
+  'uiLiteral.gestaoDadosSection.semAlegacoes': 'Nessuna accusa',
+  'uiLiteral.gestaoDadosSection.semCaminhoDaBd': 'Nessun percorso BD',
+  'uiLiteral.gestaoDadosSection.semChaveGuardada': 'Nessuna chiave salvata',
+  'uiLiteral.gestaoDadosSection.semConstatacoesRegistadas': 'Nessun risultato registrato.',
+  'uiLiteral.gestaoDadosSection.semErrosRegistados': 'Nessun errore registrato.',
+  'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
+    'Nessuna lacuna locale segnalata in questo stato.',
+  'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
+    'Segnali locali di backend con segreti oscurati. Non certificano la crittografia del resto della produzione, la migrazione completata del testo non crittografato, il runbook di custodia o il ciclo legale/GDPR.',
+  'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado': 'Istantanea isolata verificata',
+  'uiLiteral.gestaoDadosSection.sqlcipher': 'SQLCipher',
+  'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher in fase di compilazione',
+  'uiLiteral.gestaoDadosSection.sqlcipherVerificado': 'SQLCipher verificato',
+  'uiLiteral.gestaoDadosSection.total': 'totale /',
+  'uiLiteral.gestaoDadosSection.totalDeBytesDosMembros': 'Byte totali dei membri',
+  'uiLiteral.gestaoDadosSection.ultimaRotacao': 'Ultima rotazione',
+  'uiLiteral.gestaoDadosSection.ultimoEnsaio': 'Ultima prova',
+  'uiLiteral.gestaoDadosSection.ultimoRecibo': 'Ultimo scontrino',
+  'uiLiteral.gestaoDadosSection.utilizador': 'Utente',
+  'uiLiteral.gestaoDadosSection.verificacaoIsolada': 'Controllo isolato',
+  'uiLiteral.importFromRegistryForm.acaoNecessaria': 'Azione richiesta',
+  'uiLiteral.importFromRegistryForm.aCertidaoEstaASerConsultadaMantenhaEsta':
+    'Il certificato è in consultazione. Tieni aperta questa pagina.',
+  'uiLiteral.importFromRegistryForm.aConsultar': 'Da consultare',
+  'uiLiteral.importFromRegistryForm.corrijaOCodigoOuEMailETente':
+    "Correggi il codice o l'e-mail e riprova.",
+  'uiLiteral.importFromRegistryForm.estado': 'Stato',
+  'uiLiteral.registryImportPanel.acaoNecessaria': 'Azione richiesta',
+  'uiLiteral.registryImportPanel.aCertidaoEstaASerConsultadaOsValores':
+    'Il certificato è in consultazione. I valori attuali cambiano solo quando arriva il risultato.',
+  'uiLiteral.registryImportPanel.aConsultar': 'Da consultare',
+  'uiLiteral.registryImportPanel.corrijaOCodigoOuEMailETente':
+    "Correggi il codice o l'e-mail e riprova.",
+  'uiLiteral.registryImportPanel.estado': 'Stato',
+  'uiLiteral.asicSignatureInspectorPanel.manifesto': 'manifesto',
+  'uiLiteral.bookDetailPage.em': 'In',
+  'uiLiteral.bookDetailPage.por': 'Mettere',
+  'uiLiteral.bookDetailPage.total': 'totale',
+  'uiLiteral.gestaoDadosSection.dias': 'giorni',
+  'uiLiteral.gestaoDadosSection.fechados': 'Chiuso',
+  'uiLiteral.gestaoDadosSection.min': 'min',
+  'uiLiteral.privacyComplianceSection.overdue': 'in ritardo:',
+  'uiLiteral.bookDetailPage.acceptedWithoutCanonicalConversion':
+    'Accettato come riferimento ausiliario, senza conversione canonica.',
+  'uiLiteral.bookDetailPage.noAcceptedOcrDraft': 'Nessuna bozza OCR accettata.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.signingSnapshot.title': 'Copia canonica congelata per la firma',
+  'acts.signingSnapshot.body':
+    'Quando si inserisce «Sotto firma» i verbali vengono congelati. Le azioni di abbonamento utilizzano questa copia canonica e non la rigenerano né la sostituiscono.',
+  'acts.sealing.signedReady':
+    'Esistono prove tecniche di un PDF firmato per la copia canonica. Esaminarlo prima di sigillarlo.',
+  'acts.sealing.signatureRequired':
+    "Firma la copia canonica o utilizza la copia alternativa dell'originale firmato manualmente prima di sigillare.",
+  'acts.sealing.signedAck.title': 'Confermare la sigillatura dopo la firma',
+  'acts.sealing.signedAck.body':
+    'La suggellatura utilizzerà la copia canonica già firmata. Esaminare le prove tecniche e gli avvisi di conformità prima di procedere.',
+  'acts.sealing.signedAck.checkbox':
+    'Confermo di aver preso visione delle prove tecniche della firma e di voler suggellare il verbale.',
+  'acts.sealing.signedAck.checkboxWithWarnings':
+    'Confermo di aver preso visione delle prove tecniche della firma e degli avvisi di conformità e di voler provvedere al sigillo del verbale.',
+  'signing.closed.title': "L'abbonamento è terminato",
+  'signing.closed.body':
+    'Il verbale è ora «Sotto firma». Le azioni di abbonamento sono chiuse; le prove esistenti rimangono disponibili per la consultazione.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'signing.technicalComparison.row.signingSnapshotDigest': 'Digest della copia canonica congelata',
 };

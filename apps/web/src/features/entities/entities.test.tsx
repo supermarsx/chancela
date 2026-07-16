@@ -10,6 +10,8 @@ import { DEFAULT_SETTINGS, type Entity, type LedgerEventView } from '../../api/t
 
 const ENTITY: Entity = {
   id: 'new-ent-1',
+  tenant_id: 'tenant-1',
+  group_id: null,
   name: 'Encosto Estratégico, Lda.',
   nipc: '503004642',
   nipc_validated: true,

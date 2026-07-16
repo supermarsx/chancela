@@ -80,7 +80,8 @@ describe('AuthGate', () => {
     const fn = ((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url.includes('/v1/session/roster')) return new Promise<Response>(() => {});
-      if (url.includes('/v1/session')) return Promise.resolve(jsonResponse({ user: AMELIA_SESSION }));
+      if (url.includes('/v1/session'))
+        return Promise.resolve(jsonResponse({ user: AMELIA_SESSION }));
       return Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);

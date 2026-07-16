@@ -1,8 +1,9 @@
 /*
- * Chancela theme placeholder — dark green + white, old-school editorial (UX-01).
+ * Chancela theme package — dark green + white, old-school editorial (UX-01).
  * This is a token layer, not a fragile skin (UX-02): colours and type live in CSS
- * custom properties so the real theme package can supersede them later.
- * Fonts use system serif/sans/mono stacks only — no runtime font fetching (UX-03).
+ * custom properties so product surfaces consume one accessibility-aware system.
+ * The four primary families are locally bundled open-licensed faces (UX-03); system
+ * families remain only as resilient fallbacks if a local asset cannot be decoded.
  */
 
 :root {
@@ -36,10 +37,10 @@
   --field-border: #7d6a38;
   --rule: #cbb079;
 
-  --font-display: Georgia, 'Times New Roman', 'Iowan Old Style', 'Palatino Linotype', serif;
-  --font-body: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
-  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: 'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-body: 'Noto Serif', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Noto Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Noto Sans Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
 
   --space: 1rem;
   --radius: 4px;

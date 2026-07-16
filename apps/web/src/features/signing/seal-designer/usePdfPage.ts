@@ -14,7 +14,12 @@
  * rotation, and the CSS-px-per-point scale) the coordinate mapping needs.
  */
 import { useEffect, useRef, useState } from 'react';
-import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
+import type {
+  PDFDocumentLoadingTask,
+  PDFDocumentProxy,
+  PDFPageProxy,
+  RenderTask,
+} from 'pdfjs-dist';
 import { normalizeRotation, type PageGeometry } from './coordinates';
 
 type PdfjsLib = typeof import('pdfjs-dist');
@@ -80,19 +85,18 @@ export function usePdfPage(options: UsePdfPageOptions): UsePdfPageResult {
     // pdf.js takes ownership of (and detaches) the buffer it is handed, so give it a copy and
     // keep the caller's `data` intact for a later reload (e.g. a page change re-render).
     const bytes = new Uint8Array(data.slice(0));
-    let localDoc: PDFDocumentProxy | null = null;
+    let localTask: PDFDocumentLoadingTask | null = null;
     (async () => {
       try {
         const pdfjs = await loadPdfjs();
-        // Defense-in-depth: forbid the worker from evaluating strings as JavaScript, so a
-        // relaxed CSP can never let a crafted act PDF reach `eval`. This only disables a pdf.js
-        // performance shortcut for PDF functions — it does not change what we render.
-        const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
         if (cancelled) {
-          await doc.destroy();
           return;
         }
-        localDoc = doc;
+        localTask = pdfjs.getDocument({ data: bytes });
+        const doc = await localTask.promise;
+        if (cancelled) {
+          return;
+        }
         docRef.current = doc;
         setPageCount(doc.numPages);
         setStatus('ready');
@@ -105,8 +109,9 @@ export function usePdfPage(options: UsePdfPageOptions): UsePdfPageResult {
     })();
     return () => {
       cancelled = true;
-      if (localDoc) {
-        void localDoc.destroy();
+      if (localTask) {
+        void localTask.destroy();
+        localTask = null;
       }
       docRef.current = null;
     };
@@ -147,6 +152,7 @@ export function usePdfPage(options: UsePdfPageOptions): UsePdfPageResult {
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
         renderTask = page.render({
+          canvas,
           canvasContext: ctx,
           viewport,
           transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,

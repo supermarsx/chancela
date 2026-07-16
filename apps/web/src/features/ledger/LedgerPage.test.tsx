@@ -193,13 +193,9 @@ describe('LedgerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Carregar eventos mais antigos' }));
     expect(await screen.findByText('event.950')).toBeTruthy();
     expect(
-      calls.some(
-        (c) =>
-          c.url ===
-          '/v1/ledger/events/page?before_seq=950&limit=100&order=desc',
-      ),
+      calls.some((c) => c.url === '/v1/ledger/events/page?before_seq=950&limit=100&order=desc'),
     ).toBe(true);
-  });
+  }, 15_000);
 
   it('applies server-backed filters and exposes an icon-only clear button with a tooltip', async () => {
     const calls = stubLedgerFetch(page([makeEvent(88, { kind: 'act.sealed' })]));

@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { ApiError, api, parseResponse } from './client';
+import {
+  ApiError,
+  api,
+  fetchArrayBuffer,
+  fetchBlob,
+  fetchBlobVia,
+  fetchTextDownload,
+  parseResponse,
+  postBytes,
+  postTextDownload,
+} from './client';
 import type { LedgerArchiveDocumentParams } from './types';
+import { clearSessionToken, setSessionToken } from './session';
 
 interface TestRuntimeWindow {
   __CHANCELA_CONFIG__?: {
@@ -23,6 +34,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 afterEach(() => {
   delete runtimeWindow().__CHANCELA_CONFIG__;
   delete runtimeWindow().__CHANCELA_MOBILE_SHELL__;
+  clearSessionToken();
   vi.restoreAllMocks();
 });
 
@@ -1202,5 +1214,105 @@ describe('api client', () => {
     expect(init.body).toBe(raw);
     expect(init.body).not.toBe(JSON.stringify(raw));
     expect(uploaded.report.case_id).toBe('CASE-001');
+  });
+});
+
+describe('binary/text transports and additive endpoint wrappers', () => {
+  const rejected = async (promise: Promise<unknown>): Promise<ApiError> =>
+    (await promise.catch((error: unknown) => error)) as ApiError;
+
+  it('rejects an empty non-success response with a typed status error', async () => {
+    const error = await rejected(parseResponse(new Response(null, { status: 503 })));
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(503);
+  });
+
+  it('carries the in-memory session through every binary/text transport', async () => {
+    setSessionToken('session-secret');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('pdf bytes', { headers: { 'Content-Type': 'application/pdf' } }),
+      )
+      .mockResolvedValueOnce(new Response('raw bytes'))
+      .mockResolvedValueOnce(
+        new Response('manifest', { headers: { 'Content-Type': 'text/plain' } }),
+      )
+      .mockResolvedValueOnce(new Response('posted', { headers: { 'Content-Type': 'text/plain' } }))
+      .mockResolvedValueOnce(
+        new Response('zip', { headers: { 'X-Chancela-Bundle-Digest': 'a'.repeat(64) } }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ accepted: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect((await fetchBlob('/binary')).size).toBeGreaterThan(0);
+    expect((await fetchArrayBuffer('/bytes')).byteLength).toBeGreaterThan(0);
+    expect((await fetchTextDownload('/text')).text).toBe('manifest');
+    expect((await postTextDownload('/post-text', { token: 'transient' })).text).toBe('posted');
+    expect((await fetchBlobVia('/export', 'POST')).headers.get('X-Chancela-Bundle-Digest')).toBe(
+      'a'.repeat(64),
+    );
+    await expect(postBytes('/import', new ArrayBuffer(2))).resolves.toEqual({ accepted: true });
+
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init.headers as Record<string, string>)['X-Chancela-Session']).toBe('session-secret');
+    }
+    expect(fetchMock.mock.calls[3][1].body).toBe(JSON.stringify({ token: 'transient' }));
+    expect(fetchMock.mock.calls[4][1].method).toBe('POST');
+    expect(fetchMock.mock.calls[5][1].method).toBe('POST');
+  });
+
+  it('surfaces JSON and non-JSON transport errors and clears a stale session on 401', async () => {
+    setSessionToken('stale');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: 'signed PDF missing' }, 401))
+      .mockResolvedValueOnce(new Response('proxy failure', { status: 502 }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'text unavailable' }, 404))
+      .mockResolvedValueOnce(new Response('gateway', { status: 503 }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'export denied' }, 403));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect((await rejected(fetchBlob('/signed'))).message).toBe('signed PDF missing');
+    expect((await rejected(fetchArrayBuffer('/bytes'))).status).toBe(502);
+    expect((await rejected(fetchTextDownload('/text'))).message).toBe('text unavailable');
+    expect((await rejected(postTextDownload('/post-text', {}))).status).toBe(503);
+    expect((await rejected(fetchBlobVia('/export', 'POST'))).message).toBe('export denied');
+  });
+
+  it('executes the thin wrappers whose path/method shapes are otherwise contract-only', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({})));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const operations: Array<() => Promise<unknown>> = [
+      () => api.setBookLegalHold('book-1', {} as never),
+      () => api.advanceAct('act-1', {} as never),
+      () => api.archiveAct('act-1'),
+      () => api.updateTemplate('template/1', '{}'),
+      () => api.searchTrustCatalog('qualified', 25),
+      () => api.registryLookup({} as never),
+      () => api.removeUserSecret('user-1'),
+      () => api.removeAttestationKey('user-1'),
+      () => api.patchRole('role-1', {} as never),
+      () => api.deleteRole('role-1'),
+      () => api.signStoredPkcs12('act-1', {} as never),
+      () => api.deleteSession(),
+      () => api.getPaperBookImport('paper/import'),
+      () => api.updatePaperBookImportOcrStatus('paper/import', {} as never),
+      () => api.startOverInstance({} as never),
+    ];
+    for (const operation of operations) await operation();
+
+    const requests = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? 'GET',
+    }));
+    expect(requests).toContainEqual({ url: '/v1/templates/template%2F1', method: 'PUT' });
+    expect(requests).toContainEqual({ url: '/v1/roles/role-1', method: 'PATCH' });
+    expect(requests).toContainEqual({ url: '/v1/session', method: 'DELETE' });
+    expect(requests).toContainEqual({
+      url: '/v1/trust/catalog?search=qualified&limit=25',
+      method: 'GET',
+    });
   });
 });

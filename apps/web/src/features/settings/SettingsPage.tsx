@@ -14,14 +14,7 @@
  * active section is deep-linkable (`?sec=`); the working copy spans all of them, so the
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   useHealth,
@@ -959,8 +952,9 @@ export function SettingsPage() {
     onError: (e) => toast.error(e),
   });
 
-  if (settings.isLoading || !draft) return <Loading />;
+  if (settings.isLoading) return <Loading />;
   if (settings.error) return <ErrorNote error={settings.error} />;
+  if (!draft) return <Loading />;
 
   const setOrganization = <K extends keyof OrganizationSettings>(
     key: K,

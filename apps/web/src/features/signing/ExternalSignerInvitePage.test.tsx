@@ -25,7 +25,7 @@ describe('ExternalSignerInvitePage', () => {
       act: {
         id: 'act-1',
         title: 'Ata da AG anual',
-        state: 'Sealed',
+        state: 'Signing',
         meeting_date: '2026-03-30',
         ata_number: 1,
         entity_name: 'Encosto Estrategico, S.A.',
@@ -117,7 +117,7 @@ describe('ExternalSignerInvitePage', () => {
       act: {
         id: 'act-1',
         title: 'Ata com envelope',
-        state: 'Sealed',
+        state: 'Signing',
         meeting_date: '2026-03-30',
         ata_number: 1,
         entity_name: 'Encosto Estrategico, S.A.',
@@ -206,7 +206,7 @@ describe('ExternalSignerInvitePage', () => {
       act: {
         id: 'act-1',
         title: 'Ata com identidade requerida',
-        state: 'Sealed',
+        state: 'Signing',
         entity_name: 'Encosto Estrategico, S.A.',
         book_kind: 'AssembleiaGeral',
       },
@@ -280,7 +280,7 @@ describe('ExternalSignerInvitePage', () => {
       act: {
         id: 'act-1',
         title: 'Ata com envelope',
-        state: 'Sealed',
+        state: 'Signing',
         meeting_date: '2026-03-30',
         ata_number: 1,
         entity_name: 'Encosto Estrategico, S.A.',

@@ -296,40 +296,44 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     expect(document.body.textContent).toContain(ataFieldHelp.deliberationsText);
   });
 
-  it('saves bounded convening evidence through the act patch body', { timeout: 15_000 }, async () => {
-    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
-    const shared = stateful(withChair);
-    vi.stubGlobal('fetch', shared.fetchImpl);
-    renderEditor();
+  it(
+    'saves bounded convening evidence through the act patch body',
+    { timeout: 15_000 },
+    async () => {
+      const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+      const shared = stateful(withChair);
+      vi.stubGlobal('fetch', shared.fetchImpl);
+      renderEditor();
 
-    await screen.findByDisplayValue('Assembleia Geral Anual');
-    fireEvent.change(screen.getByLabelText('Data da convocatória'), {
-      target: { value: '2026-06-01' },
-    });
-    fireEvent.change(screen.getByLabelText('Meio da convocatória'), {
-      target: { value: 'Email' },
-    });
-    fireEvent.change(screen.getByLabelText('Antecedência efetiva (dias)'), {
-      target: { value: '29' },
-    });
-    fireEvent.change(screen.getByLabelText('Prova da convocatória'), {
-      target: { value: 'doc:convocatoria-2026-06-01' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-
-    await waitFor(() => {
-      expect(shared.patches.at(-1)?.convening).toEqual({
-        convener: null,
-        convener_capacity: null,
-        dispatch_date: '2026-06-01',
-        antecedence_days: 29,
-        channel: 'Email',
-        evidence_reference: 'doc:convocatoria-2026-06-01',
-        recipients: [],
-        second_call: null,
+      await screen.findByDisplayValue('Assembleia Geral Anual');
+      fireEvent.change(screen.getByLabelText('Data da convocatória'), {
+        target: { value: '2026-06-01' },
       });
-    });
-  });
+      fireEvent.change(screen.getByLabelText('Meio da convocatória'), {
+        target: { value: 'Email' },
+      });
+      fireEvent.change(screen.getByLabelText('Antecedência efetiva (dias)'), {
+        target: { value: '29' },
+      });
+      fireEvent.change(screen.getByLabelText('Prova da convocatória'), {
+        target: { value: 'doc:convocatoria-2026-06-01' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+      await waitFor(() => {
+        expect(shared.patches.at(-1)?.convening).toEqual({
+          convener: null,
+          convener_capacity: null,
+          dispatch_date: '2026-06-01',
+          antecedence_days: 29,
+          channel: 'Email',
+          evidence_reference: 'doc:convocatoria-2026-06-01',
+          recipients: [],
+          second_call: null,
+        });
+      });
+    },
+  );
 
   it('adds, saves, and removes convening recipients through the act patch body', async () => {
     const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
@@ -390,77 +394,78 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     'records convening dispatch evidence for a UI-added recipient after saving',
     { timeout: 15_000 },
     async () => {
-    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
-    const shared = stateful(withChair);
-    vi.stubGlobal('fetch', shared.fetchImpl);
-    renderEditor();
+      const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+      const shared = stateful(withChair);
+      vi.stubGlobal('fetch', shared.fetchImpl);
+      renderEditor();
 
-    await screen.findByDisplayValue('Assembleia Geral Anual');
-    fireEvent.change(screen.getByLabelText('Data da convocatória'), {
-      target: { value: '2026-06-01' },
-    });
-    fireEvent.change(screen.getByLabelText('Meio da convocatória'), {
-      target: { value: 'Email' },
-    });
-    fireEvent.change(screen.getByLabelText('Prova da convocatória'), {
-      target: { value: 'doc:convocatoria-2026-06-01' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar destinatário' }));
-
-    const recipient = screen.getByRole('group', { name: 'Destinatário 1' });
-    fireEvent.change(within(recipient).getByLabelText('Nome'), {
-      target: { value: 'Carla Sócia' },
-    });
-    fireEvent.change(within(recipient).getByLabelText('Contacto'), {
-      target: { value: 'carla@example.test' },
-    });
-    fireEvent.change(within(recipient).getByLabelText('Meio'), {
-      target: { value: 'Email' },
-    });
-
-    expect(
-      (screen.getByRole('button', { name: 'Registar expedição local' }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-
-    await waitFor(() => {
-      expect(shared.patches.at(-1)?.convening).toEqual({
-        convener: null,
-        convener_capacity: null,
-        dispatch_date: '2026-06-01',
-        antecedence_days: null,
-        channel: 'Email',
-        evidence_reference: 'doc:convocatoria-2026-06-01',
-        recipients: [
-          {
-            name: 'Carla Sócia',
-            contact: 'carla@example.test',
-            channel: 'Email',
-            reference: null,
-            dispatched_at: null,
-          },
-        ],
-        second_call: null,
+      await screen.findByDisplayValue('Assembleia Geral Anual');
+      fireEvent.change(screen.getByLabelText('Data da convocatória'), {
+        target: { value: '2026-06-01' },
       });
-    });
-
-    const dispatchButton = screen.getByRole('button', {
-      name: 'Registar expedição local',
-    }) as HTMLButtonElement;
-    await waitFor(() => expect(dispatchButton.disabled).toBe(false));
-    fireEvent.click(dispatchButton);
-
-    await waitFor(() => {
-      expect(shared.dispatches.at(-1)).toEqual({
-        dispatched_at: '2026-06-01',
-        channel: 'Email',
-        reference: 'doc:convocatoria-2026-06-01',
-        recipients: ['Carla Sócia'],
+      fireEvent.change(screen.getByLabelText('Meio da convocatória'), {
+        target: { value: 'Email' },
       });
-    });
-    expect(await screen.findByText('Evidência local de expedição registada.')).toBeTruthy();
-  });
+      fireEvent.change(screen.getByLabelText('Prova da convocatória'), {
+        target: { value: 'doc:convocatoria-2026-06-01' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Adicionar destinatário' }));
+
+      const recipient = screen.getByRole('group', { name: 'Destinatário 1' });
+      fireEvent.change(within(recipient).getByLabelText('Nome'), {
+        target: { value: 'Carla Sócia' },
+      });
+      fireEvent.change(within(recipient).getByLabelText('Contacto'), {
+        target: { value: 'carla@example.test' },
+      });
+      fireEvent.change(within(recipient).getByLabelText('Meio'), {
+        target: { value: 'Email' },
+      });
+
+      expect(
+        (screen.getByRole('button', { name: 'Registar expedição local' }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+      await waitFor(() => {
+        expect(shared.patches.at(-1)?.convening).toEqual({
+          convener: null,
+          convener_capacity: null,
+          dispatch_date: '2026-06-01',
+          antecedence_days: null,
+          channel: 'Email',
+          evidence_reference: 'doc:convocatoria-2026-06-01',
+          recipients: [
+            {
+              name: 'Carla Sócia',
+              contact: 'carla@example.test',
+              channel: 'Email',
+              reference: null,
+              dispatched_at: null,
+            },
+          ],
+          second_call: null,
+        });
+      });
+
+      const dispatchButton = screen.getByRole('button', {
+        name: 'Registar expedição local',
+      }) as HTMLButtonElement;
+      await waitFor(() => expect(dispatchButton.disabled).toBe(false));
+      fireEvent.click(dispatchButton);
+
+      await waitFor(() => {
+        expect(shared.dispatches.at(-1)).toEqual({
+          dispatched_at: '2026-06-01',
+          channel: 'Email',
+          reference: 'doc:convocatoria-2026-06-01',
+          recipients: ['Carla Sócia'],
+        });
+      });
+      expect(await screen.findByText('Evidência local de expedição registada.')).toBeTruthy();
+    },
+  );
 
   it('records convening dispatch evidence through the endpoint as local provenance only', async () => {
     const withConveningRecipients: ActView = {

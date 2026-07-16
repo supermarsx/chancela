@@ -159,8 +159,7 @@ export function LedgerPage() {
   const [filters, setFilters] = useState<LedgerFilters>(INITIAL_FILTERS);
   const deferredSearch = useDeferredValue(filters.search);
   const [archiveFormat, setArchiveFormat] = useState<LedgerArchiveDocumentFormat>('pdfa');
-  const [archiveScope, setArchiveScope] =
-    useState<LedgerArchiveDocumentScope>('current_page');
+  const [archiveScope, setArchiveScope] = useState<LedgerArchiveDocumentScope>('current_page');
   const verify = useLedgerVerify();
   const integrity = useLedgerIntegrity();
   const downloadArchive = useDownloadLedgerArchiveDocument();
@@ -289,9 +288,7 @@ export function LedgerPage() {
                 id="ledger-export-scope"
                 options={archiveScopeOptions}
                 value={archiveScope}
-                onChange={(e) =>
-                  setArchiveScope(e.target.value as LedgerArchiveDocumentScope)
-                }
+                onChange={(e) => setArchiveScope(e.target.value as LedgerArchiveDocumentScope)}
               />
             </Field>
             <Field

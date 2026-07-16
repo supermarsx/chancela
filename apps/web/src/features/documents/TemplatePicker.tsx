@@ -3,9 +3,9 @@
  * (`GET /v1/templates`, plan t48-e6 deliverable 3).
  *
  * Informational for v1: the seal auto-selects the template, so this is not a chooser —
- * it just shows the operator which model will be used (and honestly says "sem modelo
- * disponível" when a family has no template yet, mirroring the seal's documented
- * no-document fallback). Reads only, so a load error renders inline (no toast, per
+ * it just shows the operator which model will be frozen when the act enters `Signing` (and
+ * honestly says "sem modelo disponível" when a family has no template yet). Reads only, so a
+ * load error renders inline (no toast, per
  * CONVENTIONS §2).
  */
 import type { EntityFamily, LifecycleStage } from '../../api/types';

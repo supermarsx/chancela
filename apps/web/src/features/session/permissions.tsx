@@ -9,15 +9,18 @@
  * permission for, with an honest tooltip, instead of letting them click into a 403.
  *
  * Scope narrowing (mirrors `chancela-authz::scope_covers`, plan §2.4, t64-E1/E3):
- *   • a `global` grant covers ANY target scope;
- *   • an `entity(E)` grant covers `entity(E)` AND any `book` owned by E;
- *   • a `book(B)` grant covers `book(B)` only;
+ *   • a `global` grant covers ANY valid target scope;
+ *   • a `tenant(T)` grant covers resources whose authoritative parent chain reaches T;
+ *   • an `entity(E)` grant covers that entity and its contained books/acts/resources;
+ *   • a `book(B)` grant covers that book and its contained acts/resources;
+ *   • resource grants (`act`, `folder`, `template_library`, `archive`, `integration`,
+ *     `repository`) cover themselves and only narrow through a resolved parent chain;
  *   • a scoped grant NEVER satisfies a `global` check (scope-escape upward is impossible).
  *
  * Fail-closed everywhere: no matching grant ⇒ false; an absent/empty permission set ⇒
  * false; used outside a provider ⇒ deny. The Owner (all permissions @ global) ⇒ every
- * check true. The book→entity relation the `book` narrowing needs is derived pragmatically
- * from whatever books are already in the query cache (the same books the UI has loaded).
+ * check true. Parent relations are derived only from authoritative resource DTOs already in
+ * the query cache; an unknown parent, malformed scope, or cycle denies the check.
  *
  * FROZEN API for t64-E6 (role/delegation management UI) and t62 (admin UI): they reuse
  * `useCan`/`usePermissions`, the `CanScope` shape, the `scope*` builders, the `Gate*`
@@ -31,8 +34,8 @@ import {
   type ButtonHTMLAttributes,
   type ReactNode,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import type { BookView, PermissionGrant } from '../../api/types';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import type { ActView, BookView, Entity, PermissionGrant, PermissionScope } from '../../api/types';
 import { ApiError } from '../../api/client';
 import { keys, useSession } from '../../api/hooks';
 import { useT } from '../../i18n';
@@ -47,43 +50,179 @@ import {
 
 // --- Scope model ----------------------------------------------------------------
 
-/** A permission target scope, mirroring the server's `ScopeView`/`PermissionScope`. */
-export type CanScope =
-  { kind: 'global' } | { kind: 'entity'; id: string } | { kind: 'book'; id: string };
+/** A permission target scope, mirroring the server's complete `ScopeView` union. */
+export type CanScope = PermissionScope;
 
 /** The whole-instance scope — the default target when a caller passes no scope. */
-export const scopeGlobal: CanScope = { kind: 'global' };
+export const scopeGlobal: Extract<CanScope, { kind: 'global' }> = { kind: 'global' };
+/** A tenant-isolation-boundary target. */
+export const scopeTenant = (id: string): Extract<CanScope, { kind: 'tenant' }> => ({
+  kind: 'tenant',
+  id,
+});
 /** An entity-scoped target (covers the entity and its books). */
-export const scopeEntity = (id: string): CanScope => ({ kind: 'entity', id });
+export const scopeEntity = (id: string): Extract<CanScope, { kind: 'entity' }> => ({
+  kind: 'entity',
+  id,
+});
 /** A single-book-scoped target. */
-export const scopeBook = (id: string): CanScope => ({ kind: 'book', id });
+export const scopeBook = (id: string): Extract<CanScope, { kind: 'book' }> => ({
+  kind: 'book',
+  id,
+});
+/** A single act/minute target. */
+export const scopeAct = (id: string): Extract<CanScope, { kind: 'act' }> => ({ kind: 'act', id });
+/** A records-folder target. */
+export const scopeFolder = (id: string): Extract<CanScope, { kind: 'folder' }> => ({
+  kind: 'folder',
+  id,
+});
+/** A shared template-library target. */
+export const scopeTemplateLibrary = (
+  id: string,
+): Extract<CanScope, { kind: 'template_library' }> => ({ kind: 'template_library', id });
+/** An archive/export-resource target. */
+export const scopeArchive = (id: string): Extract<CanScope, { kind: 'archive' }> => ({
+  kind: 'archive',
+  id,
+});
+/** An integration/connector target. */
+export const scopeIntegration = (id: string): Extract<CanScope, { kind: 'integration' }> => ({
+  kind: 'integration',
+  id,
+});
+/** A storage-repository target. */
+export const scopeRepository = (id: string): Extract<CanScope, { kind: 'repository' }> => ({
+  kind: 'repository',
+  id,
+});
 
 /** The book→entity relation the `book` narrowing consults (fail-closed: unknown ⇒ none). */
 export type BookEntityResolver = (bookId: string) => string | undefined;
 
+/** One authoritative parent hop for a target scope (unknown ⇒ none/fail closed). */
+export type ScopeParentResolver = (scope: CanScope) => CanScope | undefined;
+
+const VALID_SCOPE_KINDS = new Set([
+  'global',
+  'tenant',
+  'entity',
+  'book',
+  'act',
+  'folder',
+  'template_library',
+  'archive',
+  'integration',
+  'repository',
+]);
+
+/** Reject malformed/unrecognised runtime DTOs before evaluating even a global grant. */
+function isValidScope(scope: unknown): scope is CanScope {
+  if (!scope || typeof scope !== 'object') return false;
+  const candidate = scope as { kind?: unknown; id?: unknown };
+  if (typeof candidate.kind !== 'string' || !VALID_SCOPE_KINDS.has(candidate.kind)) return false;
+  if (candidate.kind === 'global') return !('id' in candidate);
+  return typeof candidate.id === 'string' && candidate.id.trim().length > 0;
+}
+
+function scopeEquals(left: CanScope, right: CanScope): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === 'global' || right.kind === 'global') return true;
+  return left.id === right.id;
+}
+
+function scopeKey(scope: CanScope): string {
+  return scope.kind === 'global' ? 'global' : `${scope.kind}:${scope.id}`;
+}
+
 /**
  * Whether one effective grant covers a target scope — the client mirror of the server's
- * narrowing-only `scope_covers`. A `global` grant covers everything; an `entity` grant
- * covers that entity and its books; a `book` grant covers only itself; and a scoped grant
- * can never satisfy a `global` check (upward scope-escape is structurally impossible).
+ * narrowing-only `scope_covers`. The target is walked toward its authoritative parents for
+ * at most eight hops, matching the server bound. Unknown parents and cycles fail closed.
+ * `bookEntity` keeps the original three-level caller API source-compatible; `parentScope`
+ * supplies the additive tenant/act/resource hierarchy.
  */
 export function grantCoversScope(
   grant: PermissionGrant,
   target: CanScope,
   bookEntity: BookEntityResolver,
+  parentScope?: ScopeParentResolver,
 ): boolean {
   const g = grant.scope;
+  if (!isValidScope(g) || !isValidScope(target)) return false;
   if (g.kind === 'global') return true;
-  // A scoped grant never satisfies a Global target.
-  if (target.kind === 'global') return false;
-  if (g.kind === 'entity') {
-    if (target.kind === 'entity') return g.id === target.id;
-    // book target: covered iff the book belongs to the granted entity.
-    const owner = bookEntity(target.id);
-    return owner !== undefined && owner === g.id;
+
+  let current: CanScope | undefined = target;
+  const seen = new Set<string>();
+  for (let hop = 0; hop < 8 && current; hop += 1) {
+    if (scopeEquals(g, current)) return true;
+    const key = scopeKey(current);
+    if (seen.has(key)) return false;
+    seen.add(key);
+
+    const resolved: CanScope | undefined = parentScope?.(current);
+    if (resolved !== undefined) {
+      if (!isValidScope(resolved)) return false;
+      current = resolved;
+      continue;
+    }
+
+    // Source-compatible fallback for the original Entity → Book relation.
+    if (current.kind === 'book') {
+      const owner = bookEntity(current.id);
+      current = owner ? scopeEntity(owner) : undefined;
+    } else {
+      current = undefined;
+    }
   }
-  // g.kind === 'book' — covers only the exact book.
-  return target.kind === 'book' && g.id === target.id;
+  return false;
+}
+
+/**
+ * Resolve one authoritative parent hop from live query-cache DTOs. Only relations explicitly
+ * carried by Entity, Book, and Act responses are inferred; unsupported leaf resources return
+ * undefined until their own DTO/query contract exposes a parent.
+ */
+export function cachedScopeParent(qc: QueryClient, scope: CanScope): CanScope | undefined {
+  if (scope.kind === 'entity') {
+    const single = qc.getQueryData<Entity>(keys.entity(scope.id));
+    if (single?.tenant_id) return scopeTenant(single.tenant_id);
+    const cached = qc.getQueriesData<unknown>({ queryKey: keys.entities });
+    for (const [, value] of cached) {
+      const found = Array.isArray(value)
+        ? (value as Entity[]).find((entity) => entity?.id === scope.id)
+        : undefined;
+      if (found?.tenant_id) return scopeTenant(found.tenant_id);
+    }
+    return undefined;
+  }
+
+  if (scope.kind === 'book') {
+    const single = qc.getQueryData<BookView>(keys.book(scope.id));
+    if (single?.entity_id) return scopeEntity(single.entity_id);
+    const cached = qc.getQueriesData<unknown>({ queryKey: ['books'] });
+    for (const [, value] of cached) {
+      const found = Array.isArray(value)
+        ? (value as BookView[]).find((book) => book?.id === scope.id)
+        : undefined;
+      if (found?.entity_id) return scopeEntity(found.entity_id);
+    }
+    return undefined;
+  }
+
+  if (scope.kind === 'act') {
+    const single = qc.getQueryData<ActView>(keys.act(scope.id));
+    if (single?.book_id) return scopeBook(single.book_id);
+    const cached = qc.getQueriesData<unknown>({ queryKey: ['books'] });
+    for (const [, value] of cached) {
+      const found = Array.isArray(value)
+        ? (value as ActView[]).find((act) => act?.id === scope.id && act?.book_id)
+        : undefined;
+      if (found?.book_id) return scopeBook(found.book_id);
+    }
+  }
+
+  return undefined;
 }
 
 // --- Context --------------------------------------------------------------------
@@ -127,28 +266,31 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const grants = session.data?.permissions ?? EMPTY_GRANTS;
   const ready = !session.isLoading;
 
-  // Resolve a book's owning entity from whatever book reads are cached (single-book or any
-  // list). Fail-closed: an unknown book ⇒ undefined ⇒ an entity grant does not cover it.
+  // Resolve only relations proven by cached API DTOs. Unknown resources and unsupported leaf
+  // parents deliberately return undefined: a wider grant must never be guessed from an id.
+  const parentScope = useCallback<ScopeParentResolver>(
+    (scope) => cachedScopeParent(qc, scope),
+    [qc],
+  );
+
+  /** Source-compatible book→entity adapter for callers of the original three-scope API. */
   const bookEntity = useCallback<BookEntityResolver>(
     (bookId) => {
-      const single = qc.getQueryData<BookView>(keys.book(bookId));
-      if (single?.entity_id) return single.entity_id;
-      const lists = qc.getQueriesData<BookView[]>({ queryKey: ['books'] });
-      for (const [, list] of lists) {
-        const found = Array.isArray(list) ? list.find((b) => b?.id === bookId) : undefined;
-        if (found) return found.entity_id;
-      }
-      return undefined;
+      const parent = parentScope(scopeBook(bookId));
+      return parent?.kind === 'entity' ? parent.id : undefined;
     },
-    [qc],
+    [parentScope],
   );
 
   const value = useMemo<PermissionsContextValue>(() => {
     const can = (permission: string, scope: CanScope = scopeGlobal) =>
-      grants.some((gr) => gr.permission === permission && grantCoversScope(gr, scope, bookEntity));
+      grants.some(
+        (gr) =>
+          gr.permission === permission && grantCoversScope(gr, scope, bookEntity, parentScope),
+      );
     const canAny = (permission: string) => grants.some((gr) => gr.permission === permission);
     return { can, canAny, grants, ready };
-  }, [grants, ready, bookEntity]);
+  }, [grants, ready, bookEntity, parentScope]);
 
   return <PermissionsContext.Provider value={value}>{children}</PermissionsContext.Provider>;
 }

@@ -6,7 +6,12 @@ import type {
   LedgerEventView,
 } from '../../api/types';
 import { t } from '../../i18n';
-import { buildDashboardNotifications, popupNotifications } from './notifications';
+import type { NotificationItem } from './notifications';
+import {
+  buildDashboardNotifications,
+  compareNotifications,
+  popupNotifications,
+} from './notifications';
 
 const targetLinks = {
   entity: null,
@@ -25,6 +30,8 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
     acts_awaiting_signature: 0,
     acts_sealed: 0,
     unresolved_compliance: 0,
+    failed_sync_jobs: 0,
+    pending_backup_jobs: 0,
     ledger_length: 0,
     ledger_valid: true,
     current_work: {
@@ -815,5 +822,145 @@ describe('buildDashboardNotifications', () => {
     expect(popup).toHaveLength(1);
     expect(popup[0]?.kind).toBe('reminder');
     expect(popup[0]?.action).toEqual({ href: '/entidades/entity-1', label: 'Abrir entidade' });
+  });
+
+  it('deduplicates reminders and keeps invalid, missing, overdue, and upcoming dates honest', () => {
+    const invalid = reminder({
+      due_date: '2026-02-30',
+      status: 'Overdue',
+      entity_id: '',
+      entity_name: '',
+      source_rule: 'unknown-rule',
+      source_profile: '',
+      reason: '',
+      params: { book_id: 'book-edge' },
+    });
+    const items = buildDashboardNotifications(
+      dashboard({
+        unresolved_compliance: 1,
+        failed_sync_jobs: 0,
+        pending_backup_jobs: 0,
+        reminders: [
+          invalid,
+          { ...invalid },
+          reminder({
+            due_date: '',
+            status: 'Upcoming',
+            entity_id: '',
+            params: { act_id: 'act-upcoming' },
+          }),
+          reminder({
+            due_date: 'not-a-date',
+            status: 'Pending',
+            entity_id: '',
+            params: {},
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items.filter((item) => item.kind === 'reminder')).toHaveLength(3);
+    expect(items.find((item) => item.id.includes('2026-02-30'))).toMatchObject({
+      tone: 'warn',
+      meta: ['Data inválida', expect.any(String)],
+      action: { href: '/livros/book-edge', label: 'Abrir livro' },
+    });
+    expect(items.find((item) => item.action?.href === '/atas/act-upcoming')).toMatchObject({
+      tone: 'neutral',
+      badge: 'Planeado',
+      action: { href: '/atas/act-upcoming', label: 'Abrir entidade' },
+    });
+    expect(items.some((item) => item.id === 'compliance')).toBe(true);
+  });
+
+  it('falls back through every safe alert target and rejects unusable metadata actions', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        alerts: [
+          alert({
+            code: 'ledger.integrity.review_required',
+            target: { entity_id: null, book_id: null, act_id: null, links: { ...targetLinks } },
+          }),
+          alert({
+            code: 'unknown.act',
+            target: {
+              entity_id: null,
+              book_id: null,
+              act_id: ' act-fallback ',
+              links: targetLinks,
+            },
+            action: {
+              kind: 'open_act',
+              label_key: 'not.a.catalog.key',
+              route: 'javascript:alert(1)',
+              api_href: null,
+            },
+          }),
+          alert({
+            code: 'unknown.book',
+            target: {
+              entity_id: null,
+              book_id: ' book-fallback ',
+              act_id: null,
+              links: targetLinks,
+            },
+          }),
+          alert({
+            code: 'unknown.entity',
+            target: {
+              entity_id: ' entity-fallback ',
+              book_id: null,
+              act_id: null,
+              links: targetLinks,
+            },
+          }),
+          alert({
+            code: 'unknown.settings',
+            target: { entity_id: null, book_id: null, act_id: null, links: targetLinks },
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items.map((item) => item.action?.href)).toEqual([
+      '/arquivo',
+      '/atas/act-fallback',
+      '/livros/book-fallback',
+      '/entidades/entity-fallback',
+      '/configuracoes',
+    ]);
+  });
+
+  it('orders equal-priority items by time presence, direction, sequence, title, then id', () => {
+    const item = (overrides: Partial<NotificationItem>): NotificationItem => ({
+      id: 'b',
+      kind: 'reminder',
+      priority: 3,
+      sortTime: null,
+      tone: 'neutral',
+      badge: 'badge',
+      title: 'Beta',
+      detail: 'detail',
+      meta: [],
+      action: { href: '/configuracoes', label: 'Abrir' },
+      ...overrides,
+    });
+
+    expect(compareNotifications(item({ priority: 1 }), item({ priority: 2 }))).toBeLessThan(0);
+    expect(compareNotifications(item({ sortTime: 1 }), item({ sortTime: null }))).toBeLessThan(0);
+    expect(compareNotifications(item({ sortTime: 1 }), item({ sortTime: 2 }))).toBeLessThan(0);
+    expect(
+      compareNotifications(
+        item({ kind: 'operation', sortTime: 1 }),
+        item({ kind: 'operation', sortTime: 2 }),
+      ),
+    ).toBeGreaterThan(0);
+    expect(compareNotifications(item({ seq: 1 }), item({ seq: 2 }))).toBeGreaterThan(0);
+    expect(compareNotifications(item({ title: 'Alfa' }), item({ title: 'Beta' }))).toBeLessThan(0);
+    expect(
+      compareNotifications(item({ id: 'a', title: 'Igual' }), item({ id: 'b', title: 'Igual' })),
+    ).toBeLessThan(0);
   });
 });

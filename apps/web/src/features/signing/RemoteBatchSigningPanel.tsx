@@ -62,7 +62,9 @@ function RemoteBatchProviderManifest({ provider }: { provider?: SignatureProvide
         repeated: manifest.capabilities.remote_batch_repeated_per_document_initiate
           ? t('common.yes')
           : t('common.no'),
-        native: manifest.capabilities.provider_native_batch_claimed ? t('common.yes') : t('common.no'),
+        native: manifest.capabilities.provider_native_batch_claimed
+          ? t('common.yes')
+          : t('common.no'),
         single: manifest.capabilities.single_otp_pin_sad_batch_claimed
           ? t('common.yes')
           : t('common.no'),
@@ -582,7 +584,7 @@ function RemoteBatchInitiateResultView({ response }: { response: RemoteBatchInit
             </td>
             <td>
               {result.status === 'error' ? (
-                result.error ?? t('common.error')
+                (result.error ?? t('common.error'))
               ) : (
                 <>
                   {result.activation_hint ?? '—'}

@@ -13,6 +13,7 @@ const openExternalMock = vi.hoisted(() => vi.fn());
 vi.mock('../../desktop/openExternal', () => ({
   openExternal: (url: string) => openExternalMock(url),
 }));
+vi.mock('../signing/SigningPanel', () => ({ SigningPanel: () => null }));
 
 type IssueWithSourceMetadata = ComplianceReport['issues'][number] & Record<string, unknown>;
 type AdvisoryWithSourceMetadata = NonNullable<ComplianceReport['convening_advisories']>[number] &
@@ -81,6 +82,7 @@ function renderEditor(act: ActView, compliance: ComplianceReport) {
       { match: 'compliance', body: compliance },
       { match: '/v1/acts/act-1/follow-ups', body: [] },
       { match: '/v1/acts/act-1/documents/generated', body: [] },
+      { match: '/v1/acts/act-1/document/bundle', status: 404, body: { error: 'not found' } },
       { match: '/v1/acts/', body: act },
       { match: '/v1/books/', body: book },
     ]),
@@ -269,9 +271,7 @@ describe('CompliancePanel legal-source references', () => {
     expect(link.getAttribute('href')).toBe('https://eur-lex.europa.eu/eli/reg/2014/910/oj');
     expect(link.getAttribute('target')).toBe('_blank');
     fireEvent.click(link);
-    expect(openExternalMock).toHaveBeenCalledWith(
-      'https://eur-lex.europa.eu/eli/reg/2014/910/oj',
-    );
+    expect(openExternalMock).toHaveBeenCalledWith('https://eur-lex.europa.eu/eli/reg/2014/910/oj');
     expect(screen.getByText('Verificado')).toBeTruthy();
     expect(screen.queryByText(/fonte pendente/)).toBeNull();
   });
@@ -506,9 +506,8 @@ describe('AtaEditorPage seal gating', () => {
   it('keeps the seal action disabled until the act reaches Signing even when compliance is clean', async () => {
     renderEditor({ ...baseAct, state: 'Draft' }, complianceReport());
 
-    const sealButton = await screen.findByRole<HTMLButtonElement>('button', { name: /selar ata/i });
-    expect(sealButton.disabled).toBe(true);
-    expect(screen.getByText(/só fica disponível no estado «Em assinatura»/i)).toBeTruthy();
+    expect(await screen.findByText(/só fica disponível no estado «Em assinatura»/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /selar ata/i })).toBeNull();
     expect(screen.queryByText(/está conforme e em assinatura/i)).toBeNull();
   });
 
@@ -526,7 +525,9 @@ describe('AtaEditorPage seal gating', () => {
 
     const sealButton = await screen.findByRole<HTMLButtonElement>('button', { name: /selar ata/i });
     expect(sealButton.disabled).toBe(false);
-    // SIG-03 manual-signature banner shows during the signing phase.
-    expect(screen.getByText(/Assinatura manual \(SIG-03\)/i)).toBeTruthy();
+    // SIG-03 is shown as an explicit alternative while signed-PDF evidence is absent.
+    expect(
+      screen.getByText(/Via alternativa: original assinado manualmente \(SIG-03\)/i),
+    ).toBeTruthy();
   });
 });

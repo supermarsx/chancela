@@ -25,7 +25,7 @@ import {
   useUserDsrRequests,
   useUsers,
 } from '../../api/hooks';
-import { useT } from '../../i18n';
+import { t as translateNow, useT } from '../../i18n';
 import {
   Badge,
   Button,
@@ -263,7 +263,7 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
 
   return (
     <Card
-      title="Pedidos DSR / privacidade"
+      title={translateNow('uiLiteral.editUserPage.pedidosDsrPrivacidade')}
       actions={
         <GateButton
           perm="user.manage"
@@ -279,12 +279,15 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
     >
       <div className="stack">
         <p className="field__hint">
-          Regista o ciclo de vida dos pedidos DSR do utilizador e descarrega o JSON não secreto para
-          resposta. O conteúdo da exportação não é apresentado no ecrã.
+          {' '}
+          {translateNow('uiLiteral.editUserPage.registaOCicloDeVidaDosPedidosDsr')}{' '}
         </p>
 
         <form className="form" onSubmit={create}>
-          <Field label="Tipo de pedido" htmlFor="dsr-request-type">
+          <Field
+            label={translateNow('uiLiteral.editUserPage.tipoDePedido')}
+            htmlFor="dsr-request-type"
+          >
             <Select
               id="dsr-request-type"
               value={requestType}
@@ -317,19 +320,19 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
             <ErrorNote error={requests.error} />
           )
         ) : list.length === 0 ? (
-          <EmptyState title="Sem pedidos DSR">
-            <p>Ainda não há pedidos DSR registados para este utilizador.</p>
+          <EmptyState title={translateNow('uiLiteral.editUserPage.semPedidosDsr')}>
+            <p>{translateNow('uiLiteral.editUserPage.aindaNaoHaPedidosDsrRegistadosParaEste')}</p>
           </EmptyState>
         ) : (
           <Table
             head={
               <tr>
-                <th>Tipo</th>
-                <th>Estado</th>
-                <th>Criado</th>
-                <th>Criado por</th>
-                <th>Concluído</th>
-                <th>Ação</th>
+                <th>{translateNow('uiLiteral.editUserPage.tipo')}</th>
+                <th>{translateNow('uiLiteral.editUserPage.estado')}</th>
+                <th>{translateNow('uiLiteral.editUserPage.criado')}</th>
+                <th>{translateNow('uiLiteral.editUserPage.criadoPor')}</th>
+                <th>{translateNow('uiLiteral.editUserPage.concluido')}</th>
+                <th>{translateNow('uiLiteral.editUserPage.acao')}</th>
               </tr>
             }
           >
@@ -353,7 +356,8 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
                       disabled={busy}
                       onClick={() => complete(request.id)}
                     >
-                      Marcar concluído
+                      {' '}
+                      {translateNow('uiLiteral.editUserPage.marcarConcluido')}{' '}
                     </GateButton>
                   ) : (
                     <span className="muted">{request.completed_by ?? '—'}</span>

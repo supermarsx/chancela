@@ -37,7 +37,7 @@ type ArtifactState =
 // Raw PDF bytes; the backend route has a larger JSON/base64 envelope limit for this cap.
 export const EXTERNAL_INVITE_SIGNED_PDF_RAW_MAX_BYTES = 16 * 1024 * 1024;
 
-function formatDateTime(value?: string): string {
+export function formatExternalInviteDateTime(value?: string): string {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -47,7 +47,7 @@ function formatDateTime(value?: string): string {
   }).format(date);
 }
 
-function statusBadge(status: ExternalSignerInviteStatus, t: TFunction) {
+export function externalInviteStatusBadge(status: ExternalSignerInviteStatus, t: TFunction) {
   if (status === 'pending')
     return <Badge tone="accent">{t('externalInvite.status.pending')}</Badge>;
   if (status === 'accepted') return <Badge tone="ok">{t('externalInvite.status.accepted')}</Badge>;
@@ -57,7 +57,10 @@ function statusBadge(status: ExternalSignerInviteStatus, t: TFunction) {
   return <Badge tone="neutral">{t('externalInvite.status.revoked')}</Badge>;
 }
 
-function slotStatusLabel(status: ExternalSignerSlotStatus, t: TFunction): string {
+export function externalInviteSlotStatusLabel(
+  status: ExternalSignerSlotStatus,
+  t: TFunction,
+): string {
   if (status === 'pending') return t('signing.envelopes.slot.status.pending');
   if (status === 'initiated') return t('signing.envelopes.slot.status.initiated');
   if (status === 'signed') return t('signing.envelopes.slot.status.signed');
@@ -66,14 +69,14 @@ function slotStatusLabel(status: ExternalSignerSlotStatus, t: TFunction): string
   return t('signing.envelopes.slot.status.expired');
 }
 
-function slotStatusBadge(status: ExternalSignerSlotStatus, t: TFunction) {
+export function externalInviteSlotStatusBadge(status: ExternalSignerSlotStatus, t: TFunction) {
   if (status === 'signed') return <Badge tone="ok">{slotStatusLabel(status, t)}</Badge>;
   if (status === 'pending' || status === 'initiated')
     return <Badge tone="accent">{slotStatusLabel(status, t)}</Badge>;
   return <Badge tone="warn">{slotStatusLabel(status, t)}</Badge>;
 }
 
-function unavailableMessage(error: unknown, t: TFunction) {
+export function externalInviteUnavailableMessage(error: unknown, t: TFunction) {
   if (error instanceof ApiError && error.status === 404) {
     return (
       <InlineWarning tone="error" title={t('externalInvite.unavailable.title')}>
@@ -84,7 +87,7 @@ function unavailableMessage(error: unknown, t: TFunction) {
   return <ErrorNote error={error} />;
 }
 
-async function fileToBase64(file: File): Promise<string> {
+export async function externalInviteFileToBase64(file: File): Promise<string> {
   const buffer =
     typeof file.arrayBuffer === 'function'
       ? await file.arrayBuffer()
@@ -110,7 +113,7 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
-function formatBytes(value: number): string {
+export function formatExternalInviteBytes(value: number): string {
   if (!Number.isFinite(value) || value < 0) return 'unknown';
   if (value < 1024) return `${value} bytes`;
   const units = ['KB', 'MB', 'GB'];
@@ -125,7 +128,7 @@ function formatBytes(value: number): string {
   return `${amount.toFixed(decimals)} ${unit}`;
 }
 
-function signedPdfSizeError(file: File, t: TFunction): Error | null {
+export function externalInviteSignedPdfSizeError(file: File, t: TFunction): Error | null {
   if (file.size <= EXTERNAL_INVITE_SIGNED_PDF_RAW_MAX_BYTES) return null;
   return new Error(
     t('externalInvite.upload.file.tooLarge', {
@@ -134,9 +137,21 @@ function signedPdfSizeError(file: File, t: TFunction): Error | null {
   );
 }
 
-function canUploadSignedPdf(envelope: ExternalSignerInvitePublicView): boolean {
+export function canUploadExternalInviteSignedPdf(
+  envelope: ExternalSignerInvitePublicView,
+): boolean {
   return envelope.workflow === 'external_envelope' && Boolean(envelope.external_envelope);
 }
+
+const formatDateTime = formatExternalInviteDateTime;
+const statusBadge = externalInviteStatusBadge;
+const slotStatusLabel = externalInviteSlotStatusLabel;
+const slotStatusBadge = externalInviteSlotStatusBadge;
+const unavailableMessage = externalInviteUnavailableMessage;
+const fileToBase64 = externalInviteFileToBase64;
+const formatBytes = formatExternalInviteBytes;
+const signedPdfSizeError = externalInviteSignedPdfSizeError;
+const canUploadSignedPdf = canUploadExternalInviteSignedPdf;
 
 export function ExternalSignerInvitePage() {
   const t = useT();

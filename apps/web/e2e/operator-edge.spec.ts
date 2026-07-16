@@ -632,6 +632,8 @@ function dashboardFixture(recentEvents: LedgerEventView[]): Dashboard {
     acts_awaiting_signature: 1,
     acts_sealed: 2,
     unresolved_compliance: 0,
+    failed_sync_jobs: 0,
+    pending_backup_jobs: 0,
     ledger_length: recentEvents.length,
     ledger_valid: true,
     reminders: [],

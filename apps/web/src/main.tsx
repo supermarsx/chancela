@@ -8,6 +8,19 @@ import { ShellErrorBoundary } from './app/ErrorBoundary';
 import { recordCrash } from './app/safeMode';
 import { checkServerVersion } from './api/versionCheck';
 import { isTauri } from './desktop/tauri';
+// UX-03: every face is packaged by Vite as a local WOFF2 asset. Keep these explicit subset/weight
+// imports so the offline desktop build never reaches a font CDN and does not ship unused scripts.
+import '@fontsource/noto-serif/latin-400.css';
+import '@fontsource/noto-serif/latin-600.css';
+import '@fontsource/noto-serif/latin-700.css';
+import '@fontsource/noto-sans/latin-400.css';
+import '@fontsource/noto-sans/latin-500.css';
+import '@fontsource/noto-sans/latin-600.css';
+import '@fontsource/noto-sans/latin-700.css';
+import '@fontsource/noto-sans-mono/latin-400.css';
+import '@fontsource/noto-sans-mono/latin-600.css';
+import '@fontsource/playfair-display/latin-600.css';
+import '@fontsource/playfair-display/latin-700.css';
 import './theme.css';
 
 // Flag the document when running inside the Tauri shell so the CSS can reserve

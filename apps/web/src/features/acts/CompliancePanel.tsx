@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom';
 import type { ComplianceReport } from '../../api/types';
 import { entityFamilyLabels, severityLabels } from '../../api/labels';
 import { openExternal } from '../../desktop/openExternal';
-import { useT } from '../../i18n';
+import { t as translateNow, useT } from '../../i18n';
 import { Badge, EmptyState, InlineWarning } from '../../ui';
 
 type MetadataRecord = Record<string, unknown>;
@@ -342,13 +342,16 @@ function conveningAdvisoryNextRecord(advisory: ConveningAdvisoryView): string {
 
 function ConveningAdvisoryGuidance({ advisory }: { advisory: ConveningAdvisoryView }) {
   return (
-    <dl className="deflist deflist--tight" aria-label="Orientação local da convocatória">
+    <dl
+      className="deflist deflist--tight"
+      aria-label={translateNow('uiLiteral.compliancePanel.orientacaoLocalDaConvocatoria')}
+    >
       <div>
-        <dt>Próximo registo local</dt>
+        <dt>{translateNow('uiLiteral.compliancePanel.proximoRegistoLocal')}</dt>
         <dd>{conveningAdvisoryNextRecord(advisory)}</dd>
       </div>
       <div>
-        <dt>Limites do aviso</dt>
+        <dt>{translateNow('uiLiteral.compliancePanel.limitesDoAviso')}</dt>
         <dd>{CONVENING_NOTICE_NO_CLAIMS}</dd>
       </div>
     </dl>

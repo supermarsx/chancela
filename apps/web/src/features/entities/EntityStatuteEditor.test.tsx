@@ -16,6 +16,8 @@ import type { Entity } from '../../api/types';
 
 const entity: Entity = {
   id: 'ent-1',
+  tenant_id: 'tenant-1',
+  group_id: null,
   name: 'Encosto Estratégico, S.A.',
   nipc: '503004642',
   nipc_validated: true,

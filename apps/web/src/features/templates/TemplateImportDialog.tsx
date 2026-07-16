@@ -144,9 +144,7 @@ export function TemplateImportDialog({ onClose }: { onClose: () => void }) {
             </InlineWarning>
           ) : (
             <InlineWarning tone="error" title={t('templates.import.invalid')}>
-              <p>
-                {mappedTemplateError(t, verdict.error?.code, verdict.error?.message ?? '')}
-              </p>
+              <p>{mappedTemplateError(t, verdict.error?.code, verdict.error?.message ?? '')}</p>
             </InlineWarning>
           )
         ) : null}

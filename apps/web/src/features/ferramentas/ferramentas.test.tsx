@@ -681,9 +681,7 @@ describe('Ferramentas — ASiC signature inspector', () => {
       }
       if (url.includes('/v1/signature/asic/inspect') && method === 'POST') {
         inspectionBodies.push(JSON.parse(String(init?.body)));
-        return inspectionBodies.length === 1
-          ? staleInspection.promise
-          : freshInspection.promise;
+        return inspectionBodies.length === 1 ? staleInspection.promise : freshInspection.promise;
       }
       return Promise.reject(new Error(`no stub for ${url}`));
     });

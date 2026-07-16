@@ -406,6 +406,8 @@ function dashboardFixture(): Dashboard {
     acts_awaiting_signature: 0,
     acts_sealed: 0,
     unresolved_compliance: 0,
+    failed_sync_jobs: 0,
+    pending_backup_jobs: 0,
     ledger_length: 18,
     ledger_valid: true,
     current_work: {

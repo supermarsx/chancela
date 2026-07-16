@@ -24,6 +24,8 @@ const PROFILE: Entity['profile'] = {
 
 const ENTITY_A: Entity = {
   id: 'ent-a',
+  tenant_id: 'tenant-1',
+  group_id: null,
   name: 'Encosto Estratégico, Lda.',
   nipc: '503004642',
   nipc_validated: true,
@@ -37,6 +39,8 @@ const ENTITY_A: Entity = {
 
 const ENTITY_B: Entity = {
   id: 'ent-b',
+  tenant_id: 'tenant-1',
+  group_id: null,
   name: 'Condomínio Azul',
   nipc: '900000001',
   nipc_validated: true,

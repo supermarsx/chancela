@@ -19,13 +19,25 @@ export const daDK: Catalog = {
   'rbac.delegacoes.tab': 'Delegeringer',
   'rbac.scope.label': 'Omfang',
   'rbac.scope.global': 'Global (hele instansen)',
+  'rbac.scope.tenant': 'Lejerorganisation',
   'rbac.scope.entity': 'Enhed',
   'rbac.scope.book': 'Bog',
+  'rbac.scope.act': 'Akt',
+  'rbac.scope.folder': 'Mappe',
+  'rbac.scope.templateLibrary': 'Skabelonbibliotek',
+  'rbac.scope.archive': 'Arkiv',
+  'rbac.scope.integration': 'Forbindelse',
+  'rbac.scope.repository': 'Lager',
   'rbac.scope.global.desc': 'Gælder for hele instansen.',
+  'rbac.scope.tenant.desc': 'Gælder for organisationen og dens indeholdte ressourcer.',
   'rbac.scope.entity.desc': 'Gælder for enheden og dens bøger.',
   'rbac.scope.book.desc': 'Gælder kun for denne bog.',
+  'rbac.scope.resource.desc':
+    'Gælder for den angivne ressource og underordnede ressourcer i den tilladte struktur.',
+  'rbac.scope.tenant.pick': 'Vælg organisation',
   'rbac.scope.entity.pick': 'Vælg enhed',
   'rbac.scope.book.pick': 'Vælg bog',
+  'rbac.scope.resource.pick': 'Ressource-id',
   'rbac.group.entity': 'Enheder',
   'rbac.group.book': 'Bøger',
   'rbac.group.act': 'Akter',
@@ -43,7 +55,7 @@ export const daDK: Catalog = {
   'rbac.role.subsetNote': 'Du kan kun vælge tilladelser, du selv har. Resten vises deaktiveret.',
   'rbac.matrix.selectAll': 'Vælg alle',
   'rbac.matrix.clear': 'Ryd',
-  'rbac.matrix.meta': 'Meta',
+  'rbac.matrix.meta': 'Mål',
   'rbac.matrix.notHeld': 'Du har ikke denne tilladelse',
   'rbac.role.edit.title': 'Rediger rolle',
   'rbac.role.create.title': 'Ny rolle',
@@ -862,12 +874,12 @@ export const daDK: Catalog = {
   'acts.attachments': 'Bilag',
   'acts.lifecycle': 'Livscyklus',
   'acts.compliance': 'Overholdelse',
-  'acts.manualSignature.title': 'Manuel underskrift (SIG-03)',
+  'acts.manualSignature.title': 'Alternativ rute: manuelt signeret original (SIG-03)',
   'acts.manualSignature.body':
-    'Der er endnu ikke integration af kvalificeret elektronisk underskrift. Ved forsegling kædes protokollen sammen i journalen på grundlag af en manuel underskrift fra de tilstedeværende — sørg for, at underskriverne har underskrevet det fysiske eksemplar eller PDF-filen, før du fortsætter.',
+    'Der er stadig ingen tekniske beviser for en underskrevet PDF. Du kan underskrive den kanoniske kopi ovenfor eller alternativt optage referencen til den underskrevne original manuelt. Denne kopi validerer ikke signaturen eller bekræfter filen.',
   'acts.sealing.title': 'Forsegling',
   'acts.sealing.ready':
-    'Protokollen er i overensstemmelse og under underskrift — den kan forsegles.',
+    'Referatet er i overensstemmelse og klar til at fuldføre underskriften inden forsegling.',
   'acts.sealing.readyWithWarnings':
     'Protokollen har ikke-blokerende overholdelsesadvarsler. Gennemgå dem, og anerkend dem udtrykkeligt før forsegling.',
   'acts.sealing.warningAck.title': 'Bekræft manuel forsegling',
@@ -1102,7 +1114,7 @@ export const daDK: Catalog = {
   'trust.status.current': 'Aktuel',
   'trust.status.checkedAt': 'Kontrolleret den',
   'trust.source.cache': 'Cache',
-  'trust.source.fixture': 'Fixture',
+  'trust.source.fixture': 'Armatur',
   'trust.signature.Valid': 'Signatur gyldig',
   'trust.signature.Invalid': 'Signatur ugyldig',
   'trust.explorer.title': 'Tillidskatalog',
@@ -1277,7 +1289,7 @@ export const daDK: Catalog = {
   'pdfValidator.field.revocationEvidence': 'Tilbagekaldelsesdokumentation',
   'pdfValidator.field.present': 'Til stede',
   'pdfValidator.field.count': 'Antal',
-  'pdfValidator.field.tokens': 'Tokens',
+  'pdfValidator.field.tokens': 'Poletter',
   'pdfValidator.field.imprints': 'Gyldige imprints',
   'pdfValidator.field.trust': 'Tillid',
   'pdfValidator.field.liveTsl': 'Live TSL',
@@ -1378,7 +1390,7 @@ export const daDK: Catalog = {
   'externalValidatorReports.table.validatorFamily': 'Validatorfamilie',
   'externalValidatorReports.table.archivePath': 'Arkivsti',
   'externalValidatorReports.table.contentType': 'Indholdstype',
-  'externalValidatorReports.table.digest': 'Digest',
+  'externalValidatorReports.table.digest': 'fordøje',
   'externalValidatorReports.table.actions': 'Handlinger',
   'externalValidatorReports.table.metadataOnly': 'Kun metadatasammendrag',
   'externalValidatorReports.status':
@@ -1492,7 +1504,7 @@ export const daDK: Catalog = {
     'Revisionsidentifikator: små bogstaver, cifre og . _ - (f.eks. amelia.marques).',
   'users.field.username.placeholder': 'amelia.marques',
   'users.field.displayName.label': 'Vist navn (valgfrit)',
-  'users.field.displayName.placeholder': 'Amélia Marques',
+  'users.field.displayName.placeholder': 'Amelia Marques',
   'users.create.submitting': 'Opretter…',
   'users.create.submit': 'Opret bruger',
   'users.list.cardTitle': 'Brugere',
@@ -1528,8 +1540,10 @@ export const daDK: Catalog = {
   'settings.appearance.intensity.hint': '0 til 100. Skalerer kornets opacitet i realtid.',
   'settings.appearance.reroll': 'Regenerér korn',
   'settings.appearance.colors.title': 'Tilpassede farver',
-  'settings.appearance.colors.hint': 'Vælg dine egne farver; lad en prøve være urørt for at beholde temaets standard.',
-  'settings.appearance.colors.help': 'Tilsidesætter appens primære, sekundære, baggrunds- og overfladefarve. Tekstkontrasten justeres automatisk, så den forbliver læsbar. Rent kosmetisk — det påvirker ikke dokumenter.',
+  'settings.appearance.colors.hint':
+    'Vælg dine egne farver; lad en prøve være urørt for at beholde temaets standard.',
+  'settings.appearance.colors.help':
+    'Tilsidesætter appens primære, sekundære, baggrunds- og overfladefarve. Tekstkontrasten justeres automatisk, så den forbliver læsbar. Rent kosmetisk — det påvirker ikke dokumenter.',
   'settings.appearance.colors.primary.label': 'Primær',
   'settings.appearance.colors.secondary.label': 'Sekundær',
   'settings.appearance.colors.background.label': 'Baggrund',
@@ -1561,7 +1575,7 @@ export const daDK: Catalog = {
   'settings.signing.tslUrl.placeholder': 'https://…',
   'settings.signing.requireQualified.label': 'Kræv en kvalificeret underskrift for at forsegle',
   'settings.signing.note':
-    'Signeringspræferencerne gælder for den kvalificerede elektroniske signatur med Chave Móvel Digital, tilgængelig for forseglede protokoller.',
+    'Præferencer gælder for den frosne kanoniske kopi, når referatet indtastes "Under signatur", før forsegling.',
   'settings.signing.officialHint': 'Officiel portugisisk standard.',
   'settings.signing.reset': 'Nulstil til standard',
   'settings.management.cardTitle': 'Administration',
@@ -1635,8 +1649,8 @@ export const daDK: Catalog = {
   'settings.platform.logging.override.none': 'Ingen undtagelse',
   'settings.platform.logging.override.app': 'Applikation',
   'settings.platform.logging.override.api': 'API',
-  'settings.platform.logging.override.mcp_stdio': 'MCP stdio',
-  'settings.platform.logLevel.trace': 'Trace',
+  'settings.platform.logging.override.mcp_stdio': 'MCP studie',
+  'settings.platform.logLevel.trace': 'Spor',
   'settings.platform.logLevel.debug': 'Debug',
   'settings.platform.logLevel.info': 'Info',
   'settings.platform.logLevel.warn': 'Advarsel',
@@ -1680,17 +1694,24 @@ export const daDK: Catalog = {
   'settings.platform.logs.column.message': 'Besked',
   'settings.platform.logs.context.show': 'Kontekst',
   'settings.platform.logs.context.empty': 'Ingen kontekst',
-  "settings.platform.subnav.aria": "Driftssektioner",
-  "settings.platform.tab.services": "Tjenester",
-  "settings.platform.tab.services.desc": "Styring af ønsket tilstand for API- og MCP-serverne, med ærlige backend-resultater og et driftsrevisionsspor.",
-  "settings.platform.tab.logs": "Logfiler",
-  "settings.platform.tab.logs.desc": "Konfiguration af logniveauer og struktureret API-loghale (skrivebeskyttet).",
-  "settings.platform.serviceDetails": "Styringsdetaljer og begrænsninger",
-  "settings.platform.help.services": "Disse handlinger registrerer tjenestens ønskede tilstand; grænsefladen forudsætter ikke direkte proceskontrol (for eksempel API-selvgenstart eller MCP-stdio-start).",
-  "settings.platform.help.outcomes": "Resultatet angiver, hvad backend gjorde: \"Supervisor påkrævet\" og \"Ikke understøttet\" betyder, at en ekstern supervisor skal handle — den ønskede tilstand blev kun registreret.",
-  "settings.platform.help.logLevels": "Det globale niveau begrænser alle tjenester; hvert område bruger det strengeste af det globale og områdets niveau. \"Off\" dæmper alt.",
-  "settings.platform.help.effective": "Det effektive niveau pr. tjeneste kombinerer det globale, områdets og en eventuel tilsidesættelse; er det globale \"Off\", er alt \"Off\".",
-  "settings.platform.help.overrides": "En tilsidesættelse pr. tjeneste erstatter tjenestens områdeniveau; brug den kun, når en tjeneste kræver et andet niveau.",
+  'settings.platform.subnav.aria': 'Driftssektioner',
+  'settings.platform.tab.services': 'Tjenester',
+  'settings.platform.tab.services.desc':
+    'Styring af ønsket tilstand for API- og MCP-serverne, med ærlige backend-resultater og et driftsrevisionsspor.',
+  'settings.platform.tab.logs': 'Logfiler',
+  'settings.platform.tab.logs.desc':
+    'Konfiguration af logniveauer og struktureret API-loghale (skrivebeskyttet).',
+  'settings.platform.serviceDetails': 'Styringsdetaljer og begrænsninger',
+  'settings.platform.help.services':
+    'Disse handlinger registrerer tjenestens ønskede tilstand; grænsefladen forudsætter ikke direkte proceskontrol (for eksempel API-selvgenstart eller MCP-stdio-start).',
+  'settings.platform.help.outcomes':
+    'Resultatet angiver, hvad backend gjorde: "Supervisor påkrævet" og "Ikke understøttet" betyder, at en ekstern supervisor skal handle — den ønskede tilstand blev kun registreret.',
+  'settings.platform.help.logLevels':
+    'Det globale niveau begrænser alle tjenester; hvert område bruger det strengeste af det globale og områdets niveau. "Off" dæmper alt.',
+  'settings.platform.help.effective':
+    'Det effektive niveau pr. tjeneste kombinerer det globale, områdets og en eventuel tilsidesættelse; er det globale "Off", er alt "Off".',
+  'settings.platform.help.overrides':
+    'En tilsidesættelse pr. tjeneste erstatter tjenestens områdeniveau; brug den kun, når en tjeneste kræver et andet niveau.',
   'settings.reminders.cardTitle': 'Dashboardpåmindelser',
   'settings.reminders.enabled.label': 'Generér lokale påmindelser',
   'settings.reminders.note':
@@ -1910,7 +1931,7 @@ export const daDK: Catalog = {
   'settings.privacy.retention.column.schedule': 'Plan',
   'settings.privacy.retention.column.disposalAction': 'Planlagt handling',
   'settings.privacy.retention.column.execution': 'Udførelse',
-  'settings.privacy.retention.execution.false': 'destructive_execution_supported: false',
+  'settings.privacy.retention.execution.false': 'destructive_execution_supported: falsk',
   'settings.privacy.retention.active.true': 'Aktiv',
   'settings.privacy.retention.active.false': 'Inaktiv',
   'settings.privacy.retention.status.all': 'Alle statusser',
@@ -1967,7 +1988,7 @@ export const daDK: Catalog = {
   'settings.privacy.execution.searchPlaceholder':
     'Politik, mål, ansvarlig, blokering eller næste trin',
   'settings.privacy.execution.statusFilter': 'Udførelsesstatus',
-  "settings.privacy.execution.status.all": "Alle udførelsesstatusser",
+  'settings.privacy.execution.status.all': 'Alle udførelsesstatusser',
   'settings.about.cardTitle': 'Om',
   'settings.about.serverVersion': 'Serverversion',
   'settings.about.uiVersion': 'Grænsefladeversion',
@@ -2485,23 +2506,32 @@ export const daDK: Catalog = {
   'templates.source.user': 'Oprettet af bruger',
   'templates.editor.title.create': 'Ny skabelon',
   'templates.editor.title.edit': 'Rediger skabelon',
-  'templates.editor.intro': 'En skabelon er et genanvendeligt referatskelet: den fastlægger dokumentets struktur og blokke og udgør ingen juridisk garanti.',
+  'templates.editor.intro':
+    'En skabelon er et genanvendeligt referatskelet: den fastlægger dokumentets struktur og blokke og udgør ingen juridisk garanti.',
   'templates.editor.field.id.label': 'Id',
-  'templates.editor.field.id.help': 'Versioneret id i formatet user-<navn>/v<n>, for eksempel user-encosto-ata/v1. Præfikset user- er forbeholdt dine egne skabeloner.',
+  'templates.editor.field.id.help':
+    'Versioneret id i formatet user-<navn>/v<n>, for eksempel user-encosto-ata/v1. Præfikset user- er forbeholdt dine egne skabeloner.',
   'templates.editor.field.family.label': 'Enhedsfamilie',
-  'templates.editor.field.family.help': 'Den type enhed, som skabelonen gælder for (handelsselskab, ejerforening, forening, fond eller andelsselskab).',
+  'templates.editor.field.family.help':
+    'Den type enhed, som skabelonen gælder for (handelsselskab, ejerforening, forening, fond eller andelsselskab).',
   'templates.editor.field.stage.label': 'Referatfase',
-  'templates.editor.field.stage.help': 'Den fase i referatets livscyklus, som denne skabelon er beregnet til.',
+  'templates.editor.field.stage.help':
+    'Den fase i referatets livscyklus, som denne skabelon er beregnet til.',
   'templates.editor.field.channels.label': 'Kanaler',
-  'templates.editor.field.channels.help': 'Mødekanaler, som denne skabelon understøtter (fysisk, på afstand eller blandet).',
+  'templates.editor.field.channels.help':
+    'Mødekanaler, som denne skabelon understøtter (fysisk, på afstand eller blandet).',
   'templates.editor.field.signaturePolicy.label': 'Signaturpolitik',
-  'templates.editor.field.signaturePolicy.help': 'Den signaturpræference, skabelonen foreslår. Den attesterer eller garanterer ikke signaturernes juridiske gyldighed.',
+  'templates.editor.field.signaturePolicy.help':
+    'Den signaturpræference, skabelonen foreslår. Den attesterer eller garanterer ikke signaturernes juridiske gyldighed.',
   'templates.editor.field.rulePackId.label': 'Regelpakke',
-  'templates.editor.field.rulePackId.help': 'Id for den relevante regelpakke. Lovhenvisninger udledes af systemet og kan ikke redigeres.',
+  'templates.editor.field.rulePackId.help':
+    'Id for den relevante regelpakke. Lovhenvisninger udledes af systemet og kan ikke redigeres.',
   'templates.editor.field.locale.label': 'Sprog',
-  'templates.editor.field.locale.help': 'Sproget i skabelonens indhold. Kun pt-PT understøttes i øjeblikket.',
+  'templates.editor.field.locale.help':
+    'Sproget i skabelonens indhold. Kun pt-PT understøttes i øjeblikket.',
   'templates.editor.field.blocks.label': 'Blokke',
-  'templates.editor.field.blocks.help': 'Rækkefølgen af blokke, som dokumentet består af (overskrift, afsnit, nøgle-værdi, afstemningstabel, signaturblok, sideskift eller regel). Mindst én blok er påkrævet.',
+  'templates.editor.field.blocks.help':
+    'Rækkefølgen af blokke, som dokumentet består af (overskrift, afsnit, nøgle-værdi, afstemningstabel, signaturblok, sideskift eller regel). Mindst én blok er påkrævet.',
   'templates.import.title': 'Importér skabelon',
   'templates.import.pickFile': 'Vælg JSON-fil',
   'templates.import.preflight': 'Validerer…',
@@ -2528,8 +2558,8 @@ export const daDK: Catalog = {
   // --- Qualified CMD signing (t57) ------------------------------------------------
   'settings.signing.family.hint': 'Anbefalet: Chave Móvel Digital.',
   'settings.signing.requireQualified.hint':
-    'Styrer kun protokollens status “afsluttet (kvalificeret)” — forsegling blokeres aldrig. Når dette er slået til, forbliver en forseglet protokol “afventer kvalificeret signatur”, indtil der findes en gyldig kvalificeret signatur.',
-  'settings.signing.cmd.title': 'Chave Móvel Digital (CMD)',
+    'Med denne mulighed aktiv, kræver forsegling accepteret teknisk bevis for en kvalificeret underskrift på den frosne kanoniske kopi.',
+  'settings.signing.cmd.title': 'Digital Mobile Key (CMD)',
   'settings.signing.cmd.intro':
     'Signering i produktion kræver AMA-legitimationsoplysningerne (ApplicationId og certifikat), som leveres via miljøvariabler. Disse værdier vises kun til orientering.',
   'settings.signing.cmd.env': 'Miljø',
@@ -2541,11 +2571,11 @@ export const daDK: Catalog = {
   'settings.signing.cmd.configured': 'Konfigureret',
   'settings.signing.cmd.notConfigured': 'Ikke konfigureret',
   'signing.title': 'Kvalificeret signatur',
-  'signing.unsigned.title': 'Protokol endnu ikke kvalificeret signeret',
+  'signing.unsigned.title': 'Kanonisk kopi endnu ikke underskrevet',
   'signing.unsigned.body':
-    'Protokollen er forseglet. Du kan nu signere den med en kvalificeret elektronisk signatur via Chave Móvel Digital.',
+    'Referatet er "Under signatur" og frosset. Underskriv den kanoniske kopi nu, før du forsegler den.',
   'signing.required.body':
-    'Denne indstilling kræver en kvalificeret signatur for at afslutte protokollen. Signer protokollen med Chave Móvel Digital for at fuldføre den.',
+    'Denne konfiguration kræver en accepteret signatur før forsegling. Underskriv den kanoniske kopi for at kunne fuldføre handlingen.',
   'signing.start': 'Signer med Chave Móvel Digital',
   'signing.credentials.intro':
     'Indtast det mobilnummer, der er knyttet til Chave Móvel Digital, og signerings-PIN-koden. PIN-koden bruges kun til denne anmodning og gemmes aldrig.',
@@ -2576,9 +2606,9 @@ export const daDK: Catalog = {
   'signing.signed.digest': 'Fingeraftryk af signeret PDF',
   'signing.download': 'Download signeret PDF',
   'signing.technicalComparison.aria':
-    'Local technical comparison between sealed act and signed PDF',
+    'Lokal teknisk sammenligning mellem den kanoniske kopi og den signerede PDF',
   'signing.technicalComparison.kicker': 'Technical comparison',
-  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.title': 'Lokale metadata af den kanoniske kopi og signeret PDF',
   'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
   'signing.technicalComparison.badge.local': 'Local metadata only',
   'signing.technicalComparison.badge.noClaim': 'No claim',
@@ -2590,14 +2620,13 @@ export const daDK: Catalog = {
   'signing.technicalComparison.status.notClaimed': 'Not claimed',
   'signing.technicalComparison.status.loading': 'Loading',
   'signing.technicalComparison.row.actId': 'Act ID',
-  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
   'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
   'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
   'signing.technicalComparison.row.signedDocument': 'Signed document',
   'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
   'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
   'signing.technicalComparison.detail.act': 'Act',
-  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.bundle': 'Bundt',
   'signing.technicalComparison.detail.document': 'Document',
   'signing.technicalComparison.detail.signature': 'Signature',
   'signing.technicalComparison.detail.report': 'Report',
@@ -2640,7 +2669,7 @@ export const daDK: Catalog = {
   'signing.ccBatch.title': 'Lokal Borgerkort-batch',
   'signing.ccBatch.badge': 'Lokal batch',
   'signing.ccBatch.description':
-    'Signerer flere forseglede protokoller med Borgerkortet på denne computer.',
+    'Underskriv flere kanoniske kopier af handlinger i "I signatur" med borgerkortet på denne computer.',
   'signing.ccBatch.boundary.title': 'Kun lokal CC-signering',
   'signing.ccBatch.boundary.body':
     'Denne batch bruger det lokale, samlokaliserede Borgerkort-endpoint. Det er ikke CMD, fjern-CSC eller udbydercertificeret batch-signering; grænsefladen viser kun dokumentation returneret af serveren.',
@@ -2656,7 +2685,7 @@ export const daDK: Catalog = {
   'signing.ccBatch.selection.needMore': 'Vælg mindst to protokoller for at bruge batch-signering.',
   'signing.ccBatch.add.label': 'Protokol-id',
   'signing.ccBatch.add.hint':
-    'Tilføj id’er på forseglede protokoller, når denne visning ikke giver en liste med flere dokumenter.',
+    'Tilføj handlings-id\'er under "Under signatur", når denne overflade ikke giver en multidokumentliste.',
   'signing.ccBatch.add.action': 'Tilføj',
   'signing.ccBatch.manual.label': 'Manuelt id: {id}',
   'signing.ccBatch.maxReached': 'Grænsen på {max} protokoller er nået.',
@@ -2864,10 +2893,10 @@ export const daDK: Catalog = {
   'signing.evidence.renewal.action.addDocumentTimestamp': 'tilføj dokumenttidsstempel',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
     'registrér signaturens DSS-valideringstidspunkt',
-  'signing.provider.cmd.title': 'Chave Móvel Digital',
+  'signing.provider.cmd.title': 'Digital mobilnøgle',
   'signing.provider.cmd.description':
     'Fjernflow i to trin: signerings-PIN og SMS-kode. Anbefales, når CMD er aktiv.',
-  'signing.provider.cc.title': 'Cartão de Cidadão',
+  'signing.provider.cc.title': 'Borgerkort',
   'signing.provider.cc.description':
     'Lokal signatur med en læser tilsluttet skrivebordsprogrammet. PIN-koden anmodes aldrig i browseren.',
   'signing.provider.pkcs12.title': 'Lokalt PKCS#12/PFX-certifikat',
@@ -2903,7 +2932,7 @@ export const daDK: Catalog = {
   'signing.official.provider.label': 'Udbyder',
   'signing.official.provider.hint':
     'Valgfrit. Registrerer den udbyder, operatøren har angivet; den bruges ikke som autoritet.',
-  'signing.official.provider.placeholder': 'Autenticação.gov',
+  'signing.official.provider.placeholder': 'Authentication.gov',
   'signing.official.source.label': 'Kilde',
   'signing.official.source.hint':
     'Valgfrit. For eksempel: officiel overdragelse, skrivebordsapplikation, udbyderportal.',
@@ -3171,17 +3200,24 @@ export const daDK: Catalog = {
   'data.status.recoveryDrill.receiptEyebrow': 'Øvelseskvittering registreret',
   'data.status.recoveryDrill.verdictTitleOk': 'Sikkerhedskopi verificeret og kan gendannes',
   'data.status.recoveryDrill.verdictTitleFailed': 'Sikkerhedskopi ikke verificeret',
-  'data.status.recoveryDrill.verdictWhyOk': 'Forhåndsvalidering og den isolerede gendannelse lykkedes begge, uden nogen live-gendannelse.',
-  'data.status.recoveryDrill.verdictWhyFailed': 'Verificeringen blev ikke fuldført – stol ikke på denne sikkerhedskopi uden at undersøge det.',
+  'data.status.recoveryDrill.verdictWhyOk':
+    'Forhåndsvalidering og den isolerede gendannelse lykkedes begge, uden nogen live-gendannelse.',
+  'data.status.recoveryDrill.verdictWhyFailed':
+    'Verificeringen blev ikke fuldført – stol ikke på denne sikkerhedskopi uden at undersøge det.',
   'data.status.recoveryDrill.evidenceToggle': 'Teknisk dokumentation',
   'data.status.syncHandoff.eyebrow': 'Lokal handoff-forhåndsvalidering',
   'data.status.syncHandoff.verdictTitleReady': 'Lokal dokumentation klar til handoff-gennemgang',
-  'data.status.syncHandoff.verdictTitleMissing': 'Ikke nok lokal dokumentation til at gennemgå handoff',
+  'data.status.syncHandoff.verdictTitleMissing':
+    'Ikke nok lokal dokumentation til at gennemgå handoff',
   'data.status.syncHandoff.verdictTitleBlocked': 'Lokal handoff-gennemgang blokeret',
-  'data.status.syncHandoff.verdictWhyReady': 'Den indsamlede lokale dokumentation er klar til gennemgang — der blev ikke udført nogen synkronisering, import eller ændring.',
-  'data.status.syncHandoff.verdictWhyMissing': 'Der mangler verificeret lokal dokumentation til at gennemgå handoff — indsaml det manglende, før du fortsætter.',
-  'data.status.syncHandoff.verdictWhyBlocked': 'Blokeringer forhindrer den lokale handoff-gennemgang — løs dem, før du fortsætter.',
-  'data.status.syncHandoff.nonMutating': 'Dette er kun en lokal forhåndsvalidering (prøvekørsel): den udfører hverken synkroniseringen, handoff eller nogen dataændring.',
+  'data.status.syncHandoff.verdictWhyReady':
+    'Den indsamlede lokale dokumentation er klar til gennemgang — der blev ikke udført nogen synkronisering, import eller ændring.',
+  'data.status.syncHandoff.verdictWhyMissing':
+    'Der mangler verificeret lokal dokumentation til at gennemgå handoff — indsaml det manglende, før du fortsætter.',
+  'data.status.syncHandoff.verdictWhyBlocked':
+    'Blokeringer forhindrer den lokale handoff-gennemgang — løs dem, før du fortsætter.',
+  'data.status.syncHandoff.nonMutating':
+    'Dette er kun en lokal forhåndsvalidering (prøvekørsel): den udfører hverken synkroniseringen, handoff eller nogen dataændring.',
   'data.status.syncHandoff.evidenceToggle': 'Teknisk dokumentation',
   'data.status.syncHandoff.blockers': 'Blokeringer',
   'data.status.syncHandoff.missingEvidence': 'Manglende dokumentation',
@@ -3291,7 +3327,8 @@ export const daDK: Catalog = {
   'integrity.restore.preflight.totalMemberBytes': 'Samlede medlemsbytes',
   'integrity.restore.preflight.nextStep': 'Næste trin',
   'integrity.restore.preflight.verdictReady': 'Denne sikkerhedskopi er gyldig og kan gendannes.',
-  'integrity.restore.preflight.verdictBlocked': 'Denne sikkerhedskopi bestod ikke kontrollen – brug den ikke til gendannelse.',
+  'integrity.restore.preflight.verdictBlocked':
+    'Denne sikkerhedskopi bestod ikke kontrollen – brug den ikke til gendannelse.',
   'integrity.restore.preflight.verdictError': 'Denne sikkerhedskopi kunne ikke verificeres.',
   'integrity.restore.preflight.evidenceToggle': 'Teknisk dokumentation',
   'integrity.restore.preflight.errors': 'Fejl',
@@ -3364,7 +3401,7 @@ export const daDK: Catalog = {
   'integrity.startOver.openingDateLabel': 'Åbningsdato',
   'integrity.startOver.signatoriesLabel': 'Påkrævede underskrivere',
   'integrity.startOver.signatoriesHint': 'Adskil navne med kommaer.',
-  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques, …',
+  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques,...',
   'integrity.startOver.numberingLabel': 'Nummereringsskema',
   'integrity.startOver.confirm': 'Start forfra',
   'integrity.startOver.pending': 'Starter forfra…',
@@ -3838,7 +3875,7 @@ export const daDK: Catalog = {
   'settings.signing.providers.hint':
     'Ikke-hemmelige metadata. Grænsefladen indsamler ikke private nøgler, PIN-koder, PKCS#12-adgangssætninger eller OTP’er på denne side.',
   'settings.signing.providerMode.cmd': 'CMD/SCMD',
-  'settings.signing.providerMode.cc': 'Cartão de Cidadão',
+  'settings.signing.providerMode.cc': 'Borgerkort',
   'settings.signing.providerMode.cscQtsp': 'CSC/QTSP',
   'settings.signing.providerMode.localPkcs12': 'Lokal PKCS#12',
   'settings.signing.providerStatus.productionBlocked': 'Blokeret i produktion',
@@ -3920,11 +3957,11 @@ export const daDK: Catalog = {
   'trust.provider.analysis.value':
     '{granted} tildelt · {history} med historik · {supply} med punkter',
   'trust.provider.duplicateNames': 'Dublerede navne',
-  'trust.tsa.title': 'TSA / RFC 3161',
+  'trust.tsa.title': 'TSA/RFC 3161',
   'trust.tsa.summary.aria': 'TSA-resumé',
   'trust.tsa.configuredUrl': 'Konfigureret URL',
   'trust.tsa.status': 'Status',
-  'trust.tsa.fixture': 'Fixture',
+  'trust.tsa.fixture': 'Armatur',
   'trust.tsa.trustedRecords': 'Betroede poster',
   'trust.tsa.configuration': 'Konfiguration',
   'trust.tsa.profile': 'Profil',
@@ -3958,7 +3995,7 @@ export const daDK: Catalog = {
   'trust.tsa.statusReady': 'Klar',
   'trust.tsa.statusUnconfigured': 'Ikke konfigureret',
   'trust.tsa.statusError': 'Fejl',
-  'trust.tsa.probePassed': 'Fixture OK',
+  'trust.tsa.probePassed': 'Armaturet OK',
   'trust.tsa.probeFailed': 'Fixture mislykkedes',
   'trust.tsa.policyAdvisory': 'Rådgivende',
   'trust.tsa.policyTrusted': 'Betroet',
@@ -3971,7 +4008,7 @@ export const daDK: Catalog = {
   'signing.format.label': 'Signaturformat',
   'signing.format.hint':
     'PAdES signerer protokollens PDF/A via de kvalificerede udbydere. XAdES, ASiC og SCAP er lokale tekniske værktøjer, der producerer dokumentation om protokollens dokument med et samlokaliseret softwarecertifikat.',
-  'signing.format.pades': 'PAdES (PDF)',
+  'signing.format.pades': 'PADES (PDF)',
   'signing.format.xades': 'XAdES (XML)',
   'signing.format.asic': 'ASiC (beholder)',
   'signing.format.scap': 'Professionelt attribut (SCAP)',
@@ -4225,7 +4262,7 @@ export const daDK: Catalog = {
     'Legitimationsoplysninger krypteres, men det er ikke fuld fortrolighed, før du aktiverer SQLCipher eller OS-forsegling.',
   'settings.providerCredentials.protection.strictBlocked':
     'Streng tilstand er slået til: du kan først gemme legitimationsoplysninger, når du har aktiveret fortrolig beskyttelse.',
-  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.cmd': 'Digital Mobile Key (CMD)',
   'settings.providerCredentials.mode.csc': 'CSC-QTSP',
   'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
   'settings.providerCredentials.mode.pkcs12': 'Lokal PKCS#12',
@@ -4297,7 +4334,7 @@ export const daDK: Catalog = {
   'settings.providerCredentials.field.sandbox': 'Sandkasse (sandbox)',
   'settings.providerCredentials.field.environment': 'Miljø',
   'settings.providerCredentials.field.friendlyName': 'Visningsnavn',
-  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.localKeyId': 'Lokal nøgle-id (hex)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-fil',
   'settings.providerCredentials.help.mode':
     'Typen af signaturudbyder, der skal konfigureres. F.eks. CSC/QTSP til fjernsignering, PKCS#12 til et lokalt certifikat.',
@@ -4347,11 +4384,14 @@ export const daDK: Catalog = {
     'Vælger identiteten i en .pfx ud fra localKeyId i hexadecimal. F.eks. »3a7f9c2b«.',
   'settings.privacy.subnav.aria': 'Privatlivsområder',
   'settings.privacy.subtab.registers.label': 'Registre',
-  'settings.privacy.subtab.registers.desc': 'Databehandlere, konsekvensanalyser (DPIA), bruddscenarier og overførselskontroller.',
+  'settings.privacy.subtab.registers.desc':
+    'Databehandlere, konsekvensanalyser (DPIA), bruddscenarier og overførselskontroller.',
   'settings.privacy.subtab.retention.label': 'Opbevaring',
-  'settings.privacy.subtab.retention.desc': 'Opbevaringspolitikker, forfaldne kandidater, simulering og køen til udførelsesgennemgang.',
+  'settings.privacy.subtab.retention.desc':
+    'Opbevaringspolitikker, forfaldne kandidater, simulering og køen til udførelsesgennemgang.',
   'settings.privacy.subtab.guidance.label': 'Vejledning',
-  'settings.privacy.subtab.guidance.desc': 'Lokal DPIA-skabelon og noter om den periodiske rådgivende gennemgang.',
+  'settings.privacy.subtab.guidance.desc':
+    'Lokal DPIA-skabelon og noter om den periodiske rådgivende gennemgang.',
   'settings.privacy.status.all': 'Alle statusser',
   'settings.privacy.status.draft': 'Kladde',
   'settings.privacy.status.active': 'Aktiv',
@@ -4373,13 +4413,17 @@ export const daDK: Catalog = {
   'settings.privacy.evidence.none': 'Ingen kvittering',
   'settings.privacy.evidence.noDetail': 'Ingen detalje',
   'settings.privacy.evidence.receiptBy': '{kind} af {actor}',
-  'settings.privacy.evidence.dpiaReceiptNote': 'Ingen indberetning til myndighed · Ingen overholdelsescertificering',
-  'settings.privacy.evidence.breachReceiptNote': 'Ingen underretning til myndighed · Ingen underretning til registrerede',
+  'settings.privacy.evidence.dpiaReceiptNote':
+    'Ingen indberetning til myndighed · Ingen overholdelsescertificering',
+  'settings.privacy.evidence.breachReceiptNote':
+    'Ingen underretning til myndighed · Ingen underretning til registrerede',
   'settings.privacy.evidence.transferReceiptNote': 'Ingen godkendelse · Ingen overførselsudførelse',
   'settings.privacy.register.processor.title': 'GDPR-databehandlere',
-  'settings.privacy.register.processor.lede': 'Fortegnelse over databehandlere, underdatabehandlere og datakategorier behandlet af tredjeparter.',
+  'settings.privacy.register.processor.lede':
+    'Fortegnelse over databehandlere, underdatabehandlere og datakategorier behandlet af tredjeparter.',
   'settings.privacy.register.dpia.title': 'DPIA’er',
-  'settings.privacy.register.dpia.lede': 'Konsekvensanalyser med formål, retsgrundlag, datakategorier og aktuel risiko.',
+  'settings.privacy.register.dpia.lede':
+    'Konsekvensanalyser med formål, retsgrundlag, datakategorier og aktuel risiko.',
   'settings.privacy.register.column.processor': 'Databehandler',
   'settings.privacy.register.column.dpia': 'DPIA',
   'settings.privacy.register.column.purpose': 'Formål',
@@ -4387,7 +4431,8 @@ export const daDK: Catalog = {
   'settings.privacy.register.column.subprocessors': 'Underdatabehandlere',
   'settings.privacy.register.column.updated': 'Opdateret',
   'settings.privacy.guidance.title': 'Lokal DPIA-skabelon',
-  'settings.privacy.guidance.lede': 'En lokal/offline-pakke med felter, spørgsmål og tjek til en DPIA; den læser eller viser ikke DPIA-poster, databehandlere, registrerede, modtagere, noter, retsgrundlag eller hemmeligheder.',
+  'settings.privacy.guidance.lede':
+    'En lokal/offline-pakke med felter, spørgsmål og tjek til en DPIA; den læser eller viser ikke DPIA-poster, databehandlere, registrerede, modtagere, noter, retsgrundlag eller hemmeligheder.',
   'settings.privacy.guidance.empty.title': 'Skabelon utilgængelig',
   'settings.privacy.guidance.empty.body': 'Den lokale DPIA-pakke blev ikke returneret af API’en.',
   'settings.privacy.guidance.dl.id': 'Identifikator',
@@ -4399,33 +4444,50 @@ export const daDK: Catalog = {
   'settings.privacy.guidance.required': 'påkrævet: {value}',
   'settings.privacy.guidance.noClaims': 'No-claim-flag',
   'settings.privacy.guidance.operatorActions': 'Operatørhandlinger',
-  'settings.privacy.help.processor': 'En databehandler behandler personoplysninger på organisationens vegne. Denne fortegnelse registrerer hvem der behandler, til hvad, på hvilket retsgrundlag og hvilke underdatabehandlere der bruges.',
-  'settings.privacy.help.dpia': 'En DPIA (konsekvensanalyse vedrørende databeskyttelse) dokumenterer risiciene ved en behandling og foranstaltningerne til at mindske dem. Denne post er kun lokal og vejledende.',
-  'settings.privacy.help.breach': 'En drejebog for brudrespons samler på forhånd detektionskanaler, inddæmningstrin og hvem der skal underrettes. At registrere den her underretter ingen.',
-  'settings.privacy.help.transfer': 'En overførselskontrol dokumenterer en dataoverførsel uden for EØS: modtager, land, retsmekanisme og garantier. At registrere den hverken godkender eller udfører overførslen.',
-  'settings.privacy.help.retention': 'En opbevaringspolitik fastsætter, hvor længe en datakategori opbevares, og den planlagte handling til sidst. Dette område registrerer politikken; det sletter ikke data.',
-  'settings.privacy.help.dryRun': 'Simuleringen viser hvilke politikker der ville matche et omfang/kategori uden at udføre noget. Den forhåndsviser effekten af en politik.',
-  'settings.privacy.help.dueCandidates': 'En skrivebeskyttet scanning viser poster, hvis opbevaringsperiode er udløbet, til dokumentationsgennemgang. Den sletter, anonymiserer eller fuldfører ingen juridisk overholdelse.',
-  'settings.privacy.help.execution': 'Udførelseskøen indeholder gemte opbevaringsanmodninger til operationel gennemgang. At lukke en gennemgang registrerer beslutningen; den ændrer ikke kildeposter.',
-  'settings.privacy.help.legalHold': 'Et legal hold forhindrer bortskaffelse af poster underlagt retssag eller bevaringspligt. Dette panel opsummerer eksisterende blokeringer.',
+  'settings.privacy.help.processor':
+    'En databehandler behandler personoplysninger på organisationens vegne. Denne fortegnelse registrerer hvem der behandler, til hvad, på hvilket retsgrundlag og hvilke underdatabehandlere der bruges.',
+  'settings.privacy.help.dpia':
+    'En DPIA (konsekvensanalyse vedrørende databeskyttelse) dokumenterer risiciene ved en behandling og foranstaltningerne til at mindske dem. Denne post er kun lokal og vejledende.',
+  'settings.privacy.help.breach':
+    'En drejebog for brudrespons samler på forhånd detektionskanaler, inddæmningstrin og hvem der skal underrettes. At registrere den her underretter ingen.',
+  'settings.privacy.help.transfer':
+    'En overførselskontrol dokumenterer en dataoverførsel uden for EØS: modtager, land, retsmekanisme og garantier. At registrere den hverken godkender eller udfører overførslen.',
+  'settings.privacy.help.retention':
+    'En opbevaringspolitik fastsætter, hvor længe en datakategori opbevares, og den planlagte handling til sidst. Dette område registrerer politikken; det sletter ikke data.',
+  'settings.privacy.help.dryRun':
+    'Simuleringen viser hvilke politikker der ville matche et omfang/kategori uden at udføre noget. Den forhåndsviser effekten af en politik.',
+  'settings.privacy.help.dueCandidates':
+    'En skrivebeskyttet scanning viser poster, hvis opbevaringsperiode er udløbet, til dokumentationsgennemgang. Den sletter, anonymiserer eller fuldfører ingen juridisk overholdelse.',
+  'settings.privacy.help.execution':
+    'Udførelseskøen indeholder gemte opbevaringsanmodninger til operationel gennemgang. At lukke en gennemgang registrerer beslutningen; den ændrer ikke kildeposter.',
+  'settings.privacy.help.legalHold':
+    'Et legal hold forhindrer bortskaffelse af poster underlagt retssag eller bevaringspligt. Dette panel opsummerer eksisterende blokeringer.',
   'settings.privacy.help.purpose': 'Formålet beskriver i klart sprog, hvad data behandles til.',
-  'settings.privacy.help.legalBasis': 'Retsgrundlaget er det GDPR-grundlag, der tillader behandlingen (f.eks. samtykke, kontrakt, retlig forpligtelse).',
-  'settings.privacy.help.risk': 'Risikoniveauet er en kvalitativ vurdering af den potentielle indvirkning på de registrerede.',
-  'settings.privacy.help.status': 'Statussen angiver, om posten er en kladde, aktiv, under gennemgang eller udgået.',
+  'settings.privacy.help.legalBasis':
+    'Retsgrundlaget er det GDPR-grundlag, der tillader behandlingen (f.eks. samtykke, kontrakt, retlig forpligtelse).',
+  'settings.privacy.help.risk':
+    'Risikoniveauet er en kvalitativ vurdering af den potentielle indvirkning på de registrerede.',
+  'settings.privacy.help.status':
+    'Statussen angiver, om posten er en kladde, aktiv, under gennemgang eller udgået.',
   'settings.privacy.legalHold.dl.candidates': 'Kandidater blokeret af legal hold',
   'settings.privacy.legalHold.dl.executions': 'Udførelsesposter blokeret af legal hold',
   'settings.privacy.legalHold.dl.openReviews': 'Blokerede gennemgange stadig åbne',
   'settings.privacy.legalHold.dl.flags': 'Grænseflag',
-  'settings.privacy.legalHold.source': 'Disse tal stammer fra GET-scanningen af forfaldne kandidater og den allerede gemte opbevaringsudførelseskø; dette panel foretager ingen ændrende kald.',
+  'settings.privacy.legalHold.source':
+    'Disse tal stammer fra GET-scanningen af forfaldne kandidater og den allerede gemte opbevaringsudførelseskø; dette panel foretager ingen ændrende kald.',
   'settings.privacy.execution.status.awaitingReview': 'Afventer gennemgang',
   'settings.privacy.execution.status.blocked': 'Blokeret',
   'settings.privacy.execution.status.executed': 'Udført',
-  'settings.privacy.dueCandidates.lede': 'Skrivebeskyttet GET-scanning til dokumentationsgennemgang. Denne sektion sletter, anonymiserer eller fuldfører ingen juridisk overholdelse.',
-  'settings.privacy.dueCandidates.summary': 'Genereret {generated} · {scope} / {category} · {active} aktiv(e) kandidat(er) · {suppressed} undertrykt af afgrænset dokumentation · {withResolution} kandidat(er) med lokal disposition · {resolutions} dispositionspost(er)',
-  'settings.privacy.dueCandidates.suppressedNote': 'Kandidater undertrykt af afgrænset dokumentation vises ikke i tabellen og får ingen handlingsknapper; gennemgå dokumentationen i udførelseskøen/-historikken.',
+  'settings.privacy.dueCandidates.lede':
+    'Skrivebeskyttet GET-scanning til dokumentationsgennemgang. Denne sektion sletter, anonymiserer eller fuldfører ingen juridisk overholdelse.',
+  'settings.privacy.dueCandidates.summary':
+    'Genereret {generated} · {scope} / {category} · {active} aktiv(e) kandidat(er) · {suppressed} undertrykt af afgrænset dokumentation · {withResolution} kandidat(er) med lokal disposition · {resolutions} dispositionspost(er)',
+  'settings.privacy.dueCandidates.suppressedNote':
+    'Kandidater undertrykt af afgrænset dokumentation vises ikke i tabellen og får ingen handlingsknapper; gennemgå dokumentationen i udførelseskøen/-historikken.',
   'settings.privacy.dueCandidates.suppressedSummary': 'Resumé: {note}',
   'settings.privacy.dueCandidates.empty.title': 'Ingen forfaldne kandidater',
-  'settings.privacy.dueCandidates.empty.body': 'Der er ingen forfaldne kandidater fra den skrivebeskyttede scanning.',
+  'settings.privacy.dueCandidates.empty.body':
+    'Der er ingen forfaldne kandidater fra den skrivebeskyttede scanning.',
   'settings.privacy.dueCandidates.column.record': 'Bog og post',
   'settings.privacy.dueCandidates.column.policy': 'Politik',
   'settings.privacy.dueCandidates.column.due': 'Forfald og status',
@@ -4440,7 +4502,7 @@ export const daDK: Catalog = {
   'settings.privacy.dueCandidates.noDueDate': 'Ingen dato beregnet',
   'settings.privacy.dueCandidates.evidenceState': 'Dokumentationstilstand',
   'settings.privacy.dueCandidates.evidenceNextStep': 'Næste dokumentationstrin',
-  'settings.privacy.dueCandidates.legalHold': 'Legal hold',
+  'settings.privacy.dueCandidates.legalHold': 'lovligt hold',
   'settings.privacy.dueCandidates.noLegalHold': 'Ingen legal hold-blokeringer',
   'settings.privacy.dueCandidates.requiredApprovals': 'Påkrævede godkendelser',
   'settings.privacy.dueCandidates.noApprovals': 'Ingen påkrævede godkendelser',
@@ -4452,8 +4514,10 @@ export const daDK: Catalog = {
   'settings.privacy.dueCandidates.priorEvidenceNextStep': 'Næste trin for tidligere dokumentation',
   'settings.privacy.dueCandidates.localDispositionRecorded': 'Lokal disposition registreret',
   'settings.privacy.dueCandidates.recordedByOn': 'Registreret af {actor} den {date}',
-  'settings.privacy.dueCandidates.evidenceCountFlags': 'Dokumentation: {count} · operationelle flag: false',
-  'settings.privacy.dueCandidates.onlyNoActionEvidence': 'Kun afgrænset dokumentation uden handling.',
+  'settings.privacy.dueCandidates.evidenceCountFlags':
+    'Dokumentation: {count} · operationelle flag: false',
+  'settings.privacy.dueCandidates.onlyNoActionEvidence':
+    'Kun afgrænset dokumentation uden handling.',
   'settings.privacy.dueCandidates.onlyArchiveEvidence': 'Kun afgrænset arkivdokumentation.',
   'settings.privacy.dueCandidates.onlyReviewEvidence': 'Kun dokumentationsgennemgang.',
   'settings.privacy.dueCandidates.localDispositionExists': 'Lokal disposition findes',
@@ -4467,14 +4531,19 @@ export const daDK: Catalog = {
   'settings.privacy.dueCandidates.recordingArchive': 'Registrerer arkivdokumentation',
   'settings.privacy.dueCandidates.requestReview': 'Anmod om dokumentationsgennemgang',
   'settings.privacy.dueCandidates.recordingReview': 'Registrerer gennemgang',
-  'settings.privacy.dueCandidates.noDuplicate': 'Der oprettes ingen dublet-anmodning; scanningen er skrivebeskyttet.',
+  'settings.privacy.dueCandidates.noDuplicate':
+    'Der oprettes ingen dublet-anmodning; scanningen er skrivebeskyttet.',
   'settings.privacy.dueCandidates.requestedAt': 'Anmodet {date}',
   'settings.privacy.dueCandidates.queueEvidenceState': 'Dokumentationstilstand i kø',
   'settings.privacy.dueCandidates.queueNextStep': 'Næste trin i kø',
-  'settings.privacy.dueCandidates.noActionHint': 'Registrerer kun afgrænset ingen-handling-dokumentation; hverken godkender eller udfører bortskaffelse.',
-  'settings.privacy.dueCandidates.archiveHint': 'Registrerer kun afgrænset arkivdokumentation; hverken godkender eller udfører bortskaffelse.',
-  'settings.privacy.dueCandidates.reviewHint': 'Registrerer en review_only-anmodning; hverken godkender eller udfører bortskaffelse.',
-  'settings.privacy.execution.lede': 'Gemte opbevaringsudførelsesposter til operationel gennemgang.',
+  'settings.privacy.dueCandidates.noActionHint':
+    'Registrerer kun afgrænset ingen-handling-dokumentation; hverken godkender eller udfører bortskaffelse.',
+  'settings.privacy.dueCandidates.archiveHint':
+    'Registrerer kun afgrænset arkivdokumentation; hverken godkender eller udfører bortskaffelse.',
+  'settings.privacy.dueCandidates.reviewHint':
+    'Registrerer en review_only-anmodning; hverken godkender eller udfører bortskaffelse.',
+  'settings.privacy.execution.lede':
+    'Gemte opbevaringsudførelsesposter til operationel gennemgang.',
   'settings.privacy.execution.empty.title': 'Ingen udførelsesposter',
   'settings.privacy.execution.empty.body': 'Gennemgangskøen har endnu ingen gemte anmodninger.',
   'settings.privacy.execution.column.request': 'Anmodning',
@@ -4492,30 +4561,488 @@ export const daDK: Catalog = {
   'settings.privacy.execution.recordingReview': 'Registrerer gennemgang',
   'settings.privacy.execution.toast.reviewed': 'Operationel gennemgang registreret.',
   'settings.privacy.toast.archiveEvidenceRecorded': 'Afgrænset arkivdokumentation registreret.',
-  'settings.privacy.toast.noActionEvidenceRecorded': 'Afgrænset ingen-handling-dokumentation registreret.',
-  'settings.privacy.toast.reviewRequestRecorded': 'Anmodning om dokumentationsgennemgang registreret.',
-  'settings.privacy.toast.archiveEvidenceSent': 'Anmodning om arkivdokumentation sendt; ingen post returneret.',
-  'settings.privacy.toast.noActionEvidenceSent': 'Anmodning om ingen-handling-dokumentation sendt; ingen post returneret.',
-  'settings.privacy.toast.reviewRequestSent': 'Anmodning om gennemgang sendt; ingen udførelsespost returneret.',
+  'settings.privacy.toast.noActionEvidenceRecorded':
+    'Afgrænset ingen-handling-dokumentation registreret.',
+  'settings.privacy.toast.reviewRequestRecorded':
+    'Anmodning om dokumentationsgennemgang registreret.',
+  'settings.privacy.toast.archiveEvidenceSent':
+    'Anmodning om arkivdokumentation sendt; ingen post returneret.',
+  'settings.privacy.toast.noActionEvidenceSent':
+    'Anmodning om ingen-handling-dokumentation sendt; ingen post returneret.',
+  'settings.privacy.toast.reviewRequestSent':
+    'Anmodning om gennemgang sendt; ingen udførelsespost returneret.',
   'settings.privacy.toast.dispositionRecorded': 'Lokal dokumentationsdisposition registreret.',
   'settings.privacy.advisory.detail.noReceipt': 'Ingen lokal gennemgangs-/øvelseskvittering.',
-  'settings.privacy.advisory.detail.underReview': 'Lokal status under gennemgang, ingen juridisk konklusion.',
+  'settings.privacy.advisory.detail.underReview':
+    'Lokal status under gennemgang, ingen juridisk konklusion.',
   'settings.privacy.advisory.detail.nextReview': 'Næste lokale gennemgang: {date}.',
   'settings.privacy.advisory.detail.lastEvidence': 'Seneste dokumentation: {date}.',
-  'settings.privacy.advisory.detail.noClaims': 'Ingen underretning, godkendelse, udførelse eller certificering.',
-  'settings.privacy.help.guidance': 'En lokal, offline pakke med felter, spørgsmål og tjek til at guide en DPIA; det er kun vejledning og erstatter ikke juridisk vurdering.',
+  'settings.privacy.advisory.detail.noClaims':
+    'Ingen underretning, godkendelse, udførelse eller certificering.',
+  'settings.privacy.help.guidance':
+    'En lokal, offline pakke med felter, spørgsmål og tjek til at guide en DPIA; det er kun vejledning og erstatter ikke juridisk vurdering.',
   'data.status.subnav.aria': 'Underafsnit for datastyring',
   'data.status.tab.storage': 'Lager',
-  'data.status.tab.storage.desc': 'Pladsforbrug, tilladelser til datamappen og oprydning af lokale filer.',
+  'data.status.tab.storage.desc':
+    'Pladsforbrug, tilladelser til datamappen og oprydning af lokale filer.',
   'data.status.tab.backup': 'Sikkerhedskopier og gendannelse',
-  'data.status.tab.backup.desc': 'Driftssikkerhedskopi, gendannelsesøvelser og forhåndstjek af gendannelse/handoff.',
+  'data.status.tab.backup.desc':
+    'Driftssikkerhedskopi, gendannelsesøvelser og forhåndstjek af gendannelse/handoff.',
   'data.status.tab.keys': 'Nøgler og nulstilling',
-  'data.status.tab.keys.desc': 'Rotation af databasens krypteringsnøgle samt nulstillings- eller forfra-handlinger.',
-  'data.status.help.recoveryDrill': 'En gendannelsesøvelse kontrollerer og registrerer, om en sikkerhedskopi kan åbnes og læses i en kontrolleret lokal øvelse. Den udfører ikke en reel gendannelse, garanterer ikke fremtidig brugbarhed og validerer ikke opbevaring uden for stedet.',
-  'data.status.help.keyRotation': 'Rotation udskifter den varige databases SQLCipher-krypteringsnøgle, mens dataene bevares. Forhåndstjekket er skrivebeskyttet; udførelsen anvender rekey.',
-  'data.status.help.exportCleanup': 'Fjerner kun gamle lokale eksportfiler i henhold til den konfigurerede politik. Det er ikke juridisk sletning, GDPR-afslutning eller arkivsletning.',
-  'data.status.help.crashCleanup': 'Fjerner gamle lokale nedbrudsdiagnoser gemt på disken. Det påvirker ikke ledgeren eller domænedataene.',
-  'data.status.help.platformLogsCleanup': 'Fjerner kun den lokale platformlogkø i platform-logs.json. Fjerner ikke stdout/stderr, SIEM, ledger eller revisionskæde.',
-  'data.status.help.startOver': 'Start forfra arkiverer den aktuelle historik og fortsætter med tomme domænedata, mens brugere og indstillinger bevares. En nulstilling sletter derimod data destruktivt.',
-  'data.status.help.reset': 'Ryd data sletter domænedata, men bevarer ledgeren; en fabriksnulstilling sletter alt til en ny instans. Alle kræver den nøjagtige frase og fornyet godkendelse.',
+  'data.status.tab.keys.desc':
+    'Rotation af databasens krypteringsnøgle samt nulstillings- eller forfra-handlinger.',
+  'data.status.help.recoveryDrill':
+    'En gendannelsesøvelse kontrollerer og registrerer, om en sikkerhedskopi kan åbnes og læses i en kontrolleret lokal øvelse. Den udfører ikke en reel gendannelse, garanterer ikke fremtidig brugbarhed og validerer ikke opbevaring uden for stedet.',
+  'data.status.help.keyRotation':
+    'Rotation udskifter den varige databases SQLCipher-krypteringsnøgle, mens dataene bevares. Forhåndstjekket er skrivebeskyttet; udførelsen anvender rekey.',
+  'data.status.help.exportCleanup':
+    'Fjerner kun gamle lokale eksportfiler i henhold til den konfigurerede politik. Det er ikke juridisk sletning, GDPR-afslutning eller arkivsletning.',
+  'data.status.help.crashCleanup':
+    'Fjerner gamle lokale nedbrudsdiagnoser gemt på disken. Det påvirker ikke ledgeren eller domænedataene.',
+  'data.status.help.platformLogsCleanup':
+    'Fjerner kun den lokale platformlogkø i platform-logs.json. Fjerner ikke stdout/stderr, SIEM, ledger eller revisionskæde.',
+  'data.status.help.startOver':
+    'Start forfra arkiverer den aktuelle historik og fortsætter med tomme domænedata, mens brugere og indstillinger bevares. En nulstilling sletter derimod data destruktivt.',
+  'data.status.help.reset':
+    'Ryd data sletter domænedata, men bevarer ledgeren; en fabriksnulstilling sletter alt til en ny instans. Alle kræver den nøjagtige frase og fornyet godkendelse.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.convening.advisory.title': 'Lokal meddelelse om lovpligtig opkald',
+  'acts.convening.advisory.missingMeetingDate':
+    'Notér mødedatoen for at beregne den lokale indkaldelsesdato.',
+  'acts.convening.advisory.missingEvidence':
+    'Notér datoen/måden for afsendelse, faktisk forhåndsmeddelelse og reference for de opbevarede beviser.',
+  'acts.convening.advisory.noClaims':
+    'Kun lokale metadata; hævder ikke juridisk tilstrækkelighed, gyldig ekstern levering eller fuldførelse af workflow.',
+  'acts.convening.recipients.title': 'Ring til modtagere',
+  'acts.convening.recipients.hint':
+    'Lokale optegnelser brugt til bevis for afsendelse. Unavngivne linjer gemmes ikke.',
+  'acts.convening.recipients.add': 'Tilføj modtager',
+  'acts.convening.recipients.empty':
+    'Ingen registrerede modtagere. Tilføj mindst én modtager, før du registrerer lokale forsendelsesbeviser.',
+  'acts.convening.recipients.rowLabel': 'Modtager {number}',
+  'acts.convening.recipients.name': 'Navn',
+  'acts.convening.recipients.contact': 'Kontakte',
+  'acts.convening.recipients.contactPlaceholder':
+    'F.eks.: e-mail, adresse, konto eller intern kontakt',
+  'acts.convening.recipients.channel': 'Helt',
+  'acts.convening.recipients.dispatchedAt': 'Sendes ind',
+  'acts.convening.recipients.reference': 'Forsendelsesreference',
+  'acts.convening.recipients.referencePlaceholder': 'Eks.: RR123456789PT, kvittering, besked-id',
+  'acts.convening.recipients.remove': 'Fjern modtager',
+  'acts.convening.evidence.aria': 'Lokalt bevis for udstedelse af stævningen',
+  'acts.convening.evidence.boundary':
+    'Registrerer kun lokale beviser for afsendelse og herkomst i hovedbogen. Sender ikke e-mail/SMS, bekræfter ikke ekstern levering, hævder ikke juridisk tilstrækkelighed, fuldførelse af arbejdsgangen, accept ved registrering/DRE eller accept af en udbyder.',
+  'acts.convening.evidence.ready':
+    'Marker {count} eksisterende modtager(e) med den angivne dato og, hvis udfyldt, mediet og den lokale reference.',
+  'acts.convening.evidence.saveRecipients':
+    'Gem protokollen for at vedholde modtagerne, før du registrerer lokale beviser for afsendelse.',
+  'acts.convening.evidence.requirements':
+    'Kræver allerede eksisterende modtagere i bekendtgørelsen og en udfyldt forsendelsesdato.',
+  'acts.convening.evidence.recording': 'Optagelse af lokale beviser',
+  'acts.convening.evidence.record': 'Registrer lokal forsendelse',
+  'acts.convening.evidence.recorded': 'Lokalt bevis for afsendelse registreret.',
+  'templates.editor.field.id.placeholder': 'bruger-ryglæn-ata/v1',
+  'entities.fiscalYearEnd.cardTitle': 'Regnskabsår',
+  'entities.fiscalYearEnd.fieldLabel': 'Afslutning af øvelsen',
+  'entities.fiscalYearEnd.inputLabel': 'Afslutning af året (MM-DD)',
+  'entities.fiscalYearEnd.hint': 'Valgfri. Tom holder låsen som standard på 12-31.',
+  'entities.fiscalYearEnd.invalid': 'Brug en gyldig dato i MM-DD-format.',
+  'entities.fiscalYearEnd.placeholder': '12-31',
+  'entities.fiscalYearEnd.updated': 'Opdateret regnskabsår.',
+  'entities.fiscalYearEnd.saving': 'At gemme',
+  'entities.fiscalYearEnd.save': 'Gem zip',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'uiLiteral.actDocumentPanel.gereConvocatoriasEAposOSeloCertidoesE':
+    'Generer meddelelser og, efter forsegling, certifikater og uddrag uden at erstatte den kanoniske PDF/A.',
+  'uiLiteral.actDocumentPanel.minutasGeradas': 'Minutter genereret',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecaoTecnicaNaoEncontrouMembrosCadesOu':
+    'Den tekniske inspektion fandt ingen anerkendte CAdES- eller XAdES-medlemmer i containeren.',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecionarContentorAsicLocal':
+    'Inspicerer lokal ASiC-beholder...',
+  'uiLiteral.asicSignatureInspectorPanel.assinaturasTecnicas': 'Tekniske abonnementer',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadores': 'Blokere',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadoresEDiagnosticosDeAssinatura':
+    'Signaturblokkere og diagnostik',
+  'uiLiteral.asicSignatureInspectorPanel.contentorAsic': 'ASiC beholder',
+  'uiLiteral.asicSignatureInspectorPanel.diagnosticoDeManifestos': 'Manifest diagnose',
+  'uiLiteral.asicSignatureInspectorPanel.evidenciaEmbebidaEBloqueadores':
+    'Indlejrede beviser og blokkere',
+  'uiLiteral.asicSignatureInspectorPanel.indicadores': 'Indikatorer',
+  'uiLiteral.asicSignatureInspectorPanel.inspecaoTecnicaLocal': 'Teknisk inspektion på stedet',
+  'uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic': 'ASiC teknisk inspektør',
+  'uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao':
+    'Læs kun lokale .asice/.sce/.zip-beholdere. Underskriver ikke, gemmer ikke artefakter, ringer ikke til udbydere og konsulterer ikke TSL/TSA/OCSP/CRL live.',
+  'uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas': 'Eksplicitte begrænsninger',
+  'uiLiteral.asicSignatureInspectorPanel.ocorrencias': 'Hændelser',
+  'uiLiteral.asicSignatureInspectorPanel.oEndpointRecusouAInspecaoNenhumArtefactoFoi':
+    'Slutpunktet afviste inspektion; ingen artefakter blev signeret, gemt eller ændret.',
+  'uiLiteral.asicSignatureInspectorPanel.perfilDoContentor': 'Containerprofil',
+  'uiLiteral.asicSignatureInspectorPanel.resultadoAsic': 'ASiC resultat',
+  'uiLiteral.asicSignatureInspectorPanel.semAssinaturasReconhecidas': 'Ingen signaturer genkendt',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeAssinaturaReportados':
+    'Ingen signaturdiagnostik rapporteret.',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeManifestoReportados':
+    'Ingen manifeste diagnoser rapporteret.',
+  'uiLiteral.asicSignatureInspectorPanel.semTimestampsDeArquivoAsicReportados':
+    'Ingen ASiC-filtidsstempler rapporteret.',
+  'uiLiteral.asicSignatureInspectorPanel.timestampsDeArquivo': 'Fil tidsstempler',
+  'uiLiteral.asicSignatureInspectorPanel.validacaoCadesLimitada': 'Begrænset CAdES-validering',
+  'uiLiteral.bookDetailPage.a': 'de',
+  'uiLiteral.bookDetailPage.abrirAta': 'åbne minutter',
+  'uiLiteral.bookDetailPage.aceiteParaReferenciaAuxiliar': 'Accepter som hjælpereference',
+  'uiLiteral.bookDetailPage.aceites': '· accepteret',
+  'uiLiteral.bookDetailPage.aEntidadeEOLivroSaoPreenchidosA':
+    'Enheden og bogen er udfyldt fra denne detalje:',
+  'uiLiteral.bookDetailPage.aImportacaoPreservadaAindaNaoDevolveuRelatorioOcr':
+    'Den bevarede import har endnu ikke returneret lokal OCR/kanonisk rapport.',
+  'uiLiteral.bookDetailPage.ambito': 'Omfang',
+  'uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras':
+    'Lovlig tilbageholdelse blokerer bortskaffelse af opbevaringsregler, mens den er aktiv. Dette panel viser lokale beviser for status/revision og godkender ikke bortskaffelse eller erklærer lovoverholdelse.',
+  'uiLiteral.bookDetailPage.arquivoLegalPacote': '· juridisk fil/pakke:',
+  'uiLiteral.bookDetailPage.artefacto': 'Artefakt',
+  'uiLiteral.bookDetailPage.artefactos': 'Artefakter',
+  'uiLiteral.bookDetailPage.assinatura': '· signatur:',
+  'uiLiteral.bookDetailPage.ataCanonica': '· kanoniske referater:',
+  'uiLiteral.bookDetailPage.ataCanonicaCriada': '· kanonisk handling oprettet:',
+  'uiLiteral.bookDetailPage.ataCanonicaDocumentoCanonicoPacoteDeArquivoAssinatura':
+    'Kanonisk handling, kanonisk dokument, filpakke, underskrift, segl, PDF/A, PDF/UA og juridisk gyldighed.',
+  'uiLiteral.bookDetailPage.ataCanonicaReclamada': '· kanonisk handling hævdet:',
+  'uiLiteral.bookDetailPage.ataCriada': 'Oprettede referater:',
+  'uiLiteral.bookDetailPage.ataMutavelCriada': '· foranderlige minutter oprettet:',
+  'uiLiteral.bookDetailPage.ataMutavelDeDestino': 'Udskiftelige minutter af destination',
+  'uiLiteral.bookDetailPage.ator': 'Skuespiller',
+  'uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte': 'Blokerer kassere anmeldelse',
+  'uiLiteral.bookDetailPage.bloqueios': 'Låse',
+  'uiLiteral.bookDetailPage.certificacaoDeArquivo': 'fil certificering:',
+  'uiLiteral.bookDetailPage.confirmoQueEstaRevisaoEApenasMetadadoAuxiliar':
+    'Jeg bekræfter, at denne revision kun er hjælpe-OCR-metadata og ikke skaber en kanonisk handling, kanonisk dokument, signatur eller juridisk gyldighed.',
+  'uiLiteral.bookDetailPage.confirmoQueEsteRascunhoOcrEAuxiliarNao':
+    'Jeg bekræfter, at dette OCR-udkast er hjælpe, ikke-kanonisk og ikke skaber referater, dokumenter, underskrifter eller juridisk gyldighed.',
+  'uiLiteral.bookDetailPage.contexto': 'Sammenhæng',
+  'uiLiteral.bookDetailPage.conversaoCanonica': 'kanonisk konvertering:',
+  'uiLiteral.bookDetailPage.criado': 'Oprettet',
+  'uiLiteral.bookDetailPage.criaOuDevolveUmDossierSoComMetadados':
+    'Opret eller returner et dossier med kun metadata, fortæl og gennemgå beviser for det accepterede OCR-udkast. Det opretter ikke referater, dokumenter, PDF/A, signatur, segl, filpakke eller juridisk gyldighed.',
+  'uiLiteral.bookDetailPage.definidaEm': 'Sæt ind',
+  'uiLiteral.bookDetailPage.desconhecidos': '· ukendt',
+  'uiLiteral.bookDetailPage.digestDaFonteOcr': 'OCR-skrifttypesammendrag',
+  'uiLiteral.bookDetailPage.digestPresente': 'nuværende fordøjelse:',
+  'uiLiteral.bookDetailPage.disposalApproved': '· bortskaffelsesgodkendt:',
+  'uiLiteral.bookDetailPage.documentoAssinado': '· underskrevet dokument:',
+  'uiLiteral.bookDetailPage.documentoCanonico': '· kanonisk dokument:',
+  'uiLiteral.bookDetailPage.dossier': 'Dossier',
+  'uiLiteral.bookDetailPage.dossierAssociado': 'Tilhørende dossier',
+  'uiLiteral.bookDetailPage.dossierJaRegistado': 'Dossier er allerede registreret',
+  'uiLiteral.bookDetailPage.draftMutavel': 'foranderligt udkast:',
+  'uiLiteral.bookDetailPage.estaAcaoNaoCriaAtaCanonicaDocumentoCanonico':
+    'Denne handling opretter ikke en kanonisk handling, kanonisk dokument, PDF/A, signatur eller juridisk gyldighed.',
+  'uiLiteral.bookDetailPage.estado': 'Tilstand',
+  'uiLiteral.bookDetailPage.estado.1528o1': '· stat',
+  'uiLiteral.bookDetailPage.estado.kzwel3': 'Tilstand:',
+  'uiLiteral.bookDetailPage.estadoDeRevisaoOcrDigestDeTextoQuando':
+    'OCR-gennemgangsstatus, tekstsammenfatning, når det er angivet, reviderede sider, OCR-motor og dossiermetadata, når de er tilgængelige.',
+  'uiLiteral.bookDetailPage.estaImportacaoPreservadaAindaNaoTemOcrAuxiliar':
+    'Denne bevarede import har endnu ikke en ekstra OCR til gennemgang.',
+  'uiLiteral.bookDetailPage.estesPacotesPreservamCopiasDeLivrosEmPapel':
+    'Disse pakker bevarer papirkopier af bøger til reference. De erstatter ikke kanoniske digitale referater og erklærer ikke juridisk gyldighed, PDF/A, underskrifts gyldighed eller kvalificeret underskrift.',
+  'uiLiteral.bookDetailPage.evidenciaDeExecucaoDeConversaoRevista':
+    'Bevis for revideret konverteringsudførelse',
+  'uiLiteral.bookDetailPage.evidenciaRevista': 'Gennemgået beviser',
+  'uiLiteral.bookDetailPage.exclui': 'Udelukker',
+  'uiLiteral.bookDetailPage.execucoesLigadas': 'forbundne henrettelser:',
+  'uiLiteral.bookDetailPage.ficheiro': 'Fil',
+  'uiLiteral.bookDetailPage.flagsSemExecucao': 'Ikke-udførende flag',
+  'uiLiteral.bookDetailPage.flagsSemReivindicacao': 'Flag uden krav',
+  'uiLiteral.bookDetailPage.fluxoOperador': 'Operatør flow',
+  'uiLiteral.bookDetailPage.importacaoPreservada': 'Import bevaret',
+  'uiLiteral.bookDetailPage.inclui': 'Inkluderer',
+  'uiLiteral.bookDetailPage.legalComplianceClaimed': 'legal_compliance_claimed:',
+  'uiLiteral.bookDetailPage.limitesDoDossier': 'Dossiergrænser',
+  'uiLiteral.bookDetailPage.metadados': '· metadata:',
+  'uiLiteral.bookDetailPage.minutasCanonicas': '· kanoniske referater:',
+  'uiLiteral.bookDetailPage.naoCanonico': 'Ikke-kanonisk',
+  'uiLiteral.bookDetailPage.naoHaPacotesDeLivroEmPapelPreservados':
+    'Der er ingen papirbogspakker bevaret til denne bogreference.',
+  'uiLiteral.bookDetailPage.naResposta': 'I svaret:',
+  'uiLiteral.bookDetailPage.noArtefacto': 'I artefakten:',
+  'uiLiteral.bookDetailPage.noEventoDeLedger': '· i hovedbogsbegivenheden:',
+  'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
+    'Det lokale DGLAB-manifest er et JSON-stillads afledt af den interne pakke. Det er ikke en officiel DGLAB-eksport, offentlig indsendelse, juridisk arkiveringscertificering, PDF/A, PAdES eller PDF-UA-certificering, ej heller en registrering af destruktiv bortskaffelse.',
+  'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':
+    'Resultatet vil være et ikke-kanonisk hjælpe-OCR-udkast til gennemgang af den bevarede import.',
+  'uiLiteral.bookDetailPage.pacoteDeArquivo': '· filpakke:',
+  'uiLiteral.bookDetailPage.paginas': 'sider',
+  'uiLiteral.bookDetailPage.paginasDaFonte': 'Kilde sider',
+  'uiLiteral.bookDetailPage.pdfA': '· PDF/A:',
+  'uiLiteral.bookDetailPage.pdfUa': '· PDF/UA:',
+  'uiLiteral.bookDetailPage.promocaoParaRascunhoMutavel': 'Fremme for skiftende udkast',
+  'uiLiteral.bookDetailPage.proximoPasso': 'Næste skridt',
+  'uiLiteral.bookDetailPage.rascunhoAceite': 'Udkast accepteret',
+  'uiLiteral.bookDetailPage.rascunhoOcrAceite': 'Udkast til OCR accepteret',
+  'uiLiteral.bookDetailPage.rascunhoRevisto': 'Revideret udkast',
+  'uiLiteral.bookDetailPage.rascunhosOcr': 'OCR-udkast',
+  'uiLiteral.bookDetailPage.rehearsalLocalCalculadoAPartirDeMetadadosPreservados':
+    'Lokal genhør beregnet ud fra bevarede metadata. Udfører ikke OCR, opretter ikke kanoniske dokumenter, underskriver ikke og validerer ikke juridisk.',
+  'uiLiteral.bookDetailPage.relatorioLocalIndisponivel': 'Lokal rapport er ikke tilgængelig',
+  'uiLiteral.bookDetailPage.relatorioOcrCanonicoLocal': 'Lokal OCR/kanonisk rapport',
+  'uiLiteral.bookDetailPage.resumoOcrDossierDerivado': 'OCR resumé/afledt dossier',
+  'uiLiteral.bookDetailPage.revisaoDeOrigem': 'Kildegennemgang',
+  'uiLiteral.bookDetailPage.revisaoEFixidez': 'Gennemgang og fixering',
+  'uiLiteral.bookDetailPage.selo': '· stempel:',
+  'uiLiteral.bookDetailPage.semReivindicacao': 'Intet krav',
+  'uiLiteral.bookDetailPage.soMetadados': 'Kun metadata',
+  'uiLiteral.bookDetailPage.soMetadadosSimAtaCanonicaNaoDocumentoCanonico':
+    'Kun metadata: ja · kanonisk handling: nej · kanonisk dokument: nej · arkivpakke: nej · signatur: nej · segl: nej · PDF/A: nej · PDF/UA: nej · juridisk gyldighed: nej.',
+  'uiLiteral.bookDetailPage.textoOcrBruto': 'Rå OCR-tekst',
+  'uiLiteral.bookDetailPage.textoOcrBrutoNoDossier': 'Rå OCR-tekst i dossieret',
+  'uiLiteral.bookDetailPage.validadeLegal': '· juridisk gyldighed:',
+  'uiLiteral.bookDetailPage.validadeLegalDeclaradaNao': '. Erklæret retsgyldighed: nej.',
+  'uiLiteral.bookDetailPage.valideDatasContagemDePaginasFixidezEContexto':
+    'Valider datoer, sideantal, fixitet og bogkontekst, før du bevarer. Linket vist her er kun kontekstuelt: det opretter eller ændrer ikke kæder af minutter, og det transformerer heller ikke importen til en kanonisk digital post.',
+  'uiLiteral.funcoesSection.adicionarSo': 'Tilføj kun:',
+  'uiLiteral.funcoesSection.aplicarDefaultsEmFalta': 'Anvend manglende standardindstillinger',
+  'uiLiteral.funcoesSection.estado': 'Tilstand',
+  'uiLiteral.funcoesSection.reverDefaults': 'Gennemgå standardindstillinger',
+  'uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao': 'Indlæser gendannelsespolitik',
+  'uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff':
+    'Indlæser prævalidering af lokal overdragelse',
+  'uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio': 'Backup fil til test',
+  'uiLiteral.gestaoDadosSection.backendDuravel': 'Holdbar backend',
+  'uiLiteral.gestaoDadosSection.chancelaBackupZip': 'chancela-backup-….zip',
+  'uiLiteral.gestaoDadosSection.chaveDoBackupOpcional': 'Sikkerhedskopieringsnøgle (valgfrit)',
+  'uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios':
+    'Sammensætter kun lokale beviser: backup-kandidater, verificerede essays, bogpakker, fil- og hovedbogsstatus.',
+  'uiLiteral.gestaoDadosSection.ensaioDeRecuperacaoSemRestauro': 'Recovery test uden restaurering',
+  'uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro':
+    'Eksplicit, operatør-initieret test: ingen live-gendannelse, ingen juridisk arkivcertificering, ingen automatisk bevis for RPO/RTO eller off-site depot.',
+  'uiLiteral.gestaoDadosSection.enviadaApenasParaExecutarPragmaRekeyAResposta':
+    'Sendes kun for at udføre PRAGMA rekey; svaret returnerer kun beviser uden hemmeligholdelse.',
+  'uiLiteral.gestaoDadosSection.execucaoDaRotacaoSqlcipher': 'Udfører SQLCipher-rotation',
+  'uiLiteral.gestaoDadosSection.executaApenasORekeySqlcipherNaBaseDe':
+    'Udfør kun SQLCipher-genøglen på den allerede åbne holdbare database; konverterer ikke SQLite-lagre til almindelig tekst.',
+  'uiLiteral.gestaoDadosSection.executaAPreValidacaoExistenteDoBackupE':
+    'Udfører eksisterende forhåndsvalidering af sikkerhedskopien og registrerer en escrow-kvittering. Gendanner ikke, ændrer ikke databasen og forbereder ikke sidevogne.',
+  'uiLiteral.gestaoDadosSection.leituraDoEstadoLocalDePersistenciaNaoExecuta':
+    'Læse den lokale tilstand af vedholdenhed; udfører ikke migrerings-, omnøgle- eller depotvalidering.',
+  'uiLiteral.gestaoDadosSection.localDeCustodia': 'Fængselssted',
+  'uiLiteral.gestaoDadosSection.localIndicadoPeloOperadorIstoNaoComprovaCustodia':
+    'Placering angivet af operatøren; dette beviser ikke off-site forældremyndighed.',
+  'uiLiteral.gestaoDadosSection.nomeSimplesEmBackupsOuCaminhoAbsolutoDo':
+    'Simpelt navn i sikkerhedskopier/ eller absolut sti til filen, der skal kontrolleres.',
+  'uiLiteral.gestaoDadosSection.notasDoOperador': 'Operatør noter',
+  'uiLiteral.gestaoDadosSection.novaChaveSqlcipher': 'Ny SQLCipher-nøgle',
+  'uiLiteral.gestaoDadosSection.preValidacaoLocalDeHandoff':
+    'Forhåndsvalidering af lokal overdragelse',
+  'uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave':
+    'SQLCipher-beredskab og nøgledepot',
+  'uiLiteral.gestaoDadosSection.requerArmazenamentoDuravelEmDisco': 'Kræver holdbar disklagring.',
+  'uiLiteral.gestaoDadosSection.sidecars': 'Sidevogne',
+  'uiLiteral.gestaoDadosSection.sidecarsDuraveis': 'Holdbare sidevogne',
+  'uiLiteral.gestaoDadosSection.usadaSoNestaPreValidacaoNaoEGuardada':
+    'Anvendes kun i denne forhåndsvalidering; er ikke gemt på kvitteringen.',
+  'uiLiteral.importFromRegistryForm.consulta': 'Konsultation',
+  'uiLiteral.registryImportPanel.aConsultaAindaNaoFoiExecutada':
+    'Forespørgslen er endnu ikke blevet udført.',
+  'uiLiteral.registryImportPanel.consulta': 'Konsultation',
+  'uiLiteral.registryImportPanel.proximoPasso': 'Næste skridt',
+  'uiLiteral.registryImportPanel.resultado': 'Resultat',
+  'uiLiteral.registryImportPanel.resumo': 'Oversigt',
+  'uiLiteral.registryImportPanel.resumoDaImportacao': 'Importoversigt',
+  'uiLiteral.registryImportPanel.semAlteracoes': 'Ingen ændringer',
+  'uiLiteral.signingPanel.token': 'Token',
+  'uiLiteral.trustCatalogPage.tslConfiavel': 'Pålidelig TSL',
+  'uiLiteral.asicSignatureInspectorPanel.semIndicadoresDeEvidenciaEmbebidaReportados':
+    'Ingen indikatorer for indlejret bevis rapporteret.',
+  'uiLiteral.asicSignatureInspectorPanel.semOcorrenciasReportadas': 'Ingen rapporterede hændelser.',
+  'uiLiteral.bookDetailPage.ambitoDeArquivoPaperBookImport': 'Filomfang: papir-bog-import:',
+  'uiLiteral.bookDetailPage.criaUmaAtaEmEstadoDraftComO':
+    'Opretter referater i Kladdestatus med OCR-teksten som støtte til overvejelser. Det opretter ikke et kanonisk dokument, PDF/A, signatur, segl eller accept af juridisk gyldighed.',
+  'uiLiteral.bookDetailPage.digestDoTexto': 'Tekstsammendrag',
+  'uiLiteral.bookDetailPage.documentoCanonico.19tw3h': '. Kanonisk dokument:',
+  'uiLiteral.bookDetailPage.entidade': '· Enhed:',
+  'uiLiteral.bookDetailPage.intervalo': 'Interval:',
+  'uiLiteral.bookDetailPage.limites': 'Grænser',
+  'uiLiteral.bookDetailPage.livro': 'Bog:',
+  'uiLiteral.bookDetailPage.motor': 'Motor',
+  'uiLiteral.bookDetailPage.nota': 'Meddelelse',
+  'uiLiteral.bookDetailPage.ocrMetadadoApenasTextoArmazenado': 'OCR: kun metadata; gemt tekst:',
+  'uiLiteral.bookDetailPage.paginasRevistas': 'Reviderede sider',
+  'uiLiteral.bookDetailPage.rascunhoCriado': 'Udkast oprettet:',
+  'uiLiteral.bookDetailPage.revisto': 'Revideret',
+  'uiLiteral.bookDetailPage.textoAutoritativo': 'Autoritativ tekst:',
+  'uiLiteral.bookDetailPage.textoAutoritativo.9xkq63': '; autoritativ tekst:',
+  'uiLiteral.bookDetailPage.textoExtraido': 'Udtrukket tekst',
+  'uiLiteral.compliancePanel.limitesDoAviso': 'Advarselsgrænser',
+  'uiLiteral.compliancePanel.orientacaoLocalDaConvocatoria': 'Lokal orientering af opkaldet',
+  'uiLiteral.compliancePanel.proximoRegistoLocal': 'Næste lokal tilmelding',
+  'uiLiteral.editUserPage.acao': 'Handling',
+  'uiLiteral.editUserPage.aindaNaoHaPedidosDsrRegistadosParaEste':
+    'Der er endnu ingen DSR-anmodninger registreret for denne bruger.',
+  'uiLiteral.editUserPage.concluido': 'Afsluttet',
+  'uiLiteral.editUserPage.criado': 'Oprettet',
+  'uiLiteral.editUserPage.criadoPor': 'Skabt af',
+  'uiLiteral.editUserPage.estado': 'Tilstand',
+  'uiLiteral.editUserPage.marcarConcluido': 'Mark afsluttet',
+  'uiLiteral.editUserPage.pedidosDsrPrivacidade': 'DSR/Privatlivsanmodninger',
+  'uiLiteral.editUserPage.registaOCicloDeVidaDosPedidosDsr':
+    'Registrerer livscyklussen af ​​brugerens DSR-anmodninger og downloader ikke-hemmelig JSON til svar. Eksportindholdet vises ikke på skærmen.',
+  'uiLiteral.editUserPage.semPedidosDsr': 'Ingen DSR ordrer',
+  'uiLiteral.editUserPage.tipo': 'Type',
+  'uiLiteral.editUserPage.tipoDePedido': 'Ordretype',
+  'uiLiteral.entitiesPage.naoImportado': 'Ikke importeret',
+  'uiLiteral.entitiesPage.naoImportadoSemCertidao': 'Ikke importeret · Intet certifikat',
+  'uiLiteral.entitiesPage.semAtividade': 'Ingen aktivitet',
+  'uiLiteral.entitiesPage.semAtividadeNoArquivo': 'Ingen aktivitet på filen',
+  'uiLiteral.entitiesPage.semCertidao': 'Intet certifikat',
+  'uiLiteral.entityChronologyPanel.cronologiaLocalDeAtosSelados':
+    'Lokal kronologi af forseglede handlinger',
+  'uiLiteral.entityChronologyPanel.data': 'Dato',
+  'uiLiteral.entityChronologyPanel.descricao': 'Beskrivelse',
+  'uiLiteral.entityChronologyPanel.digest': 'fordøje',
+  'uiLiteral.entityChronologyPanel.eventosLocais': 'Lokale arrangementer',
+  'uiLiteral.entityChronologyPanel.fonteSelada': 'Kilde forseglet',
+  'uiLiteral.entityChronologyPanel.fontesSeladas': 'Forseglede Kilder',
+  'uiLiteral.entityChronologyPanel.ligacoes': 'Forbindelser',
+  'uiLiteral.entityChronologyPanel.nos': 'Os',
+  'uiLiteral.entityChronologyPanel.projecaoTecnicaLocalBaseadaApenasEmAtasSeladas':
+    'Lokal teknisk projektion kun baseret på forseglede eller arkiverede referater. Det gør ikke krav på juridisk gyldighed eller certificering af myndighed.',
+  'uiLiteral.entityChronologyPanel.provenienciaDasLigacoesLocais': 'Herkomst af lokale links',
+  'uiLiteral.entityChronologyPanel.tipo': 'Type',
+  'uiLiteral.funcoesSection.aReconciliacaoEGuiadaPorAdminESo':
+    '. Afstemning er admin-drevet og tilføjer kun disse seedede standardindstillinger.',
+  'uiLiteral.funcoesSection.atual': 'Strøm',
+  'uiLiteral.funcoesSection.defaultsEmFalta': 'Manglende standardindstillinger:',
+  'uiLiteral.funcoesSection.revisaoManual': 'Manuel gennemgang',
+  'uiLiteral.gestaoDadosSection.aindaNaoHaRecibosDeRotacaoSqlcipherBem':
+    'Der er stadig ingen kvitteringer for vellykket SQLCipher-rotation.',
+  'uiLiteral.gestaoDadosSection.arquivoVerificado': 'Verificeret fil',
+  'uiLiteral.gestaoDadosSection.atosPreservaveis': 'Bevarbare handlinger',
+  'uiLiteral.gestaoDadosSection.backend': 'Backend',
+  'uiLiteral.gestaoDadosSection.backendSqlcipherLocal': 'Lokal SQLCipher-backend',
+  'uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente': 'Seneste uvaliderede kandidat',
+  'uiLiteral.gestaoDadosSection.candidatosNaoValidados': 'Uvaliderede kandidater',
+  'uiLiteral.gestaoDadosSection.checkpointAntes': 'Checkpoint før',
+  'uiLiteral.gestaoDadosSection.checkpointDepois': 'Kontrolpost efter',
+  'uiLiteral.gestaoDadosSection.cifrado': 'Krypteret',
+  'uiLiteral.gestaoDadosSection.configuracaoDaChave': 'Nøglekonfiguration',
+  'uiLiteral.gestaoDadosSection.constatacoes': 'Fund',
+  'uiLiteral.gestaoDadosSection.documentosPreservados': 'Bevarede dokumenter',
+  'uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao': 'Genopretningsassays',
+  'uiLiteral.gestaoDadosSection.erroKeyOps': 'Key-ops fejl',
+  'uiLiteral.gestaoDadosSection.erros': 'Fejl',
+  'uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados': 'Database skema',
+  'uiLiteral.gestaoDadosSection.estado': 'Tilstand',
+  'uiLiteral.gestaoDadosSection.estadoDoEnsaio': 'Assay status',
+  'uiLiteral.gestaoDadosSection.evidenciaOperacionalLocalGeradaAposRekeySqlcipherAceite':
+    'Lokalt operationelt bevis genereret efter accept af SQLCipher-gennøgle. Disse kvitteringer bekræfter ikke kryptering under hvile, almindelig tekst-migrering, juridisk sletning eller fuld GDPR-livscyklus.',
+  'uiLiteral.gestaoDadosSection.evidenciaVerificada': 'Verificerede beviser',
+  'uiLiteral.gestaoDadosSection.fallbackFalhaFechado': 'Fallback mislykkes lukket',
+  'uiLiteral.gestaoDadosSection.fallbackHardware': 'Hardware fallback',
+  'uiLiteral.gestaoDadosSection.fonteDeChave': 'Nøglekilde',
+  'uiLiteral.gestaoDadosSection.formatoDoCabecalho': 'Overskriftsformat',
+  'uiLiteral.gestaoDadosSection.geradoEm': 'Genereret i',
+  'uiLiteral.gestaoDadosSection.historicoGuardado': 'Gemt historie',
+  'uiLiteral.gestaoDadosSection.historicoRecente': 'Nyere historie',
+  'uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo': 'Alder på sidste kvittering',
+  'uiLiteral.gestaoDadosSection.idadeMaximaConfigurada': 'Konfigureret maksimal alder',
+  'uiLiteral.gestaoDadosSection.integridadePosRekey': 'Post-rekey integritet',
+  'uiLiteral.gestaoDadosSection.lacunasDeProntidao': 'Beredskabshuller',
+  'uiLiteral.gestaoDadosSection.limitesDoRecibo': 'Kvitteringsgrænser',
+  'uiLiteral.gestaoDadosSection.livros': 'Bøger',
+  'uiLiteral.gestaoDadosSection.localDeCustodiaIndicado': 'Angivet varetægtssted',
+  'uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada': 'Åbn butik med konfigureret nøgle',
+  'uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente': 'Databasemedlem til stede',
+  'uiLiteral.gestaoDadosSection.membrosNoArquivo': 'Medlemmer i arkivet',
+  'uiLiteral.gestaoDadosSection.membrosSidecar': 'Sidevognsmedlemmer',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada': 'Klartekst-migrering blokeret',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextPendente': 'Afventer almindelig tekst-migrering',
+  'uiLiteral.gestaoDadosSection.modo': 'Mode',
+  'uiLiteral.gestaoDadosSection.operacao': 'Operation',
+  'uiLiteral.gestaoDadosSection.passosDeclarados': 'Angivne skridt',
+  'uiLiteral.gestaoDadosSection.planoDeMigracao': 'Migrationsplan',
+  'uiLiteral.gestaoDadosSection.planoKeyOps': 'Key-ops plan',
+  'uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao': 'Lokal genopretningspolitik',
+  'uiLiteral.gestaoDadosSection.preValidacaoDeImportacao': 'Importer forhåndsvalidering',
+  'uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo':
+    'Forhåndsvalidering af sidste kvittering',
+  'uiLiteral.gestaoDadosSection.preValidacaoOk': 'Forhåndsvalidering OK',
+  'uiLiteral.gestaoDadosSection.prontoParaRestauro': 'Klar til restaurering',
+  'uiLiteral.gestaoDadosSection.proximoPasso': 'Næste skridt',
+  'uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao': 'Lokale rotationskvitteringer',
+  'uiLiteral.gestaoDadosSection.registadoEm': 'Registreret i',
+  'uiLiteral.gestaoDadosSection.rekeyExecutado': 'Gentast udført',
+  'uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher': 'SQLCipher-udførelsesresultat',
+  'uiLiteral.gestaoDadosSection.resumoLocalDerivadoDeRecibosDeEnsaioSem':
+    'Lokal oversigt udledt af testkvitteringer: ingen gendannelse udført, ingen databaseudveksling, intet bevis for off-site depot, ingen RPO/RTO-certificering og ingen certificering af produktionssikkerhedskopiering.',
+  'uiLiteral.gestaoDadosSection.rpoAlvoDeclarado': 'Erklæret mål RPO',
+  'uiLiteral.gestaoDadosSection.rtoAlvoDeclarado': 'Erklæret mål RTO',
+  'uiLiteral.gestaoDadosSection.semAlegacoes': 'Ingen påstande',
+  'uiLiteral.gestaoDadosSection.semCaminhoDaBd': 'Ingen BD-sti',
+  'uiLiteral.gestaoDadosSection.semChaveGuardada': 'Ingen nøgle gemt',
+  'uiLiteral.gestaoDadosSection.semConstatacoesRegistadas': 'Ingen fund registreret.',
+  'uiLiteral.gestaoDadosSection.semErrosRegistados': 'Ingen fejl registreret.',
+  'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
+    'Ingen lokale huller rapporteret i denne stat.',
+  'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
+    'Backend lokale signaler med redigerede hemmeligheder. De certificerer ikke produktionsrestkryptering, gennemført almindelig tekst-migrering, custodial runbook eller juridisk cyklus/GDPR.',
+  'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado': 'Verificeret isoleret snapshot',
+  'uiLiteral.gestaoDadosSection.sqlcipher': 'SQLCipher',
+  'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher i build',
+  'uiLiteral.gestaoDadosSection.sqlcipherVerificado': 'Verificeret SQLCipher',
+  'uiLiteral.gestaoDadosSection.total': 'i alt /',
+  'uiLiteral.gestaoDadosSection.totalDeBytesDosMembros': 'Samlet medlemsbytes',
+  'uiLiteral.gestaoDadosSection.ultimaRotacao': 'Sidste rotation',
+  'uiLiteral.gestaoDadosSection.ultimoEnsaio': 'Sidste øve',
+  'uiLiteral.gestaoDadosSection.ultimoRecibo': 'Sidste kvittering',
+  'uiLiteral.gestaoDadosSection.utilizador': 'Bruger',
+  'uiLiteral.gestaoDadosSection.verificacaoIsolada': 'Isoleret check',
+  'uiLiteral.importFromRegistryForm.acaoNecessaria': 'Handling påkrævet',
+  'uiLiteral.importFromRegistryForm.aCertidaoEstaASerConsultadaMantenhaEsta':
+    'Certifikatet er ved at blive konsulteret. Hold denne side åben.',
+  'uiLiteral.importFromRegistryForm.aConsultar': 'Skal høres',
+  'uiLiteral.importFromRegistryForm.corrijaOCodigoOuEMailETente':
+    'Ret koden eller e-mailen, og prøv igen.',
+  'uiLiteral.importFromRegistryForm.estado': 'Tilstand',
+  'uiLiteral.registryImportPanel.acaoNecessaria': 'Handling påkrævet',
+  'uiLiteral.registryImportPanel.aCertidaoEstaASerConsultadaOsValores':
+    'Certifikatet er ved at blive konsulteret. Aktuelle værdier ændres kun, når resultatet ankommer.',
+  'uiLiteral.registryImportPanel.aConsultar': 'Skal høres',
+  'uiLiteral.registryImportPanel.corrijaOCodigoOuEMailETente':
+    'Ret koden eller e-mailen, og prøv igen.',
+  'uiLiteral.registryImportPanel.estado': 'Tilstand',
+  'uiLiteral.asicSignatureInspectorPanel.manifesto': 'manifest',
+  'uiLiteral.bookDetailPage.em': 'i',
+  'uiLiteral.bookDetailPage.por': 'sætte',
+  'uiLiteral.bookDetailPage.total': 'total',
+  'uiLiteral.gestaoDadosSection.dias': 'dage',
+  'uiLiteral.gestaoDadosSection.fechados': 'lukket',
+  'uiLiteral.gestaoDadosSection.min': 'min',
+  'uiLiteral.privacyComplianceSection.overdue': 'forsinket:',
+  'uiLiteral.bookDetailPage.acceptedWithoutCanonicalConversion':
+    'Accepteret som supplerende reference uden kanonisk konvertering.',
+  'uiLiteral.bookDetailPage.noAcceptedOcrDraft': 'Intet accepteret OCR-udkast.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.signingSnapshot.title': 'Kanonisk kopi frosset til underskrift',
+  'acts.signingSnapshot.body':
+    'Ved indtastning af «Under signatur» blev referatet fastfrosset. Abonnementshandlinger bruger denne kanoniske kopi og genskaber eller erstatter den ikke.',
+  'acts.sealing.signedReady':
+    'Der er tekniske beviser for en underskrevet PDF til den kanoniske kopi. Gennemgå det før forsegling.',
+  'acts.sealing.signatureRequired':
+    'Underskriv den kanoniske kopi eller brug den alternative kopi af den manuelt signerede original før forsegling.',
+  'acts.sealing.signedAck.title': 'Bekræft forsegling efter underskrift',
+  'acts.sealing.signedAck.body':
+    'Forseglingen vil bruge den allerede underskrevne kanoniske kopi. Gennemgå de tekniske beviser og meddelelser om overholdelse, før du fortsætter.',
+  'acts.sealing.signedAck.checkbox':
+    'Jeg bekræfter, at jeg har gennemgået det tekniske bevis for underskriften og ønsker at forsegle referatet.',
+  'acts.sealing.signedAck.checkboxWithWarnings':
+    'Jeg bekræfter, at jeg har gennemgået det tekniske bevis for underskriften og overensstemmelsesmeddelelserne og ønsker at forsegle referatet.',
+  'signing.closed.title': 'Abonnementet er afsluttet',
+  'signing.closed.body':
+    'Referatet er nu «Under signatur». Abonnementshandlinger er lukket; eksisterende beviser forbliver tilgængelige til høring.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'signing.technicalComparison.row.signingSnapshotDigest': 'Digest af den frosne kanoniske kopi',
 };

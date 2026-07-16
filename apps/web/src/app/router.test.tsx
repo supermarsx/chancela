@@ -2,7 +2,7 @@ import { Suspense, lazy } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
-import { RouteCrash } from './router';
+import { RouteCrash, routeModuleLoaders } from './router';
 
 const BrokenLazyRoute = lazy(async () => {
   throw new Error('lazy chunk unavailable');
@@ -28,6 +28,13 @@ afterEach(() => {
 });
 
 describe('route error fallback', () => {
+  it('keeps every lazy route chunk importable', async () => {
+    const modules = await Promise.all(Object.values(routeModuleLoaders).map((load) => load()));
+
+    expect(modules).toHaveLength(Object.keys(routeModuleLoaders).length);
+    expect(modules.every((module) => Object.keys(module).length > 0)).toBe(true);
+  }, 15_000);
+
   it('renders CrashScreen for a lazy route rejection instead of React Router default UI', async () => {
     const router = createMemoryRouter(
       [

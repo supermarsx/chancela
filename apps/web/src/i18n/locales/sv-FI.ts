@@ -23,13 +23,25 @@ export const svFI: Catalog = {
   'rbac.delegacoes.tab': 'Delegeringar',
   'rbac.scope.label': 'Omfattning',
   'rbac.scope.global': 'Global (hela instansen)',
+  'rbac.scope.tenant': 'Klientorganisation',
   'rbac.scope.entity': 'Enhet',
   'rbac.scope.book': 'Bok',
+  'rbac.scope.act': 'Protokoll',
+  'rbac.scope.folder': 'Mapp',
+  'rbac.scope.templateLibrary': 'Mallbibliotek',
+  'rbac.scope.archive': 'Arkiv',
+  'rbac.scope.integration': 'Anslutning',
+  'rbac.scope.repository': 'Datalager',
   'rbac.scope.global.desc': 'Gäller hela instansen.',
+  'rbac.scope.tenant.desc': 'Gäller organisationen och resurserna som den innehåller.',
   'rbac.scope.entity.desc': 'Gäller enheten och dess böcker.',
   'rbac.scope.book.desc': 'Gäller endast denna bok.',
+  'rbac.scope.resource.desc':
+    'Gäller den angivna resursen och underordnade resurser i den tillåtna hierarkin.',
+  'rbac.scope.tenant.pick': 'Välj organisation',
   'rbac.scope.entity.pick': 'Välj enhet',
   'rbac.scope.book.pick': 'Välj bok',
+  'rbac.scope.resource.pick': 'Resursidentifierare',
   'rbac.group.entity': 'Enheter',
   'rbac.group.book': 'Böcker',
   'rbac.group.act': 'Protokoll',
@@ -47,7 +59,7 @@ export const svFI: Catalog = {
   'rbac.role.subsetNote': 'Du kan bara välja behörigheter du själv har. Övriga visas inaktiverade.',
   'rbac.matrix.selectAll': 'Välj alla',
   'rbac.matrix.clear': 'Rensa',
-  'rbac.matrix.meta': 'Meta',
+  'rbac.matrix.meta': 'Mål',
   'rbac.matrix.notHeld': 'Du har inte denna behörighet',
   'rbac.role.edit.title': 'Redigera roll',
   'rbac.role.create.title': 'Ny roll',
@@ -866,11 +878,12 @@ export const svFI: Catalog = {
   'acts.attachments': 'Bilagor',
   'acts.lifecycle': 'Livscykel',
   'acts.compliance': 'Efterlevnad',
-  'acts.manualSignature.title': 'Manuell underskrift (SIG-03)',
+  'acts.manualSignature.title': 'Alternativ väg: manuellt signerat original (SIG-03)',
   'acts.manualSignature.body':
-    'Det finns ännu ingen integration för kvalificerad elektronisk underskrift. Vid försegling kedjas protokollet i liggaren på grundval av en manuell underskrift av de närvarande — säkerställ att undertecknarna har skrivit under det fysiska exemplaret eller PDF-filen innan du fortsätter.',
+    'Det finns fortfarande inga tekniska bevis på en signerad PDF. Du kan underteckna den kanoniska kopian ovan eller, alternativt, registrera referensen till det undertecknade originalet manuellt. Denna kopia validerar inte signaturen eller bekräftar filen.',
   'acts.sealing.title': 'Försegling',
-  'acts.sealing.ready': 'Protokollet följer kraven och är under underskrift — det kan förseglas.',
+  'acts.sealing.ready':
+    'Protokollet är i överensstämmelse och redo att fylla i underskriften innan förseglingen.',
   'acts.sealing.readyWithWarnings':
     'Protokollet har icke-blockerande efterlevnadsvarningar. Granska och bekräfta dem uttryckligen före försegling.',
   'acts.sealing.warningAck.title': 'Bekräfta manuell försegling',
@@ -996,7 +1009,7 @@ export const svFI: Catalog = {
   'ledger.filters.clear.aria': 'Rensa arkivfilter',
   'ledger.search.placeholder': 'Sökterm i arkivet',
   'ledger.scope.label': 'Filtrera efter omfattning',
-  'ledger.scope.placeholder': 'entity / book / act…',
+  'ledger.scope.placeholder': 'enhet/bok/handling...',
   'ledger.kind.label': 'Händelsetyp',
   'ledger.kind.placeholder': 'act.sealed, book.opened…',
   'ledger.actor.label': 'Författare',
@@ -1104,7 +1117,7 @@ export const svFI: Catalog = {
   'trust.status.current': 'Aktuell',
   'trust.status.checkedAt': 'Kontrollerad',
   'trust.source.cache': 'Cache',
-  'trust.source.fixture': 'Fixture',
+  'trust.source.fixture': 'Fixtur',
   'trust.signature.Valid': 'Signaturen giltig',
   'trust.signature.Invalid': 'Signaturen ogiltig',
   'trust.explorer.title': 'Förtroendekatalog',
@@ -1278,7 +1291,7 @@ export const svFI: Catalog = {
   'pdfValidator.field.revocationEvidence': 'Spärrbevis',
   'pdfValidator.field.present': 'Finns',
   'pdfValidator.field.count': 'Antal',
-  'pdfValidator.field.tokens': 'Tokens',
+  'pdfValidator.field.tokens': 'Polletter',
   'pdfValidator.field.imprints': 'Giltiga imprints',
   'pdfValidator.field.trust': 'Förtroende',
   'pdfValidator.field.liveTsl': 'Live TSL',
@@ -1379,7 +1392,7 @@ export const svFI: Catalog = {
   'externalValidatorReports.table.validatorFamily': 'Validatorfamilj',
   'externalValidatorReports.table.archivePath': 'Arkivsökväg',
   'externalValidatorReports.table.contentType': 'Innehållstyp',
-  'externalValidatorReports.table.digest': 'Digest',
+  'externalValidatorReports.table.digest': 'smälta',
   'externalValidatorReports.table.actions': 'Åtgärder',
   'externalValidatorReports.table.metadataOnly': 'Endast metadatasammanfattning',
   'externalValidatorReports.status':
@@ -1494,7 +1507,7 @@ export const svFI: Catalog = {
     'Granskningsidentifierare: gemener, siffror och . _ - (t.ex. amelia.marques).',
   'users.field.username.placeholder': 'amelia.marques',
   'users.field.displayName.label': 'Visningsnamn (valfritt)',
-  'users.field.displayName.placeholder': 'Amélia Marques',
+  'users.field.displayName.placeholder': 'Amelia Marques',
   'users.create.submitting': 'Skapar…',
   'users.create.submit': 'Skapa användare',
   'users.list.cardTitle': 'Användare',
@@ -1530,8 +1543,10 @@ export const svFI: Catalog = {
   'settings.appearance.intensity.hint': '0 till 100. Skalar kornets opacitet i realtid.',
   'settings.appearance.reroll': 'Generera om kornet',
   'settings.appearance.colors.title': 'Anpassade färger',
-  'settings.appearance.colors.hint': 'Välj egna färger; lämna ett prov orört för att behålla temats standard.',
-  'settings.appearance.colors.help': 'Åsidosätter appens primär-, sekundär-, bakgrunds- och ytfärg. Textkontrasten justeras automatiskt så att den förblir läsbar. Rent kosmetiskt — det påverkar inte dokument.',
+  'settings.appearance.colors.hint':
+    'Välj egna färger; lämna ett prov orört för att behålla temats standard.',
+  'settings.appearance.colors.help':
+    'Åsidosätter appens primär-, sekundär-, bakgrunds- och ytfärg. Textkontrasten justeras automatiskt så att den förblir läsbar. Rent kosmetiskt — det påverkar inte dokument.',
   'settings.appearance.colors.primary.label': 'Primär',
   'settings.appearance.colors.secondary.label': 'Sekundär',
   'settings.appearance.colors.background.label': 'Bakgrund',
@@ -1563,7 +1578,7 @@ export const svFI: Catalog = {
   'settings.signing.tslUrl.placeholder': 'https://…',
   'settings.signing.requireQualified.label': 'Kräv en kvalificerad underskrift för att försegla',
   'settings.signing.note':
-    'Signeringsinställningarna gäller den kvalificerade elektroniska underskriften med Chave Móvel Digital, tillgänglig för förseglade protokoll.',
+    'Preferenser gäller för den frysta kanoniska kopian när protokollet går in i ”Under signatur”, innan försegling.',
   'settings.signing.officialHint': 'Officiell portugisisk standard.',
   'settings.signing.reset': 'Återställ till standard',
   'settings.management.cardTitle': 'Hantering',
@@ -1636,7 +1651,7 @@ export const svFI: Catalog = {
   'settings.platform.logging.override.none': 'Ingen åsidosättning',
   'settings.platform.logging.override.app': 'Applikation',
   'settings.platform.logging.override.api': 'API',
-  'settings.platform.logging.override.mcp_stdio': 'MCP stdio',
+  'settings.platform.logging.override.mcp_stdio': 'MCP studio',
   'settings.platform.logLevel.trace': 'Spårning',
   'settings.platform.logLevel.debug': 'Felsökning',
   'settings.platform.logLevel.info': 'Info',
@@ -1681,17 +1696,24 @@ export const svFI: Catalog = {
   'settings.platform.logs.column.message': 'Meddelande',
   'settings.platform.logs.context.show': 'Kontext',
   'settings.platform.logs.context.empty': 'Ingen kontext',
-  "settings.platform.subnav.aria": "Driftsektioner",
-  "settings.platform.tab.services": "Tjänster",
-  "settings.platform.tab.services.desc": "Styrning av önskat tillstånd för API- och MCP-servrarna, med ärliga backend-utfall och ett driftgranskningsspår.",
-  "settings.platform.tab.logs": "Loggar",
-  "settings.platform.tab.logs.desc": "Konfiguration av loggnivåer och strukturerad API-loggsvans (skrivskyddad).",
-  "settings.platform.serviceDetails": "Styrningsdetaljer och begränsningar",
-  "settings.platform.help.services": "Dessa åtgärder registrerar tjänstens önskade tillstånd; gränssnittet förutsätter inte direkt processtyrning (till exempel API-självomstart eller MCP-stdio-start).",
-  "settings.platform.help.outcomes": "Utfallet anger vad backend gjorde: \"Övervakare krävs\" och \"Stöds inte\" innebär att en extern övervakare måste agera — det önskade tillståndet registrerades bara.",
-  "settings.platform.help.logLevels": "Den globala nivån begränsar alla tjänster; varje område använder den strängaste av den globala och områdets nivå. \"Off\" tystar allt.",
-  "settings.platform.help.effective": "Den effektiva nivån per tjänst kombinerar den globala, områdets och en eventuell åsidosättning; om den globala är \"Off\" är allt \"Off\".",
-  "settings.platform.help.overrides": "En åsidosättning per tjänst ersätter tjänstens områdesnivå; använd den bara när en tjänst behöver en annan nivå.",
+  'settings.platform.subnav.aria': 'Driftsektioner',
+  'settings.platform.tab.services': 'Tjänster',
+  'settings.platform.tab.services.desc':
+    'Styrning av önskat tillstånd för API- och MCP-servrarna, med ärliga backend-utfall och ett driftgranskningsspår.',
+  'settings.platform.tab.logs': 'Loggar',
+  'settings.platform.tab.logs.desc':
+    'Konfiguration av loggnivåer och strukturerad API-loggsvans (skrivskyddad).',
+  'settings.platform.serviceDetails': 'Styrningsdetaljer och begränsningar',
+  'settings.platform.help.services':
+    'Dessa åtgärder registrerar tjänstens önskade tillstånd; gränssnittet förutsätter inte direkt processtyrning (till exempel API-självomstart eller MCP-stdio-start).',
+  'settings.platform.help.outcomes':
+    'Utfallet anger vad backend gjorde: "Övervakare krävs" och "Stöds inte" innebär att en extern övervakare måste agera — det önskade tillståndet registrerades bara.',
+  'settings.platform.help.logLevels':
+    'Den globala nivån begränsar alla tjänster; varje område använder den strängaste av den globala och områdets nivå. "Off" tystar allt.',
+  'settings.platform.help.effective':
+    'Den effektiva nivån per tjänst kombinerar den globala, områdets och en eventuell åsidosättning; om den globala är "Off" är allt "Off".',
+  'settings.platform.help.overrides':
+    'En åsidosättning per tjänst ersätter tjänstens områdesnivå; använd den bara när en tjänst behöver en annan nivå.',
   'settings.reminders.cardTitle': 'Instrumentpanelspåminnelser',
   'settings.reminders.enabled.label': 'Generera lokala påminnelser',
   'settings.reminders.note':
@@ -1972,7 +1994,7 @@ export const svFI: Catalog = {
   'settings.privacy.execution.searchPlaceholder':
     'Policy, mål, ansvarig, blockering eller nästa steg',
   'settings.privacy.execution.statusFilter': 'Körningsstatus',
-  "settings.privacy.execution.status.all": "Alla körningsstatusar",
+  'settings.privacy.execution.status.all': 'Alla körningsstatusar',
   'settings.about.cardTitle': 'Om',
   'settings.about.serverVersion': 'Serverversion',
   'settings.about.uiVersion': 'Gränssnittsversion',
@@ -2488,23 +2510,32 @@ export const svFI: Catalog = {
   'templates.source.user': 'Skapad av användaren',
   'templates.editor.title.create': 'Ny mall',
   'templates.editor.title.edit': 'Redigera mall',
-  'templates.editor.intro': 'En mall är ett återanvändbart protokollskelett: den fastställer dokumentets struktur och block och utgör ingen juridisk garanti.',
+  'templates.editor.intro':
+    'En mall är ett återanvändbart protokollskelett: den fastställer dokumentets struktur och block och utgör ingen juridisk garanti.',
   'templates.editor.field.id.label': 'Identifierare',
-  'templates.editor.field.id.help': 'Versionshanterad identifierare i formatet user-<namn>/v<n>, till exempel user-encosto-ata/v1. Prefixet user- är reserverat för dina egna mallar.',
+  'templates.editor.field.id.help':
+    'Versionshanterad identifierare i formatet user-<namn>/v<n>, till exempel user-encosto-ata/v1. Prefixet user- är reserverat för dina egna mallar.',
   'templates.editor.field.family.label': 'Enhetsfamilj',
-  'templates.editor.field.family.help': 'Den typ av enhet som mallen gäller för (handelsbolag, samfällighet, förening, stiftelse eller kooperativ).',
+  'templates.editor.field.family.help':
+    'Den typ av enhet som mallen gäller för (handelsbolag, samfällighet, förening, stiftelse eller kooperativ).',
   'templates.editor.field.stage.label': 'Protokollfas',
-  'templates.editor.field.stage.help': 'Den fas i protokollets livscykel som denna mall är avsedd för.',
+  'templates.editor.field.stage.help':
+    'Den fas i protokollets livscykel som denna mall är avsedd för.',
   'templates.editor.field.channels.label': 'Kanaler',
-  'templates.editor.field.channels.help': 'Möteskanaler som mallen stöder (på plats, på distans eller blandat).',
+  'templates.editor.field.channels.help':
+    'Möteskanaler som mallen stöder (på plats, på distans eller blandat).',
   'templates.editor.field.signaturePolicy.label': 'Signaturpolicy',
-  'templates.editor.field.signaturePolicy.help': 'Den signaturpreferens som mallen föreslår. Den intygar eller garanterar inte signaturernas juridiska giltighet.',
+  'templates.editor.field.signaturePolicy.help':
+    'Den signaturpreferens som mallen föreslår. Den intygar eller garanterar inte signaturernas juridiska giltighet.',
   'templates.editor.field.rulePackId.label': 'Regelpaket',
-  'templates.editor.field.rulePackId.help': 'Identifierare för det tillämpliga regelpaketet. Laghänvisningar härleds av systemet och kan inte redigeras.',
+  'templates.editor.field.rulePackId.help':
+    'Identifierare för det tillämpliga regelpaketet. Laghänvisningar härleds av systemet och kan inte redigeras.',
   'templates.editor.field.locale.label': 'Språk',
-  'templates.editor.field.locale.help': 'Språk för mallens innehåll. För närvarande stöds endast pt-PT.',
+  'templates.editor.field.locale.help':
+    'Språk för mallens innehåll. För närvarande stöds endast pt-PT.',
   'templates.editor.field.blocks.label': 'Block',
-  'templates.editor.field.blocks.help': 'Sekvensen av block som utgör dokumentet (rubrik, stycke, nyckel-värde, omröstningstabell, signaturblock, sidbrytning eller regel). Minst ett block krävs.',
+  'templates.editor.field.blocks.help':
+    'Sekvensen av block som utgör dokumentet (rubrik, stycke, nyckel-värde, omröstningstabell, signaturblock, sidbrytning eller regel). Minst ett block krävs.',
   'templates.import.title': 'Importera mall',
   'templates.import.pickFile': 'Välj JSON-fil',
   'templates.import.preflight': 'Validerar…',
@@ -2531,8 +2562,8 @@ export const svFI: Catalog = {
   // --- Qualified CMD signing (t57) ------------------------------------------------
   'settings.signing.family.hint': 'Rekommenderas: Chave Móvel Digital.',
   'settings.signing.requireQualified.hint':
-    'Styr endast aktens status ”slutförd (kvalificerad)” — förseglingen blockeras aldrig. När detta är på förblir en förseglad akt ”väntar på kvalificerad underskrift” tills en giltig kvalificerad underskrift finns.',
-  'settings.signing.cmd.title': 'Chave Móvel Digital (CMD)',
+    'Med detta alternativ aktivt kräver försegling accepterade tekniska bevis på en kvalificerad signatur på den frysta kanoniska kopian.',
+  'settings.signing.cmd.title': 'Digital Mobile Key (CMD)',
   'settings.signing.cmd.intro':
     'Signering i produktion kräver AMA-uppgifterna (ApplicationId och certifikat), som tillhandahålls via miljövariabler. Dessa värden visas endast som information.',
   'settings.signing.cmd.env': 'Miljö',
@@ -2544,11 +2575,11 @@ export const svFI: Catalog = {
   'settings.signing.cmd.configured': 'Konfigurerad',
   'settings.signing.cmd.notConfigured': 'Inte konfigurerad',
   'signing.title': 'Kvalificerad underskrift',
-  'signing.unsigned.title': 'Protokollet ännu inte kvalificerat signerat',
+  'signing.unsigned.title': 'Kanoniskt exemplar ännu inte signerat',
   'signing.unsigned.body':
-    'Protokollet är förseglat. Du kan nu signera det med en kvalificerad elektronisk underskrift via Chave Móvel Digital.',
+    'Protokollet är "Under signatur" och fryst. Signera den kanoniska kopian nu innan du förseglar den.',
   'signing.required.body':
-    'Den här inställningen kräver en kvalificerad underskrift för att slutföra akten. Signera protokollet med Chave Móvel Digital för att slutföra det.',
+    'Denna konfiguration kräver en godkänd signatur innan försegling. Skriv under den kanoniska kopian för att kunna fullfölja akten.',
   'signing.start': 'Signera med Chave Móvel Digital',
   'signing.credentials.intro':
     'Ange det mobilnummer som är kopplat till Chave Móvel Digital och signerings-PIN-koden. PIN-koden används endast för denna begäran och sparas aldrig.',
@@ -2579,9 +2610,9 @@ export const svFI: Catalog = {
   'signing.signed.digest': 'Fingeravtryck för signerad PDF',
   'signing.download': 'Ladda ner signerad PDF',
   'signing.technicalComparison.aria':
-    'Local technical comparison between sealed act and signed PDF',
+    'Lokal teknisk jämförelse mellan den kanoniska kopian och den signerade PDF-filen',
   'signing.technicalComparison.kicker': 'Technical comparison',
-  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.title': 'Lokal metadata för den kanoniska kopian och signerad PDF',
   'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
   'signing.technicalComparison.badge.local': 'Local metadata only',
   'signing.technicalComparison.badge.noClaim': 'No claim',
@@ -2593,14 +2624,13 @@ export const svFI: Catalog = {
   'signing.technicalComparison.status.notClaimed': 'Not claimed',
   'signing.technicalComparison.status.loading': 'Loading',
   'signing.technicalComparison.row.actId': 'Act ID',
-  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
   'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
   'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
   'signing.technicalComparison.row.signedDocument': 'Signed document',
   'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
   'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
   'signing.technicalComparison.detail.act': 'Act',
-  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.bundle': 'Bunt',
   'signing.technicalComparison.detail.document': 'Document',
   'signing.technicalComparison.detail.signature': 'Signature',
   'signing.technicalComparison.detail.report': 'Report',
@@ -2643,7 +2673,7 @@ export const svFI: Catalog = {
   'signing.ccBatch.title': 'Lokal batch med Medborgarkort',
   'signing.ccBatch.badge': 'Lokal batch',
   'signing.ccBatch.description':
-    'Signerar flera förseglade protokoll med Medborgarkortet på den här datorn.',
+    'Signera flera kanoniska kopior av handlingar i "I signatur" med medborgarkortet på den här datorn.',
   'signing.ccBatch.boundary.title': 'Endast lokal CC-signering',
   'signing.ccBatch.boundary.body':
     'Den här batchen använder den lokala, samlokaliserade Medborgarkort-slutpunkten. Det är inte CMD, fjärr-CSC eller leverantörscertifierad batchsignering; gränssnittet visar endast bevis som returneras av servern.',
@@ -2659,7 +2689,7 @@ export const svFI: Catalog = {
   'signing.ccBatch.selection.needMore': 'Välj minst två protokoll för att använda batchsignering.',
   'signing.ccBatch.add.label': 'Protokoll-ID',
   'signing.ccBatch.add.hint':
-    'Lägg till ID:n för förseglade protokoll när den här vyn inte tillhandahåller en lista med flera dokument.',
+    'Lägg till akt-ID:n under "Under signatur" när denna yta inte tillhandahåller en lista med flera dokument.',
   'signing.ccBatch.add.action': 'Lägg till',
   'signing.ccBatch.manual.label': 'Manuellt ID: {id}',
   'signing.ccBatch.maxReached': 'Gränsen på {max} protokoll har nåtts.',
@@ -2868,7 +2898,7 @@ export const svFI: Catalog = {
   'signing.evidence.renewal.action.addDocumentTimestamp': 'lägg till dokumenttidsstämpel',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
     'registrera signaturens DSS-valideringstid',
-  'signing.provider.cmd.title': 'Chave Móvel Digital',
+  'signing.provider.cmd.title': 'Digital mobilnyckel',
   'signing.provider.cmd.description':
     'Fjärrflöde i två steg: signerings-PIN och SMS-kod. Rekommenderas när CMD är aktiv.',
   'signing.provider.cc.title': 'Medborgarkort',
@@ -2907,7 +2937,7 @@ export const svFI: Catalog = {
   'signing.official.provider.label': 'Leverantör',
   'signing.official.provider.hint':
     'Valfritt. Registrerar den leverantör som operatören anger; den används inte som auktoritet.',
-  'signing.official.provider.placeholder': 'Autenticação.gov',
+  'signing.official.provider.placeholder': 'Authentication.gov',
   'signing.official.source.label': 'Källa',
   'signing.official.source.hint':
     'Valfritt. Till exempel: officiell överlämning, skrivbordsapplikation, leverantörsportal.',
@@ -3176,17 +3206,24 @@ export const svFI: Catalog = {
   'data.status.recoveryDrill.receiptEyebrow': 'Övningskvitto registrerat',
   'data.status.recoveryDrill.verdictTitleOk': 'Säkerhetskopia verifierad och återställningsbar',
   'data.status.recoveryDrill.verdictTitleFailed': 'Säkerhetskopia inte verifierad',
-  'data.status.recoveryDrill.verdictWhyOk': 'Förhandsvalideringen och den isolerade återställningen lyckades båda, utan någon skarp återställning.',
-  'data.status.recoveryDrill.verdictWhyFailed': 'Verifieringen slutfördes inte – förlita dig inte på den här säkerhetskopian utan att undersöka.',
+  'data.status.recoveryDrill.verdictWhyOk':
+    'Förhandsvalideringen och den isolerade återställningen lyckades båda, utan någon skarp återställning.',
+  'data.status.recoveryDrill.verdictWhyFailed':
+    'Verifieringen slutfördes inte – förlita dig inte på den här säkerhetskopian utan att undersöka.',
   'data.status.recoveryDrill.evidenceToggle': 'Tekniska belägg',
   'data.status.syncHandoff.eyebrow': 'Lokal förhandsvalidering av överlämning',
   'data.status.syncHandoff.verdictTitleReady': 'Lokala bevis redo för överlämningsgranskning',
-  'data.status.syncHandoff.verdictTitleMissing': 'Otillräckliga lokala bevis för att granska överlämningen',
+  'data.status.syncHandoff.verdictTitleMissing':
+    'Otillräckliga lokala bevis för att granska överlämningen',
   'data.status.syncHandoff.verdictTitleBlocked': 'Lokal överlämningsgranskning blockerad',
-  'data.status.syncHandoff.verdictWhyReady': 'De insamlade lokala bevisen är redo för granskning — ingen synkronisering, import eller ändring utfördes.',
-  'data.status.syncHandoff.verdictWhyMissing': 'Det saknas verifierade lokala bevis för att granska överlämningen — samla in det som saknas innan du fortsätter.',
-  'data.status.syncHandoff.verdictWhyBlocked': 'Blockeringar hindrar den lokala överlämningsgranskningen — åtgärda dem innan du fortsätter.',
-  'data.status.syncHandoff.nonMutating': 'Detta är endast en lokal förhandsvalidering (testkörning): den utför varken synkroniseringen, överlämningen eller någon dataändring.',
+  'data.status.syncHandoff.verdictWhyReady':
+    'De insamlade lokala bevisen är redo för granskning — ingen synkronisering, import eller ändring utfördes.',
+  'data.status.syncHandoff.verdictWhyMissing':
+    'Det saknas verifierade lokala bevis för att granska överlämningen — samla in det som saknas innan du fortsätter.',
+  'data.status.syncHandoff.verdictWhyBlocked':
+    'Blockeringar hindrar den lokala överlämningsgranskningen — åtgärda dem innan du fortsätter.',
+  'data.status.syncHandoff.nonMutating':
+    'Detta är endast en lokal förhandsvalidering (testkörning): den utför varken synkroniseringen, överlämningen eller någon dataändring.',
   'data.status.syncHandoff.evidenceToggle': 'Tekniska bevis',
   'data.status.syncHandoff.blockers': 'Blockeringar',
   'data.status.syncHandoff.missingEvidence': 'Saknade bevis',
@@ -3296,9 +3333,12 @@ export const svFI: Catalog = {
   'integrity.restore.preflight.storeSchemaVersion': 'Lagringens schema',
   'integrity.restore.preflight.totalMemberBytes': 'Totalt antal medlemsbyte',
   'integrity.restore.preflight.nextStep': 'Nästa steg',
-  'integrity.restore.preflight.verdictReady': 'Den här säkerhetskopian är giltig och kan återställas.',
-  'integrity.restore.preflight.verdictBlocked': 'Den här säkerhetskopian klarade inte kontrollen – använd den inte för återställning.',
-  'integrity.restore.preflight.verdictError': 'Det gick inte att verifiera den här säkerhetskopian.',
+  'integrity.restore.preflight.verdictReady':
+    'Den här säkerhetskopian är giltig och kan återställas.',
+  'integrity.restore.preflight.verdictBlocked':
+    'Den här säkerhetskopian klarade inte kontrollen – använd den inte för återställning.',
+  'integrity.restore.preflight.verdictError':
+    'Det gick inte att verifiera den här säkerhetskopian.',
   'integrity.restore.preflight.evidenceToggle': 'Tekniska belägg',
   'integrity.restore.preflight.errors': 'Fel',
   'integrity.restore.preflight.errors.more': '{count} fler fel visas inte.',
@@ -3370,7 +3410,7 @@ export const svFI: Catalog = {
   'integrity.startOver.openingDateLabel': 'Öppningsdatum',
   'integrity.startOver.signatoriesLabel': 'Obligatoriska undertecknare',
   'integrity.startOver.signatoriesHint': 'Separera namn med kommatecken.',
-  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques, …',
+  'integrity.startOver.signatoriesPlaceholder': 'Amélia Marques,...',
   'integrity.startOver.numberingLabel': 'Numreringsschema',
   'integrity.startOver.confirm': 'Börja om',
   'integrity.startOver.pending': 'Börjar om…',
@@ -3928,11 +3968,11 @@ export const svFI: Catalog = {
   'trust.provider.analysis.value':
     '{granted} beviljade · {history} med historik · {supply} med punkter',
   'trust.provider.duplicateNames': 'Dubblerade namn',
-  'trust.tsa.title': 'TSA / RFC 3161',
+  'trust.tsa.title': 'TSA/RFC 3161',
   'trust.tsa.summary.aria': 'TSA-sammanfattning',
   'trust.tsa.configuredUrl': 'Konfigurerad URL',
   'trust.tsa.status': 'Status',
-  'trust.tsa.fixture': 'Fixture',
+  'trust.tsa.fixture': 'Fixtur',
   'trust.tsa.trustedRecords': 'Betrodda poster',
   'trust.tsa.configuration': 'Konfiguration',
   'trust.tsa.profile': 'Profil',
@@ -3967,11 +4007,11 @@ export const svFI: Catalog = {
   'trust.tsa.statusReady': 'Klar',
   'trust.tsa.statusUnconfigured': 'Inte konfigurerad',
   'trust.tsa.statusError': 'Fel',
-  'trust.tsa.probePassed': 'Fixture OK',
+  'trust.tsa.probePassed': 'Fixtur OK',
   'trust.tsa.probeFailed': 'Fixture misslyckades',
   'trust.tsa.policyAdvisory': 'Rådgivande',
   'trust.tsa.policyTrusted': 'Betrodd',
-  'trust.tsa.token': 'Token',
+  'trust.tsa.token': 'Tecken',
   'trust.tsa.tokenBytes': '{bytes} byte',
   'trust.tsa.type.all': 'Alla TSA',
   'trust.tsa.type.qtst': 'Kvalificerad QTST',
@@ -3980,7 +4020,7 @@ export const svFI: Catalog = {
   'signing.format.label': 'Underskriftsformat',
   'signing.format.hint':
     'PAdES signerar protokollets PDF/A via de kvalificerade leverantörerna. XAdES, ASiC och SCAP är lokala tekniska verktyg som producerar evidens om protokollets dokument med ett samlokaliserat programvarucertifikat.',
-  'signing.format.pades': 'PAdES (PDF)',
+  'signing.format.pades': 'PADES (PDF)',
   'signing.format.xades': 'XAdES (XML)',
   'signing.format.asic': 'ASiC (behållare)',
   'signing.format.scap': 'Yrkesattribut (SCAP)',
@@ -4232,7 +4272,7 @@ export const svFI: Catalog = {
     'Autentiseringsuppgifterna krypteras, men detta är inte full konfidentialitet förrän du aktiverar SQLCipher eller OS-försegling.',
   'settings.providerCredentials.protection.strictBlocked':
     'Strikt läge är på: du kan spara autentiseringsuppgifter först efter att ha aktiverat konfidentiellt skydd.',
-  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.cmd': 'Digital Mobile Key (CMD)',
   'settings.providerCredentials.mode.csc': 'CSC-QTSP',
   'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
   'settings.providerCredentials.mode.pkcs12': 'Lokal PKCS#12',
@@ -4304,7 +4344,7 @@ export const svFI: Catalog = {
   'settings.providerCredentials.field.sandbox': 'Sandlåda (sandbox)',
   'settings.providerCredentials.field.environment': 'Miljö',
   'settings.providerCredentials.field.friendlyName': 'Visningsnamn',
-  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.localKeyId': 'Lokal nyckel-ID (hexadecimal)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-fil',
   'settings.providerCredentials.help.mode':
     'Typ av signaturleverantör som ska konfigureras. T.ex. CSC/QTSP för fjärrsignering, PKCS#12 för ett lokalt certifikat.',
@@ -4354,11 +4394,14 @@ export const svFI: Catalog = {
     'Väljer identiteten i en .pfx utifrån localKeyId i hexadecimal. T.ex. ”3a7f9c2b”.',
   'settings.privacy.subnav.aria': 'Integritetsområden',
   'settings.privacy.subtab.registers.label': 'Register',
-  'settings.privacy.subtab.registers.desc': 'Personuppgiftsbiträden, konsekvensbedömningar (DPIA), incidentplaner och överföringskontroller.',
+  'settings.privacy.subtab.registers.desc':
+    'Personuppgiftsbiträden, konsekvensbedömningar (DPIA), incidentplaner och överföringskontroller.',
   'settings.privacy.subtab.retention.label': 'Lagring',
-  'settings.privacy.subtab.retention.desc': 'Lagringspolicyer, förfallna kandidater, simulering och kön för granskning av körningar.',
+  'settings.privacy.subtab.retention.desc':
+    'Lagringspolicyer, förfallna kandidater, simulering och kön för granskning av körningar.',
   'settings.privacy.subtab.guidance.label': 'Vägledning',
-  'settings.privacy.subtab.guidance.desc': 'Lokal DPIA-mall och anteckningar om den återkommande rådgivande granskningen.',
+  'settings.privacy.subtab.guidance.desc':
+    'Lokal DPIA-mall och anteckningar om den återkommande rådgivande granskningen.',
   'settings.privacy.status.all': 'Alla statusar',
   'settings.privacy.status.draft': 'Utkast',
   'settings.privacy.status.active': 'Aktiv',
@@ -4380,13 +4423,17 @@ export const svFI: Catalog = {
   'settings.privacy.evidence.none': 'Inget kvitto',
   'settings.privacy.evidence.noDetail': 'Ingen detalj',
   'settings.privacy.evidence.receiptBy': '{kind} av {actor}',
-  'settings.privacy.evidence.dpiaReceiptNote': 'Ingen anmälan till myndighet · Ingen efterlevnadscertifiering',
-  'settings.privacy.evidence.breachReceiptNote': 'Ingen anmälan till myndighet · Ingen underrättelse till registrerade',
+  'settings.privacy.evidence.dpiaReceiptNote':
+    'Ingen anmälan till myndighet · Ingen efterlevnadscertifiering',
+  'settings.privacy.evidence.breachReceiptNote':
+    'Ingen anmälan till myndighet · Ingen underrättelse till registrerade',
   'settings.privacy.evidence.transferReceiptNote': 'Ingen godkännande · Ingen överföringskörning',
   'settings.privacy.register.processor.title': 'GDPR-personuppgiftsbiträden',
-  'settings.privacy.register.processor.lede': 'Register över personuppgiftsbiträden, underbiträden och datakategorier som hanteras av tredje part.',
+  'settings.privacy.register.processor.lede':
+    'Register över personuppgiftsbiträden, underbiträden och datakategorier som hanteras av tredje part.',
   'settings.privacy.register.dpia.title': 'DPIA:er',
-  'settings.privacy.register.dpia.lede': 'Konsekvensbedömningar med syfte, rättslig grund, datakategorier och aktuell risk.',
+  'settings.privacy.register.dpia.lede':
+    'Konsekvensbedömningar med syfte, rättslig grund, datakategorier och aktuell risk.',
   'settings.privacy.register.column.processor': 'Personuppgiftsbiträde',
   'settings.privacy.register.column.dpia': 'DPIA',
   'settings.privacy.register.column.purpose': 'Syfte',
@@ -4394,7 +4441,8 @@ export const svFI: Catalog = {
   'settings.privacy.register.column.subprocessors': 'Underbiträden',
   'settings.privacy.register.column.updated': 'Uppdaterad',
   'settings.privacy.guidance.title': 'Lokal DPIA-mall',
-  'settings.privacy.guidance.lede': 'Ett lokalt/offline-paket med fält, frågor och kontroller för en DPIA; det läser eller visar inte DPIA-poster, biträden, registrerade, mottagare, anteckningar, rättsliga grunder eller hemligheter.',
+  'settings.privacy.guidance.lede':
+    'Ett lokalt/offline-paket med fält, frågor och kontroller för en DPIA; det läser eller visar inte DPIA-poster, biträden, registrerade, mottagare, anteckningar, rättsliga grunder eller hemligheter.',
   'settings.privacy.guidance.empty.title': 'Mall ej tillgänglig',
   'settings.privacy.guidance.empty.body': 'Det lokala DPIA-paketet returnerades inte av API:et.',
   'settings.privacy.guidance.dl.id': 'Identifierare',
@@ -4406,33 +4454,51 @@ export const svFI: Catalog = {
   'settings.privacy.guidance.required': 'obligatoriskt: {value}',
   'settings.privacy.guidance.noClaims': 'No-claim-flaggor',
   'settings.privacy.guidance.operatorActions': 'Operatörsåtgärder',
-  'settings.privacy.help.processor': 'Ett personuppgiftsbiträde behandlar personuppgifter för organisationens räkning. Detta register anger vem som behandlar, för vad, på vilken rättslig grund och vilka underbiträden som används.',
-  'settings.privacy.help.dpia': 'En DPIA (konsekvensbedömning avseende dataskydd) dokumenterar riskerna med en behandling och åtgärderna för att minska dem. Denna post är endast lokal och rådgivande.',
-  'settings.privacy.help.breach': 'En incidenthanteringsplan samlar i förväg detekteringskanaler, begränsningssteg och vem som ska underrättas. Att registrera den här underrättar ingen.',
-  'settings.privacy.help.transfer': 'En överföringskontroll dokumenterar en dataöverföring utanför EES: mottagare, land, rättslig mekanism och skyddsåtgärder. Att registrera den varken godkänner eller utför överföringen.',
-  'settings.privacy.help.retention': 'En lagringspolicy anger hur länge en datakategori sparas och den planerade åtgärden i slutet. Detta område registrerar policyn; det raderar inte data.',
-  'settings.privacy.help.dryRun': 'Simuleringen visar vilka policyer som skulle matcha ett omfång/kategori, utan att köra något. Den förhandsvisar effekten av en policy.',
-  'settings.privacy.help.dueCandidates': 'En skrivskyddad genomsökning listar poster vars lagringstid löpt ut, för bevisgranskning. Den raderar, anonymiserar eller slutför ingen rättslig efterlevnad.',
-  'settings.privacy.help.execution': 'Körningskön innehåller sparade lagringsförfrågningar för operativ granskning. Att stänga en granskning registrerar beslutet; den ändrar inte källposter.',
-  'settings.privacy.help.legalHold': 'Ett legal hold förhindrar avyttring av poster som omfattas av tvist eller bevarandeplikt. Denna panel sammanfattar befintliga blockeringar.',
-  'settings.privacy.help.purpose': 'Syftet beskriver, med enkelt språk, vad uppgifterna behandlas för.',
-  'settings.privacy.help.legalBasis': 'Den rättsliga grunden är den GDPR-grund som tillåter behandlingen (t.ex. samtycke, avtal, rättslig förpliktelse).',
-  'settings.privacy.help.risk': 'Risknivån är en kvalitativ bedömning av den möjliga påverkan på registrerade.',
-  'settings.privacy.help.status': 'Statusen anger om posten är ett utkast, aktiv, under granskning eller avvecklad.',
+  'settings.privacy.help.processor':
+    'Ett personuppgiftsbiträde behandlar personuppgifter för organisationens räkning. Detta register anger vem som behandlar, för vad, på vilken rättslig grund och vilka underbiträden som används.',
+  'settings.privacy.help.dpia':
+    'En DPIA (konsekvensbedömning avseende dataskydd) dokumenterar riskerna med en behandling och åtgärderna för att minska dem. Denna post är endast lokal och rådgivande.',
+  'settings.privacy.help.breach':
+    'En incidenthanteringsplan samlar i förväg detekteringskanaler, begränsningssteg och vem som ska underrättas. Att registrera den här underrättar ingen.',
+  'settings.privacy.help.transfer':
+    'En överföringskontroll dokumenterar en dataöverföring utanför EES: mottagare, land, rättslig mekanism och skyddsåtgärder. Att registrera den varken godkänner eller utför överföringen.',
+  'settings.privacy.help.retention':
+    'En lagringspolicy anger hur länge en datakategori sparas och den planerade åtgärden i slutet. Detta område registrerar policyn; det raderar inte data.',
+  'settings.privacy.help.dryRun':
+    'Simuleringen visar vilka policyer som skulle matcha ett omfång/kategori, utan att köra något. Den förhandsvisar effekten av en policy.',
+  'settings.privacy.help.dueCandidates':
+    'En skrivskyddad genomsökning listar poster vars lagringstid löpt ut, för bevisgranskning. Den raderar, anonymiserar eller slutför ingen rättslig efterlevnad.',
+  'settings.privacy.help.execution':
+    'Körningskön innehåller sparade lagringsförfrågningar för operativ granskning. Att stänga en granskning registrerar beslutet; den ändrar inte källposter.',
+  'settings.privacy.help.legalHold':
+    'Ett legal hold förhindrar avyttring av poster som omfattas av tvist eller bevarandeplikt. Denna panel sammanfattar befintliga blockeringar.',
+  'settings.privacy.help.purpose':
+    'Syftet beskriver, med enkelt språk, vad uppgifterna behandlas för.',
+  'settings.privacy.help.legalBasis':
+    'Den rättsliga grunden är den GDPR-grund som tillåter behandlingen (t.ex. samtycke, avtal, rättslig förpliktelse).',
+  'settings.privacy.help.risk':
+    'Risknivån är en kvalitativ bedömning av den möjliga påverkan på registrerade.',
+  'settings.privacy.help.status':
+    'Statusen anger om posten är ett utkast, aktiv, under granskning eller avvecklad.',
   'settings.privacy.legalHold.dl.candidates': 'Kandidater blockerade av legal hold',
   'settings.privacy.legalHold.dl.executions': 'Körningsposter blockerade av legal hold',
   'settings.privacy.legalHold.dl.openReviews': 'Blockerade granskningar fortfarande öppna',
   'settings.privacy.legalHold.dl.flags': 'Gränsflaggor',
-  'settings.privacy.legalHold.source': 'Dessa siffror kommer från GET-genomsökningen av förfallna kandidater och den redan sparade lagringskörningskön; denna panel gör inga ändrande anrop.',
+  'settings.privacy.legalHold.source':
+    'Dessa siffror kommer från GET-genomsökningen av förfallna kandidater och den redan sparade lagringskörningskön; denna panel gör inga ändrande anrop.',
   'settings.privacy.execution.status.awaitingReview': 'Väntar på granskning',
   'settings.privacy.execution.status.blocked': 'Blockerad',
   'settings.privacy.execution.status.executed': 'Utförd',
-  'settings.privacy.dueCandidates.lede': 'Skrivskyddad GET-genomsökning för bevisgranskning. Detta avsnitt raderar, anonymiserar eller slutför ingen rättslig efterlevnad.',
-  'settings.privacy.dueCandidates.summary': 'Genererad {generated} · {scope} / {category} · {active} aktiv(a) kandidat(er) · {suppressed} undertryckt av avgränsat bevis · {withResolution} kandidat(er) med lokal hantering · {resolutions} hanteringspost(er)',
-  'settings.privacy.dueCandidates.suppressedNote': 'Kandidater som undertryckts av avgränsat bevis listas inte i tabellen och får inga åtgärdsknappar; granska beviset i körningskön/-historiken.',
+  'settings.privacy.dueCandidates.lede':
+    'Skrivskyddad GET-genomsökning för bevisgranskning. Detta avsnitt raderar, anonymiserar eller slutför ingen rättslig efterlevnad.',
+  'settings.privacy.dueCandidates.summary':
+    'Genererad {generated} · {scope} / {category} · {active} aktiv(a) kandidat(er) · {suppressed} undertryckt av avgränsat bevis · {withResolution} kandidat(er) med lokal hantering · {resolutions} hanteringspost(er)',
+  'settings.privacy.dueCandidates.suppressedNote':
+    'Kandidater som undertryckts av avgränsat bevis listas inte i tabellen och får inga åtgärdsknappar; granska beviset i körningskön/-historiken.',
   'settings.privacy.dueCandidates.suppressedSummary': 'Sammanfattning: {note}',
   'settings.privacy.dueCandidates.empty.title': 'Inga förfallna kandidater',
-  'settings.privacy.dueCandidates.empty.body': 'Det finns inga förfallna kandidater från den skrivskyddade genomsökningen.',
+  'settings.privacy.dueCandidates.empty.body':
+    'Det finns inga förfallna kandidater från den skrivskyddade genomsökningen.',
   'settings.privacy.dueCandidates.column.record': 'Bok och post',
   'settings.privacy.dueCandidates.column.policy': 'Policy',
   'settings.privacy.dueCandidates.column.due': 'Förfall och status',
@@ -4447,7 +4513,7 @@ export const svFI: Catalog = {
   'settings.privacy.dueCandidates.noDueDate': 'Inget datum beräknat',
   'settings.privacy.dueCandidates.evidenceState': 'Bevisstatus',
   'settings.privacy.dueCandidates.evidenceNextStep': 'Nästa bevissteg',
-  'settings.privacy.dueCandidates.legalHold': 'Legal hold',
+  'settings.privacy.dueCandidates.legalHold': 'lagligt håll',
   'settings.privacy.dueCandidates.noLegalHold': 'Inga legal hold-blockeringar',
   'settings.privacy.dueCandidates.requiredApprovals': 'Nödvändiga godkännanden',
   'settings.privacy.dueCandidates.noApprovals': 'Inga nödvändiga godkännanden',
@@ -4474,13 +4540,17 @@ export const svFI: Catalog = {
   'settings.privacy.dueCandidates.recordingArchive': 'Registrerar arkivbevis',
   'settings.privacy.dueCandidates.requestReview': 'Begär bevisgranskning',
   'settings.privacy.dueCandidates.recordingReview': 'Registrerar granskning',
-  'settings.privacy.dueCandidates.noDuplicate': 'Ingen dubblettbegäran skapas; genomsökningen är skrivskyddad.',
+  'settings.privacy.dueCandidates.noDuplicate':
+    'Ingen dubblettbegäran skapas; genomsökningen är skrivskyddad.',
   'settings.privacy.dueCandidates.requestedAt': 'Begärd {date}',
   'settings.privacy.dueCandidates.queueEvidenceState': 'Bevisstatus i kö',
   'settings.privacy.dueCandidates.queueNextStep': 'Nästa steg i kö',
-  'settings.privacy.dueCandidates.noActionHint': 'Registrerar endast avgränsat bevis utan åtgärd; varken godkänner eller utför avyttring.',
-  'settings.privacy.dueCandidates.archiveHint': 'Registrerar endast avgränsat arkivbevis; varken godkänner eller utför avyttring.',
-  'settings.privacy.dueCandidates.reviewHint': 'Registrerar en review_only-begäran; varken godkänner eller utför avyttring.',
+  'settings.privacy.dueCandidates.noActionHint':
+    'Registrerar endast avgränsat bevis utan åtgärd; varken godkänner eller utför avyttring.',
+  'settings.privacy.dueCandidates.archiveHint':
+    'Registrerar endast avgränsat arkivbevis; varken godkänner eller utför avyttring.',
+  'settings.privacy.dueCandidates.reviewHint':
+    'Registrerar en review_only-begäran; varken godkänner eller utför avyttring.',
   'settings.privacy.execution.lede': 'Sparade lagringskörningsposter för operativ granskning.',
   'settings.privacy.execution.empty.title': 'Inga körningsposter',
   'settings.privacy.execution.empty.body': 'Granskningskön har ännu inga sparade förfrågningar.',
@@ -4501,28 +4571,486 @@ export const svFI: Catalog = {
   'settings.privacy.toast.archiveEvidenceRecorded': 'Avgränsat arkivbevis registrerat.',
   'settings.privacy.toast.noActionEvidenceRecorded': 'Avgränsat bevis utan åtgärd registrerat.',
   'settings.privacy.toast.reviewRequestRecorded': 'Begäran om bevisgranskning registrerad.',
-  'settings.privacy.toast.archiveEvidenceSent': 'Begäran om arkivbevis skickad; ingen post returnerad.',
-  'settings.privacy.toast.noActionEvidenceSent': 'Begäran om bevis utan åtgärd skickad; ingen post returnerad.',
-  'settings.privacy.toast.reviewRequestSent': 'Begäran om granskning skickad; ingen körningspost returnerad.',
+  'settings.privacy.toast.archiveEvidenceSent':
+    'Begäran om arkivbevis skickad; ingen post returnerad.',
+  'settings.privacy.toast.noActionEvidenceSent':
+    'Begäran om bevis utan åtgärd skickad; ingen post returnerad.',
+  'settings.privacy.toast.reviewRequestSent':
+    'Begäran om granskning skickad; ingen körningspost returnerad.',
   'settings.privacy.toast.dispositionRecorded': 'Lokal bevishantering registrerad.',
   'settings.privacy.advisory.detail.noReceipt': 'Inget lokalt gransknings-/övningskvitto.',
-  'settings.privacy.advisory.detail.underReview': 'Lokal status under granskning, ingen rättslig slutsats.',
+  'settings.privacy.advisory.detail.underReview':
+    'Lokal status under granskning, ingen rättslig slutsats.',
   'settings.privacy.advisory.detail.nextReview': 'Nästa lokala granskning: {date}.',
   'settings.privacy.advisory.detail.lastEvidence': 'Senaste bevis: {date}.',
-  'settings.privacy.advisory.detail.noClaims': 'Ingen underrättelse, godkännande, körning eller certifiering.',
-  'settings.privacy.help.guidance': 'Ett lokalt, offline-paket med fält, frågor och kontroller för att vägleda en DPIA; det är endast vägledning och ersätter inte juridisk bedömning.',
+  'settings.privacy.advisory.detail.noClaims':
+    'Ingen underrättelse, godkännande, körning eller certifiering.',
+  'settings.privacy.help.guidance':
+    'Ett lokalt, offline-paket med fält, frågor och kontroller för att vägleda en DPIA; det är endast vägledning och ersätter inte juridisk bedömning.',
   'data.status.subnav.aria': 'Underavsnitt för datahantering',
   'data.status.tab.storage': 'Lagring',
-  'data.status.tab.storage.desc': 'Utrymmesanvändning, behörigheter för datamappen och rensning av lokala filer.',
+  'data.status.tab.storage.desc':
+    'Utrymmesanvändning, behörigheter för datamappen och rensning av lokala filer.',
   'data.status.tab.backup': 'Säkerhetskopior och återställning',
-  'data.status.tab.backup.desc': 'Driftsäkerhetskopia, återställningsövningar samt förkontroller för återställning och handoff.',
+  'data.status.tab.backup.desc':
+    'Driftsäkerhetskopia, återställningsövningar samt förkontroller för återställning och handoff.',
   'data.status.tab.keys': 'Nycklar och återställning',
-  'data.status.tab.keys.desc': 'Rotation av databasens krypteringsnyckel samt nollställnings- eller börja om-åtgärder.',
-  'data.status.help.recoveryDrill': 'En återställningsövning kontrollerar och registrerar om en säkerhetskopia kan öppnas och läsas i en kontrollerad lokal övning. Den utför ingen verklig återställning, garanterar inte framtida användbarhet och validerar inte förvaring utanför platsen.',
-  'data.status.help.keyRotation': 'Rotationen ersätter den varaktiga databasens SQLCipher-krypteringsnyckel medan data behålls. Förkontrollen är skrivskyddad; körningen tillämpar rekey.',
-  'data.status.help.exportCleanup': 'Tar bort endast gamla lokala exportfiler enligt den konfigurerade policyn. Det är inte juridisk radering, GDPR-slutförande eller arkivradering.',
-  'data.status.help.crashCleanup': 'Tar bort gamla lokala kraschdiagnoser som lagrats på disk. Det påverkar inte liggaren eller domändata.',
-  'data.status.help.platformLogsCleanup': 'Tar bara bort den lokala plattformsloggkön i platform-logs.json. Tar inte bort stdout/stderr, SIEM, liggare eller granskningskedja.',
-  'data.status.help.startOver': 'Börja om arkiverar den aktuella historiken och fortsätter med tom domändata, samtidigt som användare och inställningar behålls. En återställning raderar däremot data destruktivt.',
-  'data.status.help.reset': 'Rensa data raderar domändata men bevarar liggaren; en fabriksåterställning rensar allt till en ny instans. Alla kräver den exakta frasen och omautentisering.',
+  'data.status.tab.keys.desc':
+    'Rotation av databasens krypteringsnyckel samt nollställnings- eller börja om-åtgärder.',
+  'data.status.help.recoveryDrill':
+    'En återställningsövning kontrollerar och registrerar om en säkerhetskopia kan öppnas och läsas i en kontrollerad lokal övning. Den utför ingen verklig återställning, garanterar inte framtida användbarhet och validerar inte förvaring utanför platsen.',
+  'data.status.help.keyRotation':
+    'Rotationen ersätter den varaktiga databasens SQLCipher-krypteringsnyckel medan data behålls. Förkontrollen är skrivskyddad; körningen tillämpar rekey.',
+  'data.status.help.exportCleanup':
+    'Tar bort endast gamla lokala exportfiler enligt den konfigurerade policyn. Det är inte juridisk radering, GDPR-slutförande eller arkivradering.',
+  'data.status.help.crashCleanup':
+    'Tar bort gamla lokala kraschdiagnoser som lagrats på disk. Det påverkar inte liggaren eller domändata.',
+  'data.status.help.platformLogsCleanup':
+    'Tar bara bort den lokala plattformsloggkön i platform-logs.json. Tar inte bort stdout/stderr, SIEM, liggare eller granskningskedja.',
+  'data.status.help.startOver':
+    'Börja om arkiverar den aktuella historiken och fortsätter med tom domändata, samtidigt som användare och inställningar behålls. En återställning raderar däremot data destruktivt.',
+  'data.status.help.reset':
+    'Rensa data raderar domändata men bevarar liggaren; en fabriksåterställning rensar allt till en ny instans. Alla kräver den exakta frasen och omautentisering.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.convening.advisory.title': 'Lokalt meddelande om lagstadgat samtal',
+  'acts.convening.advisory.missingMeetingDate':
+    'Anteckna mötesdatumet för att beräkna det lokala kallelsedatumet.',
+  'acts.convening.advisory.missingEvidence':
+    'Anteckna datum/sätt för avsändning, faktisk förhandsbesked och referens till bevarade bevis.',
+  'acts.convening.advisory.noClaims':
+    'Endast lokal metadata; hävdar inte laglig tillräcklighet, giltig extern leverans eller fullbordat arbetsflöde.',
+  'acts.convening.recipients.title': 'Ring mottagare',
+  'acts.convening.recipients.hint':
+    'Lokala register som används för bevis på avsändning. Namnlösa rader sparas inte.',
+  'acts.convening.recipients.add': 'Lägg till mottagare',
+  'acts.convening.recipients.empty':
+    'Inga registrerade mottagare. Lägg till minst en mottagare innan du registrerar lokala fraktbevis.',
+  'acts.convening.recipients.rowLabel': 'Mottagare {number}',
+  'acts.convening.recipients.name': 'Namn',
+  'acts.convening.recipients.contact': 'Kontakta',
+  'acts.convening.recipients.contactPlaceholder':
+    'T.ex.: e-post, adress, konto eller intern kontakt',
+  'acts.convening.recipients.channel': 'Ganska',
+  'acts.convening.recipients.dispatchedAt': 'Skickas in',
+  'acts.convening.recipients.reference': 'Fraktreferens',
+  'acts.convening.recipients.referencePlaceholder': 'Ex.: RR123456789PT, kvitto, meddelande-id',
+  'acts.convening.recipients.remove': 'Ta bort mottagaren',
+  'acts.convening.evidence.aria': 'Lokalt bevis på utfärdande av stämning',
+  'acts.convening.evidence.boundary':
+    'Registrerar endast lokala bevis på avsändning och härkomst i reskontran. Skickar inte e-post/SMS, bekräftar inte extern leverans, hävdar inte laglig tillräcklighet, slutförande av arbetsflödet, godkännande genom registrering/DRE eller godkännande av en leverantör.',
+  'acts.convening.evidence.ready':
+    'Markera {count} befintlig(a) mottagare med angivet datum och, om ifyllt, medium och lokal referens.',
+  'acts.convening.evidence.saveRecipients':
+    'Spara protokollet för att fortsätta mottagarna innan du registrerar lokala bevis på avsändning.',
+  'acts.convening.evidence.requirements':
+    'Kräver redan befintliga mottagare i meddelandet och ett ifyllt leveransdatum.',
+  'acts.convening.evidence.recording': 'Inspelning av lokala bevis',
+  'acts.convening.evidence.record': 'Registrera lokal frakt',
+  'acts.convening.evidence.recorded': 'Lokalt bevis på avsändning registreras.',
+  'templates.editor.field.id.placeholder': 'användar-ryggstöd-ata/v1',
+  'entities.fiscalYearEnd.cardTitle': 'Räkenskapsår',
+  'entities.fiscalYearEnd.fieldLabel': 'Avsluta övningen',
+  'entities.fiscalYearEnd.inputLabel': 'Avsluta året (MM-DD)',
+  'entities.fiscalYearEnd.hint': 'Frivillig. Empty håller låset som standard på 12-31.',
+  'entities.fiscalYearEnd.invalid': 'Använd ett giltigt datum i MM-DD-format.',
+  'entities.fiscalYearEnd.placeholder': '12-31',
+  'entities.fiscalYearEnd.updated': 'Uppdaterat räkenskapsår.',
+  'entities.fiscalYearEnd.saving': 'Att spara',
+  'entities.fiscalYearEnd.save': 'Spara zip',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'uiLiteral.actDocumentPanel.gereConvocatoriasEAposOSeloCertidoesE':
+    'Generera meddelanden och, efter försegling, certifikat och utdrag utan att ersätta den kanoniska PDF/A.',
+  'uiLiteral.actDocumentPanel.minutasGeradas': 'Minuter genererade',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecaoTecnicaNaoEncontrouMembrosCadesOu':
+    'Den tekniska inspektionen hittade inga erkända CAdES- eller XAdES-medlemmar i behållaren.',
+  'uiLiteral.asicSignatureInspectorPanel.aInspecionarContentorAsicLocal':
+    'Inspekterar lokal ASiC-behållare...',
+  'uiLiteral.asicSignatureInspectorPanel.assinaturasTecnicas': 'Tekniska abonnemang',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadores': 'Blockerare',
+  'uiLiteral.asicSignatureInspectorPanel.bloqueadoresEDiagnosticosDeAssinatura':
+    'Signaturblockerare och diagnostik',
+  'uiLiteral.asicSignatureInspectorPanel.contentorAsic': 'ASiC-behållare',
+  'uiLiteral.asicSignatureInspectorPanel.diagnosticoDeManifestos': 'Uppenbar diagnos',
+  'uiLiteral.asicSignatureInspectorPanel.evidenciaEmbebidaEBloqueadores':
+    'Inbäddade bevis och blockerare',
+  'uiLiteral.asicSignatureInspectorPanel.indicadores': 'Indikatorer',
+  'uiLiteral.asicSignatureInspectorPanel.inspecaoTecnicaLocal': 'Teknisk besiktning på plats',
+  'uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic': 'ASiC teknisk inspektör',
+  'uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao':
+    'Läs endast lokala .asice/.sce/.zip-behållare. Signerar inte, lagrar inte artefakter, ringer inte leverantörer och konsulterar inte TSL/TSA/OCSP/CRL live.',
+  'uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas': 'Explicita begränsningar',
+  'uiLiteral.asicSignatureInspectorPanel.ocorrencias': 'Händelser',
+  'uiLiteral.asicSignatureInspectorPanel.oEndpointRecusouAInspecaoNenhumArtefactoFoi':
+    'Endpointen vägrade inspektion; inga artefakter signerades, sparades eller ändrades.',
+  'uiLiteral.asicSignatureInspectorPanel.perfilDoContentor': 'Behållarprofil',
+  'uiLiteral.asicSignatureInspectorPanel.resultadoAsic': 'ASiC-resultat',
+  'uiLiteral.asicSignatureInspectorPanel.semAssinaturasReconhecidas': 'Inga signaturer erkända',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeAssinaturaReportados':
+    'Ingen signaturdiagnostik rapporterad.',
+  'uiLiteral.asicSignatureInspectorPanel.semDiagnosticosDeManifestoReportados':
+    'Inga tydliga diagnoser rapporterade.',
+  'uiLiteral.asicSignatureInspectorPanel.semTimestampsDeArquivoAsicReportados':
+    'Inga tidsstämplar för ASiC-filer har rapporterats.',
+  'uiLiteral.asicSignatureInspectorPanel.timestampsDeArquivo': 'Fil tidsstämplar',
+  'uiLiteral.asicSignatureInspectorPanel.validacaoCadesLimitada': 'Begränsad CAdES-validering',
+  'uiLiteral.bookDetailPage.a': 'de',
+  'uiLiteral.bookDetailPage.abrirAta': 'öppna minuter',
+  'uiLiteral.bookDetailPage.aceiteParaReferenciaAuxiliar': 'Acceptera som hjälpreferens',
+  'uiLiteral.bookDetailPage.aceites': '· accepterat',
+  'uiLiteral.bookDetailPage.aEntidadeEOLivroSaoPreenchidosA':
+    'Entiteten och boken fylls i från denna detalj:',
+  'uiLiteral.bookDetailPage.aImportacaoPreservadaAindaNaoDevolveuRelatorioOcr':
+    'Den bevarade importen har ännu inte returnerat lokal OCR/kanonisk rapport.',
+  'uiLiteral.bookDetailPage.ambito': 'Omfattning',
+  'uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras':
+    'Lagligt spärr blockerar bortskaffande av lagringsregler medan det är aktivt. Den här panelen visar lokala bevis på status/revidering och godkänner inte bortskaffande eller deklarerar laglig överensstämmelse.',
+  'uiLiteral.bookDetailPage.arquivoLegalPacote': '· juridisk fil/paket:',
+  'uiLiteral.bookDetailPage.artefacto': 'Artefakt',
+  'uiLiteral.bookDetailPage.artefactos': 'Artefakter',
+  'uiLiteral.bookDetailPage.assinatura': '· signatur:',
+  'uiLiteral.bookDetailPage.ataCanonica': '· kanoniska protokoll:',
+  'uiLiteral.bookDetailPage.ataCanonicaCriada': '· kanonisk handling skapad:',
+  'uiLiteral.bookDetailPage.ataCanonicaDocumentoCanonicoPacoteDeArquivoAssinatura':
+    'Kanonisk handling, kanoniskt dokument, filpaket, signatur, sigill, PDF/A, PDF/UA och juridisk giltighet.',
+  'uiLiteral.bookDetailPage.ataCanonicaReclamada': '· kanonisk handling hävdade:',
+  'uiLiteral.bookDetailPage.ataCriada': 'Protokoll skapade:',
+  'uiLiteral.bookDetailPage.ataMutavelCriada': '· föränderliga minuter skapade:',
+  'uiLiteral.bookDetailPage.ataMutavelDeDestino': 'Föränderliga minuter av destinationen',
+  'uiLiteral.bookDetailPage.ator': 'Skådespelare',
+  'uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte': 'Blockerar kassera granskning',
+  'uiLiteral.bookDetailPage.bloqueios': 'Lås',
+  'uiLiteral.bookDetailPage.certificacaoDeArquivo': 'filcertifiering:',
+  'uiLiteral.bookDetailPage.confirmoQueEstaRevisaoEApenasMetadadoAuxiliar':
+    'Jag bekräftar att denna revision endast är extra OCR-metadata och inte skapar en kanonisk handling, kanonisk dokument, signatur eller juridisk giltighet.',
+  'uiLiteral.bookDetailPage.confirmoQueEsteRascunhoOcrEAuxiliarNao':
+    'Jag bekräftar att detta OCR-utkast är extra, icke-kanoniskt och skapar inte protokoll, dokument, signaturer eller juridisk giltighet.',
+  'uiLiteral.bookDetailPage.contexto': 'Sammanhang',
+  'uiLiteral.bookDetailPage.conversaoCanonica': 'kanonisk konvertering:',
+  'uiLiteral.bookDetailPage.criado': 'Skapad',
+  'uiLiteral.bookDetailPage.criaOuDevolveUmDossierSoComMetadados':
+    'Skapa eller returnera ett underlag med endast metadata, sammanfatta och granska bevis för det accepterade OCR-utkastet. Det skapar inte protokoll, dokument, PDF/A, signatur, sigill, filpaket eller juridisk giltighet.',
+  'uiLiteral.bookDetailPage.definidaEm': 'Sätt in',
+  'uiLiteral.bookDetailPage.desconhecidos': '· okänd',
+  'uiLiteral.bookDetailPage.digestDaFonteOcr': 'OCR teckensnitt sammanfattning',
+  'uiLiteral.bookDetailPage.digestPresente': 'nuvarande matsmältning:',
+  'uiLiteral.bookDetailPage.disposalApproved': '· bortskaffande_godkänd:',
+  'uiLiteral.bookDetailPage.documentoAssinado': '· undertecknat dokument:',
+  'uiLiteral.bookDetailPage.documentoCanonico': '· kanoniskt dokument:',
+  'uiLiteral.bookDetailPage.dossier': 'Dokumentation',
+  'uiLiteral.bookDetailPage.dossierAssociado': 'Tillhörande dossier',
+  'uiLiteral.bookDetailPage.dossierJaRegistado': 'Dokumentationen redan registrerad',
+  'uiLiteral.bookDetailPage.draftMutavel': 'föränderligt utkast:',
+  'uiLiteral.bookDetailPage.estaAcaoNaoCriaAtaCanonicaDocumentoCanonico':
+    'Denna åtgärd skapar inte en kanonisk handling, ett kanoniskt dokument, PDF/A, signatur eller juridisk giltighet.',
+  'uiLiteral.bookDetailPage.estado': 'Ange',
+  'uiLiteral.bookDetailPage.estado.1528o1': '· stat',
+  'uiLiteral.bookDetailPage.estado.kzwel3': 'Ange:',
+  'uiLiteral.bookDetailPage.estadoDeRevisaoOcrDigestDeTextoQuando':
+    'OCR-granskningsstatus, textsammandrag när så anges, reviderade sidor, OCR-motor och dossiermetadata när tillgängligt.',
+  'uiLiteral.bookDetailPage.estaImportacaoPreservadaAindaNaoTemOcrAuxiliar':
+    'Den här bevarade importen har ännu ingen extra OCR för granskning.',
+  'uiLiteral.bookDetailPage.estesPacotesPreservamCopiasDeLivrosEmPapel':
+    'Dessa paket bevarar papperskopior av böcker som referens. De ersätter inte kanoniska digitala protokoll och deklarerar inte juridisk giltighet, PDF/A, signaturens giltighet eller kvalificerad signatur.',
+  'uiLiteral.bookDetailPage.evidenciaDeExecucaoDeConversaoRevista':
+    'Bevis på reviderad konverteringsutförande',
+  'uiLiteral.bookDetailPage.evidenciaRevista': 'Granskade bevis',
+  'uiLiteral.bookDetailPage.exclui': 'Exkluderar',
+  'uiLiteral.bookDetailPage.execucoesLigadas': 'länkade avrättningar:',
+  'uiLiteral.bookDetailPage.ficheiro': 'Fil',
+  'uiLiteral.bookDetailPage.flagsSemExecucao': 'Icke-exekverande flaggor',
+  'uiLiteral.bookDetailPage.flagsSemReivindicacao': 'Flaggor utan anspråk',
+  'uiLiteral.bookDetailPage.fluxoOperador': 'Operatörsflöde',
+  'uiLiteral.bookDetailPage.importacaoPreservada': 'Importen bevarad',
+  'uiLiteral.bookDetailPage.inclui': 'Inkluderar',
+  'uiLiteral.bookDetailPage.legalComplianceClaimed': 'legal_compliance_claimed:',
+  'uiLiteral.bookDetailPage.limitesDoDossier': 'Dossiergränser',
+  'uiLiteral.bookDetailPage.metadados': '· metadata:',
+  'uiLiteral.bookDetailPage.minutasCanonicas': '· kanoniska protokoll:',
+  'uiLiteral.bookDetailPage.naoCanonico': 'Icke-kanonisk',
+  'uiLiteral.bookDetailPage.naoHaPacotesDeLivroEmPapelPreservados':
+    'Det finns inga pappersbokpaket bevarade för denna bokreferens.',
+  'uiLiteral.bookDetailPage.naResposta': 'I svaret:',
+  'uiLiteral.bookDetailPage.noArtefacto': 'I artefakten:',
+  'uiLiteral.bookDetailPage.noEventoDeLedger': '· i reskontrahändelsen:',
+  'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
+    'Det lokala DGLAB-manifestet är en JSON-ställning som kommer från det interna paketet. Det är inte en officiell DGLAB-export, myndighetsinlämning, juridisk arkivcertifiering, PDF/A, PAdES eller PDF-UA-certifiering, och inte heller ett register över destruktiv kassering.',
+  'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':
+    'Resultatet blir ett icke-kanoniskt extra OCR-utkast för granskning av den bevarade importen.',
+  'uiLiteral.bookDetailPage.pacoteDeArquivo': '· filpaket:',
+  'uiLiteral.bookDetailPage.paginas': 'sidor',
+  'uiLiteral.bookDetailPage.paginasDaFonte': 'Källsidor',
+  'uiLiteral.bookDetailPage.pdfA': '· PDF/A:',
+  'uiLiteral.bookDetailPage.pdfUa': '· PDF/UA:',
+  'uiLiteral.bookDetailPage.promocaoParaRascunhoMutavel': 'Kampanj för föränderligt utkast',
+  'uiLiteral.bookDetailPage.proximoPasso': 'Nästa steg',
+  'uiLiteral.bookDetailPage.rascunhoAceite': 'Utkast accepterat',
+  'uiLiteral.bookDetailPage.rascunhoOcrAceite': 'Utkast till OCR accepterat',
+  'uiLiteral.bookDetailPage.rascunhoRevisto': 'Reviderat utkast',
+  'uiLiteral.bookDetailPage.rascunhosOcr': 'OCR-utkast',
+  'uiLiteral.bookDetailPage.rehearsalLocalCalculadoAPartirDeMetadadosPreservados':
+    'Lokal repetition beräknad från bevarad metadata. Utför inte OCR, skapar inte kanoniska dokument, undertecknar inte och validerar inte juridiskt.',
+  'uiLiteral.bookDetailPage.relatorioLocalIndisponivel': 'Lokal rapport är inte tillgänglig',
+  'uiLiteral.bookDetailPage.relatorioOcrCanonicoLocal': 'Lokal OCR/kanonisk rapport',
+  'uiLiteral.bookDetailPage.resumoOcrDossierDerivado': 'OCR sammanfattning/härledd dossier',
+  'uiLiteral.bookDetailPage.revisaoDeOrigem': 'Källgranskning',
+  'uiLiteral.bookDetailPage.revisaoEFixidez': 'Granskning och fixering',
+  'uiLiteral.bookDetailPage.selo': '· stämpel:',
+  'uiLiteral.bookDetailPage.semReivindicacao': 'Inget anspråk',
+  'uiLiteral.bookDetailPage.soMetadados': 'Endast metadata',
+  'uiLiteral.bookDetailPage.soMetadadosSimAtaCanonicaNaoDocumentoCanonico':
+    'Endast metadata: ja · kanonisk handling: nej · kanoniskt dokument: nej · arkivpaket: nej · signatur: nej · sigill: nej · PDF/A: nej · PDF/UA: nej · juridisk giltighet: nej.',
+  'uiLiteral.bookDetailPage.textoOcrBruto': 'Rå OCR-text',
+  'uiLiteral.bookDetailPage.textoOcrBrutoNoDossier': 'Rå OCR-text i underlaget',
+  'uiLiteral.bookDetailPage.validadeLegal': '· juridisk giltighet:',
+  'uiLiteral.bookDetailPage.validadeLegalDeclaradaNao': '. Deklarerad juridisk giltighet: nej.',
+  'uiLiteral.bookDetailPage.valideDatasContagemDePaginasFixidezEContexto':
+    'Validera datum, sidantal, fixitet och bokkontext innan du bevarar. Länken som visas här är endast kontextuell: den skapar eller ändrar inte kedjor av minuter, och den omvandlar inte heller importen till en kanonisk digital post.',
+  'uiLiteral.funcoesSection.adicionarSo': 'Lägg endast till:',
+  'uiLiteral.funcoesSection.aplicarDefaultsEmFalta': 'Använd saknade standardvärden',
+  'uiLiteral.funcoesSection.estado': 'Ange',
+  'uiLiteral.funcoesSection.reverDefaults': 'Granska standardinställningar',
+  'uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao': 'Laddar återställningspolicy',
+  'uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff':
+    'Laddar lokal handoff förvalidering',
+  'uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio': 'Säkerhetskopieringsfil för testning',
+  'uiLiteral.gestaoDadosSection.backendDuravel': 'Slitstark backend',
+  'uiLiteral.gestaoDadosSection.chancelaBackupZip': 'chancela-backup-….zip',
+  'uiLiteral.gestaoDadosSection.chaveDoBackupOpcional': 'Backup-nyckel (valfritt)',
+  'uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios':
+    'Komponerar endast lokala bevis: backupkandidater, verifierade uppsatser, bokpaket, fil- och reskontrastatus.',
+  'uiLiteral.gestaoDadosSection.ensaioDeRecuperacaoSemRestauro':
+    'Återhämtningstest utan restaurering',
+  'uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro':
+    'Explicit, operatörsinitierad testning: ingen liveåterställning, ingen laglig arkivcertifiering, inget automatiskt bevis på RPO/RTO eller vårdnad utanför platsen.',
+  'uiLiteral.gestaoDadosSection.enviadaApenasParaExecutarPragmaRekeyAResposta':
+    'Skickades endast för att exekvera PRAGMA omnyckel; svaret returnerar endast bevis utan sekretess.',
+  'uiLiteral.gestaoDadosSection.execucaoDaRotacaoSqlcipher': 'Utför SQLCipher-rotation',
+  'uiLiteral.gestaoDadosSection.executaApenasORekeySqlcipherNaBaseDe':
+    'Kör endast SQLCipher-nyckeln på den redan öppna varaktiga databasen; konverterar inte SQLite-lager till klartext.',
+  'uiLiteral.gestaoDadosSection.executaAPreValidacaoExistenteDoBackupE':
+    'Utför befintlig förvalidering av säkerhetskopian och registrerar ett depositionskvitto. Återställer inte, ändrar inte databasen och förbereder inte sidovagnar.',
+  'uiLiteral.gestaoDadosSection.leituraDoEstadoLocalDePersistenciaNaoExecuta':
+    'Läsa det lokala tillståndet av uthållighet; utför inte migrering, omnyckel eller förvaringsvalidering.',
+  'uiLiteral.gestaoDadosSection.localDeCustodia': 'Förvaringsplats',
+  'uiLiteral.gestaoDadosSection.localIndicadoPeloOperadorIstoNaoComprovaCustodia':
+    'Plats som anges av operatören; detta bevisar inte vårdnad utanför platsen.',
+  'uiLiteral.gestaoDadosSection.nomeSimplesEmBackupsOuCaminhoAbsolutoDo':
+    'Enkelt namn i säkerhetskopior/ eller absolut sökväg för filen att kontrollera.',
+  'uiLiteral.gestaoDadosSection.notasDoOperador': 'Operatörsanmärkningar',
+  'uiLiteral.gestaoDadosSection.novaChaveSqlcipher': 'Ny SQLCipher-nyckel',
+  'uiLiteral.gestaoDadosSection.preValidacaoLocalDeHandoff': 'Lokal handoff förvalidering',
+  'uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave':
+    'SQLCipher-beredskap och nyckelförvar',
+  'uiLiteral.gestaoDadosSection.requerArmazenamentoDuravelEmDisco': 'Kräver hållbar disklagring.',
+  'uiLiteral.gestaoDadosSection.sidecars': 'Sidovagnar',
+  'uiLiteral.gestaoDadosSection.sidecarsDuraveis': 'Slitstarka sidvagnar',
+  'uiLiteral.gestaoDadosSection.usadaSoNestaPreValidacaoNaoEGuardada':
+    'Används endast i denna förhandsvalidering; sparas inte på kvittot.',
+  'uiLiteral.importFromRegistryForm.consulta': 'Samråd',
+  'uiLiteral.registryImportPanel.aConsultaAindaNaoFoiExecutada': 'Frågan har ännu inte körts.',
+  'uiLiteral.registryImportPanel.consulta': 'Samråd',
+  'uiLiteral.registryImportPanel.proximoPasso': 'Nästa steg',
+  'uiLiteral.registryImportPanel.resultado': 'Resultat',
+  'uiLiteral.registryImportPanel.resumo': 'Sammanfattning',
+  'uiLiteral.registryImportPanel.resumoDaImportacao': 'Importöversikt',
+  'uiLiteral.registryImportPanel.semAlteracoes': 'Inga ändringar',
+  'uiLiteral.signingPanel.token': 'Tecken',
+  'uiLiteral.trustCatalogPage.tslConfiavel': 'Pålitlig TSL',
+  'uiLiteral.asicSignatureInspectorPanel.semIndicadoresDeEvidenciaEmbebidaReportados':
+    'Inga indikatorer på inbäddade bevis rapporterade.',
+  'uiLiteral.asicSignatureInspectorPanel.semOcorrenciasReportadas': 'Inga rapporterade händelser.',
+  'uiLiteral.bookDetailPage.ambitoDeArquivoPaperBookImport': 'Filomfattning: pappersbok-import:',
+  'uiLiteral.bookDetailPage.criaUmaAtaEmEstadoDraftComO':
+    'Skapar minuter i utkaststatus med OCR-texten som stöd för överläggningar. Det skapar inte ett kanoniskt dokument, PDF/A, signatur, sigill eller godkännande av juridisk giltighet.',
+  'uiLiteral.bookDetailPage.digestDoTexto': 'Textsammandrag',
+  'uiLiteral.bookDetailPage.documentoCanonico.19tw3h': '. Kanoniskt dokument:',
+  'uiLiteral.bookDetailPage.entidade': '· Entitet:',
+  'uiLiteral.bookDetailPage.intervalo': 'Intervall:',
+  'uiLiteral.bookDetailPage.limites': 'Gränser',
+  'uiLiteral.bookDetailPage.livro': 'Boka:',
+  'uiLiteral.bookDetailPage.motor': 'Motor',
+  'uiLiteral.bookDetailPage.nota': 'Varsel',
+  'uiLiteral.bookDetailPage.ocrMetadadoApenasTextoArmazenado': 'OCR: endast metadata; lagrad text:',
+  'uiLiteral.bookDetailPage.paginasRevistas': 'Reviderade sidor',
+  'uiLiteral.bookDetailPage.rascunhoCriado': 'Utkast skapat:',
+  'uiLiteral.bookDetailPage.revisto': 'Reviderad',
+  'uiLiteral.bookDetailPage.textoAutoritativo': 'Auktoritativ text:',
+  'uiLiteral.bookDetailPage.textoAutoritativo.9xkq63': '; auktoritativ text:',
+  'uiLiteral.bookDetailPage.textoExtraido': 'Utdragen text',
+  'uiLiteral.compliancePanel.limitesDoAviso': 'Varningsgränser',
+  'uiLiteral.compliancePanel.orientacaoLocalDaConvocatoria': 'Lokal orientering av samtalet',
+  'uiLiteral.compliancePanel.proximoRegistoLocal': 'Nästa lokal registrering',
+  'uiLiteral.editUserPage.acao': 'Handling',
+  'uiLiteral.editUserPage.aindaNaoHaPedidosDsrRegistadosParaEste':
+    'Det finns inga DSR-förfrågningar registrerade för denna användare än.',
+  'uiLiteral.editUserPage.concluido': 'Avslutad',
+  'uiLiteral.editUserPage.criado': 'Skapad',
+  'uiLiteral.editUserPage.criadoPor': 'Skapad av',
+  'uiLiteral.editUserPage.estado': 'Ange',
+  'uiLiteral.editUserPage.marcarConcluido': 'Mark avslutat',
+  'uiLiteral.editUserPage.pedidosDsrPrivacidade': 'DSR/sekretessförfrågningar',
+  'uiLiteral.editUserPage.registaOCicloDeVidaDosPedidosDsr':
+    'Registrerar livscykeln för användarens DSR-förfrågningar och laddar ner icke-hemlig JSON för svar. Exportinnehållet visas inte på skärmen.',
+  'uiLiteral.editUserPage.semPedidosDsr': 'Inga DSR-beställningar',
+  'uiLiteral.editUserPage.tipo': 'Typ',
+  'uiLiteral.editUserPage.tipoDePedido': 'Beställningstyp',
+  'uiLiteral.entitiesPage.naoImportado': 'Ej importerad',
+  'uiLiteral.entitiesPage.naoImportadoSemCertidao': 'Ej importerad · Inget certifikat',
+  'uiLiteral.entitiesPage.semAtividade': 'Ingen aktivitet',
+  'uiLiteral.entitiesPage.semAtividadeNoArquivo': 'Ingen aktivitet på filen',
+  'uiLiteral.entitiesPage.semCertidao': 'Inget certifikat',
+  'uiLiteral.entityChronologyPanel.cronologiaLocalDeAtosSelados':
+    'Lokal kronologi av förseglade akter',
+  'uiLiteral.entityChronologyPanel.data': 'Datum',
+  'uiLiteral.entityChronologyPanel.descricao': 'Beskrivning',
+  'uiLiteral.entityChronologyPanel.digest': 'smälta',
+  'uiLiteral.entityChronologyPanel.eventosLocais': 'Lokala evenemang',
+  'uiLiteral.entityChronologyPanel.fonteSelada': 'Källa förseglad',
+  'uiLiteral.entityChronologyPanel.fontesSeladas': 'Förseglade källor',
+  'uiLiteral.entityChronologyPanel.ligacoes': 'Anslutningar',
+  'uiLiteral.entityChronologyPanel.nos': 'Oss',
+  'uiLiteral.entityChronologyPanel.projecaoTecnicaLocalBaseadaApenasEmAtasSeladas':
+    'Lokal teknisk projektion baserad endast på förseglade eller arkiverade protokoll. Den gör inte anspråk på juridisk giltighet eller certifiering av auktoritet.',
+  'uiLiteral.entityChronologyPanel.provenienciaDasLigacoesLocais': 'Härkomst av lokala länkar',
+  'uiLiteral.entityChronologyPanel.tipo': 'Typ',
+  'uiLiteral.funcoesSection.aReconciliacaoEGuiadaPorAdminESo':
+    '. Avstämning är administratörsdriven och lägger bara till dessa seedade standardinställningar.',
+  'uiLiteral.funcoesSection.atual': 'Nuvarande',
+  'uiLiteral.funcoesSection.defaultsEmFalta': 'Saknade standardvärden:',
+  'uiLiteral.funcoesSection.revisaoManual': 'Manuell granskning',
+  'uiLiteral.gestaoDadosSection.aindaNaoHaRecibosDeRotacaoSqlcipherBem':
+    'Det finns fortfarande inga kvitton för lyckad SQLCipher-rotation.',
+  'uiLiteral.gestaoDadosSection.arquivoVerificado': 'Verifierad fil',
+  'uiLiteral.gestaoDadosSection.atosPreservaveis': 'Konserverbara handlingar',
+  'uiLiteral.gestaoDadosSection.backend': 'Backend',
+  'uiLiteral.gestaoDadosSection.backendSqlcipherLocal': 'Lokal SQLCipher-backend',
+  'uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente':
+    'Den senaste ovaliderade kandidaten',
+  'uiLiteral.gestaoDadosSection.candidatosNaoValidados': 'Ovaliderade kandidater',
+  'uiLiteral.gestaoDadosSection.checkpointAntes': 'Checkpoint innan',
+  'uiLiteral.gestaoDadosSection.checkpointDepois': 'Kontrollpunkt efter',
+  'uiLiteral.gestaoDadosSection.cifrado': 'Krypterad',
+  'uiLiteral.gestaoDadosSection.configuracaoDaChave': 'Nyckelkonfiguration',
+  'uiLiteral.gestaoDadosSection.constatacoes': 'Fynd',
+  'uiLiteral.gestaoDadosSection.documentosPreservados': 'Bevarade dokument',
+  'uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao': 'Återvinningsanalyser',
+  'uiLiteral.gestaoDadosSection.erroKeyOps': 'Key-ops fel',
+  'uiLiteral.gestaoDadosSection.erros': 'Fel',
+  'uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados': 'Databasschema',
+  'uiLiteral.gestaoDadosSection.estado': 'Ange',
+  'uiLiteral.gestaoDadosSection.estadoDoEnsaio': 'Analysstatus',
+  'uiLiteral.gestaoDadosSection.evidenciaOperacionalLocalGeradaAposRekeySqlcipherAceite':
+    'Lokalt operativt bevis genererat efter att SQLCipher-nyckeln accepterats. Dessa kvitton intygar inte kryptering i vila, klartextmigrering, laglig radering eller fullständig GDPR-livscykel.',
+  'uiLiteral.gestaoDadosSection.evidenciaVerificada': 'Verifierade bevis',
+  'uiLiteral.gestaoDadosSection.fallbackFalhaFechado': 'Fallback misslyckas stängd',
+  'uiLiteral.gestaoDadosSection.fallbackHardware': 'Hårdvara reserv',
+  'uiLiteral.gestaoDadosSection.fonteDeChave': 'Nyckelkälla',
+  'uiLiteral.gestaoDadosSection.formatoDoCabecalho': 'Rubrikformat',
+  'uiLiteral.gestaoDadosSection.geradoEm': 'Genereras i',
+  'uiLiteral.gestaoDadosSection.historicoGuardado': 'Sparad historik',
+  'uiLiteral.gestaoDadosSection.historicoRecente': 'Senaste historien',
+  'uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo': 'Ålder för senaste kvitto',
+  'uiLiteral.gestaoDadosSection.idadeMaximaConfigurada': 'Konfigurerad maxålder',
+  'uiLiteral.gestaoDadosSection.integridadePosRekey': 'Integritet efter omnyckel',
+  'uiLiteral.gestaoDadosSection.lacunasDeProntidao': 'Beredskapsluckor',
+  'uiLiteral.gestaoDadosSection.limitesDoRecibo': 'Kvittotsgränser',
+  'uiLiteral.gestaoDadosSection.livros': 'Böcker',
+  'uiLiteral.gestaoDadosSection.localDeCustodiaIndicado': 'Angiven vårdnadsort',
+  'uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada':
+    'Öppna butik med konfigurerad nyckel',
+  'uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente': 'Databasmedlem närvarande',
+  'uiLiteral.gestaoDadosSection.membrosNoArquivo': 'Medlemmar i register',
+  'uiLiteral.gestaoDadosSection.membrosSidecar': 'Sidvagnsmedlemmar',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada': 'Vanlig textmigrering blockerad',
+  'uiLiteral.gestaoDadosSection.migracaoPlaintextPendente': 'Väntar på migrering av klartext',
+  'uiLiteral.gestaoDadosSection.modo': 'Läge',
+  'uiLiteral.gestaoDadosSection.operacao': 'Drift',
+  'uiLiteral.gestaoDadosSection.passosDeclarados': 'Angivna steg',
+  'uiLiteral.gestaoDadosSection.planoDeMigracao': 'Migrationsplan',
+  'uiLiteral.gestaoDadosSection.planoKeyOps': 'Key-ops plan',
+  'uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao': 'Lokal återställningspolicy',
+  'uiLiteral.gestaoDadosSection.preValidacaoDeImportacao': 'Importförhandsvalidering',
+  'uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo':
+    'Förhandsvalidering av det senaste kvittot',
+  'uiLiteral.gestaoDadosSection.preValidacaoOk': 'Förhandsvalidering OK',
+  'uiLiteral.gestaoDadosSection.prontoParaRestauro': 'Klar för restaurering',
+  'uiLiteral.gestaoDadosSection.proximoPasso': 'Nästa steg',
+  'uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao': 'Lokala rotationskvitton',
+  'uiLiteral.gestaoDadosSection.registadoEm': 'Registrerad i',
+  'uiLiteral.gestaoDadosSection.rekeyExecutado': 'Omnyckel utförd',
+  'uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher': 'SQLCipher-exekveringsresultat',
+  'uiLiteral.gestaoDadosSection.resumoLocalDerivadoDeRecibosDeEnsaioSem':
+    'Lokal sammanfattning härledd från testkvitton: ingen återställning utförd, inget databasutbyte, inget bevis på vårdnad utanför platsen, ingen RPO/RTO-certifiering och ingen säkerhetskopieringspolicy för produktion.',
+  'uiLiteral.gestaoDadosSection.rpoAlvoDeclarado': 'Deklarerat mål RPO',
+  'uiLiteral.gestaoDadosSection.rtoAlvoDeclarado': 'Deklarerad mål-RTO',
+  'uiLiteral.gestaoDadosSection.semAlegacoes': 'Inga anklagelser',
+  'uiLiteral.gestaoDadosSection.semCaminhoDaBd': 'Ingen BD-väg',
+  'uiLiteral.gestaoDadosSection.semChaveGuardada': 'Ingen nyckel sparad',
+  'uiLiteral.gestaoDadosSection.semConstatacoesRegistadas': 'Inga fynd registrerade.',
+  'uiLiteral.gestaoDadosSection.semErrosRegistados': 'Inga fel registrerade.',
+  'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
+    'Inga lokala luckor rapporterade i detta tillstånd.',
+  'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
+    'Backend lokala signaler med redigerade hemligheter. De certifierar inte kryptering av produktionsvila, genomförd klartextmigrering, förvaringsbok eller juridisk cykel/GDPR.',
+  'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado': 'Verifierad isolerad ögonblicksbild',
+  'uiLiteral.gestaoDadosSection.sqlcipher': 'SQLCipher',
+  'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher i build',
+  'uiLiteral.gestaoDadosSection.sqlcipherVerificado': 'Verifierad SQLCipher',
+  'uiLiteral.gestaoDadosSection.total': 'totalt /',
+  'uiLiteral.gestaoDadosSection.totalDeBytesDosMembros': 'Totalt antal medlemsbytes',
+  'uiLiteral.gestaoDadosSection.ultimaRotacao': 'Sista rotationen',
+  'uiLiteral.gestaoDadosSection.ultimoEnsaio': 'Sista repetitionen',
+  'uiLiteral.gestaoDadosSection.ultimoRecibo': 'Sista kvitto',
+  'uiLiteral.gestaoDadosSection.utilizador': 'Användare',
+  'uiLiteral.gestaoDadosSection.verificacaoIsolada': 'Isolerad kontroll',
+  'uiLiteral.importFromRegistryForm.acaoNecessaria': 'Åtgärd krävs',
+  'uiLiteral.importFromRegistryForm.aCertidaoEstaASerConsultadaMantenhaEsta':
+    'Intyget rådfrågas. Håll den här sidan öppen.',
+  'uiLiteral.importFromRegistryForm.aConsultar': 'Ska rådfrågas',
+  'uiLiteral.importFromRegistryForm.corrijaOCodigoOuEMailETente':
+    'Korrigera koden eller e-postmeddelandet och försök igen.',
+  'uiLiteral.importFromRegistryForm.estado': 'Ange',
+  'uiLiteral.registryImportPanel.acaoNecessaria': 'Åtgärd krävs',
+  'uiLiteral.registryImportPanel.aCertidaoEstaASerConsultadaOsValores':
+    'Intyget rådfrågas. Aktuella värden ändras först när resultatet kommer.',
+  'uiLiteral.registryImportPanel.aConsultar': 'Ska rådfrågas',
+  'uiLiteral.registryImportPanel.corrijaOCodigoOuEMailETente':
+    'Korrigera koden eller e-postmeddelandet och försök igen.',
+  'uiLiteral.registryImportPanel.estado': 'Ange',
+  'uiLiteral.asicSignatureInspectorPanel.manifesto': 'manifestera',
+  'uiLiteral.bookDetailPage.em': 'i',
+  'uiLiteral.bookDetailPage.por': 'sätta',
+  'uiLiteral.bookDetailPage.total': 'total',
+  'uiLiteral.gestaoDadosSection.dias': 'dagar',
+  'uiLiteral.gestaoDadosSection.fechados': 'stängd',
+  'uiLiteral.gestaoDadosSection.min': 'min',
+  'uiLiteral.privacyComplianceSection.overdue': 'försenad:',
+  'uiLiteral.bookDetailPage.acceptedWithoutCanonicalConversion':
+    'Godkänd som kompletterande referens, utan kanonisk konvertering.',
+  'uiLiteral.bookDetailPage.noAcceptedOcrDraft': 'Inget godkänt OCR-utkast.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'acts.signingSnapshot.title': 'Kanonisk kopia fryst för underskrift',
+  'acts.signingSnapshot.body':
+    'Vid inmatning av «Under signatur» frystes protokollet. Prenumerationsåtgärder använder denna kanoniska kopia och regenererar eller ersätter den inte.',
+  'acts.sealing.signedReady':
+    'Det finns tekniska bevis på en signerad PDF för den kanoniska kopian. Se över det innan förslutning.',
+  'acts.sealing.signatureRequired':
+    'Signera den kanoniska kopian eller använd den alternativa kopian av det manuellt signerade originalet innan förseglingen.',
+  'acts.sealing.signedAck.title': 'Bekräfta förseglingen efter underskrift',
+  'acts.sealing.signedAck.body':
+    'Förseglingen kommer att använda den redan undertecknade kanoniska kopian. Granska de tekniska bevisen och meddelanden om överensstämmelse innan du fortsätter.',
+  'acts.sealing.signedAck.checkbox':
+    'Jag bekräftar att jag har granskat underskriftens tekniska bevis och vill försegla protokollet.',
+  'acts.sealing.signedAck.checkboxWithWarnings':
+    'Jag bekräftar att jag har granskat de tekniska bevisen för underskriften och efterlevnadsmeddelanden och vill försegla protokollet.',
+  'signing.closed.title': 'Prenumerationen upphörde',
+  'signing.closed.body':
+    'Protokollet är nu "Under signatur". Prenumerationsåtgärder är stängda; befintliga bevis förblir tillgängliga för samråd.',
+
+  // --- Localized UI additions ---------------------------------------------------
+  'signing.technicalComparison.row.signingSnapshotDigest':
+    'Sammanfattning av den frusna kanoniska kopian',
 };

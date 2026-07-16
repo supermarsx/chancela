@@ -857,9 +857,9 @@ describe('LivrosIntegridadeSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Re-ancorar' }));
 
     // The server message renders BOTH inline (in the still-open modal) and as a toast.
-    expect(
-      await screen.findAllByText('a cadeia já verifica; re-ancoragem recusada'),
-    ).toHaveLength(2);
+    expect(await screen.findAllByText('a cadeia já verifica; re-ancoragem recusada')).toHaveLength(
+      2,
+    );
     expect(screen.getByRole('dialog', { name: 'Re-ancorar cadeia' })).toBeTruthy();
     expect(
       calls.filter((c) => c.url === '/v1/ledger/recovery/reanchor' && c.method === 'POST'),

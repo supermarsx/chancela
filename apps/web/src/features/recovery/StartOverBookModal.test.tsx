@@ -161,9 +161,7 @@ describe('StartOverBookModal', () => {
 
   it('surfaces a 503 forward-write-blocked failure inline and via toast, keeping the modal open', async () => {
     const onClose = vi.fn();
-    installFetch(() =>
-      jsonResponse({ error: 'instância degradada: escrita bloqueada' }, 503),
-    );
+    installFetch(() => jsonResponse({ error: 'instância degradada: escrita bloqueada' }, 503));
     renderWithProviders(<StartOverBookModal book={BOOK} onClose={onClose} />);
 
     fireEvent.change(screen.getByLabelText('Motivo'), { target: { value: 'Novo exercício' } });
