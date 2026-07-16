@@ -1551,23 +1551,23 @@ impl Store {
                 matching_signed,
             )?;
         }
-        if let Some(signed) = book_signed {
-            if !exported_document_ids.contains(&signed.document_id) {
-                match self.document_by_id(&signed.document_id)? {
-                    Some(doc) => append_document_members(
-                        &mut members,
-                        &mut exported_document_ids,
-                        DocumentMemberOwner {
-                            owner_kind: "book",
-                            owner_id: book_id.to_string(),
-                            book_id: book_id.to_string(),
-                            act_id: None,
-                        },
-                        doc,
-                        Some(signed),
-                    )?,
-                    None => append_signed_members(&mut members, &signed, false)?,
-                }
+        if let Some(signed) = book_signed
+            && !exported_document_ids.contains(&signed.document_id)
+        {
+            match self.document_by_id(&signed.document_id)? {
+                Some(doc) => append_document_members(
+                    &mut members,
+                    &mut exported_document_ids,
+                    DocumentMemberOwner {
+                        owner_kind: "book",
+                        owner_id: book_id.to_string(),
+                        book_id: book_id.to_string(),
+                        act_id: None,
+                    },
+                    doc,
+                    Some(signed),
+                )?,
+                None => append_signed_members(&mut members, &signed, false)?,
             }
         }
 
@@ -2037,6 +2037,9 @@ fn format_rfc3339(at: OffsetDateTime) -> String {
 /// The domain aggregate table names cleared by a wipe/factory reset (excludes `events`).
 fn domain_table_names() -> Vec<String> {
     [
+        "group_template_library_revisions",
+        "group_template_libraries",
+        "company_groups",
         "entities",
         "books",
         "acts",
@@ -2054,7 +2057,9 @@ fn domain_table_names() -> Vec<String> {
 /// both backends (wp15).
 fn clear_domain(tx: &Tx<'_>) -> Result<(), StoreError> {
     tx.execute_recovery_batch(
-        "DELETE FROM entities; DELETE FROM books; DELETE FROM acts; \
+        "DELETE FROM group_template_library_revisions; \
+         DELETE FROM group_template_libraries; DELETE FROM company_groups; \
+         DELETE FROM entities; DELETE FROM books; DELETE FROM acts; \
          DELETE FROM registry_extracts; DELETE FROM documents; DELETE FROM follow_ups;",
     )
 }

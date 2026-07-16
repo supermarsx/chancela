@@ -1,0 +1,20 @@
+{
+  "id": "8f1c8e40-0000-4000-8000-000000000001",
+  "group_id": "7f1c8e40-0000-4000-8000-000000000001",
+  "tenant_id": "74656e61-6e74-0000-0000-000000000001",
+  "name": "Atas comuns",
+  "description": "Modelos partilhados entre as empresas do grupo",
+  "created_at": "2026-07-16T10:05:00Z",
+  "updated_at": "2026-07-16T10:05:00Z",
+  "current_revision": {
+    "group_id": "7f1c8e40-0000-4000-8000-000000000001",
+    "library_id": "8f1c8e40-0000-4000-8000-000000000001",
+    "tenant_id": "74656e61-6e74-0000-0000-000000000001",
+    "revision": 1,
+    "template_ids": [
+      "csc-ata-ag/v1"
+    ],
+    "created_at": "2026-07-16T10:05:00Z",
+    "created_by": "amelia.marques"
+  }
+}

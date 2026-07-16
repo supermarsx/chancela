@@ -89,7 +89,10 @@
 ///   field (there is **no** new column on `entities` and no ALTER — the store is additive-only), so
 ///   pre-tenancy entities migrate cleanly to a singleton default tenant. Forward-only, additive:
 ///   existing databases gain the table via [`ALL`] and advance their stamp on next open.
-pub const SCHEMA_VERSION: i64 = 19;
+/// - **v20** — adds tenant-local `company_groups`, named `group_template_libraries`, and immutable
+///   `group_template_library_revisions` (ENT-C7/DAT-03/WFL-32). Membership remains an additive
+///   optional field in `entities.json`; books, acts, and their audit chains remain entity-owned.
+pub const SCHEMA_VERSION: i64 = 20;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -681,6 +684,50 @@ CREATE TABLE IF NOT EXISTS tenants (
     json TEXT NOT NULL
 ) STRICT;";
 
+/// Tenant-local company groups. `json` is the serialized [`chancela_core::CompanyGroup`]; the
+/// explicit `tenant_id` column makes tenant-bounded enumeration/indexing auditable without making
+/// group a second isolation boundary.
+pub const CREATE_COMPANY_GROUPS: &str = "\
+CREATE TABLE IF NOT EXISTS company_groups (
+    id        TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    json      TEXT NOT NULL
+) STRICT;";
+
+pub const CREATE_COMPANY_GROUPS_TENANT_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_company_groups_tenant ON company_groups(tenant_id);";
+
+/// Multiple named shared template libraries may belong to one group. Libraries are soft-archived;
+/// their immutable revision history is never deleted by the API.
+pub const CREATE_GROUP_TEMPLATE_LIBRARIES: &str = "\
+CREATE TABLE IF NOT EXISTS group_template_libraries (
+    id        TEXT PRIMARY KEY,
+    group_id  TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    json      TEXT NOT NULL
+) STRICT;";
+
+pub const CREATE_GROUP_TEMPLATE_LIBRARIES_GROUP_IDX: &str = "CREATE INDEX IF NOT EXISTS \
+idx_group_template_libraries_group ON group_template_libraries(group_id);";
+pub const CREATE_GROUP_TEMPLATE_LIBRARIES_TENANT_IDX: &str = "CREATE INDEX IF NOT EXISTS \
+idx_group_template_libraries_tenant ON group_template_libraries(tenant_id);";
+
+/// Append-only library snapshots. The composite primary key is the persistence-level immutability
+/// guard: a revision number can be inserted once for exactly one group/library pair, never replaced.
+pub const CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS: &str = "\
+CREATE TABLE IF NOT EXISTS group_template_library_revisions (
+    group_id  TEXT NOT NULL,
+    library_id TEXT NOT NULL,
+    revision  INTEGER NOT NULL CHECK (revision >= 1),
+    tenant_id TEXT NOT NULL,
+    json      TEXT NOT NULL,
+    PRIMARY KEY (group_id, library_id, revision)
+) STRICT;";
+
+pub const CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS_LIBRARY_IDX: &str = "CREATE INDEX IF NOT EXISTS \
+idx_group_template_library_revisions_library ON \
+group_template_library_revisions(group_id, library_id, revision);";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -730,4 +777,11 @@ pub const ALL: &[&str] = &[
     CREATE_USER_TEMPLATES,
     CREATE_SUBJECT_KEYS,
     CREATE_TENANTS,
+    CREATE_COMPANY_GROUPS,
+    CREATE_COMPANY_GROUPS_TENANT_IDX,
+    CREATE_GROUP_TEMPLATE_LIBRARIES,
+    CREATE_GROUP_TEMPLATE_LIBRARIES_GROUP_IDX,
+    CREATE_GROUP_TEMPLATE_LIBRARIES_TENANT_IDX,
+    CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS,
+    CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS_LIBRARY_IDX,
 ];

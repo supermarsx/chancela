@@ -1,0 +1,70 @@
+{
+  "group": {
+    "id": "7f1c8e40-0000-4000-8000-000000000001",
+    "tenant_id": "74656e61-6e74-0000-0000-000000000001",
+    "name": "Grupo Encosto",
+    "description": "Empresas do Grupo Encosto",
+    "created_at": "2026-07-16T10:00:00Z",
+    "updated_at": "2026-07-16T10:00:00Z",
+    "member_count": 1,
+    "template_library_count": 1
+  },
+  "member_entities": [
+    {
+      "id": "2f1c8e40-0000-4000-8000-000000000001",
+      "tenant_id": "74656e61-6e74-0000-0000-000000000001",
+      "group_id": "7f1c8e40-0000-4000-8000-000000000001",
+      "name": "Encosto Estratégico, S.A.",
+      "nipc": "503004642",
+      "nipc_validated": true,
+      "seat": "Lisboa",
+      "family": "CommercialCompany",
+      "kind": "SociedadeAnonima",
+      "fiscal_year_end": null,
+      "profile": {
+        "family": "CommercialCompany",
+        "rule_pack_id": "csc-art63/v2",
+        "allowed_channels": [
+          "Physical",
+          "Hybrid",
+          "Telematic",
+          "WrittenResolution"
+        ],
+        "signature_policy": "QualifiedPreferred",
+        "template_family": "csc-commercial",
+        "calendar_presets": []
+      },
+      "statute": null
+    }
+  ],
+  "books_total": 1,
+  "books_by_state": {
+    "Open": 1
+  },
+  "acts_total": 1,
+  "acts_by_state": {
+    "Sealed": 1
+  },
+  "reminders_open": 0,
+  "reminders_overdue": 0,
+  "reminders": [],
+  "recent_audit_events": [
+    {
+      "id": "9f1c8e40-0000-4000-8000-000000000001",
+      "seq": 10,
+      "actor": "amelia.marques",
+      "justification": "group:7f1c8e40-0000-4000-8000-000000000001",
+      "timestamp": "2026-07-16T10:10:00Z",
+      "scope": "tenant:74656e61-6e74-0000-0000-000000000001",
+      "kind": "company_group.updated",
+      "payload_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "prev_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "chains": [
+        "global",
+        "tenant:74656e61-6e74-0000-0000-000000000001"
+      ],
+      "attestation": null
+    }
+  ]
+}

@@ -307,6 +307,10 @@ pub struct Entity {
     /// honouring the store's additive-only migration limitation.
     #[serde(default = "crate::tenant::default_tenant_id")]
     pub tenant_id: crate::tenant::TenantId,
+    /// Optional tenant-local company-group membership (DAT-03). A group is a convenience view, not
+    /// an authorization boundary. Old entity JSON has no key and therefore remains ungrouped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<crate::group::GroupId>,
     /// Legal name / firma.
     pub name: String,
     /// NIPC — validated ([`Nipc::parse`]) or an explicit override ([`Nipc::unvalidated`]);
@@ -344,6 +348,7 @@ impl Entity {
         Entity {
             id: EntityId::new(),
             tenant_id: crate::tenant::default_tenant_id(),
+            group_id: None,
             name: name.into(),
             nipc,
             seat: seat.into(),
@@ -359,6 +364,14 @@ impl Entity {
     #[must_use]
     pub fn in_tenant(mut self, tenant: crate::tenant::TenantId) -> Self {
         self.tenant_id = tenant;
+        self
+    }
+
+    /// Set or clear tenant-local company-group membership. The API validates tenant equality before
+    /// persisting; this builder deliberately cannot resolve a group on its own.
+    #[must_use]
+    pub fn in_group(mut self, group: Option<crate::group::GroupId>) -> Self {
+        self.group_id = group;
         self
     }
 
@@ -382,6 +395,7 @@ mod tests {
             EntityKind::SociedadePorQuotas,
         );
         assert_eq!(e.tenant_id, crate::tenant::DEFAULT_TENANT_ID);
+        assert_eq!(e.group_id, None);
     }
 
     #[test]
@@ -401,6 +415,7 @@ mod tests {
             .expect("fresh entity JSON carries tenant_id");
         let migrated: Entity = serde_json::from_value(value).unwrap();
         assert_eq!(migrated.tenant_id, crate::tenant::DEFAULT_TENANT_ID);
+        assert_eq!(migrated.group_id, None);
         assert_eq!(migrated.id, e.id);
     }
 

@@ -80,6 +80,17 @@ pub(crate) const PG_BACKUP_TABLES: &[&str] = &[
     "paper_book_ocr_conversion_dossiers",
     "paper_book_ocr_conversion_execution_artifacts",
     "follow_ups",
+    "users",
+    "roles",
+    "delegations",
+    "settings",
+    "provider_credentials",
+    "user_templates",
+    "subject_keys",
+    "tenants",
+    "company_groups",
+    "group_template_libraries",
+    "group_template_library_revisions",
 ];
 
 /// The one table whose surrogate `id` is a Postgres `GENERATED ALWAYS AS IDENTITY` column, so its
@@ -209,10 +220,10 @@ impl PostgresBackend {
             }
             if table == "meta" {
                 for j in &row_jsons {
-                    if let Some((key, value)) = parse_meta_kv(j) {
-                        if key == "instance_id" {
-                            source_instance_id = value;
-                        }
+                    if let Some((key, value)) = parse_meta_kv(j)
+                        && key == "instance_id"
+                    {
+                        source_instance_id = value;
                     }
                 }
             }
@@ -782,6 +793,33 @@ fn parse_meta_kv(json: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logical_backup_contract_covers_the_complete_group_graph() {
+        for table in [
+            "company_groups",
+            "group_template_libraries",
+            "group_template_library_revisions",
+        ] {
+            assert!(
+                PG_BACKUP_TABLES.contains(&table),
+                "Postgres logical backup omitted {table}"
+            );
+        }
+        let group_index = PG_BACKUP_TABLES
+            .iter()
+            .position(|table| *table == "company_groups")
+            .unwrap();
+        let library_index = PG_BACKUP_TABLES
+            .iter()
+            .position(|table| *table == "group_template_libraries")
+            .unwrap();
+        let revision_index = PG_BACKUP_TABLES
+            .iter()
+            .position(|table| *table == "group_template_library_revisions")
+            .unwrap();
+        assert!(group_index < library_index && library_index < revision_index);
+    }
 
     /// Build a minimal, VALID logical bundle for a one-event ledger, entirely in-memory (no DB).
     fn sample_bundle() -> (Vec<u8>, PgBackupManifest) {

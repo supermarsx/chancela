@@ -74,7 +74,10 @@
 use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::{Arc, Mutex};
 
-use chancela_core::{Act, ActId, Book, Entity, EntityId};
+use chancela_core::{
+    Act, ActId, Book, CompanyGroup, Entity, EntityId, GroupTemplateLibrary,
+    GroupTemplateLibraryRevision,
+};
 use chancela_ledger::Ledger;
 use chancela_registry::RegistryExtract;
 use postgres::types::ToSql;
@@ -299,6 +302,9 @@ impl PostgresBackend {
         let (ledger, chain_status) = Ledger::try_from_events(events);
         let integrity = ledger.integrity_report();
         Ok(LoadedState {
+            company_groups: aggregates.company_groups,
+            group_template_libraries: aggregates.group_template_libraries,
+            group_template_library_revisions: aggregates.group_template_library_revisions,
             entities: aggregates.entities,
             books: aggregates.books,
             acts: aggregates.acts,
@@ -1017,6 +1023,30 @@ fn value_to_pg_param(value: &Value) -> Box<dyn ToSql + Sync> {
 fn load_aggregate_maps(client: &mut Client) -> Result<crate::AggregateSnapshot, StoreError> {
     use std::collections::HashMap;
 
+    let mut company_groups = HashMap::new();
+    for row in client.query("SELECT json FROM company_groups", &[])? {
+        let json: String = row.get(0);
+        let group: CompanyGroup = serde_json::from_str(&json)?;
+        company_groups.insert(group.id, group);
+    }
+
+    let mut group_template_libraries = HashMap::new();
+    for row in client.query("SELECT json FROM group_template_libraries", &[])? {
+        let json: String = row.get(0);
+        let library: GroupTemplateLibrary = serde_json::from_str(&json)?;
+        group_template_libraries.insert(library.id, library);
+    }
+
+    let mut group_template_library_revisions = HashMap::new();
+    for row in client.query("SELECT json FROM group_template_library_revisions", &[])? {
+        let json: String = row.get(0);
+        let revision: GroupTemplateLibraryRevision = serde_json::from_str(&json)?;
+        group_template_library_revisions.insert(
+            (revision.group_id, revision.library_id, revision.revision),
+            revision,
+        );
+    }
+
     let mut entities = HashMap::new();
     for row in client.query("SELECT json FROM entities", &[])? {
         let json: String = row.get(0);
@@ -1080,6 +1110,9 @@ fn load_aggregate_maps(client: &mut Client) -> Result<crate::AggregateSnapshot, 
     }
 
     Ok(crate::AggregateSnapshot {
+        company_groups,
+        group_template_libraries,
+        group_template_library_revisions,
         entities,
         books,
         acts,

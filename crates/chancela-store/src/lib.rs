@@ -51,7 +51,10 @@ use std::sync::{Arc, Mutex};
 use argon2::Argon2;
 use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
-use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
+use chancela_core::{
+    Act, ActId, Book, BookId, CompanyGroup, Entity, EntityId, GroupId, GroupTemplateLibrary,
+    GroupTemplateLibraryRevision, TemplateLibraryId,
+};
 use chancela_ledger::{
     AppendError, ChainId, ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError,
 };
@@ -875,6 +878,13 @@ fn store_key_ops_plan_code(plan: StoreKeyOpsPlan) -> &'static str {
 /// can inspect and restore.
 #[derive(Debug)]
 pub struct LoadedState {
+    /// Tenant-local company groups, keyed by id.
+    pub company_groups: HashMap<GroupId, CompanyGroup>,
+    /// Named group template libraries, keyed by id.
+    pub group_template_libraries: HashMap<TemplateLibraryId, GroupTemplateLibrary>,
+    /// Immutable library revisions, keyed by their composite persistence key.
+    pub group_template_library_revisions:
+        HashMap<(GroupId, TemplateLibraryId, u64), GroupTemplateLibraryRevision>,
     /// All entities, keyed by id — loaded into `AppState.entities`.
     pub entities: HashMap<EntityId, Entity>,
     /// All books, keyed by id — loaded into `AppState.books`.
@@ -906,6 +916,10 @@ pub struct LoadedState {
 /// (store fallback on a miss), so they are not part of this snapshot.
 #[derive(Debug)]
 pub struct AggregateSnapshot {
+    pub company_groups: HashMap<GroupId, CompanyGroup>,
+    pub group_template_libraries: HashMap<TemplateLibraryId, GroupTemplateLibrary>,
+    pub group_template_library_revisions:
+        HashMap<(GroupId, TemplateLibraryId, u64), GroupTemplateLibraryRevision>,
     /// All entities, keyed by id.
     pub entities: HashMap<EntityId, Entity>,
     /// All books, keyed by id.
@@ -991,9 +1005,10 @@ pub fn encrypt_backup_envelope(
         plaintext_sha256: hex(&Sha256::digest(plaintext_zip)),
     };
     let aad = backup_envelope_aad(&header)?;
+    let aead_nonce = XNonce::from(nonce);
     let ciphertext = cipher
         .encrypt(
-            XNonce::from_slice(&nonce),
+            &aead_nonce,
             Payload {
                 msg: plaintext_zip,
                 aad: &aad,
@@ -1049,9 +1064,10 @@ pub fn decrypt_backup_envelope(
         StoreError::BadBackup("could not initialize backup decryption key".to_owned())
     })?;
     let aad = backup_envelope_aad(&envelope.header)?;
+    let aead_nonce = XNonce::from(nonce);
     let plaintext = cipher
         .decrypt(
-            XNonce::from_slice(&nonce),
+            &aead_nonce,
             Payload {
                 msg: ciphertext.as_slice(),
                 aad: &aad,
@@ -1992,6 +2008,9 @@ impl Store {
             Backend::Sqlite(_) => {
                 let loaded = self.load()?;
                 Ok(AggregateSnapshot {
+                    company_groups: loaded.company_groups,
+                    group_template_libraries: loaded.group_template_libraries,
+                    group_template_library_revisions: loaded.group_template_library_revisions,
                     entities: loaded.entities,
                     books: loaded.books,
                     acts: loaded.acts,
@@ -2225,6 +2244,36 @@ impl Store {
 
         // Aggregates: the `json` column is the full serde value; its own `id` field is the map key,
         // so the scope columns (entity_id/book_id) never need re-parsing on load.
+        let mut company_groups = HashMap::new();
+        {
+            let mut stmt = guard.prepare("SELECT json FROM company_groups")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            for json in rows {
+                let group: CompanyGroup = serde_json::from_str(&json?)?;
+                company_groups.insert(group.id, group);
+            }
+        }
+        let mut group_template_libraries = HashMap::new();
+        {
+            let mut stmt = guard.prepare("SELECT json FROM group_template_libraries")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            for json in rows {
+                let library: GroupTemplateLibrary = serde_json::from_str(&json?)?;
+                group_template_libraries.insert(library.id, library);
+            }
+        }
+        let mut group_template_library_revisions = HashMap::new();
+        {
+            let mut stmt = guard.prepare("SELECT json FROM group_template_library_revisions")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            for json in rows {
+                let revision: GroupTemplateLibraryRevision = serde_json::from_str(&json?)?;
+                group_template_library_revisions.insert(
+                    (revision.group_id, revision.library_id, revision.revision),
+                    revision,
+                );
+            }
+        }
         let mut entities = HashMap::new();
         {
             let mut stmt = guard.prepare("SELECT json FROM entities")?;
@@ -2307,6 +2356,9 @@ impl Store {
         // boot log. Computing it here (once, on load) keeps the source of truth in the store.
         let integrity = ledger.integrity_report();
         Ok(LoadedState {
+            company_groups,
+            group_template_libraries,
+            group_template_library_revisions,
             entities,
             books,
             acts,
@@ -3479,6 +3531,106 @@ impl Tx<'_> {
                         &hash,
                         &links_json,
                     ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Upsert a tenant-local company group. Archival is represented in the serialized aggregate;
+    /// rows are retained so audit/history references never dangle.
+    pub fn upsert_company_group(&self, group: &CompanyGroup) -> Result<(), StoreError> {
+        let id = group.id.to_string();
+        let tenant_id = group.tenant_id.to_string();
+        let json = serde_json::to_string(group)?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT INTO company_groups (id, tenant_id, json) VALUES (?1, ?2, ?3) \
+                     ON CONFLICT (id) DO UPDATE SET tenant_id = excluded.tenant_id, \
+                     json = excluded.json",
+                    params![id, tenant_id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO company_groups (id, tenant_id, json) VALUES ($1, $2, $3) \
+                     ON CONFLICT (id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, \
+                     json = EXCLUDED.json",
+                    &[&id, &tenant_id, &json],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Upsert the mutable metadata of one named group template library. Its revision rows are
+    /// intentionally managed only by [`Tx::insert_group_template_library_revision`].
+    pub fn upsert_group_template_library(
+        &self,
+        library: &GroupTemplateLibrary,
+    ) -> Result<(), StoreError> {
+        let id = library.id.to_string();
+        let group_id = library.group_id.to_string();
+        let tenant_id = library.tenant_id.to_string();
+        let json = serde_json::to_string(library)?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT INTO group_template_libraries (id, group_id, tenant_id, json) \
+                     VALUES (?1, ?2, ?3, ?4) ON CONFLICT (id) DO UPDATE SET \
+                     group_id = excluded.group_id, tenant_id = excluded.tenant_id, \
+                     json = excluded.json",
+                    params![id, group_id, tenant_id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO group_template_libraries (id, group_id, tenant_id, json) \
+                     VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET \
+                     group_id = EXCLUDED.group_id, tenant_id = EXCLUDED.tenant_id, \
+                     json = EXCLUDED.json",
+                    &[&id, &group_id, &tenant_id, &json],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Insert one immutable group-template-library revision. There is deliberately no update or
+    /// delete method; the composite primary key rejects rewriting an existing revision.
+    pub fn insert_group_template_library_revision(
+        &self,
+        revision: &GroupTemplateLibraryRevision,
+    ) -> Result<(), StoreError> {
+        let group_id = revision.group_id.to_string();
+        let library_id = revision.library_id.to_string();
+        let tenant_id = revision.tenant_id.to_string();
+        let revision_number = i64::try_from(revision.revision).map_err(|_| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "template library revision does not fit database INTEGER",
+            ))
+        })?;
+        let json = serde_json::to_string(revision)?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT INTO group_template_library_revisions \
+                     (group_id, library_id, revision, tenant_id, json) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![group_id, library_id, revision_number, tenant_id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO group_template_library_revisions \
+                     (group_id, library_id, revision, tenant_id, json) \
+                     VALUES ($1, $2, $3, $4, $5)",
+                    &[&group_id, &library_id, &revision_number, &tenant_id, &json],
                 )?;
             }
         }
@@ -5320,38 +5472,38 @@ impl NormalizedLedgerEventPageFilters {
     }
 
     fn matches(&self, event: &Event) -> bool {
-        if let Some(chain) = &self.chain {
-            if !event.links.iter().any(|link| &link.chain == chain) {
-                return false;
-            }
+        if let Some(chain) = &self.chain
+            && !event.links.iter().any(|link| &link.chain == chain)
+        {
+            return false;
         }
-        if let Some(query) = &self.query {
-            if !event_matches_page_query(event, query) {
-                return false;
-            }
+        if let Some(query) = &self.query
+            && !event_matches_page_query(event, query)
+        {
+            return false;
         }
-        if let Some(scope) = &self.scope {
-            if !event.scope.contains(scope) {
-                return false;
-            }
+        if let Some(scope) = &self.scope
+            && !event.scope.contains(scope)
+        {
+            return false;
         }
         if !self.kinds.is_empty() && !self.kinds.contains(&event.kind) {
             return false;
         }
-        if let Some(actor) = &self.actor {
-            if &event.actor != actor {
-                return false;
-            }
+        if let Some(actor) = &self.actor
+            && &event.actor != actor
+        {
+            return false;
         }
-        if let Some(from) = self.from {
-            if event.timestamp < from {
-                return false;
-            }
+        if let Some(from) = self.from
+            && event.timestamp < from
+        {
+            return false;
         }
-        if let Some(to) = self.to {
-            if !to.contains(event.timestamp) {
-                return false;
-            }
+        if let Some(to) = self.to
+            && !to.contains(event.timestamp)
+        {
+            return false;
         }
         true
     }
@@ -5374,11 +5526,11 @@ fn ledger_events_page_sql(
     let mut clauses = Vec::new();
     let mut values = Vec::new();
 
-    if let Some(before_seq) = before_seq {
-        if let Ok(before_seq) = i64::try_from(before_seq) {
-            clauses.push("seq < ?".to_owned());
-            values.push(Value::Integer(before_seq));
-        }
+    if let Some(before_seq) = before_seq
+        && let Ok(before_seq) = i64::try_from(before_seq)
+    {
+        clauses.push("seq < ?".to_owned());
+        values.push(Value::Integer(before_seq));
     }
     if let Some(scope) = &filters.scope {
         clauses.push("instr(scope, ?) > 0".to_owned());
@@ -6339,7 +6491,7 @@ fn decode_fixed_hex<const N: usize>(raw: &str, what: &str) -> Result<[u8; N], St
 }
 
 fn decode_hex(raw: &str, what: &str) -> Result<Vec<u8>, StoreError> {
-    if raw.len() % 2 != 0 {
+    if !raw.len().is_multiple_of(2) {
         return Err(StoreError::BadBackup(format!(
             "{what} is not valid hex: odd length"
         )));
@@ -6865,5 +7017,164 @@ mod tests {
         drop(store);
         let reopened = Store::open(dir.path()).expect("reopen");
         assert_eq!(reopened.tenants().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn company_groups_libraries_and_revisions_survive_reopen_and_backup_restore() {
+        use chancela_core::{EntityKind, Nipc, TenantId};
+
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let tenant_id = TenantId::new();
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let group = CompanyGroup::new(tenant_id, "Grupo Encosto", now);
+        let library = GroupTemplateLibrary::new(&group, "Atas do grupo", now);
+        let revision_one = GroupTemplateLibraryRevision {
+            group_id: group.id,
+            library_id: library.id,
+            tenant_id,
+            revision: 1,
+            template_ids: vec!["csc-ata-ag/v1".to_owned()],
+            created_at: now,
+            created_by: "store-test".to_owned(),
+        };
+        let revision_two = GroupTemplateLibraryRevision {
+            revision: 2,
+            template_ids: vec!["csc-ata-ag/v1".to_owned(), "csc-ata-ca/v1".to_owned()],
+            ..revision_one.clone()
+        };
+        let entity = Entity::new(
+            "Encosto Estratégico, Lda.",
+            Nipc::unvalidated("GROUP-STORE-1"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        )
+        .in_tenant(tenant_id)
+        .in_group(Some(group.id));
+
+        store
+            .persist(|tx| {
+                tx.upsert_company_group(&group)?;
+                tx.upsert_group_template_library(&library)?;
+                tx.insert_group_template_library_revision(&revision_one)?;
+                tx.insert_group_template_library_revision(&revision_two)?;
+                tx.upsert_entity(&entity)
+            })
+            .expect("persist group graph");
+
+        let loaded = store.load().expect("load group graph");
+        assert_eq!(loaded.company_groups.get(&group.id), Some(&group));
+        assert_eq!(
+            loaded.group_template_libraries.get(&library.id),
+            Some(&library)
+        );
+        assert_eq!(
+            loaded
+                .group_template_library_revisions
+                .get(&(group.id, library.id, 1)),
+            Some(&revision_one)
+        );
+        assert_eq!(
+            loaded
+                .group_template_library_revisions
+                .get(&(group.id, library.id, 2)),
+            Some(&revision_two)
+        );
+        assert_eq!(loaded.entities[&entity.id].group_id, Some(group.id));
+        let snapshot = store
+            .cluster_load_aggregates()
+            .expect("load cluster aggregate snapshot");
+        assert_eq!(snapshot.company_groups.get(&group.id), Some(&group));
+        assert_eq!(
+            snapshot.group_template_libraries.get(&library.id),
+            Some(&library)
+        );
+        assert_eq!(snapshot.group_template_library_revisions.len(), 2);
+
+        let rewrite = store.persist(|tx| tx.insert_group_template_library_revision(&revision_one));
+        assert!(
+            rewrite.is_err(),
+            "an immutable revision cannot be overwritten"
+        );
+        assert_eq!(
+            store
+                .load()
+                .expect("load after refused rewrite")
+                .group_template_library_revisions
+                .len(),
+            2
+        );
+
+        let backup = store.backup(dir.path(), &[]).expect("backup group graph");
+        let mut renamed = group.clone();
+        renamed.name = "Mutated after backup".to_owned();
+        renamed.updated_at = now + time::Duration::seconds(1);
+        store
+            .persist(|tx| tx.upsert_company_group(&renamed))
+            .expect("mutate after backup");
+        let mut ledger = store.load().expect("load ledger").ledger;
+        store
+            .restore(
+                &mut ledger,
+                std::path::Path::new(&backup.path),
+                dir.path(),
+                "store-test",
+                now + time::Duration::seconds(2),
+            )
+            .expect("restore group graph");
+        assert_eq!(
+            store.load().expect("load restored graph").company_groups[&group.id].name,
+            group.name
+        );
+
+        drop(store);
+        let reopened = Store::open(dir.path()).expect("reopen");
+        let loaded = reopened.load().expect("load after reopen");
+        assert_eq!(loaded.company_groups.get(&group.id), Some(&group));
+        assert_eq!(loaded.group_template_library_revisions.len(), 2);
+        assert_eq!(loaded.entities[&entity.id].group_id, Some(group.id));
+    }
+
+    #[test]
+    fn schema_v19_reopen_adds_the_group_tables_and_advances_the_stamp() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open current schema");
+        drop(store);
+
+        let db_path = dir.path().join(DB_FILE);
+        let conn = rusqlite::Connection::open(&db_path).expect("open raw sqlite");
+        conn.execute_batch(
+            "DROP TABLE group_template_library_revisions;
+             DROP TABLE group_template_libraries;
+             DROP TABLE company_groups;
+             UPDATE meta SET value = '19' WHERE key = 'schema_version';",
+        )
+        .expect("downgrade fixture to v19");
+        drop(conn);
+
+        let reopened = Store::open(dir.path()).expect("migrate v19 to v20");
+        let conn = reopened.locked_conn().expect("sqlite connection");
+        let version: String = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("schema stamp");
+        assert_eq!(version, schema::SCHEMA_VERSION.to_string());
+        for table in [
+            "company_groups",
+            "group_template_libraries",
+            "group_template_library_revisions",
+        ] {
+            let present: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table lookup");
+            assert_eq!(present, 1, "{table} was not created by the v20 migration");
+        }
     }
 }
