@@ -155,6 +155,25 @@ pub(crate) fn resolve(database_url: &str) -> Result<ResolvedPgTls, StoreError> {
     })
 }
 
+/// Open a fresh synchronous [`postgres::Client`] for `dsn` with the same fail-closed `verify-full`
+/// TLS posture as the read pool and the advisory-locked writer ([`resolve`]).
+///
+/// wp16 P1's follower change-feed opens its **own dedicated** `LISTEN chancela_ledger` connection on
+/// a blocking OS thread (never the writer / read pool). Before wp27 that connection was the last
+/// production path still handed `postgres::NoTls`, leaving the change-feed transport plaintext even
+/// when the rest of the deployment ran TLS. This routes it through the same [`resolve`] posture:
+/// `CHANCELA_PG_SSLMODE` → the URL's `sslmode=` → `verify-full`, encrypting and server-authenticating
+/// the LISTEN channel and **failing closed** (never falling back to plaintext) on any insecure mode.
+///
+/// Each call resolves and connects afresh so the listener thread's reconnect loop keeps the same TLS
+/// guarantees on every re-establish.
+pub fn connect_listener(dsn: &str) -> Result<postgres::Client, StoreError> {
+    let ResolvedPgTls {
+        config, connector, ..
+    } = resolve(dsn)?;
+    Ok(config.connect(connector)?)
+}
+
 /// Split a libpq DSN into `(sslmode-value, dsn-without-sslmode)`. Handles both the `postgres://…`
 /// URL query form (`?sslmode=…&…`) and the libpq keyword form (`host=… sslmode=…`). Keyword values
 /// may be single-quoted and contain whitespace; non-`sslmode` tokens are preserved as whole

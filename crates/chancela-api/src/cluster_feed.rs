@@ -572,7 +572,12 @@ fn listen_thread(dsn: String, tx: tokio::sync::mpsc::Sender<()>) {
         if tx.is_closed() {
             return;
         }
-        let mut client = match postgres::Client::connect(&dsn, postgres::NoTls) {
+        // Open the dedicated LISTEN connection through the same fail-closed verify-full TLS posture
+        // as the store's read pool and advisory-locked writer (wp27, a4's one production `NoTls`
+        // gap). `connect_listener` resolves `CHANCELA_PG_SSLMODE` → URL `sslmode=` → `verify-full`
+        // and rejects any insecure/plaintext mode, so the change-feed transport is never plaintext
+        // on a TLS deployment; it re-resolves on every reconnect so this loop keeps that guarantee.
+        let mut client = match chancela_store::pg_tls::connect_listener(&dsn) {
             Ok(client) => client,
             Err(e) => {
                 eprintln!(
@@ -827,6 +832,37 @@ mod tests {
         );
         assert_eq!(act_id_from_scope("entity:E1/book:B1"), None);
         assert_eq!(act_id_from_scope("settings"), None);
+    }
+
+    /// wp27 — the follower change-feed's dedicated `LISTEN` connection is opened through
+    /// [`chancela_store::pg_tls::connect_listener`] (the same verify-full posture as the store's read
+    /// pool and advisory-locked writer), **not** `postgres::NoTls`. This guards that regression
+    /// offline: an insecure `sslmode` is rejected *before any connection attempt* (fail-closed), which
+    /// the old plaintext `NoTls` path could never do — it would instead reach the network. No live
+    /// Postgres is touched (`resolve` returns on the mode check), so this stays in the offline suite.
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn follower_listen_connection_fails_closed_on_insecure_sslmode() {
+        // An env override would mask the URL's `sslmode=`; only assert when it is unset (the offline
+        // default). `resolve` consults `CHANCELA_PG_SSLMODE` first, so under an override the URL mode
+        // is not what is exercised.
+        if std::env::var("CHANCELA_PG_SSLMODE").is_ok() {
+            return;
+        }
+        for insecure in ["disable", "prefer", "require"] {
+            let dsn = format!("postgres://u:p@localhost:5432/db?sslmode={insecure}");
+            // `postgres::Client` is not `Debug`, so match rather than `expect_err`.
+            let msg = match chancela_store::pg_tls::connect_listener(&dsn) {
+                Ok(_) => panic!(
+                    "sslmode={insecure} must fail closed, never open a plaintext LISTEN connection"
+                ),
+                Err(e) => e.to_string(),
+            };
+            assert!(
+                msg.contains("tls configuration error") || msg.contains("verify-full"),
+                "expected a fail-closed TLS error for sslmode={insecure}, got: {msg}"
+            );
+        }
     }
 
     // ── Live-Postgres change-feed tests (§2.2/§2.3) ───────────────────────────────────────────────
