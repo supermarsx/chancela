@@ -88,7 +88,12 @@ pub async fn create_entity(
         // the read model (below), so memory and disk never diverge.
         let mut ledger = state.ledger.write().await;
         ledger.append(&actor, &scope, "entity.created", justification, &payload);
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_entity(&entity))?;
+        let entity_for_store = entity.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_entity(&entity_for_store)
+            })
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
     }
 
@@ -156,7 +161,10 @@ pub async fn patch_entity(
         Some(STATUTE_UPDATE_JUSTIFICATION),
         &payload,
     );
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_entity(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_entity(&next_for_store))
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     *entity = next;
 

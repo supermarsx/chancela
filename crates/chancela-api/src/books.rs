@@ -155,10 +155,14 @@ pub async fn create_book(
                 AppState::rollback_ledger_events(&mut ledger, 1);
                 return Err(e);
             }
-            state.persist_write_through(&mut ledger, 2, |tx| {
-                tx.upsert_book(&book)?;
-                tx.upsert_document(&made.stored)
-            })?;
+            let book_for_store = book.clone();
+            let stored_for_store = made.stored.clone();
+            state
+                .persist_write_through(&mut ledger, 2, move |tx| {
+                    tx.upsert_book(&book_for_store)?;
+                    tx.upsert_document(&stored_for_store)
+                })
+                .await?;
             state
                 .documents
                 .write()
@@ -167,7 +171,10 @@ pub async fn create_book(
         }
         None => {
             // Durably persist the genesis event + the new book row (the prior single-event path).
-            state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&book))?;
+            let book_for_store = book.clone();
+            state
+                .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_book(&book_for_store))
+                .await?;
         }
     }
     state.attest_latest(&attestor, &ledger).await;
@@ -313,10 +320,14 @@ pub async fn close_book(
                 AppState::rollback_ledger_events(&mut ledger, 1);
                 return Err(e);
             }
-            state.persist_write_through(&mut ledger, 2, |tx| {
-                tx.upsert_book(&next)?;
-                tx.upsert_document(&made.stored)
-            })?;
+            let next_for_store = next.clone();
+            let stored_for_store = made.stored.clone();
+            state
+                .persist_write_through(&mut ledger, 2, move |tx| {
+                    tx.upsert_book(&next_for_store)?;
+                    tx.upsert_document(&stored_for_store)
+                })
+                .await?;
             state
                 .documents
                 .write()
@@ -324,7 +335,10 @@ pub async fn close_book(
                 .insert(made.stored.act_id, made.stored.clone());
         }
         None => {
-            state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&next))?;
+            let next_for_store = next.clone();
+            state
+                .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_book(&next_for_store))
+                .await?;
         }
     }
     state.attest_latest(&attestor, &ledger).await;
@@ -427,7 +441,10 @@ pub async fn set_legal_hold(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_book(&next_for_store))
+        .await?;
     *book = next;
 
     Ok(Json(LegalHoldView::from(book.legal_hold.as_ref())))
@@ -473,7 +490,10 @@ pub async fn clear_legal_hold(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_book(&next_for_store))
+        .await?;
     *book = next;
 
     Ok(Json(LegalHoldView::from(book.legal_hold.as_ref())))

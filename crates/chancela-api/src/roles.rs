@@ -615,7 +615,9 @@ async fn record_role_event<T: Serialize>(
     let actor_name = actor.resolve("api");
     let mut ledger = state.ledger.write().await;
     ledger.append(&actor_name, scope_id, kind, Some(justification), &bytes);
-    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }

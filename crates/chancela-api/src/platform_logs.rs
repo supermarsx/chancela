@@ -659,7 +659,9 @@ async fn append_forwarded_log_audit_event<T: Serialize>(
         Some(justification),
         &payload_bytes,
     )?;
-    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }

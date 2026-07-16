@@ -827,7 +827,12 @@ pub async fn preserve_paper_book_import(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_paper_book_import(&stored))?;
+    let stored_for_store = stored.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_paper_book_import(&stored_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -967,13 +972,17 @@ pub async fn run_paper_book_import_ocr(
                 AppState::rollback_ledger_events(&mut ledger, 1);
                 return Err(err);
             }
-            state.persist_write_through(&mut ledger, 2, |tx| {
-                tx.update_paper_book_import_ocr_status(
-                    &import.meta.import_id,
-                    StoredPaperBookOcrStatus::Completed,
-                )?;
-                tx.upsert_paper_book_ocr_draft(&draft)
-            })?;
+            let import_id_for_store = import.meta.import_id.clone();
+            let draft_for_store = draft.clone();
+            state
+                .persist_write_through(&mut ledger, 2, move |tx| {
+                    tx.update_paper_book_import_ocr_status(
+                        &import_id_for_store,
+                        StoredPaperBookOcrStatus::Completed,
+                    )?;
+                    tx.upsert_paper_book_ocr_draft(&draft_for_store)
+                })
+                .await?;
             state.attest_latest(&attestor, &ledger).await;
             drop(ledger);
 
@@ -1004,12 +1013,15 @@ pub async fn run_paper_book_import_ocr(
         None,
         &status_payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.update_paper_book_import_ocr_status(
-            &import.meta.import_id,
-            StoredPaperBookOcrStatus::Failed,
-        )
-    })?;
+    let import_id_for_store = import.meta.import_id.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.update_paper_book_import_ocr_status(
+                &import_id_for_store,
+                StoredPaperBookOcrStatus::Failed,
+            )
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -1051,7 +1063,12 @@ pub async fn create_paper_book_import_ocr_draft(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_paper_book_ocr_draft(&draft))?;
+    let draft_for_store = draft.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_paper_book_ocr_draft(&draft_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -1130,16 +1147,22 @@ pub async fn review_paper_book_import_ocr_draft(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.review_paper_book_ocr_draft(
-            &draft_id,
-            status,
-            Some(reviewed_at),
-            Some(&reviewed_by),
-            review_note.as_deref(),
-            superseded_by.as_deref(),
-        )
-    })?;
+    let draft_id_for_store = draft_id.clone();
+    let reviewed_by_for_store = reviewed_by.clone();
+    let review_note_for_store = review_note.clone();
+    let superseded_by_for_store = superseded_by.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.review_paper_book_ocr_draft(
+                &draft_id_for_store,
+                status,
+                Some(reviewed_at),
+                Some(&reviewed_by_for_store),
+                review_note_for_store.as_deref(),
+                superseded_by_for_store.as_deref(),
+            )
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -1245,11 +1268,15 @@ pub async fn create_act_draft_from_accepted_paper_book_ocr_draft(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.upsert_act(&act)?;
-        tx.upsert_paper_book_ocr_conversion_execution_artifact(&artifact)?;
-        Ok(())
-    })?;
+    let act_for_store = act.clone();
+    let artifact_for_store = artifact.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_act(&act_for_store)?;
+            tx.upsert_paper_book_ocr_conversion_execution_artifact(&artifact_for_store)?;
+            Ok(())
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
 
     let response = paper_book_ocr_draft_canonical_draft_response(
@@ -1291,8 +1318,14 @@ pub async fn create_paper_book_ocr_conversion_dossier(
     let dossier = build_ocr_conversion_dossier(&draft, &created_by);
     let mut ledger = state.ledger.write().await;
     let scope = format!("paper-book-import:{}", import.meta.import_id);
+    // wp27-e9: offload the durable transaction onto tokio's blocking pool. The closure clones the
+    // in-memory ledger to build the projected chain INSIDE the tx (so the append commits atomically
+    // with the dossier row); it therefore cannot borrow the `ledger` guard across the
+    // `spawn_blocking` boundary — snapshot it first and move the owned snapshot in. `dossier`,
+    // `created_by`, `scope` are used only inside the closure, so they are moved (not cloned).
+    let ledger_snapshot = (*ledger).clone();
     let (upsert, bound_artifacts, projected_ledger) = store
-        .persist_result(|tx| {
+        .persist_result_blocking_async(move |tx| {
             let upsert = tx.upsert_paper_book_ocr_conversion_dossier(&dossier)?;
             let (bound_artifacts, projected_ledger) = match &upsert {
                 PaperBookOcrConversionDossierUpsert::Inserted(stored) => {
@@ -1307,7 +1340,7 @@ pub async fn create_paper_book_ocr_conversion_dossier(
                             stored,
                             &bound_artifacts,
                         ))?;
-                    let mut projected = (*ledger).clone();
+                    let mut projected = ledger_snapshot;
                     let event = projected.try_append(
                         &created_by,
                         &scope,
@@ -1322,6 +1355,7 @@ pub async fn create_paper_book_ocr_conversion_dossier(
             };
             Ok((upsert, bound_artifacts, projected_ledger))
         })
+        .await
         .map_err(|e| match e {
             StoreError::LedgerAppend(ledger_error) => ApiError::Conflict(format!(
                 "appending paper_book_import.ocr_conversion_dossier_created would break a chain: {ledger_error}"
@@ -1544,9 +1578,12 @@ async fn update_paper_book_import_ocr_status_internal(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.update_paper_book_import_ocr_status(&id, status)
-    })?;
+    let id_for_store = id.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.update_paper_book_import_ocr_status(&id_for_store, status)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 

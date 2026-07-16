@@ -79,7 +79,9 @@ pub async fn create_backup(
             Some("backup created"),
             &payload,
         );
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
     }
 
     Ok(Json(manifest))

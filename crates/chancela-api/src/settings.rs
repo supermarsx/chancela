@@ -2378,7 +2378,9 @@ pub async fn put_settings(
             &payload,
         );
         // Persist the audit event; the settings document itself is durable via `settings.json`.
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
     }
 

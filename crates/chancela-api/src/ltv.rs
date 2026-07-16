@@ -302,7 +302,12 @@ async fn run_ltv_round(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        let stored_for_store = stored.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)
+            })
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
     }
     state
