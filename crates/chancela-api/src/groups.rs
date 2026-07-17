@@ -315,6 +315,24 @@ async fn normalize_template_ids(
             "a template library revision may reference at most {MAX_LIBRARY_TEMPLATE_IDS} templates"
         )));
     }
+    // wp28: the validate+dedupe+existence loop reads `user_template` per reference. Fold the WHOLE
+    // loop into one blocking offload so those durable reads never run on a tokio worker; the
+    // sequential logic (and its first-failure ordering) is preserved verbatim. With no durable
+    // store the existence check is registry-only and hits no backend, so run it inline.
+    match state.store.clone() {
+        Some(store) => {
+            store
+                .read_blocking_async(move |s| normalize_template_ids_inner(raw, Some(s)))
+                .await
+        }
+        None => normalize_template_ids_inner(raw, None),
+    }
+}
+
+fn normalize_template_ids_inner(
+    raw: Vec<String>,
+    store: Option<&chancela_store::Store>,
+) -> Result<Vec<String>, ApiError> {
     let mut seen = HashSet::new();
     let mut ids = Vec::with_capacity(raw.len());
     for id in raw {
@@ -324,7 +342,7 @@ async fn normalize_template_ids(
                 "duplicate template reference `{id}`"
             )));
         }
-        if !crate::documents::template_id_exists(state, &id)? {
+        if !crate::documents::template_id_exists_in(store, &id)? {
             return Err(ApiError::Unprocessable(format!(
                 "unknown template reference `{id}`"
             )));
