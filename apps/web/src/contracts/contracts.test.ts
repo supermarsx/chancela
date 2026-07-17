@@ -70,6 +70,9 @@ import {
   type ApiKeyGrantView,
   type ApiKeyRateLimit,
   type ApiKeyView,
+  type PairingCodeMinted,
+  type PairingDeviceView,
+  type PairingDevices,
   type ActManualSignatureOriginalReference,
   type ActMesa,
   type ActSealMetadata,
@@ -7428,6 +7431,59 @@ describe('contract fixtures parse through the real client', () => {
     expect(rotated.revoked).toBe(false);
     expect(rotated.active).toBe(true);
   });
+
+  it('pairing.json → PairingDevices (GET /v1/pairing/devices)', async () => {
+    stubFetch(fixture('pairing.json'));
+    const response: PairingDevices = await api.listPairingDevices();
+    const parsed = assertExactKeys<PairingDevices>(response, { devices: true }, 'PairingDevices');
+    expect(parsed.devices.length).toBeGreaterThan(0);
+    for (const device of parsed.devices) {
+      const view = assertExactKeys<PairingDeviceView>(
+        device,
+        {
+          device_id: true,
+          label: true,
+          created_at: true,
+          revoked: true,
+          revoked_at: true,
+        },
+        'PairingDeviceView',
+      );
+      expect(view.device_id).toBeTypeOf('string');
+      expect(view.label).toBeTypeOf('string');
+      assertTimestamp(view.created_at, 'PairingDeviceView.created_at');
+      expect(view.revoked).toBeTypeOf('boolean');
+      // `revoked_at` is null while active and an RFC 3339 timestamp once revoked.
+      if (view.revoked_at !== null) {
+        assertTimestamp(view.revoked_at, 'PairingDeviceView.revoked_at');
+        expect(view.revoked).toBe(true);
+      } else {
+        expect(view.revoked).toBe(false);
+      }
+    }
+  });
+
+  it('pairing code mint → PairingCodeMinted (POST /v1/pairing/codes)', async () => {
+    stubFetch(
+      JSON.stringify({
+        code: '9b1f6c0000004000800000000000a1de',
+        expires_at: '2026-07-16T10:20:30Z',
+        expires_in_secs: 300,
+        label: 'Telemóvel da Amélia',
+      }),
+    );
+    const minted: PairingCodeMinted = await api.createPairingCode({ label: 'Telemóvel da Amélia' });
+    const parsed = assertExactKeys<PairingCodeMinted>(
+      minted,
+      { code: true, expires_at: true, expires_in_secs: true, label: true },
+      'PairingCodeMinted',
+    );
+    expect(parsed.code).toBeTypeOf('string');
+    expect(parsed.code.length).toBeGreaterThan(0);
+    assertTimestamp(parsed.expires_at, 'PairingCodeMinted.expires_at');
+    expect(parsed.expires_in_secs).toBeGreaterThan(0);
+    expect(parsed.label).toBe('Telemóvel da Amélia');
+  });
 });
 
 // --- Cross-cutting guards ------------------------------------------------------
@@ -7488,6 +7544,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'api-key.create.json',
       'api-key.revoke.json',
       'api-key.rotate.json',
+      'pairing.json',
       'tsa.status.json',
       'templates.json',
       'template.summary.json',

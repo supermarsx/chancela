@@ -3720,6 +3720,48 @@ export type ApiKeyCreated = ApiKeyView & {
   secret: string;
 };
 
+// --- Companion pairing / device enrollment (wp27-e4 backend, e5 UI) --------------
+//
+// The desktop operator mints a short-lived pairing code (rendered as a QR / deep-link),
+// the phone exchanges it for a companion session, and the resulting device shows up in a
+// per-operator list that can be revoked. The desktop never calls `exchange` (that is the
+// phone's unauthenticated request), so no `exchange` shape lives in this client.
+
+/** Optional body of `POST /v1/pairing/codes`. */
+export interface MintPairingCodeBody {
+  /** Human label for the device that will redeem this code (e.g. "Telemóvel da Amélia"). */
+  label?: string;
+}
+
+/** `POST /v1/pairing/codes` response — the one-time code plus its expiry. */
+export interface PairingCodeMinted {
+  /** The single-use pairing code (rendered as a QR / deep-link by the desktop UI). */
+  code: string;
+  /** RFC 3339 expiry instant. */
+  expires_at: string;
+  /** Seconds until expiry (the code TTL), for a countdown without clock-skew math. */
+  expires_in_secs: number;
+  /** The resolved device label bound to this code. */
+  label: string;
+}
+
+/** One enrolled companion device (`GET /v1/pairing/devices`). */
+export interface PairingDeviceView {
+  device_id: string;
+  label: string;
+  /** RFC 3339 enrollment instant. */
+  created_at: string;
+  /** Whether the device has been revoked. */
+  revoked: boolean;
+  /** RFC 3339 revoke instant, or `null` while active. */
+  revoked_at: string | null;
+}
+
+/** `GET /v1/pairing/devices` response. */
+export interface PairingDevices {
+  devices: PairingDeviceView[];
+}
+
 /** `POST /v1/api-keys/{id}/rotate` response: same one-time-secret shape as create. */
 export type ApiKeyRotated = ApiKeyCreated;
 

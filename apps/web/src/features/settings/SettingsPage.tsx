@@ -83,6 +83,7 @@ import { FuncoesSection } from '../rbac/FuncoesSection';
 import { DelegacoesSection } from '../rbac/DelegacoesSection';
 import { ApiKeysSection } from './ApiKeysSection';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
+import { PairingPanel } from '../pairing/PairingPanel';
 import { PlatformOperationsSection } from './PlatformOperationsSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
@@ -498,6 +499,7 @@ type SettingsSection =
   | 'utilizadores'
   | 'chaves-api'
   | 'fornecedores-assinatura'
+  | 'dispositivos'
   | 'funcoes'
   | 'delegacoes'
   | 'integridade'
@@ -523,6 +525,7 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
     label: 'settings.providerCredentials.cardTitle',
     icon: <Icon.PenNib />,
   },
+  { id: 'dispositivos', label: 'pairing.tab', icon: <Icon.IdCard /> },
   { id: 'funcoes', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
   { id: 'delegacoes', label: 'rbac.delegacoes.tab', icon: <Icon.ArrowRight /> },
   { id: 'integridade', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
@@ -542,6 +545,7 @@ const STANDALONE_SECTIONS: readonly SettingsSection[] = [
   'dados',
   'chaves-api',
   'fornecedores-assinatura',
+  'dispositivos',
 ];
 
 /**
@@ -2132,6 +2136,9 @@ export function SettingsPage() {
 
           {/* Fornecedores de assinatura (wp13) -------------------------------------- */}
           {section === 'fornecedores-assinatura' ? <ProviderCredentialsSection /> : null}
+
+          {/* Dispositivos — companion phone pairing (wp27) -------------------------- */}
+          {section === 'dispositivos' ? <PairingPanel /> : null}
 
           {/* Privacidade e conformidade ------------------------------------------- */}
           {section === 'privacidade' ? <PrivacyComplianceSection /> : null}

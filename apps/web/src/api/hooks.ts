@@ -30,6 +30,7 @@ import type {
   CmdConfirmBody,
   CcSignBody,
   CcBatchSignBody,
+  MintPairingCodeBody,
   LocalPkcs12SignBody,
   OfficialSignatureImportBody,
   XadesSignBody,
@@ -248,6 +249,7 @@ export const keys = {
   permissionCatalog: ['permissions'] as const,
   delegations: ['delegations'] as const,
   apiKeys: ['api-keys'] as const,
+  pairingDevices: ['pairing', 'devices'] as const,
   providerCredentials: ['signature', 'provider-credentials'] as const,
   privacyProcessors: ['privacy', 'processors'] as const,
   privacyDpiaTemplate: ['privacy', 'dpia-template'] as const,
@@ -2550,6 +2552,44 @@ export function useRevokeApiKey() {
     mutationFn: (id: string) => api.revokeApiKey(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.apiKeys });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+// --- Companion pairing / device enrollment (wp27) -------------------------------
+
+/**
+ * The signed-in operator's enrolled companion devices. Pass `refetchInterval` while a
+ * pairing code is outstanding so a device the phone just exchanged for appears without a
+ * manual refresh; omit it (undefined) to poll only on mount/focus once enrollment settles.
+ */
+export function usePairingDevices(options: { refetchInterval?: number | false } = {}) {
+  return useQuery({
+    queryKey: keys.pairingDevices,
+    queryFn: () => api.listPairingDevices(),
+    refetchInterval: options.refetchInterval,
+  });
+}
+
+/**
+ * Mint a single-use pairing code (rendered as a QR / deep-link). The plaintext code is
+ * returned once and lives only in the panel's local state — it is never cached or
+ * persisted, exactly like the API-key secret.
+ */
+export function useCreatePairingCode() {
+  return useMutation({
+    mutationFn: (body: MintPairingCodeBody) => api.createPairingCode(body),
+  });
+}
+
+/** Revoke an enrolled companion device (kills its session); refetch the list and ledger. */
+export function useRevokePairingDevice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (deviceId: string) => api.revokePairingDevice(deviceId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.pairingDevices });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });

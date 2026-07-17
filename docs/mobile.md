@@ -173,6 +173,52 @@ operation can use their unlocked attestation signer. Protect the data directory 
 operator-only ACL; on Unix the registry itself is written with mode `0600`, while Windows inherits
 the data directory's ACL.
 
+### Companion pairing / device enrollment
+
+A phone must obtain a session **without** the operator ever typing their password into a
+remote WebView. A short-lived **pairing-code** handshake sits on top of the session
+machinery (`crates/chancela-api/src/pairing.rs`, schema v22 `pairing_devices` table):
+
+- `POST /v1/pairing/codes` (operator session) mints a **single-use, 5-minute** code and
+  returns `{code, expires_at, expires_in_secs, label}`. Only the code's SHA-256 digest is
+  retained server-side.
+- `POST /v1/pairing/exchange` (**unauthenticated** — the phone calls this) redeems the code
+  for a companion session: `{token, device_id, label, user}`. Unknown, expired, and
+  already-used codes fail closed with one uniform `401`.
+- `GET /v1/pairing/devices` lists the operator's enrolled devices;
+  `DELETE /v1/pairing/devices/{id}` soft-revokes one and kills its companion session.
+
+The desktop UI is **Configurações → Dispositivos** (`apps/web/src/features/pairing/`). The
+operator names the device and mints a code; the panel renders it as a **QR code and a
+copyable deep-link**, counts the 5-minute TTL down, and **re-mints automatically** when a
+code expires while the panel is open. It polls `GET /v1/pairing/devices` so the phone's
+exchange surfaces as a success without a manual refresh, and each enrolled device has a
+revoke action.
+
+**Zero-dependency QR.** The QR matrix is produced by an in-tree encoder
+(`apps/web/src/features/pairing/qr.ts`: byte mode, EC level M, versions 1–10, Reed–Solomon
+over GF(256), the eight data masks, and BCH format/version information) and drawn as inline
+SVG — no QR library is added. Its Galois-field and generator-polynomial correctness is
+pinned against the published ISO/IEC 18004 values in `qr.test.ts`.
+
+**Deep-link contract.** The QR encodes `<origin>/?companion_pair=<code>`, where `<origin>`
+is the resolved API base URL (`resolveApiBaseUrl`) or, when the client is same-origin, the
+desktop's own origin. Loading it on the phone gives the companion both the server base (the
+URL origin) and the code to POST to `/v1/pairing/exchange`. The plaintext code is shown once
+and lives only in local component state — never cached or persisted, mirroring the API-key
+secret panel.
+
+The minted companion session is **identity-only** (no unlocked attestation signing key — the
+phone never authenticated a key), so a paired phone can act as the operator for RBAC-gated
+reads/writes but cannot itself perform an attestation signature. Revoking a device tears the
+session down durably and, in HA, broadcasts a digest-only invalidation to peers.
+
+> As with every remote-companion control, the pairing endpoints are exercised in-repo by
+> unit/contract/vitest tests, but actually enrolling a **remote** phone still requires the
+> operator to expose the instance over HTTPS with an exact CORS origin and protected durable
+> storage (see above). On a same-origin/desktop deployment the deep-link origin is the local
+> server, which a remote phone cannot reach.
+
 ## Honest bottom line
 
 The Android build now passes the **buildable companion** milestone, not the production-store
@@ -180,7 +226,8 @@ milestone. Landed and verified:
 a default-relative, tested base-URL indirection + mobile-detection layer (zero web/desktop
 regression), a phone-width responsive fix for the shared tab bar, a real API-36-targeting
 Android project, a locally inspected arm64 APK, and a configured Linux CI APK gate (its first
-hosted run awaits a push), plus exact-origin CORS and reload-safe authenticated sessions. Still
+hosted run awaits a push), plus exact-origin CORS, reload-safe authenticated sessions, and a
+zero-dependency QR **pairing/device-enrollment** flow (mint → scan → exchange → revoke). Still
 gated: a production upload key/Play App Signing and Play account; macOS/Xcode for iOS; and an
 operator deployment with HTTPS, an exact companion origin, protected durable storage, and Redis
 for HA before any remote companion is exposed.

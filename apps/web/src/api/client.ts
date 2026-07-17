@@ -209,6 +209,9 @@ import type {
   ApiKeyRotated,
   ApiKeyView,
   CreateApiKeyBody,
+  MintPairingCodeBody,
+  PairingCodeMinted,
+  PairingDevices,
   CredentialMode,
   ProviderCredentialsListView,
   ProviderCredentialEntryMutationResponse,
@@ -1475,6 +1478,16 @@ export const api = {
   resetData: (body: ResetDataBody) => post<ResetOutcomeView>('/v1/data/reset', body),
   startOverInstance: (body: StartOverInstanceBody) =>
     post<StartOverInstanceView>('/v1/data/start-over', body),
+
+  // Companion pairing / device enrollment (wp27). The desktop mints a single-use code
+  // (shown as a QR / deep-link), polls the device list until the phone exchanges it, and
+  // can revoke an enrolled device. The phone-side `exchange` is unauthenticated and not
+  // driven from this client.
+  createPairingCode: (body: MintPairingCodeBody = {}) =>
+    post<PairingCodeMinted>('/v1/pairing/codes', body),
+  listPairingDevices: () => get<PairingDevices>('/v1/pairing/devices'),
+  revokePairingDevice: (deviceId: string) =>
+    del<void>(`/v1/pairing/devices/${encodeURIComponent(deviceId)}`),
 
   // Dashboard (§2.7)
   dashboard: () => get<Dashboard>('/v1/dashboard'),
