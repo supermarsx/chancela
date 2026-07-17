@@ -9,7 +9,8 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{
-    Book, BookId, BookState, Entity, EntityId, EntityKind, Nipc, StatuteOverrides,
+    Book, BookId, BookState, DEFAULT_TENANT_ID, Entity, EntityId, EntityKind, Nipc,
+    StatuteOverrides, TenantId,
 };
 use chancela_ledger::{ChainId, Event};
 use serde::Deserialize;
@@ -18,7 +19,9 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{authorizer, require_permission, scope_of_book, scope_of_entity};
+use crate::authz::{
+    authorizer, require_permission, scope_of_book, scope_of_entity, scope_of_tenant,
+};
 use crate::dto::{
     BookStateCountsView, BookView, EntityActivitySummaryView, EntityListItemView,
     EntityRegistrySummaryView, EntityView, LedgerEventView, read_redaction_for_actor,
@@ -52,6 +55,12 @@ pub struct CreateEntity {
     allow_invalid_nipc: bool,
     /// Fiscal year end as `MM-DD`, if recorded for the entity.
     fiscal_year_end: Option<String>,
+    /// The tenant to create the entity in (wp27 tenancy P4). Absent (the common single-tenant case)
+    /// the singleton [`DEFAULT_TENANT_ID`] is used, so single-tenant callers never name a tenant and
+    /// behaviour is byte-identical to before tenancy. When present it must name a known tenant the
+    /// caller is authorized to create in (see [`create_entity`]).
+    #[serde(default)]
+    tenant_id: Option<Uuid>,
 }
 
 /// Create an entity, record an `entity.created` ledger event, and return it with `201`.
@@ -61,8 +70,26 @@ pub async fn create_entity(
     attestor: CurrentAttestor,
     Json(req): Json<CreateEntity>,
 ) -> Result<(StatusCode, Json<EntityView>), ApiError> {
-    // RBAC (t64-E3): creating an entity is a Global op (no entity exists yet to scope to).
-    require_permission(&state, &actor, Permission::EntityCreate, Scope::Global).await?;
+    // Tenancy (wp27-e1): the entity is created **inside a tenant**. Absent an explicit `tenant_id`
+    // the singleton default tenant is used, so single-tenant deployments stay byte-identical.
+    // Authorization narrows to that tenant (it was `Global`): a Global holder still covers every
+    // tenant, while a tenant-scoped holder may only create within its own tenant — the cross-tenant
+    // write guard. The verb stays `EntityCreate`; only the tenant CRUD verbs change under e2.
+    let tenant_id = req.tenant_id.map_or(DEFAULT_TENANT_ID, TenantId);
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityCreate,
+        scope_of_tenant(tenant_id),
+    )
+    .await?;
+    // An explicitly-named tenant must exist — a `404` **after** the authz check above (so a caller
+    // outside the tenant already got a non-enumerating `403` and never learns whether it exists). The
+    // implicit default tenant is always present, so a body without `tenant_id` skips this check and
+    // never regresses the single-tenant path (where `AppState` may hold no tenant directory yet).
+    if req.tenant_id.is_some() && !state.tenants.read().await.contains_key(&tenant_id) {
+        return Err(ApiError::NotFound);
+    }
     // A parseable NIPC is always stored validated; the override only rescues a parse failure.
     let nipc = match Nipc::parse(&req.nipc) {
         Ok(nipc) => nipc,
@@ -71,7 +98,7 @@ pub async fn create_entity(
     };
     let overridden = !nipc.is_validated();
     let fiscal_year_end = normalize_fiscal_year_end(req.fiscal_year_end)?;
-    let mut entity = Entity::new(req.name, nipc, req.seat, req.kind);
+    let mut entity = Entity::new(req.name, nipc, req.seat, req.kind).in_tenant(tenant_id);
     entity.fiscal_year_end = fiscal_year_end;
 
     // Digest the created entity into the audit chain before it becomes queryable, so the
@@ -81,7 +108,11 @@ pub async fn create_entity(
     let payload = serde_json::to_vec(&entity)?;
     let justification = overridden.then_some(NIPC_OVERRIDE_JUSTIFICATION);
     let actor = actor.resolve("api");
-    let scope = entity.id.to_string();
+    // Emit the entity genesis on its `tenant:{t}/entity:{id}` scope so the write joins BOTH its tenant
+    // chain (ChainId::Tenant — previously missing on entity mutations, a1 Q1) and its company chain.
+    // The `company:`-equivalent `entity:` segment keeps `entity.created` the genesis of the company
+    // chain (unchanged), while the added `tenant:` segment additively links the per-tenant chain.
+    let scope = format!("tenant:{tenant_id}/entity:{}", entity.id);
     {
         // Append the event and, when persistent, durably write the event + the new entity row in
         // one transaction. A store failure rolls back the append and returns 500 without mutating
