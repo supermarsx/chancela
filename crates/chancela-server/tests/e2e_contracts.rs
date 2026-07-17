@@ -86,6 +86,19 @@ async fn live_responses_match_the_canonical_contracts() {
         .expect("entity tenant id")
         .to_owned();
 
+    // The top-level tenant collection (tenant.json): create a tenant through the collection endpoint
+    // and shape-match the wire response. (wp27-e1: the `/v1/tenants` collection, distinct from the
+    // pre-existing `/v1/tenants/{tenant_id}/...` sub-resources.)
+    let (status, tenant) = h
+        .post_json_auth(
+            "/v1/tenants",
+            json!({ "name": "Encosto Estratégico Holding" }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 201, "create tenant: {tenant}");
+    assert_shape("tenant", &tenant, &contract("tenant.json"));
+
     // Tenant-local company group + its first named, versioned shared-template library.
     let groups_path = format!("/v1/tenants/{tenant_id}/groups");
     let (status, group) = h

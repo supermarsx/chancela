@@ -3763,6 +3763,28 @@ describe('contract fixtures parse through the real client', () => {
     if (entity.statute !== null) expect(entity.statute).toBeTypeOf('object');
   });
 
+  it('tenant.json → Tenant (POST/GET /v1/tenants) (wp27-e1 top-level collection)', () => {
+    // The tenant collection wire shape: the durable tenant (id + name) plus the computed
+    // entity_count. Parsed straight from the fixture bytes — the collection has no dedicated client
+    // method yet (added with the tenant UI), so this guards the shape the client will consume.
+    const tenant = JSON.parse(fixture('tenant.json')) as {
+      id: string;
+      name: string;
+      entity_count: number;
+    };
+    assertExactKeys<{ id: string; name: string; entity_count: number }>(
+      tenant,
+      { id: true, name: true, entity_count: true },
+      'Tenant',
+    );
+    expect(tenant.id, 'Tenant.id should be a non-empty uuid').not.toHaveLength(0);
+    expect(tenant.name, 'Tenant.name should be non-empty').not.toHaveLength(0);
+    expect(typeof tenant.entity_count, 'Tenant.entity_count should be a number').toBe('number');
+    expect(tenant.entity_count, 'Tenant.entity_count should be non-negative').toBeGreaterThanOrEqual(
+      0,
+    );
+  });
+
   it('book.json → BookView (POST/GET /v1/books)', async () => {
     stubFetch(fixture('book.json'));
     const book: BookView = await api.getBook('3a2b1c00-0000-4000-8000-000000000002');
@@ -7364,6 +7386,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
     // The canonical fixtures the README inventories.
     for (const expected of [
       'entity.json',
+      'tenant.json',
       'book.json',
       'act.sealed.json',
       'ledger.events.json',
