@@ -228,11 +228,18 @@ pub(crate) fn registry() -> &'static Registry {
 
 /// Whether `id` names a currently available built-in or durable user-authored template. Group
 /// library revisions validate every reference through this shared source of truth before append.
-pub(crate) fn template_id_exists(state: &AppState, id: &str) -> Result<bool, ApiError> {
+///
+/// The optional `store` handle is read **synchronously**, so async callers must run this inside a
+/// blocking offload (e.g. `read_blocking_async`) to keep the durable `user_template` read off the
+/// tokio worker (wp28). Passing `None` restricts the check to the built-in registry.
+pub(crate) fn template_id_exists_in(
+    store: Option<&chancela_store::Store>,
+    id: &str,
+) -> Result<bool, ApiError> {
     if registry().get(id).is_some() {
         return Ok(true);
     }
-    let Some(store) = &state.store else {
+    let Some(store) = store else {
         return Ok(false);
     };
     store
@@ -1810,20 +1817,29 @@ pub async fn list_imported_documents(
     let Some(store) = &state.store else {
         return Ok(Json(Vec::new()));
     };
+    // wp28: fold the metadata read and its per-row review-history reads into ONE blocking offload
+    // so the durable postgres queries never run on a tokio worker.
     let rows = store
-        .imported_documents(act_id)
-        .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?;
-    let mut views = Vec::with_capacity(rows.len());
-    for meta in &rows {
-        let history = store
-            .imported_document_review_history(&meta.id)
-            .map_err(|e| {
-                ApiError::Internal(format!(
-                    "imported document review history store read failed: {e}"
-                ))
+        .read_blocking_async(move |s| -> Result<_, ApiError> {
+            let metas = s.imported_documents(act_id).map_err(|e| {
+                ApiError::Internal(format!("imported document store read failed: {e}"))
             })?;
+            let mut out = Vec::with_capacity(metas.len());
+            for meta in metas {
+                let history = s.imported_document_review_history(&meta.id).map_err(|e| {
+                    ApiError::Internal(format!(
+                        "imported document review history store read failed: {e}"
+                    ))
+                })?;
+                out.push((meta, history));
+            }
+            Ok(out)
+        })
+        .await?;
+    let mut views = Vec::with_capacity(rows.len());
+    for (meta, history) in &rows {
         views.push(imported_document_view_with_redaction(
-            meta, &history, redaction,
+            meta, history, redaction,
         ));
     }
     Ok(Json(views))
@@ -1837,7 +1853,7 @@ pub async fn get_imported_document(
 ) -> Result<Json<ImportedDocumentView>, ApiError> {
     let doc = load_imported_document_for_actor(&state, &actor, &id).await?;
     let redaction = read_redaction_for_actor(&state, &actor).await?;
-    let history = imported_document_review_history_for_state(&state, &doc.meta.id)?;
+    let history = imported_document_review_history_for_state(&state, &doc.meta.id).await?;
     Ok(Json(imported_document_view_with_redaction(
         &doc.meta, &history, redaction,
     )))
@@ -1868,10 +1884,14 @@ pub async fn review_imported_document(
             "imported document review requires on-disk persistence".to_owned(),
         ));
     };
-    let current = store
-        .imported_document(&id)
-        .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
-        .ok_or(ApiError::NotFound)?;
+    let current = {
+        let id = id.clone();
+        store
+            .read_blocking_async(move |s| s.imported_document(&id))
+            .await
+            .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
+            .ok_or(ApiError::NotFound)?
+    };
     let scope = match current.meta.act_id {
         Some(act_id) => scope_of_act(&state, act_id).await,
         None => Scope::Global,
@@ -1916,15 +1936,23 @@ pub async fn review_imported_document(
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
-    let reviewed = store
-        .imported_document(&id)
-        .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
-        .ok_or(ApiError::NotFound)?;
-    let history = store.imported_document_review_history(&id).map_err(|e| {
-        ApiError::Internal(format!(
-            "imported document review history store read failed: {e}"
-        ))
-    })?;
+    // wp28: fold the read-back of the updated row and its review history into ONE blocking offload.
+    let (reviewed, history) = store
+        .read_blocking_async(move |s| -> Result<_, ApiError> {
+            let reviewed = s
+                .imported_document(&id)
+                .map_err(|e| {
+                    ApiError::Internal(format!("imported document store read failed: {e}"))
+                })?
+                .ok_or(ApiError::NotFound)?;
+            let history = s.imported_document_review_history(&id).map_err(|e| {
+                ApiError::Internal(format!(
+                    "imported document review history store read failed: {e}"
+                ))
+            })?;
+            Ok((reviewed, history))
+        })
+        .await?;
     Ok(Json(imported_document_view(&reviewed.meta, &history)))
 }
 
@@ -1960,7 +1988,8 @@ async fn load_imported_document_for_actor(
         return Err(ApiError::NotFound);
     };
     let Some(doc) = store
-        .imported_document(&id)
+        .read_blocking_async(move |s| s.imported_document(&id))
+        .await
         .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
     else {
         require_permission(state, actor, Permission::ActRead, Scope::Global).await?;
@@ -2072,15 +2101,17 @@ fn imported_document_view_with_redaction(
     view
 }
 
-fn imported_document_review_history_for_state(
+async fn imported_document_review_history_for_state(
     state: &AppState,
     imported_document_id: &str,
 ) -> Result<Vec<StoredImportedDocumentReviewHistoryEntry>, ApiError> {
-    let Some(store) = &state.store else {
+    let Some(store) = state.store.clone() else {
         return Ok(Vec::new());
     };
+    let imported_document_id = imported_document_id.to_owned();
     store
-        .imported_document_review_history(imported_document_id)
+        .read_blocking_async(move |s| s.imported_document_review_history(&imported_document_id))
+        .await
         .map_err(|e| {
             ApiError::Internal(format!(
                 "imported document review history store read failed: {e}"
@@ -4809,9 +4840,10 @@ async fn load_documents_for_act(
     state: &AppState,
     act_id: ActId,
 ) -> Result<Vec<StoredDocument>, ApiError> {
-    if let Some(store) = &state.store {
+    if let Some(store) = state.store.clone() {
         return store
-            .documents_for_act(act_id)
+            .read_blocking_async(move |s| s.documents_for_act(act_id))
+            .await
             .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")));
     }
 
@@ -4928,7 +4960,7 @@ pub async fn record_generated_document_dispatch_evidence(
         context.profile,
     )?;
     if let Some(imported_document_id) = &request.imported_document_id {
-        validate_dispatch_evidence_import(store, imported_document_id, context.doc.act_id)?;
+        validate_dispatch_evidence_import(store, imported_document_id, context.doc.act_id).await?;
     }
     let resolved_actor = actor.resolve(&request.actor);
     let idempotency_key =
@@ -4963,12 +4995,20 @@ pub async fn record_generated_document_dispatch_evidence(
     );
 
     let mut ledger = state.ledger.write().await;
-    if let Some(existing) = store
-        .generated_document_dispatch_evidence_by_key(&context.doc.id, &evidence.idempotency_key)
-        .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?
-    {
+    let existing = {
+        let doc_id = context.doc.id.clone();
+        let idempotency_key = evidence.idempotency_key.clone();
+        store
+            .read_blocking_async(move |s| {
+                s.generated_document_dispatch_evidence_by_key(&doc_id, &idempotency_key)
+            })
+            .await
+            .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?
+    };
+    if let Some(existing) = existing {
         drop(ledger);
-        return generated_dispatch_evidence_response(StatusCode::OK, &context, store, &existing);
+        return generated_dispatch_evidence_response(StatusCode::OK, &context, store, &existing)
+            .await;
     }
     crate::try_append_event(
         &mut ledger,
@@ -5012,17 +5052,19 @@ pub async fn record_generated_document_dispatch_evidence(
     let stored_evidence = upsert.evidence().clone();
     drop(ledger);
 
-    generated_dispatch_evidence_response(response_status, &context, store, &stored_evidence)
+    generated_dispatch_evidence_response(response_status, &context, store, &stored_evidence).await
 }
 
-fn generated_dispatch_evidence_response(
+async fn generated_dispatch_evidence_response(
     status_code: StatusCode,
     context: &GeneratedDispatchContext,
     store: &chancela_store::Store,
     evidence: &StoredGeneratedDocumentDispatchEvidence,
 ) -> Result<Response, ApiError> {
+    let doc_id = context.doc.id.clone();
     let rows = store
-        .generated_document_dispatch_evidence(&context.doc.id)
+        .read_blocking_async(move |s| s.generated_document_dispatch_evidence(&doc_id))
+        .await
         .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?;
     let status = dispatch_evidence_status_from_rows(context, &rows);
     Ok((
@@ -5048,10 +5090,16 @@ pub async fn get_generated_document_dispatch_evidence(
     let scope = scope_of_act(&state, doc.act_id).await;
     require_permission(&state, &actor, Permission::ActRead, scope).await?;
     let context = generated_dispatch_context_for_doc(&state, doc).await?;
-    let rows = match &state.store {
-        Some(store) => store
-            .generated_document_dispatch_evidence(&context.doc.id)
-            .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?,
+    let rows = match state.store.clone() {
+        Some(store) => {
+            let doc_id = context.doc.id.clone();
+            store
+                .read_blocking_async(move |s| s.generated_document_dispatch_evidence(&doc_id))
+                .await
+                .map_err(|e| {
+                    ApiError::Internal(format!("dispatch evidence store read failed: {e}"))
+                })?
+        }
         None => Vec::new(),
     };
     Ok(Json(GeneratedDocumentDispatchEvidenceListView {
@@ -5184,10 +5232,16 @@ async fn dispatch_evidence_status_for_generated_document(
     let Some(context) = maybe_generated_dispatch_context_for_doc(state, doc.clone()).await? else {
         return Ok(None);
     };
-    let rows = match &state.store {
-        Some(store) => store
-            .generated_document_dispatch_evidence(&doc.id)
-            .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?,
+    let rows = match state.store.clone() {
+        Some(store) => {
+            let doc_id = doc.id.clone();
+            store
+                .read_blocking_async(move |s| s.generated_document_dispatch_evidence(&doc_id))
+                .await
+                .map_err(|e| {
+                    ApiError::Internal(format!("dispatch evidence store read failed: {e}"))
+                })?
+        }
         None => Vec::new(),
     };
     Ok(Some(dispatch_evidence_status_from_rows(&context, &rows)))
@@ -5198,22 +5252,45 @@ pub(crate) async fn generated_dispatch_evidence_preservation_indexes_for_act(
     act_id: ActId,
 ) -> Result<Vec<GeneratedDispatchEvidencePreservationIndex>, ApiError> {
     let docs = load_documents_for_act(state, act_id).await?;
-    let mut indexes = Vec::new();
+    // Build the per-document contexts first (async), then fold ALL dispatch-evidence reads into ONE
+    // blocking offload (wp28) instead of a durable postgres read per loop iteration on the worker.
+    let mut contexts = Vec::new();
     for doc in docs
         .into_iter()
         .filter(|doc| generated_dispatch_evidence_profile_for_template(&doc.template_id).is_some())
     {
-        let Some(context) = maybe_generated_dispatch_context_for_doc(state, doc).await? else {
-            continue;
-        };
-        let rows = match &state.store {
-            Some(store) => store
-                .generated_document_dispatch_evidence(&context.doc.id)
-                .map_err(|e| {
-                    ApiError::Internal(format!("dispatch evidence store read failed: {e}"))
-                })?,
-            None => Vec::new(),
-        };
+        if let Some(context) = maybe_generated_dispatch_context_for_doc(state, doc).await? {
+            contexts.push(context);
+        }
+    }
+    let rows_by_doc = match state.store.clone() {
+        Some(store) => {
+            let doc_ids: Vec<String> = contexts.iter().map(|c| c.doc.id.clone()).collect();
+            store
+                .read_blocking_async(
+                    move |s| -> Result<
+                        Vec<Vec<StoredGeneratedDocumentDispatchEvidence>>,
+                        ApiError,
+                    > {
+                        let mut out = Vec::with_capacity(doc_ids.len());
+                        for doc_id in &doc_ids {
+                            out.push(s.generated_document_dispatch_evidence(doc_id).map_err(
+                                |e| {
+                                    ApiError::Internal(format!(
+                                        "dispatch evidence store read failed: {e}"
+                                    ))
+                                },
+                            )?);
+                        }
+                        Ok(out)
+                    },
+                )
+                .await?
+        }
+        None => vec![Vec::new(); contexts.len()],
+    };
+    let mut indexes = Vec::new();
+    for (context, rows) in contexts.into_iter().zip(rows_by_doc) {
         indexes.push(generated_dispatch_evidence_preservation_index(
             &context, &rows,
         ));
@@ -5409,27 +5486,34 @@ fn normalize_generated_dispatch_recipients(
     Ok(selected)
 }
 
-fn validate_dispatch_evidence_import(
+async fn validate_dispatch_evidence_import(
     store: &chancela_store::Store,
     imported_document_id: &str,
     act_id: ActId,
 ) -> Result<(), ApiError> {
-    let imported = store
-        .imported_document(imported_document_id)
-        .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
-        .ok_or_else(|| {
-            ApiError::Unprocessable(
-                "imported_document_id must reference an existing non-canonical imported document"
-                    .to_owned(),
-            )
-        })?;
-    if imported.meta.act_id != Some(act_id) {
-        return Err(ApiError::Unprocessable(
-            "imported_document_id must be linked to the same act as the generated document"
-                .to_owned(),
-        ));
-    }
-    Ok(())
+    let imported_document_id = imported_document_id.to_owned();
+    store
+        .read_blocking_async(move |s| -> Result<(), ApiError> {
+            let imported = s
+                .imported_document(&imported_document_id)
+                .map_err(|e| {
+                    ApiError::Internal(format!("imported document store read failed: {e}"))
+                })?
+                .ok_or_else(|| {
+                    ApiError::Unprocessable(
+                        "imported_document_id must reference an existing non-canonical imported document"
+                            .to_owned(),
+                    )
+                })?;
+            if imported.meta.act_id != Some(act_id) {
+                return Err(ApiError::Unprocessable(
+                    "imported_document_id must be linked to the same act as the generated document"
+                        .to_owned(),
+                ));
+            }
+            Ok(())
+        })
+        .await
 }
 
 fn generated_dispatch_evidence_idempotency_key(
@@ -5575,9 +5659,11 @@ async fn load_document_by_id(
     state: &AppState,
     document_id: &str,
 ) -> Result<Option<StoredDocument>, ApiError> {
-    if let Some(store) = &state.store {
+    if let Some(store) = state.store.clone() {
+        let document_id = document_id.to_owned();
         return store
-            .document_by_id(document_id)
+            .read_blocking_async(move |s| s.document_by_id(&document_id))
+            .await
             .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")));
     }
 
@@ -6717,9 +6803,10 @@ pub(crate) async fn load_document(
 ) -> Result<Option<StoredDocument>, ApiError> {
     let is_real_act = state.acts.read().await.contains_key(&act_id);
     if is_real_act {
-        if let Some(store) = &state.store {
+        if let Some(store) = state.store.clone() {
             let docs = store
-                .documents_for_act(act_id)
+                .read_blocking_async(move |s| s.documents_for_act(act_id))
+                .await
                 .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")))?;
             return Ok(first_ata_document(docs));
         }
@@ -6742,9 +6829,10 @@ pub(crate) async fn load_document(
     {
         return Ok(Some(doc));
     }
-    if let Some(store) = &state.store {
+    if let Some(store) = state.store.clone() {
         return store
-            .document_for_act(act_id)
+            .read_blocking_async(move |s| s.document_for_act(act_id))
+            .await
             .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")));
     }
     Ok(None)
@@ -7442,9 +7530,10 @@ async fn load_signed_document_for_bundle(
     if let Some(doc) = state.signed_documents.read().await.get(&act_id).cloned() {
         return Ok(Some(doc));
     }
-    if let Some(store) = &state.store {
+    if let Some(store) = state.store.clone() {
         return store
-            .signed_document_for_act(act_id)
+            .read_blocking_async(move |s| s.signed_document_for_act(act_id))
+            .await
             .map_err(|e| ApiError::Internal(format!("signed document store read failed: {e}")));
     }
     Ok(None)
@@ -7625,9 +7714,10 @@ pub async fn list_templates(
     // User-authored templates (schema v17). Parse each stored row through the same authoring guard
     // the mutations use; a row that no longer validates is skipped + logged, never 500-ing the list.
     let mut user_summaries: Vec<TemplateSummary> = Vec::new();
-    if let Some(store) = &state.store {
+    if let Some(store) = state.store.clone() {
         let rows = store
-            .user_templates()
+            .read_blocking_async(move |s| s.user_templates())
+            .await
             .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?;
         for (id, json) in rows {
             match validate_user_template(&json) {
@@ -7727,17 +7817,16 @@ fn user_template_body_str(body: &[u8]) -> Result<&str, ApiError> {
 /// Whether `id` is already taken — by a built-in catalog id or an existing user-template row. The
 /// reserved `user-` id namespace means a valid user id can never collide with a built-in, but the
 /// built-in check is kept as defence-in-depth so an id can never shadow the read-only catalog.
-fn user_template_id_taken(state: &AppState, id: &str) -> Result<bool, ApiError> {
+async fn user_template_id_taken(state: &AppState, id: &str) -> Result<bool, ApiError> {
     if registry().get(id).is_some() {
         return Ok(true);
     }
-    if let Some(store) = &state.store {
-        let taken = store
-            .user_templates()
-            .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
-            .iter()
-            .any(|(existing, _)| existing == id);
-        if taken {
+    if let Some(store) = state.store.clone() {
+        let rows = store
+            .read_blocking_async(move |s| s.user_templates())
+            .await
+            .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?;
+        if rows.iter().any(|(existing, _)| existing == id) {
             return Ok(true);
         }
     }
@@ -7787,7 +7876,7 @@ async fn persist_created_user_template(
         }
     };
     let id = spec.id.clone();
-    if user_template_id_taken(state, &id)? {
+    if user_template_id_taken(state, &id).await? {
         return Ok((StatusCode::CONFLICT, Json(template_conflict_body(&id))).into_response());
     }
     let stored_json = json.to_owned();
@@ -7849,11 +7938,15 @@ pub async fn replace_template(
     if registry().get(&id).is_some() {
         return Err(ApiError::NotFound);
     }
-    let store = state.store.as_ref().expect("store present");
-    if store
-        .user_template(&id)
-        .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
-        .is_none()
+    let store = state.store.clone().expect("store present");
+    if {
+        let id = id.clone();
+        store
+            .read_blocking_async(move |s| s.user_template(&id))
+            .await
+            .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
+    }
+    .is_none()
     {
         return Err(ApiError::NotFound);
     }
@@ -7926,11 +8019,15 @@ pub async fn delete_template(
     if registry().get(&id).is_some() {
         return Err(ApiError::NotFound);
     }
-    let store = state.store.as_ref().expect("store present");
-    if store
-        .user_template(&id)
-        .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
-        .is_none()
+    let store = state.store.clone().expect("store present");
+    if {
+        let id = id.clone();
+        store
+            .read_blocking_async(move |s| s.user_template(&id))
+            .await
+            .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
+    }
+    .is_none()
     {
         return Err(ApiError::NotFound);
     }
@@ -7971,10 +8068,16 @@ pub async fn export_template(
     let json = if let Some(spec) = registry().get(&id) {
         serde_json::to_string_pretty(spec)?
     } else {
-        let stored = match &state.store {
-            Some(store) => store
-                .user_template(&id)
-                .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?,
+        let stored = match state.store.clone() {
+            Some(store) => {
+                let id = id.clone();
+                store
+                    .read_blocking_async(move |s| s.user_template(&id))
+                    .await
+                    .map_err(|e| {
+                        ApiError::Internal(format!("user template store read failed: {e}"))
+                    })?
+            }
             None => None,
         };
         stored.ok_or(ApiError::NotFound)?
@@ -7997,7 +8100,7 @@ pub async fn export_template(
 
 /// Run the import dry-run preflight: validate + uniqueness only, no persistence. Always `200` with
 /// a `{ok, error?}` verdict.
-fn template_import_dry_run(state: &AppState, body: &[u8]) -> Result<Response, ApiError> {
+async fn template_import_dry_run(state: &AppState, body: &[u8]) -> Result<Response, ApiError> {
     let verdict = match std::str::from_utf8(body) {
         Err(_) => TemplateImportVerdict {
             ok: false,
@@ -8013,7 +8116,7 @@ fn template_import_dry_run(state: &AppState, body: &[u8]) -> Result<Response, Ap
                 error: Some(template_validation_error_body(&err)),
             },
             Ok(spec) => {
-                if user_template_id_taken(state, &spec.id)? {
+                if user_template_id_taken(state, &spec.id).await? {
                     TemplateImportVerdict {
                         ok: false,
                         error: Some(template_conflict_body(&spec.id)),
@@ -8043,7 +8146,7 @@ pub async fn import_template(
     require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
     let actor_name = actor.resolve("api");
     if q.dry_run {
-        return template_import_dry_run(&state, &body);
+        return template_import_dry_run(&state, &body).await;
     }
     persist_created_user_template(&state, &attestor, &actor_name, &body).await
 }
