@@ -1507,8 +1507,10 @@ async fn load_owner_documents(
     owner: ActId,
 ) -> Result<Vec<StoredDocument>, ApiError> {
     if let Some(store) = &state.store {
+        // wp28: offload the sync postgres read onto the blocking pool.
         return store
-            .documents_for_act(owner)
+            .read_blocking_async(move |s| s.documents_for_act(owner))
+            .await
             .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")));
     }
     Ok(state
@@ -1623,8 +1625,10 @@ async fn load_signed_document(
         return Ok(Some(doc));
     }
     if let Some(store) = &state.store {
+        // wp28: offload the sync postgres read onto the blocking pool.
         return store
-            .signed_document_for_act(act_id)
+            .read_blocking_async(move |s| s.signed_document_for_act(act_id))
+            .await
             .map_err(|e| ApiError::Internal(format!("signed document store read failed: {e}")));
     }
     Ok(None)

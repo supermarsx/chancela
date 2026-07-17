@@ -80,11 +80,18 @@ pub async fn export_book(
         .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
 
     let outcome = {
-        let mut ledger = state.ledger.write().await;
+        // wp28: the export drives the sync store backend (and fs writes); offload it onto the
+        // blocking pool. An owned ledger write guard is moved into the task and dropped there, so
+        // any postgres Client Drop stays off the async worker.
+        let mut ledger = state.ledger.clone().write_owned().await;
         let at = OffsetDateTime::now_utc();
-        store
-            .export_book(&mut ledger, BookId(id), &data_dir, &actor, at)
-            .map_err(map_store_error)?
+        let book_id = BookId(id);
+        tokio::task::spawn_blocking(move || {
+            store.export_book(&mut ledger, book_id, &data_dir, &actor, at)
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("book export worker failed: {e}")))?
+        .map_err(map_store_error)?
     };
 
     let filename = format!("book-{id}.zip");
@@ -502,7 +509,9 @@ pub async fn start_over_book(
     // entities → books → ledger (canonical order; entities read for the termo snapshot).
     let entities = state.entities.read().await;
     let mut books = state.books.write().await;
-    let mut ledger = state.ledger.write().await;
+    // wp28: an OWNED ledger write guard so it can be moved into the blocking-pool task below and
+    // handed back, keeping the sync store backend (and any postgres Client Drop) off the worker.
+    let ledger = state.ledger.clone().write_owned().await;
 
     let old_book = books.get(&old_book_id).ok_or(ApiError::NotFound)?;
     let entity = entities
@@ -510,27 +519,45 @@ pub async fn start_over_book(
         .ok_or(ApiError::NotFound)?;
 
     let at = OffsetDateTime::now_utc();
-    // 1. Archive-then-fresh: export (retained + ledger.exported) + ledger.reinitialized + a fresh
-    //    successor SHELL (Created state, new id) persisted by the store.
-    let reinit = store
-        .start_over_book(&mut ledger, old_book_id, &reason, &actor, at, &data_dir)
-        .map_err(map_store_error)?;
-    let new_book_id = reinit
-        .new_book_id
-        .as_deref()
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .map(BookId)
-        .ok_or_else(|| ApiError::Internal("start-over did not return a successor id".to_owned()))?;
-
-    // 2. Materialize the successor shell from the store and OPEN it (book.opened genesis).
-    let mut new_book = store
-        .load()
-        .map_err(|e| ApiError::Internal(format!("failed to load the successor book: {e}")))?
-        .books
-        .remove(&new_book_id)
-        .ok_or_else(|| {
-            ApiError::Internal("successor book shell not found in the store".to_owned())
-        })?;
+    // Steps 1 & 2 both drive the sync store backend; fold them into ONE blocking-pool task (wp28).
+    // The owned ledger guard is moved in and returned so the rest of the handler keeps mutating the
+    // same in-memory ledger. `actor` is still needed afterwards, so a clone crosses the boundary.
+    //   1. Archive-then-fresh: export (retained + ledger.exported) + ledger.reinitialized + a fresh
+    //      successor SHELL (Created state, new id) persisted by the store.
+    //   2. Materialize the successor shell from the store and OPEN it (book.opened genesis).
+    let actor_for_store = actor.clone();
+    let (mut ledger, reinit, mut new_book) = tokio::task::spawn_blocking(move || {
+        let mut ledger = ledger;
+        let reinit = store
+            .start_over_book(
+                &mut ledger,
+                old_book_id,
+                &reason,
+                &actor_for_store,
+                at,
+                &data_dir,
+            )
+            .map_err(map_store_error)?;
+        let new_book_id = reinit
+            .new_book_id
+            .as_deref()
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .map(BookId)
+            .ok_or_else(|| {
+                ApiError::Internal("start-over did not return a successor id".to_owned())
+            })?;
+        let new_book = store
+            .load()
+            .map_err(|e| ApiError::Internal(format!("failed to load the successor book: {e}")))?
+            .books
+            .remove(&new_book_id)
+            .ok_or_else(|| {
+                ApiError::Internal("successor book shell not found in the store".to_owned())
+            })?;
+        Ok::<_, ApiError>((ledger, reinit, new_book))
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("start-over worker failed: {e}")))??;
 
     let termo = TermoDeAbertura {
         entity_name: entity.name.clone(),
