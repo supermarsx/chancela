@@ -316,7 +316,13 @@ fn dashboard_open_books(
                 .filter(|act| act.book_id == book.id)
                 .collect::<Vec<_>>();
             let total_acts = book_acts.len();
-            let open_acts = book_acts.iter().filter(|act| act.is_mutable()).count();
+            // "Open/in-flight" acts are all acts that have not reached a finalized
+            // state (Sealed or Archived). This deliberately includes `Signing`, which
+            // is no longer `is_mutable()` but is still in flight and not finalized.
+            let open_acts = book_acts
+                .iter()
+                .filter(|act| !matches!(act.state, ActState::Sealed | ActState::Archived))
+                .count();
             DashboardOpenBook {
                 book_id: book.id.to_string(),
                 entity_id: book.entity_id.to_string(),
