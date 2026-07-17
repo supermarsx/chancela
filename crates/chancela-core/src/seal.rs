@@ -222,7 +222,19 @@ pub fn open_and_seal_book(
         .as_ref()
         .expect("termo present immediately after open");
     let payload = serde_json::to_vec(termo_ref).map_err(|e| SealError::Serialize(e.to_string()))?;
-    let scope = format!("entity:{}/book:{}", entity.id, book.id);
+    // wp27-e3: a book opened in a **non-default** tenant joins its tenant chain (ChainId::Tenant) by
+    // carrying the parent entity's `tenant:{t}` segment additively, ahead of the existing
+    // `entity:`/`book:` segments (the per-tenant analogue of e1's `entity.created`). Single-tenant
+    // deployments (the default tenant) keep the exact `entity:{}/book:{}` genesis scope, so their
+    // ledger is byte-identical to before tenancy.
+    let scope = if entity.tenant_id == crate::tenant::DEFAULT_TENANT_ID {
+        format!("entity:{}/book:{}", entity.id, book.id)
+    } else {
+        format!(
+            "tenant:{}/entity:{}/book:{}",
+            entity.tenant_id, entity.id, book.id
+        )
+    };
     let event = ledger.append(actor, &scope, "book.opened", None, &payload);
     Ok(event.seq)
 }
@@ -429,6 +441,34 @@ mod tests {
         assert_eq!(ledger.events().len(), 1);
         assert_eq!(ledger.events()[0].kind, "book.opened");
         assert!(book.is_open());
+    }
+
+    #[test]
+    fn opening_a_book_joins_its_tenant_chain() {
+        // wp27-e3 (Part 2): the `book.opened` genesis carries the parent entity's `tenant:{t}`
+        // segment so the book joins its tenant chain (ChainId::Tenant), mirroring the entity genesis.
+        let tenant = crate::tenant::TenantId::new();
+        let e = crate::entity::Entity::new(
+            "Encosto Estratégico, S.A.",
+            crate::entity::Nipc::unvalidated("A-0001"),
+            "Lisboa",
+            crate::entity::EntityKind::SociedadeAnonima,
+        )
+        .in_tenant(tenant);
+        let mut ledger = Ledger::default();
+        let mut book = Book::new(e.id, BookKind::AssembleiaGeral);
+        open_and_seal_book(&mut book, &e, abertura(&e), "sec@encosto", &mut ledger).unwrap();
+        let scope = &ledger.events()[0].scope;
+        assert_eq!(
+            scope,
+            &format!("tenant:{tenant}/entity:{}/book:{}", e.id, book.id),
+            "book.opened must carry the tenant/entity/book scope"
+        );
+        let memberships = Ledger::memberships(scope, "book.opened");
+        assert!(
+            memberships.contains(&chancela_ledger::ChainId::Tenant(tenant.to_string())),
+            "book.opened must join its tenant chain, got {memberships:?}"
+        );
     }
 
     #[test]
