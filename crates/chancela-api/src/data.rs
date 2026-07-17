@@ -213,20 +213,29 @@ pub async fn reset_data(
     }
 
     let outcome = {
-        let mut ledger = state.ledger.write().await;
+        let mut ledger_guard = state.ledger.write().await;
         let at = OffsetDateTime::now_utc();
-        let outcome = store
-            .reset(
-                &mut ledger,
-                &data_dir,
-                scope,
-                export_first,
-                &sidecars,
-                &actor,
-                at,
-            )
-            .map_err(map_store_error)?;
-        crate::refresh_degraded(&state, &ledger).await;
+        // The sync `reset` drives postgres writes (and a `postgres::Client` `Drop`) that must not run
+        // on an async worker (wp28). Move the owned ledger into the blocking closure and restore it
+        // after the offload; the write guard is held throughout, so no other task observes the swap.
+        let mut ledger = std::mem::take(&mut *ledger_guard);
+        let (ledger, result) = store
+            .read_blocking_async(move |s| {
+                let outcome = s.reset(
+                    &mut ledger,
+                    &data_dir,
+                    scope,
+                    export_first,
+                    &sidecars,
+                    &actor,
+                    at,
+                );
+                (ledger, outcome)
+            })
+            .await;
+        *ledger_guard = ledger;
+        let outcome = result.map_err(map_store_error)?;
+        crate::refresh_degraded(&state, &ledger_guard).await;
         outcome
     };
 
@@ -310,12 +319,22 @@ pub async fn start_over_instance(
     let sidecars = state.instance_sidecars()?;
 
     let outcome = {
-        let mut ledger = state.ledger.write().await;
+        let mut ledger_guard = state.ledger.write().await;
         let at = OffsetDateTime::now_utc();
-        let outcome = store
-            .start_over_instance(&mut ledger, &req.reason, &actor, at, &data_dir, &sidecars)
-            .map_err(map_store_error)?;
-        crate::refresh_degraded(&state, &ledger).await;
+        // Offload the sync `start_over_instance` (postgres writes + `Client` `Drop`) off the async
+        // worker (wp28): move the owned ledger through the blocking closure and restore it after.
+        let mut ledger = std::mem::take(&mut *ledger_guard);
+        let reason = req.reason;
+        let (ledger, result) = store
+            .read_blocking_async(move |s| {
+                let outcome =
+                    s.start_over_instance(&mut ledger, &reason, &actor, at, &data_dir, &sidecars);
+                (ledger, outcome)
+            })
+            .await;
+        *ledger_guard = ledger;
+        let outcome = result.map_err(map_store_error)?;
+        crate::refresh_degraded(&state, &ledger_guard).await;
         outcome
     };
 
