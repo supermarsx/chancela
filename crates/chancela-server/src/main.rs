@@ -87,10 +87,19 @@ async fn main() {
     // Resolve the settings data dir the same way `AppState::from_env` will, so the banner can
     // report whether settings persist to disk or live only in memory.
     let data_dir = chancela_api::AppState::resolve_data_dir();
-    let state = chancela_api::AppState::try_from_env().unwrap_or_else(|e| {
-        tracing::error!(error = %e, "invalid Chancela startup configuration");
-        std::process::exit(2);
-    });
+    // Open the store off the runtime worker thread. `try_from_env` is a synchronous store-open
+    // that, for the Postgres/cluster backend, drives the sync `postgres` crate's connector via an
+    // internal `Runtime::block_on`; calling it directly on a `#[tokio::main]` worker panics with
+    // "Cannot start a runtime from within a runtime" and aborts boot. `spawn_blocking` moves it to
+    // a blocking-pool thread (the same convention the runtime supervisor uses in `cluster.rs`).
+    // The SQLite/in-memory paths are fully sync and unaffected either way.
+    let state = tokio::task::spawn_blocking(chancela_api::AppState::try_from_env)
+        .await
+        .expect("store-open task panicked")
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "invalid Chancela startup configuration");
+            std::process::exit(2);
+        });
     #[cfg(feature = "e2e")]
     chancela_api::seed_e2e_sessions_from_data_dir(&state).await;
 
