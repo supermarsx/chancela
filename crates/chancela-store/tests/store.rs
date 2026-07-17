@@ -1547,9 +1547,10 @@ fn schema_version_is_current() {
     // (user_templates — wp23) landed as schema v17; the per-subject DEK-wrapping table
     // (subject_keys — wp26 GDPR crypto-erasure) landed as schema v18; the tenant aggregate table
     // (tenants — wp26 tenancy) landed as schema v19; company-group template libraries landed as
-    // schema v20; persisted imported-document technical validation evidence landed as schema v21.
-    // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 21);
+    // schema v20; persisted imported-document technical validation evidence landed as schema v21; the
+    // durable companion-device pairing registry (pairing_devices — wp27 mobile companion) landed as
+    // schema v22. A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 22);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1561,6 +1562,17 @@ fn schema_version_is_current() {
         )
         .unwrap();
     assert_eq!(stamped, chancela_store::schema::SCHEMA_VERSION.to_string());
+    let pairing_devices_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pairing_devices'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        pairing_devices_table, 1,
+        "pairing_devices table (v22) present"
+    );
     let ocr_draft_table: i64 = raw
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",

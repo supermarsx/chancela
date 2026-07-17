@@ -3785,6 +3785,59 @@ describe('contract fixtures parse through the real client', () => {
     );
   });
 
+  it('pairing.json → PairingDevices (GET /v1/pairing/devices) (wp27-e4 companion enrollment)', () => {
+    // The enrolled-companion-device list shape the desktop pairing UI (wp27-e5) will render: one
+    // entry per paired phone, each with a stable device id, label, enrollment instant, and a
+    // nullable revoke instant. Parsed straight from the fixture bytes — the client method arrives
+    // with the pairing UI, so this guards the wire shape the client will consume.
+    const parsed = JSON.parse(fixture('pairing.json')) as {
+      devices: Array<{
+        device_id: string;
+        label: string;
+        created_at: string;
+        revoked: boolean;
+        revoked_at: string | null;
+      }>;
+    };
+    assertExactKeys<{ devices: unknown[] }>(parsed, { devices: true }, 'PairingDevices');
+    expect(Array.isArray(parsed.devices), 'PairingDevices.devices should be an array').toBe(true);
+    expect(parsed.devices.length, 'fixture exercises active + revoked shapes').toBeGreaterThanOrEqual(
+      2,
+    );
+    const [active, revoked] = parsed.devices;
+    for (const device of parsed.devices) {
+      assertExactKeys<{
+        device_id: string;
+        label: string;
+        created_at: string;
+        revoked: boolean;
+        revoked_at: string | null;
+      }>(
+        device,
+        { device_id: true, label: true, created_at: true, revoked: true, revoked_at: true },
+        'PairingDevice',
+      );
+      expect(device.device_id, 'PairingDevice.device_id should be a non-empty id').not.toHaveLength(
+        0,
+      );
+      expect(device.label, 'PairingDevice.label should be non-empty').not.toHaveLength(0);
+      expect(
+        Number.isNaN(Date.parse(device.created_at)),
+        'PairingDevice.created_at should be an RFC 3339 timestamp',
+      ).toBe(false);
+      expect(typeof device.revoked, 'PairingDevice.revoked should be a boolean').toBe('boolean');
+    }
+    // The active device carries a null revoke instant; the revoked one carries a parseable timestamp.
+    expect(active.revoked, 'first fixture device is active').toBe(false);
+    expect(active.revoked_at, 'an active device has a null revoked_at').toBeNull();
+    expect(revoked.revoked, 'second fixture device is revoked').toBe(true);
+    expect(typeof revoked.revoked_at, 'a revoked device has a string revoked_at').toBe('string');
+    expect(
+      Number.isNaN(Date.parse(revoked.revoked_at as string)),
+      'PairingDevice.revoked_at should be an RFC 3339 timestamp when present',
+    ).toBe(false);
+  });
+
   it('book.json → BookView (POST/GET /v1/books)', async () => {
     stubFetch(fixture('book.json'));
     const book: BookView = await api.getBook('3a2b1c00-0000-4000-8000-000000000002');

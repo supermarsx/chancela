@@ -3078,6 +3078,14 @@ impl Store {
         self.document_row("tenants", id)
     }
 
+    /// Load every stored pairing-device row as `(id, json)`, ordered by id (schema v22, wp27 mobile
+    /// companion). Each `json` is the API's serialized pairing-device record (opaque to the store,
+    /// digest-only — never a plaintext bearer token). Feeds the boot-time hydrate of the in-memory
+    /// companion-device registry.
+    pub fn pairing_devices(&self) -> Result<Vec<(String, String)>, StoreError> {
+        self.document_rows("pairing_devices")
+    }
+
     /// Shared reader for the `(id, json)` document-in-relational sidecar tables (users/roles/
     /// delegations). `table` is a fixed internal identifier (never user input), so interpolating it
     /// into the query is safe. Ordered by id for a deterministic enumeration.
@@ -5020,6 +5028,21 @@ impl Tx<'_> {
     /// Remove one tenant row by id. A no-op when the id is unknown (wp26 tenancy).
     pub fn delete_tenant(&self, id: &str) -> Result<(), StoreError> {
         self.delete_document_row("tenants", id)
+    }
+
+    /// Upsert one pairing-device row (`pairing_devices`, `(id, json)`), idempotent on the device id
+    /// (schema v22, wp27 mobile companion). `json` is the API's serialized pairing-device record —
+    /// digest-only, opaque to the store. Revocation is an in-record soft flag persisted through this
+    /// same upsert, so the device stays listable as revoked.
+    pub fn upsert_pairing_device(&self, id: &str, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("pairing_devices", id, json)
+    }
+
+    /// Remove one pairing-device row by id. A no-op when the id is unknown (wp27 mobile companion).
+    /// Ordinary revocation soft-marks the record via [`upsert_pairing_device`]; this hard delete is
+    /// for the rare purge path.
+    pub fn delete_pairing_device(&self, id: &str) -> Result<(), StoreError> {
+        self.delete_document_row("pairing_devices", id)
     }
 
     /// Shared document-in-relational upsert for the `(id, json)` sidecar tables. `table` is a fixed
@@ -7245,5 +7268,83 @@ mod tests {
                 .expect("table lookup");
             assert_eq!(present, 1, "{table} was not created by the v20 migration");
         }
+    }
+
+    #[test]
+    fn schema_v21_reopen_adds_the_pairing_devices_table_and_advances_the_stamp() {
+        // wp27-e4: a database written by a pre-companion (v21) build gains the additive
+        // `pairing_devices` table via the idempotent DDL and advances its stamp forward on next open.
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open current schema");
+        drop(store);
+
+        let db_path = dir.path().join(DB_FILE);
+        let conn = rusqlite::Connection::open(&db_path).expect("open raw sqlite");
+        conn.execute_batch(
+            "DROP TABLE pairing_devices;
+             UPDATE meta SET value = '21' WHERE key = 'schema_version';",
+        )
+        .expect("downgrade fixture to v21");
+        drop(conn);
+
+        let reopened = Store::open(dir.path()).expect("migrate v21 to v22");
+        let conn = reopened.locked_conn().expect("sqlite connection");
+        let version: String = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("schema stamp");
+        assert_eq!(version, schema::SCHEMA_VERSION.to_string());
+        let present: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pairing_devices'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("table lookup");
+        assert_eq!(
+            present, 1,
+            "pairing_devices was not created by the v22 migration"
+        );
+    }
+
+    #[test]
+    fn pairing_devices_round_trip_upsert_list_delete() {
+        // wp27-e4: the companion-device registry survives reopen (reload-safe), is idempotent on the
+        // device id, and can be soft-revoked (an in-record flag persisted through the same upsert).
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        assert!(store.pairing_devices().unwrap().is_empty());
+
+        store
+            .persist(|tx| {
+                tx.upsert_pairing_device("dev-b", r#"{"device_id":"dev-b","label":"Phone B"}"#)?;
+                tx.upsert_pairing_device("dev-a", r#"{"device_id":"dev-a","label":"Phone A"}"#)?;
+                Ok(())
+            })
+            .expect("persist devices");
+
+        let reopened = Store::open(dir.path()).expect("reopen");
+        let rows = reopened.pairing_devices().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "dev-a", "rows are ordered by id");
+
+        // Idempotent update (a soft-revoke rewrites the same id's json).
+        reopened
+            .persist(|tx| {
+                tx.upsert_pairing_device(
+                    "dev-a",
+                    r#"{"device_id":"dev-a","label":"Phone A","revoked":true}"#,
+                )
+            })
+            .expect("update device");
+        assert_eq!(reopened.pairing_devices().unwrap().len(), 2);
+
+        reopened
+            .persist(|tx| tx.delete_pairing_device("dev-b"))
+            .expect("delete device");
+        assert_eq!(reopened.pairing_devices().unwrap().len(), 1);
     }
 }
