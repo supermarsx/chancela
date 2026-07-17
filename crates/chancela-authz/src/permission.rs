@@ -15,6 +15,22 @@ use serde::{Deserialize, Serialize};
 /// ([`std::collections::BTreeSet`]); it carries no authority meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Permission {
+    // --- Tenants ---
+    /// Read a tenant: list the tenant directory (`GET /v1/tenants`, filtered per row) or read one
+    /// by id (`GET /v1/tenants/{id}`). Checked at `Scope::Tenant`, so a tenant-scoped holder sees
+    /// only its own tenant while a Global holder sees the whole directory. Distinct from
+    /// `entity.read` so the tenant directory is its own authority axis, above the entity level.
+    #[serde(rename = "tenant.read")]
+    TenantRead,
+    /// Create a new tenant (`POST /v1/tenants`). Minting a tenant is a platform-level provisioning
+    /// act with no pre-existing tenant to narrow to, so it is checked at `Scope::Global`.
+    #[serde(rename = "tenant.create")]
+    TenantCreate,
+    /// Administer an existing tenant (rename / configuration / archival). Reserved for the tenant
+    /// mutation surface; seeded to the platform- and tenant-administrator roles.
+    #[serde(rename = "tenant.admin")]
+    TenantAdmin,
+
     // --- Entities ---
     #[serde(rename = "entity.read")]
     EntityRead,
@@ -127,7 +143,10 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 39] = [
+    pub const ALL: [Permission; 42] = [
+        Permission::TenantRead,
+        Permission::TenantCreate,
+        Permission::TenantAdmin,
         Permission::EntityRead,
         Permission::EntityCreate,
         Permission::EntityUpdate,
@@ -183,6 +202,9 @@ impl Permission {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Permission::TenantRead => "tenant.read",
+            Permission::TenantCreate => "tenant.create",
+            Permission::TenantAdmin => "tenant.admin",
             Permission::EntityRead => "entity.read",
             Permission::EntityCreate => "entity.create",
             Permission::EntityUpdate => "entity.update",
@@ -270,6 +292,30 @@ mod tests {
             assert_eq!(json, format!("\"{}\"", p.as_str()));
             let back: Permission = serde_json::from_str(&json).unwrap();
             assert_eq!(back, p);
+        }
+    }
+
+    #[test]
+    fn tenant_catalog_has_stable_dotted_ids() {
+        // The dedicated tenant authority axis (wp27-e2, user-locked Q3): three verbs with the
+        // stable serialised ids the wire/on-disk form and the route classification depend on.
+        assert_eq!(Permission::TenantRead.as_str(), "tenant.read");
+        assert_eq!(Permission::TenantCreate.as_str(), "tenant.create");
+        assert_eq!(Permission::TenantAdmin.as_str(), "tenant.admin");
+        for p in [
+            Permission::TenantRead,
+            Permission::TenantCreate,
+            Permission::TenantAdmin,
+        ] {
+            assert!(Permission::ALL.contains(&p), "{p} missing from ALL");
+            // Tenant verbs are ordinary (delegable) authorities, not RBAC meta.
+            assert!(!p.is_meta(), "{p} must not be a meta permission");
+            let json = serde_json::to_string(&p).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Permission>(&json).unwrap(),
+                p,
+                "{p} does not round-trip"
+            );
         }
     }
 }
