@@ -71,8 +71,8 @@ use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::collections::{BTreeMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -86,14 +86,19 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::actor::CurrentAttestor;
 use crate::authz::{require_permission, scope_of_act};
+use crate::credential_resolve::{
+    ClassifyError, ErrorClass, FailoverError, ResolveError, ResolvedCredential, ResolvedSource,
+    resolve_candidates, try_in_order_async,
+};
 use crate::error::ApiError;
 use crate::external_signing::{
     EnvelopeView, ExternalSignerSlotStatusDto, ExternalSigningOrderPolicyDto,
     LinkedExternalInviteSlotSignOutcome, LinkedExternalInviteSlotSignedPdfEvidence,
 };
 use crate::secretstore_persist::{
-    DecryptedCredentialRecord, FIELD_ACCESS_TOKEN, FIELD_AMA_CERT_PEM, FIELD_APPLICATION_ID,
-    FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD, FIELD_HTTP_BASIC_USERNAME,
+    DecryptedCredentialEntry, DecryptedCredentialRecord, FIELD_ACCESS_TOKEN, FIELD_AMA_CERT_PEM,
+    FIELD_APPLICATION_ID, FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD,
+    FIELD_HTTP_BASIC_USERNAME,
 };
 use crate::settings::{RuntimeTsaProvider, RuntimeTslSource};
 use crate::{CredentialMode, ProviderCredentialError, ProviderCredentialStore};
@@ -1625,7 +1630,16 @@ pub async fn initiate_cmd_signature(
         ));
     }
 
-    let cmd_cfg = resolve_cmd_config(&state).await?;
+    // Resolve the priority-ordered CMD candidate list (wp27-e7 multi-entry failover): the walk below
+    // attempts each enabled stored entry in order (or the env fallback), advancing on a RETRYABLE
+    // failure and stopping on a TERMINAL one. Resolved before prepare so an unconfigured provider
+    // still fails closed with the same 422 as the single-entry path.
+    let cmd_candidates = resolve_cmd_candidates(&state).await?;
+    if cmd_candidates.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "a Chave Móvel Digital não está configurada (falta o ApplicationId)".to_owned(),
+        ));
+    }
     let tsl_source = configured_tsl_source(&state).await?;
 
     // Prepare the PAdES incremental update: compute the ByteRange digest to sign. A fixed signing
@@ -1661,17 +1675,48 @@ pub async fn initiate_cmd_signature(
             })?;
 
     let doc_name = format!("ata-{}.pdf", act_id);
-    let session = run_cmd_initiate(
-        &state,
-        &cmd_cfg,
-        tsl_source,
-        &phone,
-        &pin,
-        &doc_name,
-        signing_time,
-        &prepared,
-    )
-    .await?;
+    // Multi-entry failover walk: try each candidate's CMD config in priority order. A retryable
+    // failure (transport/5xx) advances to the next entry; a terminal one (wrong PIN, provider "no",
+    // trust-gate rejection) stops immediately so the citizen's PIN attempts are never burned across
+    // entries. The chosen entry id is pinned into the session so confirm resumes the same credential.
+    let (session, chosen_entry_id) = {
+        let state_ref = &state;
+        let tsl_ref = &tsl_source;
+        let phone_ref = &phone;
+        let pin_ref = &pin;
+        let doc_ref = &doc_name;
+        let prepared_ref = &prepared;
+        let outcome = try_in_order_async(&cmd_candidates, |cred| {
+            let entry_id = candidate_entry_id(&cred.source);
+            // Own the candidate's config so the attempt future does not borrow `cred` (which the
+            // `FnMut(&_) -> Future` failover seam cannot express).
+            let cfg = cred.config.clone();
+            async move {
+                run_cmd_initiate(
+                    state_ref,
+                    &cfg,
+                    tsl_ref.clone(),
+                    phone_ref,
+                    pin_ref,
+                    doc_ref,
+                    signing_time,
+                    prepared_ref,
+                )
+                .await
+                .map(|session| (session, entry_id))
+            }
+        })
+        .await;
+        match outcome {
+            Ok(pair) => pair,
+            Err(FailoverError::Terminal(e)) | Err(FailoverError::Exhausted(e)) => return Err(e.api),
+            Err(FailoverError::NoCandidates) => {
+                return Err(ApiError::Unprocessable(
+                    "a Chave Móvel Digital não está configurada (falta o ApplicationId)".to_owned(),
+                ));
+            }
+        }
+    };
     // PIN no longer needed — drop it explicitly (also zeroizes) before persisting anything.
     drop(pin);
 
@@ -1688,7 +1733,7 @@ pub async fn initiate_cmd_signature(
         masked_phone: masked_phone.clone(),
         doc_name,
         signer_capacity_evidence_json,
-        session_json: serde_json::to_string(&session)?,
+        session_json: serialize_session_envelope(&session, chosen_entry_id.as_deref())?,
         prepared_json: serde_json::to_string(&prepared)?,
         created_at: signing_time,
         expires_at,
@@ -1764,14 +1809,19 @@ pub async fn confirm_cmd_signature(
         ));
     }
 
-    let session: CmdSignSession = serde_json::from_str(&pending.session_json)
-        .map_err(|e| ApiError::Internal(format!("corrupt pending session: {e}")))?;
+    // The envelope carries the resumable session PLUS the entry id the failover walk chose at
+    // initiate (`None` for an env/DI or pre-wp27 session). Confirm pins THAT exact credential.
+    let (session, chosen_entry_id): (CmdSignSession, Option<String>) =
+        deserialize_session_envelope(&pending.session_json)
+            .map_err(|e| ApiError::Internal(format!("corrupt pending session: {e}")))?;
     let prepared: PreparedSignature = serde_json::from_str(&pending.prepared_json)
         .map_err(|e| ApiError::Internal(format!("corrupt prepared signature: {e}")))?;
     let unsigned = load_signing_document(&state, act_id).await?;
     ensure_prepared_signature_binds_document(&unsigned, &prepared)?;
 
-    let cmd_cfg = resolve_cmd_config(&state).await?;
+    // Pin to the SAME entry initiate opened the session against — never re-resolve `default_entry`
+    // (which, once initiate can fail over, would submit the OTP against the wrong ApplicationId).
+    let cmd_cfg = resolve_cmd_config_for_entry(&state, chosen_entry_id.as_deref()).await?;
     // ValidateOtp → assemble the detached CMS. The OTP is consumed here.
     let cms = run_cmd_confirm(&state, &cmd_cfg, &session, &otp).await?;
     drop(otp);
@@ -3243,6 +3293,7 @@ pub struct SignatureProviderBoundaries {
 }
 
 /// A resolved, configured remote-signing provider (carries its non-secret config).
+#[derive(Clone)]
 enum ResolvedProvider {
     /// Chave Móvel Digital (the built-in provider `"cmd"`), with its resolved [`CmdConfig`].
     Cmd(CmdConfig),
@@ -3492,15 +3543,29 @@ pub async fn initiate_remote_signature(
     let user_ref = req.user_ref.trim().to_string();
     let act_id = ActId(id);
 
-    // Resolve + configuration-check the provider (422 for unknown / unconfigured / disabled).
-    let resolved = resolve_provider(&state, &provider).await?;
+    // Resolve the provider KIND (unknown id → 422), then the priority-ordered credential candidate
+    // list (wp27-e7 multi-entry failover). The kind is resolved without touching credentials so a
+    // provider whose *default* entry is incomplete (but a non-default entry works) is not rejected.
+    let kind = resolve_remote_provider_kind(&state, &provider)?;
 
     // CMD: reject an obviously-wrong phone early (the SCMD service is authoritative otherwise).
-    if matches!(resolved, ResolvedProvider::Cmd(_)) && !looks_like_scmd_phone(&user_ref) {
+    if matches!(kind, RemoteProviderKind::Cmd) && !looks_like_scmd_phone(&user_ref) {
         return Err(ApiError::Unprocessable(
             "número de telemóvel inválido para a Chave Móvel Digital (formato +351 XXXXXXXXX)"
                 .to_owned(),
         ));
+    }
+
+    let remote_candidates = resolve_remote_candidates(&state, &kind).await?;
+    if remote_candidates.is_empty() {
+        return Err(match kind {
+            RemoteProviderKind::Cmd => ApiError::Unprocessable(
+                "a Chave Móvel Digital não está configurada (falta o ApplicationId)".to_owned(),
+            ),
+            RemoteProviderKind::Csc(_) => ApiError::Unprocessable(format!(
+                "o prestador de assinatura '{provider}' não está configurado"
+            )),
+        });
     }
 
     let unsigned = load_signing_document(&state, act_id).await?;
@@ -3545,26 +3610,54 @@ pub async fn initiate_remote_signature(
 
     let doc_name = format!("ata-{}.pdf", act_id);
     // The non-secret display hint (a masked phone for CMD; how to authorize for a CSC provider).
-    let activation_hint = match &resolved {
-        ResolvedProvider::Cmd(_) => mask_phone(&user_ref),
-        ResolvedProvider::Csc { config, .. } => match config.authorization {
+    let activation_hint = match &kind {
+        RemoteProviderKind::Cmd => mask_phone(&user_ref),
+        RemoteProviderKind::Csc(config) => match config.authorization {
             CscAuthorization::User => "autorize a assinatura na aplicação do prestador".to_owned(),
             _ => "confirme com o código de ativação enviado".to_owned(),
         },
     };
 
-    // Drive the provider's phase-1 (authenticate → cert → TSL gate → dispatch activation).
-    let session = run_remote_initiate(
-        &state,
-        &resolved,
-        user_ref,
-        credential,
-        doc_name.clone(),
-        signing_time,
-        prepared.clone(),
-        tsl_source,
-    )
-    .await?;
+    // Drive the provider's phase-1 over the multi-entry failover walk: try each candidate's
+    // credentials in priority order, advancing on a RETRYABLE failure and stopping on a TERMINAL one
+    // (the OTP/SAD-burn guard). The chosen entry id is pinned so confirm resumes the same credential.
+    let (session, chosen_entry_id) = {
+        let state_ref = &state;
+        let user_ref_ref = &user_ref;
+        let credential_ref = &credential;
+        let doc_ref = &doc_name;
+        let prepared_ref = &prepared;
+        let tsl_ref = &tsl_source;
+        let outcome = try_in_order_async(&remote_candidates, |cred| {
+            let entry_id = candidate_entry_id(&cred.source);
+            // Own the candidate's provider so the attempt future does not borrow `cred`.
+            let resolved = cred.config.clone();
+            async move {
+                run_remote_initiate(
+                    state_ref,
+                    &resolved,
+                    user_ref_ref.clone(),
+                    credential_ref.clone(),
+                    doc_ref.clone(),
+                    signing_time,
+                    prepared_ref.clone(),
+                    tsl_ref.clone(),
+                )
+                .await
+                .map(|session| (session, entry_id))
+            }
+        })
+        .await;
+        match outcome {
+            Ok(pair) => pair,
+            Err(FailoverError::Terminal(e)) | Err(FailoverError::Exhausted(e)) => return Err(e.api),
+            Err(FailoverError::NoCandidates) => {
+                return Err(ApiError::Unprocessable(format!(
+                    "o prestador de assinatura '{provider}' não está configurado"
+                )));
+            }
+        }
+    };
 
     // Persist the non-secret pending session (durable + in-memory) so confirm survives the two
     // requests and a restart. The session blob is the serde `RemoteSignSession` (never a secret).
@@ -3580,7 +3673,7 @@ pub async fn initiate_remote_signature(
         masked_phone: activation_hint.clone(),
         doc_name,
         signer_capacity_evidence_json,
-        session_json: serde_json::to_string(&session)?,
+        session_json: serialize_session_envelope(&session, chosen_entry_id.as_deref())?,
         prepared_json: serde_json::to_string(&prepared)?,
         created_at: signing_time,
         expires_at,
@@ -3741,7 +3834,10 @@ pub async fn initiate_remote_batch_signature(
                         masked_phone: activation_hint.clone(),
                         doc_name,
                         signer_capacity_evidence_json: capacity_json,
-                        session_json: serde_json::to_string(&pending_doc.session)?,
+                        // Batch does not (yet) fail over: the session is not entry-pinned, so confirm
+                        // resolves the default credential (unchanged behaviour). Wrapped in the same
+                        // envelope for a single persisted format.
+                        session_json: serialize_session_envelope(&pending_doc.session, None)?,
                         prepared_json: serde_json::to_string(&pending_doc.prepared)?,
                         created_at: signing_time,
                         expires_at,
@@ -3861,9 +3957,11 @@ pub async fn confirm_remote_signature(
         ));
     }
 
-    // The generic pending session persists a `RemoteSignSession` (not a `CmdSignSession`).
-    let session: RemoteSignSession = serde_json::from_str(&pending.session_json)
-        .map_err(|e| ApiError::Internal(format!("corrupt pending session: {e}")))?;
+    // The generic pending session persists a `RemoteSignSession` (not a `CmdSignSession`), wrapped in
+    // the wp27-e7 envelope that also carries the entry id the failover walk chose at initiate.
+    let (session, chosen_entry_id): (RemoteSignSession, Option<String>) =
+        deserialize_session_envelope(&pending.session_json)
+            .map_err(|e| ApiError::Internal(format!("corrupt pending session: {e}")))?;
     let prepared: PreparedSignature = serde_json::from_str(&pending.prepared_json)
         .map_err(|e| ApiError::Internal(format!("corrupt prepared signature: {e}")))?;
     let unsigned = load_signing_document(&state, act_id).await?;
@@ -3875,8 +3973,12 @@ pub async fn confirm_remote_signature(
         ));
     }
 
-    // Route the confirm back to the provider that opened the session (never client-asserted).
-    let resolved = resolve_provider(&state, &session.provider_id).await?;
+    // Route the confirm back to the provider that opened the session (never client-asserted), PINNED
+    // to the exact entry initiate chose — the activation was dispatched against it, so re-resolving
+    // `default_entry` here would submit the OTP/SAD against the wrong credential (a3's latent bug).
+    let resolved =
+        resolve_provider_for_entry(&state, &session.provider_id, chosen_entry_id.as_deref())
+            .await?;
     let provider_id = session.provider_id.clone();
     let family = family_label(&provider_id);
 
@@ -4023,6 +4125,96 @@ async fn resolve_provider(
     })
 }
 
+/// A resolved remote provider's non-secret KIND, resolved WITHOUT touching credentials (wp27-e7): the
+/// built-in CMD provider, or a configured CSC provider with its non-secret [`CscConfig`]. Used for the
+/// early phone-format check + activation hint before the multi-entry credential walk, so a provider
+/// whose *default* entry is incomplete (but a non-default entry works) is not wrongly rejected.
+enum RemoteProviderKind {
+    Cmd,
+    Csc(CscConfig),
+}
+
+/// Resolve a `{provider}` id to its non-secret [`RemoteProviderKind`], or a 422 when the id is
+/// unknown. No credential material is read here.
+fn resolve_remote_provider_kind(
+    state: &AppState,
+    provider_id: &str,
+) -> Result<RemoteProviderKind, ApiError> {
+    if provider_id == CMD_PROVIDER_ID {
+        return Ok(RemoteProviderKind::Cmd);
+    }
+    let cfg = state
+        .csc_providers
+        .iter()
+        .find(|c| c.provider_id == provider_id)
+        .cloned()
+        .ok_or_else(|| {
+            ApiError::Unprocessable(format!(
+                "prestador de assinatura desconhecido: '{provider_id}'"
+            ))
+        })?;
+    Ok(RemoteProviderKind::Csc(cfg))
+}
+
+/// Resolve the priority-ordered candidate list for a remote provider (wp27-e7): each enabled stored
+/// entry (or the env/DI fallback) mapped to a full [`ResolvedProvider`] the walk can drive. CMD reuses
+/// [`resolve_cmd_candidates`]; a CSC provider pairs its fixed non-secret [`CscConfig`] with each
+/// entry's resolved secrets.
+async fn resolve_remote_candidates(
+    state: &AppState,
+    kind: &RemoteProviderKind,
+) -> Result<Vec<ResolvedCredential<ResolvedProvider>>, ApiError> {
+    match kind {
+        RemoteProviderKind::Cmd => Ok(resolve_cmd_candidates(state)
+            .await?
+            .into_iter()
+            .map(|c| ResolvedCredential {
+                source: c.source,
+                config: ResolvedProvider::Cmd(c.config),
+            })
+            .collect()),
+        RemoteProviderKind::Csc(config) => Ok(resolve_csc_candidates(state, config)?
+            .into_iter()
+            .map(|c| ResolvedCredential {
+                source: c.source,
+                config: ResolvedProvider::Csc {
+                    config: config.clone(),
+                    secrets: c.config,
+                },
+            })
+            .collect()),
+    }
+}
+
+/// Resolve a [`ResolvedProvider`] for CONFIRM, pinned to the entry the session recorded at initiate
+/// (`None` = env/DI or pre-wp27 → default resolution, byte-identical to the old confirm path).
+async fn resolve_provider_for_entry(
+    state: &AppState,
+    provider_id: &str,
+    entry_id: Option<&str>,
+) -> Result<ResolvedProvider, ApiError> {
+    if provider_id == CMD_PROVIDER_ID {
+        return Ok(ResolvedProvider::Cmd(
+            resolve_cmd_config_for_entry(state, entry_id).await?,
+        ));
+    }
+    let cfg = state
+        .csc_providers
+        .iter()
+        .find(|c| c.provider_id == provider_id)
+        .cloned()
+        .ok_or_else(|| {
+            ApiError::Unprocessable(format!(
+                "prestador de assinatura desconhecido: '{provider_id}'"
+            ))
+        })?;
+    let secrets = resolve_csc_secrets_for_entry(state, &cfg, entry_id)?;
+    Ok(ResolvedProvider::Csc {
+        config: cfg,
+        secrets,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StoredCredentialState {
     Missing,
@@ -4060,16 +4252,22 @@ fn csc_env_configured_for_authorization(cfg: &CscConfig) -> bool {
     csc_secrets_from_env(cfg).is_ok()
 }
 
+/// Resolve the **default** CSC secrets for a provider (stored default entry wins, else env, else the
+/// DI placeholder when a mock transport is injected). Used by the provider-config check and by confirm
+/// when a session was not entry-pinned (env/DI or pre-wp27); the multi-entry INITIATE walk uses
+/// [`resolve_csc_candidates`].
 fn resolve_csc_secrets(state: &AppState, config: &CscConfig) -> Result<CscSecrets, ApiError> {
     match state
         .provider_credentials
         .read_runtime(CredentialMode::CscQtsp, &config.provider_id)
     {
         Ok(Some(record)) => csc_secrets_from_stored(config, record),
-        Ok(None) => match csc_secrets_from_env(config) {
-            Ok(secrets) => Ok(secrets),
-            Err(_env_err) if state.csc_transport.is_some() => Ok(di_secrets()),
-            Err(env_err) => Err(csc_config_err(env_err)),
+        Ok(None) => match csc_secrets_from_env_fallback(state, config)? {
+            Some(secrets) => Ok(secrets),
+            None => Err(csc_config_err(CscError::Config(format!(
+                "provider '{}' has no configured credentials",
+                config.provider_id
+            )))),
         },
         Err(err) => Err(provider_credential_runtime_err(
             CredentialMode::CscQtsp,
@@ -4079,14 +4277,118 @@ fn resolve_csc_secrets(state: &AppState, config: &CscConfig) -> Result<CscSecret
     }
 }
 
+/// Resolve the priority-ordered CSC candidate list for a provider (wp27-e7): every **enabled** stored
+/// entry in priority order, or — when nothing is stored — the single env/DI-derived secrets as the
+/// [`ResolvedSource::Env`] candidate. Mirrors [`resolve_csc_secrets`] via the shared
+/// [`resolve_candidates`] engine.
+fn resolve_csc_candidates(
+    state: &AppState,
+    config: &CscConfig,
+) -> Result<Vec<ResolvedCredential<CscSecrets>>, ApiError> {
+    resolve_candidates(
+        &state.provider_credentials,
+        CredentialMode::CscQtsp,
+        &config.provider_id,
+        |entry| csc_secrets_from_entry(config, entry),
+        || csc_secrets_from_env_fallback(state, config),
+    )
+    .map_err(|e| resolve_candidates_err(CredentialMode::CscQtsp, &config.provider_id, e))
+}
+
+/// Resolve the CSC secrets for CONFIRM, pinned to the entry the session recorded at initiate. `None`
+/// (env/DI or pre-wp27) resolves the default exactly as before; `Some(id)` resolves that exact enabled
+/// entry and NEVER falls back — the activation was dispatched against it, so a gone/disabled entry is a
+/// clear 409, never a silent re-resolve of a different credential.
+fn resolve_csc_secrets_for_entry(
+    state: &AppState,
+    config: &CscConfig,
+    entry_id: Option<&str>,
+) -> Result<CscSecrets, ApiError> {
+    let Some(entry_id) = entry_id else {
+        return resolve_csc_secrets(state, config);
+    };
+    let entries = state
+        .provider_credentials
+        .read_entries_runtime(CredentialMode::CscQtsp, &config.provider_id)
+        .map_err(|e| {
+            provider_credential_runtime_err(CredentialMode::CscQtsp, &config.provider_id, e)
+        })?;
+    let entry = entries
+        .iter()
+        .find(|e| e.enabled && e.entry_id == entry_id)
+        .ok_or_else(|| {
+            pinned_entry_unavailable_err(CredentialMode::CscQtsp, &config.provider_id)
+        })?;
+    csc_secrets_from_entry(config, entry)
+}
+
+/// The env/DI-derived CSC secrets used only when NOTHING is stored: real env secrets win; a mock
+/// transport (`state.csc_transport`) falls back to the DI placeholder; otherwise the env error is
+/// surfaced. Returns `Ok(Some(_))` for a usable candidate, `Err` for a malformed/absent config.
+fn csc_secrets_from_env_fallback(
+    state: &AppState,
+    config: &CscConfig,
+) -> Result<Option<CscSecrets>, ApiError> {
+    match csc_secrets_from_env(config) {
+        Ok(secrets) => Ok(Some(secrets)),
+        Err(_env_err) if state.csc_transport.is_some() => Ok(Some(di_secrets())),
+        Err(env_err) => Err(csc_config_err(env_err)),
+    }
+}
+
+/// Assemble CSC secrets from a stored **flat** record (the legacy default-entry read path).
 fn csc_secrets_from_stored(
     config: &CscConfig,
-    mut record: DecryptedCredentialRecord,
+    record: DecryptedCredentialRecord,
 ) -> Result<CscSecrets, ApiError> {
-    let missing_fields = csc_stored_missing_fields(config, &record);
-    let client_id = nonblank_runtime_secret(record.fields.remove(FIELD_CLIENT_ID));
-    let client_secret = nonblank_runtime_secret(record.fields.remove(FIELD_CLIENT_SECRET));
-    let access_token = nonblank_runtime_secret(record.fields.remove(FIELD_ACCESS_TOKEN));
+    csc_secrets_from_fields(config, record.fields)
+}
+
+/// Assemble CSC secrets from one stored **multi-entry** entry (the failover read path).
+fn csc_secrets_from_entry(
+    config: &CscConfig,
+    entry: &DecryptedCredentialEntry,
+) -> Result<CscSecrets, ApiError> {
+    csc_secrets_from_fields(config, entry.fields.clone())
+}
+
+/// The required CSC secret fields the authorization model is missing from a decrypted field map.
+fn csc_missing_fields_in(
+    config: &CscConfig,
+    fields: &BTreeMap<String, Zeroizing<String>>,
+) -> Vec<&'static str> {
+    let has = |field: &str| {
+        fields
+            .get(field)
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    csc_missing_secret_fields(
+        config.authorization,
+        has(FIELD_CLIENT_ID),
+        has(FIELD_CLIENT_SECRET),
+        has(FIELD_ACCESS_TOKEN),
+    )
+}
+
+/// The required CSC secret fields a stored **flat** record is missing (used by the picker/status
+/// readiness readers).
+fn csc_stored_missing_fields(
+    config: &CscConfig,
+    record: &DecryptedCredentialRecord,
+) -> Vec<&'static str> {
+    csc_missing_fields_in(config, &record.fields)
+}
+
+/// Assemble [`CscSecrets`] from a decrypted field map (shared by the flat + multi-entry paths),
+/// enforcing the authorization model's required fields.
+fn csc_secrets_from_fields(
+    config: &CscConfig,
+    mut fields: BTreeMap<String, Zeroizing<String>>,
+) -> Result<CscSecrets, ApiError> {
+    let missing_fields = csc_missing_fields_in(config, &fields);
+    let client_id = nonblank_runtime_secret(fields.remove(FIELD_CLIENT_ID));
+    let client_secret = nonblank_runtime_secret(fields.remove(FIELD_CLIENT_SECRET));
+    let access_token = nonblank_runtime_secret(fields.remove(FIELD_ACCESS_TOKEN));
     if !missing_fields.is_empty() {
         return Err(stored_credentials_incomplete_err(
             CredentialMode::CscQtsp,
@@ -4112,24 +4414,6 @@ fn csc_secrets_from_stored(
             &[FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_ACCESS_TOKEN],
         )),
     }
-}
-
-fn csc_stored_missing_fields(
-    config: &CscConfig,
-    record: &DecryptedCredentialRecord,
-) -> Vec<&'static str> {
-    let has = |field: &str| {
-        record
-            .fields
-            .get(field)
-            .is_some_and(|value| !value.trim().is_empty())
-    };
-    csc_missing_secret_fields(
-        config.authorization,
-        has(FIELD_CLIENT_ID),
-        has(FIELD_CLIENT_SECRET),
-        has(FIELD_ACCESS_TOKEN),
-    )
 }
 
 fn nonblank_runtime_secret(secret: Option<Zeroizing<String>>) -> Option<Zeroizing<String>> {
@@ -4284,9 +4568,11 @@ fn remote_batch_doc_error_message(e: &chancela_signing::SigningError) -> String 
     }
 }
 
-/// Phase-1 driver: build the resolved provider's [`RemoteSigningSource`] and run `initiate` — inline
+/// Phase-1 driver: build ONE candidate provider's [`RemoteSigningSource`] and run `initiate` — inline
 /// over an injected mock transport (tests, no network), or on `spawn_blocking` over a real HTTP
-/// transport (production; the SCMD/CSC/TSL calls block and must not stall the async runtime).
+/// transport (production; the SCMD/CSC/TSL calls block and must not stall the async runtime). The
+/// transport is wrapped in a class-recording transport so a failure carries the RAW provider-error
+/// failover class the multi-entry walk needs (see the wp27-e7 note above).
 #[allow(clippy::too_many_arguments)]
 async fn run_remote_initiate(
     state: &AppState,
@@ -4297,34 +4583,46 @@ async fn run_remote_initiate(
     signing_time: OffsetDateTime,
     prepared: PreparedSignature,
     tsl_source: Option<RuntimeTslSource>,
-) -> Result<RemoteSignSession, ApiError> {
+) -> Result<RemoteSignSession, RemoteAttemptError> {
     let policy_factory = state.cmd_trust_policy.clone();
-    match resolved {
+    let class = LastTransportErrorClass::default();
+    let result: Result<RemoteSignSession, ApiError> = match resolved {
         ResolvedProvider::Cmd(cmd_cfg) => {
             if let Some(transport) = &state.cmd_transport {
-                let client =
-                    ScmdClient::from_config(SharedScmdTransport(transport.clone()), cmd_cfg)
-                        .map_err(cmd_config_err)?;
-                let source = CmdRemoteSource::new(client);
-                let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
-                let init = RemoteInitiate {
-                    user_ref: &user_ref,
-                    credential: &credential,
-                    doc_name: &doc_name,
-                    signing_time,
+                let recording = ClassRecordingScmdTransport {
+                    inner: SharedScmdTransport(transport.clone()),
+                    class: class.clone(),
                 };
-                source
-                    .initiate(&init, &prepared, Some(policy.as_mut()))
-                    .map_err(map_remote_error)
+                (|| {
+                    let client =
+                        ScmdClient::from_config(recording, cmd_cfg).map_err(cmd_config_err)?;
+                    let source = CmdRemoteSource::new(client);
+                    let mut policy =
+                        build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
+                    let init = RemoteInitiate {
+                        user_ref: &user_ref,
+                        credential: &credential,
+                        doc_name: &doc_name,
+                        signing_time,
+                    };
+                    source
+                        .initiate(&init, &prepared, Some(policy.as_mut()))
+                        .map_err(map_remote_error)
+                })()
             } else {
                 let cmd_cfg = cmd_cfg.clone();
                 let policy_factory = policy_factory.clone();
                 let tsl_source = tsl_source.clone();
+                let class = class.clone();
                 tokio::task::spawn_blocking(move || {
                     let transport =
                         HttpScmdTransport::from_config(&cmd_cfg).map_err(cmd_config_err)?;
+                    let recording = ClassRecordingScmdTransport {
+                        inner: transport,
+                        class,
+                    };
                     let client =
-                        ScmdClient::from_config(transport, &cmd_cfg).map_err(cmd_config_err)?;
+                        ScmdClient::from_config(recording, &cmd_cfg).map_err(cmd_config_err)?;
                     let source = CmdRemoteSource::new(client);
                     let mut policy = build_trust_policy(policy_factory, tsl_source)?;
                     let init = RemoteInitiate {
@@ -4338,37 +4636,49 @@ async fn run_remote_initiate(
                         .map_err(map_remote_error)
                 })
                 .await
-                .map_err(|e| ApiError::Internal(format!("remote initiate task failed: {e}")))?
+                .unwrap_or_else(|e| {
+                    Err(ApiError::Internal(format!(
+                        "remote initiate task failed: {e}"
+                    )))
+                })
             }
         }
         ResolvedProvider::Csc { config, secrets } => {
             if let Some(factory) = &state.csc_transport {
-                let client = CscClient::new(
-                    BoxedCscTransport(factory(config)),
-                    config.clone(),
-                    secrets.clone(),
-                );
-                let source = CscRemoteSource::new(client);
-                let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
-                let init = RemoteInitiate {
-                    user_ref: &user_ref,
-                    credential: &credential,
-                    doc_name: &doc_name,
-                    signing_time,
+                let recording = ClassRecordingCscTransport {
+                    inner: BoxedCscTransport(factory(config)),
+                    class: class.clone(),
                 };
-                source
-                    .initiate(&init, &prepared, Some(policy.as_mut()))
-                    .map_err(map_remote_error)
+                let client = CscClient::new(recording, config.clone(), secrets.clone());
+                let source = CscRemoteSource::new(client);
+                (|| {
+                    let mut policy =
+                        build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
+                    let init = RemoteInitiate {
+                        user_ref: &user_ref,
+                        credential: &credential,
+                        doc_name: &doc_name,
+                        signing_time,
+                    };
+                    source
+                        .initiate(&init, &prepared, Some(policy.as_mut()))
+                        .map_err(map_remote_error)
+                })()
             } else {
                 // Production: resolved stored/env secrets, real HTTP transport off the runtime.
                 let secrets = secrets.clone();
                 let config = config.clone();
                 let policy_factory = policy_factory.clone();
                 let tsl_source = tsl_source.clone();
+                let class = class.clone();
                 tokio::task::spawn_blocking(move || {
                     let transport =
                         HttpCscTransport::new(&config.base_url).map_err(csc_config_err)?;
-                    let client = CscClient::new(transport, config, secrets);
+                    let recording = ClassRecordingCscTransport {
+                        inner: transport,
+                        class,
+                    };
+                    let client = CscClient::new(recording, config, secrets);
                     let source = CscRemoteSource::new(client);
                     let mut policy = build_trust_policy(policy_factory, tsl_source)?;
                     let init = RemoteInitiate {
@@ -4382,10 +4692,18 @@ async fn run_remote_initiate(
                         .map_err(map_remote_error)
                 })
                 .await
-                .map_err(|e| ApiError::Internal(format!("remote initiate task failed: {e}")))?
+                .unwrap_or_else(|e| {
+                    Err(ApiError::Internal(format!(
+                        "remote initiate task failed: {e}"
+                    )))
+                })
             }
         }
-    }
+    };
+    result.map_err(|api| RemoteAttemptError {
+        api,
+        class: class.take_or_terminal(),
+    })
 }
 
 /// Phase-1 batch driver: build one resolved provider source and let `chancela-signing` initiate one
@@ -6526,6 +6844,182 @@ impl ScmdTransport for SharedScmdTransport {
     }
 }
 
+// --- Multi-entry failover for the two-phase remote signing path (wp27-e7) ----------------------
+//
+// The failover ENGINE (priority-ordered candidate resolution + the retryable/terminal walk) lives in
+// `credential_resolve`; the stored-PKCS#12 path (`signature_pkcs12_stored`) already wires it. The
+// helpers below wire the SAME engine into the CMD + generic-remote (CSC) two-phase INITIATE, and pin
+// the chosen entry so CONFIRM resumes the EXACT credential initiate opened the session against.
+//
+// ## Why a class-recording transport
+//
+// `try_in_order[_async]` classifies the RAW provider error (`CmdError`/`CscError`) to decide
+// retryable vs terminal. But `chancela_signing`'s initiate flattens every provider failure into an
+// opaque `SigningError::Provider(String)`, discarding that class; re-deriving it by string-matching
+// would be fragile and unsafe. Instead the initiate runs over a thin transport wrapper that records
+// the failover class of the LAST transport call (`error_class()` on the real error, BEFORE it is
+// flattened). A transport-level failure (network/TLS/5xx/429) records `Retryable`; a provider
+// decision the client parses out of a *successful* HTTP response (a wrong PIN / rejected OTP → the
+// client builds a terminal error only AFTER the transport returned `Ok`) leaves the recorder `None`
+// → the safe default `Terminal`. So a real provider "no" never fails over onto — and burns — the next
+// stored credential's PIN/OTP attempts (the OTP-burn invariant), while a genuine outage does advance.
+
+/// The failover class of the most recent transport call (`None` = that call succeeded). Shared across
+/// the (possibly `spawn_blocking`) initiate so the walk can recover the raw provider-error class after
+/// `chancela_signing` has flattened it into an opaque `SigningError::Provider`.
+#[derive(Clone, Default)]
+struct LastTransportErrorClass(Arc<Mutex<Option<ErrorClass>>>);
+
+impl LastTransportErrorClass {
+    /// Record a transport result's class: `None` on success, `Some(class)` on the raw error.
+    fn record<T, E: ClassifyError>(&self, result: &Result<T, E>) {
+        *self.0.lock().expect("transport class mutex") = match result {
+            Ok(_) => None,
+            Err(err) => Some(err.error_class()),
+        };
+    }
+
+    /// Take the recorded class, defaulting to [`ErrorClass::Terminal`] — the safe default when the
+    /// failure did not originate at the transport (a provider decision parsed from a 200 response, a
+    /// trust-gate rejection, or a CMS-assembly fault) and so must NEVER fail over.
+    fn take_or_terminal(&self) -> ErrorClass {
+        self.0
+            .lock()
+            .expect("transport class mutex")
+            .take()
+            .unwrap_or(ErrorClass::Terminal)
+    }
+}
+
+/// A CMD SOAP transport that records each call's failover class, then delegates. Wraps either the
+/// injected mock (`SharedScmdTransport`) or the real `HttpScmdTransport`.
+struct ClassRecordingScmdTransport<T> {
+    inner: T,
+    class: LastTransportErrorClass,
+}
+
+impl<T: ScmdTransport> ScmdTransport for ClassRecordingScmdTransport<T> {
+    fn call(&self, action: &str, soap_body: &str) -> Result<String, chancela_cmd::CmdError> {
+        let result = self.inner.call(action, soap_body);
+        self.class.record(&result);
+        result
+    }
+}
+
+/// A CSC REST transport that records each call's failover class, then delegates. Wraps either the
+/// injected mock (`BoxedCscTransport`) or the real `HttpCscTransport`.
+struct ClassRecordingCscTransport<T> {
+    inner: T,
+    class: LastTransportErrorClass,
+}
+
+impl<T: CscTransport> CscTransport for ClassRecordingCscTransport<T> {
+    fn post_json(
+        &self,
+        path: &str,
+        auth: CscAuthHeader<'_>,
+        body: &str,
+    ) -> Result<String, CscError> {
+        let result = self.inner.post_json(path, auth, body);
+        self.class.record(&result);
+        result
+    }
+}
+
+/// One candidate's initiate failure: the client-facing [`ApiError`] plus the failover [`ErrorClass`]
+/// derived from the RAW provider error via the recording transport. [`try_in_order_async`] reads the
+/// class to advance on `Retryable` / stop on `Terminal`; the surfaced HTTP error is `api`.
+struct RemoteAttemptError {
+    api: ApiError,
+    class: ErrorClass,
+}
+
+impl ClassifyError for RemoteAttemptError {
+    fn error_class(&self) -> ErrorClass {
+        self.class
+    }
+}
+
+/// The opaque `session_json` envelope persisted between the two phases: the provider's secret-free
+/// resumable session PLUS the id of the stored credential entry the failover walk chose at initiate.
+/// CONFIRM resolves this EXACT entry rather than re-resolving `default_entry` — which, the instant
+/// initiate can fail over to a non-default entry, would submit the OTP/SAD against the wrong
+/// ApplicationId / client credential and break the two-phase session (a3's verified latent bug).
+///
+/// `chosen_entry_id` is `None` for an env/DI-resolved session (confirm then resolves env, as before).
+/// Stored in the EXISTING opaque `session_json` text (the store never parses it) → ZERO schema change.
+/// Deserialization tolerates pre-wp27 bare-session blobs (persisted before this change, or by the
+/// batch path): they decode with `chosen_entry_id = None`.
+#[derive(Serialize, Deserialize)]
+struct PendingSessionEnvelope {
+    /// The stored entry id the failover walk selected, or `None` for an env/DI-resolved session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    chosen_entry_id: Option<String>,
+    /// The wrapped provider session (`CmdSignSession` or `RemoteSignSession`) as opaque JSON.
+    session: serde_json::Value,
+}
+
+/// Serialize a resumable session + the chosen entry id into the persisted `session_json` envelope.
+fn serialize_session_envelope<S: Serialize>(
+    session: &S,
+    chosen_entry_id: Option<&str>,
+) -> Result<String, serde_json::Error> {
+    let envelope = PendingSessionEnvelope {
+        chosen_entry_id: chosen_entry_id.map(str::to_owned),
+        session: serde_json::to_value(session)?,
+    };
+    serde_json::to_string(&envelope)
+}
+
+/// Deserialize a persisted `session_json` into `(session, chosen_entry_id)`, tolerant of the pre-wp27
+/// bare-session format (no envelope → `chosen_entry_id = None`). The two provider session types carry
+/// no `session` field, so the envelope shape never matches a bare session by accident.
+fn deserialize_session_envelope<S: serde::de::DeserializeOwned>(
+    session_json: &str,
+) -> Result<(S, Option<String>), serde_json::Error> {
+    match serde_json::from_str::<PendingSessionEnvelope>(session_json) {
+        Ok(envelope) => Ok((
+            serde_json::from_value(envelope.session)?,
+            envelope.chosen_entry_id,
+        )),
+        // Legacy bare session (lacks the required `session` field): decode as the session directly.
+        Err(_) => Ok((serde_json::from_str::<S>(session_json)?, None)),
+    }
+}
+
+/// The non-secret id of the stored entry a resolved candidate came from, or `None` for the env/DI
+/// fallback — persisted so confirm can pin the same credential.
+fn candidate_entry_id(source: &ResolvedSource) -> Option<String> {
+    match source {
+        ResolvedSource::Stored { entry_id, .. } => Some(entry_id.clone()),
+        ResolvedSource::Env => None,
+    }
+}
+
+/// Map a candidate-resolution failure onto an [`ApiError`]: a store failure is a runtime-credential
+/// error; an assembly failure already carries its own client-facing [`ApiError`].
+fn resolve_candidates_err(
+    mode: CredentialMode,
+    provider_id: &str,
+    err: ResolveError<ApiError>,
+) -> ApiError {
+    match err {
+        ResolveError::Store(e) => provider_credential_runtime_err(mode, provider_id, e),
+        ResolveError::Assemble(api) => api,
+    }
+}
+
+/// The pinned entry a two-phase session recorded is gone/disabled by confirm time. Confirm must NOT
+/// fall back to another credential (the OTP/SAD was burned against the pinned one) — surface a clear
+/// 409 telling the operator to restart the signature.
+fn pinned_entry_unavailable_err(mode: CredentialMode, provider_id: &str) -> ApiError {
+    let _ = (mode, provider_id);
+    ApiError::Conflict(
+        "a credencial usada para iniciar esta assinatura já não está disponível; reinicie a assinatura"
+            .to_owned(),
+    )
+}
+
 impl TslSource for RuntimeTslSource {
     fn fetch(&self) -> Result<Vec<u8>, TslError> {
         let bytes = if let Some(path) = self.location.path() {
@@ -6647,8 +7141,10 @@ pub(crate) fn validate_runtime_tsa_provider_url(
     }
 }
 
-/// Phase-1 driver: run `cmd_initiate` over the injected transport inline (tests, no network), or a
-/// real `HttpScmdTransport` off the async runtime (production).
+/// Phase-1 driver: run `cmd_initiate` for ONE candidate over the injected transport inline (tests, no
+/// network), or a real `HttpScmdTransport` off the async runtime (production). The transport is wrapped
+/// in a [`ClassRecordingScmdTransport`] so a failure carries the RAW provider-error failover class
+/// (`Retryable`/`Terminal`) that the multi-entry walk needs — see the wp27-e7 note above.
 #[allow(clippy::too_many_arguments)]
 async fn run_cmd_initiate(
     state: &AppState,
@@ -6659,19 +7155,25 @@ async fn run_cmd_initiate(
     doc_name: &str,
     signing_time: OffsetDateTime,
     prepared: &PreparedSignature,
-) -> Result<CmdSignSession, ApiError> {
+) -> Result<CmdSignSession, RemoteAttemptError> {
     let policy_factory = state.cmd_trust_policy.clone();
-    if let Some(transport) = &state.cmd_transport {
-        let client = ScmdClient::from_config(SharedScmdTransport(transport.clone()), cmd_cfg)
-            .map_err(cmd_config_err)?;
-        let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
-        let init = CmdInitiate {
-            user_id: phone,
-            pin,
-            doc_name,
-            signing_time,
+    let class = LastTransportErrorClass::default();
+    let result: Result<CmdSignSession, ApiError> = if let Some(transport) = &state.cmd_transport {
+        let recording = ClassRecordingScmdTransport {
+            inner: SharedScmdTransport(transport.clone()),
+            class: class.clone(),
         };
-        cmd_initiate(&client, &init, prepared, Some(policy.as_mut())).map_err(map_signing_error)
+        (|| {
+            let client = ScmdClient::from_config(recording, cmd_cfg).map_err(cmd_config_err)?;
+            let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
+            let init = CmdInitiate {
+                user_id: phone,
+                pin,
+                doc_name,
+                signing_time,
+            };
+            cmd_initiate(&client, &init, prepared, Some(policy.as_mut())).map_err(map_signing_error)
+        })()
     } else {
         // Production: the real SCMD/TSL calls block, so run them off the async worker.
         let cmd_cfg = cmd_cfg.clone();
@@ -6681,9 +7183,14 @@ async fn run_cmd_initiate(
         let doc_name = doc_name.to_owned();
         let policy_factory = policy_factory.clone();
         let tsl_source = tsl_source.clone();
+        let class = class.clone();
         tokio::task::spawn_blocking(move || {
             let transport = HttpScmdTransport::from_config(&cmd_cfg).map_err(cmd_config_err)?;
-            let client = ScmdClient::from_config(transport, &cmd_cfg).map_err(cmd_config_err)?;
+            let recording = ClassRecordingScmdTransport {
+                inner: transport,
+                class,
+            };
+            let client = ScmdClient::from_config(recording, &cmd_cfg).map_err(cmd_config_err)?;
             let mut policy = build_trust_policy(policy_factory, tsl_source)?;
             let init = CmdInitiate {
                 user_id: &phone,
@@ -6695,8 +7202,12 @@ async fn run_cmd_initiate(
                 .map_err(map_signing_error)
         })
         .await
-        .map_err(|e| ApiError::Internal(format!("cmd initiate task failed: {e}")))?
-    }
+        .unwrap_or_else(|e| Err(ApiError::Internal(format!("cmd initiate task failed: {e}"))))
+    };
+    result.map_err(|api| RemoteAttemptError {
+        api,
+        class: class.take_or_terminal(),
+    })
 }
 
 /// Phase-2 driver: run `cmd_confirm` over the injected transport inline (tests), or a real
@@ -6743,10 +7254,12 @@ fn build_trust_policy(
     Ok(Box::new(TslTrustPolicy::new(source)))
 }
 
-/// Resolve the effective [`CmdConfig`]: a complete stored CMD record wins; otherwise environment
-/// secrets are used, and the existing non-secret settings selector fallback fills in the
+/// Resolve the effective **default** [`CmdConfig`]: a complete stored CMD record wins; otherwise
+/// environment secrets are used, and the existing non-secret settings selector fallback fills in the
 /// ApplicationId when env is unset. A present but incomplete stored record fails closed instead of
-/// mixing with env/settings.
+/// mixing with env/settings. Used by the provider-config check and by confirm when a session was not
+/// entry-pinned (env/DI or a pre-wp27 session); the multi-entry INITIATE walk uses
+/// [`resolve_cmd_candidates`].
 async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
     let cmd = { state.settings.read().await.signing.cmd.clone() };
     match state
@@ -6764,24 +7277,75 @@ async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
         }
     }
 
+    cmd_config_from_env(&cmd)?.ok_or_else(|| {
+        ApiError::Unprocessable(
+            "a Chave Móvel Digital não está configurada (falta o ApplicationId)".to_owned(),
+        )
+    })
+}
+
+/// Resolve the priority-ordered CMD candidate list (wp27-e7): every **enabled** stored CMD entry in
+/// priority order, or — when nothing is stored — the single env/settings-derived config as the
+/// [`ResolvedSource::Env`] candidate. Mirrors [`resolve_cmd_config`]'s precedence via the shared
+/// [`resolve_candidates`] engine; an all-disabled or unconfigured provider yields an empty list.
+async fn resolve_cmd_candidates(
+    state: &AppState,
+) -> Result<Vec<ResolvedCredential<CmdConfig>>, ApiError> {
+    let cmd = { state.settings.read().await.signing.cmd.clone() };
+    resolve_candidates(
+        &state.provider_credentials,
+        CredentialMode::Cmd,
+        "",
+        |entry| cmd_config_from_entry(&cmd, entry),
+        || cmd_config_from_env(&cmd),
+    )
+    .map_err(|e| resolve_candidates_err(CredentialMode::Cmd, "", e))
+}
+
+/// Resolve the CMD config for CONFIRM, pinned to the entry the session recorded at initiate. `None`
+/// (an env/DI or pre-wp27 session) resolves the default exactly as before; `Some(id)` resolves that
+/// exact enabled entry and NEVER falls back — the OTP was dispatched against it, so a gone/disabled
+/// entry is a clear 409, never a silent re-resolve of a different credential.
+async fn resolve_cmd_config_for_entry(
+    state: &AppState,
+    entry_id: Option<&str>,
+) -> Result<CmdConfig, ApiError> {
+    let Some(entry_id) = entry_id else {
+        return resolve_cmd_config(state).await;
+    };
+    let cmd = { state.settings.read().await.signing.cmd.clone() };
+    let entries = state
+        .provider_credentials
+        .read_entries_runtime(CredentialMode::Cmd, "")
+        .map_err(|e| provider_credential_runtime_err(CredentialMode::Cmd, "", e))?;
+    let entry = entries
+        .iter()
+        .find(|e| e.enabled && e.entry_id == entry_id)
+        .ok_or_else(|| pinned_entry_unavailable_err(CredentialMode::Cmd, ""))?;
+    cmd_config_from_entry(&cmd, entry)
+}
+
+/// The env/settings-derived CMD config, or `None` when nothing at all is configured (no
+/// `CHANCELA_CMD_*` env and no settings ApplicationId) — the caller then fails closed. Malformed
+/// `CHANCELA_CMD_*` values fail closed here rather than being swallowed.
+fn cmd_config_from_env(
+    cmd: &crate::settings::SigningCmdSettings,
+) -> Result<Option<CmdConfig>, ApiError> {
     // Env-supplied secrets (never from the settings JSON). A truly absent env config may still fall
-    // back to the non-secret settings ApplicationId, but malformed CHANCELA_CMD_* values fail
-    // closed instead of being swallowed.
+    // back to the non-secret settings ApplicationId, but malformed CHANCELA_CMD_* values fail closed.
     let env_cfg = match CmdConfig::from_env() {
         Ok(cfg) => Some(cfg),
         Err(err) if cmd_env_config_is_missing(&err) => None,
         Err(err) => return Err(cmd_env_config_err(err)),
     };
-    let application_id = env_cfg
+    let Some(application_id) = env_cfg
         .as_ref()
         .map(|c| c.application_id.clone())
         .or_else(|| cmd.application_id.clone())
         .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| {
-            ApiError::Unprocessable(
-                "a Chave Móvel Digital não está configurada (falta o ApplicationId)".to_owned(),
-            )
-        })?;
+    else {
+        return Ok(None);
+    };
     let env = match cmd.env {
         crate::settings::CmdEnvSetting::Preprod => CmdEnv::Preprod,
         crate::settings::CmdEnvSetting::Prod => CmdEnv::Prod,
@@ -6798,17 +7362,35 @@ async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
     // Validate the field-encryptor is buildable (PROD without the AMA cert is refused here).
     cfg.field_encryptor()
         .map_err(|e| ApiError::Unprocessable(format!("configuração CMD inválida: {e}")))?;
-    Ok(cfg)
+    Ok(Some(cfg))
 }
 
+/// Assemble a CMD config from a stored **flat** record (the legacy default-entry read path).
 fn cmd_config_from_stored(
     cmd: &crate::settings::SigningCmdSettings,
-    mut record: DecryptedCredentialRecord,
+    record: DecryptedCredentialRecord,
 ) -> Result<CmdConfig, ApiError> {
-    let application_id = nonblank_runtime_secret(record.fields.remove(FIELD_APPLICATION_ID));
-    let username = nonblank_runtime_secret(record.fields.remove(FIELD_HTTP_BASIC_USERNAME));
-    let password = nonblank_runtime_secret(record.fields.remove(FIELD_HTTP_BASIC_PASSWORD));
-    let ama_cert_pem = nonblank_runtime_secret(record.fields.remove(FIELD_AMA_CERT_PEM));
+    cmd_config_from_fields(cmd, record.fields)
+}
+
+/// Assemble a CMD config from one stored **multi-entry** entry (the failover read path).
+fn cmd_config_from_entry(
+    cmd: &crate::settings::SigningCmdSettings,
+    entry: &DecryptedCredentialEntry,
+) -> Result<CmdConfig, ApiError> {
+    cmd_config_from_fields(cmd, entry.fields.clone())
+}
+
+/// Assemble a [`CmdConfig`] from a decrypted field map (shared by the flat + multi-entry paths). A
+/// partial record fails closed rather than mixing with env/settings.
+fn cmd_config_from_fields(
+    cmd: &crate::settings::SigningCmdSettings,
+    mut fields: BTreeMap<String, Zeroizing<String>>,
+) -> Result<CmdConfig, ApiError> {
+    let application_id = nonblank_runtime_secret(fields.remove(FIELD_APPLICATION_ID));
+    let username = nonblank_runtime_secret(fields.remove(FIELD_HTTP_BASIC_USERNAME));
+    let password = nonblank_runtime_secret(fields.remove(FIELD_HTTP_BASIC_PASSWORD));
+    let ama_cert_pem = nonblank_runtime_secret(fields.remove(FIELD_AMA_CERT_PEM));
     let mut missing = Vec::new();
     if application_id.is_none() {
         missing.push(FIELD_APPLICATION_ID);
