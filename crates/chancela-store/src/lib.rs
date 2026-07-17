@@ -3323,6 +3323,40 @@ impl Store {
         }
     }
 
+    /// Async wrapper for synchronous store **reads** (wp28), the read-side counterpart of
+    /// [`Store::persist_result_blocking_async`]. Offloads a blocking read closure onto tokio's
+    /// blocking thread pool so it never runs on an async worker.
+    ///
+    /// This matters for the synchronous `postgres` backend, which drives its connector — and even
+    /// `postgres::Client`'s `Drop` — via an internal `Runtime::block_on`; executing that from a
+    /// tokio runtime worker (directly inside an `async fn`, not inside `spawn_blocking`) panics and
+    /// aborts the process. The [`Store`] clone captured by the task is dropped *inside* the blocking
+    /// thread, so any owned `Client` is torn down safely off the async worker.
+    ///
+    /// Like [`Store::persist_result_blocking_async`], `spawn_blocking` requires the closure to be
+    /// `Send + 'static`, so callers pass an **owned** closure that returns owned/serializable data
+    /// (never a live `PooledConnection`/`Row`/`Client`). `T` crosses the blocking-task boundary and
+    /// so must also be `Send + 'static`; it is typically a `Result<_, StoreError>`, in which case
+    /// callers append `?` after `.await` (e.g. `store.read_blocking_async(move |s|
+    /// s.documents_for_act(id)).await?`).
+    pub async fn read_blocking_async<T, F>(&self, f: F) -> T
+    where
+        F: FnOnce(&Store) -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        // Cheap clone (shared `Arc<Mutex<..>>` / pool) so the blocking task reads through the exact
+        // same underlying connection/pool as the caller; the clone is dropped inside the blocking
+        // thread, keeping any owned postgres `Client` `Drop` off the async worker.
+        let store = self.clone();
+        match tokio::task::spawn_blocking(move || f(&store)).await {
+            Ok(result) => result,
+            // Re-raise a panic in the read on the caller, matching the previous behaviour of the
+            // inline synchronous call (a panic unwound the request task). `spawn_blocking` tasks are
+            // not cancellable once started, so a non-panic `JoinError` does not occur here.
+            Err(join_error) => std::panic::resume_unwind(join_error.into_panic()),
+        }
+    }
+
     /// Snapshot the database with `VACUUM INTO` (transactionally consistent, no downtime), bundle
     /// it with the given `sidecars` and a `manifest.json` into a single zip under
     /// `<data_dir>/backups/`, and return the [`BackupManifest`] (frozen §3.2).
