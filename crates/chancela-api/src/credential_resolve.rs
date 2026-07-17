@@ -308,6 +308,43 @@ where
     }
 }
 
+/// The **async** twin of [`try_in_order`], for signing paths whose per-candidate attempt is an
+/// `async fn` (the CMD/CSC two-phase remote initiate runs the real provider call on `spawn_blocking`
+/// and must be `.await`ed). The retryable/terminal policy is byte-identical to [`try_in_order`]:
+///
+/// - `Ok(value)` — return it.
+/// - a **retryable** error — remember it and advance to the next candidate.
+/// - a **terminal** error — return [`FailoverError::Terminal`] **immediately**, without touching any
+///   later candidate (the OTP/PIN-burn guard: a real provider "no" must never cascade to — and burn —
+///   the next stored credential's attempts).
+///
+/// An empty slice returns [`FailoverError::NoCandidates`]; all-retryable returns
+/// [`FailoverError::Exhausted`] with the last error.
+pub async fn try_in_order_async<C, T, E, F, Fut>(
+    candidates: &[ResolvedCredential<C>],
+    mut attempt: F,
+) -> Result<T, FailoverError<E>>
+where
+    F: FnMut(&ResolvedCredential<C>) -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+    E: ClassifyError,
+{
+    let mut last_retryable = None;
+    for candidate in candidates {
+        match attempt(candidate).await {
+            Ok(value) => return Ok(value),
+            Err(err) => match err.error_class() {
+                ErrorClass::Terminal => return Err(FailoverError::Terminal(err)),
+                ErrorClass::Retryable => last_retryable = Some(err),
+            },
+        }
+    }
+    match last_retryable {
+        Some(err) => Err(FailoverError::Exhausted(err)),
+        None => Err(FailoverError::NoCandidates),
+    }
+}
+
 // --- PKCS#12 signer input (the one genuinely-new per-mode assembly) -------------------------
 
 /// Selector key: the PKCS#12 `friendlyName` to match when a PFX carries several identities.
