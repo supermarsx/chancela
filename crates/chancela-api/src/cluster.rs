@@ -340,14 +340,42 @@ impl AppState {
         let Some(store) = &self.store else {
             return Ok(());
         };
-        // Catch up + re-verify from Postgres (authoritative). `load` re-runs the chain verification.
-        let loaded = match store.load() {
-            Ok(loaded) => loaded,
-            Err(e) => {
+        // wp28-soak BUG-1 (site 3): `load` / `cluster_durable_max_seq` / `all_signed_documents` /
+        // `all_pending_cmd_sessions` are SYNCHRONOUS `postgres` store ops (their connection is driven
+        // by an internal `block_on`). This fn is `.await`ed on the supervisor's tokio worker during
+        // failover, so calling them inline panicked ("Cannot start a runtime from within a runtime")
+        // and aborted the promoting node on the FIRST promotion. Gather every durable read off the
+        // worker in a SINGLE blocking task; the async state swap below is unchanged. Semantics are
+        // preserved: any read error → DEGRADED read-only + error return, and the reads keep their
+        // original relative order (load → durable MAX(seq) → signed docs → pending sessions).
+        let store_read = store.clone();
+        let gathered = tokio::task::spawn_blocking(move || {
+            let loaded = store_read.load().map_err(|e| e.to_string())?;
+            let durable_max = store_read
+                .cluster_durable_max_seq()
+                .map_err(|e| e.to_string())?;
+            let signed = store_read
+                .all_signed_documents()
+                .map_err(|e| e.to_string())?;
+            let pending = store_read
+                .all_pending_cmd_sessions()
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>((loaded, durable_max, signed, pending))
+        })
+        .await;
+        let (loaded, durable_max, signed, pending) = match gathered {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => {
                 *self.degraded.write().await = true;
                 return Err(ApiError::Internal(format!(
-                    "promotion handoff load failed: {e}"
+                    "promotion handoff durable read failed: {e}"
                 )));
+            }
+            Err(_) => {
+                *self.degraded.write().await = true;
+                return Err(ApiError::Internal(
+                    "promotion handoff durable-read task panicked".to_owned(),
+                ));
             }
         };
         // §4.2 step d: a broken durable chain must NOT be extended — go read-only and alarm.
@@ -359,39 +387,12 @@ impl AppState {
             )));
         }
         let durable_len = loaded.ledger.len();
-        let durable_max = match store.cluster_durable_max_seq() {
-            Ok(max) => max,
-            Err(e) => {
-                *self.degraded.write().await = true;
-                return Err(ApiError::Internal(format!(
-                    "promotion handoff failed to read durable MAX(seq): {e}"
-                )));
-            }
-        };
         if let Err(msg) = validate_handoff_ledger_len(durable_len, durable_max) {
             *self.degraded.write().await = true;
             return Err(ApiError::Internal(format!(
                 "promotion handoff refused mismatched durable ledger state: {msg}"
             )));
         }
-        let signed = match store.all_signed_documents() {
-            Ok(signed) => signed,
-            Err(e) => {
-                *self.degraded.write().await = true;
-                return Err(ApiError::Internal(format!(
-                    "promotion handoff failed to reload signed documents: {e}"
-                )));
-            }
-        };
-        let pending = match store.all_pending_cmd_sessions() {
-            Ok(pending) => pending,
-            Err(e) => {
-                *self.degraded.write().await = true;
-                return Err(ApiError::Internal(format!(
-                    "promotion handoff failed to reload pending CMD sessions: {e}"
-                )));
-            }
-        };
         // Swap the authoritative durable state in, discarding any stale in-memory tail (§4.4).
         *self.entities.write().await = loaded.entities;
         *self.books.write().await = loaded.books;

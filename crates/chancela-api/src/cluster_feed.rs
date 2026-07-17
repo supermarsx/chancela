@@ -234,7 +234,19 @@ impl AppState {
             let len = self.ledger.read().await.len();
             (len > 0).then(|| (len - 1) as u64)
         };
-        let durable_max_result = store.cluster_durable_max_seq();
+        // wp28-soak BUG-1 (site 2): `cluster_durable_max_seq()` runs a SYNCHRONOUS `postgres` query,
+        // whose connection is driven by an internal `block_on`. Calling it directly here made this
+        // async fn panic ("Cannot start a runtime from within a runtime") whenever it was awaited on a
+        // tokio worker — i.e. on EVERY `/health` and `/metrics` request on a Postgres node, which
+        // aborts the process (the container healthcheck alone kills the node ~30s after boot). Offload
+        // the blocking query, matching the discipline the cluster supervisor/watchdog already use.
+        let durable_max_result = {
+            let store = store.clone();
+            match tokio::task::spawn_blocking(move || store.cluster_durable_max_seq()).await {
+                Ok(r) => r,
+                Err(_) => return None,
+            }
+        };
         let durable_max_seq = durable_max_result.as_ref().ok().copied().flatten();
         let lag_available = durable_max_result.is_ok();
         Some(ClusterReplicaLag {
