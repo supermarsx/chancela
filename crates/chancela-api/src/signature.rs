@@ -5509,7 +5509,13 @@ pub async fn get_signature_status(
 }
 
 fn pending_provider_info(pending: &PendingCmdSession) -> PendingProviderInfo {
-    if let Ok(session) = serde_json::from_str::<RemoteSignSession>(&pending.session_json) {
+    // The persisted `session_json` is wrapped in a `PendingSessionEnvelope` (wp27 e7); read it through
+    // the tolerant envelope decoder, which also handles the pre-wp27 bare-session format. A plain
+    // `from_str::<RemoteSignSession>` would fail on the envelope and mis-report the session as the CMD
+    // default provider.
+    if let Ok((session, _)) =
+        deserialize_session_envelope::<RemoteSignSession>(&pending.session_json)
+    {
         let provider_id = session.provider_id;
         let activation_hint =
             (provider_id != CMD_PROVIDER_ID).then(|| pending.masked_phone.clone());
