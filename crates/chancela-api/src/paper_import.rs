@@ -856,7 +856,8 @@ pub async fn list_paper_book_imports(
         return Ok(Json(Vec::new()));
     };
     let rows = store
-        .paper_book_imports(book_ref.as_deref())
+        .read_blocking_async(move |s| s.paper_book_imports(book_ref.as_deref()))
+        .await
         .map_err(|e| ApiError::Internal(format!("paper-book import store read failed: {e}")))?;
     Ok(Json(rows.iter().map(paper_book_import_view).collect()))
 }
@@ -1086,8 +1087,10 @@ pub async fn list_paper_book_import_ocr_drafts(
     let Some(store) = &state.store else {
         return Ok(Json(Vec::new()));
     };
+    let import_id = import.meta.import_id.clone();
     let rows = store
-        .paper_book_ocr_drafts(&import.meta.import_id)
+        .read_blocking_async(move |s| s.paper_book_ocr_drafts(&import_id))
+        .await
         .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?;
     Ok(Json(rows.iter().map(paper_book_ocr_draft_view).collect()))
 }
@@ -1122,8 +1125,10 @@ pub async fn review_paper_book_import_ocr_draft(
             "paper-book OCR draft review requires on-disk persistence".to_owned(),
         ));
     };
+    let draft_id_for_read = draft_id.clone();
     let current = store
-        .paper_book_ocr_draft(&draft_id)
+        .read_blocking_async(move |s| s.paper_book_ocr_draft(&draft_id_for_read))
+        .await
         .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
         .ok_or(ApiError::NotFound)?;
     if current.import_id != import.meta.import_id {
@@ -1167,7 +1172,8 @@ pub async fn review_paper_book_import_ocr_draft(
     drop(ledger);
 
     let reviewed = store
-        .paper_book_ocr_draft(&draft_id)
+        .read_blocking_async(move |s| s.paper_book_ocr_draft(&draft_id))
+        .await
         .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
         .ok_or(ApiError::NotFound)?;
     Ok(Json(paper_book_ocr_draft_view(&reviewed)))
@@ -1191,15 +1197,21 @@ pub async fn create_act_draft_from_accepted_paper_book_ocr_draft(
         ));
     };
     let draft = store
-        .paper_book_ocr_draft(&draft_id)
+        .read_blocking_async(move |s| s.paper_book_ocr_draft(&draft_id))
+        .await
         .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
         .ok_or(ApiError::NotFound)?;
     if draft.import_id != import.meta.import_id {
         return Err(ApiError::NotFound);
     }
     ensure_ocr_draft_can_create_act_draft(&draft)?;
+    let import_id_for_read = import.meta.import_id.clone();
+    let draft_id_for_read = draft.draft_id.clone();
     let existing_dossier = store
-        .paper_book_ocr_conversion_dossier_for_draft(&import.meta.import_id, &draft.draft_id)
+        .read_blocking_async(move |s| {
+            s.paper_book_ocr_conversion_dossier_for_draft(&import_id_for_read, &draft_id_for_read)
+        })
+        .await
         .map_err(|e| {
             ApiError::Internal(format!(
                 "paper-book OCR conversion dossier store read failed: {e}"
@@ -1306,7 +1318,8 @@ pub async fn create_paper_book_ocr_conversion_dossier(
         ));
     };
     let draft = store
-        .paper_book_ocr_draft(&draft_id)
+        .read_blocking_async(move |s| s.paper_book_ocr_draft(&draft_id))
+        .await
         .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
         .ok_or(ApiError::NotFound)?;
     if draft.import_id != import.meta.import_id {
@@ -1386,11 +1399,16 @@ pub async fn create_paper_book_ocr_conversion_dossier(
             ))
         }
         PaperBookOcrConversionDossierUpsert::Existing(stored) => {
+            let import_id_for_read = stored.import_id.clone();
+            let draft_id_for_read = stored.draft_id.clone();
             let bound_artifacts = store
-                .paper_book_ocr_conversion_execution_artifacts_for_draft(
-                    &stored.import_id,
-                    &stored.draft_id,
-                )
+                .read_blocking_async(move |s| {
+                    s.paper_book_ocr_conversion_execution_artifacts_for_draft(
+                        &import_id_for_read,
+                        &draft_id_for_read,
+                    )
+                })
+                .await
                 .map_err(|e| {
                     ApiError::Internal(format!(
                         "paper-book OCR conversion execution artifact store read failed: {e}"
@@ -1419,31 +1437,36 @@ pub async fn list_paper_book_ocr_conversion_dossiers(
     let Some(store) = &state.store else {
         return Ok(Json(Vec::new()));
     };
-    let rows = store
-        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+    // wp28: fold the dossier list read and the per-dossier bound-artifact reads into ONE offloaded
+    // closure so the whole read runs on the blocking pool (never a sync postgres op on an async
+    // worker), returning owned view rows.
+    let import_id = import.meta.import_id.clone();
+    let out = store
+        .read_blocking_async(
+            move |s| -> Result<Vec<PaperBookOcrConversionDossierView>, StoreError> {
+                let rows = s.paper_book_ocr_conversion_dossiers(&import_id)?;
+                let mut out = Vec::with_capacity(rows.len());
+                for dossier in &rows {
+                    let bound_artifacts = s
+                        .paper_book_ocr_conversion_execution_artifacts_for_draft(
+                            &dossier.import_id,
+                            &dossier.draft_id,
+                        )?;
+                    let bound_artifacts = (!bound_artifacts.is_empty()).then_some(bound_artifacts);
+                    out.push(paper_book_ocr_conversion_dossier_view(
+                        dossier,
+                        bound_artifacts.as_deref(),
+                    ));
+                }
+                Ok(out)
+            },
+        )
+        .await
         .map_err(|e| {
             ApiError::Internal(format!(
                 "paper-book OCR conversion dossier store read failed: {e}"
             ))
         })?;
-    let mut out = Vec::with_capacity(rows.len());
-    for dossier in &rows {
-        let bound_artifacts = store
-            .paper_book_ocr_conversion_execution_artifacts_for_draft(
-                &dossier.import_id,
-                &dossier.draft_id,
-            )
-            .map_err(|e| {
-                ApiError::Internal(format!(
-                    "paper-book OCR conversion execution artifact store read failed: {e}"
-                ))
-            })?;
-        let bound_artifacts = (!bound_artifacts.is_empty()).then_some(bound_artifacts);
-        out.push(paper_book_ocr_conversion_dossier_view(
-            dossier,
-            bound_artifacts.as_deref(),
-        ));
-    }
     Ok(Json(out))
 }
 
@@ -1460,30 +1483,35 @@ pub async fn get_paper_book_ocr_canonical_rehearsal(
         return Err(ApiError::NotFound);
     };
 
-    let drafts = store
-        .paper_book_ocr_drafts(&import.meta.import_id)
-        .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?;
-    let dossiers = store
-        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
-        .map_err(|e| {
-            ApiError::Internal(format!(
-                "paper-book OCR conversion dossier store read failed: {e}"
-            ))
-        })?;
-    let mut artifacts = Vec::new();
-    for draft in &drafts {
-        let mut rows = store
-            .paper_book_ocr_conversion_execution_artifacts_for_draft(
-                &import.meta.import_id,
-                &draft.draft_id,
-            )
-            .map_err(|e| {
-                ApiError::Internal(format!(
-                    "paper-book OCR conversion execution artifact store read failed: {e}"
-                ))
-            })?;
-        artifacts.append(&mut rows);
-    }
+    // wp28: fold the drafts, dossiers, and per-draft artifact reads into ONE offloaded closure so the
+    // whole read runs on the blocking pool, returning owned rows for the (pure) report builder below.
+    let import_id = import.meta.import_id.clone();
+    #[allow(clippy::type_complexity)]
+    let (drafts, dossiers, artifacts) = store
+        .read_blocking_async(
+            move |s| -> Result<
+                (
+                    Vec<StoredPaperBookOcrDraft>,
+                    Vec<StoredPaperBookOcrConversionDossier>,
+                    Vec<StoredPaperBookOcrConversionExecutionArtifact>,
+                ),
+                StoreError,
+            > {
+                let drafts = s.paper_book_ocr_drafts(&import_id)?;
+                let dossiers = s.paper_book_ocr_conversion_dossiers(&import_id)?;
+                let mut artifacts = Vec::new();
+                for draft in &drafts {
+                    let mut rows = s.paper_book_ocr_conversion_execution_artifacts_for_draft(
+                        &import_id,
+                        &draft.draft_id,
+                    )?;
+                    artifacts.append(&mut rows);
+                }
+                Ok((drafts, dossiers, artifacts))
+            },
+        )
+        .await
+        .map_err(|e| ApiError::Internal(format!("paper-book OCR store read failed: {e}")))?;
 
     Ok(Json(paper_book_ocr_canonical_rehearsal_report(
         &import.meta,
@@ -1531,7 +1559,8 @@ async fn load_paper_book_import_for_actor(
         return Err(ApiError::NotFound);
     };
     store
-        .paper_book_import(&id)
+        .read_blocking_async(move |s| s.paper_book_import(&id))
+        .await
         .map_err(|e| ApiError::Internal(format!("paper-book import store read failed: {e}")))?
         .ok_or(ApiError::NotFound)
 }
@@ -1551,8 +1580,10 @@ async fn update_paper_book_import_ocr_status_internal(
         ));
     }
     let store = state.store.as_ref().expect("checked store");
+    let id_for_read = id.clone();
     let current = store
-        .paper_book_import(&id)
+        .read_blocking_async(move |s| s.paper_book_import(&id_for_read))
+        .await
         .map_err(|e| ApiError::Internal(format!("paper-book import store read failed: {e}")))?
         .ok_or(ApiError::NotFound)?;
     if current.meta.ocr_status == StoredPaperBookOcrStatus::Disabled
