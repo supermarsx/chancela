@@ -216,26 +216,28 @@ async fn load_generated_dispatch_evidence_snapshots(
     acts: &HashMap<ActId, Act>,
 ) -> Result<Vec<GeneratedDispatchEvidenceSnapshot>, ApiError> {
     if let Some(store) = &state.store {
-        let mut snapshots = Vec::new();
-        for act in acts.values() {
-            let docs = store
-                .documents_for_act(act.id)
-                .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")))?;
-            for document in docs.into_iter().filter(|document| {
-                crate::documents::generated_dispatch_evidence_profile_for_template(
-                    &document.template_id,
-                )
-                .is_some()
-            }) {
-                let evidence = store
-                    .generated_document_dispatch_evidence(&document.id)
-                    .map_err(|e| {
-                        ApiError::Internal(format!("dispatch evidence store read failed: {e}"))
-                    })?;
-                snapshots.push(GeneratedDispatchEvidenceSnapshot { document, evidence });
-            }
-        }
-        return Ok(snapshots);
+        // wp28: offload the whole read-loop onto the blocking pool as ONE closure so the sync
+        // postgres backend never drives its connector on an async worker (would panic/abort).
+        let act_ids: Vec<ActId> = acts.values().map(|act| act.id).collect();
+        return store
+            .read_blocking_async(move |s| {
+                let mut snapshots = Vec::new();
+                for act_id in act_ids {
+                    let docs = s.documents_for_act(act_id)?;
+                    for document in docs.into_iter().filter(|document| {
+                        crate::documents::generated_dispatch_evidence_profile_for_template(
+                            &document.template_id,
+                        )
+                        .is_some()
+                    }) {
+                        let evidence = s.generated_document_dispatch_evidence(&document.id)?;
+                        snapshots.push(GeneratedDispatchEvidenceSnapshot { document, evidence });
+                    }
+                }
+                Ok::<_, chancela_store::StoreError>(snapshots)
+            })
+            .await
+            .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")));
     }
 
     let documents = state
@@ -267,7 +269,8 @@ async fn load_imported_document_metadata(
 ) -> Result<Vec<StoredImportedDocumentMeta>, ApiError> {
     if let Some(store) = &state.store {
         return store
-            .imported_documents(None)
+            .read_blocking_async(move |s| s.imported_documents(None))
+            .await
             .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")));
     }
     Ok(Vec::new())

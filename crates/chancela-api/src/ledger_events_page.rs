@@ -25,8 +25,11 @@ pub(crate) async fn select_ledger_events_page(
     query: LedgerEventsSelectorQuery<'_>,
 ) -> Result<LedgerEventsSelection, ApiError> {
     if let Some(store) = &state.store {
+        // wp28: offload the sync postgres read onto the blocking pool (owned query moved in).
+        let page_query = store_query(&query);
         let page = store
-            .ledger_events_page(&store_query(&query))
+            .read_blocking_async(move |s| s.ledger_events_page(&page_query))
+            .await
             .map_err(|e| {
                 ApiError::Internal(format!("failed to read persisted ledger events: {e}"))
             })?;

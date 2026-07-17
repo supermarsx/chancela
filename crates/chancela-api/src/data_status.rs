@@ -720,8 +720,18 @@ pub async fn execute_data_key_rotation(
 
     let new_key = req.new_key.unwrap_or_default();
     let current_options = StoreOpenOptions::new().with_encryption_key("<configured>");
-    let preflight = Store::key_rotation_preflight(&data_dir, &current_options, &new_key)
-        .map_err(map_key_rotation_preflight_error)?;
+    // wp28: the preflight opens/inspects the on-disk store; offload it onto the blocking pool so
+    // the sync backend never drives its connector on an async worker (would panic/abort).
+    let preflight = {
+        let preflight_data_dir = data_dir.clone();
+        let preflight_new_key = new_key.clone();
+        task::spawn_blocking(move || {
+            Store::key_rotation_preflight(&preflight_data_dir, &current_options, &preflight_new_key)
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("data key-rotation preflight worker failed: {e}")))?
+        .map_err(map_key_rotation_preflight_error)?
+    };
     if !preflight.ready() {
         return Err(ApiError::Unprocessable(format!(
             "data key-rotation execution refused by preflight status {:?}; no rekey was attempted",

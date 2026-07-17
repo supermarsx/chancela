@@ -762,8 +762,11 @@ async fn latest_signed_document_for_seal(
     // transactions have committed. Prefer the durable row so a just-appended LTV revision cannot
     // be shadowed by a briefly stale in-memory projection.
     if let Some(store) = &state.store {
+        // wp28: offload the sync postgres read (called under the ledger write lock) onto the
+        // blocking pool; holding the tokio guard across this await is safe (the task never needs it).
         return store
-            .signed_document_for_act(act_id)
+            .read_blocking_async(move |s| s.signed_document_for_act(act_id))
+            .await
             .map_err(|error| ApiError::Internal(format!("signed document read failed: {error}")));
     }
     Ok(state.signed_documents.read().await.get(&act_id).cloned())
