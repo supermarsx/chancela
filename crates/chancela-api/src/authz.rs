@@ -449,8 +449,26 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/api", RouteClass::Exempt),
     ("/api/", RouteClass::Exempt),
     ("/health/{*rest}", RouteClass::Exempt),
+    // In-process test-fixture upstreams (NOT part of chancela's router): mock external servers the
+    // reqwest fetch paths hit instead of the network — `/Versao/Exportacao` mocks the INE SMI
+    // version-export catalog, `/{id}` mocks the law-PDF download. `router_paths_from_source` walks
+    // the whole `lib.rs` (its `\n}\n` region terminator does not match the CRLF-terminated router
+    // block), so these fixture `.route(...)` literals surface in the walk. They are unauthenticated
+    // by design (bare mock servers), so they are `Exempt`.
+    ("/Versao/Exportacao", RouteClass::Exempt),
+    ("/{id}", RouteClass::Exempt),
     // --- Any valid session (introspection for the web permissions context) ----------------------
     ("/v1/session/permissions", RouteClass::Session),
+    // --- Companion device pairing (wp27-e4) -----------------------------------------------------
+    // Mint / list / revoke are operator-authenticated: their handlers gate on `resolve_operator`
+    // (an interactive session bound to an active user), not a specific `require_permission` verb —
+    // so they are `Session`, not `Gated`, matching how other operator-session routes are classified.
+    // Exchange is deliberately unauthenticated (the phone has no session yet, exactly like
+    // `/v1/session/roster`) → `Exempt`.
+    ("/v1/pairing/codes", RouteClass::Session),
+    ("/v1/pairing/exchange", RouteClass::Exempt),
+    ("/v1/pairing/devices", RouteClass::Session),
+    ("/v1/pairing/devices/{device_id}", RouteClass::Session),
     // --- Entities -------------------------------------------------------------------------------
     ("/v1/entities", RouteClass::Gated), // GET entity.read@Global · POST entity.create@Global
     ("/v1/entities/{id}", RouteClass::Gated), // GET entity.read@Entity · PATCH entity.update@Entity

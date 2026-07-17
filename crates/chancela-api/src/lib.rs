@@ -5759,7 +5759,10 @@ mod tests {
 
     /// Draft an ata into `book_id`, fill mandatory (compliance-clean) contents, and advance it to
     /// Signing; returns the act id. Mirrors `full_lifecycle_happy_path`'s fill.
-    async fn draft_fill_and_advance(state: &AppState, book_id: &str) -> String {
+    /// Draft a fully populated ata and drive it up to (but not into) Signing. Stopping at
+    /// `TextApproved` lets the caller choose the canonical subtype when it advances into Signing —
+    /// the point at which the signing snapshot is now frozen.
+    async fn draft_fill_and_advance_to_text_approved(state: &AppState, book_id: &str) -> String {
         let (_, act) = send(
             state.clone(),
             post_json(
@@ -5785,13 +5788,7 @@ mod tests {
             ),
         )
         .await;
-        for to in [
-            "Review",
-            "Convened",
-            "Deliberated",
-            "TextApproved",
-            "Signing",
-        ] {
+        for to in ["Review", "Convened", "Deliberated", "TextApproved"] {
             let (status, _) = send(
                 state.clone(),
                 post_json(&format!("/v1/acts/{act_id}/advance"), json!({ "to": to })),
@@ -5799,6 +5796,20 @@ mod tests {
             .await;
             assert_eq!(status, StatusCode::OK);
         }
+        act_id
+    }
+
+    async fn draft_fill_and_advance(state: &AppState, book_id: &str) -> String {
+        let act_id = draft_fill_and_advance_to_text_approved(state, book_id).await;
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/advance"),
+                json!({ "to": "Signing" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
         act_id
     }
 
@@ -5892,13 +5903,14 @@ mod tests {
             post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
         )
         .await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        // Seal is evidence-gated: with neither a validated signed PDF nor a manual original
+        // reference, the seal is refused with 409 SEAL_EVIDENCE_REQUIRED (before any mutation).
+        assert_eq!(status, StatusCode::CONFLICT);
+        let error = body["error"].as_str().expect("error");
         assert!(
-            body["error"]
-                .as_str()
-                .expect("error")
-                .contains("manual_signature_original_reference"),
-            "validation error names the missing reference: {body}"
+            error.contains("seal requires")
+                && error.contains("manual_signature_original_reference"),
+            "conflict names the missing seal evidence: {body}"
         );
 
         let (status, act) = send(state, get(&format!("/v1/acts/{act_id}"))).await;
@@ -6154,12 +6166,26 @@ mod tests {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_fill_and_advance(&state, &book_id).await;
 
-        // Pre-seal the persisted PDF is 404 (no document until sealing).
-        let (status, _, _) =
+        // The canonical Ata is generated and persisted on entry to Signing (not at seal): the
+        // persisted PDF already downloads as application/pdf with a PDF header before sealing.
+        let (status, ctype, bytes) =
             send_bytes(state.clone(), get(&format!("/v1/acts/{act_id}/document"))).await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(status, StatusCode::OK);
+        assert!(ctype.starts_with("application/pdf"), "content-type={ctype}");
+        assert!(bytes.starts_with(b"%PDF-"), "bytes start with a PDF header");
 
-        // Seal → the additive `document` block names the PDF/A digest + pinned template version.
+        // The `document.generated` event was bound into the chain at Signing.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        assert!(
+            events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "document.generated"),
+            "a document.generated event was appended at Signing: {events}"
+        );
+
+        // Seal → the additive `document` block names the frozen PDF/A digest + pinned template.
         let (status, sealed) = send(
             state.clone(),
             post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
@@ -6171,18 +6197,7 @@ mod tests {
         assert_eq!(doc["pdf_digest"].as_str().expect("digest").len(), 64);
         assert!(doc["id"].is_string());
 
-        // A `document.generated` event is bound into the chain.
-        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
-        assert!(
-            events
-                .as_array()
-                .expect("events")
-                .iter()
-                .any(|e| e["kind"] == "document.generated"),
-            "a document.generated event was appended: {events}"
-        );
-
-        // The persisted PDF now downloads as application/pdf and carries the PDF header.
+        // The persisted PDF still downloads as application/pdf and carries the PDF header.
         let (status, ctype, bytes) =
             send_bytes(state, get(&format!("/v1/acts/{act_id}/document"))).await;
         assert_eq!(status, StatusCode::OK);
@@ -6490,17 +6505,27 @@ mod tests {
     #[tokio::test]
     async fn office_export_requires_a_preserved_document_and_rebuildable_model() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
-        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        // A draft (not yet advanced into Signing) has no preserved canonical document, so the
+        // office export is 404 — the preserved snapshot is only generated on entry to Signing.
+        let (_, act) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({ "book_id": book_id, "title": "Ata da AG anual", "channel": "Physical" }),
+            ),
+        )
+        .await;
+        let draft_act_id = act["id"].as_str().expect("act id").to_owned();
 
         let (status, _, _) = send_bytes(
             state.clone(),
-            get(&format!("/v1/acts/{act_id}/document/office")),
+            get(&format!("/v1/acts/{draft_act_id}/document/office")),
         )
         .await;
         assert_eq!(
             status,
             StatusCode::NOT_FOUND,
-            "draft has no preserved document to export"
+            "a draft has no preserved document to export"
         );
 
         let orphan_act_id = ActId(Uuid::new_v4());
@@ -7023,13 +7048,13 @@ mod tests {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_fill_and_advance(&state, &book_id).await;
 
-        // The bundle is 404 until sealed.
+        // The bundle is available once the canonical is generated on entry to Signing.
         let (status, _) = send(
             state.clone(),
             get(&format!("/v1/acts/{act_id}/document/bundle")),
         )
         .await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(status, StatusCode::OK);
 
         send(
             state.clone(),
@@ -8387,26 +8412,54 @@ mod tests {
     async fn seal_template_id_override_selects_a_subtype_and_unknown_errors() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
 
-        // An unknown override id is rejected (422), never silently defaulted to the spine.
-        let act_bad = draft_fill_and_advance(&state, &book_id).await;
+        // The canonical subtype is now chosen when the act enters Signing (the snapshot is frozen
+        // there), not at seal. An unknown override id is rejected (422) and the act never advances
+        // into Signing — no snapshot is left behind.
+        let act_bad = draft_fill_and_advance_to_text_approved(&state, &book_id).await;
         let (status, _) = send(
             state.clone(),
             post_json(
-                &format!("/v1/acts/{act_bad}/seal"),
-                seal_body_with_template_id("nao-existe/v9"),
+                &format!("/v1/acts/{act_bad}/advance"),
+                json!({ "to": "Signing", "template_id": "nao-existe/v9" }),
             ),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        // The bad seal rolled back: the act is not sealed.
         let (_, act) = send(state.clone(), get(&format!("/v1/acts/{act_bad}"))).await;
         assert_ne!(
-            act["state"], "Sealed",
-            "a failed override seal leaves no trace"
+            act["state"], "Signing",
+            "a failed override advance leaves no signing snapshot"
         );
 
-        // A valid ata subtype override generates that subtype instead of the spine.
-        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        // A valid ata subtype override at Signing freezes that subtype into the canonical snapshot.
+        let act_id = draft_fill_and_advance_to_text_approved(&state, &book_id).await;
+        let (status, view) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/advance"),
+                json!({ "to": "Signing", "template_id": "csc-ata-aprovacao-contas/v1" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "override advance: {view}");
+
+        // A seal template_id that does not match the frozen snapshot is refused (409), never
+        // re-selected at seal time; the failed seal leaves the act in Signing.
+        let (status, mismatch) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/seal"),
+                seal_body_with_template_id("csc-ata-ag/v1"),
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "mismatched seal template: {mismatch}"
+        );
+
+        // A matching seal template_id seals against the frozen subtype.
         let (status, sealed) = send(
             state.clone(),
             post_json(
@@ -13931,8 +13984,11 @@ mod tests {
     #[tokio::test]
     async fn csc_seal_blocked_without_mesa_then_passes_with_mesa() {
         // The re-promoted mesa Error: a CSC ata missing its presidente da mesa is refused at the
-        // seal (422), then seals once the mesa is filled through the wire.
+        // seal (422). Because Signing content is now frozen, the mesa can no longer be patched in
+        // after Signing — it must be present before Signing for a later act to seal clean.
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+
+        // --- Blocked: no mesa. Advance to Signing, then the seal is refused with the mesa Error. ---
         let (_, act) = send(
             state.clone(),
             post_json(
@@ -13941,13 +13997,13 @@ mod tests {
             ),
         )
         .await;
-        let act_id = act["id"].as_str().expect("act id").to_owned();
+        let blocked_id = act["id"].as_str().expect("act id").to_owned();
 
         // Fill everything except the mesa.
         let (status, _) = send(
             state.clone(),
             patch_json(
-                &format!("/v1/acts/{act_id}"),
+                &format!("/v1/acts/{blocked_id}"),
                 json!({
                     "meeting_date": "2026-03-30",
                     "meeting_time": "10:00",
@@ -13960,10 +14016,14 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        advance_to_signing(&state, &act_id).await;
+        advance_to_signing(&state, &blocked_id).await;
 
         // Compliance reports the blocking mesa Error and refuses the seal.
-        let (_, comp) = send(state.clone(), get(&format!("/v1/acts/{act_id}/compliance"))).await;
+        let (_, comp) = send(
+            state.clone(),
+            get(&format!("/v1/acts/{blocked_id}/compliance")),
+        )
+        .await;
         assert!(comp["errors"].as_u64().expect("errors") >= 1);
         assert_eq!(comp["seal_allowed"], false);
         assert!(
@@ -13977,7 +14037,7 @@ mod tests {
 
         let (status, body) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
+            post_json(&format!("/v1/acts/{blocked_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -13990,22 +14050,59 @@ mod tests {
             "the seal refusal carries the mesa Error: {body}"
         );
 
-        // Fill the mesa through the wire → the seal now succeeds.
+        // Signing content is frozen: the mesa can no longer be patched in after Signing.
         let (status, _) = send(
             state.clone(),
             patch_json(
-                &format!("/v1/acts/{act_id}"),
+                &format!("/v1/acts/{blocked_id}"),
                 json!({ "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] } }),
             ),
         )
         .await;
-        assert_eq!(status, StatusCode::OK);
-        let (status, sealed) = send(
-            state,
-            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "Signing content is immutable; the mesa cannot be patched in after Signing"
+        );
+
+        // --- Passes: the mesa is present before Signing, so the seal succeeds. ---
+        let (_, act) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({ "book_id": book_id, "title": "Ata", "channel": "Physical" }),
+            ),
         )
         .await;
-        assert_eq!(status, StatusCode::OK, "seal after mesa: {sealed}");
+        let ok_id = act["id"].as_str().expect("act id").to_owned();
+        let (status, _) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{ok_id}"),
+                json!({
+                    "meeting_date": "2026-03-30",
+                    "meeting_time": "10:00",
+                    "place": "Sede social",
+                    "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] },
+                    "agenda": [{ "number": 1, "text": "Contas" }],
+                    "attendance_reference": "Lista de presenças",
+                    "deliberations": "Aprovadas as contas.",
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        advance_to_signing(&state, &ok_id).await;
+        let (status, sealed) = send(
+            state,
+            post_json(&format!("/v1/acts/{ok_id}/seal"), seal_body()),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "seal with mesa before Signing: {sealed}"
+        );
         assert_eq!(sealed["ata_number"], 1);
     }
 
