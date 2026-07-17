@@ -113,7 +113,9 @@ async fn reconcile_documents_async(
     table: DocumentTable,
     rows: Vec<(String, String)>,
 ) -> Result<(), StoreError> {
-    let existing = existing_ids(store, table)?;
+    let existing = store
+        .read_blocking_async(move |s| existing_ids(s, table))
+        .await?;
     store
         .persist_blocking_async(move |tx| reconcile_documents_tx(tx, table, &rows, &existing))
         .await
@@ -404,8 +406,13 @@ pub(crate) async fn reload_into_state(state: &AppState, store: &Store) {
     *state.roles.write().await = loaded.roles;
     *state.delegations.write().await = loaded.delegations;
     *state.settings.write().await = loaded.settings;
-    // Refresh the encrypted provider-credential records (ciphertext only; no decryption here).
-    state.provider_credentials.reload_from_db();
+    // Refresh the encrypted provider-credential records (ciphertext only; no decryption here). The DB
+    // read runs on the blocking pool so the synchronous `postgres` query never executes on a runtime
+    // worker thread; `reload_from_db` handles its own read errors (failing that store closed).
+    let credentials = state.provider_credentials.clone();
+    if let Err(e) = tokio::task::spawn_blocking(move || credentials.reload_from_db()).await {
+        eprintln!("cluster: provider-credential reload task panicked ({e})");
+    }
 }
 
 #[cfg(test)]
