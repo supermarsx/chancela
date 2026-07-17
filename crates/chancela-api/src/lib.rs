@@ -170,6 +170,7 @@ mod sidecar_store;
 mod signature;
 mod signature_pkcs12_stored;
 mod sync_handoff;
+mod tenants;
 mod trust;
 mod users;
 mod xades_signature;
@@ -1616,6 +1617,14 @@ pub fn router(state: AppState) -> Router {
             "/v1/entities/{id}/chronology",
             get(chronology::get_entity_chronology),
         )
+        // Top-level tenant collection (wp27-e1). The `/v1/tenants/{tenant_id}/...` sub-resource
+        // surface already existed; these add the missing collection itself. The `{tenant_id}` param
+        // name matches the sub-resource routes so the shared path prefix has no capture conflict.
+        .route(
+            "/v1/tenants",
+            get(tenants::list_tenants).post(tenants::create_tenant),
+        )
+        .route("/v1/tenants/{tenant_id}", get(tenants::get_tenant))
         .route(
             "/v1/tenants/{tenant_id}/groups",
             get(groups::list_groups).post(groups::create_group),
@@ -4891,9 +4900,13 @@ mod tests {
             .iter()
             .find(|e| e["kind"] == "entity.created")
             .expect("entity.created event");
+        // wp27-e1: entity genesis now emits on `tenant:{t}/entity:{id}`, so it joins its per-tenant
+        // chain (ChainId::Tenant) in addition to the company chain. The default-tenant helper stamps
+        // DEFAULT_TENANT_ID; memberships are canonically sorted (company < tenant), global prepended.
+        let tenant_chain = format!("tenant:{DEFAULT_TENANT_ID}");
         assert_eq!(
             entity_created["chains"],
-            json!(["global", company_chain.clone()])
+            json!(["global", company_chain.clone(), tenant_chain])
         );
         let book_opened = arr
             .iter()

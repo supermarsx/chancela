@@ -340,11 +340,10 @@ pub async fn authorizer(state: &AppState, actor: &CurrentActor) -> Result<Author
     })
 }
 
-/// The target [`Scope`] for a **tenant** operation (wp26 tenancy). Used by the two-tenant isolation
-/// fixture today and by the forthcoming tenant CRUD (P4); the narrowing relation is fed from
-/// `state.entities`. `allow(dead_code)` until a non-test handler calls it.
+/// The target [`Scope`] for a **tenant** operation (wp26 tenancy). Used by the tenant collection CRUD
+/// and the tenant-aware entity create (wp27-e1) as well as the two-tenant isolation fixture; the
+/// narrowing relation is fed from `state.entities`.
 #[must_use]
-#[allow(dead_code)]
 pub fn scope_of_tenant(id: chancela_core::TenantId) -> Scope {
     Scope::Tenant(AuthzTenantId(id.0))
 }
@@ -460,6 +459,9 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/entities/{id}/registry/import", RouteClass::Gated), // POST entity.registry.import@Entity
     ("/v1/entities/{id}/chronology", RouteClass::Gated), // GET entity.read@Entity
     ("/v1/registry/lookup", RouteClass::Gated), // POST entity.read@Global
+    // --- Top-level tenant collection (wp27-e1) ------------------------------------------------
+    ("/v1/tenants", RouteClass::Gated), // GET entity.read@Tenant (per-row) · POST entity.create@Global
+    ("/v1/tenants/{tenant_id}", RouteClass::Gated), // GET entity.read@Tenant
     // --- Company groups + shared versioned template libraries ---------------------------------
     ("/v1/tenants/{tenant_id}/groups", RouteClass::Gated),
     (
