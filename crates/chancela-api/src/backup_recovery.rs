@@ -410,8 +410,14 @@ pub async fn create_backup_recovery_drill(
         .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
     let archive = resolve_backup_archive(&data_dir, &archive_ref)?;
 
+    // Offload the sync preflight (postgres in-memory verify + `Client` `Drop`) off the async worker
+    // (wp28); it routes through pg_backup on the Postgres backend.
+    let passphrase = req.passphrase;
     let outcome = store
-        .restore_preflight(&archive, &data_dir, req.passphrase.as_deref())
+        .read_blocking_async(move |s| {
+            s.restore_preflight(&archive, &data_dir, passphrase.as_deref())
+        })
+        .await
         .map_err(crate::recovery::map_store_error)?;
     let isolated_restore_verification =
         BackupRecoveryDrillIsolatedRestoreVerification::from_preflight_outcome(&outcome);

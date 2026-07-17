@@ -258,7 +258,18 @@ pub async fn reanchor_ledger(
     let record = ledger
         .reanchor(&actor, &req.reason, at)
         .map_err(map_reanchor_error)?;
-    store.persist_reanchored_ledger(&ledger).map_err(|e| {
+    // The in-memory `reanchor` above is worker-safe, but the durable write drives postgres (and a
+    // `postgres::Client` `Drop`) that must not run on an async worker (wp28). Move the owned ledger
+    // into the blocking closure (read-only there) and restore it afterwards; the write guard is held.
+    let owned_ledger = std::mem::take(&mut *ledger);
+    let (owned_ledger, persisted) = store
+        .read_blocking_async(move |s| {
+            let persisted = s.persist_reanchored_ledger(&owned_ledger);
+            (owned_ledger, persisted)
+        })
+        .await;
+    *ledger = owned_ledger;
+    persisted.map_err(|e| {
         AppState::map_store_write_error("failed to persist the re-anchored chain", e)
     })?;
 
@@ -397,8 +408,14 @@ pub async fn restore_store_preflight(
         .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
     let archive = resolve_restore_archive(&data_dir, &req.archive)?;
 
+    // Offload the sync preflight (postgres in-memory verify + `Client` `Drop`) off the async worker
+    // (wp28) — same hazard as the execution restore, even though it never swaps the live DB.
+    let passphrase = req.passphrase;
     let outcome = store
-        .restore_preflight(&archive, &data_dir, req.passphrase.as_deref())
+        .read_blocking_async(move |s| {
+            s.restore_preflight(&archive, &data_dir, passphrase.as_deref())
+        })
+        .await
         .map_err(map_store_error)?;
     Ok(Json(RestorePreflightOutcomeView::from(outcome)))
 }
@@ -434,24 +451,39 @@ pub async fn restore_store(
     state.invalidate_all_sessions().await?;
 
     let outcome = {
-        let mut ledger = state.ledger.write().await;
+        let mut ledger_guard = state.ledger.write().await;
         let at = OffsetDateTime::now_utc();
-        let outcome = match passphrase.as_deref() {
-            Some(passphrase) => store.restore_encrypted_with_sidecars(
-                &mut ledger,
-                &archive,
-                &data_dir,
-                &actor,
-                at,
-                passphrase,
-                &sidecars,
-            ),
-            None => {
-                store.restore_with_sidecars(&mut ledger, &archive, &data_dir, &actor, at, &sidecars)
-            }
-        }
-        .map_err(map_store_error)?;
-        crate::refresh_degraded(&state, &ledger).await;
+        // The sync restore drives postgres writes (and a `postgres::Client` `Drop`) that must not run
+        // on an async worker (wp28). Fold both restore variants into ONE blocking closure that owns
+        // the ledger, then restore it after; the write guard is held throughout.
+        let mut ledger = std::mem::take(&mut *ledger_guard);
+        let (ledger, result) = store
+            .read_blocking_async(move |s| {
+                let outcome = match passphrase.as_deref() {
+                    Some(passphrase) => s.restore_encrypted_with_sidecars(
+                        &mut ledger,
+                        &archive,
+                        &data_dir,
+                        &actor,
+                        at,
+                        passphrase,
+                        &sidecars,
+                    ),
+                    None => s.restore_with_sidecars(
+                        &mut ledger,
+                        &archive,
+                        &data_dir,
+                        &actor,
+                        at,
+                        &sidecars,
+                    ),
+                };
+                (ledger, outcome)
+            })
+            .await;
+        *ledger_guard = ledger;
+        let outcome = result.map_err(map_store_error)?;
+        crate::refresh_degraded(&state, &ledger_guard).await;
         outcome
     };
 
