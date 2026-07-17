@@ -534,6 +534,25 @@ fn no_secrets_ever_enter_an_export_bundle() {
         .export_book(&mut ledger, book.id, dir.path(), "amelia.marques", at())
         .expect("export");
 
+    // The bundle is a ZIP whose members are Deflate-compressed, so a raw-byte search over
+    // `export.bytes` is toothless: plaintext secrets never appear verbatim in compressed data.
+    // Decompress every member and run the assertions over the DECOMPRESSED content so they can
+    // actually catch a leak.
+    let members: Vec<(String, Vec<u8>)> = {
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&export.bytes))
+            .expect("bundle is a valid zip");
+        let mut out = Vec::new();
+        for i in 0..archive.len() {
+            let mut f = archive.by_index(i).unwrap();
+            let name = f.name().to_string();
+            let mut buf = Vec::new();
+            f.read_to_end(&mut buf).unwrap();
+            out.push((name, buf));
+        }
+        out
+    };
+    assert!(!members.is_empty(), "bundle must contain members");
+
     for needle in [
         b"SUPER_SECRET_HASH_ZZZ".as_slice(),
         b"RECOVERY_SECRET_ZZZ".as_slice(),
@@ -541,14 +560,22 @@ fn no_secrets_ever_enter_an_export_bundle() {
         b"password_hash".as_slice(),
         b"recovery_hash".as_slice(),
     ] {
-        assert!(
-            !contains_subslice(&export.bytes, needle),
-            "bundle must not contain secret material {:?}",
-            String::from_utf8_lossy(needle)
-        );
+        for (name, bytes) in &members {
+            assert!(
+                !contains_subslice(bytes, needle),
+                "member {name:?} must not contain secret material {:?}",
+                String::from_utf8_lossy(needle)
+            );
+        }
     }
-    // Positive control: the bundle DOES carry the public entity name.
-    assert!(contains_subslice(&export.bytes, b"Encosto Estrategico Lda"));
+    // Positive control: some decompressed member DOES carry the public entity name. This proves
+    // the negative assertions above are running over real, searchable plaintext.
+    assert!(
+        members
+            .iter()
+            .any(|(_, bytes)| contains_subslice(bytes, b"Encosto Estrategico Lda")),
+        "positive control: expected non-secret entity name in a decompressed member"
+    );
 }
 
 #[test]
