@@ -42,6 +42,26 @@ use crate::{AppState, CredentialMode, EntryMetadata, EntrySelectors, ProviderCre
 /// The ledger scope every provider-credential mutation is recorded under.
 const AUDIT_SCOPE: &str = "provider_credentials";
 
+/// Offload a blocking provider-credential store mutation onto the blocking pool (wp28). The write
+/// helpers (`put_entry`/`delete_entry`/`reorder_entries`) reconcile the encrypted records into the
+/// shared `provider_credentials` table via a **synchronous** store write; under the `postgres`
+/// backend that drives its connector — and `postgres::Client::Drop` — through an internal
+/// `Runtime::block_on`, which panics and aborts the process when run directly on a tokio runtime
+/// worker. `spawn_blocking` moves it off the worker; the cloned `Arc` handle is dropped inside the
+/// blocking thread. A panic in the closure is re-raised on the caller (matching the previous inline
+/// synchronous call). The closure returns owned data (a `Result`), never a borrow of the store.
+async fn offload_credentials<T, F>(state: &AppState, f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce(&crate::ProviderCredentialStore) -> T + Send + 'static,
+{
+    let credentials = state.provider_credentials.clone();
+    match tokio::task::spawn_blocking(move || f(&credentials)).await {
+        Ok(result) => result,
+        Err(join_error) => std::panic::resume_unwind(join_error.into_panic()),
+    }
+}
+
 // --- Request DTOs (secret fields are write-only, redacted from `Debug`) --------------------------
 
 /// A write-only secret value. Deserializes from a JSON string, holds the plaintext only in a
@@ -235,10 +255,20 @@ pub async fn create_entry(
     };
     let (audit_priority, audit_enabled) = (metadata.priority, metadata.enabled);
 
-    state
-        .provider_credentials
-        .put_entry(mode, &provider_id, &entry_id, Some(metadata), set, &[])
-        .map_err(map_store_err)?;
+    let write_provider = provider_id.clone();
+    let write_entry = entry_id.clone();
+    offload_credentials(&state, move |creds| {
+        creds.put_entry(
+            mode,
+            &write_provider,
+            &write_entry,
+            Some(metadata),
+            set,
+            &[],
+        )
+    })
+    .await
+    .map_err(map_store_err)?;
 
     audit(
         &state,
@@ -303,10 +333,20 @@ pub async fn update_entry(
     };
     let (audit_priority, audit_enabled) = (metadata.priority, metadata.enabled);
 
-    state
-        .provider_credentials
-        .put_entry(mode, &provider_id, &entry_id, Some(metadata), set, &clear)
-        .map_err(map_store_err)?;
+    let write_provider = provider_id.clone();
+    let write_entry = entry_id.clone();
+    offload_credentials(&state, move |creds| {
+        creds.put_entry(
+            mode,
+            &write_provider,
+            &write_entry,
+            Some(metadata),
+            set,
+            &clear,
+        )
+    })
+    .await
+    .map_err(map_store_err)?;
 
     audit(
         &state,
@@ -348,10 +388,13 @@ pub async fn delete_entry(
     let mode = parse_mode(&mode_raw)?;
     let provider_id = resolve_provider(mode, &provider_raw)?;
 
-    let removed = state
-        .provider_credentials
-        .delete_entry(mode, &provider_id, &entry_id)
-        .map_err(map_store_err)?;
+    let write_provider = provider_id.clone();
+    let write_entry = entry_id.clone();
+    let removed = offload_credentials(&state, move |creds| {
+        creds.delete_entry(mode, &write_provider, &write_entry)
+    })
+    .await
+    .map_err(map_store_err)?;
     if !removed {
         return Err(ApiError::NotFound);
     }
@@ -409,10 +452,13 @@ pub async fn reorder_entries(
     // rather than a sequence of per-entry `put_entry` writes that could persist a partially-applied
     // ordering if a later write failed mid-loop. The permutation was validated against `current` above;
     // each entry keeps its label/enabled/endpoint/selectors/fields and only its priority is updated.
-    state
-        .provider_credentials
-        .reorder_entries(mode, &provider_id, &req.order)
-        .map_err(map_store_err)?;
+    let write_provider = provider_id.clone();
+    let write_order = req.order.clone();
+    offload_credentials(&state, move |creds| {
+        creds.reorder_entries(mode, &write_provider, &write_order)
+    })
+    .await
+    .map_err(map_store_err)?;
 
     audit(
         &state,

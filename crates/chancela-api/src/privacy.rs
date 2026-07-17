@@ -7540,12 +7540,16 @@ async fn enumerate_erasure_plan(state: &AppState, request: &DsrRequest) -> Erasu
     let subject_id = subject.to_string();
     let subject_present = state.users.read().await.contains_key(&subject);
     let subject_dek_present = match &state.store {
-        Some(store) => store
-            .get_subject_key(&subject_id)
-            .ok()
-            .flatten()
-            .map(|row| row.erased_at.is_none() && !row.wrapped_dek.is_empty())
-            .unwrap_or(false),
+        Some(store) => {
+            let subject_id = subject_id.clone();
+            store
+                .read_blocking_async(move |s| s.get_subject_key(&subject_id))
+                .await
+                .ok()
+                .flatten()
+                .map(|row| row.erased_at.is_none() && !row.wrapped_dek.is_empty())
+                .unwrap_or(false)
+        }
         None => false,
     };
     let ledger_event_count = dsr_subject_ledger_event_count(state, subject).await;
@@ -7984,7 +7988,7 @@ pub async fn erasure_execute(
     // inside a transaction). Best-effort: the DEK is already destroyed and the row already gone, so a
     // VACUUM failure must not fail the erasure; the outcome records whether it completed.
     let vacuum_completed = match &state.store {
-        Some(store) => match store.vacuum() {
+        Some(store) => match store.read_blocking_async(|s| s.vacuum()).await {
             Ok(()) => true,
             Err(e) => {
                 eprintln!("wp26-gdpr: VACUUM after erasure failed (non-fatal): {e}");

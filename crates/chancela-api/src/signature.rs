@@ -7918,7 +7918,8 @@ pub(crate) async fn load_signed(
     }
     if let Some(store) = &state.store {
         return store
-            .signed_document_for_act(act_id)
+            .read_blocking_async(move |s| s.signed_document_for_act(act_id))
+            .await
             .map_err(|e| ApiError::Internal(format!("signed document store read failed: {e}")));
     }
     Ok(None)
@@ -8006,8 +8007,10 @@ async fn load_pending(
         return Ok(Some(p));
     }
     if let Some(store) = &state.store {
+        let session_id = session_id.to_owned();
         return store
-            .pending_cmd_session(session_id)
+            .read_blocking_async(move |s| s.pending_cmd_session(&session_id))
+            .await
             .map_err(|e| ApiError::Internal(format!("pending session store read failed: {e}")));
     }
     Ok(None)
