@@ -58,6 +58,21 @@ fn anchors_for(fixture: &SignedFixture) -> TslTrustAnchors {
     TslTrustAnchors::new().with_cert_der(&fixture.signer_cert_der)
 }
 
+/// Validate a Trusted List's XML-DSig with **no** trust anchor configured — the hermetic
+/// equivalent of the env entry point (`validate_tsl_signature`) in an unconfigured environment.
+///
+/// The structural, algorithm, digest, and signature-verification rejections these tests assert are
+/// all decided *before* the trust-anchor gate (the anchor check is the final step of
+/// `xmldsig::verify`), so passing an explicitly-empty anchor set is behaviourally identical to the
+/// env entry point for every rejection case — while being immune to any ambient
+/// `CHANCELA_TSL_TRUST_ANCHOR[_SHA256]` in the test runner's environment. Using the env entry point
+/// here instead coupled these tests to the runner's environment: with an anchor env var set (a
+/// legitimate deployment/dev-machine configuration) `from_env()` could return a different error and
+/// flip the asserted variant, spuriously failing ~16 tests at once.
+fn validate_unanchored(xml: &[u8]) -> Result<(), TslError> {
+    validate_tsl_signature_with_anchors(xml, &TslTrustAnchors::new())
+}
+
 #[derive(Clone, Copy)]
 enum EcdsaSignatureEncoding {
     Raw,
@@ -69,12 +84,28 @@ fn fixture_dir() -> PathBuf {
 }
 
 fn load_list() -> TrustedList {
-    let xml = std::fs::read(fixture_dir().join("pt-tsl-sample.xml")).expect("read fixture");
-    parse_tsl(&xml).expect("parse fixture")
+    parse_tsl(&load_xml()).expect("parse fixture")
 }
 
+/// Read the XML fixture, normalising CRLF -> LF.
+///
+/// These tests perform byte-exact string surgery on the fixture — locating `  </ds:Signature>\n`,
+/// `</TrustServiceStatusList>`, and element boundaries — all written against LF line endings. A git
+/// checkout that materialises the fixture with CRLF (observed in a fresh `git worktree` even under
+/// `core.autocrlf=false`, because the committed blob is LF but the working tree gets CR-injected)
+/// would otherwise make `str::find` miss the `\n`-terminated patterns and panic every
+/// signed-fixture test — ~22 at once — while the line-ending-tolerant `parse_tsl` tests still pass.
+/// Normalising here makes the whole suite deterministic regardless of how the fixture was checked
+/// out. (A crate-local `.gitattributes` also pins the fixture to `eol=lf`, fixing the checkout at
+/// the source; this belt-and-suspenders keeps the tests robust even where that has not taken
+/// effect yet.)
 fn load_xml() -> Vec<u8> {
-    std::fs::read(fixture_dir().join("pt-tsl-sample.xml")).expect("read fixture")
+    let raw = std::fs::read(fixture_dir().join("pt-tsl-sample.xml")).expect("read fixture");
+    if raw.contains(&b'\r') {
+        raw.into_iter().filter(|&b| b != b'\r').collect()
+    } else {
+        raw
+    }
 }
 
 fn fixture_without_signature() -> Vec<u8> {
@@ -659,7 +690,7 @@ fn client_downgrades_granted_to_unknown_when_signature_is_missing() {
 
 #[test]
 fn tsl_signature_validation_rejects_missing_signature_metadata() {
-    let err = validate_tsl_signature(&fixture_without_signature()).unwrap_err();
+    let err = validate_unanchored(&fixture_without_signature()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureStructure(_)),
         "got {err:?}"
@@ -682,7 +713,7 @@ fn tsl_signature_validation_rejects_unsupported_canonicalization_metadata() {
         <ds:SignatureValue>ZmFrZQ==</ds:SignatureValue>
       </ds:Signature>
     </TrustServiceStatusList>"#;
-    let err = validate_tsl_signature(xml).unwrap_err();
+    let err = validate_unanchored(xml).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureUnsupportedAlgorithm(ref alg) if alg.contains("canonicalization")),
         "got {err:?}"
@@ -694,7 +725,7 @@ fn tsl_signature_validation_rejects_unsupported_signature_method_metadata() {
     let mut signed = String::from_utf8(signed_fixture().xml).expect("signed fixture is UTF-8");
     signed = signed.replace(RSA_SHA256, "http://www.w3.org/2000/09/xmldsig#rsa-sha1");
 
-    let err = validate_tsl_signature(signed.as_bytes()).unwrap_err();
+    let err = validate_unanchored(signed.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureUnsupportedAlgorithm(ref alg) if alg.contains("signature method")),
         "got {err:?}"
@@ -709,7 +740,7 @@ fn tsl_signature_validation_rejects_malformed_signature_value_base64() {
         .expect("signed fixture is UTF-8")
         .replace(&good, "not-base64*");
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(matches!(err, TslError::Base64(_)), "got {err:?}");
 }
 
@@ -724,7 +755,7 @@ fn tsl_signature_validation_rejects_multiple_references() {
             ),
         );
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("multiple <ds:Reference>")),
         "got {err:?}"
@@ -740,7 +771,7 @@ fn tsl_signature_validation_rejects_unsupported_reference_transform() {
             r#"<ds:Transforms><ds:Transform Algorithm="urn:unsupported-transform"/></ds:Transforms><ds:DigestMethod"#,
         );
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureUnsupportedAlgorithm(ref alg) if alg.contains("transform")),
         "got {err:?}"
@@ -763,7 +794,7 @@ fn tsl_signature_validation_rejects_digest_mismatch_metadata() {
         <ds:SignatureValue>ZmFrZQ==</ds:SignatureValue>
       </ds:Signature>
     </TrustServiceStatusList>"#;
-    let err = validate_tsl_signature(xml).unwrap_err();
+    let err = validate_unanchored(xml).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureDigestMismatch),
         "got {err:?}"
@@ -832,21 +863,31 @@ fn tsl_signature_validation_fails_closed_with_empty_anchor_set() {
 
 #[test]
 fn tsl_signature_env_entry_point_fails_closed_without_configured_anchor() {
-    // The public `validate_tsl_signature` resolves anchors from the environment. With neither
-    // CHANCELA_TSL_TRUST_ANCHOR nor CHANCELA_TSL_TRUST_ANCHOR_SHA256 set (this test binary sets
-    // neither), the anchor set is empty and a self-consistent list is reported untrusted.
-    assert!(
-        TslTrustAnchors::from_env()
-            .expect("no anchor env vars set -> empty set")
-            .is_empty(),
-        "this test binary must not configure a TSL trust anchor"
-    );
+    // The public `validate_tsl_signature` resolves anchors from the environment and MUST fail
+    // closed when none is configured. The fail-closed invariant is asserted hermetically here —
+    // against an explicitly-empty anchor set, exactly what `from_env` yields when unconfigured — so
+    // this test is robust to any ambient CHANCELA_TSL_TRUST_ANCHOR[_SHA256] in the runner's
+    // environment. (The earlier form asserted `from_env().is_empty()` unconditionally and so failed
+    // on any machine/CI that legitimately exports a TSL trust anchor.)
     let signed = signed_fixture();
-    let err = validate_tsl_signature(&signed.xml).unwrap_err();
+    let err =
+        validate_tsl_signature_with_anchors(&signed.xml, &TslTrustAnchors::new()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureUntrusted(_)),
-        "env entry point must fail closed without a configured anchor, got {err:?}"
+        "an unconfigured (empty) anchor set must fail closed, got {err:?}"
     );
+
+    // Additionally, when this binary's environment is itself unconfigured (the CI default), the
+    // env-resolving entry point resolves that same empty set and fails closed identically. Skipped
+    // when an anchor happens to be configured — then the env path's outcome depends on that anchor
+    // and is not this test's concern.
+    if TslTrustAnchors::from_env().is_ok_and(|anchors| anchors.is_empty()) {
+        let env_err = validate_tsl_signature(&signed.xml).unwrap_err();
+        assert!(
+            matches!(env_err, TslError::SignatureUntrusted(_)),
+            "env entry point must fail closed without a configured anchor, got {env_err:?}"
+        );
+    }
 }
 
 #[test]
@@ -855,7 +896,7 @@ fn tsl_signature_validation_rejects_missing_same_document_uri_fragment_target() 
         .expect("signed fixture is UTF-8")
         .replacen(r#" Id="TSL-Fragment""#, "", 1);
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("did not match")),
         "got {err:?}"
@@ -864,7 +905,7 @@ fn tsl_signature_validation_rejects_missing_same_document_uri_fragment_target() 
 
 #[test]
 fn tsl_signature_validation_rejects_non_root_same_document_uri_fragment_target() {
-    let err = validate_tsl_signature(&signed_non_root_fragment_fixture().xml).unwrap_err();
+    let err = validate_unanchored(&signed_non_root_fragment_fixture().xml).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("TrustServiceStatusList root")),
         "got {err:?}"
@@ -877,7 +918,7 @@ fn tsl_signature_validation_rejects_tampered_signed_info() {
         .expect("signed fixture is UTF-8")
         .replace(EXC_C14N_10, C14N_10);
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureVerificationFailed),
         "got {err:?}"
@@ -893,7 +934,7 @@ fn tsl_signature_validation_rejects_tampered_referenced_content() {
             "<SchemeTerritory>ES</SchemeTerritory>",
         );
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureDigestMismatch),
         "got {err:?}"
@@ -909,7 +950,7 @@ fn tsl_signature_validation_rejects_tampered_same_document_uri_fragment_content(
             "<SchemeTerritory>ES</SchemeTerritory>",
         );
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureDigestMismatch),
         "got {err:?}"
@@ -928,7 +969,7 @@ fn tsl_signature_validation_rejects_tampered_signature_value() {
             &base64_standard(&bad_signature),
         );
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureVerificationFailed),
         "got {err:?}"
@@ -947,7 +988,7 @@ fn tsl_signature_validation_rejects_tampered_p256_ecdsa_signature_value() {
             &base64_standard(&bad_signature),
         );
 
-    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureVerificationFailed),
         "got {err:?}"
@@ -958,7 +999,7 @@ fn tsl_signature_validation_rejects_tampered_p256_ecdsa_signature_value() {
 fn tsl_signature_validation_rejects_der_encoded_p256_ecdsa_signature_value() {
     let signed = signed_ecdsa_fixture(EcdsaSignatureEncoding::Der);
 
-    let err = validate_tsl_signature(&signed.xml).unwrap_err();
+    let err = validate_unanchored(&signed.xml).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("raw r||s")),
         "got {err:?}"
@@ -995,8 +1036,8 @@ fn tsl_signature_validation_rejects_incomplete_fixture_signature() {
     // The bundled fixture carries a placeholder <ds:Signature> with only a CanonicalizationMethod,
     // SignatureMethod, and a fake SignatureValue — no <ds:Reference>, no <ds:KeyInfo>. The
     // validator MUST detect this and reject it rather than silently accepting the list.
-    let xml = std::fs::read(fixture_dir().join("pt-tsl-sample.xml")).unwrap();
-    let err = validate_tsl_signature(&xml).unwrap_err();
+    let xml = load_xml();
+    let err = validate_unanchored(&xml).unwrap_err();
     // The exact variant depends on which structural check trips first (missing Reference, missing
     // KeyInfo, etc.), but it MUST be a signature-structure/digest/verification error, never the
     // old `SignatureValidationNotImplemented`.
