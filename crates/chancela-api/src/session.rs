@@ -197,6 +197,25 @@ impl DurableSessionRegistry {
         Ok(())
     }
 
+    /// Revoke a durable session by its **token digest** rather than the plaintext bearer (wp27-e4
+    /// companion device revoke). The companion-device registry persists only the SHA-256 digest of a
+    /// device's session token, so revoking a device can kill its durable session without the registry
+    /// ever holding the plaintext token. A no-op for a non-durable registry or an unknown digest.
+    pub(crate) async fn revoke_by_digest(&self, digest: &str) -> Result<(), ApiError> {
+        if !self.is_durable() {
+            return Ok(());
+        }
+        let mut records = self.0.records.write().await;
+        if !records.contains_key(digest) {
+            return Ok(());
+        }
+        let mut next = records.clone();
+        next.remove(digest);
+        self.persist(&next)?;
+        *records = next;
+        Ok(())
+    }
+
     pub(crate) async fn clear(&self) -> Result<(), ApiError> {
         if !self.is_durable() {
             return Ok(());
@@ -671,6 +690,32 @@ pub async fn create_session(
         None => None,
     };
 
+    let token = mint_session(&state, uid, unlocked_key).await?;
+
+    Ok(Json(SessionCreated {
+        token,
+        user: UserView::from(&user),
+    }))
+}
+
+/// Mint a fresh opaque session token for `uid` and register it across **every** session layer — the
+/// durable digest registry (single-node), the shared cluster authority (HA), the in-memory live map,
+/// and the issued-at map — exactly as the successful password path in [`create_session`] does.
+///
+/// `unlocked_key` is the in-memory attestation signing key held for the life of the session: `Some`
+/// only on the interactive password path (the key is unlocked from the password). Companion/pairing
+/// sessions ([`crate::pairing`]) pass `None`, matching a follower/restarted node — the phone gets an
+/// identity-only session and never an unlocked signing key it never authenticated for.
+///
+/// Fails closed (`503`) when the shared authority cannot **prove** the write, rolling the durable
+/// record back first so a token is never returned that would vanish after a failover. This is the
+/// single minting code path; the password verifier stays entirely in [`create_session`] and is not
+/// weakened — pairing is additive.
+pub(crate) async fn mint_session(
+    state: &AppState,
+    uid: UserId,
+    unlocked_key: Option<SigningKey>,
+) -> Result<String, ApiError> {
     let token = Uuid::new_v4().to_string();
     let now = OffsetDateTime::now_utc();
     let expires_at = now + Duration::seconds(SESSION_TTL_SECS);
@@ -710,11 +755,7 @@ pub async fn create_session(
         .write()
         .await
         .insert(token.clone(), now);
-
-    Ok(Json(SessionCreated {
-        token,
-        user: UserView::from(&user),
-    }))
+    Ok(token)
 }
 
 async fn upgrade_password_hash_after_signin(

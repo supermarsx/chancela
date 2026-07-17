@@ -147,6 +147,7 @@ mod ledger_filter;
 mod ltv;
 mod notifications;
 mod observability;
+mod pairing;
 mod paper_import;
 mod password_policy;
 mod pdf_signature_validation;
@@ -538,6 +539,12 @@ pub struct AppState {
     /// in-memory states keep the explicit no-op default; clustered Postgres uses Redis instead.
     #[doc(hidden)]
     pub durable_sessions: session::DurableSessionRegistry,
+    /// Companion device-pairing registry (wp27-e4): outstanding short-lived pairing codes plus the
+    /// store-backed enrolled-device index. Codes are ephemeral/in-memory; devices are reload-safe via
+    /// the `pairing_devices` table (schema v22, rehydrated at boot). Not on the deadlock lock-order
+    /// chain — its locks are short-lived and independent, like `sessions`.
+    #[doc(hidden)]
+    pub pairing: pairing::PairingRegistry,
     /// Short-lived server-bound previews for destructive retained-export cleanup. In-memory only:
     /// previews bind the token to the canonical data directory, request policy, and server-selected
     /// candidate manifest, and reset on restart.
@@ -1000,6 +1007,10 @@ impl AppState {
                     // durable (it reads each entity's own `tenant_id`).
                     let tenants = hydrate_tenants(&store);
                     state.tenants = Arc::new(RwLock::new(tenants));
+                    // wp27-e4 mobile companion: rehydrate the enrolled-device index from the durable
+                    // `pairing_devices` table (v22) so a paired phone — and the operator's ability to
+                    // list/revoke it — survives a restart, mirroring the durable session registry.
+                    state.pairing = pairing::PairingRegistry::from_store(&store);
                     state.follow_ups = Arc::new(RwLock::new(loaded.follow_ups));
                     state.registry_extracts = Arc::new(RwLock::new(loaded.registry_extracts));
                     state.ledger = Arc::new(RwLock::new(loaded.ledger));
@@ -2379,6 +2390,15 @@ pub fn router(state: AppState) -> Router {
             get(session::get_session)
                 .post(session::create_session)
                 .delete(session::delete_session),
+        )
+        // Companion device pairing (wp27-e4). Mint (operator-authenticated) → exchange
+        // (unauthenticated: the phone has no session yet) → list/revoke (operator-authenticated).
+        .route("/v1/pairing/codes", post(pairing::create_pairing_code))
+        .route("/v1/pairing/exchange", post(pairing::exchange_pairing_code))
+        .route("/v1/pairing/devices", get(pairing::list_pairing_devices))
+        .route(
+            "/v1/pairing/devices/{device_id}",
+            delete(pairing::revoke_pairing_device),
         )
         // Own the entire `/v1` and `/health` namespaces: any unmatched path under them is a
         // JSON 404, never a fall-through. The same route table is mounted under `/api`, so these

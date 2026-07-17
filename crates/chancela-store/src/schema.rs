@@ -95,7 +95,14 @@
 /// - **v21** — persists the complete local technical validation report that admitted each
 ///   non-canonical imported document. The report remains linked to the original retained bytes and
 ///   carries no trust/legal-validity claim.
-pub const SCHEMA_VERSION: i64 = 21;
+/// - **v22** — adds `pairing_devices` (wp27 mobile companion): the durable, reload-safe registry of
+///   phones enrolled through the short-lived pairing-code protocol. A document-in-relational
+///   `(id, json)` table mirroring the aggregate tables; `json` is the API's serialized pairing-device
+///   record (opaque to the store) and — like the durable session registry — holds only a **SHA-256
+///   digest** of the companion session token, never the plaintext bearer. Forward-only, additive:
+///   existing databases gain the table via the idempotent [`ALL`] DDL and advance their stamp on next
+///   open.
+pub const SCHEMA_VERSION: i64 = 22;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -734,6 +741,21 @@ pub const CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS_LIBRARY_IDX: &str = "CREATE IN
 idx_group_template_library_revisions_library ON \
 group_template_library_revisions(group_id, library_id, revision);";
 
+/// `pairing_devices` — the durable, reload-safe companion-device registry (schema v22, wp27 mobile
+/// companion). Document-in-relational `(id, json)` like the aggregate tables: `id` is the device id
+/// (primary key; the upsert is idempotent on it) and `json` is the API's serialized pairing-device
+/// record, opaque to the store.
+///
+/// Like the durable session registry (`sessions.json`), the record holds **only a SHA-256 digest** of
+/// the companion session token — never the plaintext bearer — so this table is a device directory, not
+/// a bearer-token database. A revoked device is soft-marked in the record (a `revoked_at` field), so
+/// the operator's device list can still show it; the row is never a source of a live credential.
+pub const CREATE_PAIRING_DEVICES: &str = "\
+CREATE TABLE IF NOT EXISTS pairing_devices (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -790,4 +812,5 @@ pub const ALL: &[&str] = &[
     CREATE_GROUP_TEMPLATE_LIBRARIES_TENANT_IDX,
     CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS,
     CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS_LIBRARY_IDX,
+    CREATE_PAIRING_DEVICES,
 ];
