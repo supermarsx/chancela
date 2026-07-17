@@ -1527,6 +1527,69 @@ mod tests {
         );
     }
 
+    /// wp27-e3 (Part 1): the group dashboard is a tenant-reachable scan surface. A tenant-A owner
+    /// sees only tenant-A members on A's dashboard and gets a non-enumerating `403` on tenant-B's
+    /// dashboard — freezing the `require ... @ scope_of_tenant` gate + the `tenant_id ==` filter
+    /// against a cross-tenant leak regression.
+    #[tokio::test]
+    async fn group_dashboard_is_tenant_scoped_and_refuses_cross_tenant() {
+        let state = AppState::default();
+        let (tenant_a, tenant_b) = install_tenants(&state).await;
+        let owner_a = token_for_role_at(
+            &state,
+            "owner.a",
+            OWNER_ROLE_ID,
+            scope_of_tenant(tenant_a.id),
+        )
+        .await;
+
+        let group_a = CompanyGroup::new(tenant_a.id, "Grupo A", OffsetDateTime::UNIX_EPOCH);
+        let group_b = CompanyGroup::new(tenant_b.id, "Grupo B", OffsetDateTime::UNIX_EPOCH);
+        let member_a = assigned_entity(&group_a, &entity(tenant_a.id)).expect("assign A member");
+        let member_a_id = member_a.id;
+        {
+            let mut groups = state.company_groups.write().await;
+            groups.insert(group_a.id, group_a.clone());
+            groups.insert(group_b.id, group_b.clone());
+            state.entities.write().await.insert(member_a_id, member_a);
+        }
+
+        // A's dashboard shows only A's member.
+        let (status, dash) = send_raw(
+            state.clone(),
+            request(
+                Method::GET,
+                &format!(
+                    "/v1/tenants/{}/groups/{}/dashboard",
+                    tenant_a.id, group_a.id
+                ),
+                None,
+                &owner_a,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{dash}");
+        let members = dash["member_entities"].as_array().expect("members");
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0]["id"], member_a_id.to_string());
+
+        // B's dashboard is a non-enumerating 403 for the tenant-A owner.
+        let (status, _) = send_raw(
+            state,
+            request(
+                Method::GET,
+                &format!(
+                    "/v1/tenants/{}/groups/{}/dashboard",
+                    tenant_b.id, group_b.id
+                ),
+                None,
+                &owner_a,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
     #[tokio::test]
     async fn template_library_routes_validate_references_and_preserve_immutable_history() {
         let state = AppState::default();

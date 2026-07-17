@@ -24,7 +24,7 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
-use chancela_core::{Entity, EntityId, EntityKind, Nipc};
+use chancela_core::{DEFAULT_TENANT_ID, Entity, EntityId, EntityKind, Nipc, TenantId};
 use chancela_registry::{
     AccessCode, HttpRegistryTransport, LegalForm, RegistryExtract, RegistryTransport,
     parse_certidao,
@@ -38,7 +38,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{authorizer, require_permission, scope_of_entity};
+use crate::authz::{authorizer, require_permission, scope_of_entity, scope_of_tenant};
 use crate::dto::{
     EntityView, RegistryConflict, RegistryExtractView, RegistryImportReport, compute_expired,
     read_redaction_for_actor,
@@ -73,6 +73,12 @@ pub struct RegistryImportRequest {
 pub struct RegistryCreateRequest {
     pub code: String,
     pub email: Option<String>,
+    /// The tenant to create the imported entity in (wp27 tenancy P4, e3 follow-up). Absent (the
+    /// common single-tenant case) the singleton [`DEFAULT_TENANT_ID`] is used, so single-tenant
+    /// callers never name a tenant and behaviour is byte-identical to before tenancy. When present
+    /// it must name a known tenant the caller is authorized to create in.
+    #[serde(default)]
+    pub tenant_id: Option<Uuid>,
 }
 
 // --- LegalForm → EntityKind mapping ------------------------------------------------------
@@ -946,8 +952,25 @@ pub async fn import_from_registry(
     attestor: CurrentAttestor,
     Json(req): Json<RegistryCreateRequest>,
 ) -> Result<(StatusCode, Json<RegistryImportReport>), ApiError> {
-    // RBAC (t64-E3): creating an entity from the registry is a Global entity.create.
-    require_permission(&state, &actor, Permission::EntityCreate, Scope::Global).await?;
+    // Tenancy (wp27-e3): the imported entity is created **inside a tenant** (mirrors e1's
+    // `create_entity`). Absent an explicit `tenant_id` the singleton default tenant is used, so
+    // single-tenant deployments stay byte-identical. Authorization narrows to that tenant (it was
+    // `Global`): a Global holder still covers every tenant, while a tenant-scoped holder may only
+    // import within its own tenant — the cross-tenant write guard.
+    let tenant_id = req.tenant_id.map_or(DEFAULT_TENANT_ID, TenantId);
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityCreate,
+        scope_of_tenant(tenant_id),
+    )
+    .await?;
+    // An explicitly-named tenant must exist — a `404` **after** the authz check (a caller outside
+    // the tenant already got a non-enumerating `403`). The implicit default tenant is always
+    // present, so a body without `tenant_id` skips this check and never regresses single-tenant.
+    if req.tenant_id.is_some() && !state.tenants.read().await.contains_key(&tenant_id) {
+        return Err(ApiError::NotFound);
+    }
     let extract = consult(&state, &req.code, req.email.as_deref()).await?;
 
     // Collect everything the certidão lacked so the 422 explains exactly what was missing.
@@ -1008,7 +1031,7 @@ pub async fn import_from_registry(
     };
 
     let seat = eff_sede.clone().unwrap_or_default();
-    let entity = Entity::new(firma, nipc, seat, kind);
+    let entity = Entity::new(firma, nipc, seat, kind).in_tenant(tenant_id);
     let eid = entity.id;
 
     // Every populated field of a fresh entity was sourced from the extract (matrícula or body).
@@ -1032,9 +1055,17 @@ pub async fn import_from_registry(
     let mut extracts = state.registry_extracts.write().await;
     {
         let mut ledger = state.ledger.write().await;
+        // A non-default tenant joins the imported entity to its tenant chain (ChainId::Tenant);
+        // the default tenant keeps the exact pre-tenancy bare-entity genesis scope (single-tenant
+        // byte-identical). Mirrors e3's book/act create-path emission.
+        let entity_scope = if tenant_id == DEFAULT_TENANT_ID {
+            eid.to_string()
+        } else {
+            format!("tenant:{tenant_id}/entity:{eid}")
+        };
         ledger.append(
             &actor,
-            &eid.to_string(),
+            &entity_scope,
             "entity.created",
             None,
             &entity_payload,
@@ -1930,6 +1961,112 @@ mod tests {
         assert!(
             created < imported,
             "entity.created before registry.imported"
+        );
+    }
+
+    /// wp27-e3 (Part 3): an import naming an explicit tenant creates the entity **in that tenant**
+    /// (not the hard-stamped default) and emits `entity.created` on the `tenant:{t}/...` scope so the
+    /// imported entity joins its tenant chain — the registry analogue of e1's `create_entity` fix.
+    #[tokio::test]
+    async fn import_from_registry_creates_the_entity_in_the_named_tenant() {
+        let html = certidao_html(
+            "Encosto Estratégico, S.A.",
+            "503004642",
+            "Sociedade Anónima",
+            "Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        let tenant = TenantId::new();
+        assert_ne!(tenant, DEFAULT_TENANT_ID);
+        state
+            .tenants
+            .write()
+            .await
+            .insert(tenant, chancela_core::Tenant::new("Encosto Group"));
+
+        let (status, report) = send(
+            state.clone(),
+            post_json(
+                "/v1/entities/import-from-registry",
+                json!({ "code": "1234-5678-9012", "tenant_id": tenant.to_string() }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{report}");
+        let id = report["entity"]["id"].as_str().expect("id");
+        let eid = EntityId(Uuid::parse_str(id).expect("entity id is uuid"));
+
+        // The imported entity carries the named tenant, not the singleton default.
+        let stored_tenant = state
+            .entities
+            .read()
+            .await
+            .get(&eid)
+            .expect("entity stored")
+            .tenant_id;
+        assert_eq!(
+            stored_tenant, tenant,
+            "imported entity must be created in the named tenant"
+        );
+
+        // `entity.created` joins the tenant chain (ChainId::Tenant).
+        let ledger = state.ledger.read().await;
+        let event = ledger
+            .events()
+            .iter()
+            .find(|e| e.kind == "entity.created")
+            .expect("entity.created emitted");
+        assert_eq!(event.scope, format!("tenant:{tenant}/entity:{eid}"));
+        let memberships = chancela_ledger::Ledger::memberships(&event.scope, "entity.created");
+        assert!(
+            memberships.contains(&chancela_ledger::ChainId::Tenant(tenant.to_string())),
+            "imported entity must join its tenant chain, got {memberships:?}"
+        );
+    }
+
+    /// wp27-e3 (Part 3): naming an **unknown** tenant is a non-enumerating `404` (after the authz
+    /// check), and a body without `tenant_id` still creates under the default tenant (byte-identical).
+    #[tokio::test]
+    async fn import_from_registry_unknown_tenant_is_404_and_absent_defaults() {
+        let html = certidao_html(
+            "Encosto Estratégico, S.A.",
+            "503004642",
+            "Sociedade Anónima",
+            "Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                "/v1/entities/import-from-registry",
+                json!({ "code": "1234-5678-9012", "tenant_id": TenantId::new().to_string() }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unknown tenant is a 404");
+
+        // Absent tenant → default tenant, unchanged behaviour.
+        let (status, report) = send(
+            state.clone(),
+            post_json(
+                "/v1/entities/import-from-registry",
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{report}");
+        let eid =
+            EntityId(Uuid::parse_str(report["entity"]["id"].as_str().expect("id")).expect("uuid"));
+        assert_eq!(
+            state
+                .entities
+                .read()
+                .await
+                .get(&eid)
+                .expect("entity stored")
+                .tenant_id,
+            DEFAULT_TENANT_ID
         );
     }
 

@@ -13,8 +13,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chancela_core::act::AiHumanVerificationStatus;
 use chancela_core::{
-    Act, ActError, ActId, ActState, Book, BookId, Entity, EntityFamily, EntityKind, PresenceMode,
-    SealEvidence, Severity, rule_pack_for, seal_act_with_evidence,
+    Act, ActError, ActId, ActState, Book, BookId, DEFAULT_TENANT_ID, Entity, EntityFamily,
+    EntityKind, PresenceMode, SealEvidence, Severity, rule_pack_for, seal_act_with_evidence,
 };
 use chancela_store::{StoredDocument, StoredSignedDocument};
 use serde_json::json;
@@ -44,7 +44,9 @@ pub async fn draft_act(
     // RBAC (t64-E3): drafting an act is scoped to the target book (resolved from the body).
     require_permission(&state, &actor, Permission::ActDraft, scope_of_book(book_id)).await?;
     let actor = actor.resolve(&req.actor);
-    // books → acts → ledger.
+    // entities → books → acts → ledger. The entity read is acquired first (fixed global lock
+    // order) so the act genesis can carry the parent entity's tenant (wp27-e3).
+    let entities = state.entities.read().await;
     let books = state.books.read().await;
     let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
     if !book.is_open() {
@@ -53,6 +55,12 @@ pub async fn draft_act(
         )));
     }
     let entity_id = book.entity_id;
+    // Tenancy (wp27-e3): the act genesis joins its tenant chain, mirroring e1's entity/`book.opened`
+    // change. Derive the tenant from the parent entity; a single-tenant deployment (or an entity not
+    // yet in the read model) resolves to the default tenant, keeping behaviour byte-identical.
+    let tenant_id = entities
+        .get(&entity_id)
+        .map_or(DEFAULT_TENANT_ID, |entity| entity.tenant_id);
 
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
@@ -68,7 +76,16 @@ pub async fn draft_act(
         act.ai_provenance = Some(ai_provenance.into_core()?);
     }
 
-    let scope = format!("entity:{}/book:{}/act:{}", entity_id, act.book_id, act.id);
+    // Non-default tenant → the act genesis joins its tenant chain; the default tenant keeps the
+    // exact pre-tenancy `entity:/book:/act:` scope (single-tenant byte-identical).
+    let scope = if tenant_id == DEFAULT_TENANT_ID {
+        format!("entity:{}/book:{}/act:{}", entity_id, act.book_id, act.id)
+    } else {
+        format!(
+            "tenant:{}/entity:{}/book:{}/act:{}",
+            tenant_id, entity_id, act.book_id, act.id
+        )
+    };
     let payload = serde_json::to_vec(&act)?;
     // Validating append (t54): reject a chain-breaking append before mutating the ledger.
     crate::try_append_event(&mut ledger, &actor, &scope, "act.drafted", None, &payload)?;
@@ -1349,6 +1366,88 @@ mod tests {
             .persist_write_through(&mut ledger, 2, |_tx| Ok(()))
             .await
             .expect("ledger genesis persists");
+    }
+
+    /// wp27-e3 (Part 2): drafting an act emits its `act.drafted` genesis on a `tenant:{t}/...`
+    /// scope so the act joins its tenant chain (ChainId::Tenant), mirroring e1's entity change. The
+    /// tenant is derived from the parent entity; a non-default tenant proves the derivation is real
+    /// (not a hard-stamped default).
+    #[tokio::test]
+    async fn draft_act_emits_tenant_scoped_genesis() {
+        let state = AppState::default();
+        let actor = seed_owner(&state).await;
+        let tenant = chancela_core::TenantId::new();
+        let entity = entity_of(EntityKind::SociedadePorQuotas).in_tenant(tenant);
+        let entity_id = entity.id;
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        let book_id = book.id;
+        state.entities.write().await.insert(entity_id, entity);
+        state.books.write().await.insert(book_id, book);
+        // Seed the tenant-scoped genesis chain (entity.created → book.opened) so the act.drafted
+        // append validates against a real book-chain genesis, as it does in production.
+        {
+            let mut ledger = state.ledger.write().await;
+            crate::try_append_event(
+                &mut ledger,
+                "amelia.marques",
+                &format!("tenant:{tenant}/entity:{entity_id}"),
+                "entity.created",
+                None,
+                b"entity",
+            )
+            .expect("entity genesis");
+            crate::try_append_event(
+                &mut ledger,
+                "amelia.marques",
+                &format!("tenant:{tenant}/entity:{entity_id}/book:{book_id}"),
+                "book.opened",
+                None,
+                b"book",
+            )
+            .expect("book genesis");
+            state
+                .persist_write_through(&mut ledger, 2, |_tx| Ok(()))
+                .await
+                .expect("genesis persists");
+        }
+
+        let req = DraftAct {
+            book_id: book_id.0,
+            title: "Ata inaugural".to_owned(),
+            channel: MeetingChannel::Physical,
+            ai_provenance: None,
+            convening: None,
+            retifies: None,
+            actor: "amelia.marques".to_owned(),
+        };
+        let (status, _view) = draft_act(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+        .expect("draft succeeds");
+        assert_eq!(status, StatusCode::CREATED);
+
+        let ledger = state.ledger.read().await;
+        let event = ledger
+            .events()
+            .iter()
+            .find(|e| e.kind == "act.drafted")
+            .expect("act.drafted emitted");
+        assert!(
+            event.scope.starts_with(&format!(
+                "tenant:{tenant}/entity:{entity_id}/book:{book_id}/act:"
+            )),
+            "act.drafted scope `{}` lacks the tenant segment",
+            event.scope
+        );
+        let memberships = chancela_ledger::Ledger::memberships(&event.scope, "act.drafted");
+        assert!(
+            memberships.contains(&chancela_ledger::ChainId::Tenant(tenant.to_string())),
+            "act.drafted must join its tenant chain, got {memberships:?}"
+        );
     }
 
     #[tokio::test]
