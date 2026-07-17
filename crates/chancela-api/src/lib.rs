@@ -17008,11 +17008,15 @@ mod tests {
             chancela_authz::default_roles().len() + 1
         );
 
-        // The frozen verb catalog is introspectable by any session. wp23 (e4) added the 39th verb
-        // `template.manage`, so the catalog now enumerates 39.
+        // The verb catalog is introspectable by any session and is exactly the compiled
+        // `Permission::ALL` (kept dynamic so a catalog change — e.g. wp27-e2's dedicated `Tenant*`
+        // verbs — needs no magic-number edit here).
         let (status, cat) = send(state.clone(), get("/v1/permissions")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(cat["permissions"].as_array().expect("verbs").len(), 39);
+        assert_eq!(
+            cat["permissions"].as_array().expect("verbs").len(),
+            chancela_authz::Permission::ALL.len()
+        );
 
         // Rename + narrow the permission-set.
         let (status, patched) = send(

@@ -193,13 +193,17 @@ impl Role {
     }
 
     /// The seeded **Platform Administrator** role: broad administrative authority, including RBAC
-    /// meta-permissions, but not the Owner-only destructive reset/wipe verbs.
+    /// meta-permissions and full tenant provisioning/administration (`tenant.create`/`tenant.read`/
+    /// `tenant.admin`), but not the Owner-only destructive reset/wipe verbs.
     #[must_use]
     pub fn platform_administrator() -> Self {
         Role {
             id: PLATFORM_ADMIN_ROLE_ID,
             name: "Platform Administrator".to_owned(),
             permission_set: [
+                Permission::TenantRead,
+                Permission::TenantCreate,
+                Permission::TenantAdmin,
                 Permission::EntityRead,
                 Permission::EntityCreate,
                 Permission::EntityUpdate,
@@ -244,15 +248,19 @@ impl Role {
         }
     }
 
-    /// The seeded **Tenant Administrator** role: entity/book/act administration plus scoped
+    /// The seeded **Tenant Administrator** role: reads and administers its own tenant
+    /// (`tenant.read`/`tenant.admin`) plus entity/book/act administration and scoped
     /// assignment/delegation, without global role-definition, user-management or platform settings
-    /// management.
+    /// management. It deliberately lacks `tenant.create` — minting a tenant is a platform-level
+    /// provisioning act reserved for the Owner and Platform Administrator.
     #[must_use]
     pub fn tenant_administrator() -> Self {
         Role {
             id: TENANT_ADMIN_ROLE_ID,
             name: "Tenant Administrator".to_owned(),
             permission_set: [
+                Permission::TenantRead,
+                Permission::TenantAdmin,
                 Permission::EntityRead,
                 Permission::EntityUpdate,
                 Permission::BookRead,
@@ -971,6 +979,43 @@ mod tests {
 
     fn permissions(perms: impl IntoIterator<Item = Permission>) -> BTreeSet<Permission> {
         perms.into_iter().collect()
+    }
+
+    #[test]
+    fn tenant_permissions_are_seeded_only_to_owner_and_the_admin_roles() {
+        use Permission::{TenantAdmin, TenantCreate, TenantRead};
+
+        // Owner (protected super-role) holds all three via `Permission::ALL`.
+        let owner = Role::owner();
+        for p in [TenantRead, TenantCreate, TenantAdmin] {
+            assert!(owner.permission_set.contains(&p), "owner missing {p}");
+        }
+
+        // Platform Administrator: full tenant provisioning + administration.
+        let platform = Role::platform_administrator();
+        assert!(platform.permission_set.contains(&TenantRead));
+        assert!(platform.permission_set.contains(&TenantCreate));
+        assert!(platform.permission_set.contains(&TenantAdmin));
+
+        // Tenant Administrator: reads + administers its tenant, but MUST NOT mint tenants.
+        let tenant_admin = Role::tenant_administrator();
+        assert!(tenant_admin.permission_set.contains(&TenantRead));
+        assert!(tenant_admin.permission_set.contains(&TenantAdmin));
+        assert!(
+            !tenant_admin.permission_set.contains(&TenantCreate),
+            "Tenant Administrator must not hold tenant.create (platform-level provisioning)"
+        );
+
+        // No other seeded role carries any tenant verb — the tenant directory is a privileged axis.
+        for role in non_admin_seeded_roles() {
+            for p in [TenantRead, TenantCreate, TenantAdmin] {
+                assert!(
+                    !role.permission_set.contains(&p),
+                    "{} unexpectedly holds {p}",
+                    role.name
+                );
+            }
+        }
     }
 
     #[test]

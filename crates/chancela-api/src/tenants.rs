@@ -16,13 +16,15 @@
 //! addressed tenant's scope, so an unknown tenant is a non-enumerating result (a Global holder
 //! proceeds to the honest `404`; a scoped non-member gets `403`).
 //!
-//! ## Authorization (e2 re-point seam)
+//! ## Authorization (dedicated `Tenant*` catalog — wp27-e2)
 //!
-//! These handlers deliberately reuse the existing `EntityCreate`/`EntityRead` verbs — creation at
-//! `Scope::Global` (a new tenant has no existing scope to narrow to; it is a platform-level act) and
-//! read at `Scope::Tenant`. Executor **e2** introduces dedicated `Tenant*` permissions and re-points
-//! exactly the `require_permission`/`authorizer` calls in this module; they are kept together and
-//! un-inlined so that re-targeting is a single local edit.
+//! The tenant directory is its **own** authority axis, above the entity level: these handlers gate on
+//! the dedicated [`Permission::TenantCreate`]/[`Permission::TenantRead`] verbs (not the entity verbs).
+//! `POST /v1/tenants` requires `tenant.create` at `Scope::Global` — minting a tenant is a
+//! platform-level provisioning act with no pre-existing scope to narrow to — while the reads authorize
+//! `tenant.read` at `Scope::Tenant`, so a tenant-scoped holder sees only its own tenant and a Global
+//! holder sees the whole directory. The verbs are seeded to Owner, Platform Administrator and (read +
+//! admin, not create) Tenant Administrator; see `chancela_authz::role`.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -97,9 +99,9 @@ pub(crate) async fn create_tenant(
     attestor: CurrentAttestor,
     Json(body): Json<CreateTenantBody>,
 ) -> Result<(StatusCode, Json<TenantView>), ApiError> {
-    // AUTHZ (e2 re-point target): minting a NEW tenant is a platform-level operation — there is no
-    // existing tenant to scope to — so it is gated at Global. e2 swaps this for `TenantCreate`.
-    require_permission(&state, &actor, Permission::EntityCreate, Scope::Global).await?;
+    // AUTHZ: minting a NEW tenant is a platform-level operation — there is no existing tenant to
+    // scope to — so it is gated on the dedicated `tenant.create` verb at Global.
+    require_permission(&state, &actor, Permission::TenantCreate, Scope::Global).await?;
 
     let tenant = Tenant::new(normalized_name(body.name)?);
     let payload = serde_json::to_vec(&tenant)?;
@@ -147,7 +149,7 @@ pub(crate) async fn list_tenants(
         .read()
         .await
         .values()
-        .filter(|tenant| authz.permits(Permission::EntityRead, scope_of_tenant(tenant.id)))
+        .filter(|tenant| authz.permits(Permission::TenantRead, scope_of_tenant(tenant.id)))
         .cloned()
         .collect::<Vec<_>>();
     tenants.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
@@ -158,7 +160,7 @@ pub(crate) async fn list_tenants(
     Ok(Json(views))
 }
 
-/// `GET /v1/tenants/{tenant_id}` — read one tenant, or `404`. Authorizes `entity.read` at the
+/// `GET /v1/tenants/{tenant_id}` — read one tenant, or `404`. Authorizes `tenant.read` at the
 /// addressed tenant's scope, so an unknown tenant is non-enumerating.
 pub(crate) async fn get_tenant(
     State(state): State<AppState>,
@@ -169,7 +171,7 @@ pub(crate) async fn get_tenant(
     require_permission(
         &state,
         &actor,
-        Permission::EntityRead,
+        Permission::TenantRead,
         scope_of_tenant(tenant_id),
     )
     .await?;
@@ -513,6 +515,124 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
+    }
+
+    /// **Authorize-path gate (wp27-e2).** The tenant collection is gated on the DEDICATED `Tenant*`
+    /// verbs, not the entity verbs. A `Gestor` holds `entity.create` + `entity.read` at Global yet
+    /// carries no tenant verb, so it is refused every tenant operation — proving the CRUD no longer
+    /// rides on `EntityCreate`/`EntityRead`. A role holding only `tenant.read` may read/list but still
+    /// cannot create, proving `tenant.create` is a distinct authority.
+    #[tokio::test]
+    async fn tenant_crud_requires_the_dedicated_tenant_permissions() {
+        use chancela_authz::{GESTOR_ROLE_ID, Permission, Role};
+
+        let state = AppState::default();
+        install_default_tenant(&state).await;
+        let default_id = chancela_core::DEFAULT_TENANT_ID.to_string();
+
+        // A Gestor at Global: has entity.create + entity.read, but NO tenant.* verb.
+        let gestor = token_for_role_at(&state, "gestor", GESTOR_ROLE_ID, Scope::Global).await;
+
+        // create → 403 (lacks tenant.create, even though it holds entity.create).
+        let (status, _) = send_raw(
+            state.clone(),
+            request(
+                Method::POST,
+                "/v1/tenants",
+                Some(json!({"name": "Encosto Estratégico, Lda"})),
+                &gestor,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "create must require tenant.create, not entity.create"
+        );
+
+        // get → 403 (lacks tenant.read, even though it holds entity.read).
+        let (status, _) = send_raw(
+            state.clone(),
+            request(
+                Method::GET,
+                &format!("/v1/tenants/{default_id}"),
+                None,
+                &gestor,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "get must require tenant.read, not entity.read"
+        );
+
+        // list → 200 but EMPTY: the per-row `tenant.read` filter admits nothing for the Gestor.
+        let (status, list) = send_raw(
+            state.clone(),
+            request(Method::GET, "/v1/tenants", None, &gestor),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{list}");
+        assert!(
+            list.as_array().expect("array").is_empty(),
+            "a caller without tenant.read must see no tenants: {list}"
+        );
+
+        // A custom role holding ONLY tenant.read at Global.
+        let reader_role_id = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: reader_role_id,
+            name: "Tenant Reader".to_owned(),
+            permission_set: [Permission::TenantRead].into_iter().collect(),
+            protected: false,
+        });
+        let reader = token_for_role_at(&state, "reader", reader_role_id, Scope::Global).await;
+
+        // With tenant.read it now sees the default tenant on list…
+        let (status, list) = send_raw(
+            state.clone(),
+            request(Method::GET, "/v1/tenants", None, &reader),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{list}");
+        assert!(
+            list.as_array()
+                .expect("array")
+                .iter()
+                .any(|row| row["id"] == default_id),
+            "tenant.read holder must see the default tenant: {list}"
+        );
+
+        // …and can read it by id…
+        let (status, _) = send_raw(
+            state.clone(),
+            request(
+                Method::GET,
+                &format!("/v1/tenants/{default_id}"),
+                None,
+                &reader,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // …but tenant.read alone does NOT grant creation (that needs tenant.create → 403).
+        let (status, _) = send_raw(
+            state,
+            request(
+                Method::POST,
+                "/v1/tenants",
+                Some(json!({"name": "Encosto Estratégico, Lda"})),
+                &reader,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "tenant.read must not imply tenant.create"
+        );
     }
 
     /// `create_entity` with no `tenant_id` in the body stays byte-identical to the pre-tenancy
