@@ -1,0 +1,10 @@
+# The XML Trusted List fixture drives byte-exact string surgery in tests/tsl_fixture.rs
+# (it locates "  </ds:Signature>\n", "</TrustServiceStatusList>", element boundaries), all
+# written against LF line endings. It MUST check out with LF on every platform: a CRLF checkout
+# — observed in a fresh `git worktree` even with core.autocrlf=false, since the committed blob is
+# LF but the working tree gets CR-injected — makes those searches miss and panics ~22 signature
+# tests. Pin it explicitly so the working tree is LF regardless of the surrounding git config.
+fixtures/pt-tsl-sample.xml text eol=lf
+
+# The DER certificate fixture is binary: never apply text/eol conversion to it.
+fixtures/unlisted-ca.der binary
