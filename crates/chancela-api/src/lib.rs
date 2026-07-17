@@ -1143,7 +1143,17 @@ impl AppState {
         // CLOSED here so at most one writer ever extends the chain. Roll the just-appended in-memory
         // events back out so memory never diverges from the untouched durable chain, then return a
         // `503` "not leader". SQLite (single-node) is always its own leader, so this is a no-op there.
-        if let Err(e) = store.cluster_assert_writable() {
+        //
+        // wp28: `cluster_assert_writable` queries the writer session (Postgres sync I/O via an
+        // internal `block_on`), so it is offloaded onto the blocking pool — calling it directly on
+        // this async worker panics and aborts the process on Postgres. The `&mut Ledger` guard is
+        // NOT captured by the closure; it stays on this task and is held across the await unchanged
+        // (no release/reacquire), so no `seq` can interleave (invariant #1). The gate still runs
+        // BEFORE the persist, preserving the fail-closed redirect/early-return semantics.
+        if let Err(e) = store
+            .read_blocking_async(|s| s.cluster_assert_writable())
+            .await
+        {
             let len = ledger.len();
             let kept: Vec<Event> = ledger.events()[..len - event_count].to_vec();
             *ledger = Ledger::try_from_events(kept).0;
@@ -1185,7 +1195,16 @@ impl AppState {
         // near-real-time (plan §2.2). Best-effort by design: a missed NOTIFY (leader crash between
         // commit and signal, no listener) is retried by the seq-poll backstop once Postgres can be
         // queried, so a failure here must never fail the write. No-op on SQLite (single-node).
-        if let Err(e) = store.cluster_notify_append((len as i64) - 1) {
+        //
+        // wp28: the NOTIFY runs a Postgres sync query, so it is offloaded onto the blocking pool
+        // (direct call on this async worker would panic). The write already committed above, the
+        // seq is an owned primitive moved into the closure, and a failure here is still swallowed
+        // (logged only) — behaviour is preserved, only the thread the query runs on changes.
+        let notify_seq = (len as i64) - 1;
+        if let Err(e) = store
+            .read_blocking_async(move |s| s.cluster_notify_append(notify_seq))
+            .await
+        {
             eprintln!("cluster: NOTIFY on append failed ({e}); followers will retry via seq-poll");
         }
         Ok(())
@@ -1303,8 +1322,11 @@ impl AppState {
         let Some(store) = &self.store else {
             return Ok(());
         };
+        // wp28: `load` runs the durable backend's sync read queries; offload it so this async
+        // worker never drives Postgres I/O directly (which would panic). Returns owned aggregates.
         let loaded = store
-            .load()
+            .read_blocking_async(|s| s.load())
+            .await
             .map_err(|e| ApiError::Internal(format!("reload after restore failed: {e}")))?;
         *self.entities.write().await = loaded.entities;
         *self.company_groups.write().await = loaded.company_groups;
@@ -1317,15 +1339,27 @@ impl AppState {
         *self.registry_extracts.write().await = loaded.registry_extracts;
         // wp26 tenancy: re-hydrate the tenant directory from the restored `tenants` table (seeding
         // the default tenant if absent), matching the boot path.
-        *self.tenants.write().await = hydrate_tenants(store);
+        //
+        // wp28: `hydrate_tenants` issues sync `tenants()`/`persist()` store calls, so the whole
+        // function is offloaded here (this reload runs on an async worker). The boot call site
+        // (`build_with_data_dir`) keeps the direct sync call — it runs off-runtime, pre-request.
+        // The returned `HashMap` is owned, so it crosses the blocking-task boundary safely.
+        *self.tenants.write().await = store.read_blocking_async(hydrate_tenants).await;
         self.registry_auto_updates.write().await.clear();
         self.documents.write().await.clear();
         self.external_signer_invites.write().await.clear();
         self.external_signing_envelopes.write().await.clear();
-        if let Ok(signed) = store.all_signed_documents() {
+        // wp28: both re-reads are sync store queries — offload them off the async worker.
+        if let Ok(signed) = store
+            .read_blocking_async(|s| s.all_signed_documents())
+            .await
+        {
             *self.signed_documents.write().await = signed;
         }
-        if let Ok(pending) = store.all_pending_cmd_sessions() {
+        if let Ok(pending) = store
+            .read_blocking_async(|s| s.all_pending_cmd_sessions())
+            .await
+        {
             *self.pending_signatures.write().await = pending;
         }
         if let Some(dir) = self.data_dir() {
