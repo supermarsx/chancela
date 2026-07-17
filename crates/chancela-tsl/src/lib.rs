@@ -72,7 +72,7 @@ pub use record::{
 };
 pub use source::{
     BytesTslSource, DEFAULT_PT_TSL_URL, ENV_TSL_TRUST_ANCHOR, ENV_TSL_TRUST_ANCHOR_SHA256,
-    ENV_TSL_URL, FileTslSource, HttpTslSource, TslSource, TslTrustAnchors, validate_tsl_signature,
-    validate_tsl_signature_with_anchors,
+    ENV_TSL_URL, FileTslSource, HttpTslSource, TslSource, TslTrustAnchors, parse_anchor_certs,
+    parse_hex_sha256, validate_tsl_signature, validate_tsl_signature_with_anchors,
 };
 pub use trust_store::TslTrustStore;

@@ -25,8 +25,8 @@ use chancela_tsa::{QualifiedTimestampPolicy, TimestampRequest, verify_response};
 use chancela_tsl::{
     AuthenticatedList, DEFAULT_LOTL_URL, DEFAULT_PT_TSL_URL, DigitalIdentity, ENV_LOTL_URL,
     LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService, TrustServiceProvider,
-    TrustedList, TslTrustAnchors, TslTrustStore, ingest_lotl, ingest_member_tsl, member_pointer,
-    parse_tsl, validate_tsl_signature,
+    TrustedList, TslError, TslTrustAnchors, TslTrustStore, ingest_lotl, ingest_member_tsl,
+    member_pointer, parse_anchor_certs, parse_hex_sha256, parse_tsl, validate_tsl_signature,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -582,12 +582,26 @@ pub async fn refresh_trust_tsl(
                 .to_owned(),
         )
     })?;
-    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
+    let (tsl_selection, anchor_certs, anchor_fingerprints) = {
+        let guard = state.settings.read().await;
+        (
+            guard.signing.runtime_tsl_selection(),
+            guard.signing.tsl_trust_anchor_certs.clone(),
+            guard.signing.tsl_trust_anchor_sha256.clone(),
+        )
+    };
     let use_lotl = request.lotl.unwrap_or(false);
     let attempt = tokio::task::spawn_blocking(move || {
         let now = OffsetDateTime::now_utc();
         if use_lotl {
-            import_tsl_via_lotl(data_dir, tsl_selection, request, now)
+            import_tsl_via_lotl(
+                data_dir,
+                tsl_selection,
+                anchor_certs,
+                anchor_fingerprints,
+                request,
+                now,
+            )
         } else {
             import_tsl_to_cache(data_dir, tsl_selection, request, now)
         }
@@ -922,10 +936,39 @@ fn resolve_member_tsl_url(selection: &RuntimeTslSelection, request_url: Option<&
         .unwrap_or_else(|| DEFAULT_PT_TSL_URL.to_owned())
 }
 
+/// Resolve the LOTL trust anchors from operator configuration: the certificate/fingerprint anchors
+/// provisioned in `SigningSettings` **unioned** with those from the environment
+/// ([`TslTrustAnchors::from_env`]).
+///
+/// Settings-first with the environment as fallback. Because anchoring is a *union* — a list is
+/// trusted when its signer matches **any** configured anchor, and anchors dedup by fingerprint —
+/// starting from the environment set and folding the settings anchors on top yields exactly the
+/// `settings ∪ env` set regardless of order. The resolved set stays **empty (fail-closed)** when
+/// neither source configures an anchor: a default anchor is never baked in, so an unconfigured
+/// install trusts no list. The settings anchors were already shape-validated on save; a parse error
+/// here is still surfaced fail-closed by the caller.
+fn resolve_lotl_trust_anchors(
+    settings_certs: &[String],
+    settings_fingerprints: &[String],
+) -> Result<TslTrustAnchors, TslError> {
+    let mut anchors = TslTrustAnchors::from_env()?;
+    for pem in settings_certs {
+        for cert_der in parse_anchor_certs(pem.as_bytes())? {
+            anchors = anchors.with_cert_der(&cert_der);
+        }
+    }
+    for fingerprint in settings_fingerprints {
+        anchors = anchors.with_fingerprint(parse_hex_sha256(fingerprint)?);
+    }
+    Ok(anchors)
+}
+
 /// Live LOTL → member-state trust bootstrap into the trust cache (wp26 §2.1).
 fn import_tsl_via_lotl(
     data_dir: PathBuf,
     selection: RuntimeTslSelection,
+    anchor_certs: Vec<String>,
+    anchor_fingerprints: Vec<String>,
     request: TslRefreshRequest,
     now: OffsetDateTime,
 ) -> Result<TslRefreshStatusView, ApiError> {
@@ -946,10 +989,11 @@ fn import_tsl_via_lotl(
     let lotl_url = resolve_lotl_url(request.lotl_url.as_deref());
     let member_url = resolve_member_tsl_url(&selection, request.url.as_deref());
 
-    // Root of trust: the pinned OJEU LOTL signing anchor(s). An empty set fails closed inside
-    // `ingest_lotl`, but we surface a configuration error early so the operator knows the anchor —
-    // not the bytes — is missing.
-    let anchors = TslTrustAnchors::from_env().map_err(|e| {
+    // Root of trust: the pinned OJEU LOTL signing anchor(s) — settings-provisioned anchors unioned
+    // with the environment ones, settings-first. An empty set fails closed inside `ingest_lotl`, but
+    // we surface a configuration error early so the operator knows the anchor — not the bytes — is
+    // missing.
+    let anchors = resolve_lotl_trust_anchors(&anchor_certs, &anchor_fingerprints).map_err(|e| {
         ApiError::Unprocessable(format!("LOTL trust anchor configuration error: {e}"))
     })?;
 
@@ -3711,5 +3755,76 @@ mod tests {
                 .status_message
                 .contains("exactly one default")
         );
+    }
+
+    // Serializes access to the process-global trust-anchor env vars across the wiring tests below,
+    // which set/remove them to exercise the settings ∪ environment union.
+    static ANCHOR_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn resolve_lotl_trust_anchors_unions_settings_with_env() {
+        let _guard = ANCHOR_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Anchor provisioned via the environment (fingerprint form).
+        let env_cert = b"env-provisioned-anchor-der";
+        let env_fp: [u8; 32] = Sha256::digest(env_cert).into();
+        let env_fp_hex = crate::hex::hex(&env_fp);
+
+        // Anchor provisioned via settings as a PEM certificate: the base64 body decodes to
+        // `b"hello trust anchor"`, which is what a signer must match to be anchored.
+        let settings_pem =
+            "-----BEGIN CERTIFICATE-----\naGVsbG8gdHJ1c3QgYW5jaG9y\n-----END CERTIFICATE-----";
+        let settings_pem_der = b"hello trust anchor";
+
+        // Anchor provisioned via settings as a sha256 fingerprint.
+        let settings_fp_cert = b"settings-fingerprint-anchor-der";
+        let settings_fp: [u8; 32] = Sha256::digest(settings_fp_cert).into();
+        let settings_fp_hex = crate::hex::hex(&settings_fp);
+
+        // SAFETY: single-threaded within the ANCHOR_ENV_LOCK critical section.
+        unsafe {
+            std::env::set_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR_SHA256, &env_fp_hex);
+            std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR);
+        }
+        let anchors = resolve_lotl_trust_anchors(&[settings_pem.to_owned()], &[settings_fp_hex])
+            .expect("valid settings + env anchors resolve");
+        unsafe {
+            std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR_SHA256);
+        }
+
+        assert_eq!(
+            anchors.len(),
+            3,
+            "settings PEM + settings fingerprint + env fingerprint form a 3-anchor union"
+        );
+        assert!(
+            anchors.is_anchored(env_cert),
+            "environment anchor is trusted"
+        );
+        assert!(
+            anchors.is_anchored(settings_pem_der),
+            "settings PEM anchor is trusted"
+        );
+        assert!(
+            anchors.is_anchored(settings_fp_cert),
+            "settings fingerprint anchor is trusted"
+        );
+    }
+
+    #[test]
+    fn resolve_lotl_trust_anchors_empty_is_fail_closed() {
+        let _guard = ANCHOR_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // SAFETY: single-threaded within the ANCHOR_ENV_LOCK critical section.
+        unsafe {
+            std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR_SHA256);
+            std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR);
+        }
+
+        // No settings anchors and no environment anchors: no default is ever baked in, so the
+        // resolved set is empty and trusts no list (fail-closed).
+        let anchors = resolve_lotl_trust_anchors(&[], &[]).expect("empty config resolves");
+        assert!(anchors.is_empty(), "unconfigured anchors trust nothing");
+        assert!(!anchors.is_anchored(b"any signer certificate"));
     }
 }

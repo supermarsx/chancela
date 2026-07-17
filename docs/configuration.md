@@ -100,7 +100,7 @@ Settings.
 
 | Area | Variables |
 |---|---|
-| Trust lists (TSL) | `CHANCELA_TSL_URL`, `CHANCELA_TSL_TRUST_ANCHOR`, `CHANCELA_TSL_TRUST_ANCHOR_SHA` |
+| Trust lists (TSL / LOTL) | `CHANCELA_TSL_URL`, `CHANCELA_LOTL_URL`, `CHANCELA_TSL_TRUST_ANCHOR`, `CHANCELA_TSL_TRUST_ANCHOR_SHA256` |
 | Timestamping (TSA) | `CHANCELA_TSA_URL` |
 | CMD (Chave Móvel Digital) | `CHANCELA_CMD_ENV`, `CHANCELA_CMD_APPLICATION_ID`, `CHANCELA_CMD_AMA_CERT_PEM`, `CHANCELA_CMD_HTTP_BASIC_USERNAME`, `CHANCELA_CMD_HTTP_BASIC_PASSWORD` |
 | CSC / QTSP cloud signing | `CHANCELA_CSC_PROVIDERS`, plus per-provider `CHANCELA_CSC_<NAME>_CLIENT_ID` / `_CLIENT_SECRET` / `_ACCESS_TOKEN` |
@@ -110,6 +110,46 @@ Settings.
 | Law corpus | `CHANCELA_LAW_URL`, `CHANCELA_WRITE_VALIDATOR_CORPUS` |
 | Paper-book OCR | `CHANCELA_PAPER_BOOK_OCR_COMMAND`, `CHANCELA_PAPER_BOOK_OCR_ENGINE_NAME`, `CHANCELA_PAPER_BOOK_OCR_TIMEOUT_SECS`, and related `CHANCELA_PAPER_BOOK_OCR_*` |
 | MCP server | `CHANCELA_MCP_ENABLED`, `CHANCELA_MCP_API_KEY`, `CHANCELA_MCP_TRANSPORT`, `CHANCELA_MCP_BIND`, `CHANCELA_MCP_BASE_URL`, `CHANCELA_MCP_ENABLED_TOOLS`, `CHANCELA_AI_ENABLED` |
+
+`CHANCELA_TSL_URL` overrides the pinned Portuguese Trusted List URL; `CHANCELA_LOTL_URL`
+overrides the pinned EU List of Trusted Lists (LOTL) URL used by the LOTL → member-state
+bootstrap. Both default to the pinned public endpoints and can also be set per-refresh from
+Settings — they are **locations, not trust**.
+
+### Provisioning and rotating the Trusted-List signing anchor
+
+The Trusted List is the system's root of trust: it declares which CAs are "qualified". Its own
+XML-DSig signature carries the signer certificate *inside* the list, so verifying that signature
+against the embedded certificate only proves the bytes are self-consistent — anyone can mint a
+self-signed list that verifies against its own key. To be authentic, the signer certificate must
+match a **trust anchor the operator provisions out of band**: the EU LOTL / national-scheme
+XML-DSig **signing certificate** (a *public* X.509 certificate — not a secret, not a credential).
+
+**No default anchor is ever shipped.** With no anchor configured the anchor set is empty and every
+list — including a cryptographically self-consistent, self-signed one — is reported *untrusted*
+(fail-closed). `CHANCELA_TSL_URL` / `CHANCELA_LOTL_URL` are URLs, never anchors; provisioning a
+signing certificate is a required, deliberate step at deploy time.
+
+Provision the anchor either way, or both — the two sources are a **union** (a signer matching **any**
+configured certificate or fingerprint is anchored):
+
+- **Environment:** `CHANCELA_TSL_TRUST_ANCHOR` names a file holding one or more PEM
+  `CERTIFICATE` blocks (or a single raw-DER certificate); `CHANCELA_TSL_TRUST_ANCHOR_SHA256`
+  holds one or more hex SHA-256 fingerprints of the signer certificate's DER (comma/semicolon/
+  whitespace-separated, optional `:` byte separators). A variable that is *set but unparseable*
+  is a hard error — a misconfigured anchor trusts nothing rather than silently degrading.
+- **Settings** (`signing.tsl_trust_anchor_certs` / `signing.tsl_trust_anchor_sha256`): the same
+  anchors as application config — a list of PEM certificate strings and a list of 64-character
+  sha256 hex fingerprints. Invalid PEM or a malformed fingerprint is rejected on save with `422`.
+  At runtime the settings anchors are **unioned with** the environment anchors (settings-first,
+  environment as fallback).
+
+**Rotation:** because matching is by the exact signing certificate (equivalently its SHA-256
+fingerprint), configure **multiple** anchors to span a key rollover. Add the incoming signing
+certificate (or its fingerprint) alongside the outgoing one *before* the scheme switches keys;
+both are trusted during the overlap, and the retired one can be removed after the cut-over. This
+is the intended mechanism — there is no certificate-path build to an issuing CA, so the anchor
+must be the actual publishing certificate(s).
 
 ## Multi-node variables
 

@@ -231,7 +231,11 @@ impl TslTrustAnchors {
 /// Extract one or more DER certificates from a trust-anchor file: parse every PEM
 /// `-----BEGIN CERTIFICATE-----` block if present, else treat the whole file as a single DER
 /// certificate.
-fn parse_anchor_certs(bytes: &[u8]) -> Result<Vec<Vec<u8>>, TslError> {
+///
+/// Shared by [`TslTrustAnchors::from_env`] and by application-config callers that provision the
+/// same anchors from a settings document (the certificate bytes are then folded in with
+/// [`with_cert_der`](TslTrustAnchors::with_cert_der)). Fails closed on empty or malformed input.
+pub fn parse_anchor_certs(bytes: &[u8]) -> Result<Vec<Vec<u8>>, TslError> {
     const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
     const END: &str = "-----END CERTIFICATE-----";
 
@@ -270,7 +274,11 @@ fn parse_anchor_certs(bytes: &[u8]) -> Result<Vec<Vec<u8>>, TslError> {
 }
 
 /// Parse a single hex SHA-256 fingerprint (64 hex nibbles, optional `:` byte separators).
-fn parse_hex_sha256(s: &str) -> Result<[u8; 32], TslError> {
+///
+/// Shared by [`TslTrustAnchors::from_env`] and by application-config callers that pin the same
+/// fingerprint from a settings document (folded in with
+/// [`with_fingerprint`](TslTrustAnchors::with_fingerprint)).
+pub fn parse_hex_sha256(s: &str) -> Result<[u8; 32], TslError> {
     let cleaned: String = s.chars().filter(|c| *c != ':').collect();
     let bytes = cleaned.as_bytes();
     if bytes.len() != 64 {
