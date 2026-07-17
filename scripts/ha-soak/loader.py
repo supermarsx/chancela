@@ -13,9 +13,14 @@ What it does, for --duration seconds:
   (iii) records throughput, errors, 5xx, redirects, per-fault failover (write-resume) time, and the
        leader timeline (asserting never >1 leader at once).
 
-Then a CORRECTNESS check: polls every node's /health (cluster.applied_seq / durable_max_seq) and
-/v1/ledger/verify, asserts all surviving nodes converge to the same durable head with an intact
-hash-chain, exactly one leader, and that no committed ledger events were lost or duplicated.
+Then a QUIESCE/SETTLE phase (so we never grade the cluster mid-election right after the last fault):
+faults stop a margin before load ends; once load stops we recover any lingering fault (un-pause a
+partitioned follower, restart a killed node / Postgres) and poll up to a bounded settle-timeout for
+the cluster to re-elect and fully converge. THEN a CORRECTNESS check: polls every node's /health
+(cluster.applied_seq / durable_max_seq) and /v1/ledger/verify, asserts all surviving nodes converge
+to the same durable head with an intact hash-chain, exactly one leader, and that no committed ledger
+events were lost or duplicated. If the settle-timeout elapses without single-leader + convergence,
+that is a real FAIL (reported honestly, not papered over).
 
 Exit code 0 iff the soak ran and all correctness assertions held; non-zero otherwise.
 """
@@ -88,6 +93,12 @@ class Soak:
         self.port = a.port
         self.pg = a.postgres_container
         self.duration = a.duration
+        # Quiesce/settle knobs: stop injecting new faults this many seconds before the load phase
+        # ends, and — after load stops and the cluster is recovered — poll up to settle_timeout for
+        # the cluster to re-elect + fully converge BEFORE the final correctness snapshot.
+        self.fault_stop_margin = max(0, a.fault_stop_margin)
+        self.settle_timeout = max(0, a.settle_timeout)
+        self.settle_poll = 2  # seconds between settle sweeps
         self.metrics_out = a.metrics_out
         self.session = None  # x-chancela-session token (Redis-shared → valid on any node)
         self.user_id = None
@@ -213,6 +224,88 @@ class Soak:
                     self.no_leader_windows += 1
             time.sleep(1)
 
+    # ---- helpers ----
+    def _sleep(self, secs):
+        """Sleep up to `secs`, but wake immediately once stop is set (so chaos exits promptly
+        at end-of-load and can run its recovery cleanup instead of blocking a full fault window)."""
+        end = time.time() + secs
+        while not self.stop.is_set():
+            rem = end - time.time()
+            if rem <= 0:
+                break
+            time.sleep(min(1.0, rem))
+
+    def _container_running(self, name):
+        rc, out, _ = docker("inspect", "-f", "{{.State.Running}}", name)
+        return out == "true"
+
+    def _recover_cluster(self, grace=5):
+        """Undo any lingering fault before settling: un-pause / un-partition every app node, make
+        sure any killed/restarted app node + Postgres is back up. Idempotent (unpause/start on an
+        already-healthy container is a harmless no-op)."""
+        print("[settle] recovering cluster: unpause + ensure all nodes and postgres are up", flush=True)
+        if not self._container_running(self.pg):
+            docker("start", self.pg)
+        for n in self.nodes:
+            docker("unpause", n)  # no-op if not paused
+            if not self._container_running(n):
+                docker("start", n)
+        # brief grace for containers / postgres to accept connections again before we poll
+        time.sleep(grace)
+
+    def _strict_converged(self, snap):
+        """STRICT quiescence predicate over one cluster sweep. Returns (converged, target_seq).
+
+        converged == True requires ALL of:
+          * exactly one node reports role==leader,
+          * every node reports a durable_max_seq and applied_seq,
+          * every node's durable_max_seq == the max durable head across nodes (target),
+          * every node's applied_seq == target (fully applied, lag 0),
+          * every node reports lag 0 (where lag is present),
+          * every node's hash-chain verifies valid,
+          * every node reports the same ledger head seq AND head hash.
+        This is the same bar the final verdict enforces — so the sweep we break on IS a passing one.
+        """
+        if not snap or len(snap) != len(self.nodes):
+            return False, None
+        durs, applied, lags, valids, seqs, hashes = [], [], [], [], [], []
+        leaders = 0
+        for n in self.nodes:
+            s = snap.get(n)
+            if not s:
+                return False, None
+            h = s.get("health")
+            if not h or not isinstance(h.get("cluster"), dict):
+                return False, None
+            c = h["cluster"]
+            if c.get("role") == "leader":
+                leaders += 1
+            durs.append(c.get("durable_max_seq"))
+            applied.append(c.get("applied_seq"))
+            lags.append(c.get("lag"))
+            v = s.get("verify")
+            valids.append(bool(v and v.get("valid")))
+            seqs.append(s.get("head_seq"))
+            hashes.append(s.get("head_hash"))
+        if leaders != 1:
+            return False, None
+        if any(d is None for d in durs) or any(a is None for a in applied):
+            return False, None
+        target = max(durs)
+        if not all(d == target for d in durs):
+            return False, target
+        if not all(a == target for a in applied):
+            return False, target
+        if any(lag not in (0, None) for lag in lags):
+            return False, target
+        if not all(valids):
+            return False, target
+        if any(x is None for x in seqs) or len(set(seqs)) != 1:
+            return False, target
+        if any(x is None for x in hashes) or len(set(hashes)) != 1:
+            return False, target
+        return True, target
+
     # ---- chaos ----
     def measure_failover_after(self, label, t_fault):
         """Wait until a write succeeds after t_fault; return resume seconds."""
@@ -235,62 +328,76 @@ class Soak:
         return e
 
     def chaos_thread(self):
-        # Fault schedule: begin after a warmup, cycle through fault types until near the end.
+        # Fault schedule: begin after a warmup, cycle through fault types, and STOP injecting new
+        # faults `fault_stop_margin` seconds before the load phase ends — so the cluster has clean
+        # air (no fresh kill/restart/partition) leading into the post-load settle + snapshot.
         warmup = 60
         cycle = max(90, (self.duration - warmup) // 6)  # ~6 fault cycles
         t0 = time.time()
-        time.sleep(min(warmup, max(5, self.duration // 20)))
-        cyc = 0
-        while not self.stop.is_set() and (time.time() - t0) < (self.duration - 20):
-            cyc += 1
-            phase = (cyc - 1) % 3
-            if phase == 0:
-                # KILL current leader → forced failover, then revive it.
-                ldr, _ = self.current_leader()
-                if ldr:
+        fault_deadline = self.duration - self.fault_stop_margin
+        try:
+            self._sleep(min(warmup, max(5, self.duration // 20)))
+            cyc = 0
+            while not self.stop.is_set() and (time.time() - t0) < fault_deadline:
+                cyc += 1
+                phase = (cyc - 1) % 3
+                if phase == 0:
+                    # KILL current leader → forced failover, then revive it.
+                    ldr, _ = self.current_leader()
+                    if ldr:
+                        t = time.time()
+                        docker("kill", ldr)
+                        e = self.record_fault("kill-leader", ldr, t)
+                        resume = self.measure_failover_after("kill-leader", t)
+                        e["failover_resume_s"] = resume
+                        print(f"[fault] kill-leader {ldr} resume={resume}s", flush=True)
+                        self._sleep(15)
+                        docker("start", ldr)  # bring the node back as a follower
+                elif phase == 1:
+                    # RESTART Postgres → leader must step down (watchdog) & re-elect after PG returns.
                     t = time.time()
-                    docker("kill", ldr)
-                    e = self.record_fault("kill-leader", ldr, t)
-                    resume = self.measure_failover_after("kill-leader", t)
+                    docker("restart", "-t", "5", self.pg)
+                    e = self.record_fault("restart-postgres", self.pg, t)
+                    resume = self.measure_failover_after("restart-postgres", t)
                     e["failover_resume_s"] = resume
-                    print(f"[fault] kill-leader {ldr} resume={resume}s", flush=True)
-                    time.sleep(15)
-                    docker("start", ldr)  # bring the node back as a follower
-            elif phase == 1:
-                # RESTART Postgres → leader must step down (watchdog) & re-elect after PG returns.
-                t = time.time()
-                docker("restart", "-t", "5", self.pg)
-                e = self.record_fault("restart-postgres", self.pg, t)
-                resume = self.measure_failover_after("restart-postgres", t)
-                e["failover_resume_s"] = resume
-                print(f"[fault] restart-postgres resume={resume}s", flush=True)
-            else:
-                # PAUSE (partition) a follower for a window, then unpause.
-                ldr, _ = self.current_leader()
-                follower = next((n for n in self.nodes if n != ldr), None)
-                if follower:
-                    t = time.time()
-                    rc, _, _ = docker("pause", follower)
-                    if rc == 0:
-                        self.record_fault("pause-follower", follower, t, {"hold_s": 20})
-                        time.sleep(20)
-                        docker("unpause", follower)
-            # wait out the rest of the cycle
-            waited = 0
-            while waited < cycle and not self.stop.is_set():
-                time.sleep(2)
-                waited += 2
+                    print(f"[fault] restart-postgres resume={resume}s", flush=True)
+                else:
+                    # PAUSE (partition) a follower for a window, then unpause.
+                    ldr, _ = self.current_leader()
+                    follower = next((n for n in self.nodes if n != ldr), None)
+                    if follower:
+                        t = time.time()
+                        rc, _, _ = docker("pause", follower)
+                        if rc == 0:
+                            self.record_fault("pause-follower", follower, t, {"hold_s": 20})
+                            self._sleep(20)
+                            docker("unpause", follower)
+                # wait out the rest of the cycle (unless we've reached the fault deadline / stopped)
+                waited = 0
+                while (
+                    waited < cycle
+                    and not self.stop.is_set()
+                    and (time.time() - t0) < fault_deadline
+                ):
+                    self._sleep(2)
+                    waited += 2
+        finally:
+            # Never leave the cluster degraded when load stops: un-pause any partitioned follower and
+            # restart any node/postgres we may have just knocked over. (_recover_cluster in the settle
+            # phase double-checks, but doing it here means an interrupted fault heals immediately.)
+            for n in self.nodes:
+                docker("unpause", n)
+                if not self._container_running(n):
+                    docker("start", n)
+            if not self._container_running(self.pg):
+                docker("start", self.pg)
 
     # ---- correctness ----
     def convergence(self):
-        print("[verify] draining, then checking convergence across nodes...", flush=True)
-        # Ensure every node container is running/unpaused for the final read.
-        for n in self.nodes:
-            docker("unpause", n)  # no-op if not paused
-            rc, out, _ = docker("inspect", "-f", "{{.State.Running}}", n)
-            if out != "true":
-                docker("start", n)
-        # Give followers time to reconcile the durable head after load stops.
+        print("[verify] load stopped; recovering + settling before correctness snapshot...", flush=True)
+        # 1. Recover any lingering fault (un-pause/partition, restart killed node/postgres) so the
+        #    cluster is free to re-elect and reconcile.
+        self._recover_cluster()
         report = {"nodes": {}}
         # Determine durable head target = max durable_max_seq observed across nodes.
         def head_of(n):
@@ -313,37 +420,35 @@ class Soak:
                 snap[n] = {"health": h, "verify": v, "head_seq": hs, "head_hash": hh}
             return snap
 
+        # 2. Poll for STRICT quiescence up to settle_timeout: break the instant the cluster has a
+        #    single leader AND all nodes have re-elected + fully converged to the durable head (same
+        #    applied==durable==max head, lag 0, valid chains, identical head hash/seq). This is what
+        #    keeps us from snapshotting mid-election right after the last fault. If the timeout
+        #    elapses without that state, it is an HONEST FAIL — we do NOT extend to force green.
         target = None
         converged = False
-        deadline = time.time() + 90
         last = {}
-        while time.time() < deadline:
+        settle_start = time.time()
+        settle_deadline = settle_start + self.settle_timeout
+        settle_seconds = None
+        while True:
             last = sweep()
-            durs = []
-            applied = []
-            leaders = 0
-            ok = True
-            for n, s in last.items():
-                h = s["health"]
-                if not h or not isinstance(h.get("cluster"), dict):
-                    ok = False
-                    continue
-                c = h["cluster"]
-                if c.get("role") == "leader":
-                    leaders += 1
-                if c.get("durable_max_seq") is not None:
-                    durs.append(c["durable_max_seq"])
-                if c.get("applied_seq") is not None:
-                    applied.append(c["applied_seq"])
-            if ok and durs:
-                target = max(durs)
-                # converged: every node's applied_seq == the shared durable head, exactly one leader
-                if applied and all(x == target for x in applied) and len(applied) == len(self.nodes) and leaders == 1:
-                    converged = True
-                    break
-            time.sleep(3)
+            converged, target = self._strict_converged(last)
+            if converged:
+                settle_seconds = round(time.time() - settle_start, 2)
+                print(f"[settle] cluster quiesced after {settle_seconds}s (single leader + converged)", flush=True)
+                break
+            if time.time() >= settle_deadline:
+                settle_seconds = round(time.time() - settle_start, 2)
+                print(
+                    f"[settle] TIMEOUT after {settle_seconds}s (limit {self.settle_timeout}s) — "
+                    "cluster did not reach single-leader + full convergence",
+                    flush=True,
+                )
+                break
+            time.sleep(self.settle_poll)
 
-        # Build the report from the last sweep.
+        # Build the report from the last (settled, or timed-out) sweep.
         heads = set()
         verify_lengths = set()
         head_hashes = set()
@@ -391,6 +496,14 @@ class Soak:
         }
         report["checks"] = checks
         report["converged"] = converged
+        # Settle metrics: how long the post-load re-election + convergence took (or that it timed out).
+        report["settle"] = {
+            "settle_seconds": settle_seconds,
+            "settle_timeout_s": self.settle_timeout,
+            "fault_stop_margin_s": self.fault_stop_margin,
+            "settled": converged,
+            "timed_out": not converged,
+        }
         return report
 
     def run(self):
@@ -436,6 +549,8 @@ class Soak:
                 "status_counts": {str(k): v for k, v in self.status_counts.items()},
                 "redirects_followed": self.redirects,
                 "multi_leader_violations": self.multi_leader_violations,
+                "settle_seconds": report.get("settle", {}).get("settle_seconds"),
+                "settle_timed_out": report.get("settle", {}).get("timed_out"),
                 "faults": self.faults,
                 "errors_sample": self.errors_sample,
                 "convergence": report,
@@ -476,6 +591,18 @@ def main():
     ap.add_argument("--postgres-container", required=True)
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--duration", type=int, default=1800)
+    # Quiesce/settle: stop new faults this long before load ends, then poll up to settle-timeout for
+    # a single leader + full convergence before the final snapshot. Env-overridable for soak.sh.
+    ap.add_argument(
+        "--fault-stop-margin",
+        type=int,
+        default=int(os.environ.get("SOAK_FAULT_STOP_MARGIN", "30")),
+    )
+    ap.add_argument(
+        "--settle-timeout",
+        type=int,
+        default=int(os.environ.get("SOAK_SETTLE_SECONDS", "90")),
+    )
     ap.add_argument("--metrics-out", default="/tmp/soak-metrics.json")
     a = ap.parse_args()
     sys.exit(Soak(a).run())

@@ -9,8 +9,11 @@
 # Usage:
 #   scripts/ha-soak/soak.sh [DURATION_SECONDS] [REPLICAS]
 # Env:
-#   SOAK_KEEP=1   leave the cluster up after the run (skip teardown)
-#   SOAK_WRITERS  writer-thread count inside the driver (default 6)
+#   SOAK_KEEP=1          leave the cluster up after the run (skip teardown)
+#   SOAK_WRITERS         writer-thread count inside the driver (default 6)
+#   SOAK_SETTLE_SECONDS  post-load settle timeout — how long the driver polls for a single leader +
+#                        full convergence before the final correctness snapshot (default 90)
+#   SOAK_FAULT_STOP_MARGIN  stop injecting new faults this many seconds before load ends (default 30)
 #
 # Requires: docker + compose v2, the `chancela-server:postgres` image already built, and the
 # docker/secrets/{postgres_password,database_url,credential_key} files present.
@@ -84,6 +87,8 @@ docker run -i --rm \
   --name chancela-soak-driver \
   --network "$NET" \
   -e "SOAK_WRITERS=${SOAK_WRITERS:-6}" \
+  -e "SOAK_SETTLE_SECONDS=${SOAK_SETTLE_SECONDS:-90}" \
+  -e "SOAK_FAULT_STOP_MARGIN=${SOAK_FAULT_STOP_MARGIN:-30}" \
   -v //var/run/docker.sock:/var/run/docker.sock \
   python:3.12-alpine \
   sh -c "apk add --no-cache docker-cli >/dev/null 2>&1 && python - --nodes '$NODES' --postgres-container '$PG' --duration '$DURATION'" \
