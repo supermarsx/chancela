@@ -148,6 +148,56 @@ async fn draft_act(state: &AppState, token: &str) -> String {
     act["id"].as_str().unwrap().to_owned()
 }
 
+async fn prepare_signing_act(state: &AppState, token: &str, act_id: &str) {
+    let (status, body) = send(
+        state,
+        json_req(
+            "PATCH",
+            &format!("/v1/acts/{act_id}"),
+            token,
+            json!({
+                "meeting_date": "2026-03-30",
+                "meeting_time": "10:00",
+                "place": "Sede social",
+                "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretario"] },
+                "agenda": [{ "number": 1, "text": "Aprovacao das contas" }],
+                "attendance_reference": "Lista de presencas",
+                "deliberations": "Aprovadas as contas do exercicio."
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "patch act: {body}");
+
+    for to in [
+        "Review",
+        "Convened",
+        "Deliberated",
+        "TextApproved",
+        "Signing",
+    ] {
+        let (status, body) = send(
+            state,
+            json_req(
+                "POST",
+                &format!("/v1/acts/{act_id}/advance"),
+                token,
+                json!({ "to": to }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "advance to {to}: {body}");
+    }
+}
+
+/// Creates an act and advances it into `Signing`, the state required before an
+/// external-signing envelope can be created (see signature.rs guard).
+async fn signing_act(state: &AppState, token: &str) -> String {
+    let act_id = draft_act(state, token).await;
+    prepare_signing_act(state, token, &act_id).await;
+    act_id
+}
+
 async fn create_envelope(state: &AppState, token: &str, act_id: &str) -> Value {
     let (status, envelope) = send(
         state,
@@ -174,7 +224,7 @@ async fn marker_only_completion_is_rejected_until_required_slot_is_signed() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = draft_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let envelope = create_envelope(&state, &token, &act_id).await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let required_slot = envelope["slots"][0]["id"].as_str().expect("slot id");
@@ -255,7 +305,7 @@ async fn signed_status_without_evidence_is_rejected() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = draft_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let envelope = create_envelope(&state, &token, &act_id).await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let required_slot = envelope["slots"][0]["id"].as_str().expect("slot id");
@@ -282,7 +332,7 @@ async fn signed_slot_evidence_without_complete_stays_workflow_open() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = draft_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let envelope = create_envelope(&state, &token, &act_id).await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let required_slot = envelope["slots"][0]["id"].as_str().expect("slot id");
@@ -338,7 +388,7 @@ async fn configured_identity_requirements_need_matching_evidence_before_signed()
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = draft_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
 
     let (status, envelope) = send(
         &state,
@@ -452,7 +502,7 @@ async fn declined_expired_and_revoked_required_slots_block_completion() {
         let dir = TempDir::new();
         let state = AppState::with_data_dir(dir.0.clone());
         let token = bootstrap(&state).await;
-        let act_id = draft_act(&state, &token).await;
+        let act_id = signing_act(&state, &token).await;
         let envelope = create_envelope(&state, &token, &act_id).await;
         let envelope_id = envelope["id"].as_str().expect("envelope id");
         let required_slot = envelope["slots"][0]["id"].as_str().expect("slot id");
@@ -514,7 +564,7 @@ async fn sequential_flow_blocks_later_required_slots_until_earlier_resolves() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = draft_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
 
     let (status, envelope) = send(
         &state,
