@@ -279,6 +279,15 @@ impl PostgresBackend {
         if self.is_leader() {
             return Ok(true);
         }
+        // wp28 election-liveness fix: a Postgres restart drops the un-pooled writer session, and the
+        // sync `postgres::Client` never reconnects on its own — so the `pg_try_advisory_lock` below
+        // would error `connection closed` on every tick forever and the cluster would stay stuck
+        // leaderless even though the lock was freed by the bounce. Re-establish the writer session
+        // first when it has broken. Only reached on a follower (leaders early-return above), which
+        // holds no advisory lock, so swapping its session cannot lose a held lock — and a fresh
+        // session must still win the lock through the contention below, preserving single-writer
+        // safety. If Postgres is still down the reconnect errors and we retry next tick.
+        self.reconnect_writer_if_broken()?;
         let node_id = self.node_id.clone();
         let advertised = self.advertised_addr.clone();
         let epoch = {
@@ -524,6 +533,33 @@ mod tests {
             "each promotion bumps the monotonic leader_epoch (fence)"
         );
         drop(follower);
+    }
+
+    #[test]
+    #[ignore = "requires a live Postgres (set DATABASE_URL)"]
+    fn reconnect_writer_is_a_noop_on_a_healthy_session() {
+        // wp28: the probe must not disturb a live writer session — a healthy follower calls this on
+        // every promotion tick, so it has to be side-effect-free when the connection is fine. Prove
+        // it returns Ok, keeps the session usable, and (crucially) does NOT drop a held advisory lock
+        // even if it were ever called on a leader (defence in depth for the single-writer invariant).
+        let Some(url) = test_url() else { return };
+        let leader = PostgresBackend::open(&url).expect("opens as leader");
+        assert!(leader.is_leader());
+        let epoch_before = leader.leader_epoch();
+        leader
+            .reconnect_writer_if_broken()
+            .expect("healthy-session reconnect probe is Ok");
+        // The session is still alive and still holds the lock + epoch → still verifies as leader.
+        assert!(
+            leader.verify_still_leader(),
+            "a healthy leader still verifies after the reconnect probe (lock not dropped)"
+        );
+        assert_eq!(
+            leader.leader_epoch(),
+            epoch_before,
+            "the probe must not bump the epoch or re-elect"
+        );
+        drop(leader);
     }
 
     #[test]

@@ -286,6 +286,45 @@ impl PostgresBackend {
         self.writer.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// **wp28 election-liveness fix — reconnect the writer session if its connection has broken.**
+    ///
+    /// The writer is a single, never-pooled `postgres::Client` (§4). The synchronous `postgres`
+    /// crate does NOT auto-reconnect: once its TCP connection is dropped — e.g. Postgres is
+    /// restarted / bounced under it — every subsequent query on that client returns
+    /// `connection closed` **forever**. Because the advisory-lock election runs on this one client
+    /// (`try_promote`'s `pg_try_advisory_lock`), a Postgres bounce would otherwise leave every node's
+    /// writer session permanently dead: the lock is freed cluster-wide (sessions gone) yet no live
+    /// session can grab it, and the cluster stays STUCK LEADERLESS (the observed wp28 liveness bug).
+    /// The pooled read path recovers on its own (r2d2 `test_on_check_out`); only this un-pooled writer
+    /// needs explicit re-establishment.
+    ///
+    /// This cheaply probes the session and, when it is broken, opens a fresh writer connection from
+    /// the retained DSN (same resolved config + rustls connector as [`Self::open`]).
+    ///
+    /// **Safety:** a freshly opened session holds NO advisory lock, so re-contention still goes
+    /// through `pg_try_advisory_lock`, which Postgres grants to at most one session — the
+    /// single-writer invariant is fully preserved (no split-brain). MUST only be called on a node
+    /// that is NOT the current leader (a follower holds no lock to lose by swapping its session); the
+    /// sole caller, [`Self::try_promote`], guarantees this by early-returning for a leader.
+    pub(crate) fn reconnect_writer_if_broken(&self) -> Result<(), StoreError> {
+        // Cheap liveness probe on the writer session; a broken/closed connection errors here. A
+        // healthy follower session answers immediately and we leave it untouched.
+        {
+            let mut writer = self.writer();
+            if writer.simple_query("SELECT 1").is_ok() {
+                return Ok(());
+            }
+        }
+        // The writer connection is dead — open a replacement and swap it in. If Postgres is not back
+        // yet this returns an error; the caller retries on the next election tick (self-healing).
+        let crate::pg_tls::ResolvedPgTls {
+            config, connector, ..
+        } = crate::pg_tls::resolve(&self.dsn)?;
+        let fresh = config.connect(connector)?;
+        *self.writer() = fresh;
+        Ok(())
+    }
+
     /// Boot replay: read the aggregate rows and all `events` (ordered by `seq`) into a
     /// [`LoadedState`], byte-for-byte the same reconstruction as the SQLite [`crate::Store::load`]
     /// path (the `events` rows feed `Ledger::try_from_events`, which re-verifies the chain).
