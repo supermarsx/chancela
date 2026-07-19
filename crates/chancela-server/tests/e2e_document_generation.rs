@@ -360,14 +360,35 @@ async fn document_pipeline_end_to_end_and_pdfa_conformance() {
     assert_eq!(pre_model["title"], "Ata da Assembleia Geral Anual");
     assert_well_formed_document_model(&pre_model);
 
-    // Pre-seal the persisted PDF is 404 (nothing produced until sealing).
-    let (status, _, _) = get_bytes(&h, &format!("/v1/acts/{act_id}/document")).await;
-    assert_eq!(status, 404, "no persisted PDF before sealing");
-    // ...and so is the bundle.
-    let (status, _) = h
+    // Pre-seal the persisted PDF is the immutable canonical snapshot taken on entry to Signing —
+    // the exact bytes a qualified signature will cover. Producing it at Signing rather than at seal
+    // is what lets the card sign a frozen document, so it is downloadable here by design.
+    let (status, ctype, pre_seal_pdf) = get_bytes(&h, &format!("/v1/acts/{act_id}/document")).await;
+    assert_eq!(status, 200, "canonical signing snapshot is served before sealing");
+    assert!(ctype.starts_with("application/pdf"), "pre-seal ctype={ctype}");
+    assert!(
+        pre_seal_pdf.starts_with(b"%PDF-"),
+        "pre-seal bytes are a PDF"
+    );
+    // It is already PDF/A-2u conformant: sealing must not be what makes the bytes conformant.
+    assert_pdfa2u_conformant(&pre_seal_pdf);
+
+    // The bundle is assembled over that same snapshot, so it is available too — and it describes
+    // the exact bytes just downloaded. Assert the fixity rather than merely the status code.
+    let (status, pre_seal_bundle) = h
         .get_json(&format!("/v1/acts/{act_id}/document/bundle"))
         .await;
-    assert_eq!(status, 404, "no bundle before sealing");
+    assert_eq!(status, 200, "pre-seal bundle: {pre_seal_bundle}");
+    assert_eq!(
+        pre_seal_bundle["document"]["pdf_digest"],
+        sha256_hex(&pre_seal_pdf),
+        "pre-seal bundle describes the canonical snapshot byte-for-byte"
+    );
+    // No qualified signature has happened, so the bundle carries no signed material yet.
+    assert!(
+        pre_seal_bundle["signed"].is_null(),
+        "no signed material before signing: {pre_seal_bundle}"
+    );
 
     // ----- Seal → the act's PDF/A-2u document is produced -----------------------------------------
     let (status, sealed) = h
