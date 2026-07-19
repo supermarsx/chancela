@@ -19,6 +19,7 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
   const downloadStem = `${slugForDownload(entityName)}-ata-\\d+`;
   const nipc = validNipc(Date.now());
 
+  await installBrowserDownloadFallback(page);
   await mockUnavailableSigningProviders(page);
   await signInAt(page, '/');
   // A fresh onboarding path lands signed in, but the permission-gated action cache is only
@@ -73,7 +74,7 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
 
     const digitalSign = page.getByRole('button', { name: 'Assinar com DigitalSign' });
     await expect(digitalSign).toBeDisabled();
-    const digitalSignRow = page.locator('.rowline').filter({ has: digitalSign });
+    const digitalSignRow = page.locator('.signing-provider').filter({ has: digitalSign });
     await expect(digitalSignRow.getByText('não configurado', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Assinar com Cartão de Cidadão' }).click();
@@ -95,7 +96,7 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
 
     await expect(
       page.getByText(
-        'Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+        'Markdown, TXT, HTML, RTF, ODT e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
       ),
     ).toBeVisible();
 
@@ -207,6 +208,24 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
     await expectPdfDownload(archiveDownload, /^arquivo-.*\.pdf$/);
   });
 });
+
+/**
+ * The document/export surfaces prefer the File System Access save picker, which never resolves in
+ * headless Chromium. Removing it makes them fall back to the ordinary browser download this spec
+ * inspects — the same fixture `export-save-hardening.spec.ts` uses.
+ */
+async function installBrowserDownloadFallback(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      Object.defineProperty(window, 'showSaveFilePicker', {
+        value: undefined,
+        configurable: true,
+      });
+    } catch {
+      (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker = undefined;
+    }
+  });
+}
 
 async function mockUnavailableSigningProviders(page: Page): Promise<void> {
   await page.route('**/v1/signature/providers', async (route) => {

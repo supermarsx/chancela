@@ -123,6 +123,9 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await expect(restore).toHaveCount(0);
 
     await selectSettingsSection(page, 'Gestão de Dados', 'dados');
+    // The destructive reset controls sit under the «Chaves e reposição» sub-tab, deliberately
+    // separated from the everyday storage view.
+    await dataSubTab(page, 'Chaves e reposição').click();
     await page.getByRole('button', { name: 'Limpar dados' }).click();
     const wipe = page.getByRole('dialog', { name: 'Limpar dados' });
     await expect(wipe).toBeVisible();
