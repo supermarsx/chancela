@@ -19,7 +19,7 @@ use chancela_archive::{
 };
 use chancela_authz::Permission;
 use chancela_core::{Act, ActId, ActState, BookId, BookState, LegalHold, LifecycleStage};
-use chancela_store::{StoredDocument, StoredSignedDocument};
+use chancela_store::{StoredDocument, StoredInstrumentSignature, StoredSignedDocument};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -143,6 +143,10 @@ struct PackageDocument {
     document_id: Uuid,
     document: StoredDocument,
     signed: Option<StoredSignedDocument>,
+    /// Every signature this document carries, oldest first, from `instrument_signatures` (schema
+    /// v23). `signed` is only the *current* artifact — one row, overwritten by each new signer — so
+    /// on its own it cannot answer "the ata was signed by two gerentes". Empty when unsigned.
+    signature_chain: Vec<StoredInstrumentSignature>,
     position: BookPosition,
     /// 1-based reading position, assigned after the inventory is sorted. The package's ZIP members
     /// are named by document id and the format requires them to be path-sorted, so the member order
@@ -404,6 +408,12 @@ struct ArchiveDocumentEvidenceIndexEntry {
     position: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     ata_number: Option<u64>,
+    /// How many signatures this document carries. `0` for an unsigned document.
+    signature_count: usize,
+    /// Who signed, in signing order — enough to answer "the ata was signed by two gerentes" from
+    /// the index alone, without opening every per-document evidence report. The full per-signature
+    /// evidence, with its basis statements, is at `signature_evidence_path`.
+    signatures: Vec<ArchiveSignatureIndexEntry>,
     canonical_pdf_path: String,
     document_metadata_path: String,
     signature_evidence_path: String,
@@ -416,6 +426,23 @@ struct ArchiveDocumentEvidenceIndexEntry {
     signer_certificate_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     timestamp_token_path: Option<String>,
+}
+
+/// The index-level summary of one signature. Deliberately thin: the name is read from the signer
+/// certificate, the capacity is what Chancela recorded, and the two are named so they cannot be
+/// mistaken for one another even at this size.
+#[derive(Serialize)]
+struct ArchiveSignatureIndexEntry {
+    seq: i64,
+    /// The common name from the signer certificate, or `None` if it carries none.
+    signer_common_name: Option<String>,
+    /// The signer certificate subject DN, verbatim.
+    signer_cert_subject: Option<String>,
+    /// The capacity Chancela recorded for this signer, or `None` when none was recorded. Not
+    /// asserted by the signature.
+    capacity: Option<String>,
+    signing_time: String,
+    is_current_artifact: bool,
 }
 
 #[derive(Serialize)]
@@ -528,6 +555,99 @@ struct SignatureEvidence<'a> {
     renewal_policy: RenewalPolicyEvidenceReport,
     legal_b_lta_claimed: bool,
     persisted_validation: PersistedValidationEvidence,
+    /// Every signature on this document, oldest first. The fields above describe only the current
+    /// artifact; this is where a second or third signer becomes visible.
+    signatures: Vec<SignatureChainEntryEvidence<'a>>,
+    signature_chain: SignatureChainEvidence,
+}
+
+/// One signature in a document's chain, with the two kinds of identity held apart on purpose.
+///
+/// A signature binds a certificate to bytes. It does not bind a role: nothing in the CMS blob says
+/// "gerente". The capacity is what Chancela was told (or what SCAP answered) at signing time, and
+/// it is recorded, not proven. Merging the two into one "signer" object would let a reader take a
+/// declared capacity for a cryptographic fact, so they are separate objects, each stating its basis.
+#[derive(Serialize)]
+struct SignatureChainEntryEvidence<'a> {
+    /// 1-based position in the signing chain, assigned by the store. With sequential PAdES,
+    /// signature 2 signs signature 1's output, so this is the order the chain must be read in.
+    seq: i64,
+    /// The signatory slot this signature filled, when the book model records one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slot_id: Option<&'a str>,
+    /// Whether this is the signature whose bytes the package ships as `signed/{id}.pdf`. Exactly
+    /// one entry in a chain is `true`; the earlier ones were superseded and their bytes are not
+    /// package members (their digests are published here so they remain identifiable).
+    is_current_artifact: bool,
+    signed_pdf: SignatureChainArtifactEvidence<'a>,
+    asserted_by_signature: SignatureAssertedIdentityEvidence<'a>,
+    recorded_by_chancela: SignatureRecordedCapacityEvidence<'a>,
+}
+
+#[derive(Serialize)]
+struct SignatureChainArtifactEvidence<'a> {
+    sha256: &'a str,
+    content_type: &'static str,
+    /// The package member holding these exact bytes, or `None` for a superseded signature — the
+    /// package ships only the current artifact.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+}
+
+/// What the signature itself carries. Everything here comes out of the signer certificate or the
+/// CAdES signed attributes, and is therefore bound to the signed bytes.
+#[derive(Serialize)]
+struct SignatureAssertedIdentityEvidence<'a> {
+    basis: &'static str,
+    /// The signer leaf certificate subject DN, verbatim — the cryptographic identity.
+    signer_cert_subject: Option<&'a str>,
+    /// The common name (OID 2.5.4.3) read out of that certificate's subject. A convenience for
+    /// reading the DN, not a second, independent claim; `None` when the certificate carries no CN.
+    signer_common_name: Option<String>,
+    signer_certificate_sha256: String,
+    signing_time: String,
+    family: &'a str,
+    evidentiary_level: &'a str,
+    trusted_list_status: Option<&'a str>,
+}
+
+/// What Chancela recorded about this signature. None of it is bound by the signature.
+#[derive(Serialize)]
+struct SignatureRecordedCapacityEvidence<'a> {
+    basis: &'static str,
+    /// Whether any capacity evidence was recorded at all. An absent capacity reads as absent.
+    capacity_present: bool,
+    /// The declared or SCAP-resolved capacity (e.g. `gerente`), or `None` when none was recorded.
+    capacity: Option<String>,
+    /// `signature_request` (operator-declared) or `scap_attribute_provider` (resolved upstream).
+    capacity_source: Option<String>,
+    /// e.g. `not_checked_by_scap`, or the marker SCAP returned.
+    capacity_verification_status: Option<String>,
+    capacity_verification_source: Option<String>,
+    capacity_verified_at: Option<String>,
+    capacity_authority_reference: Option<String>,
+    capacity_status_scope: Option<String>,
+    /// When the api completed this signature (storage metadata, not the CAdES signing time).
+    signed_at: String,
+    /// Present and unparseable capacity evidence, rather than silently dropped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capacity_evidence_unreadable: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slot_id: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct SignatureChainEvidence {
+    /// `instrument_signatures` when the store holds a real per-signer history;
+    /// `signed_documents_single_row_fallback` for a subject signed before schema v23, whose one
+    /// signature is reported at `seq` 1.
+    basis: &'static str,
+    count: usize,
+    order: &'static str,
+    /// The `seq` of the signature whose bytes the package ships.
+    current_artifact_seq: Option<i64>,
+    signer_name_basis: &'static str,
+    capacity_basis: &'static str,
 }
 
 #[derive(Serialize)]
@@ -1030,6 +1150,7 @@ async fn load_book_archive_inventory(
             document_id: parse_document_id(&document)?,
             document,
             signed: None,
+            signature_chain: Vec::new(),
             position,
             reading_order: 0,
         });
@@ -1048,6 +1169,7 @@ async fn load_book_archive_inventory(
                 }
                 None => None,
             };
+            let signature_chain = load_signature_chain(state, act.id, signed.as_ref()).await?;
             // The loop is already walking `book_acts` in `ata_number` order; carrying the number
             // into the ordinal is what keeps that work instead of discarding it in a later sort.
             let ata_number = act.ata_number.expect("filtered to numbered atas above");
@@ -1058,6 +1180,7 @@ async fn load_book_archive_inventory(
                 document_id,
                 document,
                 signed,
+                signature_chain,
                 position: BookPosition::Ata(ata_number),
                 reading_order: 0,
             });
@@ -1742,6 +1865,41 @@ async fn load_signed_document(
     Ok(None)
 }
 
+/// Every signature recorded for `act_id`, oldest first.
+///
+/// `Store::signature_history_for_subject` is the accessor to use: it reads `instrument_signatures`
+/// and, for a subject signed before schema v23, falls back to the single `signed_documents` row and
+/// reports it as that subject's `seq`-1 signature. So a legacy book exports as one signature rather
+/// than as none.
+///
+/// The store-less arm mirrors that fallback for the in-memory `signed_documents` map, which is the
+/// only signature surface an api running without a store has.
+async fn load_signature_chain(
+    state: &AppState,
+    act_id: ActId,
+    current: Option<&StoredSignedDocument>,
+) -> Result<Vec<StoredInstrumentSignature>, ApiError> {
+    if let Some(store) = &state.store {
+        // wp28: offload the sync postgres read onto the blocking pool.
+        let history = store
+            .read_blocking_async(move |s| s.signature_history_for_subject(act_id))
+            .await
+            .map_err(|e| ApiError::Internal(format!("signature history store read failed: {e}")))?;
+        if !history.is_empty() {
+            return Ok(history);
+        }
+    }
+    Ok(current
+        .cloned()
+        .map(|document| StoredInstrumentSignature {
+            seq: 1,
+            slot_id: None,
+            document,
+        })
+        .into_iter()
+        .collect())
+}
+
 fn parse_document_id(document: &StoredDocument) -> Result<Uuid, ApiError> {
     Uuid::parse_str(&document.id)
         .map_err(|e| ApiError::Conflict(format!("stored document id is not a UUID: {e}")))
@@ -2054,6 +2212,34 @@ fn archive_evidence_index_bytes(
     .map_err(|e| ApiError::Internal(format!("archive evidence index serialization failed: {e}")))
 }
 
+fn archive_signature_index_entries(doc: &PackageDocument) -> Vec<ArchiveSignatureIndexEntry> {
+    let current_digest = doc
+        .signed
+        .as_ref()
+        .map(|signed| signed.signed_pdf_digest.as_str());
+    doc.signature_chain
+        .iter()
+        .map(|entry| {
+            let signed = &entry.document;
+            ArchiveSignatureIndexEntry {
+                seq: entry.seq,
+                signer_common_name: signer_common_name(&signed.signer_cert_der),
+                signer_cert_subject: signed.signer_cert_subject.clone(),
+                capacity: signed
+                    .signer_capacity_evidence_json
+                    .as_deref()
+                    .and_then(|json| {
+                        serde_json::from_str::<crate::signature::SignerCapacityEvidence>(json).ok()
+                    })
+                    .map(|capacity| capacity.requested_provider_capacity),
+                signing_time: rfc3339(signed.signing_time),
+                is_current_artifact: current_digest
+                    .is_some_and(|digest| digest == signed.signed_pdf_digest),
+            }
+        })
+        .collect()
+}
+
 fn archive_document_evidence_index(doc: &PackageDocument) -> ArchiveDocumentEvidenceIndexEntry {
     ArchiveDocumentEvidenceIndexEntry {
         document_id: doc.document_id,
@@ -2061,6 +2247,8 @@ fn archive_document_evidence_index(doc: &PackageDocument) -> ArchiveDocumentEvid
         reading_order: doc.reading_order,
         position: doc.position.code(),
         ata_number: doc.position.ata_number(),
+        signature_count: doc.signature_chain.len(),
+        signatures: archive_signature_index_entries(doc),
         canonical_pdf_path: format!("documents/{}.pdf", doc.document_id),
         document_metadata_path: format!("metadata/{}.json", doc.document_id),
         signature_evidence_path: format!("evidence/{}.json", doc.document_id),
@@ -2264,6 +2452,126 @@ fn signed_metadata<'a>(
     }
 }
 
+/// OID 2.5.4.3 (`id-at-commonName`).
+const COMMON_NAME_OID: &str = "2.5.4.3";
+
+const SIGNATURE_ASSERTED_BASIS: &str = "read from the signer leaf certificate and the CAdES signed attributes carried by this \
+     signature; bound to the signed bytes";
+const SIGNATURE_RECORDED_BASIS: &str = "recorded by Chancela at signing from the signature request or a SCAP attribute lookup; not \
+     asserted by the signature and not bound to the signed bytes";
+const SIGNER_NAME_BASIS: &str = "common name read from the signer certificate subject; Chancela records no separate signer name";
+const CAPACITY_BASIS: &str = "signer_capacity_evidence recorded with each signature; see verification_status for whether \
+     any authority was consulted";
+
+/// The common name in a certificate's subject DN, or `None` if the certificate does not parse or
+/// carries no CN.
+///
+/// Read from the DER rather than from the stored `signer_cert_subject` string so the published name
+/// comes from the certificate itself, not from a re-parse of a rendering of it.
+fn signer_common_name(cert_der: &[u8]) -> Option<String> {
+    use x509_cert::der::Decode;
+    let cert = x509_cert::Certificate::from_der(cert_der).ok()?;
+    cert.tbs_certificate
+        .subject
+        .0
+        .iter()
+        .flat_map(|rdn| rdn.0.iter())
+        .find(|attribute| attribute.oid.to_string() == COMMON_NAME_OID)
+        .and_then(|attribute| {
+            // `AttributeTypeAndValue` renders as `CN=value` with RFC 4514 escaping; the value is
+            // everything after the first `=`.
+            let rendered = attribute.to_string();
+            rendered
+                .split_once('=')
+                .map(|(_, value)| unescape_rfc4514(value))
+        })
+        .filter(|name| !name.trim().is_empty())
+}
+
+/// Undo RFC 4514 backslash escaping (`\,`, `\+`, `\\`, …) in a rendered DN attribute value.
+fn unescape_rfc4514(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(escaped) = chars.next() {
+                out.push(escaped);
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// The per-signature evidence chain for a document, oldest first.
+fn signature_chain_entries<'a>(
+    doc: &'a PackageDocument,
+    current_digest: &str,
+) -> Vec<SignatureChainEntryEvidence<'a>> {
+    doc.signature_chain
+        .iter()
+        .map(|entry| {
+            let signed = &entry.document;
+            let is_current_artifact = signed.signed_pdf_digest == current_digest;
+            let capacity = signed
+                .signer_capacity_evidence_json
+                .as_deref()
+                .map(serde_json::from_str::<crate::signature::SignerCapacityEvidence>);
+            let (capacity, unreadable) = match capacity {
+                Some(Ok(capacity)) => (Some(capacity), None),
+                Some(Err(_)) => (
+                    None,
+                    Some("stored capacity evidence did not parse; nothing is inferred from it"),
+                ),
+                None => (None, None),
+            };
+            SignatureChainEntryEvidence {
+                seq: entry.seq,
+                slot_id: entry.slot_id.as_deref(),
+                is_current_artifact,
+                signed_pdf: SignatureChainArtifactEvidence {
+                    sha256: &signed.signed_pdf_digest,
+                    content_type: signed_pdf_profile(signed.timestamp_token_der.is_some()),
+                    path: is_current_artifact.then(|| format!("signed/{}.pdf", doc.document_id)),
+                },
+                asserted_by_signature: SignatureAssertedIdentityEvidence {
+                    basis: SIGNATURE_ASSERTED_BASIS,
+                    signer_cert_subject: signed.signer_cert_subject.as_deref(),
+                    signer_common_name: signer_common_name(&signed.signer_cert_der),
+                    signer_certificate_sha256: sha256_hex(&signed.signer_cert_der),
+                    signing_time: rfc3339(signed.signing_time),
+                    family: &signed.signature_family,
+                    evidentiary_level: &signed.evidentiary_level,
+                    trusted_list_status: signed.trusted_list_status.as_deref(),
+                },
+                recorded_by_chancela: SignatureRecordedCapacityEvidence {
+                    basis: SIGNATURE_RECORDED_BASIS,
+                    capacity_present: capacity.is_some(),
+                    capacity: capacity
+                        .as_ref()
+                        .map(|c| c.requested_provider_capacity.clone()),
+                    capacity_source: capacity.as_ref().map(|c| c.source.clone()),
+                    capacity_verification_status: capacity
+                        .as_ref()
+                        .map(|c| c.verification_status.clone()),
+                    capacity_verification_source: capacity
+                        .as_ref()
+                        .and_then(|c| c.verification_source.clone()),
+                    capacity_verified_at: capacity.as_ref().and_then(|c| c.verified_at.clone()),
+                    capacity_authority_reference: capacity
+                        .as_ref()
+                        .and_then(|c| c.authority_reference.clone()),
+                    capacity_status_scope: capacity.as_ref().map(|c| c.status_scope.clone()),
+                    signed_at: rfc3339(signed.signed_at),
+                    capacity_evidence_unreadable: unreadable,
+                    slot_id: entry.slot_id.as_deref(),
+                },
+            }
+        })
+        .collect()
+}
+
 fn signature_evidence<'a>(
     doc: &'a PackageDocument,
     signed: &'a StoredSignedDocument,
@@ -2281,6 +2589,19 @@ fn signature_evidence<'a>(
         .timestamp_trust_report_json
         .as_deref()
         .and_then(|json| serde_json::from_str(json).ok());
+    let signatures = signature_chain_entries(doc, &signed.signed_pdf_digest);
+    // The store's pre-v23 fallback reports the one `signed_documents` row as `seq` 1. It is
+    // indistinguishable from a real one-entry history at the type level, so the basis is derived
+    // from whether a history exists at all rather than guessed from the shape.
+    let chain_basis = if doc.signature_chain.len() > 1 {
+        "instrument_signatures"
+    } else {
+        "instrument_signatures_or_signed_documents_single_row_fallback"
+    };
+    let current_artifact_seq = signatures
+        .iter()
+        .find(|entry| entry.is_current_artifact)
+        .map(|entry| entry.seq);
     let timestamp_trust_persistence = if has_timestamp {
         if timestamp_trust.is_some() {
             "persisted_technical_timestamp_trust_report"
@@ -2332,6 +2653,15 @@ fn signature_evidence<'a>(
             timestamp_trust: timestamp_trust_persistence,
             cryptographic_revalidation_at_export: "not_performed",
         },
+        signature_chain: SignatureChainEvidence {
+            basis: chain_basis,
+            count: signatures.len(),
+            order: "seq_ascending",
+            current_artifact_seq,
+            signer_name_basis: SIGNER_NAME_BASIS,
+            capacity_basis: CAPACITY_BASIS,
+        },
+        signatures,
     }
 }
 
