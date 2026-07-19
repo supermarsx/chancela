@@ -16,8 +16,12 @@ mod common;
 
 use common::*;
 
-/// Seal an act as the bootstrap Owner and return `(harness_token, act_id)`.
-async fn seal_act(h: &ServerHarness) -> (String, String) {
+/// Drive an act up to `Signing` as the bootstrap Owner and return `(harness_token, act_id)`.
+///
+/// The act is deliberately left UNSEALED: signature collection is the only mutable signature state,
+/// so the CC endpoint refuses a sealed act with a `409` before it ever reaches the card. Sealing is
+/// what happens *after* the qualified signature lands, not before it.
+async fn act_ready_for_signing(h: &ServerHarness) -> (String, String) {
     let token = bootstrap_session(h).await;
     let entity_id = create_entity(
         h,
@@ -32,14 +36,6 @@ async fn seal_act(h: &ServerHarness) -> (String, String) {
     let act_id = draft_act(h, &book_id, "Ata da AG anual", Some(&token)).await;
     fill_act_contents(h, &act_id, &token).await;
     advance_to_signing(h, &act_id, Some(&token)).await;
-    let (status, sealed) = h
-        .post_json_auth(
-            &format!("/v1/acts/{act_id}/seal"),
-            manual_signature_seal_body("Arquivo E2E / CC signing ata"),
-            &token,
-        )
-        .await;
-    assert_eq!(status, 200, "seal: {sealed}");
     (token, act_id)
 }
 
@@ -51,7 +47,7 @@ async fn seal_act(h: &ServerHarness) -> (String, String) {
 async fn cc_signing_409s_on_a_remote_server_but_passes_the_gate_when_co_located() {
     // --- Plain (remote) server: the CC endpoint is refused with 409 (co-location gate). -----------
     let h = ServerHarness::start().await;
-    let (token, act_id) = seal_act(&h).await;
+    let (token, act_id) = act_ready_for_signing(&h).await;
 
     let (status, err) = h
         .post_json_auth(
@@ -82,7 +78,7 @@ async fn cc_signing_409s_on_a_remote_server_but_passes_the_gate_when_co_located(
 
     // --- Co-located server: the gate passes, but with no reader in CI signing fails cleanly (422). -
     let h2 = ServerHarness::start_with(HarnessOptions::default().with_local_signing()).await;
-    let (token2, act_id2) = seal_act(&h2).await;
+    let (token2, act_id2) = act_ready_for_signing(&h2).await;
 
     let (status, err) = h2
         .post_json_auth(
