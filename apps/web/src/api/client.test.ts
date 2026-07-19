@@ -6,12 +6,13 @@ import {
   fetchBlob,
   fetchBlobVia,
   fetchTextDownload,
+  isCredentialProofPath,
   parseResponse,
   postBytes,
   postTextDownload,
 } from './client';
 import type { LedgerArchiveDocumentParams } from './types';
-import { clearSessionToken, setSessionToken } from './session';
+import { clearSessionToken, getSessionToken, onSessionCleared, setSessionToken } from './session';
 
 interface TestRuntimeWindow {
   __CHANCELA_CONFIG__?: {
@@ -1314,5 +1315,97 @@ describe('binary/text transports and additive endpoint wrappers', () => {
       url: '/v1/trust/catalog?search=qualified&limit=25',
       method: 'GET',
     });
+  });
+});
+
+describe('401 handling: rejected credential proof vs expired session', () => {
+  const rejected = async (promise: Promise<unknown>): Promise<ApiError> =>
+    (await promise.catch((error: unknown) => error)) as ApiError;
+
+  /** Answer every request with the server's real refusal for a wrong current password. */
+  function stubWrongPassword() {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ error: 'palavra-passe atual incorreta' }, 401)),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('classifies only the credential-proof paths', () => {
+    expect(isCredentialProofPath('/v1/users/u1/secret')).toBe(true);
+    expect(isCredentialProofPath('/v1/users/u1/recovery')).toBe(true);
+    expect(isCredentialProofPath('/v1/users/u1/attestation-key')).toBe(true);
+    // Neighbouring user routes are ordinary: a 401 there really is a dead session.
+    expect(isCredentialProofPath('/v1/users')).toBe(false);
+    expect(isCredentialProofPath('/v1/users/u1')).toBe(false);
+    expect(isCredentialProofPath('/v1/users/u1/roles')).toBe(false);
+    expect(isCredentialProofPath('/v1/session')).toBe(false);
+    expect(isCredentialProofPath(undefined)).toBe(false);
+  });
+
+  it('keeps the operator signed in when a credential proof is rejected', async () => {
+    stubWrongPassword();
+
+    // Every endpoint that verifies the CURRENT password: mistyping it must not sign you out.
+    const operations: Array<() => Promise<unknown>> = [
+      () => api.issueRecovery('u1', { current_password: 'wrong' }),
+      () => api.setUserSecret('u1', { password: 'novaPalavra1', current_password: 'wrong' }),
+      () => api.removeUserSecret('u1', { current_password: 'wrong' }),
+      () => api.createAttestationKey('u1', { current_password: 'wrong' }),
+      () => api.removeAttestationKey('u1', { current_password: 'wrong' }),
+    ];
+
+    for (const operation of operations) {
+      setSessionToken('live-session');
+      const error = await rejected(operation());
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.status).toBe(401);
+      expect(error.credentialProof).toBe(true);
+      expect(error.message).toBe('palavra-passe atual incorreta');
+      expect(getSessionToken()).toBe('live-session');
+    }
+  });
+
+  it('still clears a stale session on an ordinary 401', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ error: 'sessão requerida' }, 401)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    for (const operation of [
+      () => api.listEntities(),
+      () => api.getSession(),
+      () => api.listUsers(),
+      () => fetchBlob('/v1/acts/a1/document'),
+      () => postBytes('/v1/books/b1/import', new ArrayBuffer(2)),
+    ]) {
+      setSessionToken('stale');
+      const error = await rejected(operation());
+      expect(error.status).toBe(401);
+      expect(error.credentialProof).toBe(false);
+      expect(getSessionToken()).toBeNull();
+    }
+  });
+
+  it('notifies session-cleared listeners for an expired session but not for a bad proof', async () => {
+    const cleared = vi.fn();
+    const unsubscribe = onSessionCleared(cleared);
+    try {
+      stubWrongPassword();
+      setSessionToken('live-session');
+      await rejected(api.issueRecovery('u1', { current_password: 'wrong' }));
+      expect(cleared).not.toHaveBeenCalled();
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(jsonResponse({ error: 'sessão requerida' }, 401)),
+      );
+      await rejected(api.listEntities());
+      expect(cleared).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
   });
 });

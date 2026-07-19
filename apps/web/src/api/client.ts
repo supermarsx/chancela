@@ -297,12 +297,44 @@ interface ApiErrorBody {
   tries_left?: string;
 }
 
+/**
+ * Endpoints whose 401 means "the credential proof you supplied is wrong or missing", NOT
+ * "your session is dead": the secret, attestation-key and recovery-phrase endpoints all
+ * verify the target's CURRENT password (`verify_current`) and answer a bad proof with
+ * `401 palavra-passe atual incorreta`. Signing the operator out on those would mean a typo
+ * in the current-password field ejects them from the whole app.
+ */
+const CREDENTIAL_PROOF_PATH = /\/v1\/users\/[^/]+\/(secret|attestation-key|recovery)(\?|$)/;
+
+/** Whether a 401 on `path` is a rejected credential proof rather than an expired session. */
+export function isCredentialProofPath(path: string | undefined): boolean {
+  return path !== undefined && CREDENTIAL_PROOF_PATH.test(path);
+}
+
+/**
+ * The shared 401 rule for every helper below: clear the stale token for an ordinary 401, but
+ * leave the session alone when the 401 came from a credential-proof path. Returns whether this
+ * was such a refusal so the caller can tag the `ApiError` for inline, field-level handling.
+ */
+function handleUnauthorized(res: Response, path: string): boolean {
+  if (res.status !== 401) return false;
+  if (isCredentialProofPath(path)) return true;
+  clearSessionToken();
+  return false;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly field?: string;
   readonly issues?: ComplianceIssue[];
   readonly warnings?: ComplianceIssue[];
+  /**
+   * A 401 that rejected a supplied credential proof (wrong/missing current password or recovery
+   * phrase) rather than an expired session. The session token is deliberately NOT cleared for
+   * these, and callers render them as a field-level refusal next to the proof input.
+   */
+  readonly credentialProof: boolean;
   /**
    * Structured in-app Cartão de Cidadão PIN-rejection fields (t67-e8's `422 PinRejected`). Both are
    * PIN-free: `pinStatus` is `"wrong_pin"`/`"blocked"`, `triesLeft` a coarse hint. Absent on every
@@ -311,10 +343,11 @@ export class ApiError extends Error {
   readonly pinStatus?: string;
   readonly triesLeft?: string;
 
-  constructor(status: number, body: ApiErrorBody) {
+  constructor(status: number, body: ApiErrorBody, credentialProof = false) {
     super(body.error || body.message || t('error.requestFailed', { status }));
     this.name = 'ApiError';
     this.status = status;
+    this.credentialProof = credentialProof;
     this.code = body.code;
     this.field = body.field;
     this.issues = body.issues;
@@ -355,11 +388,18 @@ function responsePath(res: Response, path?: string): string {
  * token '<'". That condition almost always means the server binary is older than this UI.
  */
 export async function parseResponse<T>(res: Response, path?: string): Promise<T> {
+  // Tag a rejected credential proof so callers can show it inline instead of treating it as
+  // a dead session (the token is left intact for these — see `handleUnauthorized`).
+  const proof = res.status === 401 && isCredentialProofPath(path);
   const text = await res.text();
   if (!text) {
     // Empty body (e.g. 204): nothing to parse. A non-2xx empty body still errors.
     if (!res.ok) {
-      throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) });
+      throw new ApiError(
+        res.status,
+        { error: t('error.requestFailed', { status: res.status }) },
+        proof,
+      );
     }
     return undefined as T;
   }
@@ -372,9 +412,11 @@ export async function parseResponse<T>(res: Response, path?: string): Promise<T>
     const detail = looksHtml
       ? t('error.detail.html')
       : t('error.detail.type', { contentType: contentType || t('error.detail.unknownType') });
-    throw new ApiError(res.status, {
-      error: t('error.unexpectedResponse', { detail, suffix, status: res.status }),
-    });
+    throw new ApiError(
+      res.status,
+      { error: t('error.unexpectedResponse', { detail, suffix, status: res.status }) },
+      proof,
+    );
   }
 
   let data: unknown;
@@ -383,9 +425,11 @@ export async function parseResponse<T>(res: Response, path?: string): Promise<T>
   } catch {
     const where = responsePath(res, path);
     const suffix = where ? t('error.pathSuffix', { path: where }) : '';
-    throw new ApiError(res.status, {
-      error: t('error.invalidJson', { suffix, status: res.status }),
-    });
+    throw new ApiError(
+      res.status,
+      { error: t('error.invalidJson', { suffix, status: res.status }) },
+      proof,
+    );
   }
 
   if (!res.ok) {
@@ -393,7 +437,7 @@ export async function parseResponse<T>(res: Response, path?: string): Promise<T>
       data && typeof data === 'object' && 'error' in data
         ? (data as ApiErrorBody)
         : { error: t('error.requestFailed', { status: res.status }) };
-    throw new ApiError(res.status, body);
+    throw new ApiError(res.status, body, proof);
   }
   return data as T;
 }
@@ -410,12 +454,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) headers[SESSION_HEADER] = token;
   if (init?.body) headers['Content-Type'] = 'application/json';
   const res = await fetch(resolveApiUrl(path), { ...init, headers });
-  // A 401 means the server no longer recognises the token (e.g. it restarted and the
-  // in-memory session was lost). Clear the stale token and notify listeners so the
-  // session query refetches and the UI reflects the signed-out state (L-1).
-  if (res.status === 401) {
-    clearSessionToken();
-  }
+  // A 401 usually means the server no longer recognises the token (e.g. it restarted and the
+  // in-memory session was lost): clear the stale token and notify listeners so the session
+  // query refetches and the UI reflects the signed-out state (L-1). A credential-proof path
+  // is the exception — there the 401 is about the submitted proof, not the session.
+  handleUnauthorized(res, path);
   return parseResponse<T>(res, path);
 }
 
@@ -456,7 +499,7 @@ export async function fetchBlob(path: string): Promise<Blob> {
   const headers: Record<string, string> = {};
   if (token) headers[SESSION_HEADER] = token;
   const res = await fetch(resolveApiUrl(path), { headers });
-  if (res.status === 401) clearSessionToken();
+  const credentialProof = handleUnauthorized(res, path);
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
     try {
@@ -465,7 +508,7 @@ export async function fetchBlob(path: string): Promise<Blob> {
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message });
+    throw new ApiError(res.status, { error: message }, credentialProof);
   }
   return res.blob();
 }
@@ -481,7 +524,7 @@ export async function fetchArrayBuffer(path: string): Promise<ArrayBuffer> {
   const headers: Record<string, string> = {};
   if (token) headers[SESSION_HEADER] = token;
   const res = await fetch(resolveApiUrl(path), { headers });
-  if (res.status === 401) clearSessionToken();
+  const credentialProof = handleUnauthorized(res, path);
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
     try {
@@ -490,7 +533,7 @@ export async function fetchArrayBuffer(path: string): Promise<ArrayBuffer> {
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message });
+    throw new ApiError(res.status, { error: message }, credentialProof);
   }
   return res.arrayBuffer();
 }
@@ -505,7 +548,7 @@ export async function fetchTextDownload(path: string): Promise<TextDownload> {
   const headers: Record<string, string> = {};
   if (token) headers[SESSION_HEADER] = token;
   const res = await fetch(resolveApiUrl(path), { headers });
-  if (res.status === 401) clearSessionToken();
+  const credentialProof = handleUnauthorized(res, path);
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
     try {
@@ -514,7 +557,7 @@ export async function fetchTextDownload(path: string): Promise<TextDownload> {
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message });
+    throw new ApiError(res.status, { error: message }, credentialProof);
   }
   const contentType = res.headers.get('Content-Type') ?? '';
   const text = await res.clone().text();
@@ -535,7 +578,7 @@ export async function postTextDownload(path: string, body: unknown): Promise<Tex
     headers,
     body: JSON.stringify(body),
   });
-  if (res.status === 401) clearSessionToken();
+  const credentialProof = handleUnauthorized(res, path);
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
     try {
@@ -544,7 +587,7 @@ export async function postTextDownload(path: string, body: unknown): Promise<Tex
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message });
+    throw new ApiError(res.status, { error: message }, credentialProof);
   }
   const contentType = res.headers.get('Content-Type') ?? '';
   const text = await res.clone().text();
@@ -567,7 +610,7 @@ export async function fetchBlobVia(
   const headers: Record<string, string> = {};
   if (token) headers[SESSION_HEADER] = token;
   const res = await fetch(resolveApiUrl(path), { method, headers });
-  if (res.status === 401) clearSessionToken();
+  const credentialProof = handleUnauthorized(res, path);
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
     try {
@@ -576,7 +619,7 @@ export async function fetchBlobVia(
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message });
+    throw new ApiError(res.status, { error: message }, credentialProof);
   }
   return { blob: await res.blob(), headers: res.headers };
 }
@@ -591,7 +634,7 @@ export async function postBytes<T>(path: string, bytes: ArrayBuffer | Blob): Pro
   const headers: Record<string, string> = { 'Content-Type': 'application/zip' };
   if (token) headers[SESSION_HEADER] = token;
   const res = await fetch(resolveApiUrl(path), { method: 'POST', headers, body: bytes });
-  if (res.status === 401) clearSessionToken();
+  handleUnauthorized(res, path);
   return parseResponse<T>(res, path);
 }
 
@@ -601,7 +644,7 @@ export async function putOpaqueBytes<T>(path: string, bytes: ArrayBuffer | Blob)
   const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
   if (token) headers[SESSION_HEADER] = token;
   const res = await fetch(resolveApiUrl(path), { method: 'PUT', headers, body: bytes });
-  if (res.status === 401) clearSessionToken();
+  handleUnauthorized(res, path);
   return parseResponse<T>(res, path);
 }
 
@@ -618,7 +661,7 @@ export async function postJsonBlob(
     headers,
     body: JSON.stringify(body),
   });
-  if (res.status === 401) clearSessionToken();
+  const credentialProof = handleUnauthorized(res, path);
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
     try {
@@ -627,7 +670,7 @@ export async function postJsonBlob(
     } catch {
       // Preserve the bounded status-only message for non-JSON error bodies.
     }
-    throw new ApiError(res.status, { error: message });
+    throw new ApiError(res.status, { error: message }, credentialProof);
   }
   return { blob: await res.blob(), headers: res.headers };
 }

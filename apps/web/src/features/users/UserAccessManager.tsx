@@ -182,9 +182,17 @@ export function UserAccessManager({ user }: { user: UserView }) {
     setPwForbidden(false);
   }
 
-  /** 403 → inline refusal (retryable); every error still toasts the server's PT message. */
+  /**
+   * A refused proof → inline refusal (retryable); every error still toasts the server's PT
+   * message. The cross-user refusal is a 403; the self-service one is a 401 flagged
+   * `credentialProof` by the API client (which also leaves the session signed in for it).
+   */
+  function isRefusedProof(e: unknown): boolean {
+    return e instanceof ApiError && (e.status === 403 || e.credentialProof);
+  }
+
   function handleSecretError(e: unknown) {
-    if (e instanceof ApiError && e.status === 403) setPwForbidden(true);
+    if (isRefusedProof(e)) setPwForbidden(true);
     toast.error(e);
   }
 
@@ -269,7 +277,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
         toast.success(t('toast.recovery.issued'));
       },
       onError: (e) => {
-        if (e instanceof ApiError && e.status === 403) setRecForbidden(true);
+        if (isRefusedProof(e)) setRecForbidden(true);
         toast.error(e);
       },
     });
@@ -345,6 +353,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
                 label={t('users.secret.current')}
                 htmlFor={`sec-cur-${user.id}`}
                 hint={t('users.secret.currentHint')}
+                error={pwForbidden ? t('signin.wrongPassword') : undefined}
               >
                 <Input
                   id={`sec-cur-${user.id}`}
@@ -442,7 +451,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
                 label={t('users.secret.current')}
                 htmlFor={`rec-cur-${user.id}`}
                 hint={t('users.recovery.selfHint')}
-                error={recForbidden ? t('users.secret.forbidden') : undefined}
+                error={recForbidden ? t('signin.wrongPassword') : undefined}
               >
                 <Input
                   id={`rec-cur-${user.id}`}
