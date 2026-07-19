@@ -51,7 +51,11 @@ test('manual sealing requires, captures, and preserves the signed-original refer
   const sealedPath = new URL(page.url()).pathname;
   await signInAt(page, sealedPath);
   await expect(page).toHaveURL(new RegExp(`${escapeRegExp(sealedPath)}$`));
-  await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
+  // «Ata selada» is also the title of the follow-ups panel note, so target the act-level
+  // sealed banner by its body copy.
+  await expect(
+    page.getByRole('note').filter({ hasText: 'O conteúdo está congelado e encadeado no registo' }),
+  ).toBeVisible();
   await expect(page.getByText('Original assinado', { exact: true })).toBeVisible();
   await expect(page.getByText(storageReference, { exact: true })).toBeVisible();
   await expect(page.getByText(custodian, { exact: true })).toBeVisible();
@@ -99,7 +103,9 @@ async function createSigningReadyAct(
 async function fillSigningReadyAta(page: Page): Promise<void> {
   await page.getByLabel('Data da reunião').fill('2026-04-30');
   await page.getByLabel('Hora da reunião').fill('10:00');
-  await page.getByLabel('Local').fill('Sede social');
+  // `getByLabel('Local')` is a substring match and also hits the convening-evidence group
+  // («Evidência local de expedição…»); target the field by role + accessible name instead.
+  await page.getByRole('textbox', { name: 'Local', exact: true }).fill('Sede social');
   await page.getByLabel('Referência de presenças').fill('Lista de presenças MANUAL-E2E');
   await page.getByLabel('Presentes').fill('3');
   await page.getByLabel('Representados').fill('0');

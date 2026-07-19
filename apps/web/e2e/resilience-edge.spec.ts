@@ -5,6 +5,7 @@
  */
 import { expect, test, type Page, type Route } from './fixtures';
 import { signInAt } from './auth';
+import { routeShellPolling } from './shell-routes';
 
 const ENTITY_ID = '2f1c8e40-0000-4000-8000-00000000e2e1';
 const DEGRADED_ENTITY_ID = '2f1c8e40-0000-4000-8000-00000000d001';
@@ -29,7 +30,10 @@ test('HTML returned from /v1/dashboard is surfaced as a typed inline error', asy
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  await signInAt(page, '/ferramentas?tool=legislacao');
+  // Install the stub BEFORE signing in. `NotificationBell` lives in the global shell and calls
+  // `useDashboard()`, so the first page load already fetches /v1/dashboard; with `staleTime`
+  // 30 s and no refetch on focus, a stub installed afterwards would never be reached and
+  // clicking `Painel` would just re-render the real (empty, valid) response from cache.
   await page.route('**/v1/dashboard', async (route) => {
     await route.fulfill({
       status: 200,
@@ -37,6 +41,7 @@ test('HTML returned from /v1/dashboard is surfaced as a typed inline error', asy
       body: '<!doctype html><title>stale shell</title><main>not json</main>',
     });
   });
+  await signInAt(page, '/ferramentas?tool=legislacao');
 
   await tab(page, 'Painel').click();
 
@@ -357,6 +362,9 @@ async function routeAuthenticatedShell(
   page: Page,
   permissions = ['settings.manage'],
 ): Promise<void> {
+  // First, so a spec's own stub for the same URL (registered later) still wins.
+  await routeShellPolling(page);
+
   const user = userFixture();
   const session = {
     user,
@@ -811,6 +819,22 @@ function dashboardFixture(recentEvents: unknown[] = []) {
     pending_backup_jobs: 0,
     ledger_length: recentEvents.length,
     ledger_valid: true,
+    // DashboardPage reads `current_work.act_counts_by_state` unguarded, so the fixture must
+    // carry it — the shell only reaches the dashboard now that the poll stubs keep it signed in.
+    current_work: {
+      open_books: [],
+      act_counts_by_state: {
+        Draft: 0,
+        Review: 0,
+        Convened: 0,
+        Deliberated: 0,
+        TextApproved: 0,
+        Signing: 0,
+        Sealed: 0,
+        Archived: 0,
+      },
+    },
+    alerts: [],
     reminders: [],
     recent_events: recentEvents,
   };

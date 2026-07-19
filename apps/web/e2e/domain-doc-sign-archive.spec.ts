@@ -36,7 +36,9 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
   });
 
   await test.step('pre-seal document preview renders and signing/seal are unavailable', async () => {
-    await expect(page.getByRole('button', { name: 'Selar ata' })).toBeDisabled();
+    // Before the act reaches «Em assinatura» the Selagem card offers no seal affordance at all —
+    // it renders only the explanatory note. (It used to render the button in a disabled state.)
+    await expect(page.getByRole('button', { name: 'Selar ata' })).toHaveCount(0);
     await expect(page.getByText('A selagem só fica disponível')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Descarregar PDF' })).toHaveCount(0);
@@ -55,10 +57,34 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
     await expect(page.getByRole('button', { name: 'Descarregar PDF' })).toHaveCount(0);
   });
 
-  await test.step('seal and download canonical PDF/A plus non-evidentiary working copies', async () => {
+  await test.step('signing panel shows configured/unconfigured providers and CC unavailable state', async () => {
+    // Signing affordances only exist while the act is «Em assinatura» — sealing closes them
+    // (asserted below), so this step runs before the seal rather than after it.
     await advanceToSigning(page);
     await expect(page.getByText('Conforme', { exact: true })).toBeVisible();
 
+    await expect(page.getByText('Cópia canónica ainda não assinada')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Assinar com Chave Móvel Digital' }),
+    ).toBeVisible();
+
+    const multicert = page.getByRole('button', { name: 'Assinar com Multicert' });
+    await expect(multicert).toBeEnabled();
+
+    const digitalSign = page.getByRole('button', { name: 'Assinar com DigitalSign' });
+    await expect(digitalSign).toBeDisabled();
+    const digitalSignRow = page.locator('.rowline').filter({ has: digitalSign });
+    await expect(digitalSignRow.getByText('não configurado', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Assinar com Cartão de Cidadão' }).click();
+    await expect(page.getByText('Assinatura com Cartão de Cidadão')).toBeVisible();
+    await page.getByRole('button', { name: 'Assinar com o cartão' }).click();
+    await expect(
+      page.getByText('Disponível apenas na aplicação de secretária', { exact: true }),
+    ).toBeVisible();
+  });
+
+  await test.step('seal and download canonical PDF/A plus non-evidentiary working copies', async () => {
     const seal = page.getByRole('button', { name: 'Selar ata' });
     await expect(seal).toBeEnabled();
     await sealActForSigning(page, {
@@ -116,7 +142,13 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
 
     await signInAt(page, sealedPath);
     await expect(page).toHaveURL(new RegExp(`${escapeRegExp(sealedPath)}$`));
-    await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
+    // «Ata selada» is also the title of the follow-ups panel note, so target the act-level
+    // sealed banner by its body copy.
+    await expect(
+      page
+        .getByRole('note')
+        .filter({ hasText: 'O conteúdo está congelado e encadeado no registo' }),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Descarregar PDF' })).toBeVisible();
     await expect(page.getByLabel('Data da reunião')).toBeDisabled();
   });
@@ -138,29 +170,19 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
 
     await page.getByRole('link', { name: 'Abrir' }).click();
     await expect(page).toHaveURL(new RegExp(`/atas/${escapeRegExp(actId)}$`));
-    await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
+    // «Ata selada» is also the title of the follow-ups panel note, so target the act-level
+    // sealed banner by its body copy.
+    await expect(
+      page
+        .getByRole('note')
+        .filter({ hasText: 'O conteúdo está congelado e encadeado no registo' }),
+    ).toBeVisible();
   });
 
-  await test.step('signing panel shows configured/unconfigured providers and CC unavailable state', async () => {
-    await expect(page.getByText('Ata ainda sem assinatura qualificada')).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'Assinar com Chave Móvel Digital' }),
-    ).toBeVisible();
-
-    const multicert = page.getByRole('button', { name: 'Assinar com Multicert' });
-    await expect(multicert).toBeEnabled();
-
-    const digitalSign = page.getByRole('button', { name: 'Assinar com DigitalSign' });
-    await expect(digitalSign).toBeDisabled();
-    const digitalSignRow = page.locator('.rowline').filter({ has: digitalSign });
-    await expect(digitalSignRow.getByText('não configurado', { exact: true })).toBeVisible();
-
-    await page.getByRole('button', { name: 'Assinar com Cartão de Cidadão' }).click();
-    await expect(page.getByText('Assinatura com Cartão de Cidadão')).toBeVisible();
-    await page.getByRole('button', { name: 'Assinar com o cartão' }).click();
-    await expect(
-      page.getByText('Disponível apenas na aplicação de secretária', { exact: true }),
-    ).toBeVisible();
+  await test.step('sealing closes the signing actions but keeps the evidence readable', async () => {
+    await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
+    await expect(page.getByText('Assinatura encerrada')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Assinar com/ })).toHaveCount(0);
   });
 
   await test.step('archive the act, filter the ledger, and export the filtered PDF/A', async () => {
@@ -274,7 +296,9 @@ async function createAct(
 async function fillAtaForDocument(page: Page): Promise<void> {
   await page.getByLabel('Data da reunião').fill('2026-03-30');
   await page.getByLabel('Hora da reunião').fill('15:00');
-  await page.getByLabel('Local').fill('Sede social');
+  // `getByLabel('Local')` is a substring match and also hits the convening-evidence group
+  // («Evidência local de expedição…»); target the field by role + accessible name instead.
+  await page.getByRole('textbox', { name: 'Local', exact: true }).fill('Sede social');
   await page.getByLabel('Referência de presenças').fill('Lista de presenças DOC-E2E');
   await page.getByLabel('Presentes').fill('3');
   await page.getByLabel('Representados').fill('0');

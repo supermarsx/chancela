@@ -33,7 +33,11 @@ test('signed act external signer invite remains tracking-only and never exposes 
   await expect(page.getByRole('note').filter({ hasText: 'Ata selada' }).first()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
   await expect(page.getByText('Ata assinada com assinatura eletrónica qualificada')).toBeVisible();
-  await expect(page.getByText(abbreviatedDigest(SIGNED_DIGEST))).toBeVisible();
+  // The signed-record summary and the draft/signed technical comparison both show this
+  // digest by design, so scope the assertion to the summary deflist.
+  await expect(
+    page.locator('.signing-deflist').getByText(abbreviatedDigest(SIGNED_DIGEST)),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Descarregar PDF assinado' })).toBeVisible();
 
   await expect(page.getByText('Convites de assinatura externa')).toBeVisible();

@@ -1,7 +1,7 @@
 /**
  * Focused browser proof for the local/co-located CC batch-signing UI.
  *
- * All API calls are route-stubbed. The tests mount the real signing panel for a sealed unsigned
+ * All API calls are route-stubbed. The tests mount the real signing panel for an unsigned act in «Em assinatura»
  * act and prove the browser request/result behavior only; they do not contact CC middleware,
  * card readers, CMD/CSC/QTSP providers, SCAP, trust services, or live signing systems.
  * This is route-stubbed local browser proof only, not live Autenticacao.gov/CC middleware,
@@ -38,14 +38,18 @@ test('local CC batch panel submits transient PIN and renders route-stubbed per-d
   await expect(batchPanel.getByText('Cartão de Cidadão local em lote')).toBeVisible();
   await expect(batchPanel.getByText('Assinatura CC local apenas')).toBeVisible();
 
-  await page.getByLabel('ID do ato').fill(MANUAL_ACT_ID);
-  await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
-  await expect(page.getByText('2 selecionados de 200')).toBeVisible();
+  // The remote per-document batch panel is a sibling with the same field names, so every
+  // locator here is scoped to the local CC batch panel.
+  await batchPanel.getByLabel('ID do ato').fill(MANUAL_ACT_ID);
+  await batchPanel.getByRole('button', { name: 'Adicionar', exact: true }).click();
+  await expect(batchPanel.getByText('2 selecionados de 200')).toBeVisible();
 
-  await page.getByLabel('Qualidade/capacidade declarada').fill(' Presidente da Mesa ');
-  await page.getByLabel('Ator').fill(' operador-local ');
-  await page.getByLabel('PIN de assinatura do Cartão de Cidadão (opcional)').fill(' 1234 ');
-  await page.getByRole('button', { name: 'Assinar lote com CC local' }).click();
+  await batchPanel.getByLabel('Qualidade/capacidade declarada').fill(' Presidente da Mesa ');
+  await batchPanel.getByLabel('Ator').fill(' operador-local ');
+  await batchPanel
+    .getByLabel('PIN de assinatura do Cartão de Cidadão (opcional)')
+    .fill(' 1234 ');
+  await batchPanel.getByRole('button', { name: 'Assinar lote com CC local' }).click();
 
   await expect.poll(() => audit.batchBodies).toEqual([
     {
@@ -82,13 +86,13 @@ test('local CC batch panel omits blank PIN and reports per-document authenticati
   await routeLocalCcBatchFixtures(page, audit);
 
   await page.goto(`/atas/${ACT_ID}`);
-  await page.getByLabel('ID do ato').fill(MANUAL_ACT_ID);
-  await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
-  await page.getByRole('button', { name: 'Assinar lote com CC local' }).click();
+  const batchPanel = page.getByLabel('Assinatura local em lote com Cartão de Cidadão');
+  await batchPanel.getByLabel('ID do ato').fill(MANUAL_ACT_ID);
+  await batchPanel.getByRole('button', { name: 'Adicionar', exact: true }).click();
+  await batchPanel.getByRole('button', { name: 'Assinar lote com CC local' }).click();
 
   await expect.poll(() => audit.batchBodies).toEqual([{ act_ids: [ACT_ID, MANUAL_ACT_ID] }]);
   expect(audit.batchBodies[0]).not.toHaveProperty('pin');
-  const batchPanel = page.getByLabel('Assinatura local em lote com Cartão de Cidadão');
   await expect(batchPanel.getByText('Autenticação por documento', { exact: true })).toBeVisible();
   await expect(batchPanel.getByText('Autenticação única', { exact: true })).toHaveCount(0);
 
@@ -194,6 +198,11 @@ async function routeLocalCcBatchFixtures(
       return;
     }
     if (method === 'GET' && pathname === '/v1/documents/imported') {
+      await fulfillJson(route, []);
+      return;
+    }
+    // The generated-minutes card lists convocatoria templates for the act's entity family.
+    if (method === 'GET' && pathname === '/v1/templates') {
       await fulfillJson(route, []);
       return;
     }
@@ -461,8 +470,10 @@ function actFixture() {
     id: ACT_ID,
     book_id: BOOK_ID,
     title: 'Ata local CC batch E2E',
-    state: 'Sealed',
-    seal_event_seq: 3,
+    // Signing actions are only open while the act is «Em assinatura»: sealing deliberately
+    // closes them (SigningPanel `signingOpen`). This fixture must therefore stay pre-seal.
+    state: 'Signing',
+    seal_event_seq: null,
     retifies: null,
     channel: 'Physical',
     meeting_date: '2026-07-12',
@@ -474,7 +485,7 @@ function actFixture() {
     mesa: { presidente: 'Amelia Marques', secretarios: ['Rui Secretario'] },
     agenda: [{ number: 1, text: 'Prova local de browser do lote CC' }],
     referenced_documents: [],
-    deliberations: 'Ata selada para prova de browser do lote CC local.',
+    deliberations: 'Ata em assinatura para prova de browser do lote CC local.',
     deliberation_items: [],
     telematic_evidence: null,
     attachments: [],

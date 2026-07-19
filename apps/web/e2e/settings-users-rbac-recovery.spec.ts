@@ -58,6 +58,9 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
 
     const recoveryBlock = access.locator('.access-manager__block').nth(1);
     await recoveryBlock.getByRole('button', { name: 'Gerar frase de recuperação' }).click();
+    // Self-service issuance proves the current password server-side (t51); omitting it makes
+    // the POST 401, which the API client treats as a dead session and signs the user out.
+    await recoveryBlock.getByLabel('Palavra-passe atual').fill(password);
     await recoveryBlock.getByRole('button', { name: 'Gerar frase' }).click();
 
     await expect(recoveryBlock.getByText('Guarde esta frase agora')).toBeVisible();
@@ -178,6 +181,9 @@ test('data management recovery drill records isolated restore evidence without l
 
   await signInAt(page, '/configuracoes?sec=dados');
   await selectSettingsSection(page, 'Gestão de Dados', 'dados');
+  // Gestão de Dados opens on «Armazenamento»; backup and recovery drills are a sibling sub-tab.
+  await dataSubTab(page, 'Cópias e recuperação').click();
+  await expect(dataSubTab(page, 'Cópias e recuperação')).toHaveAttribute('aria-pressed', 'true');
 
   const backupResponsePromise = page.waitForResponse(
     (response) => response.request().method() === 'POST' && apiPath(response.url()) === '/v1/backup',
@@ -254,6 +260,12 @@ function backupPathFromManifest(manifest: unknown): string {
 async function selectSettingsSection(page: Page, name: string, section: string): Promise<void> {
   await settingsSectionButton(page, name).click();
   await expect(page).toHaveURL(new RegExp(`[?&]sec=${section}`));
+}
+
+function dataSubTab(page: Page, name: string): Locator {
+  return page
+    .getByRole('group', { name: 'Sub-secções da gestão de dados' })
+    .getByRole('button', { name, exact: true });
 }
 
 function cardByTitle(page: Page, title: string): Locator {

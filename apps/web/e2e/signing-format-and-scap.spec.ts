@@ -1,7 +1,7 @@
 /**
  * Browser E2E for the signing-format selector and the SCAP professional-attribute picker (t67-e13).
  *
- * Creates and seals its own act, opens the signing panel, and:
+ * Creates its own act, advances it to «Em assinatura», opens the signing panel, and:
  *   1. switches the signing format to XAdES, choosing a packaging + level, then submits the local
  *      XAdES tool with a dummy PKCS#12 — the xades/sign request is intercepted (fulfilled 409, the
  *      off-host / not-co-located reality) so the placed choices are proven to reach the request body
@@ -14,7 +14,7 @@
  */
 import { expect, test, type Locator, type Page } from './fixtures';
 import { OPERATOR, signInAt } from './auth';
-import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
+import { fillOpenBookTermSignatories } from './book-helpers';
 
 test('signing format selector: XAdES choice reaches the request body; SCAP shows declared-not-verified', async ({
   page,
@@ -85,8 +85,9 @@ test('signing format selector: XAdES choice reaches the request body; SCAP shows
   await fillAtaForDocument(page);
   await page.getByRole('button', { name: 'Guardar' }).click();
   await expect(page.getByRole('button', { name: 'A guardar…' })).toHaveCount(0);
+  // The act stays in «Em assinatura»: sealing closes the signing actions, including the local
+  // XAdES/ASiC/SCAP format tools this spec drives.
   await advanceToSigning(page);
-  await sealActForSigning(page);
 
   await test.step('XAdES format/level/packaging choice reaches the xades/sign body', async () => {
     await page.getByLabel('Formato de assinatura').selectOption('xades');
@@ -160,7 +161,9 @@ async function createAct(
 async function fillAtaForDocument(page: Page): Promise<void> {
   await page.getByLabel('Data da reunião').fill('2026-03-30');
   await page.getByLabel('Hora da reunião').fill('15:00');
-  await page.getByLabel('Local').fill('Sede social');
+  // `getByLabel('Local')` is a substring match and also hits the convening-evidence group
+  // («Evidência local de expedição…»); target the field by role + accessible name instead.
+  await page.getByRole('textbox', { name: 'Local', exact: true }).fill('Sede social');
   await page.getByLabel('Referência de presenças').fill('Lista de presenças FORMATO-E2E');
   await page.getByLabel('Presentes').fill('3');
   await page.getByLabel('Representados').fill('0');

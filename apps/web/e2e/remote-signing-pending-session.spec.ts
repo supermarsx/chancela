@@ -241,6 +241,11 @@ async function routePendingSessionFixtures(
       await fulfillJson(route, []);
       return;
     }
+    // The generated-minutes card lists convocatoria templates for the act's entity family.
+    if (method === 'GET' && pathname === '/v1/templates') {
+      await fulfillJson(route, []);
+      return;
+    }
     if (method === 'GET' && pathname === `/v1/acts/${ACT_ID}/signature/external-invites`) {
       await fulfillJson(route, []);
       return;
@@ -334,8 +339,19 @@ function isUnexpectedLiveSigningOrTrustPath(
   );
 }
 
+function signingPanel(page: Page) {
+  return page
+    .locator('.panel')
+    .filter({ has: page.getByRole('heading', { name: 'Assinatura qualificada' }) });
+}
+
+/**
+ * The signing surface must claim no live trust validation or legal conclusion. Scoped to the
+ * qualified-signature card: the surrounding editor carries unrelated *negated* disclaimers
+ * («…não afirma suficiência legal…») that a naive substring match would hit.
+ */
 async function expectNoLiveTrustOrLegalClaim(page: Page): Promise<void> {
-  await expect(page.locator('body')).not.toContainText(
+  await expect(signingPanel(page)).not.toContainText(
     /validação do prestador confirmada|prestador validou|validade legal confirmada|validade jurídica confirmada|efeito legal confirmado|suficiência legal|conclusão jurídica confirmada|estatuto qualificado confirmado|Lista de Confiança validada|produção CSC|CSC de produção|SCAP verificada/i,
   );
   await expect(page.getByText('Ata assinada com assinatura eletrónica qualificada')).toHaveCount(0);
@@ -577,8 +593,10 @@ function actFixture() {
     id: ACT_ID,
     book_id: BOOK_ID,
     title: 'Ata pending session resume E2E',
-    state: 'Sealed',
-    seal_event_seq: 5,
+    // Signing actions are only open while the act is «Em assinatura»: sealing deliberately
+    // closes them (SigningPanel `signingOpen`). This fixture must therefore stay pre-seal.
+    state: 'Signing',
+    seal_event_seq: null,
     retifies: null,
     channel: 'Physical',
     meeting_date: '2026-07-12',
@@ -590,7 +608,7 @@ function actFixture() {
     mesa: { presidente: 'Amelia Marques', secretarios: ['Rui Secretario'] },
     agenda: [{ number: 1, text: 'Prova local de retoma de sessao pendente' }],
     referenced_documents: [],
-    deliberations: 'Ata selada para prova de browser da retoma de sessao pendente.',
+    deliberations: 'Ata em assinatura para prova de browser da retoma de sessao pendente.',
     deliberation_items: [],
     telematic_evidence: null,
     attachments: [],

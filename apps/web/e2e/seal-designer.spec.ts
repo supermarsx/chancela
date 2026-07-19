@@ -1,7 +1,8 @@
 /**
  * Browser E2E for the visual seal designer (t67-e12).
  *
- * Creates and seals its own act, opens the signing panel, and drives the seal designer: opening
+ * Creates its own act, advances it to «Em assinatura», opens the signing panel, and drives the
+ * seal designer: opening
  * it from the "Posicionar selo visível" affordance, placing a seal with the precise numeric
  * position fields, and confirming the applied-seal summary. It then starts a Chave Móvel Digital
  * sign and captures the request body to prove the placed seal `{page,x,y,w,h}` actually reaches
@@ -10,7 +11,7 @@
  */
 import { expect, test, type Locator, type Page } from './fixtures';
 import { OPERATOR, signInAt } from './auth';
-import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
+import { fillOpenBookTermSignatories } from './book-helpers';
 
 test('seal designer: place a visible seal and carry it into the sign request', async ({ page }) => {
   test.setTimeout(180_000);
@@ -41,8 +42,9 @@ test('seal designer: place a visible seal and carry it into the sign request', a
   await fillAtaForDocument(page);
   await page.getByRole('button', { name: 'Guardar' }).click();
   await expect(page.getByRole('button', { name: 'A guardar…' })).toHaveCount(0);
+  // The act stays in «Em assinatura»: sealing deliberately closes every signing action
+  // (SigningPanel `signingOpen`), and the seal designer is one of them.
   await advanceToSigning(page);
-  await sealActForSigning(page);
 
   await test.step('the seal affordance opens the designer', async () => {
     const open = page.getByRole('button', { name: 'Posicionar selo visível' });
@@ -121,7 +123,9 @@ async function createAct(
 async function fillAtaForDocument(page: Page): Promise<void> {
   await page.getByLabel('Data da reunião').fill('2026-03-30');
   await page.getByLabel('Hora da reunião').fill('15:00');
-  await page.getByLabel('Local').fill('Sede social');
+  // `getByLabel('Local')` is a substring match and also hits the convening-evidence group
+  // («Evidência local de expedição…»); target the field by role + accessible name instead.
+  await page.getByRole('textbox', { name: 'Local', exact: true }).fill('Sede social');
   await page.getByLabel('Referência de presenças').fill('Lista de presenças SELO-E2E');
   await page.getByLabel('Presentes').fill('3');
   await page.getByLabel('Representados').fill('0');

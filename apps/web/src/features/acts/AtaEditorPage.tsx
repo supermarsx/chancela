@@ -1560,8 +1560,10 @@ function ConveningDispatchEvidenceAction({
   const hasDispatchDate = convening.dispatch_date.trim() !== '';
   const ready = !disabled && !pending && hasDispatchDate && recipientsPersisted;
 
+  // `aria-label` on a generic (role-less) element is ignored by assistive technology; the
+  // grouping role is what makes this label reach the accessibility tree.
   return (
-    <div className="stack--tight" aria-label={t('acts.convening.evidence.aria')}>
+    <div className="stack--tight" role="group" aria-label={t('acts.convening.evidence.aria')}>
       {error ? <ErrorNote error={error} /> : null}
       <p className="field__hint">{t('acts.convening.evidence.boundary')}</p>
       {hasDispatchDate && recipientsPersisted ? (

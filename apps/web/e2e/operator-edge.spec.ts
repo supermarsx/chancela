@@ -4,6 +4,7 @@
  * the shared E2E server's current mutable data.
  */
 import { expect, test, type Locator, type Page, type Route } from './fixtures';
+import { routeShellPolling } from './shell-routes';
 import type {
   Dashboard,
   DsrRequestType,
@@ -261,6 +262,9 @@ async function routeAuthenticatedShell(
   page: Page,
   permissions = OPERATOR_PERMISSIONS,
 ): Promise<void> {
+  // First, so a spec's own stub for the same URL (registered later) still wins.
+  await routeShellPolling(page);
+
   const users = [OPERATOR, TARGET_USER];
   const grants = permissions.map(permissionGrant);
   const session = { user: OPERATOR, permissions: grants };
@@ -636,6 +640,22 @@ function dashboardFixture(recentEvents: LedgerEventView[]): Dashboard {
     pending_backup_jobs: 0,
     ledger_length: recentEvents.length,
     ledger_valid: true,
+    // DashboardPage reads `current_work.act_counts_by_state` unguarded, so the fixture must
+    // carry it — the shell only reaches the dashboard now that the poll stubs keep it signed in.
+    current_work: {
+      open_books: [],
+      act_counts_by_state: {
+        Draft: 5,
+        Review: 0,
+        Convened: 0,
+        Deliberated: 0,
+        TextApproved: 0,
+        Signing: 1,
+        Sealed: 2,
+        Archived: 0,
+      },
+    },
+    alerts: [],
     reminders: [],
     recent_events: recentEvents,
   };

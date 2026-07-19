@@ -64,7 +64,9 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   // --- Fill the ata and save -------------------------------------------------
   await page.getByLabel('Data da reunião').fill('2026-03-30');
   await page.getByLabel('Hora da reunião').fill('15:00');
-  await page.getByLabel('Local').fill('Sede social');
+  // `getByLabel('Local')` is a substring match and also hits the convening-evidence group
+  // («Evidência local de expedição…»); target the field by role + accessible name instead.
+  await page.getByRole('textbox', { name: 'Local', exact: true }).fill('Sede social');
   await page.getByLabel('Referência de presenças').fill('Lista de presenças anexa');
   await page.getByLabel('Presentes').fill('3');
   await page.getByLabel('Representados').fill('0');
@@ -111,7 +113,11 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   const ataNumber = page.getByTestId('ata-number');
   await expect(ataNumber).toBeVisible();
   await expect(ataNumber).toContainText(/\d/); // an ata number was assigned
-  await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
+  // «Ata selada» is also the title of the follow-ups panel note, so target the act-level
+  // sealed banner by its body copy.
+  await expect(
+    page.getByRole('note').filter({ hasText: 'O conteúdo está congelado e encadeado no registo' }),
+  ).toBeVisible();
 
   // --- Arquivo: the chain is intact and the actor is the signed-in user ------
   await tab('Arquivo').click();

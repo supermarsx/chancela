@@ -35,7 +35,14 @@ test('signed-in operator records external signer slot evidence as technical evid
 
   await page.goto(`/atas/${ACT_ID}`);
 
-  await expect(page.getByRole('note').filter({ hasText: 'Ata selada' }).first()).toBeVisible();
+  // The act is «Em assinatura»: the banner asserting the document is frozen is the signing
+  // snapshot note (it becomes «Ata selada» only after sealing, which closes signing).
+  await expect(
+    page
+      .getByRole('note')
+      .filter({ hasText: 'Cópia canónica congelada para assinatura' })
+      .first(),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
 
   const envelopeSection = page
@@ -247,6 +254,11 @@ async function routeExternalSigningOperatorEvidenceFixtures(
       await fulfillJson(route, []);
       return;
     }
+    // The generated-minutes card lists convocatoria templates for the act's entity family.
+    if (method === 'GET' && pathname === '/v1/templates') {
+      await fulfillJson(route, []);
+      return;
+    }
     if (method === 'GET' && pathname === `/v1/acts/${ACT_ID}/signature/external-invites`) {
       await fulfillJson(route, []);
       return;
@@ -324,8 +336,19 @@ async function expectNoCredentialInputs(scope: Page | Locator): Promise<void> {
   ).toHaveCount(0);
 }
 
+function signingPanel(page: Page): Locator {
+  return page
+    .locator('.panel')
+    .filter({ has: page.getByRole('heading', { name: 'Assinatura qualificada' }) });
+}
+
+/**
+ * The signing surface must not claim provider validation, qualified status or legal effect.
+ * Scoped to the qualified-signature card: the surrounding editor carries unrelated
+ * *negated* disclaimers («…não afirma suficiência legal…») that a naive substring match hits.
+ */
 async function expectNoPositiveClaimText(page: Page): Promise<void> {
-  await expect(page.locator('body')).not.toContainText(
+  await expect(signingPanel(page)).not.toContainText(
     /Chancela assinou|assinado pela Chancela|validado pelo prestador|prestador validou|validação do prestador confirmada|validade legal confirmada|validade jurídica confirmada|efeito legal confirmado|suficiência legal|conclusão jurídica confirmada|estatuto qualificado confirmado|Lista de Confiança validada|notarização|certificação oficial/i,
   );
 }
@@ -507,8 +530,10 @@ function actFixture() {
     id: ACT_ID,
     book_id: BOOK_ID,
     title: ACT_TITLE,
-    state: 'Sealed',
-    seal_event_seq: 5,
+    // Signing actions are only open while the act is «Em assinatura»: sealing deliberately
+    // closes them (SigningPanel `signingOpen`). This fixture must therefore stay pre-seal.
+    state: 'Signing',
+    seal_event_seq: null,
     retifies: null,
     channel: 'Physical',
     meeting_date: '2026-07-12',
@@ -520,7 +545,7 @@ function actFixture() {
     mesa: { presidente: 'Amelia Marques', secretarios: ['Rui Secretario'] },
     agenda: [{ number: 1, text: 'Aprovacao de evidencia tecnica de slot externo' }],
     referenced_documents: [],
-    deliberations: 'Ata selada para prova local de evidencia tecnica de assinatura externa.',
+    deliberations: 'Ata em assinatura para prova local de evidencia tecnica de assinatura externa.',
     deliberation_items: [],
     telematic_evidence: null,
     attachments: [],

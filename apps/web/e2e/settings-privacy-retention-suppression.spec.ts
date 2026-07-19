@@ -46,6 +46,10 @@ test('Settings Privacidade suppresses retention candidates already covered by bo
   await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
   await expect(settingsSectionButton(page, 'Privacidade')).toHaveAttribute('aria-pressed', 'true');
 
+  // Privacidade opens on «Registos»; the retention surfaces live under the «Retenção» sub-tab.
+  await privacySubTab(page, 'Retenção').click();
+  await expect(privacySubTab(page, 'Retenção')).toHaveAttribute('aria-pressed', 'true');
+
   const candidatesPanel = panelByTitle(page, 'Candidatos de retenção vencidos');
   await expect(candidatesPanel).toBeVisible();
   await expect(candidatesPanel).toContainText('2 candidato(s) ativo(s)');
@@ -145,6 +149,12 @@ test('Settings Privacidade suppresses retention candidates already covered by bo
 function settingsSectionButton(page: Page, name: string): Locator {
   return page
     .getByRole('group', { name: 'Secções de configuração' })
+    .getByRole('button', { name, exact: true });
+}
+
+function privacySubTab(page: Page, name: string): Locator {
+  return page
+    .getByRole('group', { name: 'Áreas de privacidade' })
     .getByRole('button', { name, exact: true });
 }
 

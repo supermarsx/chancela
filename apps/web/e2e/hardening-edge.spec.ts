@@ -12,6 +12,7 @@ import {
   type Route,
 } from './fixtures';
 import { OPERATOR, OPERATOR_PASSWORD, signInAt } from './auth';
+import { routeShellPolling } from './shell-routes';
 import type {
   ApiKeyCreated,
   SessionResult,
@@ -198,6 +199,9 @@ async function routeAuthenticatedShell(
   page: Page,
   permissions = ['settings.manage', 'ledger.read'],
 ): Promise<void> {
+  // First, so a spec's own stub for the same URL (registered later) still wins.
+  await routeShellPolling(page);
+
   const user = userFixture();
   const session = {
     user,

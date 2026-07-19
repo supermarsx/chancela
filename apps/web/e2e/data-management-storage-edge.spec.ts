@@ -3,10 +3,9 @@
  * the real E2E backend for status, RBAC, and cleanup, while seeding only disposable files
  * inside Playwright's throwaway CHANCELA_E2E_DATA_DIR.
  */
-import type { APIResponse } from '@playwright/test';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { expect, test, type APIRequestContext } from './fixtures';
+import { expect, test, type APIRequestContext, type Page } from './fixtures';
 import { OPERATOR, OPERATOR_PASSWORD, signInAt } from './auth';
 import type {
   DataCleanupResult,
@@ -14,6 +13,7 @@ import type {
   DataUsageConcern,
   SessionResult,
   SessionRoster,
+  Settings,
   UserView,
 } from '../src/api/types';
 
@@ -63,6 +63,14 @@ test('storage cleanup is settings.manage-gated and only deletes retained exports
   expect(await pathExists(seeded.exportBundle)).toBe(true);
   expect(await pathExists(seeded.crashFile)).toBe(true);
 
+  // Retained-export cleanup now runs against the configured retention policy, whose defaults
+  // (30 days minimum age, keep the latest 5) would spare the fixtures this test just seeded.
+  // Relax the policy so the eligible set is exactly the seeded exports.
+  await setRetainedExportCleanupPolicy(page.request, origin, ownerSession.token, {
+    minimum_age_days: 0,
+    keep_latest: 0,
+  });
+
   await signInAt(page, '/configuracoes?sec=dados');
   await expect(page).toHaveURL(/[?&]sec=dados/);
   await expect(page.getByRole('heading', { name: 'Estado do armazenamento' })).toBeVisible();
@@ -73,27 +81,45 @@ test('storage cleanup is settings.manage-gated and only deletes retained exports
     hasText: 'Exportações retidas',
   });
   await expect(exportsCleanup).toContainText('Exportações retidas');
-  await expect(exportsCleanup.getByRole('button', { name: 'Limpar exportações' })).toBeEnabled();
 
-  await exportsCleanup.getByRole('button', { name: 'Limpar exportações' }).click();
+  // The destructive action is preview-gated: it stays disabled until a dry run has listed the
+  // eligible files, and the dry run itself must delete nothing.
+  const execute = exportsCleanup.getByRole('button', {
+    name: 'Executar limpeza de ficheiros',
+  });
+  await expect(execute).toBeDisabled();
+
+  const previewResponsePromise = waitForCleanupResponse(page);
+  await exportsCleanup.getByRole('button', { name: 'Pré-visualizar limpeza' }).click();
+  const previewResponse = await previewResponsePromise;
+  await expectOk(previewResponse, 'Owner export cleanup preview');
+  const previewResult = (await previewResponse.json()) as DataCleanupResult;
+  expect(previewResult.target).toBe('exports');
+  expect(previewResult.dry_run).toBe(true);
+  expect(previewResult.would_delete_files).toBeGreaterThanOrEqual(2);
+  expect(previewResult.deleted_files).toBe(0);
+  expect(await pathExists(seeded.exportManifest)).toBe(true);
+  expect(await pathExists(seeded.exportBundle)).toBe(true);
+
+  await expect(execute).toBeEnabled();
+  await execute.click();
   const dialog = page.getByRole('dialog', { name: 'Exportações retidas' });
-  await expect(dialog).toContainText('Apagar exportações retidas nesta pasta de dados?');
-
-  const cleanupResponsePromise = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === '/v1/data/cleanup' &&
-      response.request().method() === 'POST',
+  await expect(dialog).toContainText(
+    'Limpa apenas ficheiros de exportação locais retidos que a pré-visualização marcou como elegíveis',
   );
-  await dialog.getByRole('button', { name: 'Limpar exportações' }).click();
+
+  const cleanupResponsePromise = waitForCleanupResponse(page);
+  await dialog.getByRole('button', { name: 'Executar limpeza de ficheiros' }).click();
   const cleanupResponse = await cleanupResponsePromise;
   await expectOk(cleanupResponse, 'Owner export cleanup');
   const cleanup = (await cleanupResponse.json()) as DataCleanupResult;
   expect(cleanup.target).toBe('exports');
+  expect(cleanup.dry_run).toBe(false);
   expect(cleanup.deleted_files).toBeGreaterThanOrEqual(2);
   expect(cleanup.deleted_directories).toBeGreaterThanOrEqual(1);
   expect(cleanup.skipped).toEqual([]);
 
-  await expect(page.getByText('Manutenção concluída')).toBeVisible();
+  await expect(page.getByText('Limpeza de exportações retidas concluída')).toBeVisible();
   await expect
     .poll(
       async () =>
@@ -171,6 +197,35 @@ async function getDataStatus(
   return (await response.json()) as DataStatusResponse;
 }
 
+/** Replaces the retained-export cleanup retention policy (settings are a full-document PUT). */
+async function setRetainedExportCleanupPolicy(
+  request: APIRequestContext,
+  origin: string,
+  token: string,
+  policy: { minimum_age_days: number; keep_latest: number },
+): Promise<void> {
+  const current = await request.get(`${origin}/v1/settings`, { headers: sessionHeaders(token) });
+  await expectOk(current, 'settings read');
+  const settings = (await current.json()) as Settings;
+  const updated = await request.put(`${origin}/v1/settings`, {
+    headers: sessionHeaders(token),
+    data: {
+      ...settings,
+      data_management: { ...settings.data_management, retained_export_cleanup: policy },
+    },
+  });
+  await expectOk(updated, 'settings write');
+}
+
+/** Resolves on the next `POST /v1/data/cleanup` response (preview or execution). */
+function waitForCleanupResponse(page: Page) {
+  return page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/v1/data/cleanup' &&
+      response.request().method() === 'POST',
+  );
+}
+
 function resolveReportedDataDir(reported: string | null): string {
   if (!reported) {
     throw new Error('Backend did not report a data directory.');
@@ -220,7 +275,11 @@ async function pathExists(target: string): Promise<boolean> {
   }
 }
 
-async function expectOk(response: APIResponse, context: string): Promise<void> {
+/** Accepts both `APIRequestContext` responses and page-observed `Response`s. */
+async function expectOk(
+  response: { ok(): boolean; status(): number; text(): Promise<string> },
+  context: string,
+): Promise<void> {
   if (!response.ok()) {
     throw new Error(`${context} failed: HTTP ${response.status()} ${await response.text()}`);
   }

@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { expect, test, type Page, type Route } from './fixtures';
+import { expect, test, type Locator, type Page, type Route } from './fixtures';
 
 const ACT_ID = '4f75c924-6b15-4ee8-8f18-5d56f120e101';
 const BOOK_ID = '4f75c924-6b15-4ee8-8f18-5d56f120e102';
@@ -36,7 +36,14 @@ test('official signed-PDF handoff import is technical evidence only in the brows
 
   await page.goto(`/atas/${ACT_ID}`);
 
-  await expect(page.getByRole('note').filter({ hasText: 'Ata selada' }).first()).toBeVisible();
+  // The act is «Em assinatura»: the banner asserting the document is frozen is the signing
+  // snapshot note (it becomes «Ata selada» only after sealing, which closes signing).
+  await expect(
+    page
+      .getByRole('note')
+      .filter({ hasText: 'Cópia canónica congelada para assinatura' })
+      .first(),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
   await expect(page.getByText('PDF já assinado na Autenticação.gov')).toBeVisible();
   await expect(
@@ -103,9 +110,17 @@ test('official signed-PDF handoff import is technical evidence only in the brows
       'A importação guarda o PDF assinado e a evidência técnica observada. Os metadados indicados pelo operador não são autoridade para confiança, qualificação ou conclusão jurídica.',
     ),
   ).toBeVisible();
-  await expect(page.getByText('Handoff oficial Autenticação.gov')).toBeVisible();
-  await expect(page.getByTitle(SIGNED_DIGEST)).toBeVisible();
-  await expect(page.getByText('Estado na Lista de Confiança')).toHaveCount(0);
+  // Two legitimate renderings now: the evidence definition list and the provider chip in the
+  // (signing-open) picker. The evidence entry is the one this assertion is about.
+  await expect(page.getByText('Handoff oficial Autenticação.gov', { exact: true })).toBeVisible();
+  // The signed digest can render in two panels (signer evidence list and the canonical-vs-signed
+  // technical comparison, which appears once the document bundle resolves); assert the first.
+  await expect(page.getByTitle(SIGNED_DIGEST).first()).toBeVisible();
+  // The technical-comparison panel does render a Trust List row, but only to report that no
+  // status was provided. A *claimed* status is what this assertion guards against.
+  await expect(
+    page.getByText(/Estado na Lista de Confiança(?!:? não fornecido)/u),
+  ).toHaveCount(0);
 
   expect(importBodies).toHaveLength(1);
   expect(importBodies[0]).toEqual({
@@ -253,6 +268,11 @@ async function routeOfficialHandoffFixtures(
       await fulfillJson(route, []);
       return;
     }
+    // The generated-minutes card lists convocatoria templates for the act's entity family.
+    if (method === 'GET' && pathname === '/v1/templates') {
+      await fulfillJson(route, []);
+      return;
+    }
     if (method === 'GET' && pathname === `/v1/acts/${ACT_ID}/signature/external-invites`) {
       await fulfillJson(route, []);
       return;
@@ -329,8 +349,19 @@ async function expectNoCredentialInputs(page: Page): Promise<void> {
   ).toHaveCount(0);
 }
 
+function signingPanel(page: Page): Locator {
+  return page
+    .locator('.panel')
+    .filter({ has: page.getByRole('heading', { name: 'Assinatura qualificada' }) });
+}
+
+/**
+ * The signing surface must not claim provider validation, qualified status or legal effect.
+ * Scoped to the qualified-signature card: the surrounding editor carries unrelated
+ * *negated* disclaimers («…não afirma suficiência legal…») that a naive substring match hits.
+ */
 async function expectNoPositiveClaimText(page: Page): Promise<void> {
-  await expect(page.locator('body')).not.toContainText(
+  await expect(signingPanel(page)).not.toContainText(
     /Chancela assinou|assinado pela Chancela|validado pelo prestador|prestador validou|validação do prestador confirmada|validade legal confirmada|validade jurídica confirmada|efeito legal confirmado|suficiência legal|conclusão jurídica confirmada|estatuto qualificado confirmado|Lista de Confiança validada|notarização|certificação oficial/i,
   );
 }
@@ -493,8 +524,10 @@ function actFixture(imported = false) {
     id: ACT_ID,
     book_id: BOOK_ID,
     title: ACT_TITLE,
-    state: 'Sealed',
-    seal_event_seq: 5,
+    // Signing actions are only open while the act is «Em assinatura»: sealing deliberately
+    // closes them (SigningPanel `signingOpen`). This fixture must therefore stay pre-seal.
+    state: 'Signing',
+    seal_event_seq: null,
     retifies: null,
     channel: 'Physical',
     meeting_date: '2026-07-12',
@@ -506,7 +539,7 @@ function actFixture(imported = false) {
     mesa: { presidente: 'Amélia Marques', secretarios: ['Rui Secretário'] },
     agenda: [{ number: 1, text: 'Aprovação de importação técnica de PDF assinado' }],
     referenced_documents: [],
-    deliberations: 'Ata selada para prova local do handoff oficial de PDF assinado.',
+    deliberations: 'Ata em assinatura para prova local do handoff oficial de PDF assinado.',
     deliberation_items: [],
     telematic_evidence: null,
     attachments: [],

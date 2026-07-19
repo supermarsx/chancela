@@ -71,6 +71,13 @@ test('platform operations renders API/MCP rows and records MCP start as supervis
   );
   await expect(mcpRow).not.toContainText(/started process|spawned process|processo iniciado/i);
 
+  // Per-service log overrides now live behind the «Registos» sub-tab of Operações.
+  await page
+    .getByRole('group', { name: 'Secções de operações' })
+    .getByRole('button', { name: 'Registos' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Níveis de log' })).toBeVisible();
+
   const autosaveResponse = waitForApiResponse(page, '/v1/settings', 'PUT');
   await page.getByLabel('MCP stdio').selectOption('warn');
   expect((await autosaveResponse).status()).toBe(200);
