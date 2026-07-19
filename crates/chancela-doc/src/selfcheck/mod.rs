@@ -623,12 +623,17 @@ fn verify_fonts(
                 .map_err(|_| fail("/FontFile2 does not resolve to a stream".into()))?;
 
             let widths = parse_widths(cid, &fail)?;
+            let labelled: Vec<(String, &[u8])> = contents
+                .iter()
+                .map(|(page_index, content)| (format!("page {page_index}"), content.as_slice()))
+                .collect();
             glyphs::verify(
+                "page content",
                 &program.content,
                 program.dict.get(b"Length1").and_then(Object::as_i64).ok(),
                 &to_unicode.content,
                 &widths,
-                contents,
+                &labelled,
             )
             .map_err(&fail)?;
             checked_glyphs = true;

@@ -12,13 +12,18 @@
 //! The visible-seal path matters here. When a seal is requested, the widget gains an `/AP /N` form
 //! XObject with its own `/Resources`, which is the one place the signed file can acquire fonts,
 //! colour spaces or transparency that never passed through the writer. Those resources are walked
-//! with the same closed profile the page content is held to, and every font in them must be
-//! embedded and carry a `/ToUnicode` CMap — the rule the seal path is most likely to break, since
-//! standard-14 faces have no font program to embed.
+//! with the same closed profile the page content is held to, and a seal font is held to the **same
+//! glyph-level rules as a page font** ([`super::glyphs`]): an embedded program, a `/ToUnicode`
+//! entry for every glyph shown that round-trips through the font's own `cmap`, and `/W` widths that
+//! agree with `hmtx`. Presence checks alone were not enough here — a seal drawn with a standard-14
+//! face has no font program at all, and one drawn with an embedded face can still map its glyphs to
+//! the wrong characters.
+
+use std::collections::BTreeMap;
 
 use lopdf::{Dictionary, Document, Object};
 
-use super::render;
+use super::{glyphs, render};
 
 /// `/F` annotation flag bits (PDF 32000-1 §12.5.3).
 const FLAG_INVISIBLE: i64 = 1 << 0;
@@ -215,6 +220,12 @@ fn verify_appearance_stream(doc: &Document, normal: &Object, where_: &str) -> Re
         ));
     }
 
+    // The appearance stream is normally Flate-compressed, so every rule below reads the *decoded*
+    // operators. Checking the raw bytes would silently pass whatever a compressed stream contains.
+    let content = stream
+        .decompressed_content()
+        .unwrap_or_else(|_| stream.content.clone());
+
     let Some(resources) = stream
         .dict
         .get(b"Resources")
@@ -235,34 +246,139 @@ fn verify_appearance_stream(doc: &Document, normal: &Object, where_: &str) -> Re
             let name = String::from_utf8_lossy(name);
             let font = resolve_dict(doc, font)
                 .ok_or_else(|| format!("{where_} /AP /N font /{name} does not resolve"))?;
-            let descriptor = font_descriptor(doc, font);
-            let embedded = descriptor.is_some_and(|descriptor| {
-                descriptor.has(b"FontFile")
-                    || descriptor.has(b"FontFile2")
-                    || descriptor.has(b"FontFile3")
-            });
-            if !embedded {
-                return Err(format!(
-                    "{where_} /AP /N font /{name} ({}) has no embedded font program — a visible \
-                     seal drawn with a non-embedded face makes the signed file non-conformant",
-                    font.get(b"BaseFont")
-                        .and_then(Object::as_name)
-                        .map(|base| String::from_utf8_lossy(base).to_string())
-                        .unwrap_or_else(|_| "unnamed".into())
-                ));
-            }
-            if !font.has(b"ToUnicode") {
-                return Err(format!(
-                    "{where_} /AP /N font /{name} has no /ToUnicode CMap"
-                ));
-            }
+            verify_seal_font(doc, font, &name, &content, where_)?;
         }
     }
 
     // Everything else the seal declares goes through the page profile: fonts only.
     render::verify_resources(resources, &format!("{where_} /AP /N"))?;
-    render::verify_operators(&stream.content, &format!("{where_} /AP /N"))?;
+    render::verify_operators(&content, &format!("{where_} /AP /N"))?;
     Ok(())
+}
+
+/// Hold one seal font to the full glyph-level profile, not merely to a presence check.
+fn verify_seal_font(
+    doc: &Document,
+    font: &Dictionary,
+    name: &str,
+    content: &[u8],
+    where_: &str,
+) -> Result<(), String> {
+    let descriptor = font_descriptor(doc, font);
+    let embedded = descriptor.is_some_and(|descriptor| {
+        descriptor.has(b"FontFile") || descriptor.has(b"FontFile2") || descriptor.has(b"FontFile3")
+    });
+    if !embedded {
+        return Err(format!(
+            "{where_} /AP /N font /{name} ({}) has no embedded font program — a visible seal drawn \
+             with a non-embedded face makes the signed file non-conformant",
+            font.get(b"BaseFont")
+                .and_then(Object::as_name)
+                .map(|base| String::from_utf8_lossy(base).to_string())
+                .unwrap_or_else(|_| "unnamed".into())
+        ));
+    }
+    if !font.has(b"ToUnicode") {
+        return Err(format!(
+            "{where_} /AP /N font /{name} has no /ToUnicode CMap"
+        ));
+    }
+
+    // Beyond presence: the same composite-font profile a page font is held to. A simple font would
+    // show single-byte codes the glyph reader cannot interpret, so it is rejected outright rather
+    // than skipped — skipping would make the seal the one place a font escapes the check.
+    if font.get(b"Subtype").and_then(Object::as_name).ok() != Some(b"Type0") {
+        return Err(format!(
+            "{where_} /AP /N font /{name} is not a Type0 composite font — the seal path emits a \
+             single Type0 / Identity-H font, so a simple font came from elsewhere"
+        ));
+    }
+    let to_unicode = font
+        .get(b"ToUnicode")
+        .and_then(Object::as_reference)
+        .ok()
+        .and_then(|id| doc.get_object(id).and_then(Object::as_stream).ok())
+        .ok_or_else(|| format!("{where_} /AP /N font /{name} /ToUnicode is not a stream"))?;
+    let cid = font
+        .get(b"DescendantFonts")
+        .and_then(Object::as_array)
+        .ok()
+        .and_then(|array| array.first())
+        .and_then(|first| resolve_dict(doc, first))
+        .ok_or_else(|| {
+            format!("{where_} /AP /N font /{name} has no resolvable descendant CIDFont")
+        })?;
+    let program = descriptor
+        .and_then(|descriptor| {
+            descriptor
+                .get(b"FontFile2")
+                .and_then(Object::as_reference)
+                .ok()
+        })
+        .and_then(|id| doc.get_object(id).and_then(Object::as_stream).ok())
+        .ok_or_else(|| {
+            format!("{where_} /AP /N font /{name} is not embedded as a /FontFile2 TrueType program")
+        })?;
+
+    let mut widths = BTreeMap::new();
+    let array = cid
+        .get(b"W")
+        .and_then(Object::as_array)
+        .map_err(|_| format!("{where_} /AP /N font /{name} has no /W widths array"))?;
+    let mut index = 0usize;
+    while index < array.len() {
+        let start = array[index]
+            .as_i64()
+            .map_err(|_| format!("{where_} /AP /N font /{name} /W entry is not an integer CID"))?;
+        let list = array
+            .get(index + 1)
+            .and_then(|entry| entry.as_array().ok())
+            .ok_or_else(|| {
+                format!(
+                    "{where_} /AP /N font /{name} /W entry for CID {start} is not followed by a \
+                     width array — the range form `c_first c_last w` is outside the seal profile"
+                )
+            })?;
+        for (offset, width) in list.iter().enumerate() {
+            let cid_value = u16::try_from(start + offset as i64).map_err(|_| {
+                format!("{where_} /AP /N font /{name} /W CID {start} is out of range")
+            })?;
+            let width = width.as_i64().map_err(|_| {
+                format!(
+                    "{where_} /AP /N font /{name} /W width for CID {cid_value} is not an integer"
+                )
+            })?;
+            if widths.insert(cid_value, width).is_some() {
+                return Err(format!(
+                    "{where_} /AP /N font /{name} /W declares CID {cid_value} more than once"
+                ));
+            }
+        }
+        index += 2;
+    }
+
+    let program_bytes = program
+        .decompressed_content()
+        .unwrap_or_else(|_| program.content.clone());
+    let length1 = program
+        .dict
+        .get(b"Length1")
+        .and_then(Object::as_i64)
+        .ok()
+        // The seal shares the document's /FontFile2, whose /Length1 describes the *stored* stream.
+        // A compressed program would make that comparison meaningless, so it is only asserted when
+        // the bytes were stored verbatim.
+        .filter(|_| !program.dict.has(b"Filter"));
+    let subject = format!("{where_} /AP /N seal");
+    glyphs::verify(
+        &subject,
+        &program_bytes,
+        length1,
+        &to_unicode.content,
+        &widths,
+        &[(subject.clone(), content)],
+    )
+    .map_err(|e| format!("{where_} /AP /N font /{name}: {e}"))
 }
 
 fn font_descriptor<'a>(doc: &'a Document, font: &'a Dictionary) -> Option<&'a Dictionary> {

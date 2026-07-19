@@ -58,6 +58,8 @@ pub mod sign;
 pub mod validate;
 
 mod pdf;
+mod sfnt;
+mod xmp;
 
 #[cfg(test)]
 mod tests;

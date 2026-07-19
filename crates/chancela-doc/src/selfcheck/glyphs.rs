@@ -30,13 +30,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Assert the composite font's `/ToUnicode`, `/W` and embedded program agree with each other and
-/// with the glyphs the page content actually shows.
+/// with the glyphs the content actually shows.
+///
+/// `subject` names what those contents are ("page content", or a widget's seal appearance) and is
+/// used in the diagnostics; `contents` pairs each stream with its own label. The same rules apply
+/// to a signature seal's appearance stream as to a page, because a seal is text a reader will try
+/// to extract like any other.
 pub(super) fn verify(
+    subject: &str,
     program: &[u8],
     length1: Option<i64>,
     to_unicode: &[u8],
     widths: &BTreeMap<u16, i64>,
-    contents: &[(usize, Vec<u8>)],
+    contents: &[(String, &[u8])],
 ) -> Result<(), String> {
     let sfnt = Sfnt::parse(program)?;
     if let Some(declared) = length1
@@ -49,13 +55,15 @@ pub(super) fn verify(
     }
 
     let mut shown = BTreeSet::new();
-    for (page_index, content) in contents {
-        for gid in shown_glyph_ids(content).map_err(|e| format!("page {page_index}: {e}"))? {
+    for (label, content) in contents {
+        for gid in shown_glyph_ids(content).map_err(|e| format!("{label}: {e}"))? {
             shown.insert(gid);
         }
     }
     if shown.is_empty() {
-        return Err("no page shows any glyph — the document has no extractable text".into());
+        return Err(format!(
+            "{subject} shows no glyph — none of this text is extractable"
+        ));
     }
 
     let mapping = parse_to_unicode(to_unicode)?;
@@ -65,16 +73,15 @@ pub(super) fn verify(
 
     for &gid in &shown {
         if gid == 0 {
-            return Err(
-                "page content shows glyph 0 (.notdef): a character is missing from the embedded \
+            return Err(format!(
+                "{subject} shows glyph 0 (.notdef): a character is missing from the embedded \
                  face, so it renders as a blank box and its /ToUnicode entry describes whichever \
                  character reached .notdef first"
-                    .into(),
-            );
+            ));
         }
         if gid >= num_glyphs {
             return Err(format!(
-                "page content shows glyph {gid} but the embedded program has only {num_glyphs} glyphs"
+                "{subject} shows glyph {gid} but the embedded program has only {num_glyphs} glyphs"
             ));
         }
         let scalars = mapping
@@ -116,14 +123,14 @@ pub(super) fn verify(
     for gid in mapping.keys() {
         if !shown.contains(gid) {
             return Err(format!(
-                "/ToUnicode carries an entry for glyph {gid}, which no page shows"
+                "/ToUnicode carries an entry for glyph {gid}, which no page shows ({subject})"
             ));
         }
     }
     for gid in widths.keys() {
         if !shown.contains(gid) {
             return Err(format!(
-                "/W carries a width for glyph {gid}, which no page shows"
+                "/W carries a width for glyph {gid}, which no page shows ({subject})"
             ));
         }
     }

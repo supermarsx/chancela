@@ -445,6 +445,25 @@ fn replace_once(bytes: &mut [u8], from: &[u8], to: &[u8]) {
     bytes[at..at + from.len()].copy_from_slice(to);
 }
 
+/// Change one hex digit in place, wrapping `F` to `0` — an equal-length mutation, so no
+/// cross-reference offset moves and the failure that follows is the rule's, not the file's.
+fn bump_hex_digit(bytes: &mut [u8], at: usize) {
+    bytes[at] = match bytes[at] {
+        b'f' | b'F' => b'0',
+        b'9' => b'A',
+        digit => digit + 1,
+    };
+}
+
+/// The same, for a decimal digit (a `/W` width stays an integer of the same width).
+fn bump_decimal_digit(bytes: &mut [u8], at: usize) {
+    bytes[at] = if bytes[at] == b'9' {
+        b'1'
+    } else {
+        bytes[at] + 1
+    };
+}
+
 /// A signed document to mutate.
 fn signed_fixture(serial: u8) -> (Vec<u8>, Vec<u8>) {
     let base = pdfa::write(&ata_fixture()).expect("write base");
@@ -529,18 +548,13 @@ fn a_non_widget_annotation_is_rejected() {
     );
 }
 
-/// A visible text seal draws with standard-14 Helvetica, which has no font program to embed — so
-/// requesting one produces a signed file that is **not** PDF/A conformant. Nothing caught this
-/// before, because veraPDF only ever saw unsigned fixtures and the write-time gate runs before the
-/// seal exists. This test pins the defect: it must fail until the seal path embeds its font.
-#[test]
-fn a_visible_text_seal_is_caught_embedding_a_non_embedded_font() {
+/// Sign `base` with a visible text seal carrying `name`.
+fn sign_with_text_seal(base: &[u8], name: &str, serial: u8) -> Vec<u8> {
     use chancela_pades::{
         SealAppearance, SealContent, SealPlacement, TextSeal, sign_pdf_with_appearance,
     };
 
-    let base = pdfa::write(&ata_fixture()).expect("write base");
-    let signer = TestSigner::new_rsa("Amélia Marques Visível (teste)", 15);
+    let signer = TestSigner::new_rsa("Amélia Marques Visível (teste)", serial);
     let cert = signer.cert_der();
     let appearance = SealAppearance {
         placement: SealPlacement {
@@ -550,18 +564,51 @@ fn a_visible_text_seal_is_caught_embedding_a_non_embedded_font() {
             w: 200.0,
             h: 60.0,
         },
-        content: SealContent::Text(TextSeal::name_date("Amelia Marques", "2026-07-06")),
+        content: SealContent::Text(TextSeal::signed_by(
+            "Assinado por",
+            name,
+            "2026-07-06 12:00 UTC",
+        )),
     };
-    let signed = sign_pdf_with_appearance(
-        &base,
-        &SignOptions::default(),
-        Some(&appearance),
-        |digest| {
-            let attrs = signed_attributes_digest(digest, &cert, fixed_time())?;
-            assemble_cades_b(&signer.raw_signature(&attrs), digest, fixed_time())
-        },
-    )
-    .expect("visible-seal signing succeeds today");
+    sign_pdf_with_appearance(base, &SignOptions::default(), Some(&appearance), |digest| {
+        let attrs = signed_attributes_digest(digest, &cert, fixed_time())?;
+        assemble_cades_b(&signer.raw_signature(&attrs), digest, fixed_time())
+    })
+    .expect("visible-seal signing")
+}
+
+/// A visible text seal used to draw with standard-14 Helvetica, which has no font program to embed,
+/// so every visibly-sealed file was silently non-conformant. The seal now draws with the *document's
+/// own* embedded face, and the whole signed file — appearance stream included — satisfies the
+/// structural profile. The seal's Portuguese accents are the point: they are what an unembedded
+/// WinAnsi face mangled, and the `/ToUnicode` round-trip through the font's own `cmap` is what
+/// proves they survive.
+#[test]
+fn a_visible_text_seal_embeds_its_font_and_the_signed_file_verifies() {
+    let base = pdfa::write(&ata_fixture()).expect("write base");
+    let signed = sign_with_text_seal(&base, "Amélia Marques Gonçalves", 15);
+
+    selfcheck::verify_signed(&signed).expect("a visibly-sealed signed file is conformant");
+    assert!(
+        find(&signed, b"Helvetica").is_none(),
+        "the seal must not fall back to a standard-14 face"
+    );
+}
+
+/// The pin for the defect itself: reintroduce a non-embedded seal font and the check must still
+/// say so. Without this, "the seal verifies" could mean the seal font rule stopped firing.
+#[test]
+fn a_seal_font_without_an_embedded_program_is_still_caught() {
+    let base = pdfa::write(&ata_fixture()).expect("write base");
+    let mut signed = sign_with_text_seal(&base, "Amélia Marques Gonçalves", 17);
+    // Break the *seal's* descendant font link to the document's /FontDescriptor — the last such key
+    // in the file, in the appended revision — leaving a seal font with no embedded program. Equal
+    // length, so every xref offset stays put.
+    let at = signed
+        .windows(15)
+        .rposition(|w| w == b"/FontDescriptor")
+        .expect("the seal CIDFont /FontDescriptor");
+    replace_once(&mut signed[at..], b"/FontDescriptor", b"/FontDescriptoz");
 
     let err = selfcheck::verify_signed(&signed)
         .expect_err("a seal drawn with a non-embedded face is not PDF/A conformant");
@@ -571,25 +618,98 @@ fn a_visible_text_seal_is_caught_embedding_a_non_embedded_font() {
     );
 }
 
-/// The PDF/UA-1 claim is made in the base revision's XMP and survives signing verbatim — but the
-/// signature widget is not in the structure tree, which ISO 14289-1 7.18.1 requires. So the signed
-/// file asserts an accessibility conformance it does not have.
-///
-/// This is a residual gap, recorded here as an executable fact rather than prose: the day the
-/// signer tags the widget (or stops claiming UA once signed), this test changes and says so.
+/// The seal's `/ToUnicode` is checked against the embedded font's own `cmap`, not merely for
+/// existence: repointing one entry's target makes the seal extract as a character the font maps to a
+/// different glyph, and the check must say so. Presence checks cannot see this.
 #[test]
-fn signing_currently_falsifies_the_pdf_ua_claim() {
+fn a_seal_tounicode_that_disagrees_with_the_font_is_caught() {
+    let base = pdfa::write(&ata_fixture()).expect("write base");
+    let mut signed = sign_with_text_seal(&base, "Amélia Marques Gonçalves", 19);
+    // The last bfchar section is the seal's; bump the last digit of its first target scalar.
+    let section = signed
+        .windows(12)
+        .rposition(|w| w == b"beginbfchar\n")
+        .expect("the seal /ToUnicode")
+        + 12;
+    let target = find(&signed[section..], b"> <").expect("a bfchar entry") + section + 3;
+    bump_hex_digit(&mut signed, target + 3);
+
+    let err = selfcheck::verify_signed(&signed).expect_err("a wrong seal /ToUnicode must fail");
+    assert!(
+        err.to_string().contains("/ToUnicode maps glyph"),
+        "unexpected error: {err}"
+    );
+}
+
+/// The seal's `/W` widths are checked against the embedded `hmtx`. A width that no longer matches
+/// would lay the seal text out wrong in any viewer that trusts the PDF over the font.
+#[test]
+fn a_seal_width_that_disagrees_with_the_embedded_font_is_caught() {
+    let base = pdfa::write(&ata_fixture()).expect("write base");
+    let mut signed = sign_with_text_seal(&base, "Amélia Marques Gonçalves", 21);
+    // The seal CIDFont's `/W [gid [width] …]` is the last one in the file.
+    let widths = signed
+        .windows(4)
+        .rposition(|w| w == b"/W [")
+        .expect("the seal /W array")
+        + 4;
+    let first_width = find(&signed[widths..], b"[").expect("a width array") + widths + 1;
+    bump_decimal_digit(&mut signed, first_width);
+
+    let err = selfcheck::verify_signed(&signed).expect_err("a wrong seal /W width must fail");
+    assert!(
+        err.to_string().contains("the embedded hmtx gives"),
+        "unexpected error: {err}"
+    );
+}
+
+/// The signature widget is not in the structure tree, which ISO 14289-1 7.18.1 requires of a visible
+/// annotation — so a signed file may not go on claiming PDF/UA-1. The signer now **supersedes** the
+/// XMP in the signature revision to drop the claim (the base bytes the `/ByteRange` covers are
+/// untouched), so a signed file claims nothing rather than claiming something false.
+///
+/// Both halves matter. `NotClaimed` alone would also be reached by a writer that stopped claiming
+/// PDF/UA at all, so the unsigned base is asserted to still claim it *and hold it*; and the
+/// falsified state is re-created below to show the detector that found this has not gone quiet.
+#[test]
+fn signing_drops_the_pdf_ua_claim_rather_than_falsifying_it() {
     let (base, signed) = signed_fixture(16);
     assert_eq!(
         selfcheck::ua_claim(&base).expect("base UA claim"),
         UaClaim::Claimed,
         "the unsigned document's PDF/UA-1 claim holds"
     );
+    assert_eq!(
+        selfcheck::ua_claim(&signed).expect("signed UA claim"),
+        UaClaim::NotClaimed,
+        "a signed file must make no PDF/UA-1 claim, having an untagged signature widget"
+    );
+}
+
+/// The falsification detector must still fire. Restoring the claim into the superseded XMP — one
+/// equal-length edit, in the *appended* revision, so no offset moves — puts the file back in the
+/// state finding 2 described, and `ua_claim` must say `Falsified` again.
+#[test]
+fn a_signed_file_that_kept_its_ua_claim_is_still_reported_falsified() {
+    let (_, mut signed) = signed_fixture(18);
+    // The *last* copy of the packet is the superseded one the signature revision appended; putting
+    // the identifier back into it, over an equal-length run, restores the false claim without
+    // moving a single offset.
+    let at = signed
+        .windows(30)
+        .rposition(|w| w == b"<dc:format>application/pdf</dc")
+        .expect("the superseded XMP");
+    replace_once(
+        &mut signed[at..],
+        b"<dc:format>application/pdf</dc",
+        b"<pdfuaid:part>1</pdfuaid:part>",
+    );
+
     match selfcheck::ua_claim(&signed).expect("signed UA claim") {
         UaClaim::Falsified(reason) => {
             assert!(reason.contains("7.18.1"), "unexpected reason: {reason}")
         }
-        other => panic!("expected the signed UA claim to be falsified, got {other:?}"),
+        other => panic!("expected the restored UA claim to be falsified, got {other:?}"),
     }
 }
 

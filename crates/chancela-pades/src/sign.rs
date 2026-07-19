@@ -18,9 +18,11 @@ use der::{Decode, Encode};
 use sha2::{Digest, Sha256};
 use x509_cert::attr::Attribute;
 
-use crate::appearance::{self, SealAppearance};
+use crate::appearance::{self, SealAppearance, SealContent};
 use crate::error::PadesError;
 use crate::pdf;
+use crate::sfnt::Sfnt;
+use crate::xmp;
 
 /// Bytes reserved for the CMS inside the `/Contents` hex placeholder. A CAdES-B CMS (2048-bit RSA
 /// or P-256 signature + signer certificate) is a few KB; a signature timestamp adds a couple more.
@@ -257,14 +259,32 @@ fn prepare_incremental(
     let field_num = base + 2;
     let sig_num = base + 3;
 
-    // Build the visible-seal appearance objects (form XObject, and for image seals the image
-    // XObject + optional /SMask), numbered from base + 4. `None` keeps the invisible default.
+    // A text seal draws with the document's own embedded font programme (see `appearance::SealFont`
+    // for why), so it must be located and parsed before the appearance is built. The programme
+    // bytes are held here so the parsed view can borrow them.
+    let seal_font_source = match appearance.map(|app| &app.content) {
+        Some(SealContent::Text(_)) => Some(seal_font_source(&doc, page_id)?),
+        _ => None,
+    };
+    let seal_font = match &seal_font_source {
+        Some(source) => Some(appearance::SealFont {
+            program: Sfnt::parse(&source.program)?,
+            descriptor: source.descriptor,
+            base_font: source.base_font.clone(),
+        }),
+        None => None,
+    };
+
+    // Build the visible-seal appearance objects (form XObject and its font objects, and for image
+    // seals the image XObject + optional /SMask), numbered from base + 4. `None` keeps the
+    // invisible default.
     let built_appearance = match appearance {
         Some(app) => Some(appearance::build_appearance(
             &app.content,
             app.placement.w,
             app.placement.h,
             base + 4,
+            seal_font.as_ref(),
         )?),
         None => None,
     };
@@ -354,6 +374,7 @@ fn prepare_incremental(
     let acroform_body = ser(&acroform)?;
     let field_body = ser(&field)?;
     let sig_body = signature_dict_template(opts);
+    let metadata_override = superseded_metadata(&doc, &catalog)?;
 
     // Assemble the incremental section, recording each object's absolute offset.
     let prev_len = pdf_bytes.len();
@@ -373,6 +394,12 @@ fn prepare_incremental(
     ];
     if let Some(built) = &built_appearance {
         objects.extend(built.objects.iter().cloned());
+    }
+    // The superseded XMP goes last, after the signature dictionary, for the same reason the
+    // appearance objects do: it carries caller-supplied text (`dc:description`), and a placeholder
+    // search below takes the *first* match. The signature dictionary must own that match.
+    if let Some(metadata) = &metadata_override {
+        objects.push((metadata.id.0, metadata.body.clone()));
     }
     for (id, body) in &objects {
         let off = prev_len + section.len();
@@ -457,6 +484,146 @@ fn prepare_incremental(
         byterange_digest: content_digest,
         hex_start,
     })
+}
+
+/// Re-emit the document's XMP metadata object without its PDF/UA-1 claim, if it makes one.
+///
+/// Returns the object id to re-define and its new serialized body, or `None` when the document
+/// claims no PDF/UA conformance (so nothing needs superseding). The object keeps **its own number**:
+/// redefining it in the incremental update leaves the signed base bytes untouched — which the
+/// `/ByteRange` requires — while every reader resolving `/Metadata` reaches the new definition.
+///
+/// See [`crate::xmp`] for why the claim cannot survive signing.
+struct SupersededObject {
+    id: (u32, u16),
+    body: Vec<u8>,
+}
+
+fn superseded_metadata(
+    doc: &lopdf::Document,
+    catalog: &lopdf::Dictionary,
+) -> Result<Option<SupersededObject>, PadesError> {
+    let Ok(metadata_id) = catalog
+        .get(b"Metadata")
+        .and_then(lopdf::Object::as_reference)
+    else {
+        return Ok(None); // no metadata stream at all: nothing claims anything
+    };
+    let Ok(stream) = doc
+        .get_object(metadata_id)
+        .and_then(lopdf::Object::as_stream)
+    else {
+        return Ok(None);
+    };
+    let packet = stream
+        .decompressed_content()
+        .unwrap_or_else(|_| stream.content.clone());
+    let Some(stripped) = xmp::without_pdf_ua_claim(&packet)? else {
+        return Ok(None);
+    };
+
+    // Re-emit uncompressed and without a /Filter: PDF/A requires the document metadata stream to be
+    // readable without decoding, and the original was written that way.
+    let mut dict = stream.dict.clone();
+    dict.remove(b"Filter");
+    dict.remove(b"DecodeParms");
+    dict.set("Length", lopdf::Object::Integer(stripped.len() as i64));
+    let mut body = Vec::with_capacity(stripped.len() + 64);
+    pdf::write_dict(&dict, &mut body).map_err(|m| PadesError::MalformedStructure(m.into()))?;
+    body.extend_from_slice(b"\nstream\n");
+    body.extend_from_slice(&stripped);
+    body.extend_from_slice(b"\nendstream");
+    Ok(Some(SupersededObject {
+        id: metadata_id,
+        body,
+    }))
+}
+
+/// The document's embedded font programme and the objects a seal font reuses from it.
+///
+/// Held separately from [`appearance::SealFont`] because the parsed view borrows these bytes.
+struct SealFontSource {
+    program: Vec<u8>,
+    descriptor: (u32, u16),
+    base_font: Vec<u8>,
+}
+
+/// Locate the composite font the sealed page already uses, so a text seal can be drawn with it.
+///
+/// Failing here is deliberate. The alternative — falling back to a standard-14 face — is what made
+/// every visibly-sealed file non-conformant in the first place, and it fails silently. A caller
+/// asking for a text seal on a PDF with no embedded TrueType font is asking for something this
+/// signer cannot produce conformantly, and is told so.
+fn seal_font_source(
+    doc: &lopdf::Document,
+    page_id: (u32, u16),
+) -> Result<SealFontSource, PadesError> {
+    let fonts = doc.get_page_fonts(page_id).map_err(|_| {
+        PadesError::MalformedStructure(
+            "a text seal needs the page's /Resources /Font dictionary, which could not be read"
+                .into(),
+        )
+    })?;
+
+    for font in fonts.values() {
+        if font.get(b"Subtype").and_then(lopdf::Object::as_name).ok() != Some(b"Type0") {
+            continue;
+        }
+        let Some(cid) = font
+            .get(b"DescendantFonts")
+            .and_then(lopdf::Object::as_array)
+            .ok()
+            .and_then(|array| array.first())
+            .and_then(|first| doc.dereference(first).ok())
+            .and_then(|(_, object)| object.as_dict().ok())
+        else {
+            continue;
+        };
+        let Ok(descriptor_id) = cid
+            .get(b"FontDescriptor")
+            .and_then(lopdf::Object::as_reference)
+        else {
+            continue;
+        };
+        let Ok(descriptor) = doc
+            .get_object(descriptor_id)
+            .and_then(lopdf::Object::as_dict)
+        else {
+            continue;
+        };
+        let Ok(program_id) = descriptor
+            .get(b"FontFile2")
+            .and_then(lopdf::Object::as_reference)
+        else {
+            continue;
+        };
+        let Ok(program) = doc
+            .get_object(program_id)
+            .and_then(lopdf::Object::as_stream)
+        else {
+            continue;
+        };
+        let base_font = cid
+            .get(b"BaseFont")
+            .and_then(lopdf::Object::as_name)
+            .or_else(|_| descriptor.get(b"FontName").and_then(lopdf::Object::as_name))
+            .map(<[u8]>::to_vec)
+            .unwrap_or_else(|_| b"SealFont".to_vec());
+        return Ok(SealFontSource {
+            program: program
+                .decompressed_content()
+                .unwrap_or_else(|_| program.content.clone()),
+            descriptor: descriptor_id,
+            base_font,
+        });
+    }
+
+    Err(PadesError::MalformedStructure(
+        "a visible text seal must be drawn with an embedded font, but the sealed page declares no \
+         Type0 font with a /FontFile2 TrueType programme (a seal drawn with a standard-14 face \
+         would make the signed file non-conformant)"
+            .into(),
+    ))
 }
 
 /// Build the raw `/Sig` dictionary body with a fixed-width ByteRange placeholder and a zero-filled

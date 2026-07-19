@@ -424,6 +424,160 @@ fn base_pdf() -> Vec<u8> {
     )
 }
 
+/// A minimal TrueType programme covering printable ASCII plus Portuguese accented letters, with
+/// every glyph empty and 600/1000 em wide. Mirrors the fixture in `chancela-pades/src/tests.rs`
+/// (copied, as `assemble_pdf` and `TestSigner` above already are — test fixtures do not cross crate
+/// boundaries in this workspace).
+///
+/// A visible **text** seal is drawn with the font the document itself embeds, so a document to be
+/// text-sealed must embed one; a page with an empty `/Resources` cannot be sealed conformantly and
+/// the signer refuses rather than falling back to a non-embedded face.
+fn synthetic_truetype(chars: &[char]) -> Vec<u8> {
+    let num_glyphs = chars.len() as u16 + 1;
+
+    let mut head = vec![0u8; 54];
+    head[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    head[18..20].copy_from_slice(&1000u16.to_be_bytes()); // unitsPerEm
+    let mut hhea = vec![0u8; 36];
+    hhea[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    hhea[34..36].copy_from_slice(&num_glyphs.to_be_bytes()); // numberOfHMetrics
+    let mut maxp = vec![0u8; 32];
+    maxp[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    maxp[4..6].copy_from_slice(&num_glyphs.to_be_bytes());
+    let mut hmtx = Vec::new();
+    for _ in 0..num_glyphs {
+        hmtx.extend_from_slice(&600u16.to_be_bytes());
+        hmtx.extend_from_slice(&0i16.to_be_bytes());
+    }
+    let loca = vec![0u8; (num_glyphs as usize + 1) * 2];
+
+    // cmap format 4: one single-character segment per covered char, plus the 0xFFFF terminator.
+    let mut segments: Vec<(u16, u16, i16)> = chars
+        .iter()
+        .enumerate()
+        .map(|(index, &ch)| {
+            let code = ch as u16;
+            (code, code, (index as i32 + 1 - code as i32) as i16)
+        })
+        .collect();
+    segments.push((0xFFFF, 0xFFFF, 1));
+    let seg_x2 = segments.len() as u16 * 2;
+    let mut subtable = vec![0u8; 14];
+    subtable[0..2].copy_from_slice(&4u16.to_be_bytes()); // format
+    subtable[6..8].copy_from_slice(&seg_x2.to_be_bytes()); // segCountX2
+    for &(_, end, _) in &segments {
+        subtable.extend_from_slice(&end.to_be_bytes());
+    }
+    subtable.extend_from_slice(&0u16.to_be_bytes()); // reservedPad
+    for &(start, _, _) in &segments {
+        subtable.extend_from_slice(&start.to_be_bytes());
+    }
+    for &(_, _, delta) in &segments {
+        subtable.extend_from_slice(&delta.to_be_bytes());
+    }
+    for _ in &segments {
+        subtable.extend_from_slice(&0u16.to_be_bytes()); // idRangeOffset
+    }
+    let length = subtable.len() as u16;
+    subtable[2..4].copy_from_slice(&length.to_be_bytes());
+
+    let mut cmap = Vec::new();
+    cmap.extend_from_slice(&0u16.to_be_bytes()); // version
+    cmap.extend_from_slice(&1u16.to_be_bytes()); // numTables
+    cmap.extend_from_slice(&3u16.to_be_bytes()); // platformID = Windows
+    cmap.extend_from_slice(&1u16.to_be_bytes()); // encodingID = BMP
+    cmap.extend_from_slice(&12u32.to_be_bytes()); // subtable offset
+    cmap.extend_from_slice(&subtable);
+
+    let tables: Vec<(&[u8; 4], Vec<u8>)> = vec![
+        (b"cmap", cmap),
+        (b"glyf", Vec::new()),
+        (b"head", head),
+        (b"hhea", hhea),
+        (b"hmtx", hmtx),
+        (b"loca", loca),
+        (b"maxp", maxp),
+    ];
+    let mut out = Vec::new();
+    out.extend_from_slice(&0x0001_0000u32.to_be_bytes());
+    out.extend_from_slice(&(tables.len() as u16).to_be_bytes());
+    out.extend_from_slice(&[0u8; 6]); // searchRange / entrySelector / rangeShift
+    let directory = out.len();
+    out.resize(directory + tables.len() * 16, 0);
+    for (index, (tag, data)) in tables.iter().enumerate() {
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+        let offset = out.len() as u32;
+        let entry = directory + index * 16;
+        out[entry..entry + 4].copy_from_slice(*tag);
+        out[entry + 8..entry + 12].copy_from_slice(&offset.to_be_bytes());
+        out[entry + 12..entry + 16].copy_from_slice(&(data.len() as u32).to_be_bytes());
+        out.extend_from_slice(data);
+    }
+    out
+}
+
+/// A one-page PDF whose page declares a `Type0` / `Identity-H` font with an embedded `/FontFile2` —
+/// the shape a real document has, and the shape a visible text seal requires.
+fn base_pdf_with_font() -> Vec<u8> {
+    let mut chars: Vec<char> = (0x20u8..=0x7Eu8).map(char::from).collect();
+    chars.extend("áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ".chars());
+    chars.sort_unstable();
+    chars.dedup();
+    let program = synthetic_truetype(&chars);
+
+    let mut buf: Vec<u8> = Vec::new();
+    buf.extend_from_slice(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n");
+    let bodies: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+          /Resources << /Font << /F1 4 0 R >> >> >>"
+            .to_vec(),
+        b"<< /Type /Font /Subtype /Type0 /BaseFont /TestFace /Encoding /Identity-H \
+          /DescendantFonts [5 0 R] >>"
+            .to_vec(),
+        b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /TestFace \
+          /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> \
+          /FontDescriptor 6 0 R /CIDToGIDMap /Identity /DW 500 >>"
+            .to_vec(),
+        b"<< /Type /FontDescriptor /FontName /TestFace /Flags 34 /FontBBox [0 -200 600 800] \
+          /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 7 0 R >>"
+            .to_vec(),
+        {
+            let mut stream = format!(
+                "<< /Length {} /Length1 {} >>\nstream\n",
+                program.len(),
+                program.len()
+            )
+            .into_bytes();
+            stream.extend_from_slice(&program);
+            stream.extend_from_slice(b"\nendstream");
+            stream
+        },
+    ];
+
+    let mut offsets = Vec::new();
+    for (index, body) in bodies.iter().enumerate() {
+        offsets.push(buf.len());
+        buf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+        buf.extend_from_slice(body);
+        buf.extend_from_slice(b"\nendobj\n");
+    }
+    let xref_off = buf.len();
+    buf.extend_from_slice(format!("xref\n0 {}\n", bodies.len() + 1).as_bytes());
+    buf.extend_from_slice(b"0000000000 65535 f\r\n");
+    for off in &offsets {
+        buf.extend_from_slice(format!("{off:010} 00000 n\r\n").as_bytes());
+    }
+    buf.extend_from_slice(
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\n", bodies.len() + 1).as_bytes(),
+    );
+    buf.extend_from_slice(format!("startxref\n{xref_off}\n%%EOF\n").as_bytes());
+    buf
+}
+
 fn marked_pdf(marker: &str) -> Vec<u8> {
     let marker_object = format!("<< /ChancelaTestMarker ({marker}) >>");
     assemble_pdf(
@@ -638,7 +792,8 @@ fn one_failing_document_does_not_abort_the_batch() {
 /// with no appearance keeps the invisible, locked default.
 #[test]
 fn per_document_seal_placement_is_applied_independently() {
-    let pdf = base_pdf();
+    // A text seal draws with the document's own embedded font, so the fixture embeds one.
+    let pdf = base_pdf_with_font();
     let provider = cc_provider(KeyCard::new());
     let docs = [
         pdf_doc("seal-a", &pdf, Some(text_seal(0, 72.0, 600.0))),

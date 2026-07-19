@@ -4,11 +4,12 @@
 //! XObject drawn inside the widget's `/Rect`. This module builds that appearance for the two seal
 //! kinds the sign path offers:
 //!
-//! - **Text templates** ([`TextSeal`]) — a bordered box of one or more Helvetica text lines
-//!   (name + date variants and friends). Uses the standard-14 `Helvetica` / `Helvetica-Bold` fonts
-//!   (no embedding) with `WinAnsiEncoding`, which covers Latin-1 (Portuguese accented letters). The
-//!   line-drawing operators mirror the deterministic text patterns of `chancela-doc`'s `layout.rs`
-//!   (copied, not shared — no cross-crate dependency).
+//! - **Text templates** ([`TextSeal`]) — a bordered box of one or more text lines (name + date
+//!   variants and friends), drawn with the **font programme the document already embeds**, as a
+//!   composite `Type0` / `Identity-H` font with its own `/ToUnicode` CMap and `/W` widths. See
+//!   [`SealFont`] for why the seal shares the document's `/FontFile2` rather than bundling a face
+//!   of its own. The line-drawing operators mirror the deterministic text patterns of
+//!   `chancela-doc`'s `layout.rs` (copied, not shared — no cross-crate dependency).
 //! - **Raster images** ([`ImageSeal`]) — a scanned/PNG/JPEG seal. JPEG bytes are embedded verbatim
 //!   as a `/DCTDecode` image XObject (no re-encode). PNG is decoded (via the `png` crate) to raw
 //!   8-bit samples stored as a `/FlateDecode` image XObject (`DeviceRGB` or `DeviceGray`); an alpha
@@ -20,10 +21,13 @@
 //! [`crate::sign`]; that module owns object-number allocation, the widget `/Rect`, and the `/AP`
 //! wiring.
 
+use std::collections::BTreeMap;
+
 use lopdf::{Dictionary, Object, Stream};
 
 use crate::error::PadesError;
 use crate::pdf;
+use crate::sfnt::Sfnt;
 
 /// A visible signature seal: where it goes ([`SealPlacement`]) and what it shows ([`SealContent`]).
 ///
@@ -151,11 +155,14 @@ impl TextSeal {
 /// One styled line of a [`TextSeal`].
 #[derive(Debug, Clone)]
 pub struct SealTextLine {
-    /// The line text (encoded as WinAnsi/Latin-1; unmappable characters become `?`).
+    /// The line text. Every character must exist in the document's embedded font programme;
+    /// one that does not is a signing error rather than a blank box (see [`SealFont`]).
     pub text: String,
     /// Font size in points.
     pub size: f32,
-    /// Whether to draw the line in `Helvetica-Bold`.
+    /// Whether to emphasise the line. The document embeds one face, so emphasis is synthesised by
+    /// stroking the glyph outlines as well as filling them (text rendering mode 2) rather than by
+    /// switching to a bold face that is not there.
     pub bold: bool,
 }
 
@@ -187,17 +194,49 @@ pub(crate) struct BuiltAppearance {
     pub objects: Vec<(u32, Vec<u8>)>,
 }
 
+/// The document's own embedded font programme, borrowed for the duration of one seal build.
+///
+/// A visible seal's `/AP /N` stream is the one place a signed file can acquire a font that never
+/// passed through the document writer, and PDF/A-2 §6.2.11 requires every font used for rendering
+/// to be embedded and (for the "u" conformance level) to carry a `/ToUnicode` CMap. Drawing seals
+/// with a standard-14 face — as this module used to — silently made every visibly-sealed file
+/// non-conformant.
+///
+/// The fix is not to bundle a font in this crate. That would add a whole font programme to every
+/// signed file and would still be a *different* face from the one the document body uses. Instead
+/// the seal reuses what is already in the input PDF: the seal's `/FontDescriptor` is the document's
+/// descriptor, so the seal and the body share one `/FontFile2` stream and the signature adds no
+/// font bytes at all. Only the small per-seal objects — the descendant `CIDFont` (with `/W` for the
+/// seal's glyphs) and its `/ToUnicode` CMap — are new.
+pub(crate) struct SealFont<'a> {
+    /// The document's `/FontFile2` programme, parsed for `cmap` and `hmtx` lookups.
+    pub(crate) program: Sfnt<'a>,
+    /// Object id of the document's `/FontDescriptor`, referenced rather than rebuilt.
+    pub(crate) descriptor: (u32, u16),
+    /// The `/BaseFont` name the document uses, kept so the seal font names the same face.
+    pub(crate) base_font: Vec<u8>,
+}
+
 /// Build the appearance objects for `content` in a `w`×`h` (points) box, allocating object numbers
-/// starting at `first_num`. The `/AP /N` form XObject is always `first_num`; image seals also use
+/// starting at `first_num`. The `/AP /N` form XObject is always `first_num`; text seals also use
+/// `first_num + 1..=first_num + 3` (`/ToUnicode`, descendant `CIDFont`, `Type0`), and image seals
 /// `first_num + 1` (image) and, when the image has alpha, `first_num + 2` (`/SMask`).
 pub(crate) fn build_appearance(
     content: &SealContent,
     w: f32,
     h: f32,
     first_num: u32,
+    font: Option<&SealFont<'_>>,
 ) -> Result<BuiltAppearance, PadesError> {
     match content {
-        SealContent::Text(seal) => build_text_appearance(seal, w, h, first_num),
+        SealContent::Text(seal) => {
+            let font = font.ok_or_else(|| {
+                PadesError::MalformedStructure(
+                    "a text seal needs the document's embedded font programme".into(),
+                )
+            })?;
+            build_text_appearance(seal, w, h, first_num, font)
+        }
         SealContent::Image(seal) => build_image_appearance(seal, w, h, first_num),
     }
 }
@@ -209,34 +248,103 @@ fn build_text_appearance(
     w: f32,
     h: f32,
     first_num: u32,
+    font: &SealFont<'_>,
 ) -> Result<BuiltAppearance, PadesError> {
     let ap_num = first_num;
-    let content = text_content_stream(seal, w, h);
+    let to_unicode_num = first_num + 1;
+    let cid_num = first_num + 2;
+    let type0_num = first_num + 3;
 
-    // Standard-14 fonts, inline in the form's /Resources (no font program to embed).
-    let helvetica = |base: &[u8]| {
-        let mut f = Dictionary::new();
-        f.set("Type", Object::Name(b"Font".to_vec()));
-        f.set("Subtype", Object::Name(b"Type1".to_vec()));
-        f.set("BaseFont", Object::Name(base.to_vec()));
-        f.set("Encoding", Object::Name(b"WinAnsiEncoding".to_vec()));
-        Object::Dictionary(f)
-    };
+    // `used` is glyph id → Unicode scalar, which is exactly what /ToUnicode and /W both need. It is
+    // filled while the content stream is built, so the two describe the same glyph set by
+    // construction: no stale entries, no gaps.
+    let mut used: BTreeMap<u16, u32> = BTreeMap::new();
+    let content = text_content_stream(seal, w, h, font, &mut used)?;
+    if used.is_empty() {
+        return Err(PadesError::MalformedStructure(
+            "the text seal draws no characters, so the widget would show an empty box".into(),
+        ));
+    }
+
     let mut fonts = Dictionary::new();
-    fonts.set("F1", helvetica(b"Helvetica"));
-    fonts.set("F2", helvetica(b"Helvetica-Bold"));
+    fonts.set("F1", Object::Reference((type0_num, 0)));
     let mut resources = Dictionary::new();
     resources.set("Font", Object::Dictionary(fonts));
 
-    let form_body = form_xobject_body(w, h, resources, content)?;
+    // Descendant CIDFont: Identity-H means CID == glyph id, so /W is keyed by glyph id directly and
+    // /CIDToGIDMap is the identity. Widths come from the embedded `hmtx`, which is what a checker
+    // compares them against.
+    let mut widths = Vec::with_capacity(used.len() * 2);
+    for &gid in used.keys() {
+        widths.push(Object::Integer(gid as i64));
+        widths.push(Object::Array(vec![Object::Integer(
+            font.program.width_1000(gid)?,
+        )]));
+    }
+    let mut cid = Dictionary::new();
+    cid.set("Type", Object::Name(b"Font".to_vec()));
+    cid.set("Subtype", Object::Name(b"CIDFontType2".to_vec()));
+    cid.set("BaseFont", Object::Name(font.base_font.clone()));
+    let mut system_info = Dictionary::new();
+    system_info.set(
+        "Registry",
+        Object::String(b"Adobe".to_vec(), lopdf::StringFormat::Literal),
+    );
+    system_info.set(
+        "Ordering",
+        Object::String(b"Identity".to_vec(), lopdf::StringFormat::Literal),
+    );
+    system_info.set("Supplement", Object::Integer(0));
+    cid.set("CIDSystemInfo", Object::Dictionary(system_info));
+    cid.set("FontDescriptor", Object::Reference(font.descriptor));
+    cid.set("CIDToGIDMap", Object::Name(b"Identity".to_vec()));
+    cid.set("DW", Object::Integer(500));
+    cid.set("W", Object::Array(widths));
+
+    let mut type0 = Dictionary::new();
+    type0.set("Type", Object::Name(b"Font".to_vec()));
+    type0.set("Subtype", Object::Name(b"Type0".to_vec()));
+    type0.set("BaseFont", Object::Name(font.base_font.clone()));
+    type0.set("Encoding", Object::Name(b"Identity-H".to_vec()));
+    type0.set(
+        "DescendantFonts",
+        Object::Array(vec![Object::Reference((cid_num, 0))]),
+    );
+    type0.set("ToUnicode", Object::Reference((to_unicode_num, 0)));
+
+    let to_unicode = to_unicode_cmap(&used);
+    let mut to_unicode_dict = Dictionary::new();
+    to_unicode_dict.set("Length", Object::Integer(to_unicode.len() as i64));
+
+    let dict_body = |dict: &Dictionary| -> Result<Vec<u8>, PadesError> {
+        let mut out = Vec::new();
+        pdf::write_dict(dict, &mut out).map_err(|m| PadesError::MalformedStructure(m.into()))?;
+        Ok(out)
+    };
+
     Ok(BuiltAppearance {
         normal_ap_num: ap_num,
-        objects: vec![(ap_num, form_body)],
+        objects: vec![
+            (ap_num, form_xobject_body(w, h, resources, content)?),
+            (
+                to_unicode_num,
+                stream_object_body(&to_unicode_dict, &to_unicode)?,
+            ),
+            (cid_num, dict_body(&cid)?),
+            (type0_num, dict_body(&type0)?),
+        ],
     })
 }
 
-/// Build the content stream: an optional border rectangle, then each line placed top-to-bottom.
-fn text_content_stream(seal: &TextSeal, w: f32, h: f32) -> Vec<u8> {
+/// Build the content stream: an optional border rectangle, then each line placed top-to-bottom,
+/// recording every glyph shown in `used`.
+fn text_content_stream(
+    seal: &TextSeal,
+    w: f32,
+    h: f32,
+    font: &SealFont<'_>,
+    used: &mut BTreeMap<u16, u32>,
+) -> Result<Vec<u8>, PadesError> {
     let mut s: Vec<u8> = Vec::new();
     if seal.border {
         // Thin black rectangle inset 0.5pt from the box edge.
@@ -258,16 +366,109 @@ fn text_content_stream(seal: &TextSeal, w: f32, h: f32) -> Vec<u8> {
         if baseline < inset {
             break; // out of vertical room; drop remaining lines rather than overflow the box
         }
-        let font = if line.bold { "F2" } else { "F1" };
+        let glyphs = shape(&line.text, font, used)?;
+        if glyphs.is_empty() {
+            baseline -= line.size * 0.35;
+            continue;
+        }
         s.extend_from_slice(b"BT\n");
-        s.extend_from_slice(format!("/{} {} Tf\n", font, num(line.size)).as_bytes());
+        s.extend_from_slice(format!("/F1 {} Tf\n", num(line.size)).as_bytes());
         s.extend_from_slice(b"0 g\n");
+        if line.bold {
+            // Synthetic emphasis: fill *and* stroke the outlines (mode 2). The document embeds one
+            // face, and inventing a bold one is not something a signer may do.
+            s.extend_from_slice(b"0 0 0 RG\n2 Tr\n");
+            s.extend_from_slice(format!("{} w\n", num(line.size * 0.03)).as_bytes());
+        } else {
+            s.extend_from_slice(b"0 Tr\n");
+        }
         s.extend_from_slice(format!("{} {} Td\n", num(inset), num(baseline)).as_bytes());
-        push_pdf_literal(&winansi(&line.text), &mut s);
-        s.extend_from_slice(b" Tj\nET\n");
+        s.push(b'<');
+        for gid in glyphs {
+            s.extend_from_slice(format!("{gid:04X}").as_bytes());
+        }
+        s.extend_from_slice(b"> Tj\nET\n");
         baseline -= line.size * 0.35; // inter-line gap
     }
-    s
+    Ok(s)
+}
+
+/// Resolve `text` to glyph ids through the embedded font's `cmap`, recording each in `used`.
+///
+/// A character the face does not have resolves to glyph 0 (`.notdef`), which renders as a blank box
+/// and whose `/ToUnicode` entry would describe whichever character reached `.notdef` first — silent,
+/// wrong, and undetectable by a check that only asks whether a CMap exists. So it is refused.
+fn shape(
+    text: &str,
+    font: &SealFont<'_>,
+    used: &mut BTreeMap<u16, u32>,
+) -> Result<Vec<u16>, PadesError> {
+    let mut glyphs = Vec::with_capacity(text.len());
+    for ch in text.chars() {
+        // Line breaks have no glyph and no meaning inside a single seal line.
+        if ch == '\n' || ch == '\r' {
+            continue;
+        }
+        let gid = font.program.glyph_id(ch)?;
+        if gid == 0 {
+            return Err(PadesError::MalformedStructure(format!(
+                "seal text contains {ch:?} (U+{:04X}), which the document's embedded font \
+                 programme has no glyph for — drawing it would show a blank box and corrupt the \
+                 seal's extractable text",
+                ch as u32
+            )));
+        }
+        // First scalar wins, deterministically: two characters sharing a glyph (a no-break space
+        // and a space, say) would both round-trip, and picking one keeps the CMap single-valued.
+        used.entry(gid).or_insert(ch as u32);
+        glyphs.push(gid);
+    }
+    Ok(glyphs)
+}
+
+/// Build the `/ToUnicode` CMap for the seal's glyphs, in the `bfchar` form a checker can compare
+/// against the embedded font's own `cmap`.
+fn to_unicode_cmap(used: &BTreeMap<u16, u32>) -> Vec<u8> {
+    let mut body = String::from(
+        "/CIDInit /ProcSet findresource begin\n\
+12 dict begin\n\
+begincmap\n\
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n\
+/CMapName /Adobe-Identity-UCS def\n\
+/CMapType 2 def\n\
+1 begincodespacerange\n\
+<0000> <FFFF>\n\
+endcodespacerange\n",
+    );
+    let entries: Vec<(u16, u32)> = used.iter().map(|(&gid, &scalar)| (gid, scalar)).collect();
+    for chunk in entries.chunks(100) {
+        body.push_str(&format!("{} beginbfchar\n", chunk.len()));
+        for &(gid, scalar) in chunk {
+            body.push_str(&format!("<{gid:04X}> <{}>\n", utf16be_hex(scalar)));
+        }
+        body.push_str("endbfchar\n");
+    }
+    body.push_str(
+        "endcmap\n\
+CMapName currentdict /CMap defineresource pop\n\
+end\n\
+end",
+    );
+    body.into_bytes()
+}
+
+/// Encode a Unicode scalar as big-endian UTF-16 hex (a surrogate pair outside the BMP).
+fn utf16be_hex(scalar: u32) -> String {
+    match char::from_u32(scalar) {
+        Some(c) => {
+            let mut buf = [0u16; 2];
+            c.encode_utf16(&mut buf)
+                .iter()
+                .map(|unit| format!("{unit:04X}"))
+                .collect()
+        }
+        None => "FFFD".to_string(),
+    }
 }
 
 // --- Image seals ---------------------------------------------------------------------------------
@@ -564,49 +765,6 @@ fn stream_object_body(dict: &Dictionary, content: &[u8]) -> Result<Vec<u8>, Pade
     out.extend_from_slice(content);
     out.extend_from_slice(b"\nendstream");
     Ok(out)
-}
-
-/// Append a PDF literal string `(...)`, escaping `(`, `)`, `\`, and bare EOL bytes.
-fn push_pdf_literal(bytes: &[u8], out: &mut Vec<u8>) {
-    out.push(b'(');
-    for &b in bytes {
-        match b {
-            b'(' | b')' | b'\\' => {
-                out.push(b'\\');
-                out.push(b);
-            }
-            b'\n' => out.extend_from_slice(b"\\n"),
-            b'\r' => out.extend_from_slice(b"\\r"),
-            _ => out.push(b),
-        }
-    }
-    out.push(b')');
-}
-
-/// Encode a string as WinAnsiEncoding bytes. ASCII and Latin-1 (U+00A0..U+00FF) map to their code
-/// point (WinAnsi agrees with Latin-1 there, covering Portuguese accented letters); a few common
-/// punctuation characters are mapped explicitly; anything else becomes `?`.
-fn winansi(s: &str) -> Vec<u8> {
-    s.chars()
-        .map(|c| {
-            let cp = c as u32;
-            if cp < 0x80 || (0xA0..=0xFF).contains(&cp) {
-                cp as u8
-            } else {
-                match c {
-                    '\u{2018}' => 0x91, // ‘
-                    '\u{2019}' => 0x92, // ’
-                    '\u{201C}' => 0x93, // “
-                    '\u{201D}' => 0x94, // ”
-                    '\u{2022}' => 0x95, // •
-                    '\u{2013}' => 0x96, // – en dash
-                    '\u{2014}' => 0x97, // — em dash
-                    '\u{20AC}' => 0x80, // €
-                    _ => b'?',
-                }
-            }
-        })
-        .collect()
 }
 
 /// Format a coordinate deterministically (fixed 2 decimals, no negative zero) — copied from the
