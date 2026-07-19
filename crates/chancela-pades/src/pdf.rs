@@ -55,6 +55,71 @@ pub(crate) fn last_startxref(pdf: &[u8]) -> Option<usize> {
         .ok()
 }
 
+/// Read the existing file identifier from the newest trailer that carries one, as the raw
+/// `[<…> <…>]` array bytes ready to splice into a new trailer.
+///
+/// An incremental update's trailer must repeat the original `/ID` (PDF 32000-1 §7.5.5), and
+/// ISO 19005-2 §6.1.3 requires the *file* trailer dictionary — the last one — to have it at all.
+/// Omitting it silently drops a signed PDF/A file out of conformance, which nothing downstream
+/// notices because signature validation does not care about `/ID`.
+///
+/// The chain is walked newest-first so that appending to an already-appended file (signature, then
+/// DSS, then archive timestamp) keeps propagating the same identifier.
+pub(crate) fn trailer_id_array(pdf: &[u8]) -> Option<Vec<u8>> {
+    let mut offset = last_startxref(pdf)?;
+    let mut seen = Vec::new();
+
+    loop {
+        if seen.contains(&offset) || seen.len() > 64 {
+            return None;
+        }
+        seen.push(offset);
+
+        let trailer_at = find(pdf.get(offset..)?, b"trailer")? + offset;
+        // Bound the search to this trailer: the next `startxref` closes it.
+        let end = find(pdf.get(trailer_at..)?, b"startxref")
+            .map(|at| trailer_at + at)
+            .unwrap_or(pdf.len());
+        let trailer = pdf.get(trailer_at..end)?;
+
+        if let Some(id) = id_array(trailer) {
+            return Some(id);
+        }
+        offset = key_integer(trailer, b"/Prev")?;
+    }
+}
+
+/// Extract the `[…]` following `/ID` in a trailer, verbatim.
+fn id_array(trailer: &[u8]) -> Option<Vec<u8>> {
+    let at = find(trailer, b"/ID")?;
+    let mut i = at + b"/ID".len();
+    while i < trailer.len() && trailer[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if trailer.get(i) != Some(&b'[') {
+        return None;
+    }
+    let close = trailer[i..].iter().position(|&b| b == b']')? + i;
+    Some(trailer[i..=close].to_vec())
+}
+
+/// Read the integer value of `key` in a trailer dictionary.
+fn key_integer(trailer: &[u8], key: &[u8]) -> Option<usize> {
+    let at = find(trailer, key)?;
+    let mut i = at + key.len();
+    while i < trailer.len() && trailer[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let start = i;
+    while i < trailer.len() && trailer[i].is_ascii_digit() {
+        i += 1;
+    }
+    std::str::from_utf8(trailer.get(start..i)?)
+        .ok()?
+        .parse()
+        .ok()
+}
+
 /// Compute the total encoded length (header + content) of the DER TLV at the start of `bytes`,
 /// so a CMS object can be trimmed away from trailing `/Contents` zero-padding.
 ///

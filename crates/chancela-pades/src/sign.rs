@@ -405,9 +405,15 @@ fn prepare_incremental(
     // Trailer + startxref. /Size is one past the highest object number, which the appearance
     // objects may push beyond sig_num.
     let size = objects.iter().map(|(id, _)| *id).max().unwrap_or(sig_num) + 1;
+    // Repeat the original /ID. Without it the *file* trailer dictionary of the signed document has
+    // no identifier, which ISO 19005-2 6.1.3 requires — so an unsigned PDF/A file would silently
+    // stop being one the moment it was signed.
+    let id = pdf::trailer_id_array(pdf_bytes)
+        .map(|array| format!(" /ID {}", String::from_utf8_lossy(&array)))
+        .unwrap_or_default();
     section.extend_from_slice(
         format!(
-            "trailer\n<< /Size {size} /Root {} 0 R /Prev {prev_startxref} >>\n",
+            "trailer\n<< /Size {size} /Root {} 0 R /Prev {prev_startxref}{id} >>\n",
             root_id.0
         )
         .as_bytes(),

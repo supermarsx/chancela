@@ -1,24 +1,47 @@
 //! Structural PDF/A-2u + PDF/UA-1 self-verifier — the invariants we can assert without a native
 //! validator.
 //!
-//! Run on the writer's own output (§5.1 of the conformance cheatsheet). It mirrors what
-//! `chancela-pades` and veraPDF care about: a classic xref table, a binary header marker, `/Root` +
-//! `/ID` with no `/Encrypt`, an XMP `/Metadata` stream (uncompressed, carrying the PDF/A markers), a
-//! GTS_PDFA1 OutputIntent with an N=3 profile, and every text font embedded with a `/ToUnicode`
-//! CMap. When the XMP additionally carries the PDF/UA-1 identifier (`pdfuaid:part`), this verifier
-//! becomes the **enforced UA gate**: it asserts the identifier is `1`, that a well-formed
-//! `pdfaExtension` schema description accompanies it, and that the tagged heading hierarchy does not
-//! skip a level — on top of the always-on tagged-structure, marked-content, `/Lang` and
-//! `/DisplayDocTitle` checks. Failures surface as [`DocError::Conformance`].
+//! # What this certifies, and over what population
 //!
-//! The UA claim is scoped to the **pre-signature** document. `chancela-pades` later injects an
-//! invisible signature widget that is out of the UA claim (see the wp26-pdfua plan, G14).
+//! This is **not** a general ISO 19005 validator and must never be described as one. It is a
+//! validator for *files produced by this writer*, and it earns that narrower claim two ways:
 //!
-//! # External verification (opt-in, NOT CI-gated)
+//! * **(A) checks** — rules implemented directly: the cross-reference chain, the XMP identifiers,
+//!   the ICC profile's own bytes, `/ToUnicode` correctness glyph by glyph, the tagged-structure
+//!   topology, annotation flags.
+//! * **(B) invariants** — rules discharged by proving the writer *cannot emit* the construct the
+//!   rule constrains. A page whose `/Resources` holds nothing but `/Font`, and whose content stream
+//!   draws only from a closed operator list, cannot contain a Separation space, a soft mask, a
+//!   transparency group or an inline image, so the entire ISO corpus governing them is vacuous for
+//!   this file. Removing a failure mode is stronger than detecting it — but it only holds while the
+//!   invariant does, which is why the invariants are asserted on every document rather than assumed.
 //!
-//! This Rust self-check is the automated gate (no native binary in the distroless ethos). For a
-//! full ISO-19005-2 / ISO-14289-1 conformance pass, run veraPDF against a generated file out of
-//! band:
+//! Applied to an arbitrary third-party PDF this module will reject conformant files, because
+//! several checks compare against *our* bounded shape (the bundled ICC bytes, the writer's
+//! structure roles, the closed operator list). That is the intended trade.
+//!
+//! # Reach
+//!
+//! [`verify`] runs inside `pdfa::write` on the bytes it is about to return, so on its own it can
+//! only ever see the **pre-signature** document. [`verify_signed`] and [`verify_any`] extend the
+//! same rules to a file that `chancela-pades` has appended an incremental update to — the bytes
+//! actually shipped — including the signature widget, the `/AcroForm`, any visible seal's
+//! appearance stream, and the `/Prev`-chained cross-reference sections that only a signed file has.
+//!
+//! # Residual gaps
+//!
+//! Rules neither implemented nor discharged by an invariant, i.e. what an external validator still
+//! buys: full ISO 14289 reading-order and alternate-text semantics beyond the writer's bounded
+//! topology; `glyf` outline internals (tables are bounds-checked and required, individual glyph
+//! programs are not decoded); and XMP schema validation beyond the identifiers and `dc:` fields
+//! checked here.
+//!
+//! PDF/UA-1 is a **separate claim** and is answered separately by [`ua_claim`], not folded into
+//! [`verify`]'s pass/fail — see [`UaClaim`] for why.
+//!
+//! Failures surface as [`DocError::Conformance`].
+//!
+//! # External verification
 //!
 //! ```text
 //! verapdf --flavour 2u path/to/doc.pdf          # exit 0 == PDF/A-2U conformant
@@ -29,11 +52,32 @@
 //! Flavour codes: `2u` = PDF/A-2U, `2a` = 2A, `2b` = 2B, `ua1` = PDF/UA-1. Verify the flag spelling
 //! (`--flavour`/`-f`) against the installed veraPDF build; older releases differ.
 
+mod annots;
+mod glyphs;
+mod icc;
+mod render;
+mod revisions;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use crate::DocError;
+
+/// Which revision of a Chancela document the bytes under test represent.
+///
+/// The distinction is structural, not cosmetic: signing appends an incremental update, so a signed
+/// file has a `/Prev`-chained second cross-reference section, an `/AcroForm` the unsigned file must
+/// not have, and a widget annotation on a page that otherwise carries none. Checking a signed file
+/// against the unsigned profile fails on all three; checking an unsigned file against the signed
+/// profile lets a missing signature pass unnoticed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Profile {
+    /// Bytes exactly as `pdfa::write` returns them: one revision, no annotations, no `/AcroForm`.
+    Unsigned,
+    /// Bytes after `chancela-pades` appended one or more signature revisions.
+    Signed,
+}
 
 fn find(hay: &[u8], needle: &[u8]) -> bool {
     find_slice(hay, needle).is_some()
@@ -59,8 +103,59 @@ fn last_startxref(pdf: &[u8]) -> Option<usize> {
     std::str::from_utf8(&pdf[start..i]).ok()?.parse().ok()
 }
 
-/// Assert the PDF/A-2u structural invariants on freshly produced `bytes`.
+/// Assert the PDF/A-2u structural invariants on freshly produced, **pre-signature** `bytes`.
+///
+/// This is the gate `pdfa::write` runs on its own output. For a file that has been signed, use
+/// [`verify_signed`]; for bytes of unknown provenance (read back from disk or storage), use
+/// [`verify_any`].
 pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
+    verify_profile(bytes, Profile::Unsigned)
+}
+
+/// Assert the same invariants on a file `chancela-pades` has signed.
+///
+/// Everything [`verify`] checks still applies — the signature is an *incremental update*, so the
+/// original revision's bytes survive verbatim underneath it — plus the rules that only have
+/// something to bite on once a signature exists: a well-formed `/Prev` chain of classic
+/// cross-reference sections, `/ID` carried into the newest trailer, an `/AcroForm` whose fields
+/// match the widgets actually attached to pages, and a widget whose flags, `/Rect` and appearance
+/// stream satisfy the annotation rules.
+///
+/// This closes the reach gap: the file Chancela ships is the signed one, and nothing validated it
+/// before.
+pub fn verify_signed(bytes: &[u8]) -> Result<(), DocError> {
+    verify_profile(bytes, Profile::Signed)
+}
+
+/// Verify `bytes` under whichever profile they turn out to be, for files read back from disk.
+///
+/// The discriminator is the catalog's `/AcroForm`: `pdfa::write` never emits one and
+/// `chancela-pades` always adds one, so the two populations are disjoint by construction rather
+/// than by heuristic.
+pub fn verify_any(bytes: &[u8]) -> Result<(), DocError> {
+    let signed = Document::load_mem(bytes)
+        .ok()
+        .and_then(|doc| {
+            let root = doc
+                .trailer
+                .get(b"Root")
+                .and_then(Object::as_reference)
+                .ok()?;
+            Some(doc.get_object(root).ok()?.as_dict().ok()?.has(b"AcroForm"))
+        })
+        .unwrap_or(false);
+    verify_profile(
+        bytes,
+        if signed {
+            Profile::Signed
+        } else {
+            Profile::Unsigned
+        },
+    )
+}
+
+/// Assert the PDF/A-2u structural invariants on `bytes` under `profile`.
+pub fn verify_profile(bytes: &[u8], profile: Profile) -> Result<(), DocError> {
     let fail = |m: String| DocError::Conformance(m);
 
     // --- Header + binary marker (§2.1) -----------------------------------------------------------
@@ -75,18 +170,11 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
         ));
     }
 
-    // --- Classic xref table (C1) -----------------------------------------------------------------
+    // --- Classic xref table, every revision (C1) -------------------------------------------------
     if !find(bytes, b"\nxref\n") {
         return Err(fail("no classic `xref` table found (xref stream?)".into()));
     }
-    match last_startxref(bytes) {
-        Some(off) if bytes.get(off..off + 4) == Some(b"xref") => {}
-        _ => {
-            return Err(fail(
-                "startxref does not resolve to a classic `xref` table".into(),
-            ));
-        }
-    }
+    verify_revisions(bytes, profile, &fail)?;
 
     // --- No LZW anywhere (§1.6) ------------------------------------------------------------------
     if find(bytes, b"/LZWDecode") {
@@ -97,7 +185,9 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
     let doc = Document::load_mem(bytes)
         .map_err(|e| fail(format!("output does not parse via lopdf: {e}")))?;
 
-    // Trailer: /Root, /ID (two equal 16-byte strings), no /Encrypt.
+    // Trailer: /Root, no /Encrypt. `/ID` is checked against the raw trailer bytes in
+    // `verify_revisions` — lopdf merges the revision chain and drops `/ID` when the newest trailer
+    // omits it, so `doc.trailer` cannot answer the question for a signed file.
     if doc.trailer.has(b"Encrypt") {
         return Err(fail(
             "trailer carries /Encrypt (encryption is prohibited)".into(),
@@ -108,30 +198,25 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
         .get(b"Root")
         .and_then(Object::as_reference)
         .map_err(|_| fail("trailer has no /Root reference".into()))?;
-    match doc.trailer.get(b"ID").and_then(Object::as_array) {
-        Ok(a) if a.len() == 2 => {
-            let s0 = a[0]
-                .as_str()
-                .map_err(|_| fail("/ID[0] not a string".into()))?;
-            let s1 = a[1]
-                .as_str()
-                .map_err(|_| fail("/ID[1] not a string".into()))?;
-            if s0.len() != 16 || s1 != s0 {
-                return Err(fail("/ID must be two equal 16-byte strings".into()));
-            }
-        }
-        _ => return Err(fail("trailer /ID missing or not a 2-element array".into())),
-    }
 
     // Catalog.
     let catalog = doc
         .get_object(root_id)
         .and_then(Object::as_dict)
         .map_err(|_| fail("catalog object missing".into()))?;
-    if catalog.has(b"AcroForm") {
-        return Err(fail(
-            "catalog has /AcroForm (must be absent; pades adds it)".into(),
-        ));
+    match (profile, catalog.has(b"AcroForm")) {
+        (Profile::Unsigned, true) => {
+            return Err(fail(
+                "catalog has /AcroForm (must be absent; pades adds it)".into(),
+            ));
+        }
+        (Profile::Signed, false) => {
+            return Err(fail(
+                "signed profile: catalog has no /AcroForm, so this file carries no signature"
+                    .into(),
+            ));
+        }
+        _ => {}
     }
     if catalog.has(b"AA") {
         return Err(fail(
@@ -151,7 +236,12 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
     let lang =
         std::str::from_utf8(lang).map_err(|_| fail("catalog /Lang is not valid UTF-8".into()))?;
     verify_document_title_preference(catalog, &fail)?;
-    verify_tagged_structure(&doc, catalog, &fail)?;
+    // Collected once and threaded through: the tagged-structure, colour/transparency and glyph
+    // checks all reason about the same page content, and re-decoding it per check would let them
+    // disagree about what the file says.
+    let contents = collect_page_contents(&doc, &fail)?;
+    verify_tagged_structure(&doc, catalog, &contents, &fail)?;
+    render::verify_pages(&doc, &contents).map_err(fail)?;
     let oi_arr = catalog
         .get(b"OutputIntents")
         .and_then(Object::as_array)
@@ -212,26 +302,210 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
         .get_object(icc_ref)
         .and_then(Object::as_stream)
         .map_err(|_| fail("/DestOutputProfile is not a stream".into()))?;
-    if icc.dict.get(b"N").and_then(Object::as_i64).ok() != Some(3) {
-        return Err(fail("ICC profile stream /N is not 3".into()));
+    let declared_n = icc
+        .dict
+        .get(b"N")
+        .and_then(Object::as_i64)
+        .map_err(|_| fail("ICC profile stream has no /N component count".into()))?;
+    if declared_n != 3 {
+        return Err(fail(format!(
+            "ICC profile stream /N is {declared_n}, not 3"
+        )));
+    }
+    // The profile's own bytes, not merely its declared component count.
+    icc::verify(&icc.content, declared_n).map_err(fail)?;
+
+    // Every font on every page: embedded program + /ToUnicode, then the "u" itself — that the CMap
+    // maps every shown glyph, and maps it to what the embedded font agrees it is.
+    verify_fonts(&doc, &contents, &fail)?;
+
+    // Annotations. Vacuous before signing; the whole signature surface after.
+    match profile {
+        Profile::Unsigned => annots::verify_none(&doc).map_err(fail)?,
+        Profile::Signed => annots::verify_signature_widgets(&doc, catalog).map_err(fail)?,
     }
 
-    // Every font on every page: embedded program + /ToUnicode.
-    verify_fonts(&doc, &fail)?;
+    Ok(())
+}
 
-    // First page /Annots (C3): absent or inline array.
-    if let Some(first_page) = doc.page_iter().next() {
-        let page = doc
-            .get_object(first_page)
-            .and_then(Object::as_dict)
-            .map_err(|_| fail("first page object missing".into()))?;
-        match page.get(b"Annots") {
-            Ok(Object::Array(_)) | Err(_) => {}
-            Ok(_) => return Err(fail("first page /Annots is not an inline array".into())),
+/// Whether a file's PDF/UA-1 claim, if it makes one, is one the file actually satisfies.
+///
+/// PDF/A-2U and PDF/UA-1 are separate conformance claims, and a Chancela document can hold the
+/// first without the second. Signing is exactly where they part company: the incremental update
+/// leaves every PDF/A property intact but adds a widget annotation, and ISO 14289-1 §7.18.1
+/// requires visible annotations to appear in the structure tree. Folding that into [`verify`]'s
+/// pass/fail would make a file that *is* archivable look like it is not, and reporting it as a
+/// footnote would let a false accessibility claim ship. So it is its own answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UaClaim {
+    /// The XMP carries no `pdfuaid` identifier; nothing is claimed and nothing is owed.
+    NotClaimed,
+    /// The file claims PDF/UA-1 and satisfies the invariants this checker can assert.
+    Claimed,
+    /// The file claims PDF/UA-1 but demonstrably does not satisfy it.
+    Falsified(String),
+}
+
+/// Report the PDF/UA-1 claim status of `bytes`.
+///
+/// See [`UaClaim`]. This runs the annotation-tagging rule that [`verify_signed`] deliberately does
+/// not, so a caller can distinguish "not archivable" from "archivable, but claiming an
+/// accessibility conformance it lacks" — two problems with different owners and different fixes.
+pub fn ua_claim(bytes: &[u8]) -> Result<UaClaim, DocError> {
+    let fail = |m: String| DocError::Conformance(m);
+    let doc = Document::load_mem(bytes)
+        .map_err(|e| fail(format!("input does not parse via lopdf: {e}")))?;
+    let root_id = doc
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .map_err(|_| fail("trailer has no /Root reference".into()))?;
+    let catalog = doc
+        .get_object(root_id)
+        .and_then(Object::as_dict)
+        .map_err(|_| fail("catalog object missing".into()))?;
+    let meta_ref = catalog
+        .get(b"Metadata")
+        .and_then(Object::as_reference)
+        .map_err(|_| fail("catalog /Metadata is not an indirect reference".into()))?;
+    let xmp = doc
+        .get_object(meta_ref)
+        .and_then(Object::as_stream)
+        .map_err(|_| fail("/Metadata is not a stream".into()))?;
+
+    if !find(&xmp.content, b"<pdfuaid:part>1</pdfuaid:part>") {
+        return Ok(UaClaim::NotClaimed);
+    }
+    Ok(match untagged_annotation(&doc) {
+        Some(reason) => UaClaim::Falsified(reason),
+        None => UaClaim::Claimed,
+    })
+}
+
+/// Find a visible annotation that is absent from the structure tree, if any.
+///
+/// A structure element reaches an annotation through an `/OBJR`, and the annotation points back
+/// with `/StructParent`; without the latter no `/ParentTree` entry can exist, so the absence of
+/// `/StructParent` is sufficient to show the annotation is untagged.
+fn untagged_annotation(doc: &Document) -> Option<String> {
+    for (page_index, page_id) in doc.page_iter().enumerate() {
+        let page = doc.get_object(page_id).and_then(Object::as_dict).ok()?;
+        let Ok(Object::Array(annots)) = page.get(b"Annots") else {
+            continue;
+        };
+        for annot in annots {
+            let dict = match annot {
+                Object::Reference(id) => doc.get_object(*id).and_then(Object::as_dict).ok(),
+                Object::Dictionary(dict) => Some(dict),
+                _ => None,
+            };
+            if !dict.is_some_and(|dict| dict.has(b"StructParent")) {
+                return Some(format!(
+                    "the XMP claims PDF/UA-1, but the page {page_index} signature widget has no \
+                     /StructParent and so is absent from the structure tree (ISO 14289-1 7.18.1). \
+                     Either tag the widget in the signature revision, or stop claiming PDF/UA-1 \
+                     once the file is signed — as it stands the claim is false."
+                ));
+            }
+        }
+    }
+    None
+}
+
+/// Walk the cross-reference chain and assert every revision's shape.
+///
+/// `/ID` is read here rather than from `lopdf`'s merged trailer for the reason given in
+/// [`revisions`]: the merged view silently loses it. ISO 19005-2 §6.1.3 requires the **file
+/// trailer dictionary** — the last one — to carry `/ID`, and PDF 32000-1 §7.5.5 requires an
+/// incremental update's trailer to repeat the original's first element, which is also what lets a
+/// verifier tie the revisions of a signed document together.
+fn verify_revisions(
+    bytes: &[u8],
+    profile: Profile,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let revisions = revisions::chain(bytes).map_err(fail)?;
+
+    match (profile, revisions.len()) {
+        (Profile::Unsigned, 1) => {}
+        (Profile::Unsigned, n) => {
+            return Err(fail(format!(
+                "unsigned profile: file has {n} cross-reference revisions, expected exactly 1 \
+                 (was this file already signed or otherwise appended to?)"
+            )));
+        }
+        (Profile::Signed, 0 | 1) => {
+            return Err(fail(
+                "signed profile: file has a single cross-reference revision, so no incremental \
+                 signature update was ever appended"
+                    .into(),
+            ));
+        }
+        (Profile::Signed, _) => {}
+    }
+
+    let mut expected_id: Option<(Vec<u8>, Vec<u8>)> = None;
+    for (index, revision) in revisions.iter().enumerate() {
+        if revision.has_key(b"/Encrypt") {
+            return Err(fail(format!(
+                "revision at offset {} carries /Encrypt (encryption is prohibited)",
+                revision.xref_offset
+            )));
+        }
+        if revision.has_key(b"/XRefStm") {
+            return Err(fail(format!(
+                "revision at offset {} is a hybrid-reference file (/XRefStm)",
+                revision.xref_offset
+            )));
+        }
+        let id = revision.id_pair().ok_or_else(|| {
+            fail(format!(
+                "revision at offset {} has no well-formed two-element hex /ID in its trailer \
+                 (ISO 19005-2 6.1.3 requires it, and an incremental update must repeat it)",
+                revision.xref_offset
+            ))
+        })?;
+        if id.0.len() != 16 || id.1 != id.0 {
+            return Err(fail(format!(
+                "revision at offset {} /ID is not two equal 16-byte strings",
+                revision.xref_offset
+            )));
+        }
+        match &expected_id {
+            None => expected_id = Some(id),
+            Some(first) if first.0 == id.0 => {}
+            Some(first) => {
+                return Err(fail(format!(
+                    "revision {index} /ID[0] {} does not match the newest revision's {}",
+                    hex(&id.0),
+                    hex(&first.0)
+                )));
+            }
         }
     }
 
     Ok(())
+}
+
+/// Render bytes as lowercase hex, for `/ID` mismatch diagnostics.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Decode every page's content stream once.
+fn collect_page_contents(
+    doc: &Document,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<Vec<(usize, Vec<u8>)>, DocError> {
+    let mut contents = Vec::new();
+    for (page_index, page_id) in doc.page_iter().enumerate() {
+        let page = doc
+            .get_object(page_id)
+            .and_then(Object::as_dict)
+            .map_err(|_| fail(format!("page {page_index} object missing")))?;
+        contents.push((page_index, page_content_bytes(doc, page, page_index, fail)?));
+    }
+    Ok(contents)
 }
 
 fn verify_document_title_preference(
@@ -286,7 +560,13 @@ fn verify_xmp_accessibility_metadata(
     Ok(())
 }
 
-fn verify_fonts(doc: &Document, fail: &dyn Fn(String) -> DocError) -> Result<(), DocError> {
+fn verify_fonts(
+    doc: &Document,
+    contents: &[(usize, Vec<u8>)],
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let mut checked_glyphs = false;
+
     for page_id in doc.page_iter() {
         let fonts = match doc.get_page_fonts(page_id) {
             Ok(f) => f,
@@ -294,48 +574,124 @@ fn verify_fonts(doc: &Document, fail: &dyn Fn(String) -> DocError) -> Result<(),
         };
         for (_name, font) in fonts {
             let subtype = font.get(b"Subtype").and_then(Object::as_name).ok();
-            if !font.has(b"ToUnicode") {
-                return Err(fail(
-                    "a text font has no /ToUnicode CMap (breaks the \"u\")".into(),
-                ));
+            if subtype != Some(b"Type0") {
+                return Err(fail(format!(
+                    "a page font has /Subtype /{} — the writer emits a single Type0 / Identity-H \
+                     composite font, so any simple font came from elsewhere",
+                    subtype
+                        .map(|s| String::from_utf8_lossy(s).to_string())
+                        .unwrap_or_else(|| "(none)".into())
+                )));
             }
-            // Locate the FontDescriptor (directly, or via the descendant for Type0).
-            let descriptor = if subtype == Some(b"Type0") {
-                let desc = font
-                    .get(b"DescendantFonts")
-                    .and_then(Object::as_array)
-                    .ok()
-                    .and_then(|a| a.first().cloned());
-                let cid = match desc {
-                    Some(Object::Reference(r)) => doc.get_object(r).and_then(Object::as_dict).ok(),
-                    Some(Object::Dictionary(ref d)) => Some(d),
+            let to_unicode_ref = font
+                .get(b"ToUnicode")
+                .and_then(Object::as_reference)
+                .map_err(|_| {
+                    fail("a text font has no /ToUnicode CMap (breaks the \"u\")".into())
+                })?;
+            let to_unicode = doc
+                .get_object(to_unicode_ref)
+                .and_then(Object::as_stream)
+                .map_err(|_| fail("/ToUnicode does not resolve to a stream".into()))?;
+
+            let cid = font
+                .get(b"DescendantFonts")
+                .and_then(Object::as_array)
+                .ok()
+                .and_then(|a| a.first())
+                .and_then(|first| match first {
+                    Object::Reference(r) => doc.get_object(*r).and_then(Object::as_dict).ok(),
+                    Object::Dictionary(d) => Some(d),
                     _ => None,
-                };
-                cid.and_then(|c| c.get(b"FontDescriptor").ok())
-                    .and_then(|o| o.as_reference().ok())
-                    .and_then(|r| doc.get_object(r).and_then(Object::as_dict).ok())
-            } else {
-                font.get(b"FontDescriptor")
-                    .and_then(Object::as_reference)
-                    .ok()
-                    .and_then(|r| doc.get_object(r).and_then(Object::as_dict).ok())
-            };
-            let descriptor = descriptor
+                })
+                .ok_or_else(|| fail("Type0 font has no resolvable descendant CIDFont".into()))?;
+            let descriptor = cid
+                .get(b"FontDescriptor")
+                .and_then(Object::as_reference)
+                .ok()
+                .and_then(|r| doc.get_object(r).and_then(Object::as_dict).ok())
                 .ok_or_else(|| fail("a text font has no resolvable /FontDescriptor".into()))?;
-            let embedded = descriptor.has(b"FontFile2") || descriptor.has(b"FontFile3");
-            if !embedded {
-                return Err(fail(
-                    "a text font is not embedded (no /FontFile2 or /FontFile3)".into(),
-                ));
-            }
+            let program_ref = descriptor
+                .get(b"FontFile2")
+                .and_then(Object::as_reference)
+                .map_err(|_| {
+                    fail("a text font is not embedded as a /FontFile2 TrueType program".into())
+                })?;
+            let program = doc
+                .get_object(program_ref)
+                .and_then(Object::as_stream)
+                .map_err(|_| fail("/FontFile2 does not resolve to a stream".into()))?;
+
+            let widths = parse_widths(cid, &fail)?;
+            glyphs::verify(
+                &program.content,
+                program.dict.get(b"Length1").and_then(Object::as_i64).ok(),
+                &to_unicode.content,
+                &widths,
+                contents,
+            )
+            .map_err(&fail)?;
+            checked_glyphs = true;
         }
     }
+
+    if !checked_glyphs {
+        return Err(fail(
+            "no page declares a font, so no text in this file is extractable".into(),
+        ));
+    }
     Ok(())
+}
+
+/// Parse the CIDFont `/W` array in the `c [w]` form the writer emits, into glyph → width.
+///
+/// The `c_first c_last w` range form is rejected rather than expanded: the writer never emits it,
+/// so encountering one means the widths did not come from this writer and the agreement between
+/// `/W` and `hmtx` that [`glyphs::verify`] checks would be asserting the wrong thing.
+fn parse_widths(
+    cid: &Dictionary,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<BTreeMap<u16, i64>, DocError> {
+    let array = cid
+        .get(b"W")
+        .and_then(Object::as_array)
+        .map_err(|_| fail("descendant CIDFont has no /W widths array".into()))?;
+    let mut widths = BTreeMap::new();
+    let mut index = 0usize;
+
+    while index < array.len() {
+        let start = array[index]
+            .as_i64()
+            .map_err(|_| fail("/W entry is not an integer CID".into()))?;
+        let list = array
+            .get(index + 1)
+            .and_then(|entry| entry.as_array().ok())
+            .ok_or_else(|| {
+                fail(format!(
+                    "/W entry for CID {start} is not followed by a width array — the range form \
+                     `c_first c_last w` is outside the writer's profile"
+                ))
+            })?;
+        for (offset, width) in list.iter().enumerate() {
+            let cid_value = u16::try_from(start + offset as i64)
+                .map_err(|_| fail(format!("/W CID {start} is out of range")))?;
+            let width = width
+                .as_i64()
+                .map_err(|_| fail(format!("/W width for CID {cid_value} is not an integer")))?;
+            if widths.insert(cid_value, width).is_some() {
+                return Err(fail(format!("/W declares CID {cid_value} more than once")));
+            }
+        }
+        index += 2;
+    }
+
+    Ok(widths)
 }
 
 fn verify_tagged_structure(
     doc: &Document,
     catalog: &Dictionary,
+    contents: &[(usize, Vec<u8>)],
     fail: &dyn Fn(String) -> DocError,
 ) -> Result<(), DocError> {
     let mark_info = catalog
@@ -433,9 +789,13 @@ fn verify_tagged_structure(
                 "/ParentTree has no array for page {page_index} /StructParents {struct_parents}"
             ))
         })?;
-        let content = page_content_bytes(doc, page, page_index, fail)?;
-        verify_marked_content_scopes(&content, page_index, fail)?;
-        let mcids = content_mcids(&content, page_index, fail)?;
+        let content = &contents
+            .iter()
+            .find(|(index, _)| *index == page_index)
+            .ok_or_else(|| fail(format!("page {page_index} content was not collected")))?
+            .1;
+        verify_marked_content_scopes(content, page_index, fail)?;
+        let mcids = content_mcids(content, page_index, fail)?;
         let expected_parent_count = mcids
             .iter()
             .next_back()

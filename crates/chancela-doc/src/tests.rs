@@ -1690,3 +1690,177 @@ fn pdf_ua_is_claimed_for_conforming_document() {
         Ok(Object::Boolean(true))
     ));
 }
+
+// --- The (A)/(B) checks added by t12-e1: ICC, glyph-level /ToUnicode, colour and transparency ----
+//
+// Every one of these is mutation-verified with an **equal-length** mutant. That matters twice over:
+// a length-changing edit invalidates every xref offset after it, so the file fails with a generic
+// "object missing" that proves nothing about the rule under test; and a check that has never been
+// observed to fail is indistinguishable from a check that cannot fail.
+
+/// Locate `needle` and return its offset, panicking with a readable message when absent.
+fn offset_of(bytes: &[u8], needle: &[u8]) -> usize {
+    bytes
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .unwrap_or_else(|| panic!("missing byte pattern: {}", String::from_utf8_lossy(needle)))
+}
+
+/// Change one hex digit in place, wrapping `f` to `0`, so the mutant stays the same length *and*
+/// stays syntactically valid hex — the edit must be caught by the rule, not by the parser.
+fn bump_hex_digit(bytes: &mut [u8], at: usize) {
+    bytes[at] = match bytes[at] {
+        b'f' | b'F' => b'0',
+        b'9' => b'A',
+        digit => digit + 1,
+    };
+}
+
+#[test]
+fn selfcheck_rejects_a_structurally_broken_icc_profile() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // `acsp` at header offset 36 is the ICC magic. Without it the bytes are not a profile at all,
+    // and the old `/N == 3` check would have waved them through regardless.
+    replace_once(&mut bytes, b"acsp", b"acsq");
+
+    let err = selfcheck::verify(&bytes).expect_err("a non-ICC profile must fail");
+    assert!(
+        err.to_string().contains("acsp"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_a_tampered_icc_profile() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // A byte in the profile's tag *data*, past the tag table, so the structural checks all still
+    // pass: this is a well-formed ICC profile that is simply no longer the one we ship, and the
+    // colour of every page is no longer the colour we promised.
+    let profile_start = offset_of(&bytes, b"acsp") - 36;
+    bytes[profile_start + 400] ^= 0xff;
+
+    let err = selfcheck::verify(&bytes).expect_err("a tampered profile must fail");
+    assert!(
+        err.to_string().contains("not the shipped sRGB profile"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_a_tounicode_entry_the_font_disagrees_with() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // Repoint the first bfchar mapping at a different Unicode scalar. The CMap stays well-formed
+    // and still has an entry for every glyph shown — only its *content* is now a lie, which is
+    // precisely what a presence check cannot see.
+    let first_entry = offset_of(&bytes, b"beginbfchar\n") + b"beginbfchar\n".len();
+    let target = offset_of(&bytes[first_entry..], b"> <") + first_entry + 3;
+    bump_hex_digit(&mut bytes, target + 3);
+
+    let err = selfcheck::verify(&bytes).expect_err("a wrong /ToUnicode target must fail");
+    assert!(
+        err.to_string().contains("/ToUnicode maps glyph"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_a_glyph_shown_without_a_tounicode_entry() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // Repoint a bfchar *source* code instead: the mapped glyph now has no entry, and some other
+    // glyph gains a spurious one. The leading digit is bumped rather than the trailing one so the
+    // mutant lands far from any glyph in use — a collision would trip the duplicate-key rule
+    // instead, which is a different check.
+    let first_entry = offset_of(&bytes, b"beginbfchar\n") + b"beginbfchar\n".len();
+    bump_hex_digit(&mut bytes, first_entry + 1);
+
+    let err = selfcheck::verify(&bytes).expect_err("an unmapped shown glyph must fail");
+    let message = err.to_string();
+    assert!(
+        message.contains("has no /ToUnicode entry") || message.contains("which no page shows"),
+        "unexpected self-check error: {message}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_a_width_that_disagrees_with_the_embedded_font() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // The `/W` array is `cid [width] cid [width] …`; bump a digit of the first width. The array
+    // stays well-formed, so only the agreement with `hmtx` can catch it.
+    let widths = offset_of(&bytes, b"/W[");
+    let first_width = offset_of(&bytes[widths + 3..], b"[") + widths + 4;
+    bytes[first_width] = if bytes[first_width] == b'9' {
+        b'1'
+    } else {
+        bytes[first_width] + 1
+    };
+
+    let err = selfcheck::verify(&bytes).expect_err("a wrong /W width must fail");
+    assert!(
+        err.to_string().contains("the embedded hmtx gives"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_a_devicecmyk_content_operator() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // `0 g` (DeviceGray fill) becomes `0 k` (DeviceCMYK). The file has an RGB output intent only,
+    // so CMYK has no defined rendering — the exact rule veraPDF enforces on colour.
+    replace_once(&mut bytes, b"\n0 g\n", b"\n0 k\n");
+
+    let err = selfcheck::verify(&bytes).expect_err("DeviceCMYK must fail");
+    assert!(
+        err.to_string().contains("DeviceCMYK"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_a_transparency_operator() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // `gs` is the only door to blend modes, soft masks and constant alpha. Nothing else in the
+    // file needs to change for this to be a transparency-bearing document.
+    replace_once(&mut bytes, b"\n0 g\n", b"\ngs\n\n");
+
+    let err = selfcheck::verify(&bytes).expect_err("an ExtGState operator must fail");
+    assert!(
+        err.to_string().contains("ExtGState"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_a_non_font_page_resource() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // Rename the page's only resource category. Any name but `/Font` is a construct the writer
+    // does not emit — an XObject, an ExtGState, a colour space — and the closed profile says so.
+    replace_once(&mut bytes, b"/Resources<</Font", b"/Resources<</Xfnt");
+
+    let err = selfcheck::verify(&bytes).expect_err("a foreign page resource must fail");
+    assert!(
+        err.to_string().contains("font-only resource profile"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn writing_a_character_the_face_lacks_is_refused_rather_than_silently_blanked() {
+    // A character with no glyph in the bundled face resolves to glyph 0 (.notdef). The writer would
+    // then record "glyph 0 means 漢" — so this character renders as a blank box, and the *next*
+    // missing character renders as the same blank box but extracts as 漢. Silent, wrong, and
+    // invisible to any check that only asks whether a /ToUnicode CMap exists.
+    let mut doc = fixture();
+    doc.blocks.push(Block::Paragraph {
+        runs: vec![Run {
+            text: "漢字".to_string(),
+            bold: false,
+            italic: false,
+        }],
+    });
+
+    let err = pdfa::write(&doc).expect_err("a glyph the face lacks must not be silently emitted");
+    assert!(
+        err.to_string().contains(".notdef"),
+        "unexpected self-check error: {err}"
+    );
+}

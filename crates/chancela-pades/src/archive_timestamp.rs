@@ -249,6 +249,7 @@ fn build_doc_timestamp_placeholder(
     let mut section = incremental_section(
         pdf_bytes.len(),
         prev_startxref,
+        pdf::trailer_id_array(pdf_bytes),
         root_id.0,
         timestamp_id,
         vec![
@@ -541,6 +542,9 @@ fn doc_timestamp_dict_template(token_capacity: usize) -> Vec<u8> {
 fn incremental_section(
     prev_len: usize,
     prev_startxref: usize,
+    // The original file's `/ID` array, repeated into this update's trailer so the appended revision
+    // keeps the ISO 19005-2 6.1.3 identifier the base document carries.
+    id_array: Option<Vec<u8>>,
     root_id: u32,
     max_new_id: u32,
     objects: Vec<(u32, Vec<u8>)>,
@@ -575,9 +579,12 @@ fn incremental_section(
         i = j + 1;
     }
 
+    let id = id_array
+        .map(|array| format!(" /ID {}", String::from_utf8_lossy(&array)))
+        .unwrap_or_default();
     section.extend_from_slice(
         format!(
-            "trailer\n<< /Size {} /Root {root_id} 0 R /Prev {prev_startxref} >>\n",
+            "trailer\n<< /Size {} /Root {root_id} 0 R /Prev {prev_startxref}{id} >>\n",
             max_new_id + 1
         )
         .as_bytes(),

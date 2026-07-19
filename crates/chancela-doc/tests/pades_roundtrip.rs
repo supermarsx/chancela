@@ -424,6 +424,175 @@ fn tampering_the_signed_document_breaks_validation() {
     );
 }
 
+// --- The reach proof (t12-e1): the file we actually ship is structurally validated ---------------
+//
+// `pdfa::write` self-checks the bytes it is about to return, so it can only ever see the
+// *pre-signature* document. `chancela-pades` then appends an incremental update, and until these
+// tests existed nothing re-validated the result — the file Chancela ships was structurally
+// unvalidated. `selfcheck::verify_signed` closes that, and the mutants below prove it is a real
+// gate rather than a rubber stamp.
+//
+// Every mutant is **equal-length**: a length-changing edit shifts every xref offset after it, so
+// the file fails with a generic "object missing" that attributes nothing.
+
+use chancela_doc::selfcheck::{self, UaClaim};
+
+/// Overwrite the first occurrence of `from` with `to`, which must be the same length.
+fn replace_once(bytes: &mut [u8], from: &[u8], to: &[u8]) {
+    assert_eq!(from.len(), to.len(), "replacement must preserve offsets");
+    let at = find(bytes, from)
+        .unwrap_or_else(|| panic!("missing pattern: {}", String::from_utf8_lossy(from)));
+    bytes[at..at + from.len()].copy_from_slice(to);
+}
+
+/// A signed document to mutate.
+fn signed_fixture(serial: u8) -> (Vec<u8>, Vec<u8>) {
+    let base = pdfa::write(&ata_fixture()).expect("write base");
+    let signer = TestSigner::new_rsa("Amélia Marques Selo (teste)", serial);
+    let signed = sign_with(&base, &signer, &SignOptions::default());
+    (base, signed)
+}
+
+/// THE reach assertion: the signed bytes — not merely the unsigned base — satisfy the structural
+/// PDF/A-2u invariants, including the ones only a signed file can violate (a `/Prev`-chained xref
+/// chain, `/ID` in the *file* trailer, the `/AcroForm`, and the widget's flags and appearance).
+#[test]
+fn signed_output_satisfies_the_structural_invariants() {
+    let (base, signed) = signed_fixture(10);
+    selfcheck::verify(&base).expect("the unsigned base verifies");
+    selfcheck::verify_signed(&signed).expect("the SIGNED file verifies");
+    // And the on-disk entry point reaches the same verdict without being told which it is.
+    selfcheck::verify_any(&base).expect("auto-detected base");
+    selfcheck::verify_any(&signed).expect("auto-detected signed");
+}
+
+/// The two profiles are not interchangeable — which is what makes checking under the right one
+/// meaningful. An unsigned file must not pass the signed profile (it has no signature at all), and
+/// a signed file must not pass the unsigned one (it has an `/AcroForm` the writer never emits).
+#[test]
+fn the_signed_and_unsigned_profiles_are_not_interchangeable() {
+    let (base, signed) = signed_fixture(11);
+    let err = selfcheck::verify_signed(&base).expect_err("an unsigned file is not a signed one");
+    assert!(
+        err.to_string().contains("no incremental signature update"),
+        "unexpected error: {err}"
+    );
+    let err = selfcheck::verify(&signed).expect_err("a signed file is not an unsigned one");
+    assert!(
+        err.to_string().contains("expected exactly 1"),
+        "unexpected error: {err}"
+    );
+}
+
+/// ISO 19005-2 6.1.3 requires the **file** trailer — the newest one — to carry `/ID`. `lopdf`
+/// merges the revision chain and drops `/ID` when the newest trailer omits it, so this can only be
+/// checked against the raw trailer bytes. It is exactly the rule the signer used to break.
+#[test]
+fn the_signed_file_trailer_must_carry_the_document_identifier() {
+    let (_, mut signed) = signed_fixture(12);
+    // Rename the key in the *last* trailer only; every offset stays put.
+    let last_trailer = signed
+        .windows(7)
+        .rposition(|w| w == b"trailer")
+        .expect("trailer");
+    replace_once(&mut signed[last_trailer..], b"/ID [", b"/Iz [");
+
+    let err = selfcheck::verify_signed(&signed).expect_err("a trailer without /ID must fail");
+    assert!(err.to_string().contains("6.1.3"), "unexpected error: {err}");
+}
+
+/// PDF/A-2 6.3.1: an annotation must set Print and must not set Hidden, Invisible or NoView. The
+/// signer emits `/F 132` (Print + Locked); `/F 130` is Hidden + Locked with Print cleared.
+#[test]
+fn the_signature_widget_annotation_flags_are_enforced() {
+    let (_, mut signed) = signed_fixture(13);
+    replace_once(&mut signed, b"/F 132", b"/F 130");
+
+    let err = selfcheck::verify_signed(&signed).expect_err("bad annotation flags must fail");
+    assert!(
+        err.to_string().contains("Print flag"),
+        "unexpected error: {err}"
+    );
+}
+
+/// The only annotation subtype this pipeline may produce is a signature widget. Anything else means
+/// something other than our signer wrote to the file.
+#[test]
+fn a_non_widget_annotation_is_rejected() {
+    let (_, mut signed) = signed_fixture(14);
+    replace_once(&mut signed, b"/Subtype /Widget", b"/Subtype /Wodget");
+
+    let err = selfcheck::verify_signed(&signed).expect_err("a foreign annotation must fail");
+    assert!(
+        err.to_string().contains("/Wodget"),
+        "unexpected error: {err}"
+    );
+}
+
+/// A visible text seal draws with standard-14 Helvetica, which has no font program to embed — so
+/// requesting one produces a signed file that is **not** PDF/A conformant. Nothing caught this
+/// before, because veraPDF only ever saw unsigned fixtures and the write-time gate runs before the
+/// seal exists. This test pins the defect: it must fail until the seal path embeds its font.
+#[test]
+fn a_visible_text_seal_is_caught_embedding_a_non_embedded_font() {
+    use chancela_pades::{
+        SealAppearance, SealContent, SealPlacement, TextSeal, sign_pdf_with_appearance,
+    };
+
+    let base = pdfa::write(&ata_fixture()).expect("write base");
+    let signer = TestSigner::new_rsa("Amélia Marques Visível (teste)", 15);
+    let cert = signer.cert_der();
+    let appearance = SealAppearance {
+        placement: SealPlacement {
+            page: 0,
+            x: 60.0,
+            y: 60.0,
+            w: 200.0,
+            h: 60.0,
+        },
+        content: SealContent::Text(TextSeal::name_date("Amelia Marques", "2026-07-06")),
+    };
+    let signed = sign_pdf_with_appearance(
+        &base,
+        &SignOptions::default(),
+        Some(&appearance),
+        |digest| {
+            let attrs = signed_attributes_digest(digest, &cert, fixed_time())?;
+            assemble_cades_b(&signer.raw_signature(&attrs), digest, fixed_time())
+        },
+    )
+    .expect("visible-seal signing succeeds today");
+
+    let err = selfcheck::verify_signed(&signed)
+        .expect_err("a seal drawn with a non-embedded face is not PDF/A conformant");
+    assert!(
+        err.to_string().contains("no embedded font program"),
+        "unexpected error: {err}"
+    );
+}
+
+/// The PDF/UA-1 claim is made in the base revision's XMP and survives signing verbatim — but the
+/// signature widget is not in the structure tree, which ISO 14289-1 7.18.1 requires. So the signed
+/// file asserts an accessibility conformance it does not have.
+///
+/// This is a residual gap, recorded here as an executable fact rather than prose: the day the
+/// signer tags the widget (or stops claiming UA once signed), this test changes and says so.
+#[test]
+fn signing_currently_falsifies_the_pdf_ua_claim() {
+    let (base, signed) = signed_fixture(16);
+    assert_eq!(
+        selfcheck::ua_claim(&base).expect("base UA claim"),
+        UaClaim::Claimed,
+        "the unsigned document's PDF/UA-1 claim holds"
+    );
+    match selfcheck::ua_claim(&signed).expect("signed UA claim") {
+        UaClaim::Falsified(reason) => {
+            assert!(reason.contains("7.18.1"), "unexpected reason: {reason}")
+        }
+        other => panic!("expected the signed UA claim to be falsified, got {other:?}"),
+    }
+}
+
 /// Determinism-adjacent sanity at the seam (e2 owns the exhaustive determinism test): the same
 /// model yields byte-identical pre-sign bytes, so the signable input — and thus the whole pipeline
 /// — is reproducible.

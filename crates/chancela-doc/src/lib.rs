@@ -27,7 +27,7 @@ mod accessibility;
 mod font;
 mod layout;
 pub mod pdfa;
-mod selfcheck;
+pub mod selfcheck;
 #[cfg(test)]
 mod tests;
 mod xmp;
