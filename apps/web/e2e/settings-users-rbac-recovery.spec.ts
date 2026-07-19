@@ -227,6 +227,9 @@ test('data management recovery drill records isolated restore evidence without l
 
   const receipt = page.getByRole('note').filter({ hasText: 'Recibo de ensaio registado' });
   await expect(receipt).toBeVisible();
+  // The receipt now shows a verdict summary; the evidence and its limits are behind the
+  // «Evidência técnica» disclosure, so open it before asserting them.
+  await receipt.locator('details.recovery-evidence > summary').click();
   await expect(receipt.getByText('Verificação isolada')).toBeVisible();
   await expect(receipt.getByText('Limites do recibo')).toBeVisible();
   await expect(receipt.getByText('Sem restauro ao vivo')).toBeVisible();
