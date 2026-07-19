@@ -998,6 +998,24 @@ impl PostgresBackend {
         Ok(out)
     }
 
+    /// Every recorded signature for `subject_id`, in signing order (`seq` ascending). Mirrors the
+    /// SQLite `Store::instrument_signatures_for_subject` projection exactly, including its
+    /// `seq, slot_id`-first column order.
+    pub(crate) fn instrument_signatures_for_subject(
+        &self,
+        subject_id: ActId,
+    ) -> Result<Vec<crate::StoredInstrumentSignature>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            &format!(
+                "SELECT {INSTRUMENT_SIGNATURE_COLUMNS} FROM instrument_signatures \
+                 WHERE subject_id = $1 ORDER BY seq ASC"
+            ),
+            &[&subject_id.to_string()],
+        )?;
+        rows.iter().map(row_to_instrument_signature).collect()
+    }
+
     pub(crate) fn pending_cmd_session(
         &self,
         session_id: &str,
@@ -1040,6 +1058,13 @@ pub(crate) const ARTIFACT_COLUMNS: &str = "artifact_id, import_id, draft_id, dos
     canonical_document_created, signed_document_created, archive_package_created, pdfa_created, \
     pdfua_created, signature_created, seal_created, archive_certification_claimed, \
     legal_validity_claimed, source_extracted_text_in_artifact, source_extracted_text_in_ledger_event";
+
+/// The `instrument_signatures` column list. `seq, slot_id` lead, then the `signed_documents` column
+/// order verbatim, so the shared signature payload maps identically in both tables.
+pub(crate) const INSTRUMENT_SIGNATURE_COLUMNS: &str = "seq, slot_id, subject_id, document_id, \
+    signed_pdf_digest, signature_family, evidentiary_level, trusted_list_status, \
+    signer_cert_subject, signing_time, signed_at, signer_cert_der, timestamp_token_der, \
+    timestamp_trust_report_json, signer_capacity_evidence_json, signed_pdf_bytes";
 
 /// The `signed_documents` column list, shared by the by-act and boot-rehydrate reads.
 pub(crate) const SIGNED_DOCUMENT_COLUMNS: &str = "act_id, document_id, signed_pdf_digest, \
@@ -1451,6 +1476,31 @@ pub(crate) fn row_to_signed_document(row: &Row) -> Result<StoredSignedDocument, 
         timestamp_trust_report_json: row.get(11),
         signer_capacity_evidence_json: row.get(12),
         signed_pdf_bytes: row.get(13),
+    })
+}
+
+pub(crate) fn row_to_instrument_signature(
+    row: &Row,
+) -> Result<crate::StoredInstrumentSignature, StoreError> {
+    Ok(crate::StoredInstrumentSignature {
+        seq: row.get(0),
+        slot_id: row.get(1),
+        document: StoredSignedDocument {
+            act_id: parse_uuid_newtype::<ActId>(&row.get::<_, String>(2))?,
+            document_id: row.get(3),
+            signed_pdf_digest: row.get(4),
+            signature_family: row.get(5),
+            evidentiary_level: row.get(6),
+            trusted_list_status: row.get(7),
+            signer_cert_subject: row.get(8),
+            signing_time: parse_rfc3339(&row.get::<_, String>(9))?,
+            signed_at: parse_rfc3339(&row.get::<_, String>(10))?,
+            signer_cert_der: row.get(11),
+            timestamp_token_der: row.get(12),
+            timestamp_trust_report_json: row.get(13),
+            signer_capacity_evidence_json: row.get(14),
+            signed_pdf_bytes: row.get(15),
+        },
     })
 }
 

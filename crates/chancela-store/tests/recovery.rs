@@ -1139,6 +1139,193 @@ fn reset_backend_factory_blanks_everything() {
     assert!(outcome.cleared.iter().any(|c| c == "users.json"));
 }
 
+/// A wipe promises the operator that "entidades, livros, atas e documentos" are deleted. The signed
+/// PDF is the most sensitive document the product holds, so it must go with the rest — and so must
+/// its signature history, or a superseded signer's artifact would outlive the wipe.
+///
+/// This also proves the export-first rail is what makes the destruction acceptable: the artifact is
+/// gone from the live store and still present in the archive taken before it.
+#[test]
+fn a_domain_wipe_removes_signed_artifacts_and_their_signature_history() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, act) = seed(&store);
+
+    // Two signatures on the same act: the current artifact plus a full history behind it.
+    let first = sample_signed_document(act.id, "doc-1", b"%PDF-1.7 signed by the first signer");
+    let second = sample_signed_document(act.id, "doc-1", b"%PDF-1.7 countersigned by the second");
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .expect("first signature");
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .expect("second signature");
+    assert_eq!(
+        store
+            .signature_history_for_subject(act.id)
+            .expect("history")
+            .len(),
+        2,
+        "both signatures are recorded before the wipe"
+    );
+
+    let outcome = store
+        .reset(
+            &mut ledger,
+            dir.path(),
+            ResetScope::BackendDomain,
+            true, // export-first: the archive is what makes the destruction acceptable
+            &[],
+            "amelia.marques",
+            at(),
+        )
+        .expect("domain wipe");
+
+    // Nothing signed survives the wipe: not the current artifact, not the superseded signature.
+    assert!(
+        store
+            .signed_document_for_act(act.id)
+            .expect("read signed doc")
+            .is_none(),
+        "the signed PDF must not outlive a wipe that claims to delete documents"
+    );
+    assert!(
+        store
+            .all_signed_documents()
+            .expect("read all signed docs")
+            .is_empty()
+    );
+    assert!(
+        store
+            .instrument_signatures_for_subject(act.id)
+            .expect("read raw history")
+            .is_empty(),
+        "the signature history is wiped too"
+    );
+    assert!(
+        store
+            .signature_history_for_subject(act.id)
+            .expect("read history")
+            .is_empty(),
+        "and the fallback read finds nothing to fall back to"
+    );
+
+    // The operator's receipt names both tables — a table cleared but not disclosed is its own defect.
+    assert!(
+        outcome.cleared.iter().any(|c| c == "signed_documents"),
+        "cleared receipt: {:?}",
+        outcome.cleared
+    );
+    assert!(
+        outcome.cleared.iter().any(|c| c == "instrument_signatures"),
+        "cleared receipt: {:?}",
+        outcome.cleared
+    );
+
+    // The export-first archive still holds the signed artifact: destroyed live, preserved as record.
+    let archive = outcome
+        .export_archive
+        .expect("export-first archive present");
+    let db_bytes = zip_member(&std::fs::read(&archive).unwrap(), "chancela.db").expect("db member");
+    let snapshot_dir = TempDir::new();
+    std::fs::write(snapshot_dir.path().join("chancela.db"), &db_bytes).unwrap();
+    let snapshot = Store::open(snapshot_dir.path()).expect("open archived snapshot");
+    assert_eq!(
+        snapshot
+            .signature_history_for_subject(act.id)
+            .expect("archived history")
+            .len(),
+        2,
+        "the archive taken before the wipe still carries both signatures"
+    );
+
+    // The wipe stays auditable: the ledger is preserved and records that it happened.
+    let loaded = store.load().expect("reload");
+    assert!(
+        loaded
+            .ledger
+            .events()
+            .iter()
+            .any(|e| e.kind == "data.wiped")
+    );
+    assert!(loaded.chain_status.is_ok());
+}
+
+/// A factory reset is strictly more destructive than a domain wipe, so it must not leave behind what
+/// the domain wipe now removes.
+#[test]
+fn a_factory_reset_removes_signed_artifacts_too() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, act) = seed(&store);
+    let signed = sample_signed_document(act.id, "doc-1", b"%PDF-1.7 signed");
+    store
+        .persist(|tx| tx.upsert_signed_document(&signed))
+        .expect("sign");
+
+    store
+        .reset(
+            &mut ledger,
+            dir.path(),
+            ResetScope::BackendFactory,
+            false,
+            &[],
+            "amelia.marques",
+            at(),
+        )
+        .expect("factory reset");
+
+    assert!(
+        store
+            .signed_document_for_act(act.id)
+            .expect("read signed doc")
+            .is_none()
+    );
+    assert!(
+        store
+            .instrument_signatures_for_subject(act.id)
+            .expect("read raw history")
+            .is_empty()
+    );
+}
+
+/// The other side of the ruling: what a domain wipe keeps, it keeps on purpose. A domain wipe clears
+/// domain data and is explicitly NOT a factory reset — the user directory survives it (only
+/// `backend_factory` promises "apaga tudo — dados, utilizadores, definições e caches"). Pinning this
+/// keeps a future "wipe more" change from quietly turning a data wipe into an account wipe.
+#[test]
+fn a_domain_wipe_deliberately_keeps_the_user_directory() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, _act) = seed(&store);
+    store
+        .persist(|tx| tx.upsert_user("amelia.marques", r#"{"id":"amelia.marques"}"#))
+        .expect("seed the user directory");
+
+    let outcome = store
+        .reset(
+            &mut ledger,
+            dir.path(),
+            ResetScope::BackendDomain,
+            false,
+            &[],
+            "amelia.marques",
+            at(),
+        )
+        .expect("domain wipe");
+
+    assert_eq!(
+        store.users().expect("read users").len(),
+        1,
+        "a domain wipe is not a factory reset: users are retained deliberately"
+    );
+    assert!(
+        !outcome.cleared.iter().any(|c| c == "users"),
+        "and the receipt never claims otherwise: {:?}",
+        outcome.cleared
+    );
+}
+
 #[test]
 fn export_first_archives_before_a_destructive_wipe() {
     let dir = TempDir::new();

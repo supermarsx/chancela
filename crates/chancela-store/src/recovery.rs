@@ -492,8 +492,13 @@ pub struct ReinitOutcome {
 /// The scope of a destructive [`Store::reset`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResetScope {
-    /// Clear domain data (entities/books/acts/documents/registry_extracts/imported) but PRESERVE the
-    /// append-only ledger and emit a chained `data.wiped` — the wipe stays auditable.
+    /// Clear domain data (entities/books/acts/documents/**signed documents and their signature
+    /// history**/registry_extracts/imported) but PRESERVE the append-only ledger and emit a chained
+    /// `data.wiped` — the wipe stays auditable.
+    ///
+    /// The signed artifacts go with the rest: leaving the signed PDFs behind while telling the
+    /// operator the documents were deleted is the worse failure of the two, and the ledger — which a
+    /// domain wipe preserves — remains the record that they existed.
     BackendDomain,
     /// Clear EVERYTHING (store rows incl. the ledger + the sidecar files) to a blank first-run
     /// instance. The ledger is gone, so the export-first archive IS the record.
@@ -2035,6 +2040,14 @@ fn format_rfc3339(at: OffsetDateTime) -> String {
 }
 
 /// The domain aggregate table names cleared by a wipe/factory reset (excludes `events`).
+///
+/// This is also the operator-facing receipt: it is returned verbatim as [`ResetOutcome::cleared`]
+/// and recorded in the ledgered [`WipeRecord`], so a table missing here is both undeleted *and*
+/// undisclosed. It must stay in lockstep with [`clear_domain`].
+///
+/// `signed_documents` and `instrument_signatures` are listed: a wipe that promises to delete
+/// "entidades, livros, atas e documentos" must not leave the signed PDFs — the most sensitive
+/// artifact the product holds — sitting in the database while the UI reports the data as gone.
 fn domain_table_names() -> Vec<String> {
     [
         "group_template_library_revisions",
@@ -2045,6 +2058,9 @@ fn domain_table_names() -> Vec<String> {
         "acts",
         "registry_extracts",
         "documents",
+        // The signature history first, then the current artifact it is the history for.
+        "instrument_signatures",
+        "signed_documents",
         "follow_ups",
     ]
     .into_iter()
@@ -2055,12 +2071,17 @@ fn domain_table_names() -> Vec<String> {
 /// Clear the domain aggregate tables (not the ledger). Backend-agnostic (SQLite + Postgres) via the
 /// shared [`Tx::execute_recovery_batch`], so the wipe/start-over reset transactions are atomic on
 /// both backends (wp15).
+///
+/// Every table deleted here must also be named in [`domain_table_names`], which is what the operator
+/// is told was cleared.
 fn clear_domain(tx: &Tx<'_>) -> Result<(), StoreError> {
     tx.execute_recovery_batch(
         "DELETE FROM group_template_library_revisions; \
          DELETE FROM group_template_libraries; DELETE FROM company_groups; \
          DELETE FROM entities; DELETE FROM books; DELETE FROM acts; \
-         DELETE FROM registry_extracts; DELETE FROM documents; DELETE FROM follow_ups;",
+         DELETE FROM registry_extracts; DELETE FROM documents; \
+         DELETE FROM instrument_signatures; DELETE FROM signed_documents; \
+         DELETE FROM follow_ups;",
     )
 }
 

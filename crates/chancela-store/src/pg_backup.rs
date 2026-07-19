@@ -58,40 +58,10 @@ pub const PG_BACKUP_FORMAT: &str = "chancela-pg-logical-backup/v1";
 /// The backend tag a Postgres logical bundle carries (so restore can reject a foreign bundle).
 pub const PG_BACKUP_BACKEND: &str = "postgres";
 
-/// Every application table exported by a logical backup, in a stable order. `meta` is included so a
-/// restore adopts the SOURCE instance's `instance_id`/`schema_version` (mirroring how a SQLite
-/// restore swaps in the source DB file). Index-only objects are not tables and are not listed.
-pub(crate) const PG_BACKUP_TABLES: &[&str] = &[
-    "meta",
-    "events",
-    "entities",
-    "books",
-    "acts",
-    "registry_extracts",
-    "documents",
-    "imported_books",
-    "signed_documents",
-    "pending_cmd_sessions",
-    "imported_documents",
-    "imported_document_review_history",
-    "generated_document_dispatch_evidence",
-    "paper_book_imports",
-    "paper_book_ocr_drafts",
-    "paper_book_ocr_conversion_dossiers",
-    "paper_book_ocr_conversion_execution_artifacts",
-    "follow_ups",
-    "users",
-    "roles",
-    "delegations",
-    "settings",
-    "provider_credentials",
-    "user_templates",
-    "subject_keys",
-    "tenants",
-    "company_groups",
-    "group_template_libraries",
-    "group_template_library_revisions",
-];
+/// Every application table exported by a logical backup, in a stable order — defined beside the DDL
+/// it must mirror, as [`schema::LOGICAL_BACKUP_TABLES`]. See that constant for why the list lives
+/// there and what guards it against drift.
+pub(crate) use crate::schema::LOGICAL_BACKUP_TABLES as PG_BACKUP_TABLES;
 
 /// The one table whose surrogate `id` is a Postgres `GENERATED ALWAYS AS IDENTITY` column, so its
 /// rows must be re-inserted with `OVERRIDING SYSTEM VALUE` to preserve the exact ids and its

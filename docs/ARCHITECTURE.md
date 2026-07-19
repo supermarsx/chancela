@@ -34,7 +34,7 @@ DAG is acyclic and the domain/security crates never depend on `chancela-api`.
 |---|---|
 | `crates/chancela-core` | Domain model: `Entity`/`Book`/`Act`, sealing (`seal.rs`), rule packs + `EntityProfile` (`rules.rs`/`profile.rs`), and the frozen `DocumentModel`/`LifecycleStage` render seam (`document_model.rs`). Pure leaf. |
 | `crates/chancela-ledger` | Append-only, hash-chained, **multi-chain** event ledger (single file `lib.rs`). |
-| `crates/chancela-store` | Durable system of record: embedded SQLite store (`schema.rs`, `SCHEMA_VERSION = 5`), hot backup, imported-document evidence storage, and the whole integrity/recovery/portability plane (`recovery.rs`). Sits between the domain crates and the API; must not depend on `chancela-api`. |
+| `crates/chancela-store` | Durable system of record: embedded SQLite store (`schema.rs`, `SCHEMA_VERSION = 23`), hot backup, imported-document evidence storage, and the whole integrity/recovery/portability plane (`recovery.rs`). Sits between the domain crates and the API; must not depend on `chancela-api`. |
 | `crates/chancela-archive` | Deterministic internal preservation-package builder (DOC-20, spec 08): ZIP manifest, checksums, provenance, rights/language metadata, signing/evidence sidecars, preservation level, retention/legal-hold metadata, and DGLAB-aligned producer/interchange metadata. It explicitly does not claim official DGLAB interchange or certification. |
 | `crates/chancela-api` | Axum HTTP layer over everything: DTOs, handlers, `AppState`, the router, the RBAC gate, and the degraded gate. |
 | `crates/chancela-server` | The `chancela-server` binary (`main.rs`); binds `127.0.0.1:8080` (`CHANCELA_ADDR`), serves the API + the web bundle from `apps/web/dist`. |

@@ -102,7 +102,16 @@
 ///   digest** of the companion session token, never the plaintext bearer. Forward-only, additive:
 ///   existing databases gain the table via the idempotent [`ALL`] DDL and advance their stamp on next
 ///   open.
-pub const SCHEMA_VERSION: i64 = 22;
+/// - **v23** — adds `instrument_signatures` (t9-S2, carved out of t8 §5.3): the append-only,
+///   **ordered** signature history for a signing subject. It fixes a real data-loss defect —
+///   `signed_documents.act_id` is a PRIMARY KEY written with `INSERT OR REPLACE`, so a second
+///   signature on the same subject silently destroyed the first signer's row *and bytes*. The new
+///   table keys on `(subject_id, seq)`, so signature *n+1* appends beside signature *n* instead of
+///   over it, and sequential PAdES/CAdES order (signature 2 covers signature 1) is recorded rather
+///   than inferred. `signed_documents` is unchanged and remains "the current signed artifact", so
+///   every existing read path keeps working and pre-v23 rows stay readable forever. Forward-only,
+///   additive: existing databases gain the table via [`ALL`] and advance their stamp on next open.
+pub const SCHEMA_VERSION: i64 = 23;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -287,6 +296,88 @@ CREATE TABLE IF NOT EXISTS signed_documents (
     signer_capacity_evidence_json TEXT,
     signed_pdf_bytes    BLOB NOT NULL
 ) STRICT;";
+
+/// `instrument_signatures` — the append-only, **ordered** signature history for a signing subject
+/// (schema v23, t9-S2; carved out of t8 §5.3).
+///
+/// ## Why this table exists
+///
+/// [`CREATE_SIGNED_DOCUMENTS`] holds **one row per subject** (`act_id` is its PRIMARY KEY) and is
+/// written with `INSERT OR REPLACE`. A second signature on the same subject therefore *destroyed the
+/// first signer's provenance and bytes*. Nothing recorded who signed first, when, or what they saw.
+/// This table is the fix: `(subject_id, seq)` is the primary key, so signature *n+1* lands **beside**
+/// signature *n* rather than on top of it.
+///
+/// ## Order is data, not an inference
+///
+/// Sequential PAdES/CAdES signatures are cryptographically ordered — signature 2 signs the output of
+/// signature 1, so replaying them out of order produces artifacts that verify inconsistently. `seq` is
+/// that order, recorded explicitly, 1-based and gapless per subject; the composite primary key makes
+/// the database refuse two signatures claiming the same position. Retrieval is always `ORDER BY seq`.
+/// Neither `signed_at` nor `signing_time` is a substitute: both are wall clocks (`signing_time` comes
+/// from the signer's own CAdES signed attributes) and can tie, skew, or run backwards.
+///
+/// ## Relationship to `signed_documents`
+///
+/// `signed_documents` is unchanged and keeps its meaning: **the current signed artifact** — the
+/// topmost signature in the chain, the one `get_signed_document_pdf`, the export bundle and recovery
+/// serve. This table is the history behind it. A subject with no rows here is a pre-v23 subject; the
+/// read path falls back to its `signed_documents` row and reports it as a single seq-1 signature, so
+/// **existing rows remain readable and fetchable forever** (no migrate-and-drop).
+///
+/// ## Bytes are stored per signature, deliberately
+///
+/// Each row keeps its own `signed_pdf_bytes`. That duplicates the newest signature's bytes with
+/// `signed_documents`, which is a real storage cost, and it is the right trade for an evidence
+/// product: a superseded signature's artifact is the *only* evidence of what that signer actually
+/// signed, and the alternative (a NULL meaning "same as the current `signed_documents` row") silently
+/// re-points at the wrong bytes the moment the next signature lands. Deduplicating by digest into a
+/// content-addressed blob table is a future option; aliasing is not.
+///
+/// **This table never stores a PIN or an OTP** — only public signature material, exactly the columns
+/// `signed_documents` carries.
+///
+/// - `subject_id` — the signed subject. An act id today; deliberately **not** named `act_id` so t8's
+///   termo instruments can key on it without a column rename (the store has no `ALTER` mechanism).
+/// - `seq` — 1-based signature order within the subject. Part of the primary key.
+/// - `slot_id` — the signatory slot this signature filled, or NULL. Always NULL in v23: t8 owns slots,
+///   but the column ships now because a column added later would never reach existing databases.
+/// - every remaining column — as documented on [`CREATE_SIGNED_DOCUMENTS`], for this signature.
+pub const CREATE_INSTRUMENT_SIGNATURES: &str = "\
+CREATE TABLE IF NOT EXISTS instrument_signatures (
+    subject_id          TEXT NOT NULL,
+    seq                 INTEGER NOT NULL,
+    slot_id             TEXT,
+    document_id         TEXT NOT NULL,
+    signed_pdf_digest   TEXT NOT NULL,
+    signature_family    TEXT NOT NULL,
+    evidentiary_level   TEXT NOT NULL,
+    trusted_list_status TEXT,
+    signer_cert_subject TEXT,
+    signing_time        TEXT NOT NULL,
+    signed_at           TEXT NOT NULL,
+    signer_cert_der     BLOB NOT NULL,
+    timestamp_token_der BLOB,
+    timestamp_trust_report_json TEXT,
+    signer_capacity_evidence_json TEXT,
+    signed_pdf_bytes    BLOB NOT NULL,
+    PRIMARY KEY (subject_id, seq)
+) STRICT;";
+
+/// Unique index over `(subject_id, signed_pdf_digest)` — makes the append **idempotent**, matching
+/// `Tx::upsert_signed_document`'s existing idempotent-on-retry contract.
+///
+/// A signed PDF's digest is the natural identity of a signature artifact: two distinct signatures
+/// always produce distinct bytes, and a retried or replayed write of the *same* signature produces
+/// identical bytes. So re-appending an already-recorded signature is a no-op that keeps its original
+/// `seq`, while a genuinely new signature always gets a fresh one. Without this, a retry would inflate
+/// the chain with a duplicate at seq+1 and misreport the signature count.
+///
+/// No separate `subject_id` index is needed: the `(subject_id, seq)` primary key already indexes
+/// `subject_id` as its leftmost column on both SQLite and Postgres.
+pub const CREATE_INSTRUMENT_SIGNATURES_DIGEST_IDX: &str = "\
+CREATE UNIQUE INDEX IF NOT EXISTS idx_instrument_signatures_subject_digest \
+ON instrument_signatures (subject_id, signed_pdf_digest);";
 
 /// `pending_cmd_sessions` — an in-flight two-phase Chave Móvel Digital signing session (schema v4,
 /// t57-S3), persisted so the `initiate`→`confirm` request pair survives across the two stateless
@@ -773,6 +864,8 @@ pub const ALL: &[&str] = &[
     CREATE_IMPORTED_BOOKS,
     CREATE_IMPORTED_BOOKS_BOOK_IDX,
     CREATE_SIGNED_DOCUMENTS,
+    CREATE_INSTRUMENT_SIGNATURES,
+    CREATE_INSTRUMENT_SIGNATURES_DIGEST_IDX,
     CREATE_PENDING_CMD_SESSIONS,
     CREATE_PENDING_CMD_SESSIONS_ACT_IDX,
     CREATE_IMPORTED_DOCUMENTS,
@@ -814,3 +907,156 @@ pub const ALL: &[&str] = &[
     CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS_LIBRARY_IDX,
     CREATE_PAIRING_DEVICES,
 ];
+
+/// Every application table a **Postgres logical backup** exports and restores, in a stable order
+/// (`crate::pg_backup::PG_BACKUP_TABLES` is this list). `meta` is included so a restore adopts the
+/// SOURCE instance's `instance_id`/`schema_version`, mirroring how a SQLite restore swaps in the
+/// source DB file. Index-only objects are not tables and are not listed.
+///
+/// ## Why it lives beside the DDL rather than beside the backup code
+///
+/// The SQLite backend snapshots the whole database *file*, so it carries every table for free. The
+/// Postgres backend cannot: it reads table by table, from this hand-maintained enumeration. A table
+/// added to [`ALL`] and forgotten here is therefore data that survives on SQLite and **silently
+/// vanishes on a Postgres restore** — a divergence between two backends that are supposed to offer
+/// the same guarantee. That has happened twice. The list sits next to the DDL it must mirror so the
+/// two are edited together, and [`tests::logical_backup_tables_cover_the_whole_schema`] fails by
+/// name if they ever drift again.
+///
+/// The order is load-bearing for the backup itself (it fixes the export member order and the
+/// `TRUNCATE`/`INSERT` order on restore), which is why this is an explicit list and not derived.
+pub const LOGICAL_BACKUP_TABLES: &[&str] = &[
+    "meta",
+    "events",
+    "entities",
+    "books",
+    "acts",
+    "registry_extracts",
+    "documents",
+    "imported_books",
+    "signed_documents",
+    // Listed immediately after the artifact it is the history for: without this line a Postgres
+    // backup would carry only the current signature and silently drop every superseded one on
+    // restore — the very loss schema v23 exists to prevent.
+    "instrument_signatures",
+    "pending_cmd_sessions",
+    "imported_documents",
+    "imported_document_review_history",
+    "generated_document_dispatch_evidence",
+    "paper_book_imports",
+    "paper_book_ocr_drafts",
+    "paper_book_ocr_conversion_dossiers",
+    "paper_book_ocr_conversion_execution_artifacts",
+    "follow_ups",
+    "users",
+    "roles",
+    "delegations",
+    "settings",
+    "provider_credentials",
+    // Beside the other directory-shaped tables it lives with: without this line a Postgres backup
+    // silently dropped the companion-device pairing registry (schema v22), so a restore left every
+    // enrolled phone unknown to the instance.
+    "pairing_devices",
+    "user_templates",
+    "subject_keys",
+    "tenants",
+    "company_groups",
+    "group_template_libraries",
+    "group_template_library_revisions",
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tables deliberately NOT carried by a logical backup, each with the reason.
+    ///
+    /// Empty on purpose: today every table in [`ALL`] is backed up. The list exists so an
+    /// intentional omission and a forgotten one cannot look alike — silently leaving a table out of
+    /// [`LOGICAL_BACKUP_TABLES`] is exactly how that enumeration drifted twice. Adding an entry here
+    /// is the only sanctioned way to exclude a table, and it forces the reason to be written down.
+    const INTENTIONALLY_NOT_BACKED_UP: &[(&str, &str)] = &[];
+
+    /// The table names the DDL declares, parsed out of `CREATE TABLE IF NOT EXISTS <name>`. Index
+    /// statements are not tables and are skipped.
+    fn schema_table_names() -> Vec<&'static str> {
+        const PREFIX: &str = "CREATE TABLE IF NOT EXISTS ";
+        ALL.iter()
+            .filter_map(|ddl| ddl.strip_prefix(PREFIX))
+            .map(|rest| {
+                rest.split(|c: char| c.is_whitespace() || c == '(')
+                    .next()
+                    .expect("a CREATE TABLE statement names its table")
+            })
+            .collect()
+    }
+
+    /// The guard for [`LOGICAL_BACKUP_TABLES`]: the hand-maintained enumeration must cover the schema
+    /// exactly. A table in [`ALL`] and not there is exported by no Postgres backup and restored by no
+    /// Postgres restore. The failure names the offending tables, so the next drift is diagnosed from
+    /// the message alone.
+    #[test]
+    fn logical_backup_tables_cover_the_whole_schema() {
+        let schema_tables = schema_table_names();
+        assert!(
+            schema_tables.len() > 20,
+            "the DDL parser found only {} tables — it stopped matching the schema's shape",
+            schema_tables.len()
+        );
+
+        let missing: Vec<&str> = schema_tables
+            .iter()
+            .copied()
+            .filter(|table| !LOGICAL_BACKUP_TABLES.contains(table))
+            .filter(|table| {
+                !INTENTIONALLY_NOT_BACKED_UP
+                    .iter()
+                    .any(|(excluded, _)| excluded == table)
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "LOGICAL_BACKUP_TABLES is missing {missing:?} — a Postgres logical backup would \
+             silently drop those rows on restore. Add each to LOGICAL_BACKUP_TABLES, or, if one \
+             genuinely must not be backed up, to INTENTIONALLY_NOT_BACKED_UP with a reason."
+        );
+
+        // The reverse: a name here that the schema no longer creates makes the export fail at
+        // runtime on a `SELECT … FROM <table>` against a table that never existed.
+        let unknown: Vec<&str> = LOGICAL_BACKUP_TABLES
+            .iter()
+            .copied()
+            .filter(|table| !schema_tables.contains(table))
+            .collect();
+        assert!(
+            unknown.is_empty(),
+            "LOGICAL_BACKUP_TABLES names {unknown:?}, which schema::ALL does not create"
+        );
+
+        // An allow-listed exclusion must name a real table, carry a reason, and not also be backed up.
+        for (excluded, reason) in INTENTIONALLY_NOT_BACKED_UP {
+            assert!(
+                schema_tables.contains(excluded),
+                "INTENTIONALLY_NOT_BACKED_UP names {excluded:?}, which schema::ALL does not create"
+            );
+            assert!(
+                !LOGICAL_BACKUP_TABLES.contains(excluded),
+                "{excluded:?} is both backed up and allow-listed as excluded ({reason})"
+            );
+            assert!(
+                !reason.trim().is_empty(),
+                "the exclusion of {excluded:?} must carry a reason"
+            );
+        }
+    }
+
+    /// The registry the enumeration most recently drifted on: `pairing_devices` (schema v22) was
+    /// absent, so a Postgres restore lost every enrolled companion device.
+    #[test]
+    fn logical_backup_carries_the_pairing_device_registry() {
+        assert!(
+            LOGICAL_BACKUP_TABLES.contains(&"pairing_devices"),
+            "a logical backup must carry the companion-device pairing registry"
+        );
+    }
+}

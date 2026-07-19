@@ -1642,6 +1642,31 @@ pub struct StoredSignedDocument {
     pub signed_pdf_bytes: Vec<u8>,
 }
 
+/// One signature in a subject's ordered signature history (the `instrument_signatures` table,
+/// schema v23; t9-S2, carved out of t8 §5.3). Returned by
+/// [`Store::instrument_signatures_for_subject`] and [`Store::signature_history_for_subject`].
+///
+/// The signature payload is a [`StoredSignedDocument`] — the columns are identical, and the subject
+/// is its [`StoredSignedDocument::act_id`]. What this type adds is the subject-scoped **position**.
+///
+/// **Never carries a PIN or an OTP** — only public signature material.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredInstrumentSignature {
+    /// 1-based position in the subject's signature chain, gapless and assigned by the store.
+    ///
+    /// This is cryptographic order, not a display nicety: with sequential PAdES/CAdES, signature 2
+    /// signs signature 1's output, so the chain only verifies when replayed in this order.
+    pub seq: i64,
+    /// The signatory slot this signature filled, or `None`.
+    ///
+    /// Always `None` in schema v23 — t8 owns the slot model. The field exists now because the store
+    /// is additive-only (no `ALTER`), so a column introduced later would never reach an existing
+    /// database.
+    pub slot_id: Option<String>,
+    /// The signature itself: its bytes, its signer, and its metadata at the time it was made.
+    pub document: StoredSignedDocument,
+}
+
 /// An in-flight two-phase Chave Móvel Digital signing session (the `pending_cmd_sessions` table,
 /// schema v4; t57-S3), persisted so the `initiate`→`confirm` request pair survives across the two
 /// stateless requests (and a restart).
@@ -2981,6 +3006,74 @@ impl Store {
             out.insert(doc.act_id, doc);
         }
         Ok(out)
+    }
+
+    /// Every recorded signature for `subject_id`, **in signing order** (`seq` ascending), straight
+    /// from `instrument_signatures` (schema v23).
+    ///
+    /// Returns empty for a subject signed before v23 — those signatures predate the history table.
+    /// Callers that want "the signatures of this subject" almost always want
+    /// [`Self::signature_history_for_subject`], which folds that case in. This raw view exists so the
+    /// pre-v23 fallback is observable rather than invisible.
+    pub fn instrument_signatures_for_subject(
+        &self,
+        subject_id: ActId,
+    ) -> Result<Vec<StoredInstrumentSignature>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.instrument_signatures_for_subject(subject_id);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT seq, slot_id, subject_id, document_id, signed_pdf_digest, signature_family, \
+             evidentiary_level, trusted_list_status, signer_cert_subject, signing_time, signed_at, \
+             signer_cert_der, timestamp_token_der, timestamp_trust_report_json, \
+             signer_capacity_evidence_json, signed_pdf_bytes \
+             FROM instrument_signatures WHERE subject_id = ?1 ORDER BY seq ASC",
+        )?;
+        let rows = stmt.query_map(params![subject_id.to_string()], row_to_instrument_signature)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
+    /// Every signature for `subject_id` in signing order, **including subjects signed before schema
+    /// v23**.
+    ///
+    /// This is the read path the multi-signature fix is for: it returns *all* signatures, oldest
+    /// first, where `Store::signed_document_for_act` returns only the current artifact.
+    ///
+    /// # Back-compat
+    ///
+    /// `instrument_signatures` only records signatures written on v23 or later. A subject signed
+    /// before the upgrade has a `signed_documents` row and no history, and must not read as unsigned.
+    /// So when the history is empty this falls back to that row and reports it as the subject's single
+    /// `seq`-1 signature — which is exactly what it is, since pre-v23 the table could only ever hold
+    /// one. Nothing is migrated, copied or dropped: the old row stays where it is and stays
+    /// authoritative for itself, forever.
+    ///
+    /// The fallback is deliberately keyed on an *empty* history rather than merged with it. Once a
+    /// subject has history rows, they are the whole truth — the `signed_documents` row is the last of
+    /// them, and merging would double-count it.
+    pub fn signature_history_for_subject(
+        &self,
+        subject_id: ActId,
+    ) -> Result<Vec<StoredInstrumentSignature>, StoreError> {
+        let history = self.instrument_signatures_for_subject(subject_id)?;
+        if !history.is_empty() {
+            return Ok(history);
+        }
+        Ok(self
+            .signed_document_for_act(subject_id)?
+            .map(|document| StoredInstrumentSignature {
+                seq: 1,
+                slot_id: None,
+                document,
+            })
+            .into_iter()
+            .collect())
     }
 
     /// Fetch one pending CMD signing session by id, or `None` if unknown/consumed. The api falls back
@@ -5360,12 +5453,160 @@ impl Tx<'_> {
         Ok(outcomes)
     }
 
-    /// Upsert the SIGNED PDF variant for an act (`signed_documents`, keyed by `act_id`, schema v4).
-    /// Idempotent on the act id. Called inside the confirm transaction alongside the `document.signed`
-    /// event append (t57-S3), so the signed variant and its ledger event land in one durable commit.
+    /// Upsert the SIGNED PDF variant for an act (`signed_documents`, keyed by `act_id`, schema v4)
+    /// **and append it to the subject's ordered signature history** (`instrument_signatures`, schema
+    /// v23). Called inside the confirm transaction alongside the `document.signed` event append
+    /// (t57-S3), so the signed variant, its history row and its ledger event land in one durable
+    /// commit.
+    ///
+    /// # The two writes, and why both
+    ///
+    /// `signed_documents` keeps its original meaning — **the current signed artifact** — so every
+    /// existing reader (`Store::signed_document_for_act`, `all_signed_documents`, the export bundle,
+    /// recovery) is unaffected. But that table holds one row per subject and this write is `INSERT OR
+    /// REPLACE`, so on its own a second signature *destroys the first signer's row and bytes*. The
+    /// history append is what makes signature *n+1* additive: it lands at `seq = n+1` beside its
+    /// predecessors, preserving sequential PAdES/CAdES order. Read it back with
+    /// [`Store::signature_history_for_subject`].
+    ///
+    /// # Idempotency
+    ///
+    /// Still idempotent on the act id, and the history append is idempotent too: a re-write of the
+    /// *same* signature (identical `signed_pdf_digest`) keeps its original `seq` instead of inflating
+    /// the chain with a duplicate. Only genuinely new signature bytes advance the sequence.
     ///
     /// **Never persists a PIN or an OTP** — only the public signed PDF + signature metadata.
     pub fn upsert_signed_document(&self, doc: &StoredSignedDocument) -> Result<(), StoreError> {
+        self.upsert_signed_document_row(doc)?;
+        self.append_instrument_signature(doc, None)?;
+        Ok(())
+    }
+
+    /// Append `doc` to its subject's signature history, returning the `seq` it occupies.
+    ///
+    /// Idempotent on `(subject_id, signed_pdf_digest)`: if this exact signature is already recorded
+    /// its existing `seq` is returned and nothing is written. Otherwise it takes `MAX(seq) + 1`, which
+    /// is race-free because the store is single-writer (the SQLite write lock; the Postgres writer
+    /// lock) and this runs inside the caller's transaction. The unique index
+    /// `idx_instrument_signatures_subject_digest` is the backstop for both properties.
+    fn append_instrument_signature(
+        &self,
+        doc: &StoredSignedDocument,
+        slot_id: Option<&str>,
+    ) -> Result<i64, StoreError> {
+        let signing_time = doc
+            .signing_time
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let signed_at = doc
+            .signed_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let subject_id = doc.act_id.to_string();
+        const INSERT: &str = "INSERT INTO instrument_signatures \
+             (subject_id, seq, slot_id, document_id, signed_pdf_digest, signature_family, \
+              evidentiary_level, trusted_list_status, signer_cert_subject, signing_time, signed_at, \
+              signer_cert_der, timestamp_token_der, timestamp_trust_report_json, \
+              signer_capacity_evidence_json, signed_pdf_bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)";
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                let conn = self.raw()?;
+                // Already recorded? Keep the original position.
+                let existing: Option<i64> = conn
+                    .query_row(
+                        "SELECT seq FROM instrument_signatures \
+                         WHERE subject_id = ?1 AND signed_pdf_digest = ?2",
+                        params![subject_id, doc.signed_pdf_digest],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if let Some(seq) = existing {
+                    return Ok(seq);
+                }
+                let seq: i64 = conn.query_row(
+                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM instrument_signatures \
+                     WHERE subject_id = ?1",
+                    params![subject_id],
+                    |row| row.get(0),
+                )?;
+                conn.execute(
+                    INSERT,
+                    params![
+                        subject_id,
+                        seq,
+                        slot_id,
+                        doc.document_id,
+                        doc.signed_pdf_digest,
+                        doc.signature_family,
+                        doc.evidentiary_level,
+                        doc.trusted_list_status,
+                        doc.signer_cert_subject,
+                        signing_time,
+                        signed_at,
+                        doc.signer_cert_der,
+                        doc.timestamp_token_der,
+                        doc.timestamp_trust_report_json,
+                        doc.signer_capacity_evidence_json,
+                        doc.signed_pdf_bytes,
+                    ],
+                )?;
+                Ok(seq)
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let mut client = cell.borrow_mut();
+                let existing = client.query_opt(
+                    "SELECT seq FROM instrument_signatures \
+                     WHERE subject_id = $1 AND signed_pdf_digest = $2",
+                    &[&subject_id, &doc.signed_pdf_digest],
+                )?;
+                if let Some(row) = existing {
+                    return Ok(row.get::<_, i64>(0));
+                }
+                let seq: i64 = client
+                    .query_one(
+                        "SELECT COALESCE(MAX(seq), 0) + 1 FROM instrument_signatures \
+                         WHERE subject_id = $1",
+                        &[&subject_id],
+                    )?
+                    .get(0);
+                let trusted_list_status = doc.trusted_list_status.as_deref();
+                let signer_cert_subject = doc.signer_cert_subject.as_deref();
+                let timestamp_trust_report_json = doc.timestamp_trust_report_json.as_deref();
+                let signer_capacity_evidence_json = doc.signer_capacity_evidence_json.as_deref();
+                let signer_cert_der: &[u8] = &doc.signer_cert_der;
+                let timestamp_token_der = doc.timestamp_token_der.as_deref();
+                let signed_pdf_bytes: &[u8] = &doc.signed_pdf_bytes;
+                client.execute(
+                    &crate::dialect::rewrite_placeholders(INSERT),
+                    &[
+                        &subject_id,
+                        &seq,
+                        &slot_id,
+                        &doc.document_id,
+                        &doc.signed_pdf_digest,
+                        &doc.signature_family,
+                        &doc.evidentiary_level,
+                        &trusted_list_status,
+                        &signer_cert_subject,
+                        &signing_time,
+                        &signed_at,
+                        &signer_cert_der,
+                        &timestamp_token_der,
+                        &timestamp_trust_report_json,
+                        &signer_capacity_evidence_json,
+                        &signed_pdf_bytes,
+                    ],
+                )?;
+                Ok(seq)
+            }
+        }
+    }
+
+    /// Write the current-signed-artifact row only. The history append lives in
+    /// [`Self::upsert_signed_document`], which is the entry point callers use.
+    fn upsert_signed_document_row(&self, doc: &StoredSignedDocument) -> Result<(), StoreError> {
         let signing_time = doc
             .signing_time
             .format(&Rfc3339)
@@ -6433,6 +6674,55 @@ fn row_to_signed_document(
             timestamp_trust_report_json,
             signer_capacity_evidence_json,
             signed_pdf_bytes,
+        })
+    })())
+}
+
+/// Map one `instrument_signatures` row to a [`StoredInstrumentSignature`]. Deferred inner `Result`
+/// (the `subject_id` / timestamp conversions surface as [`StoreError`]) unwrapped by the caller.
+///
+/// The projection leads with `seq, slot_id` and then repeats the `signed_documents` column order, so
+/// the shared signature payload maps exactly as [`row_to_signed_document`] does.
+#[allow(clippy::type_complexity)]
+fn row_to_instrument_signature(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredInstrumentSignature, StoreError>> {
+    let seq: i64 = row.get(0)?;
+    let slot_id: Option<String> = row.get(1)?;
+    let subject_id_raw: String = row.get(2)?;
+    let document_id: String = row.get(3)?;
+    let signed_pdf_digest: String = row.get(4)?;
+    let signature_family: String = row.get(5)?;
+    let evidentiary_level: String = row.get(6)?;
+    let trusted_list_status: Option<String> = row.get(7)?;
+    let signer_cert_subject: Option<String> = row.get(8)?;
+    let signing_time_raw: String = row.get(9)?;
+    let signed_at_raw: String = row.get(10)?;
+    let signer_cert_der: Vec<u8> = row.get(11)?;
+    let timestamp_token_der: Option<Vec<u8>> = row.get(12)?;
+    let timestamp_trust_report_json: Option<String> = row.get(13)?;
+    let signer_capacity_evidence_json: Option<String> = row.get(14)?;
+    let signed_pdf_bytes: Vec<u8> = row.get(15)?;
+    Ok((|| {
+        Ok(StoredInstrumentSignature {
+            seq,
+            slot_id,
+            document: StoredSignedDocument {
+                act_id: parse_uuid_newtype::<ActId>(&subject_id_raw)?,
+                document_id,
+                signed_pdf_digest,
+                signature_family,
+                evidentiary_level,
+                trusted_list_status,
+                signer_cert_subject,
+                signing_time: parse_rfc3339(&signing_time_raw)?,
+                signed_at: parse_rfc3339(&signed_at_raw)?,
+                signer_cert_der,
+                timestamp_token_der,
+                timestamp_trust_report_json,
+                signer_capacity_evidence_json,
+                signed_pdf_bytes,
+            },
         })
     })())
 }

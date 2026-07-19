@@ -1549,8 +1549,10 @@ fn schema_version_is_current() {
     // (tenants — wp26 tenancy) landed as schema v19; company-group template libraries landed as
     // schema v20; persisted imported-document technical validation evidence landed as schema v21; the
     // durable companion-device pairing registry (pairing_devices — wp27 mobile companion) landed as
-    // schema v22. A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 22);
+    // schema v22; the ordered multi-signature history (instrument_signatures — t9-S2, fixing the
+    // single-row `signed_documents` data-loss defect) landed as schema v23. A fresh DB is stamped
+    // with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 23);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -2998,6 +3000,224 @@ fn signed_document_round_trips_and_is_keyed_by_act() {
         store.signed_document_for_act(act_id).unwrap().as_ref(),
         Some(&doc)
     );
+}
+
+// --- instrument_signatures: multi-signature history (schema v23, t9-S2) -------------------------
+
+/// A distinct signature over the same subject: fresh signer, fresh bytes, hence a fresh digest.
+fn sample_nth_signature(act_id: ActId, signer: &str, nth: u8) -> StoredSignedDocument {
+    StoredSignedDocument {
+        signed_pdf_digest: format!("digest-{nth}"),
+        signer_cert_subject: Some(format!("CN={signer}")),
+        // Sequential PAdES: signer n+1 signs signer n's output, so the bytes grow and differ.
+        signed_pdf_bytes: format!("%PDF-1.7 signed x{nth}").into_bytes(),
+        signed_at: OffsetDateTime::from_unix_timestamp(1_750_000_050 + i64::from(nth)).unwrap(),
+        ..sample_signed(act_id)
+    }
+}
+
+/// The defect this table exists to fix: `signed_documents.act_id` is a PRIMARY KEY written with
+/// `INSERT OR REPLACE`, so before schema v23 a second signature on a subject silently destroyed the
+/// first signer's row *and bytes*. Both signatures must now survive, in signing order.
+#[test]
+fn a_second_signature_no_longer_destroys_the_first() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let first = sample_nth_signature(act_id, "Amélia Marques", 1);
+    let second = sample_nth_signature(act_id, "Rui Ferreira", 2);
+
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .unwrap();
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .unwrap();
+
+    // Both are retrievable, oldest first — this is the assertion that fails pre-v23.
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 2, "both signatures survive");
+    assert_eq!(history[0].seq, 1);
+    assert_eq!(history[1].seq, 2);
+    assert_eq!(
+        history[0].document, first,
+        "the first signer's row and bytes are intact"
+    );
+    assert_eq!(history[1].document, second);
+    // Order is the signing order, not an artefact of the storage engine.
+    assert_eq!(
+        history[0].document.signer_cert_subject.as_deref(),
+        Some("CN=Amélia Marques")
+    );
+
+    // `signed_documents` keeps its old meaning — the CURRENT artifact — so no reader regresses.
+    assert_eq!(
+        store.signed_document_for_act(act_id).unwrap(),
+        Some(second.clone())
+    );
+    assert_eq!(
+        store.all_signed_documents().unwrap().get(&act_id),
+        Some(&second)
+    );
+
+    // Durable across a restart, still in order.
+    drop(store);
+    let store = Store::open(dir.path()).unwrap();
+    let reopened = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(reopened, history);
+}
+
+#[test]
+fn a_third_signature_appends_after_the_first_two() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let signers = ["Amélia Marques", "Rui Ferreira", "Beatriz Nunes"];
+    for (idx, signer) in signers.iter().enumerate() {
+        let sig = sample_nth_signature(act_id, signer, u8::try_from(idx).unwrap() + 1);
+        store.persist(|tx| tx.upsert_signed_document(&sig)).unwrap();
+    }
+
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 3);
+    assert_eq!(
+        history.iter().map(|s| s.seq).collect::<Vec<_>>(),
+        vec![1, 2, 3],
+        "seq is 1-based and gapless"
+    );
+    assert_eq!(
+        history
+            .iter()
+            .map(|s| s.document.signer_cert_subject.clone().unwrap())
+            .collect::<Vec<_>>(),
+        signers
+            .iter()
+            .map(|s| format!("CN={s}"))
+            .collect::<Vec<_>>(),
+        "retrieval order is signing order"
+    );
+    // The slot model belongs to t8; v23 records no slot.
+    assert!(history.iter().all(|s| s.slot_id.is_none()));
+}
+
+/// The append is idempotent on the signature itself, matching `upsert_signed_document`'s existing
+/// idempotent-on-retry contract: a replayed write must not inflate the chain with a duplicate.
+#[test]
+fn rewriting_the_same_signature_keeps_its_position() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let first = sample_nth_signature(act_id, "Amélia Marques", 1);
+    let second = sample_nth_signature(act_id, "Rui Ferreira", 2);
+
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .unwrap();
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .unwrap();
+    // Replay both, in the same order.
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .unwrap();
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .unwrap();
+
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 2, "a replay adds nothing");
+    assert_eq!(history[0].document, first, "and does not reorder");
+    assert_eq!(history[1].document, second);
+}
+
+/// Back-compat, and the reason nothing is migrated: a subject signed before v23 has a
+/// `signed_documents` row and no history rows. It must stay readable and must not read as unsigned.
+#[test]
+fn a_pre_v23_signed_document_stays_readable_as_a_single_signature() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let legacy = sample_signed(act_id);
+    store
+        .persist(|tx| tx.upsert_signed_document(&legacy))
+        .unwrap();
+
+    // Simulate a database written before v23: the artifact row exists, the history does not.
+    drop(store);
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute("DELETE FROM instrument_signatures", [])
+            .unwrap();
+    }
+    let store = Store::open(dir.path()).unwrap();
+
+    // The old lookup is untouched — `GET /v1/acts/{id}/document/signed`, export and recovery.
+    assert_eq!(
+        store.signed_document_for_act(act_id).unwrap(),
+        Some(legacy.clone())
+    );
+    assert_eq!(
+        store.all_signed_documents().unwrap().get(&act_id),
+        Some(&legacy)
+    );
+
+    // The raw history is genuinely empty — the fallback is doing the work, not a hidden migration.
+    assert!(
+        store
+            .instrument_signatures_for_subject(act_id)
+            .unwrap()
+            .is_empty()
+    );
+
+    // And the history read reports it as the subject's single, first signature.
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].seq, 1);
+    assert_eq!(history[0].document, legacy);
+
+    // A later signature on that legacy subject still appends rather than replacing. It lands at
+    // seq 1 of the real history: pre-v23 rows were never recorded there and are not backfilled.
+    let next = sample_nth_signature(act_id, "Rui Ferreira", 2);
+    store
+        .persist(|tx| tx.upsert_signed_document(&next))
+        .unwrap();
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].document, next);
+    // The legacy artifact is still where it always was, and still fetchable.
+    assert_eq!(store.signed_document_for_act(act_id).unwrap(), Some(next));
+}
+
+/// An unsigned subject has neither a history nor a current artifact.
+#[test]
+fn signature_history_for_an_unsigned_subject_is_empty() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let unknown = ActId(uuid::Uuid::new_v4());
+    assert!(
+        store
+            .signature_history_for_subject(unknown)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// Two subjects signed independently must not bleed into each other's chain.
+#[test]
+fn signature_chains_are_scoped_per_subject() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let (a, b) = (ActId(uuid::Uuid::new_v4()), ActId(uuid::Uuid::new_v4()));
+    for (subject, count) in [(a, 2u8), (b, 1u8)] {
+        for nth in 1..=count {
+            let sig = sample_nth_signature(subject, "Amélia Marques", nth);
+            store.persist(|tx| tx.upsert_signed_document(&sig)).unwrap();
+        }
+    }
+    assert_eq!(store.signature_history_for_subject(a).unwrap().len(), 2);
+    let b_history = store.signature_history_for_subject(b).unwrap();
+    assert_eq!(b_history.len(), 1);
+    assert_eq!(b_history[0].seq, 1, "b's chain starts at 1, not after a's");
 }
 
 #[test]
