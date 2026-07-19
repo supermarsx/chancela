@@ -28,7 +28,11 @@ export function LedgerTable({
 }) {
   const t = useT();
   const locale = useLocale();
-  if (events.length === 0) {
+  // Shared by the dashboard and the Arquivo page, so a single malformed row from either
+  // payload must not take the surrounding page down with the error boundary: drop it and
+  // render the rest of the chain.
+  const rows = events.filter((event): event is LedgerEventView => Boolean(event));
+  if (rows.length === 0) {
     return <EmptyState title={t('ledger.empty')} />;
   }
   return (
@@ -45,7 +49,7 @@ export function LedgerTable({
         </tr>
       }
     >
-      {events.map((e) => (
+      {rows.map((e) => (
         <tr key={e.id}>
           <td>{e.seq}</td>
           <td>
@@ -57,7 +61,7 @@ export function LedgerTable({
           {showChains ? (
             <td>
               <span className="ledger-chain-list">
-                {e.chains.map((chain) => (
+                {(e.chains ?? []).map((chain) => (
                   <Badge key={chain} tone="neutral">
                     <span title={chain}>{shortChain(chain)}</span>
                   </Badge>

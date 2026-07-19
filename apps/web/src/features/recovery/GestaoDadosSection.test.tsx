@@ -831,6 +831,25 @@ describe('GestaoDadosSection', () => {
     expect(screen.getAllByText('Não verificado').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('reports a probe the response omits as unchecked instead of crashing the section', async () => {
+    // A server that predates a probe key sends no entry for it; the row must degrade to
+    // "Não verificado" rather than take the whole page down with the error boundary.
+    const partialPermissions = { ...durableStatus.permissions };
+    delete (partialPermissions as Partial<DataStatusResponse['permissions']>).durable_store_open;
+    installFetch([{ ...durableStatus, permissions: partialPermissions }]);
+    renderWithProviders(<GestaoDadosSection />);
+
+    expect(await screen.findByText('Ler pasta')).toBeTruthy();
+    const permissionsSection = screen
+      .getByRole('heading', { name: 'Permissões' })
+      .closest('section')!;
+    const durableRow = within(permissionsSection)
+      .getAllByRole('listitem')
+      .find((item) => item.textContent?.includes('Loja durável'))!;
+    expect(durableRow.textContent).toContain('Não verificado');
+    expect(durableRow.className).toContain('data-status-probe--neutral');
+  });
+
   it('refreshes data status manually', async () => {
     const refreshed: DataStatusResponse = {
       ...durableStatus,

@@ -169,7 +169,9 @@ export function LedgerPage() {
   );
   const eventsQuery = useLedgerPages(ledgerParams);
   const pages = eventsQuery.data?.pages ?? [];
-  const events = pages.flatMap((page) => page.events);
+  // A page whose envelope carries no `events` array contributes no rows rather than a hole:
+  // `flatMap` would otherwise splice an `undefined` into the list and crash the table.
+  const events = pages.flatMap((page) => page.events ?? []);
   const activeFilterCount = countActiveFilters(filters);
   const activeFilters = activeFilterCount > 0;
   const chainOptions = useMemo(() => {

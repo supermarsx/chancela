@@ -11,6 +11,7 @@ import type {
   Dashboard,
   DashboardAlert,
   DashboardActStateCounts,
+  DashboardCurrentWork,
   DashboardLawReference,
   DashboardOpenBook,
   DashboardReminder,
@@ -33,6 +34,38 @@ import {
 import { LedgerTable } from '../ledger/LedgerTable';
 import { actConveningGuidanceRoute } from '../acts/anchors';
 import './DashboardPage.css';
+
+const NO_ACT_COUNTS: DashboardActStateCounts = {
+  Draft: 0,
+  Review: 0,
+  Convened: 0,
+  Deliberated: 0,
+  TextApproved: 0,
+  Signing: 0,
+  Sealed: 0,
+  Archived: 0,
+};
+
+/**
+ * Every collection below is required by the contract, so this normalisation should be a no-op
+ * against a correct server. It exists because the whole route lives behind a single error
+ * boundary: a response that omits `current_work` (or one of the lists) must degrade to the
+ * "nothing open" state each summary already renders for a tenant with no work, not to a white
+ * screen. Done once here so the summaries downstream stay unconditional.
+ */
+function withDashboardDefaults(data: Dashboard): Dashboard {
+  const currentWork = data.current_work as Partial<DashboardCurrentWork> | undefined;
+  return {
+    ...data,
+    current_work: {
+      open_books: currentWork?.open_books ?? [],
+      act_counts_by_state: { ...NO_ACT_COUNTS, ...currentWork?.act_counts_by_state },
+    },
+    alerts: data.alerts ?? [],
+    reminders: data.reminders ?? [],
+    recent_events: data.recent_events ?? [],
+  };
+}
 
 const RECENT_EVENTS_LIMIT = 10;
 const SUMMARY_LIST_LIMIT = 5;
@@ -1112,7 +1145,7 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
 export function DashboardPage() {
   const t = useT();
   const [params, setParams] = useSearchParams();
-  const { data, isLoading, error } = useDashboard();
+  const { data: payload, isLoading, error } = useDashboard();
   const tab = dashboardTabFromParam(params.get(DASHBOARD_TAB_PARAM));
 
   function selectTab(next: DashboardTab) {
@@ -1144,8 +1177,9 @@ export function DashboardPage() {
     );
   }
   if (error) return <ErrorNote error={error} />;
-  if (!data) return null;
+  if (!payload) return null;
 
+  const data = withDashboardDefaults(payload);
   const recentEvents = data.recent_events
     .slice()
     .sort(compareByRecency)

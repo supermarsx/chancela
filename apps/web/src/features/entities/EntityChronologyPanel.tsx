@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
 import { useEntityChronology } from '../../api/hooks';
 import type {
+  EntityChronologyAnalytics,
   EntityChronologyEvent,
   EntityChronologyMermaid,
   EntityChronologySealedActProjection,
@@ -20,8 +21,13 @@ function mermaidLabel(t: TFunction, key: MermaidKey): string {
   return t('entities.chronology.graph.relationships');
 }
 
+/**
+ * An absent graph reads as an empty one: `GraphPathSummary` and `MermaidSource` both already
+ * render the "sem grafo" message for an empty string, so a response missing `mermaid` (or one
+ * of its keys) degrades to that instead of throwing.
+ */
 function graphText(view: EntityChronologyView, key: MermaidKey): string {
-  return view.mermaid[key].trim();
+  return view.mermaid?.[key]?.trim() ?? '';
 }
 
 function actorsText(actors: string[], t: TFunction) {
@@ -215,15 +221,29 @@ function GraphPathSummary({
   );
 }
 
-function ChronologyAnalytics({ view, t }: { view: EntityChronologyView; t: TFunction }) {
+/**
+ * The analytics block is derived data the server computes from the events and graphs already
+ * rendered above. A response that omits it (an older server, or a projection that could not be
+ * computed) drops the section rather than the whole panel — nothing here is evidence that is
+ * unavailable elsewhere on the page.
+ */
+function ChronologyAnalytics({
+  analytics,
+  t,
+}: {
+  analytics: EntityChronologyAnalytics | undefined;
+  t: TFunction;
+}) {
+  if (!analytics) return null;
+
   const graphCounts = MERMAID_KEYS.map((key) => ({
     key,
     label: mermaidLabel(t, key),
-    counts: view.analytics.graph[key],
+    counts: analytics.graph?.[key],
   }));
   const sourceList =
-    view.analytics.source_inscriptions.length > 0
-      ? view.analytics.source_inscriptions
+    analytics.source_inscriptions.length > 0
+      ? analytics.source_inscriptions
           .map((inscription) => t('entities.chronology.sourceInscription', { inscription }))
           .join(', ')
       : t('entities.chronology.none');
@@ -238,28 +258,28 @@ function ChronologyAnalytics({ view, t }: { view: EntityChronologyView; t: TFunc
       <dl className="chronology-metrics">
         <div>
           <dt>{t('entities.chronology.analytics.totalEvents')}</dt>
-          <dd>{view.analytics.total_events}</dd>
+          <dd>{analytics.total_events}</dd>
         </div>
         <div>
           <dt>{t('entities.chronology.analytics.datedEvents')}</dt>
-          <dd>{view.analytics.dated_events}</dd>
+          <dd>{analytics.dated_events}</dd>
         </div>
         <div>
           <dt>{t('entities.chronology.analytics.undatedEvents')}</dt>
-          <dd>{view.analytics.undated_events}</dd>
+          <dd>{analytics.undated_events}</dd>
         </div>
         <div>
           <dt>{t('entities.chronology.analytics.sourceInscriptions')}</dt>
-          <dd>{view.analytics.source_inscription_count}</dd>
+          <dd>{analytics.source_inscription_count}</dd>
         </div>
       </dl>
 
       <div className="chronology-analytics__detail">
         <div>
           <h5>{t('entities.chronology.analytics.eventKinds')}</h5>
-          {view.analytics.event_kinds.length > 0 ? (
+          {analytics.event_kinds.length > 0 ? (
             <ul className="chronology-analytics__list">
-              {view.analytics.event_kinds.map((row) => (
+              {analytics.event_kinds.map((row) => (
                 <li key={row.kind}>
                   {t('entities.chronology.analytics.kindCount', {
                     kind: row.kind,
@@ -281,16 +301,22 @@ function ChronologyAnalytics({ view, t }: { view: EntityChronologyView; t: TFunc
         <div>
           <h5>{t('entities.chronology.analytics.graphCounts')}</h5>
           <ul className="chronology-analytics__list">
-            {graphCounts.map((graph) => (
-              <li key={graph.key}>
-                {t('entities.chronology.analytics.graphCount', {
-                  label: graph.label,
-                  nodes: graph.counts.nodes,
-                  edges: graph.counts.edges,
-                  warnings: graph.counts.warnings,
-                })}
-              </li>
-            ))}
+            {graphCounts.map((graph) =>
+              graph.counts ? (
+                <li key={graph.key}>
+                  {t('entities.chronology.analytics.graphCount', {
+                    label: graph.label,
+                    nodes: graph.counts.nodes,
+                    edges: graph.counts.edges,
+                    warnings: graph.counts.warnings,
+                  })}
+                </li>
+              ) : (
+                <li className="muted" key={graph.key}>
+                  {`${graph.label}: ${t('entities.chronology.graph.empty')}`}
+                </li>
+              ),
+            )}
           </ul>
         </div>
       </div>
@@ -509,7 +535,7 @@ export function EntityChronologyPanel({ entityId }: { entityId: string }) {
 
         <GraphPathSummary graphs={graphs} t={t} />
 
-        <ChronologyAnalytics view={chronology.data} t={t} />
+        <ChronologyAnalytics analytics={chronology.data.analytics} t={t} />
 
         <ChronologyTimeline view={chronology.data} t={t} />
 

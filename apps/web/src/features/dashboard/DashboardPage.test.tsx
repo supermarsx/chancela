@@ -1794,4 +1794,30 @@ describe('DashboardPage', () => {
       expect(within(complianceItem).queryByRole('link')).toBeNull();
     }
   });
+
+  it('degrades to the empty states when the payload omits current_work and the lists', async () => {
+    // A response missing these collections must not take the whole route down with the error
+    // boundary; every tab renders the same empty state as a tenant with no work.
+    const partial = { ...baseDashboard } as Partial<Dashboard>;
+    delete partial.current_work;
+    delete partial.alerts;
+    delete partial.reminders;
+    delete partial.recent_events;
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: partial }]));
+    renderDashboard();
+
+    // Estatísticas: the activity number cards read zero rather than throwing.
+    const activity = (await screen.findByText('Rascunhos e atas ativas')).closest('section');
+    expect(within(activity!).getAllByText('0').length).toBeGreaterThan(0);
+
+    await openDashboardTab('Atividades atuais');
+    expect(
+      await screen.findByText('Sem livros abertos expostos pelos dados do painel.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Sem atas ativas expostas pelos dados do painel.')).toBeTruthy();
+
+    await openDashboardTab('Últimos eventos');
+    expect(await screen.findByText('Sem eventos')).toBeTruthy();
+  });
 });

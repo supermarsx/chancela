@@ -250,13 +250,18 @@ function redactReceiptEvidenceText(value: string): string {
     .replace(MEMBER_FILENAME_RE, '[membro redigido]');
 }
 
-function permissionTone(check: DataPermissionCheck): 'ok' | 'warn' | 'neutral' {
-  if (!check.checked) return 'neutral';
+/**
+ * A probe the response carries no entry for is reported as unchecked, not as a crash:
+ * a server that predates a probe key omits it, which for the operator is the same
+ * situation as a probe that did not run. Never claim `ok` for a probe we have no result for.
+ */
+function permissionTone(check: DataPermissionCheck | undefined): 'ok' | 'warn' | 'neutral' {
+  if (!check?.checked) return 'neutral';
   return check.ok ? 'ok' : 'warn';
 }
 
-function permissionLabel(check: DataPermissionCheck, t: TFunction): string {
-  if (!check.checked) return t('data.status.permission.unchecked');
+function permissionLabel(check: DataPermissionCheck | undefined, t: TFunction): string {
+  if (!check?.checked) return t('data.status.permission.unchecked');
   return check.ok ? t('data.status.permission.ok') : t('data.status.permission.warn');
 }
 
@@ -275,11 +280,13 @@ function permissionSummary(
   permissions: DataPermissionStatus,
   t: TFunction,
 ): { label: string; tone: 'ok' | 'warn' | 'neutral' } {
-  const checks = PERMISSION_ROWS.map((row) => permissions[row.key]);
-  if (checks.some((check) => check.checked && !check.ok)) {
+  const checks: (DataPermissionCheck | undefined)[] = PERMISSION_ROWS.map(
+    (row) => permissions[row.key],
+  );
+  if (checks.some((check) => check?.checked && !check.ok)) {
     return { label: t('data.status.permission.warn'), tone: 'warn' };
   }
-  if (checks.some((check) => !check.checked)) {
+  if (checks.some((check) => !check?.checked)) {
     return { label: t('data.status.permission.unchecked'), tone: 'neutral' };
   }
   return { label: t('data.status.permission.ok'), tone: 'ok' };
@@ -2024,7 +2031,9 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                   </div>
                   <ul className="data-status-permissions">
                     {PERMISSION_ROWS.map((row) => {
-                      const check = data.permissions[row.key];
+                      // Typed as possibly absent on purpose: a response missing this probe
+                      // renders as "unchecked" instead of taking the page down.
+                      const check: DataPermissionCheck | undefined = data.permissions[row.key];
                       return (
                         <li
                           key={row.key}
@@ -2034,7 +2043,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                             {messageOrText(row.label, t)}
                           </span>
                           <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
-                          {check.message ? (
+                          {check?.message ? (
                             <span className="data-status-probe__message">{check.message}</span>
                           ) : null}
                         </li>
