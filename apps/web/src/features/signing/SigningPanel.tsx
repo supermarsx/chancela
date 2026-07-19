@@ -786,7 +786,7 @@ type SigningProvider = { id: string; kind: 'cmd' | 'csc'; label: string };
 /** The built-in CMD provider descriptor (its labels are fixed; `label` is unused for CMD). */
 const CMD_PROVIDER: SigningProvider = { id: CMD_PROVIDER_ID, kind: 'cmd', label: 'CMD' };
 
-function providerFromPending(
+export function providerFromPending(
   pending: PendingSignatureInfo,
   availableProviders: SignatureProviderView[],
 ): SigningProvider {
@@ -948,11 +948,11 @@ type TechnicalComparisonKind =
 
 type TechnicalComparisonTone = 'neutral' | 'accent' | 'warn' | 'error' | 'ok';
 
-function hasMetadata(value: string | null | undefined): value is string {
+export function hasMetadata(value: string | null | undefined): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function sameMetadata(left: string | null | undefined, right: string | null | undefined): boolean {
+export function sameMetadata(left: string | null | undefined, right: string | null | undefined): boolean {
   return (
     hasMetadata(left) &&
     hasMetadata(right) &&
@@ -960,7 +960,7 @@ function sameMetadata(left: string | null | undefined, right: string | null | un
   );
 }
 
-function comparisonStatus(
+export function comparisonStatus(
   kind: TechnicalComparisonKind,
   t: TFunction,
 ): { tone: TechnicalComparisonTone; label: string } {
@@ -983,7 +983,7 @@ function comparisonStatus(
   }
 }
 
-function technicalComparisonFamilyLabel(family: string, t: TFunction): string {
+export function technicalComparisonFamilyLabel(family: string, t: TFunction): string {
   if (family === FAMILY_OFFICIAL_HANDOFF) return t('signing.official.family');
   return signatureFamilyLabels[family as SignatureFamily] ?? family;
 }
@@ -1406,14 +1406,14 @@ function ProviderChoice({
   );
 }
 
-function providerEnvironmentLabel(environment: string | null | undefined, t: TFunction): string {
+export function providerEnvironmentLabel(environment: string | null | undefined, t: TFunction): string {
   if (environment === 'preprod') return t('signing.provider.manifest.environment.preprod');
   if (environment === 'prod') return t('signing.provider.manifest.environment.prod');
   if (environment === 'sandbox') return t('signing.provider.manifest.environment.sandbox');
   return t('signing.provider.manifest.environment.unknown');
 }
 
-function providerAuthorizationLabel(mode: string | null | undefined, t: TFunction): string {
+export function providerAuthorizationLabel(mode: string | null | undefined, t: TFunction): string {
   if (mode === 'pin_otp') return t('signing.provider.manifest.authorization.pinOtp');
   if (mode === 'service') return t('signing.provider.manifest.authorization.service');
   if (mode === 'user') return t('signing.provider.manifest.authorization.user');
@@ -1470,18 +1470,18 @@ function inviteStatusBadge(invite: ExternalSignerInviteView, t: TFunction) {
   return <Badge tone="neutral">{t('signing.invites.status.revoked')}</Badge>;
 }
 
-function workflowLabel(workflow: string, t: TFunction): string {
+export function workflowLabel(workflow: string, t: TFunction): string {
   if (workflow === 'tracking_only') return t('signing.invites.workflow.trackingOnly');
   if (workflow === 'external_envelope') return t('signing.invites.workflow.externalEnvelope');
   return workflow;
 }
 
-function orderPolicyLabel(policy: ExternalSigningOrderPolicy, t: TFunction): string {
+export function orderPolicyLabel(policy: ExternalSigningOrderPolicy, t: TFunction): string {
   if (policy === 'sequential') return t('signing.envelopes.order.sequential');
   return t('signing.envelopes.order.parallel');
 }
 
-function identityRequirementLabel(
+export function identityRequirementLabel(
   requirement: ExternalSignerIdentityRequirement,
   t: TFunction,
 ): string {
@@ -1492,7 +1492,7 @@ function identityRequirementLabel(
   return t('signing.envelopes.identity.representativeCapacity');
 }
 
-function slotStatusLabel(status: ExternalSignerSlotStatus, t: TFunction): string {
+export function slotStatusLabel(status: ExternalSignerSlotStatus, t: TFunction): string {
   if (status === 'pending') return t('signing.envelopes.slot.status.pending');
   if (status === 'initiated') return t('signing.envelopes.slot.status.initiated');
   if (status === 'signed') return t('signing.envelopes.slot.status.signed');
@@ -1508,7 +1508,7 @@ function slotStatusBadge(status: ExternalSignerSlotStatus, t: TFunction) {
   return <Badge tone="warn">{slotStatusLabel(status, t)}</Badge>;
 }
 
-function slotIdentityRequirements(slot: ExternalSigningEnvelopeSlotView, t: TFunction): string {
+export function slotIdentityRequirements(slot: ExternalSigningEnvelopeSlotView, t: TFunction): string {
   const requirements = slot.identity_requirements ?? [];
   return requirements.length
     ? requirements.map((requirement) => identityRequirementLabel(requirement, t)).join(', ')
@@ -1547,11 +1547,11 @@ function SlotEvidenceMetadata({ slot }: { slot: ExternalSigningEnvelopeSlotView 
   );
 }
 
-function slotCanRecordTechnicalEvidence(slot: ExternalSigningEnvelopeSlotView): boolean {
+export function slotCanRecordTechnicalEvidence(slot: ExternalSigningEnvelopeSlotView): boolean {
   return slot.status === 'pending' || slot.status === 'initiated';
 }
 
-function buildSlotEvidenceRows(
+export function buildSlotEvidenceRows(
   slot: ExternalSigningEnvelopeSlotView,
   form: SlotEvidenceFormState,
   t: TFunction,
@@ -1576,7 +1576,7 @@ function buildSlotEvidenceRows(
   return rows;
 }
 
-function inviteSlotOptions(envelopes: ExternalSigningEnvelopeView[], t: TFunction) {
+export function inviteSlotOptions(envelopes: ExternalSigningEnvelopeView[], t: TFunction) {
   return envelopes.flatMap((envelope) =>
     envelope.slots
       .filter((slot) => slot.status === 'pending')
