@@ -1,0 +1,23 @@
+# Repo-root entry point for the deployment profiles in docker/docker-compose.yml.
+#
+# It exists so that a bare `docker compose build` / `docker compose up` works
+# from the repo ROOT as well as from the `docker/` directory. Compose only
+# auto-discovers a compose file in the current directory, and the real
+# definitions live in docker/, so this file simply pulls them in.
+#
+#   docker compose up --build                       # single-node (default)
+#   docker compose --profile worker up --build      # + sync/backup worker
+#   docker compose --profile postgres up --build    # Postgres + Redis
+#
+# `include` resolves the included file's relative paths (build context `..`,
+# `./secrets/*`, `./postgres-tls-init.sh`) against docker/, so both invocation
+# points produce the identical configuration.
+#
+# `name` is pinned here and in docker/docker-compose.yml so running from either
+# directory targets the SAME project, containers, volumes and network — without
+# it Compose would derive the project name from the current directory and
+# silently create a second, parallel stack.
+name: chancela
+
+include:
+  - path: docker/docker-compose.yml

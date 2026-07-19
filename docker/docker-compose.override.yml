@@ -1,0 +1,18 @@
+# Auto-loaded next to docker/docker-compose.yml (identical to the repo-root
+# docker-compose.override.yml, so `docker compose up` behaves the same whether
+# it is run from the repo root or from this directory).
+#
+# Every service in docker-compose.yml is profile-gated, so a bare
+# `docker compose up` would otherwise fail with "no service selected". This
+# makes the single-node server the DEFAULT service, i.e. `docker compose up`
+# == `docker compose --profile single-node up`. Every other profile still has
+# to be requested explicitly.
+#
+# Compose does not auto-load override files when a file is passed with `-f`, so
+# the documented explicit forms (`docker compose -f docker/docker-compose.yml
+# --profile <p> ...`, used by docs/, scripts/ and CI) are unaffected. Use that
+# explicit form for `--profile postgres`: there the `chancela` service replaces
+# `server`, and both publish the same host port.
+services:
+  server:
+    profiles: !reset []
