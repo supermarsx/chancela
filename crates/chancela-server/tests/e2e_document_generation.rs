@@ -362,10 +362,19 @@ async fn document_pipeline_end_to_end_and_pdfa_conformance() {
 
     // Pre-seal the persisted PDF is the immutable canonical snapshot taken on entry to Signing —
     // the exact bytes a qualified signature will cover. Producing it at Signing rather than at seal
-    // is what lets the card sign a frozen document, so it is downloadable here by design.
+    // is what lets the card sign a frozen document, so it is downloadable here by design: the
+    // signers have to be able to see the very PDF they are signing. That contract arrived with
+    // `37f6b26` (enforce evidence before sealing acts); this journey asserted the pre-`37f6b26`
+    // world until now only because earlier-failing e2e binaries kept it from ever running.
     let (status, ctype, pre_seal_pdf) = get_bytes(&h, &format!("/v1/acts/{act_id}/document")).await;
-    assert_eq!(status, 200, "canonical signing snapshot is served before sealing");
-    assert!(ctype.starts_with("application/pdf"), "pre-seal ctype={ctype}");
+    assert_eq!(
+        status, 200,
+        "canonical signing snapshot is served before sealing"
+    );
+    assert!(
+        ctype.starts_with("application/pdf"),
+        "pre-seal ctype={ctype}"
+    );
     assert!(
         pre_seal_pdf.starts_with(b"%PDF-"),
         "pre-seal bytes are a PDF"
