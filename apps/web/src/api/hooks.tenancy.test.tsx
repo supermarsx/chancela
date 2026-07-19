@@ -382,7 +382,7 @@ describe('connector targets and durable jobs', () => {
     const cancelled = job({ status: 'cancelled' });
     vi.spyOn(api, 'cancelConnectorJob').mockResolvedValue(cancelled as never);
 
-    const listKey = keys.connectorJobs(TENANT, { status: 'queued' });
+    const listKey = keys.connectorJobs(TENANT, { limit: 25 });
     const detailKey = keys.connectorJob(TENANT, 'job-1');
     qc.setQueryData(listKey, {
       jobs: [job(), job({ id: 'job-2' })],
