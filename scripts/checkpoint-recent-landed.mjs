@@ -2412,12 +2412,12 @@ function assertCheckpointMap() {
     "PDF accessibility table-header scope self-check coverage",
   );
   assertFileContains(
-    "crates/chancela-doc/src/selfcheck.rs",
+    "crates/chancela-doc/src/selfcheck/mod.rs",
     "verify_local_structure_topology",
     "PDF accessibility bounded topology self-check marker",
   );
   assertFileContains(
-    "crates/chancela-doc/src/selfcheck.rs",
+    "crates/chancela-doc/src/selfcheck/mod.rs",
     "verify_table_cell_attributes",
     "PDF accessibility table-header scope verifier marker",
   );

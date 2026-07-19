@@ -233,7 +233,7 @@ identifier (`pdfuaid:part=1`) plus the mandatory `pdfaExtension` schema descript
 A document that doesn't clear the bar stays plain PDF/A-2U — there is no fabricated claim and
 no silent downgrade of the PDF/A metadata either way.
 
-**The first enforced gate is `crates/chancela-doc/src/selfcheck.rs`**, run on every
+**The first enforced gate is `crates/chancela-doc/src/selfcheck/mod.rs`**, run on every
 `pdfa::write()` call. For every document it asserts `/MarkInfo /Marked true`, a
 `/StructTreeRoot` with a non-empty `/RoleMap`, catalog `/Lang`, `/ViewerPreferences
 /DisplayDocTitle true`, and that no text-showing operator sits outside a marked-content scope;
