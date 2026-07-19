@@ -8,8 +8,8 @@
 
 use chancela_core::{
     Act, ActState, Book, BookKind, Entity, EntityId, EntityKind, MeetingChannel, Nipc,
-    TermoDeAbertura, act::ManualSignatureOriginalReference, open_and_seal_book, rule_pack_for,
-    seal_act,
+    TermoDeAbertura, TermoDeEncerramento, act::ManualSignatureOriginalReference,
+    open_and_seal_book, rule_pack_for, seal_act,
 };
 use chancela_ledger::Ledger;
 use time::macros::{date, time};
@@ -69,6 +69,35 @@ const OLD_SHAPE_TERMO_ABERTURA_JSON: &str = r#"{
     "required_signatories": ["Administrador"]
 }"#;
 
+/// A string-only termo de encerramento JSON: no structured records, no t8 tail.
+const OLD_SHAPE_TERMO_ENCERRAMENTO_JSON: &str = r#"{
+    "ata_count": 17,
+    "reason": "BookFull",
+    "closing_date": [2026, 365],
+    "required_signatories": ["Gerente"]
+}"#;
+
+/// A pre-t8 **open** book JSON: no `book_number`, `page_capacity`, `pages_used` or
+/// `pages_reserved` keys, and a termo carrying none of the instrument fields.
+const PRE_T8_OPEN_BOOK_JSON: &str = r#"{
+    "id": "00000000-0000-0000-0000-000000000005",
+    "entity_id": "00000000-0000-0000-0000-000000000003",
+    "kind": "GerenciaAdministracao",
+    "state": "Open",
+    "termo_abertura": {
+        "entity_name": "Sociedade X, S.A.",
+        "entity_nipc": "503004642",
+        "entity_seat": "Lisboa",
+        "purpose": "livro de atas",
+        "numbering_scheme": "Sequential",
+        "opening_date": [2020, 15],
+        "required_signatories": ["Gerente"]
+    },
+    "termo_encerramento": null,
+    "last_ata_number": 41,
+    "predecessor": null
+}"#;
+
 #[test]
 fn old_shape_act_json_deserializes_with_defaults() {
     let act: Act = serde_json::from_str(OLD_SHAPE_ACT_JSON).expect("old-shape act deserializes");
@@ -85,6 +114,8 @@ fn old_shape_act_json_deserializes_with_defaults() {
     assert!(!act.attachments[0].beginning_of_proof);
     assert_eq!(act.signatories[0].permilage, None);
     assert!(act.seal_metadata.is_none());
+    // t8/F15: an act that predates the capacity model has no frozen page count.
+    assert_eq!(act.page_count, None);
 
     // The free-text substance is intact and the act is still mutable / usable.
     assert_eq!(act.deliberations, "Aprovado o relatório de gestão.");
@@ -109,6 +140,14 @@ fn old_shape_book_json_deserializes_with_no_legal_hold() {
     let book: Book =
         serde_json::from_str(OLD_SHAPE_BOOK_JSON).expect("old-shape book deserializes");
     assert!(book.legal_hold.is_none());
+    // t8/F14: no capacity was ever declared, so the book is unlimited and its counters start
+    // at zero rather than being invented from historical content.
+    assert_eq!(book.book_number, None);
+    assert_eq!(book.page_capacity, None);
+    assert!(!book.has_page_capacity());
+    assert_eq!(book.pages_used, 0);
+    assert_eq!(book.pages_reserved, 0);
+    assert_eq!(book.pages_remaining(), None);
 }
 
 #[test]
@@ -117,6 +156,70 @@ fn old_shape_termo_abertura_deserializes_with_no_structured_signatories() {
         serde_json::from_str(OLD_SHAPE_TERMO_ABERTURA_JSON).expect("old-shape termo deserializes");
     assert_eq!(termo.required_signatories, vec!["Administrador"]);
     assert!(termo.required_signatory_records.is_empty());
+    // t8: the instrument tail is absent, so the termo is a purely *declared* one.
+    assert_eq!(termo.termo_instrument_id, None);
+    assert_eq!(termo.title, None);
+    assert_eq!(termo.book_number, None);
+    assert_eq!(termo.place, None);
+    assert_eq!(termo.page_capacity, None);
+    assert!(termo.body.is_empty());
+    assert!(
+        termo.collected_signatures.is_empty(),
+        "a legacy termo has declared names, never collected signatures"
+    );
+}
+
+#[test]
+fn old_shape_termo_encerramento_deserializes_with_no_instrument_tail() {
+    let termo: TermoDeEncerramento = serde_json::from_str(OLD_SHAPE_TERMO_ENCERRAMENTO_JSON)
+        .expect("old-shape closing termo deserializes");
+    assert_eq!(termo.ata_count, 17);
+    assert!(termo.required_signatory_records.is_empty());
+    assert_eq!(termo.termo_instrument_id, None);
+    assert!(termo.body.is_empty());
+    assert!(termo.collected_signatures.is_empty());
+    assert_eq!(termo.pages_used_at_close, None);
+}
+
+#[test]
+fn a_pre_t8_open_book_still_accepts_atas_without_limit() {
+    // §7.3 rule 4, non-negotiable: a book opened before the capacity model must never suddenly
+    // refuse an ata because a limit it never agreed to was invented for it.
+    let mut book: Book =
+        serde_json::from_str(PRE_T8_OPEN_BOOK_JSON).expect("pre-t8 open book deserializes");
+    assert!(book.is_open());
+    assert!(!book.has_page_capacity());
+    assert!(!book.is_capacity_exhausted());
+
+    for expected in 42..=60 {
+        assert_eq!(book.assign_next_ata_number().unwrap(), expected);
+        book.reserve_pages(25).unwrap();
+        book.consume_reserved_pages(25).unwrap();
+    }
+    assert!(
+        !book.is_capacity_exhausted(),
+        "an unlimited book never exhausts"
+    );
+}
+
+#[test]
+fn a_pre_t8_book_round_trips_without_gaining_keys() {
+    // Re-serializing a legacy book must not stamp t8 keys onto it: the stored JSON stays the
+    // shape it was written in, so nothing downstream sees a spurious capacity.
+    let book: Book = serde_json::from_str(PRE_T8_OPEN_BOOK_JSON).unwrap();
+    let json = serde_json::to_string(&book).unwrap();
+    for absent in [
+        "page_capacity",
+        "pages_used",
+        "pages_reserved",
+        "book_number",
+        "termo_instrument_id",
+        "collected_signatures",
+    ] {
+        assert!(!json.contains(absent), "{absent} must not appear: {json}");
+    }
+    let back: Book = serde_json::from_str(&json).unwrap();
+    assert_eq!(book, back);
 }
 
 #[test]
@@ -205,6 +308,7 @@ fn free_text_only_act_still_seals_under_csc_v2() {
             opening_date: date!(2026 - 01 - 15),
             required_signatories: vec!["Administrador".into()],
             required_signatory_records: Vec::new(),
+            ..TermoDeAbertura::default()
         },
         "sec@encosto",
         &mut ledger,

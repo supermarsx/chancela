@@ -357,6 +357,7 @@ async fn insert_closed_book(state: &AppState, closing_date: Date) -> String {
         opening_date: date(1999, Month::January, 1),
         required_signatories: vec!["Management".to_owned()],
         required_signatory_records: Vec::new(),
+        ..Default::default()
     })
     .expect("book opens");
     book.close(TermoDeEncerramento {
@@ -365,6 +366,7 @@ async fn insert_closed_book(state: &AppState, closing_date: Date) -> String {
         closing_date,
         required_signatories: vec!["Management".to_owned()],
         required_signatory_records: Vec::new(),
+        ..Default::default()
     })
     .expect("book closes");
     let book_id = book.id.to_string();

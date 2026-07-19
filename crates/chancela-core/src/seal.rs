@@ -161,6 +161,12 @@ struct ActPayload<'a> {
     convening: Option<&'a Convening>,
     #[serde(skip_serializing_if = "Option::is_none")]
     attendees: Option<&'a [Attendee]>,
+    // F15 (append-only). The rendered page count frozen at the content freeze, so the seal
+    // binds the act's page consumption as a fact rather than something re-derivable later. An
+    // act without one emits no bytes, so already-sealed acts and any act sealed without a
+    // count produce a byte-identical preimage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page_count: Option<u32>,
 }
 
 impl<'a> ActPayload<'a> {
@@ -188,6 +194,7 @@ impl<'a> ActPayload<'a> {
             members_represented: act.members_represented,
             convening: act.convening.as_ref(),
             attendees: (!act.attendees.is_empty()).then_some(act.attendees.as_slice()),
+            page_count: act.page_count,
         }
     }
 }
@@ -391,6 +398,7 @@ mod tests {
             opening_date: date!(2026 - 01 - 15),
             required_signatories: vec!["Administrador".into()],
             required_signatory_records: Vec::new(),
+            ..TermoDeAbertura::default()
         }
     }
 
@@ -1088,5 +1096,141 @@ mod tests {
             Sha256::digest(&new_bytes).as_slice(),
             Sha256::digest(&old_bytes).as_slice(),
         );
+    }
+
+    #[test]
+    fn digest_of_pre_existing_act_is_unchanged_by_the_f15_page_count() {
+        // The same guarantee for F15. An act carrying no frozen page count — every act that
+        // predates the capacity model, and any act sealed without one — must produce a
+        // preimage byte-identical to what it produced before `page_count` was appended.
+        use sha2::{Digest, Sha256};
+
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let act = ready_act(&book);
+        assert!(act.page_count.is_none());
+
+        // Faithful reconstruction of the ActPayload shape *before* F15 was appended: the same
+        // fields, same declaration order, up to `attendees`.
+        #[derive(Serialize)]
+        struct OldActPayload<'a> {
+            act_id: String,
+            book_id: String,
+            title: &'a str,
+            channel: MeetingChannel,
+            meeting_date: Option<time::Date>,
+            place: Option<&'a str>,
+            attendance_reference: Option<&'a str>,
+            deliberations: &'a str,
+            telematic_evidence: Option<&'a str>,
+            attachments: &'a [Attachment],
+            signatories: &'a [SignatorySlot],
+            retifies: Option<String>,
+            meeting_time: Option<time::Time>,
+            mesa: &'a Mesa,
+            agenda: &'a [AgendaItem],
+            referenced_documents: &'a [DocumentReference],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            written_resolution_evidence: Option<&'a WrittenResolutionEvidence>,
+            deliberation_items: &'a [DeliberationItem],
+            members_present: Option<u32>,
+            members_represented: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            convening: Option<&'a Convening>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            attendees: Option<&'a [Attendee]>,
+        }
+        let old = OldActPayload {
+            act_id: act.id.to_string(),
+            book_id: act.book_id.to_string(),
+            title: &act.title,
+            channel: act.channel,
+            meeting_date: act.meeting_date,
+            place: act.place.as_deref(),
+            attendance_reference: act.attendance_reference.as_deref(),
+            deliberations: &act.deliberations,
+            telematic_evidence: act.telematic_evidence.as_deref(),
+            attachments: &act.attachments,
+            signatories: &act.signatories,
+            retifies: act.retifies.map(|id| id.to_string()),
+            meeting_time: act.meeting_time,
+            mesa: &act.mesa,
+            agenda: &act.agenda,
+            referenced_documents: &act.referenced_documents,
+            written_resolution_evidence: act.written_resolution_evidence.as_ref(),
+            deliberation_items: &act.deliberation_items,
+            members_present: act.members_present,
+            members_represented: act.members_represented,
+            convening: act.convening.as_ref(),
+            attendees: (!act.attendees.is_empty()).then_some(act.attendees.as_slice()),
+        };
+
+        let new_bytes = serde_json::to_vec(&ActPayload::of(&act)).unwrap();
+        let old_bytes = serde_json::to_vec(&old).unwrap();
+
+        assert_eq!(new_bytes, old_bytes);
+        let json = String::from_utf8(new_bytes.clone()).unwrap();
+        assert!(
+            !json.contains("page_count"),
+            "an absent page count must not serialize"
+        );
+        assert_eq!(
+            Sha256::digest(&new_bytes).as_slice(),
+            Sha256::digest(&old_bytes).as_slice(),
+        );
+    }
+
+    #[test]
+    fn a_frozen_page_count_binds_into_the_seal_digest() {
+        // The companion proof: F15 is not silently dropped. A frozen page count changes the
+        // preimage, so the seal binds the act's page consumption as a recorded fact.
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let mut act = ready_act(&book);
+        let without = serde_json::to_vec(&ActPayload::of(&act)).unwrap();
+
+        act.freeze_page_count(3).unwrap();
+        let with = serde_json::to_vec(&ActPayload::of(&act)).unwrap();
+
+        assert_ne!(without, with, "a frozen page count must bind");
+        let json = String::from_utf8(with).unwrap();
+        assert!(json.contains("\"page_count\":3"), "{json}");
+    }
+
+    #[test]
+    fn a_page_count_is_frozen_once_and_never_moved() {
+        // R6: the count is captured at the content freeze and is a historical fact. If a
+        // template revision changed the rendered length, re-freezing must be refused rather
+        // than silently moving a sealed act's page consumption.
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let mut act = ready_act(&book);
+        act.freeze_page_count(4).unwrap();
+        // Idempotent for the same value, so a retried freeze is harmless.
+        act.freeze_page_count(4).unwrap();
+        assert!(matches!(
+            act.freeze_page_count(5),
+            Err(ActError::PageCountAlreadyFrozen { frozen: 4 })
+        ));
+        assert_eq!(act.page_count, Some(4));
+    }
+
+    #[test]
+    fn a_sealed_act_cannot_acquire_a_page_count_after_the_fact() {
+        let entity = entity();
+        let mut ledger = Ledger::default();
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        open_and_seal_book(&mut book, &entity, abertura(&entity), "sec@x", &mut ledger).unwrap();
+        let mut act = ready_act(&book);
+        seal_act(
+            &mut book,
+            &mut act,
+            &entity,
+            &CscArt63RulePack,
+            "sec@x",
+            true,
+            Some(manual_reference()),
+            &mut ledger,
+        )
+        .unwrap();
+        assert_eq!(act.state, ActState::Sealed);
+        assert!(matches!(act.freeze_page_count(2), Err(ActError::Sealed)));
     }
 }

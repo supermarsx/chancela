@@ -4015,6 +4015,7 @@ mod tests {
             opening_date: date!(2026 - 01 - 05),
             required_signatories: vec!["Gerência".to_owned()],
             required_signatory_records: Vec::new(),
+            ..Default::default()
         });
 
         let draft = Act::draft(book.id, "Rascunho", MeetingChannel::Physical);
@@ -4314,6 +4315,7 @@ mod tests {
             opening_date: date!(2026 - 01 - 05),
             required_signatories: Vec::new(),
             required_signatory_records: Vec::new(),
+            ..Default::default()
         });
         let entities = HashMap::from([(entity.id, entity.clone())]);
         let books = HashMap::from([(book.id, book.clone())]);
@@ -4393,6 +4395,7 @@ mod tests {
             opening_date: date!(2026 - 01 - 05),
             required_signatories: vec!["Administração".to_owned()],
             required_signatory_records: Vec::new(),
+            ..Default::default()
         });
         book.legal_hold = Some(LegalHold {
             reason: "litigation hold".to_owned(),

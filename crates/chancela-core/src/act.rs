@@ -902,6 +902,18 @@ pub struct Act {
     /// `TextApproved -> Signing` requires accepted human review first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_provenance: Option<AiProvenance>,
+    /// F15 — how many PDF/A pages this act occupies in its book.
+    ///
+    /// Captured **once**, at the `TextApproved -> Signing` content freeze, which is the moment
+    /// the rendered page count becomes both knowable and permanently stable. It is bound into
+    /// the seal payload as a recorded historical fact and **is never recomputed on read**: a
+    /// template revision must not be able to move a sealed act's page consumption after the
+    /// event. `None` on acts that predate the capacity model.
+    ///
+    /// Additive and append-only: `None` emits no bytes, so a pre-existing act's preimage — and
+    /// therefore its frozen digest — is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_count: Option<u32>,
 }
 
 impl Act {
@@ -936,6 +948,25 @@ impl Act {
             convening: None,
             attendees: Vec::new(),
             ai_provenance: None,
+            page_count: None,
+        }
+    }
+
+    /// Freeze the rendered page count at the content freeze (F15).
+    ///
+    /// Idempotent for the same value so a retried freeze is harmless, but a *different* value
+    /// is refused: the count is a fact about the bytes the signatures bind, not a cache.
+    pub fn freeze_page_count(&mut self, pages: u32) -> Result<(), ActError> {
+        match self.page_count {
+            Some(frozen) if frozen == pages => Ok(()),
+            Some(frozen) => Err(ActError::PageCountAlreadyFrozen { frozen }),
+            None => {
+                if matches!(self.state, ActState::Sealed | ActState::Archived) {
+                    return Err(ActError::Sealed);
+                }
+                self.page_count = Some(pages);
+                Ok(())
+            }
         }
     }
 

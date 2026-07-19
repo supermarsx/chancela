@@ -3503,6 +3503,7 @@ mod tests {
                     email: None,
                 },
             ],
+            ..Default::default()
         })
         .expect("book opens");
 
@@ -3538,6 +3539,7 @@ mod tests {
             opening_date: parse_date("2026-07-10").expect("valid date"),
             required_signatories: vec!["Administrador".to_owned()],
             required_signatory_records: Vec::new(),
+            ..Default::default()
         })
         .expect("book opens");
 

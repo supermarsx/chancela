@@ -344,6 +344,7 @@ fn termo(case: &FamilyCase) -> TermoDeAbertura {
             "Carla Neves".to_owned(),
         ],
         required_signatory_records: Vec::new(),
+        ..Default::default()
     }
 }
 

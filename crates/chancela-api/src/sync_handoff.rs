@@ -830,6 +830,7 @@ mod tests {
             opening_date: date!(2026 - 01 - 15),
             required_signatories: vec!["Administrador".to_owned()],
             required_signatory_records: Vec::new(),
+            ..Default::default()
         };
         book.termo_abertura = Some(termo);
         book.state = BookState::Closed;

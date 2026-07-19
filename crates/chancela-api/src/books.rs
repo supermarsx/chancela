@@ -114,6 +114,7 @@ pub async fn create_book(
         opening_date,
         required_signatories,
         required_signatory_records,
+        ..Default::default()
     };
     let mut book = match predecessor {
         Some(p) => Book::new_successor(entity_id, kind, BookId(p)),
@@ -273,6 +274,7 @@ pub async fn close_book(
         closing_date,
         required_signatories,
         required_signatory_records,
+        ..Default::default()
     };
     next.close(termo)?; // BookError::NotClosable → 409
 

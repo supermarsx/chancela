@@ -903,6 +903,7 @@ mod tests {
                 opening_date: date!(2026 - 01 - 10),
                 required_signatories: vec!["Administrador".to_owned()],
                 required_signatory_records: Vec::new(),
+                ..Default::default()
             })
             .expect("open book");
         for _ in 0..4 {
@@ -921,6 +922,7 @@ mod tests {
                 opening_date: date!(2026 - 02 - 01),
                 required_signatories: vec!["Presidente".to_owned()],
                 required_signatory_records: Vec::new(),
+                ..Default::default()
             })
             .expect("open successor");
         for _ in 0..8 {
@@ -933,6 +935,7 @@ mod tests {
                 closing_date: date!(2026 - 06 - 30),
                 required_signatories: vec!["Presidente".to_owned()],
                 required_signatory_records: Vec::new(),
+                ..Default::default()
             })
             .expect("close successor");
 

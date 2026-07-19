@@ -568,6 +568,10 @@ pub async fn start_over_book(
         opening_date,
         required_signatories,
         required_signatory_records,
+        // The successor's termo is shaped exactly like a freshly-created book's
+        // (`books::create_book`): the t8 instrument fields are not carried over from the book being
+        // started over, so a start-over successor opens with a clean termo.
+        ..Default::default()
     };
     // Appends the `book.opened` genesis of the successor chain (fresh chain, always opens cleanly).
     open_and_seal_book(&mut new_book, entity, termo, &actor, &mut ledger)?;

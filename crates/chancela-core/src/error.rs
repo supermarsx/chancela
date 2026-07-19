@@ -4,9 +4,11 @@
 //! (such as `chancela-api`) that would rather match a single enum.
 
 use thiserror::Error;
+use uuid::Uuid;
 
-use crate::act::ActState;
+use crate::act::{ActState, SignatoryCapacity};
 use crate::book::BookState;
+use crate::termo::{TermoCompletionPolicy, TermoKind, TermoState};
 
 /// A NIPC (número de identificação de pessoa coletiva) failed validation.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -41,6 +43,221 @@ pub enum BookError {
         /// The id of the book the operation was invoked on.
         book: String,
     },
+    /// The book has no room for the pages an act needs (F14).
+    ///
+    /// Raised at the act's content freeze, never mid-signature. The remedy is to close this
+    /// book and continue in a successor. A book with no declared capacity never raises this.
+    #[error(
+        "book has no remaining capacity: {required} page(s) requested, \
+         {used} used and {reserved} reserved of {capacity}"
+    )]
+    CapacityExceeded {
+        /// Pages the book was opened with.
+        capacity: u32,
+        /// Pages consumed by sealed atas.
+        used: u32,
+        /// Pages held by atas frozen in signing.
+        reserved: u32,
+        /// Pages the refused operation asked for.
+        required: u32,
+    },
+    /// A reservation release or conversion referred to more pages than are reserved.
+    #[error("cannot settle {requested} reserved page(s); only {reserved} are reserved")]
+    NoSuchReservation {
+        /// Pages currently reserved.
+        reserved: u32,
+        /// Pages the operation asked to settle.
+        requested: u32,
+    },
+    /// A declared page capacity fell outside the accepted bounds.
+    #[error("page capacity {requested} is outside the accepted range {min}..={max}")]
+    PageCapacityOutOfRange {
+        /// The rejected value.
+        requested: u32,
+        /// Smallest accepted capacity.
+        min: u32,
+        /// Largest accepted capacity.
+        max: u32,
+    },
+    /// The page arithmetic would overflow.
+    #[error("page count arithmetic overflowed")]
+    PageCountOverflow,
+}
+
+/// A termo instrument transition, mutation or validation was rejected.
+///
+/// Only two of these encode a legal requirement — [`TermoError::NoSignatories`] (CCom
+/// art. 31.º n.º 2 requires the termo be *lavrado* by a qualified person, so a termo with no
+/// signatory has no author) and [`TermoError::ForbiddenCapacity`] (the provision's closed list
+/// of who may draw it up). Every other variant is product or evidentiary-assurance policy and
+/// must not be surfaced as a legal mandate.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum TermoError {
+    /// A mutation was attempted after the content was frozen for signing.
+    #[error("termo is not editable in state {0:?}; content freezes on entering Signing")]
+    NotMutable(TermoState),
+    /// The requested lifecycle transition is not legal from the current state.
+    #[error("invalid termo transition from {from:?} to {to:?}")]
+    InvalidTransition {
+        /// State the instrument was in.
+        from: TermoState,
+        /// State the transition attempted to reach.
+        to: TermoState,
+    },
+    /// A signature operation was attempted while the instrument was not collecting.
+    #[error("termo is not collecting signatures (state {0:?})")]
+    NotSigning(TermoState),
+    /// **LAW** — CCom art. 31.º n.º 2: the termo must be drawn up by a qualified person, so an
+    /// instrument with no signatory at all has no author.
+    #[error("a termo must name at least one signatory (Código Comercial art. 31.º n.º 2)")]
+    NoSignatories,
+    /// Signatories exist but none is marked required, so nothing would ever have to be signed.
+    #[error("a termo must have at least one required signatory")]
+    NoRequiredSlots,
+    /// **LAW** — the capacity is outside CCom art. 31.º n.º 2's closed list of who may draw up
+    /// the termos.
+    #[error(
+        "capacity {capacity:?} may not draw up a termo; Código Comercial art. 31.º n.º 2 names \
+         the administração, the members of the organ concerned, the secretário da sociedade \
+         and the presidente da mesa da assembleia geral"
+    )]
+    ForbiddenCapacity {
+        /// The slot that carried the refused capacity.
+        slot_id: Uuid,
+        /// The refused capacity.
+        capacity: SignatoryCapacity,
+    },
+    /// The same slot id appears twice.
+    #[error("duplicate termo signatory slot id {0}")]
+    DuplicateSlotId(Uuid),
+    /// Two slots claim the same position, which would make the signing order ambiguous.
+    #[error("duplicate termo signatory slot order {0}")]
+    DuplicateSlotOrder(u16),
+    /// No slot with the requested id exists.
+    #[error("termo signatory slot {0} was not found")]
+    SlotNotFound(Uuid),
+    /// The slot already carries a collected signature.
+    #[error("termo signatory slot {0} has already signed")]
+    SlotAlreadySigned(Uuid),
+    /// A slot cannot sign while an earlier required slot is unsigned: in sequential PAdES,
+    /// each signer signs the previous signer's output.
+    #[error("termo signatory slot {blocked} waits for earlier required slot {waiting_on}")]
+    SequentialOrderBlocked {
+        /// The slot being held back.
+        blocked: Uuid,
+        /// The earlier required slot that must sign first.
+        waiting_on: Uuid,
+    },
+    /// The completion policy is not yet satisfied.
+    #[error("required termo signatory slots are not signed: {slot_ids:?}")]
+    RequiredSlotsNotSigned {
+        /// Required slot ids that still block completion.
+        slot_ids: Vec<Uuid>,
+    },
+    /// The completion policy cannot be satisfied by the configured slots.
+    #[error("completion policy {policy:?} is invalid for {required_slot_count} required slot(s)")]
+    InvalidCompletionPolicy {
+        /// The rejected policy.
+        policy: TermoCompletionPolicy,
+        /// How many slots are marked required.
+        required_slot_count: u16,
+    },
+    /// The policy could complete without any management signature.
+    ///
+    /// **Product policy applied on top of the law, not a legal requirement.** The statute
+    /// reads as a set of alternatives in which a secretário or presidente da mesa alone could
+    /// suffice; requiring management at minimum is the product's own stricter rule.
+    #[error(
+        "completion policy {policy:?} could complete without a signature from the \
+         administração; at least one required signatory must sign in a management capacity"
+    )]
+    ManagementFloorNotSatisfiable {
+        /// The rejected policy.
+        policy: TermoCompletionPolicy,
+    },
+    /// The termo has no clauses.
+    #[error("a termo must have at least one clause")]
+    EmptyBody,
+    /// The body exceeds the clause cap.
+    #[error("a termo may have at most {max} clauses, got {count}")]
+    TooManyClauses {
+        /// Clauses supplied.
+        count: usize,
+        /// Cap.
+        max: usize,
+    },
+    /// The same clause id appears twice.
+    #[error("duplicate termo clause id {0}")]
+    DuplicateClauseId(Uuid),
+    /// A clause carries no text.
+    #[error("termo clause {clause_id} has no text")]
+    EmptyClauseText {
+        /// The offending clause.
+        clause_id: Uuid,
+    },
+    /// A clause's text exceeds the size cap.
+    #[error("termo clause {clause_id} is {bytes} bytes; the maximum is {max_bytes}")]
+    ClauseTextTooLong {
+        /// The offending clause.
+        clause_id: Uuid,
+        /// Size supplied.
+        bytes: usize,
+        /// Cap.
+        max_bytes: usize,
+    },
+    /// A signatory slot carries no name.
+    #[error("termo signatory slot {slot_id} has no name")]
+    EmptySignatoryName {
+        /// The offending slot.
+        slot_id: Uuid,
+    },
+    /// A required field was absent.
+    #[error("termo field {0} is required")]
+    MissingField(&'static str),
+    /// A field was present but blank.
+    #[error("termo field {0} must not be blank")]
+    EmptyField(&'static str),
+    /// A field exceeded its length bound.
+    #[error("termo field {field} exceeds {max_chars} characters")]
+    TextTooLong {
+        /// The offending field.
+        field: &'static str,
+        /// Cap.
+        max_chars: usize,
+    },
+    /// A field was set that does not belong on this kind of termo.
+    #[error("termo field {field} does not apply to a termo de {kind}")]
+    FieldNotApplicable {
+        /// The offending field.
+        field: &'static str,
+        /// The kind it was set on.
+        kind: TermoKind,
+    },
+    /// The declared page capacity fell outside the accepted bounds.
+    #[error("page capacity {requested} is outside the accepted range {min}..={max}")]
+    PageCapacityOutOfRange {
+        /// The rejected value.
+        requested: u32,
+        /// Smallest accepted capacity.
+        min: u32,
+        /// Largest accepted capacity.
+        max: u32,
+    },
+    /// A book number below 1 was supplied.
+    #[error("book number must be at least 1, got {0}")]
+    InvalidBookNumber(u32),
+    /// A withdrawal was attempted after signatures had been collected, which would leave those
+    /// signatures binding bytes the instrument no longer has.
+    #[error("cannot withdraw a termo once signatures have been collected")]
+    SignaturesAlreadyCollected,
+    /// The instrument was projected into the wrong payload type.
+    #[error("expected a termo de {expected}, got a termo de {actual}")]
+    WrongKind {
+        /// Kind the projection required.
+        expected: TermoKind,
+        /// Kind the instrument actually is.
+        actual: TermoKind,
+    },
 }
 
 /// An act (ata) state-machine transition or mutation was rejected.
@@ -57,6 +274,15 @@ pub enum ActError {
     /// A content mutation was attempted on a sealed (append-only) act (WFL-20 / DAT-12).
     #[error("act is sealed and append-only; corrections must be a new act (WFL-21)")]
     Sealed,
+    /// The act's rendered page count was already frozen (F15).
+    ///
+    /// The count is a recorded historical fact captured at the content freeze; recomputing it
+    /// on read would let a template revision silently move a sealed act's page consumption.
+    #[error("act page count is already frozen at {frozen}; it is never recomputed")]
+    PageCountAlreadyFrozen {
+        /// The count captured at the content freeze.
+        frozen: u32,
+    },
 }
 
 /// Sealing an act or opening a book failed.
@@ -99,6 +325,9 @@ pub enum CoreError {
     /// See [`ActError`].
     #[error(transparent)]
     Act(#[from] ActError),
+    /// See [`TermoError`].
+    #[error(transparent)]
+    Termo(#[from] TermoError),
     /// See [`SealError`].
     #[error(transparent)]
     Seal(#[from] SealError),

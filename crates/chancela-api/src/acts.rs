@@ -1286,6 +1286,7 @@ mod tests {
                 .expect("valid opening date"),
             required_signatories: vec!["Administrador".to_owned()],
             required_signatory_records: Vec::new(),
+            ..Default::default()
         })
         .expect("test book opens");
         book

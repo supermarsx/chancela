@@ -9,6 +9,10 @@
 //!   lifecycle framed by a [`TermoDeAbertura`] and a [`TermoDeEncerramento`]
 //!   (WFL-10..14). The sealed termo de abertura is the genesis event of the book's
 //!   hash chain (WFL-11 / DAT-11).
+//! - [`TermoInstrument`] — either termo as a **drafted, fillable, signable instrument** in its
+//!   own right (Código Comercial art. 31.º n.º 2 names the two termos together and puts them
+//!   on the same signers). It is projected into [`TermoDeAbertura`] / [`TermoDeEncerramento`]
+//!   at seal time, so those remain the ledger payload types.
 //! - [`Act`] — an *ata*, with the
 //!   `Draft -> Review -> Convened -> Deliberated -> TextApproved -> Signing -> Sealed
 //!   -> Archived` state machine (WFL-01). Sealing assigns a sequential *ata* number
@@ -35,6 +39,7 @@ pub mod profile;
 pub mod rules;
 pub mod seal;
 pub mod tenant;
+pub mod termo;
 
 pub use act::{
     Act, ActId, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
@@ -45,8 +50,9 @@ pub use act::{
     WrittenResolutionEvidenceSummary, written_resolution_evidence_summary,
 };
 pub use book::{
-    Book, BookId, BookKind, BookState, LegalHold, NumberingScheme, TermoDeAbertura,
-    TermoDeEncerramento, TermoSignatory,
+    Book, BookId, BookKind, BookState, ClosingReason, LegalHold, NumberingScheme,
+    TermoClauseRecord, TermoCollectedSignature, TermoDeAbertura, TermoDeEncerramento,
+    TermoSignatory,
 };
 pub use document_model::{
     Block, DocumentModel, KvRow, LifecycleStage, Run, SignatureSlot, VoteRow,
@@ -54,7 +60,7 @@ pub use document_model::{
 pub use entity::{
     Entity, EntityFamily, EntityId, EntityKind, Majority, Nipc, Quorum, StatuteOverrides,
 };
-pub use error::{ActError, BookError, CoreError, NipcError, SealError};
+pub use error::{ActError, BookError, CoreError, NipcError, SealError, TermoError};
 pub use external_signing::{
     ExternalSignatureCompletionSummary, ExternalSignatureEnvelope, ExternalSignatureEnvelopeId,
     ExternalSignatureEvidence, ExternalSignerSlot, ExternalSignerSlotId, ExternalSignerSlotStatus,
@@ -80,3 +86,9 @@ pub use rules::{
 };
 pub use seal::{SealEvidence, SealOutcome, open_and_seal_book, seal_act, seal_act_with_evidence};
 pub use tenant::{DEFAULT_TENANT_ID, Tenant, TenantId, default_tenant_id};
+pub use termo::{
+    ClauseOrigin, DEFAULT_PAGE_CAPACITY, MAX_CLAUSE_TEXT_BYTES, MAX_PAGE_CAPACITY,
+    MAX_TERMO_CLAUSES, MIN_PAGE_CAPACITY, TermoClause, TermoCompletionPolicy,
+    TermoCompletionSummary, TermoFields, TermoInstrument, TermoInstrumentId, TermoKind,
+    TermoSignatorySlot, TermoState, is_management_capacity, is_permitted_termo_capacity,
+};
