@@ -446,9 +446,14 @@ pub async fn restore_store(
     let sidecars = state.instance_sidecars()?;
     let passphrase = req.passphrase;
 
-    // Do this before swapping durable state. If the shared Redis authority is unavailable, abort
-    // the restore rather than let pre-restore sessions become valid again after recovery.
-    state.invalidate_all_sessions().await?;
+    // Fail-closed BEFORE swapping durable state: if the shared session authority cannot be reached,
+    // abort now rather than recover into an instance whose pre-restore bearers cannot be revoked.
+    // This only probes — the sessions themselves are invalidated after the swap succeeds, because a
+    // restore that is refused (bad archive ⇒ 422, nothing applied) must not destroy the operator's
+    // session as a side effect. Invalidating up front made "this operation was refused" and "your
+    // session is dead" the same outcome, which is exactly the partial-apply leak this endpoint's
+    // verify-before-swap contract promises does not happen.
+    state.probe_session_authority()?;
 
     let outcome = {
         let mut ledger_guard = state.ledger.write().await;
@@ -486,6 +491,10 @@ pub async fn restore_store(
         crate::refresh_degraded(&state, &ledger_guard).await;
         outcome
     };
+
+    // The swap landed: every pre-restore bearer must now stop working against the recovered
+    // instance, including the one that drove this restore.
+    state.invalidate_all_sessions().await?;
 
     // The swap replaced the whole DB; refresh the in-memory read-models so reads reflect it.
     state.reload_domain_memory().await?;

@@ -1756,7 +1756,53 @@ fn normalized_absolute(path: &FsPath) -> Result<PathBuf, String> {
             }
         }
     }
-    Ok(normalized)
+    Ok(resolve_existing_prefix(normalized))
+}
+
+/// Replace the longest *existing* prefix of `path` with its real (fully symlink-resolved) path,
+/// re-appending the components that do not exist yet.
+///
+/// This is what makes the configured object root a **real** path before anything else in this
+/// module touches it. It deliberately does **not** relax [`ensure_existing_components`]: every
+/// component at or below the root is still rejected outright if it is a symbolic link, so the
+/// traversal protection that guard exists for — an attacker swapping `objects/<repo>` for a link
+/// pointing outside the root — is completely unchanged.
+///
+/// What it does fix is that the guard was also walking the components *above* the root, i.e. the
+/// host's own filesystem layout, which the deployment does not control and the repository has no
+/// standing to veto. On macOS `$TMPDIR` lives under `/var`, which is a symlink to `/private/var`,
+/// so every path under it was refused before the repository looked at a single byte it owns. The
+/// same shape appears on real hosts (`/home` under autofs, container bind mounts). Resolving the
+/// root up front means the walk asks about real directories rather than about that ancestry —
+/// nothing is exempted from the check, the check is simply asked the right question.
+///
+/// Unix only: on Windows `fs::canonicalize` returns `\\?\`-verbatim paths, which would change the
+/// `starts_with` / `strip_prefix` containment arithmetic every caller here depends on. Windows has
+/// no equivalent of the `/var` case, so it keeps the previous, byte-identical behaviour.
+#[cfg(unix)]
+fn resolve_existing_prefix(path: PathBuf) -> PathBuf {
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut probe = path.as_path();
+    loop {
+        if let Ok(mut resolved) = fs::canonicalize(probe) {
+            for component in tail.iter().rev() {
+                resolved.push(component.as_os_str());
+            }
+            return resolved;
+        }
+        // Nothing on this path exists yet (or it is unreadable): leave it lexically normalized.
+        let (Some(name), Some(parent)) = (probe.file_name(), probe.parent()) else {
+            return path;
+        };
+        tail.push(name.to_owned());
+        probe = parent;
+    }
+}
+
+/// Windows keeps the previous, byte-identical behaviour — see the `#[cfg(unix)]` twin above.
+#[cfg(not(unix))]
+fn resolve_existing_prefix(path: PathBuf) -> PathBuf {
+    path
 }
 
 fn safe_join(root: &FsPath, relative: &str) -> Result<PathBuf, ApiError> {

@@ -1469,7 +1469,31 @@ impl AppState {
         }
     }
 
-    /// Invalidate all authenticated sessions before a whole-instance restore/factory reset. Redis
+    /// Fail-closed reachability check on the shared session authority, with **no** side effect on
+    /// any live session.
+    ///
+    /// A restore must not swap durable state unless it is known that every pre-restore bearer can
+    /// afterwards be invalidated — otherwise old tokens stay valid against the recovered instance.
+    /// That guarantee only requires knowing the authority is *reachable* before the swap; actually
+    /// clearing the sessions before the archive has been accepted destroys the caller's session for
+    /// an operation that is then refused and applies nothing.
+    ///
+    /// `resolve` is the probe because it is already fail-closed (`Unavailable` on any backend
+    /// error, never a miss) and, on a token that does not exist, is a pure read.
+    pub(crate) fn probe_session_authority(&self) -> Result<(), ApiError> {
+        let probe_token = format!("probe-{}", uuid::Uuid::new_v4());
+        match self.cluster_shared.sessions.resolve(
+            &probe_token,
+            std::time::Duration::from_secs(actor::SESSION_TTL_SECS.max(0) as u64),
+        ) {
+            cluster_shared_state::SessionLookup::Unavailable => Err(ApiError::Unavailable(
+                "não foi possível contactar as sessões partilhadas; operação cancelada".to_owned(),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// Invalidate all authenticated sessions after a whole-instance restore/factory reset. Redis
     /// advances an authority epoch atomically, so every old digest becomes invalid without scanning
     /// keys; a shared-store failure aborts the destructive operation before it mutates durable data.
     pub(crate) async fn invalidate_all_sessions(&self) -> Result<(), ApiError> {

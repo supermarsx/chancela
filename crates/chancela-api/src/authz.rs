@@ -449,14 +449,6 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/api", RouteClass::Exempt),
     ("/api/", RouteClass::Exempt),
     ("/health/{*rest}", RouteClass::Exempt),
-    // In-process test-fixture upstreams (NOT part of chancela's router): mock external servers the
-    // reqwest fetch paths hit instead of the network — `/Versao/Exportacao` mocks the INE SMI
-    // version-export catalog, `/{id}` mocks the law-PDF download. `router_paths_from_source` walks
-    // the whole `lib.rs` (its `\n}\n` region terminator does not match the CRLF-terminated router
-    // block), so these fixture `.route(...)` literals surface in the walk. They are unauthenticated
-    // by design (bare mock servers), so they are `Exempt`.
-    ("/Versao/Exportacao", RouteClass::Exempt),
-    ("/{id}", RouteClass::Exempt),
     // --- Any valid session (introspection for the web permissions context) ----------------------
     ("/v1/session/permissions", RouteClass::Session),
     // --- Companion device pairing (wp27-e4) -----------------------------------------------------
@@ -899,14 +891,20 @@ mod tests {
     /// Extract every `.route("<path>", ...)` path literal from the router source. A tiny hand parser
     /// (no regex dep): find each `.route(`, skip to the next `"`, read to the closing `"`.
     fn router_paths_from_source() -> Vec<String> {
-        const SRC: &str = include_str!("lib.rs");
+        const RAW: &str = include_str!("lib.rs");
+        // `include_str!` yields whatever line endings the working tree was checked out with, and
+        // `.gitattributes` is `* text=auto` — so this file is LF under CI's Linux/macOS runners and
+        // CRLF on a Windows checkout. Normalizing first keeps the region terminator below matching
+        // on both, otherwise the walk silently runs to EOF on Windows and picks up the `.route(...)`
+        // literals of the in-process test-fixture mock servers further down `lib.rs`.
+        let src = RAW.replace("\r\n", "\n");
         // Only walk the `router()` builder, not the whole file (the module has test routers too).
-        let start = SRC
+        let start = src
             .find("pub fn router(")
             .expect("router() must exist in lib.rs");
-        let body = &SRC[start..];
-        let end = body.find("\n}\n").map(|e| e + start).unwrap_or(SRC.len());
-        let region = &SRC[start..end];
+        let body = &src[start..];
+        let end = body.find("\n}\n").map(|e| e + start).unwrap_or(src.len());
+        let region = &src[start..end];
 
         let mut paths = Vec::new();
         let mut rest = region;

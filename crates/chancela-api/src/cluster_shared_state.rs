@@ -1063,6 +1063,45 @@ mod tests {
         );
     }
 
+    /// The pre-swap guard on a whole-store restore: it must still refuse to proceed when the shared
+    /// session authority is unreachable (otherwise a recovered instance keeps honouring pre-restore
+    /// bearers), but it must NOT invalidate anything itself — a restore that is then refused leaves
+    /// the operator's session working.
+    #[tokio::test]
+    async fn session_authority_probe_fails_closed_without_touching_live_sessions() {
+        let backend = FakeSharedSessions::default();
+        let uid = Uuid::new_v4();
+        backend.put("tok", uid, 1_700_000_000, Duration::from_secs(60));
+        let mut state = crate::AppState::default();
+        state.cluster_shared.sessions = SharedSessionStore::new(backend.clone());
+        state.sessions.write().await.insert(
+            "tok".to_owned(),
+            crate::session::SessionEntry {
+                user_id: crate::users::UserId(uid),
+                unlocked_key: None,
+                expires_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            },
+        );
+
+        // Reachable authority: the probe passes and the live session is untouched.
+        state
+            .probe_session_authority()
+            .expect("authority reachable");
+        assert!(state.sessions.read().await.contains_key("tok"));
+        assert!(matches!(
+            backend.resolve("tok", Duration::from_secs(60)),
+            SessionLookup::Found { .. }
+        ));
+
+        // Unreachable authority: fail closed, so the caller aborts before swapping durable state.
+        let mut state = crate::AppState::default();
+        state.cluster_shared.sessions = SharedSessionStore::new(FailingSessions);
+        assert!(matches!(
+            state.probe_session_authority(),
+            Err(crate::ApiError::Unavailable(_))
+        ));
+    }
+
     #[cfg(feature = "redis")]
     #[tokio::test]
     async fn all_sessions_pubsub_event_evicts_node_local_cache() {
