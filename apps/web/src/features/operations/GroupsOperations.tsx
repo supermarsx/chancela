@@ -91,10 +91,16 @@ function CreateGroupForm({ tenantId }: { tenantId: string }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await create.mutateAsync({
-      tenantId,
-      body: { name: name.trim(), description: description.trim() || undefined },
-    });
+    try {
+      await create.mutateAsync({
+        tenantId,
+        body: { name: name.trim(), description: description.trim() || undefined },
+      });
+    } catch {
+      // React Query retains and renders the typed API error through `create.error`; keep the
+      // typed values so the operator can correct and resubmit.
+      return;
+    }
     setName('');
     setDescription('');
   }
@@ -201,7 +207,12 @@ function GroupMembers({
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!entityId) return;
-    await assign.mutateAsync({ tenantId, groupId, entityId });
+    try {
+      await assign.mutateAsync({ tenantId, groupId, entityId });
+    } catch {
+      // Rendered through `assign.error`; keep the chosen entity so it can be retried.
+      return;
+    }
     setEntityId('');
   }
 
@@ -261,9 +272,7 @@ function GroupMembers({
                   type="button"
                   variant="ghost"
                   disabled={remove.isPending}
-                  onClick={() =>
-                    void remove.mutateAsync({ tenantId, groupId, entityId: entity.id })
-                  }
+                  onClick={() => remove.mutate({ tenantId, groupId, entityId: entity.id })}
                 >
                   {t('operations.groups.members.remove')}
                 </GateButton>
@@ -303,7 +312,7 @@ function LibraryDetail({
         className="form operations-form"
         onSubmit={(event) => {
           event.preventDefault();
-          void patch.mutateAsync({
+          patch.mutate({
             tenantId,
             groupId,
             libraryId: library.id,
@@ -351,7 +360,7 @@ function LibraryDetail({
             variant="ghost"
             icon={<Icon.Archive />}
             disabled={archive.isPending}
-            onClick={() => void archive.mutateAsync({ tenantId, groupId, libraryId: library.id })}
+            onClick={() => archive.mutate({ tenantId, groupId, libraryId: library.id })}
           >
             {t('operations.groups.libraries.archive')}
           </GateButton>
@@ -365,7 +374,7 @@ function LibraryDetail({
         onSubmit={(event) => {
           event.preventDefault();
           if (templateIds.length === 0) return;
-          void append.mutateAsync({
+          append.mutate({
             tenantId,
             groupId,
             libraryId: library.id,
@@ -444,15 +453,21 @@ function GroupLibraries({ tenantId, groupId }: { tenantId: string; groupId: stri
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (templateIds.length === 0) return;
-    const created = await create.mutateAsync({
-      tenantId,
-      groupId,
-      body: {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        template_ids: templateIds,
-      },
-    });
+    let created: GroupTemplateLibraryView;
+    try {
+      created = await create.mutateAsync({
+        tenantId,
+        groupId,
+        body: {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          template_ids: templateIds,
+        },
+      });
+    } catch {
+      // Rendered through `create.error`; the draft library stays on screen for a retry.
+      return;
+    }
     setName('');
     setDescription('');
     setTemplateIds([]);
@@ -575,7 +590,7 @@ function GroupDetail({
           className="form operations-form"
           onSubmit={(event) => {
             event.preventDefault();
-            void patch.mutateAsync({
+            patch.mutate({
               tenantId,
               groupId: group.id,
               body: { name: name.trim(), description: description.trim() || null },
@@ -622,7 +637,7 @@ function GroupDetail({
               variant="ghost"
               icon={<Icon.Archive />}
               disabled={archive.isPending || group.member_count > 0}
-              onClick={() => void archive.mutateAsync({ tenantId, groupId: group.id })}
+              onClick={() => archive.mutate({ tenantId, groupId: group.id })}
             >
               {t('operations.groups.archive')}
             </GateButton>

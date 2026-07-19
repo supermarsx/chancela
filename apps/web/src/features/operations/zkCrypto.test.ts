@@ -1,11 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  arrayBufferToBase64,
   base64ToBytes,
   bytesToBase64,
+  bytesToHex,
   canonicalZkAssociatedData,
   decryptZkObject,
   encryptZkObject,
   sha256Hex,
+  ZK_MAX_CIPHERTEXT_BYTES,
 } from './zkCrypto';
 
 function buffer(value: string): ArrayBuffer {
@@ -15,6 +18,10 @@ function buffer(value: string): ArrayBuffer {
 function key(seed: number): string {
   return bytesToBase64(Uint8Array.from({ length: 32 }, (_, index) => (seed + index) % 256));
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('trusted-client zero-knowledge cryptography', () => {
   it('uses the exact cross-language canonical associated-data representation', () => {
@@ -102,5 +109,76 @@ describe('trusted-client zero-knowledge cryptography', () => {
         recipientId: 'Custodian',
       }),
     ).rejects.toThrow('non-empty');
+  });
+
+  it('refuses input the repository could never store or address', async () => {
+    const base = {
+      repositoryId: '11111111-1111-4111-8111-111111111111',
+      objectId: '22222222-2222-4222-8222-222222222222',
+      byokBase64: key(1),
+      recipientId: 'Custodian',
+    };
+    await expect(
+      encryptZkObject({ ...base, plaintext: new ArrayBuffer(ZK_MAX_CIPHERTEXT_BYTES), version: 1 }),
+    ).rejects.toThrow('64 MiB');
+    await expect(
+      encryptZkObject({ ...base, plaintext: new ArrayBuffer(8), version: 0 }),
+    ).rejects.toThrow('start at one');
+    await expect(
+      encryptZkObject({ ...base, plaintext: new ArrayBuffer(8), version: 1, recipientId: '  ' }),
+    ).rejects.toThrow('public key-custodian label');
+  });
+
+  it('rejects a client key that is not base64 at all', () => {
+    expect(() => base64ToBytes('not base64 !!')).toThrow('valid base64');
+  });
+
+  it('refuses ciphertext whose length contradicts the manifest before hashing it', async () => {
+    const encrypted = await encryptZkObject({
+      plaintext: new TextEncoder().encode('fixture').buffer as ArrayBuffer,
+      repositoryId: '11111111-1111-4111-8111-111111111111',
+      objectId: '22222222-2222-4222-8222-222222222222',
+      version: 1,
+      byokBase64: key(1),
+      recipientId: 'Custodian',
+    });
+    await expect(
+      decryptZkObject(encrypted.manifest, encrypted.ciphertext.slice(1), key(1)),
+    ).rejects.toThrow('length does not match');
+  });
+
+  it('reports a wrapped key that the client key cannot unwrap as an authentication failure', async () => {
+    const encrypted = await encryptZkObject({
+      plaintext: new TextEncoder().encode('fixture').buffer as ArrayBuffer,
+      repositoryId: '11111111-1111-4111-8111-111111111111',
+      objectId: '22222222-2222-4222-8222-222222222222',
+      version: 1,
+      byokBase64: key(1),
+      recipientId: 'Custodian',
+    });
+    // Keep the recipient's key reference (so the slot still matches) but corrupt the wrapped CEK.
+    const wrapped = base64ToBytes(encrypted.manifest.wrapped_keys[0].wrapped_cek_base64);
+    wrapped[0] ^= 0xff;
+    const manifest = {
+      ...encrypted.manifest,
+      wrapped_keys: [
+        { ...encrypted.manifest.wrapped_keys[0], wrapped_cek_base64: bytesToBase64(wrapped) },
+      ],
+    };
+    await expect(decryptZkObject(manifest, encrypted.ciphertext, key(1))).rejects.toThrow(
+      'could not authenticate and decrypt',
+    );
+  });
+
+  it('base64-encodes buffers larger than one conversion chunk without truncating them', async () => {
+    const bytes = new Uint8Array(0x8000 + 5).fill(7);
+    const encoded = await arrayBufferToBase64(bytes.buffer);
+    expect(base64ToBytes(encoded)).toHaveLength(bytes.length);
+    expect(bytesToHex(bytes.subarray(0, 2))).toBe('0707');
+  });
+
+  it('fails closed when the client has no WebCrypto subtle implementation', async () => {
+    vi.stubGlobal('crypto', {});
+    await expect(sha256Hex(new ArrayBuffer(4))).rejects.toThrow('WebCrypto is not available');
   });
 });

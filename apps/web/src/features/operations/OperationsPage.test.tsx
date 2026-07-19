@@ -64,6 +64,50 @@ describe('OperationsPage', () => {
     expect(screen.queryByLabelText('Organização')).toBeNull();
   });
 
+  it('reports a failed entity load instead of pretending no organization exists', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(json({ error: 'Diretório indisponível' }, 503)),
+    );
+
+    renderWithProviders(<OperationsPage />, ['/operacoes']);
+
+    expect(await screen.findByText('Diretório indisponível')).toBeTruthy();
+    expect(screen.queryByText('Ainda não existe uma organização selecionável')).toBeNull();
+    expect(screen.queryByLabelText('Organização')).toBeNull();
+  });
+
+  it('switching organization drops the selections scoped to the previous one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url === '/v1/entities') {
+          return json([entity, { ...entity, id: 'entity-2', tenant_id: 'tenant-2' }]);
+        }
+        if (url.endsWith('/groups')) return json([]);
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    renderWithProviders(
+      <>
+        <OperationsPage />
+        <LocationProbe />
+      </>,
+      ['/operacoes?tenant=tenant-1&group=group-1&repository=repo-1&object=obj-1'],
+    );
+
+    const picker = (await screen.findByLabelText('Organização')) as HTMLSelectElement;
+    // Both tenants are offered, named by the entity that exposes them.
+    expect(Array.from(picker.options, (option) => option.value)).toEqual(['tenant-1', 'tenant-2']);
+    fireEvent.change(picker, { target: { value: 'tenant-2' } });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/operacoes?tenant=tenant-2'),
+    );
+  });
+
   it('keeps every operator area reachable through URL-backed task tabs', async () => {
     const requests: string[] = [];
     vi.stubGlobal(

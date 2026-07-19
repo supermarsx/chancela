@@ -5,6 +5,7 @@ import {
   EMPTY_CUSTODY_FORM,
   commaSeparatedIds,
   connectorConfigTemplate,
+  connectorSecretReference,
   custodyPolicyFromForm,
   parseConnectorConfig,
   tenantIdsFromEntities,
@@ -52,6 +53,47 @@ describe('operator contract models', () => {
     ).toThrow('CHANCELA_CONNECTOR_SECRET');
   });
 
+  it('rejects configuration that is valid JSON but not a connector object', () => {
+    expect(() => parseConnectorConfig('"web_dav"', 'web_dav')).toThrow('must be a JSON object');
+    expect(() => parseConnectorConfig('[]', 'web_dav')).toThrow('must be a JSON object');
+    expect(() => parseConnectorConfig('null', 'web_dav')).toThrow('must be a JSON object');
+    expect(() => parseConnectorConfig(JSON.stringify({ kind: 'web_dav' }), 'web_dav')).toThrow(
+      'non-empty placeholder id',
+    );
+    expect(() =>
+      parseConnectorConfig(JSON.stringify({ kind: 'web_dav', id: '   ' }), 'web_dav'),
+    ).toThrow('non-empty placeholder id');
+  });
+
+  it('inspects nested and repeated structures for smuggled credentials', () => {
+    expect(() =>
+      parseConnectorConfig(
+        JSON.stringify({ kind: 'web_dav', id: 'x', auth: { mode: 'basic', token: 'raw' } }),
+        'web_dav',
+      ),
+    ).toThrow('config.auth.token looks like secret material');
+    expect(() =>
+      parseConnectorConfig(
+        JSON.stringify({ kind: 'web_dav', id: 'x', hosts: [{ password_ref: 'nope' }] }),
+        'web_dav',
+      ),
+    ).toThrow('config.hosts[0].password_ref must be a CHANCELA_CONNECTOR_SECRET_*');
+  });
+
+  it('accepts an explicitly absent optional secret reference', () => {
+    const config = { kind: 'web_dav', id: 'x', session_token_ref: null };
+    expect(parseConnectorConfig(JSON.stringify(config), 'web_dav')).toEqual(config);
+  });
+
+  it('admits only confined connector secret references', () => {
+    expect(connectorSecretReference('CHANCELA_CONNECTOR_SECRET_S3_ACCESS_KEY')).toBe(
+      'CHANCELA_CONNECTOR_SECRET_S3_ACCESS_KEY',
+    );
+    expect(() => connectorSecretReference('AWS_ACCESS_KEY')).toThrow(
+      'Invalid connector secret reference',
+    );
+  });
+
   it('builds public custody metadata without recovery shares and enforces threshold invariants', () => {
     expect(custodyPolicyFromForm(EMPTY_CUSTODY_FORM)).toEqual({
       bring_your_own_key: true,
@@ -89,5 +131,13 @@ describe('operator contract models', () => {
         custodianLabels: 'A, B',
       }),
     ).toThrow('one public label');
+    expect(() =>
+      custodyPolicyFromForm({
+        ...EMPTY_CUSTODY_FORM,
+        splitRecovery: true,
+        threshold: '2.5',
+        custodianLabels: 'A, B, C',
+      }),
+    ).toThrow('whole numbers');
   });
 });
