@@ -3252,7 +3252,7 @@ function assertPaperBookActView(obj: unknown, label: string): ActView {
       retifies: true,
     },
     label,
-    ['convening', 'ai_provenance'],
+    ['convening', 'attendees', 'ai_provenance'],
   );
   expect(act.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
   expect(act.book_id.length, `${label}.book_id should be non-empty`).toBeGreaterThan(0);
@@ -3783,9 +3783,10 @@ describe('contract fixtures parse through the real client', () => {
     expect(tenant.id, 'Tenant.id should be a non-empty uuid').not.toHaveLength(0);
     expect(tenant.name, 'Tenant.name should be non-empty').not.toHaveLength(0);
     expect(typeof tenant.entity_count, 'Tenant.entity_count should be a number').toBe('number');
-    expect(tenant.entity_count, 'Tenant.entity_count should be non-negative').toBeGreaterThanOrEqual(
-      0,
-    );
+    expect(
+      tenant.entity_count,
+      'Tenant.entity_count should be non-negative',
+    ).toBeGreaterThanOrEqual(0);
   });
 
   it('pairing.json → PairingDevices (GET /v1/pairing/devices) (wp27-e4 companion enrollment)', () => {
@@ -3804,9 +3805,10 @@ describe('contract fixtures parse through the real client', () => {
     };
     assertExactKeys<{ devices: unknown[] }>(parsed, { devices: true }, 'PairingDevices');
     expect(Array.isArray(parsed.devices), 'PairingDevices.devices should be an array').toBe(true);
-    expect(parsed.devices.length, 'fixture exercises active + revoked shapes').toBeGreaterThanOrEqual(
-      2,
-    );
+    expect(
+      parsed.devices.length,
+      'fixture exercises active + revoked shapes',
+    ).toBeGreaterThanOrEqual(2);
     const [active, revoked] = parsed.devices;
     for (const device of parsed.devices) {
       assertExactKeys<{
@@ -3910,6 +3912,7 @@ describe('contract fixtures parse through the real client', () => {
         retifies: true,
       },
       'ActView',
+      ['attendees'],
     );
     inEnum(MEETING_CHANNELS, act.channel, 'ActView.channel');
     inEnum(ACT_STATES, act.state, 'ActView.state');

@@ -144,6 +144,9 @@ export const SIGNATORY_CAPACITIES = [
 ] as const;
 export type SignatoryCapacity = (typeof SIGNATORY_CAPACITIES)[number];
 
+export const PRESENCE_MODES = ['InPerson', 'Represented', 'Absent'] as const;
+export type PresenceMode = (typeof PRESENCE_MODES)[number];
+
 export type Severity = 'Warning' | 'Error';
 export type LegalBasisVerification = 'Verified' | 'Pending';
 
@@ -565,6 +568,27 @@ export interface ActDeliberationItem {
   statements: ActMemberStatement[];
 }
 
+/**
+ * The voting weight one attendance row carries — the externally tagged core enum. Companies
+ * weight by capital (in minor units, i.e. cents); condominiums by permilagem (‰, 0..=1000).
+ */
+export type ActAttendanceWeight = { Capital: number } | { Permilage: number };
+
+/**
+ * One row of the structured lista de presenças (G2). Coexists with the `members_present` /
+ * `members_represented` counts, which stay the fallback when nobody is named.
+ *
+ * `represented_by` must be set **iff** `presence` is `Represented` — the API rejects any other
+ * combination with a 422.
+ */
+export interface ActAttendee {
+  name: string;
+  quality: SignatoryCapacity;
+  presence: PresenceMode;
+  represented_by: string | null;
+  weight: ActAttendanceWeight | null;
+}
+
 export interface ActConveningRecipient {
   name: string;
   contact: string | null;
@@ -768,6 +792,8 @@ export interface ActView {
   seal_metadata: ActSealMetadata | null;
   retifies: string | null;
   convening?: ActConvening;
+  /** Skip-serialized when empty, so an act with nobody named carries no `attendees` key. */
+  attendees?: ActAttendee[];
   ai_provenance?: AiProvenanceView | null;
 }
 
@@ -4988,6 +5014,7 @@ export interface UpdateActBody {
   attachments?: ActAttachment[];
   signatories?: ActSignatory[];
   convening?: ActConvening | null;
+  attendees?: ActAttendee[];
 }
 
 export interface AdvanceActBody {

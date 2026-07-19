@@ -877,6 +877,19 @@ export const deDE: Catalog = {
   'acts.meetingDate': 'Sitzungsdatum',
   'acts.local': 'Ort',
   'acts.attendanceRef': 'Anwesenheitsreferenz',
+  'acts.attendees': 'Anwesenheit',
+  'acts.attendees.hint':
+    'Benennen Sie alle Teilnehmenden, ihre Eigenschaft und — bei Vertretung — die vertretende Person. Ohne ausgefüllte Zeilen verweist das Protokoll nur auf die Anwesenheitsreferenz.',
+  'acts.attendees.nameAria': 'Name der teilnehmenden Person',
+  'acts.attendees.qualityAria': 'Eigenschaft der teilnehmenden Person',
+  'acts.attendees.presenceAria': 'Art der Anwesenheit',
+  'acts.attendees.representedByAria': 'Vertreten durch',
+  'acts.attendees.representedByRequired': 'Geben Sie an, wer diese Person vertreten hat.',
+  'acts.attendees.capitalAria': 'Kapital (Cent)',
+  'acts.attendees.capitalPlaceholder': 'Cent',
+  'acts.attendees.add': 'Teilnehmende Person hinzufügen',
+  'acts.attendees.none': 'Keine Anwesenheitszeilen ausgefüllt.',
+  'acts.attendees.summary': '{present} anwesend · {represented} vertreten · {absent} abwesend',
   'acts.telematicEvidence': 'Telematischer Nachweis',
   'acts.telematicEvidenceHint': 'Plattformaufzeichnung / Aufnahme (CSC art. 377(8))',
   'acts.deliberacoes': 'Beschlüsse',
@@ -2121,6 +2134,9 @@ export const deDE: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Bevollmächtigter',
   'enum.signatoryCapacity.CondoOwner': 'Wohnungseigentümer',
   // Severities
+  'enum.presenceMode.InPerson': 'Persönlich anwesend',
+  'enum.presenceMode.Represented': 'Vertreten',
+  'enum.presenceMode.Absent': 'Abwesend',
   'enum.severity.Warning': 'Warnung',
   'enum.severity.Error': 'Fehler',
   // Signature families
@@ -4212,6 +4228,14 @@ export const deDE: Catalog = {
     'Anzahl der anwesenden Mitglieder für einen schnellen Überblick und Beschlussfähigkeitsprüfungen.',
   'fieldHelp.acts.membersRepresented':
     'Anzahl der durch Vollmacht oder ein anderes zulässiges Mittel vertretenen Mitglieder.',
+  'fieldHelp.acts.attendeeName':
+    'Name der teilnehmenden Person, so wie er im Protokoll erscheinen muss.',
+  'fieldHelp.acts.attendeePresence':
+    'Anwesend, vertreten oder abwesend. Bestimmt, was das Protokoll in dieser Zeile wiedergibt.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Name der vertretenden Person. Erforderlich, wenn die Anwesenheit „Vertreten“ lautet.',
+  'fieldHelp.acts.attendeeWeight':
+    'Stimmgewicht dieser Zeile: Kapital in Cent bei Gesellschaften, Miteigentumsanteil bei Wohnungseigentum.',
   'fieldHelp.acts.telematicEvidence':
     'Aufzeichnung der Plattform, Mitschnitt oder anderer Nachweis, der die Fern- oder Hybridsitzung stützt.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5123,14 +5147,16 @@ export const deDE: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Geräte',
   'pairing.connect.title': 'Ein Telefon verbinden',
-  'pairing.lede': 'Koppeln Sie ein Telefon mit dieser Instanz, um es als Begleit-App zu nutzen. Erzeugen Sie einen Code, scannen Sie ihn auf dem Telefon und schließen Sie die Kopplung ab.',
+  'pairing.lede':
+    'Koppeln Sie ein Telefon mit dieser Instanz, um es als Begleit-App zu nutzen. Erzeugen Sie einen Code, scannen Sie ihn auf dem Telefon und schließen Sie die Kopplung ab.',
   'pairing.label.label': 'Gerätename',
   'pairing.label.hint': 'Ein Name, um dieses Telefon in der Geräteliste wiederzuerkennen.',
   'pairing.label.placeholder': 'Amélias Telefon',
   'pairing.connect': 'Kopplungscode erzeugen',
   'pairing.minting': 'Code wird erzeugt…',
   'pairing.code.title': 'Zum Koppeln scannen',
-  'pairing.code.instructions': 'Öffnen Sie die Telefonkamera und scannen Sie den Code, oder öffnen Sie den Link unten auf dem Telefon.',
+  'pairing.code.instructions':
+    'Öffnen Sie die Telefonkamera und scannen Sie den Code, oder öffnen Sie den Link unten auf dem Telefon.',
   'pairing.qr.alt': 'QR-Code zur Kopplung',
   'pairing.deepLink.label': 'Kopplungslink',
   'pairing.deepLink.copy': 'Link kopieren',
@@ -5149,7 +5175,8 @@ export const deDE: Catalog = {
   'pairing.enrolled.done': 'Fertig',
   'pairing.devices.title': 'Gekoppelte Geräte',
   'pairing.devices.empty': 'Keine gekoppelten Geräte',
-  'pairing.devices.emptyBody': 'Sie haben noch kein Telefon gekoppelt. Erzeugen Sie einen Code, um zu beginnen.',
+  'pairing.devices.emptyBody':
+    'Sie haben noch kein Telefon gekoppelt. Erzeugen Sie einen Code, um zu beginnen.',
   'pairing.table.device': 'Gerät',
   'pairing.table.enrolled': 'Gekoppelt am',
   'pairing.table.status': 'Status',

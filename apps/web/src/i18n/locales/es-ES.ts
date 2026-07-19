@@ -873,6 +873,19 @@ export const esES: Catalog = {
   'acts.meetingDate': 'Fecha de la reunión',
   'acts.local': 'Lugar',
   'acts.attendanceRef': 'Referencia de asistencia',
+  'acts.attendees': 'Asistencias',
+  'acts.attendees.hint':
+    'Identifique por su nombre a quienes participaron, en qué calidad y — cuando estén representados — por quién. Sin filas cumplimentadas, el acta solo remite a la referencia de asistencia.',
+  'acts.attendees.nameAria': 'Nombre del asistente',
+  'acts.attendees.qualityAria': 'Calidad del asistente',
+  'acts.attendees.presenceAria': 'Modo de asistencia',
+  'acts.attendees.representedByAria': 'Representado por',
+  'acts.attendees.representedByRequired': 'Indique quién representó a este asistente.',
+  'acts.attendees.capitalAria': 'Capital (céntimos)',
+  'acts.attendees.capitalPlaceholder': 'céntimos',
+  'acts.attendees.add': 'Añadir asistente',
+  'acts.attendees.none': 'Sin filas de asistencia cumplimentadas.',
+  'acts.attendees.summary': '{present} presentes · {represented} representados · {absent} ausentes',
   'acts.telematicEvidence': 'Evidencia telemática',
   'acts.telematicEvidenceHint': 'Registro de la plataforma / grabación (CSC art. 377(8))',
   'acts.deliberacoes': 'Acuerdos',
@@ -2104,6 +2117,9 @@ export const esES: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Apoderado',
   'enum.signatoryCapacity.CondoOwner': 'Propietario',
   // Gravedades
+  'enum.presenceMode.InPerson': 'Presente en persona',
+  'enum.presenceMode.Represented': 'Representado',
+  'enum.presenceMode.Absent': 'Ausente',
   'enum.severity.Warning': 'Aviso',
   'enum.severity.Error': 'Error',
   // Familias de firma
@@ -4185,6 +4201,13 @@ export const esES: Catalog = {
     'Número de miembros presentes para lectura rápida y comprobaciones de quórum.',
   'fieldHelp.acts.membersRepresented':
     'Número de miembros representados mediante poder u otro medio admitido.',
+  'fieldHelp.acts.attendeeName': 'Nombre de quien participó, tal como debe constar en el acta.',
+  'fieldHelp.acts.attendeePresence':
+    'Presente, representado o ausente. Determina lo que el acta recoge en esta fila.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Nombre de quien representó a este asistente. Obligatorio cuando la asistencia es «Representado».',
+  'fieldHelp.acts.attendeeWeight':
+    'Peso de voto de esta fila: capital en céntimos en las sociedades, cuota milesimal en las comunidades.',
   'fieldHelp.acts.telematicEvidence':
     'Registro de la plataforma, grabación u otra prueba que respalde la reunión remota o híbrida.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5094,14 +5117,16 @@ export const esES: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Equipos',
   'pairing.connect.title': 'Conectar un teléfono',
-  'pairing.lede': 'Vincula un teléfono con esta instancia para usarlo como aplicación complementaria. Genera un código, escanéalo en el teléfono y completa la vinculación.',
+  'pairing.lede':
+    'Vincula un teléfono con esta instancia para usarlo como aplicación complementaria. Genera un código, escanéalo en el teléfono y completa la vinculación.',
   'pairing.label.label': 'Nombre del equipo',
   'pairing.label.hint': 'Un nombre para reconocer este teléfono en la lista de equipos.',
   'pairing.label.placeholder': 'Teléfono de Amélia',
   'pairing.connect': 'Generar código de vinculación',
   'pairing.minting': 'Generando código…',
   'pairing.code.title': 'Escanea para vincular',
-  'pairing.code.instructions': 'Abre la cámara del teléfono y escanea el código, o abre el enlace de abajo en el teléfono.',
+  'pairing.code.instructions':
+    'Abre la cámara del teléfono y escanea el código, o abre el enlace de abajo en el teléfono.',
   'pairing.qr.alt': 'Código QR de vinculación',
   'pairing.deepLink.label': 'Enlace de vinculación',
   'pairing.deepLink.copy': 'Copiar enlace',
@@ -5120,7 +5145,8 @@ export const esES: Catalog = {
   'pairing.enrolled.done': 'Hecho',
   'pairing.devices.title': 'Equipos vinculados',
   'pairing.devices.empty': 'No hay equipos vinculados',
-  'pairing.devices.emptyBody': 'Aún no has vinculado ningún teléfono. Genera un código para empezar.',
+  'pairing.devices.emptyBody':
+    'Aún no has vinculado ningún teléfono. Genera un código para empezar.',
   'pairing.table.device': 'Equipo',
   'pairing.table.enrolled': 'Vinculado el',
   'pairing.table.status': 'Estado',

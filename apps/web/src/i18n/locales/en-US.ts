@@ -864,6 +864,19 @@ export const enUS: Catalog = {
   'acts.meetingDate': 'Meeting date',
   'acts.local': 'Venue',
   'acts.attendanceRef': 'Attendance reference',
+  'acts.attendees': 'Attendance',
+  'acts.attendees.hint':
+    'Name everyone who took part, in what capacity, and — when represented — by whom. With no rows filled in, the minute only points to the attendance reference.',
+  'acts.attendees.nameAria': 'Attendee name',
+  'acts.attendees.qualityAria': 'Attendee capacity',
+  'acts.attendees.presenceAria': 'Presence mode',
+  'acts.attendees.representedByAria': 'Represented by',
+  'acts.attendees.representedByRequired': 'State who represented this attendee.',
+  'acts.attendees.capitalAria': 'Capital (cents)',
+  'acts.attendees.capitalPlaceholder': 'cents',
+  'acts.attendees.add': 'Add attendee',
+  'acts.attendees.none': 'No attendance rows filled in.',
+  'acts.attendees.summary': '{present} present · {represented} represented · {absent} absent',
   'acts.telematicEvidence': 'Telematic evidence',
   'acts.telematicEvidenceHint': 'Platform record / recording (CSC art. 377(8))',
   'acts.deliberacoes': 'Resolutions',
@@ -2084,6 +2097,9 @@ export const enUS: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Attorney',
   'enum.signatoryCapacity.CondoOwner': 'Unit owner',
   // Severities
+  'enum.presenceMode.InPerson': 'In person',
+  'enum.presenceMode.Represented': 'Represented',
+  'enum.presenceMode.Absent': 'Absent',
   'enum.severity.Warning': 'Warning',
   'enum.severity.Error': 'Error',
   // Signature families
@@ -4135,6 +4151,14 @@ export const enUS: Catalog = {
   'fieldHelp.acts.membersPresent': 'Number of members present, for a quick read and quorum checks.',
   'fieldHelp.acts.membersRepresented':
     'Number of members represented by proxy or another permitted means.',
+  'fieldHelp.acts.attendeeName':
+    'The name of the person who took part, as it must appear in the minute.',
+  'fieldHelp.acts.attendeePresence':
+    'Present, represented, or absent. It decides what the minute recites on this line.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'The name of the person who stood in for this attendee. Required when the presence is “Represented”.',
+  'fieldHelp.acts.attendeeWeight':
+    'The voting weight of this row: capital in cents for companies, per-mil share for condominiums.',
   'fieldHelp.acts.telematicEvidence':
     'Record of the platform, recording, or other evidence supporting the remote or hybrid meeting.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5018,14 +5042,16 @@ export const enUS: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Devices',
   'pairing.connect.title': 'Connect a phone',
-  'pairing.lede': 'Pair a phone with this instance to use it as a companion app. Generate a code, scan it on the phone, and finish pairing.',
+  'pairing.lede':
+    'Pair a phone with this instance to use it as a companion app. Generate a code, scan it on the phone, and finish pairing.',
   'pairing.label.label': 'Device name',
   'pairing.label.hint': 'A name to recognize this phone in the device list.',
-  'pairing.label.placeholder': 'Amélia\'s phone',
+  'pairing.label.placeholder': "Amélia's phone",
   'pairing.connect': 'Generate pairing code',
   'pairing.minting': 'Generating code…',
   'pairing.code.title': 'Scan to pair',
-  'pairing.code.instructions': 'Open the phone camera and scan the code, or open the link below on the phone.',
+  'pairing.code.instructions':
+    'Open the phone camera and scan the code, or open the link below on the phone.',
   'pairing.qr.alt': 'Pairing QR code',
   'pairing.deepLink.label': 'Pairing link',
   'pairing.deepLink.copy': 'Copy link',
@@ -5044,7 +5070,7 @@ export const enUS: Catalog = {
   'pairing.enrolled.done': 'Done',
   'pairing.devices.title': 'Paired devices',
   'pairing.devices.empty': 'No paired devices',
-  'pairing.devices.emptyBody': 'You haven\'t paired a phone yet. Generate a code to get started.',
+  'pairing.devices.emptyBody': "You haven't paired a phone yet. Generate a code to get started.",
   'pairing.table.device': 'Device',
   'pairing.table.enrolled': 'Paired on',
   'pairing.table.status': 'Status',

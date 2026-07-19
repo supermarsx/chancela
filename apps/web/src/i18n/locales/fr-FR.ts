@@ -878,6 +878,19 @@ export const frFR: Catalog = {
   'acts.meetingDate': 'Date de la réunion',
   'acts.local': 'Lieu',
   'acts.attendanceRef': 'Référence de présence',
+  'acts.attendees': 'Présences',
+  'acts.attendees.hint':
+    'Nommez chaque participant, sa qualité et — en cas de représentation — la personne qui l’a représenté. Sans lignes renseignées, le procès-verbal se borne à renvoyer à la référence de présence.',
+  'acts.attendees.nameAria': 'Nom du participant',
+  'acts.attendees.qualityAria': 'Qualité du participant',
+  'acts.attendees.presenceAria': 'Mode de présence',
+  'acts.attendees.representedByAria': 'Représenté par',
+  'acts.attendees.representedByRequired': 'Indiquez qui a représenté ce participant.',
+  'acts.attendees.capitalAria': 'Capital (centimes)',
+  'acts.attendees.capitalPlaceholder': 'centimes',
+  'acts.attendees.add': 'Ajouter un participant',
+  'acts.attendees.none': 'Aucune ligne de présence renseignée.',
+  'acts.attendees.summary': '{present} présents · {represented} représentés · {absent} absents',
   'acts.telematicEvidence': 'Preuve télématique',
   'acts.telematicEvidenceHint': 'Enregistrement de la plateforme / captation (CSC art. 377-8)',
   'acts.deliberacoes': 'Résolutions',
@@ -2116,6 +2129,9 @@ export const frFR: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Mandataire',
   'enum.signatoryCapacity.CondoOwner': 'Copropriétaire',
   // Severities
+  'enum.presenceMode.InPerson': 'Présent en personne',
+  'enum.presenceMode.Represented': 'Représenté',
+  'enum.presenceMode.Absent': 'Absent',
   'enum.severity.Warning': 'Avertissement',
   'enum.severity.Error': 'Erreur',
   // Signature families
@@ -4204,6 +4220,14 @@ export const frFR: Catalog = {
     'Nombre de membres présents pour une lecture rapide et les contrôles de quorum.',
   'fieldHelp.acts.membersRepresented':
     'Nombre de membres représentés par procuration ou par un autre moyen admis.',
+  'fieldHelp.acts.attendeeName':
+    'Nom de la personne qui a participé, tel qu’il doit figurer au procès-verbal.',
+  'fieldHelp.acts.attendeePresence':
+    'Présent, représenté ou absent. Détermine ce que le procès-verbal énonce sur cette ligne.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Nom de la personne qui a représenté ce participant. Obligatoire lorsque la présence est « Représenté ».',
+  'fieldHelp.acts.attendeeWeight':
+    'Poids de vote de cette ligne : capital en centimes pour les sociétés, quote-part en millièmes pour les copropriétés.',
   'fieldHelp.acts.telematicEvidence':
     'Enregistrement de la plateforme, captation ou autre preuve à l’appui de la réunion à distance ou hybride.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5111,14 +5135,16 @@ export const frFR: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Appareils',
   'pairing.connect.title': 'Connecter un téléphone',
-  'pairing.lede': 'Associez un téléphone à cette instance pour l’utiliser comme application compagnon. Générez un code, scannez-le sur le téléphone et terminez l’association.',
+  'pairing.lede':
+    'Associez un téléphone à cette instance pour l’utiliser comme application compagnon. Générez un code, scannez-le sur le téléphone et terminez l’association.',
   'pairing.label.label': 'Nom de l’appareil',
   'pairing.label.hint': 'Un nom pour reconnaître ce téléphone dans la liste des appareils.',
   'pairing.label.placeholder': 'Téléphone d’Amélia',
   'pairing.connect': 'Générer un code d’association',
   'pairing.minting': 'Génération du code…',
   'pairing.code.title': 'Scannez pour associer',
-  'pairing.code.instructions': 'Ouvrez l’appareil photo du téléphone et scannez le code, ou ouvrez le lien ci-dessous sur le téléphone.',
+  'pairing.code.instructions':
+    'Ouvrez l’appareil photo du téléphone et scannez le code, ou ouvrez le lien ci-dessous sur le téléphone.',
   'pairing.qr.alt': 'Code QR d’association',
   'pairing.deepLink.label': 'Lien d’association',
   'pairing.deepLink.copy': 'Copier le lien',
@@ -5137,7 +5163,8 @@ export const frFR: Catalog = {
   'pairing.enrolled.done': 'Terminé',
   'pairing.devices.title': 'Appareils associés',
   'pairing.devices.empty': 'Aucun appareil associé',
-  'pairing.devices.emptyBody': 'Vous n’avez pas encore associé de téléphone. Générez un code pour commencer.',
+  'pairing.devices.emptyBody':
+    'Vous n’avez pas encore associé de téléphone. Générez un code pour commencer.',
   'pairing.table.device': 'Appareil',
   'pairing.table.enrolled': 'Associé le',
   'pairing.table.status': 'Statut',

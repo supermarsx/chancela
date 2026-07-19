@@ -38,6 +38,7 @@ import {
   dispatchChannelLabels,
   meetingChannelLabels,
   optionsFrom,
+  presenceModeLabels,
   severityLabels,
   signatoryCapacityLabels,
 } from '../../api/labels';
@@ -46,9 +47,12 @@ import {
   ATTACHMENT_KINDS,
   DISPATCH_CHANNELS,
   MEETING_CHANNELS,
+  PRESENCE_MODES,
   SIGNATORY_CAPACITIES,
   type ActAgendaItem,
   type ActAttachment,
+  type ActAttendanceWeight,
+  type ActAttendee,
   type ActConvening,
   type ActConveningRecipient,
   type ActDeliberationItem,
@@ -67,8 +71,10 @@ import {
   type ComplianceReport,
   type DispatchActConveningBody,
   type DispatchChannel,
+  type EntityFamily,
   type HumanVerificationDecision,
   type MeetingChannel,
+  type PresenceMode,
   type SignatoryCapacity,
   type WrittenResolutionEvidenceInput,
   type WrittenResolutionReviewReceiptInput,
@@ -121,6 +127,7 @@ interface Draft {
   attendance_reference: string;
   members_present: string;
   members_represented: string;
+  attendees: ActAttendee[];
   mesa: ActMesa;
   agenda: ActAgendaItem[];
   referenced_documents: ActDocumentReference[];
@@ -191,6 +198,7 @@ function toDraft(act: ActView): Draft {
     attendance_reference: act.attendance_reference ?? '',
     members_present: act.members_present == null ? '' : String(act.members_present),
     members_represented: act.members_represented == null ? '' : String(act.members_represented),
+    attendees: act.attendees ?? [],
     mesa: { presidente: act.mesa.presidente, secretarios: act.mesa.secretarios },
     agenda: act.agenda,
     referenced_documents: act.referenced_documents,
@@ -251,6 +259,24 @@ function normalizedConveningRecipients(
       dispatched_at: orNull(recipient.dispatched_at ?? ''),
     }))
     .filter((recipient) => recipient.name !== '');
+}
+
+/**
+ * Drop the blank rows an operator left behind and keep the represented/proxy invariant the API
+ * enforces (`represented_by` set **iff** the presence is `Represented`). A `Represented` row with
+ * no proxy still goes out as-is — the editor warns about it inline rather than inventing a name.
+ */
+function normalizedAttendees(attendees: ActAttendee[]): ActAttendee[] {
+  return attendees
+    .map((attendee) => ({
+      name: attendee.name.trim(),
+      quality: attendee.quality,
+      presence: attendee.presence,
+      represented_by:
+        attendee.presence === 'Represented' ? orNull(attendee.represented_by ?? '') : null,
+      weight: attendee.weight,
+    }))
+    .filter((attendee) => attendee.name !== '');
 }
 
 function writtenResolutionReviewStatusOptions(
@@ -972,6 +998,199 @@ export function SignatoriesEditor({
       {signatories.length === 0 && disabled ? (
         <p className="muted">{t('acts.noSignatories')}</p>
       ) : null}
+    </div>
+  );
+}
+
+// --- Presenças (G2) -------------------------------------------------------------
+//
+// The structured lista de presenças. `members_present` / `members_represented` remain the
+// aggregate fallback; these rows are what lets the ata itself name who attended, in what
+// capacity, with what weight, and — when represented — by whom. The ata templates render the
+// roll when it is non-empty and fall back to reciting `attendance_reference` when it is not.
+
+/**
+ * Which weight a family's attendance rows carry: companies weight by capital, condominiums by
+ * permilagem, and the non-profit families are one-member-one-vote (no weight column at all).
+ * An unknown family (the entity query still in flight) keeps the capital column rather than
+ * making the input flicker away under the operator.
+ */
+export function attendanceWeightKind(
+  family: EntityFamily | undefined,
+): 'Capital' | 'Permilage' | null {
+  if (family === 'Condominium') return 'Permilage';
+  if (family === 'CommercialCompany' || family === undefined) return 'Capital';
+  return null;
+}
+
+/** The weight kind a row is already carrying, else the family default. */
+function rowWeightKind(
+  weight: ActAttendanceWeight | null,
+  familyKind: 'Capital' | 'Permilage' | null,
+): 'Capital' | 'Permilage' | null {
+  if (weight && 'Permilage' in weight) return 'Permilage';
+  if (weight && 'Capital' in weight) return 'Capital';
+  return familyKind;
+}
+
+const weightValue = (weight: ActAttendanceWeight | null): string =>
+  weight == null ? '' : String('Capital' in weight ? weight.Capital : weight.Permilage);
+
+const emptyAttendee = (): ActAttendee => ({
+  name: '',
+  quality: 'Member',
+  presence: 'InPerson',
+  represented_by: null,
+  weight: null,
+});
+
+export function AttendeesEditor({
+  attendees,
+  family,
+  disabled,
+  onChange,
+}: {
+  attendees: ActAttendee[];
+  family: EntityFamily | undefined;
+  disabled: boolean;
+  onChange: (next: ActAttendee[]) => void;
+}) {
+  const t = useT();
+  const familyKind = attendanceWeightKind(family);
+  const update = (i: number, patch: Partial<ActAttendee>) =>
+    onChange(attendees.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
+  // `represented_by` must be set iff the presence is `Represented` (the API 422s otherwise), so
+  // switching away from `Represented` drops the proxy rather than leaving an orphaned name.
+  const setPresence = (i: number, presence: PresenceMode) =>
+    update(i, {
+      presence,
+      ...(presence === 'Represented' ? {} : { represented_by: null }),
+    });
+  const count = (presence: PresenceMode) => attendees.filter((a) => a.presence === presence).length;
+
+  return (
+    <div className="stack--tight">
+      {attendees.map((attendee, i) => {
+        const kind = rowWeightKind(attendee.weight, familyKind);
+        return (
+          <div className="rowline" key={i}>
+            <Field label={t('acts.attendees.nameAria')} help={ataFieldHelp.attendeeName}>
+              <Input
+                aria-label={t('acts.attendees.nameAria')}
+                placeholder={t('acts.namePlaceholder')}
+                value={attendee.name}
+                disabled={disabled}
+                onChange={(e) => update(i, { name: e.target.value })}
+              />
+            </Field>
+            <Field label={t('acts.capacityAria')} help={ataFieldHelp.signatoryCapacity}>
+              <Select
+                aria-label={t('acts.attendees.qualityAria')}
+                value={attendee.quality}
+                disabled={disabled}
+                onChange={(e) => update(i, { quality: e.target.value as SignatoryCapacity })}
+                options={optionsFrom(SIGNATORY_CAPACITIES, signatoryCapacityLabels)}
+              />
+            </Field>
+            <Field label={t('acts.attendees.presenceAria')} help={ataFieldHelp.attendeePresence}>
+              <Select
+                aria-label={t('acts.attendees.presenceAria')}
+                value={attendee.presence}
+                disabled={disabled}
+                onChange={(e) => setPresence(i, e.target.value as PresenceMode)}
+                options={optionsFrom(PRESENCE_MODES, presenceModeLabels)}
+              />
+            </Field>
+            {attendee.presence === 'Represented' ? (
+              <Field
+                label={t('acts.attendees.representedByAria')}
+                help={ataFieldHelp.attendeeRepresentedBy}
+              >
+                <Input
+                  aria-label={t('acts.attendees.representedByAria')}
+                  placeholder={t('acts.namePlaceholder')}
+                  value={attendee.represented_by ?? ''}
+                  disabled={disabled}
+                  onChange={(e) => update(i, { represented_by: e.target.value })}
+                />
+                {(attendee.represented_by ?? '').trim() === '' ? (
+                  <InlineWarning>{t('acts.attendees.representedByRequired')}</InlineWarning>
+                ) : null}
+              </Field>
+            ) : null}
+            {kind !== null ? (
+              <Field
+                label={
+                  kind === 'Permilage'
+                    ? t('acts.signatoryPermilageAria')
+                    : t('acts.attendees.capitalAria')
+                }
+                help={ataFieldHelp.attendeeWeight}
+              >
+                <Input
+                  className={kind === 'Permilage' ? 'input--permilage' : undefined}
+                  type="number"
+                  min={0}
+                  {...(kind === 'Permilage' ? { max: 1000 } : {})}
+                  aria-label={
+                    kind === 'Permilage'
+                      ? t('acts.signatoryPermilageAria')
+                      : t('acts.attendees.capitalAria')
+                  }
+                  placeholder={
+                    kind === 'Permilage'
+                      ? t('acts.signatoryPermilagePlaceholder')
+                      : t('acts.attendees.capitalPlaceholder')
+                  }
+                  value={weightValue(attendee.weight)}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    update(i, {
+                      weight:
+                        e.target.value === ''
+                          ? null
+                          : kind === 'Permilage'
+                            ? { Permilage: Math.trunc(Number(e.target.value)) }
+                            : { Capital: Math.trunc(Number(e.target.value)) },
+                    })
+                  }
+                />
+              </Field>
+            ) : null}
+            {!disabled ? (
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<Icon.Trash />}
+                onClick={() => onChange(attendees.filter((_, idx) => idx !== i))}
+              >
+                {t('common.remove')}
+              </Button>
+            ) : null}
+          </div>
+        );
+      })}
+      {!disabled ? (
+        <Button
+          type="button"
+          variant="secondary"
+          icon={<Icon.Plus />}
+          onClick={() => onChange([...attendees, emptyAttendee()])}
+        >
+          {t('acts.attendees.add')}
+        </Button>
+      ) : null}
+      {attendees.length > 0 ? (
+        <p className="muted">
+          {t('acts.attendees.summary', {
+            present: count('InPerson'),
+            represented: count('Represented'),
+            absent: count('Absent'),
+          })}
+        </p>
+      ) : (
+        <p className="muted">{t('acts.attendees.none')}</p>
+      )}
     </div>
   );
 }
@@ -2128,6 +2347,7 @@ function draftToPatch(draft: Draft) {
     attendance_reference: orNull(draft.attendance_reference),
     members_present: orNullNum(draft.members_present),
     members_represented: orNullNum(draft.members_represented),
+    attendees: normalizedAttendees(draft.attendees),
     mesa: { presidente: orNull(draft.mesa.presidente ?? ''), secretarios: draft.mesa.secretarios },
     agenda: draft.agenda,
     referenced_documents: draft.referenced_documents,
@@ -2828,6 +3048,16 @@ export function AtaEditorPage() {
                 </Field>
               ) : null}
             </div>
+          </Card>
+
+          <Card title={t('acts.attendees')}>
+            <p className="field__hint">{t('acts.attendees.hint')}</p>
+            <AttendeesEditor
+              attendees={draft.attendees}
+              family={entity.data?.family}
+              disabled={readOnly}
+              onChange={(next) => set('attendees', next)}
+            />
           </Card>
 
           <div id={ACT_CONVENING_GUIDANCE_ID} data-testid={ACT_CONVENING_GUIDANCE_ID}>

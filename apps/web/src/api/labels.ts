@@ -26,6 +26,7 @@ import type {
   Locale,
   MeetingChannel,
   NumberingScheme,
+  PresenceMode,
   Severity,
   SignatoryCapacity,
   SignatureFamily,
@@ -60,6 +61,7 @@ export const dispatchChannelLabels = enumLabels<DispatchChannel>('dispatchChanne
 export const actStateLabels = enumLabels<ActState>('actState');
 export const attachmentKindLabels = enumLabels<AttachmentKind>('attachmentKind');
 export const signatoryCapacityLabels = enumLabels<SignatoryCapacity>('signatoryCapacity');
+export const presenceModeLabels = enumLabels<PresenceMode>('presenceMode');
 export const severityLabels = enumLabels<Severity>('severity');
 export const localeLabels = enumLabels<Locale>('locale');
 export const signatureFamilyLabels = enumLabels<SignatureFamily>('signatureFamily');

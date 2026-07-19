@@ -868,6 +868,20 @@ export const nlNL: Catalog = {
   'acts.meetingDate': 'Vergaderdatum',
   'acts.local': 'Locatie',
   'acts.attendanceRef': 'Aanwezigheidsreferentie',
+  'acts.attendees': 'Aanwezigheid',
+  'acts.attendees.hint':
+    'Noem iedereen die deelnam, in welke hoedanigheid en — bij vertegenwoordiging — door wie. Zonder ingevulde regels verwijzen de notulen alleen naar de aanwezigheidsreferentie.',
+  'acts.attendees.nameAria': 'Naam van de deelnemer',
+  'acts.attendees.qualityAria': 'Hoedanigheid van de deelnemer',
+  'acts.attendees.presenceAria': 'Wijze van aanwezigheid',
+  'acts.attendees.representedByAria': 'Vertegenwoordigd door',
+  'acts.attendees.representedByRequired': 'Geef aan wie deze deelnemer heeft vertegenwoordigd.',
+  'acts.attendees.capitalAria': 'Kapitaal (centen)',
+  'acts.attendees.capitalPlaceholder': 'centen',
+  'acts.attendees.add': 'Deelnemer toevoegen',
+  'acts.attendees.none': 'Geen aanwezigheidsregels ingevuld.',
+  'acts.attendees.summary':
+    '{present} aanwezig · {represented} vertegenwoordigd · {absent} afwezig',
   'acts.telematicEvidence': 'Telematisch bewijs',
   'acts.telematicEvidenceHint': 'Platformregistratie / opname (CSC art. 377(8))',
   'acts.deliberacoes': 'Besluiten',
@@ -2103,6 +2117,9 @@ export const nlNL: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Gemachtigde',
   'enum.signatoryCapacity.CondoOwner': 'Eigenaar',
   // Severities
+  'enum.presenceMode.InPerson': 'Persoonlijk aanwezig',
+  'enum.presenceMode.Represented': 'Vertegenwoordigd',
+  'enum.presenceMode.Absent': 'Afwezig',
   'enum.severity.Warning': 'Waarschuwing',
   'enum.severity.Error': 'Fout',
   // Signature families
@@ -4188,6 +4205,13 @@ export const nlNL: Catalog = {
     'Aantal aanwezige leden voor een snel overzicht en quorumcontroles.',
   'fieldHelp.acts.membersRepresented':
     'Aantal leden dat door volmacht of een ander toegestaan middel is vertegenwoordigd.',
+  'fieldHelp.acts.attendeeName': 'Naam van degene die deelnam, zoals die in de notulen moet staan.',
+  'fieldHelp.acts.attendeePresence':
+    'Aanwezig, vertegenwoordigd of afwezig. Bepaalt wat de notulen op deze regel vermelden.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Naam van degene die deze deelnemer vertegenwoordigde. Verplicht wanneer de aanwezigheid ‘Vertegenwoordigd’ is.',
+  'fieldHelp.acts.attendeeWeight':
+    'Stemgewicht van deze regel: kapitaal in centen bij vennootschappen, aandeel in duizendsten bij VvE’s.',
   'fieldHelp.acts.telematicEvidence':
     'Registratie van het platform, opname of ander bewijs dat de vergadering op afstand of hybride ondersteunt.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5099,14 +5123,16 @@ export const nlNL: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Apparaten',
   'pairing.connect.title': 'Een telefoon verbinden',
-  'pairing.lede': 'Koppel een telefoon aan deze instantie om deze als begeleidende app te gebruiken. Genereer een code, scan die op de telefoon en voltooi de koppeling.',
+  'pairing.lede':
+    'Koppel een telefoon aan deze instantie om deze als begeleidende app te gebruiken. Genereer een code, scan die op de telefoon en voltooi de koppeling.',
   'pairing.label.label': 'Apparaatnaam',
   'pairing.label.hint': 'Een naam om deze telefoon in de apparatenlijst te herkennen.',
   'pairing.label.placeholder': 'Telefoon van Amélia',
   'pairing.connect': 'Koppelingscode genereren',
   'pairing.minting': 'Code genereren…',
   'pairing.code.title': 'Scan om te koppelen',
-  'pairing.code.instructions': 'Open de telefooncamera en scan de code, of open de onderstaande link op de telefoon.',
+  'pairing.code.instructions':
+    'Open de telefooncamera en scan de code, of open de onderstaande link op de telefoon.',
   'pairing.qr.alt': 'QR-code voor koppeling',
   'pairing.deepLink.label': 'Koppelingslink',
   'pairing.deepLink.copy': 'Link kopiëren',
@@ -5125,7 +5151,8 @@ export const nlNL: Catalog = {
   'pairing.enrolled.done': 'Klaar',
   'pairing.devices.title': 'Gekoppelde apparaten',
   'pairing.devices.empty': 'Geen gekoppelde apparaten',
-  'pairing.devices.emptyBody': 'U hebt nog geen telefoon gekoppeld. Genereer een code om te beginnen.',
+  'pairing.devices.emptyBody':
+    'U hebt nog geen telefoon gekoppeld. Genereer een code om te beginnen.',
   'pairing.table.device': 'Apparaat',
   'pairing.table.enrolled': 'Gekoppeld op',
   'pairing.table.status': 'Status',

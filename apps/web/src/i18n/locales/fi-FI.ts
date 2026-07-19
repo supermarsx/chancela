@@ -867,6 +867,19 @@ export const fiFI: Catalog = {
   'acts.meetingDate': 'Kokouspäivä',
   'acts.local': 'Paikka',
   'acts.attendanceRef': 'Läsnäoloviite',
+  'acts.attendees': 'Läsnäolot',
+  'acts.attendees.hint':
+    'Nimeä kaikki osallistuneet, missä ominaisuudessa ja — edustettuna — kenen edustamana. Ilman täytettyjä rivejä pöytäkirja viittaa vain läsnäoloviitteeseen.',
+  'acts.attendees.nameAria': 'Osallistujan nimi',
+  'acts.attendees.qualityAria': 'Osallistujan ominaisuus',
+  'acts.attendees.presenceAria': 'Läsnäolon muoto',
+  'acts.attendees.representedByAria': 'Edustajana',
+  'acts.attendees.representedByRequired': 'Ilmoita, kuka edusti tätä osallistujaa.',
+  'acts.attendees.capitalAria': 'Pääoma (sentteinä)',
+  'acts.attendees.capitalPlaceholder': 'senttiä',
+  'acts.attendees.add': 'Lisää osallistuja',
+  'acts.attendees.none': 'Läsnäolorivejä ei ole täytetty.',
+  'acts.attendees.summary': '{present} läsnä · {represented} edustettuina · {absent} poissa',
   'acts.telematicEvidence': 'Telemaattinen näyttö',
   'acts.telematicEvidenceHint': 'Alustan loki / tallenne (CSC art. 377.8)',
   'acts.deliberacoes': 'Päätökset',
@@ -2095,6 +2108,9 @@ export const fiFI: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Asiamies',
   'enum.signatoryCapacity.CondoOwner': 'Osakas',
   // Severities
+  'enum.presenceMode.InPerson': 'Henkilökohtaisesti läsnä',
+  'enum.presenceMode.Represented': 'Edustettuna',
+  'enum.presenceMode.Absent': 'Poissa',
   'enum.severity.Warning': 'Varoitus',
   'enum.severity.Error': 'Virhe',
   // Signature families
@@ -4173,6 +4189,14 @@ export const fiFI: Catalog = {
     'Läsnä olevien jäsenten lukumäärä nopeaa lukemista ja päätösvaltaisuustarkistuksia varten.',
   'fieldHelp.acts.membersRepresented':
     'Valtakirjalla tai muulla sallitulla tavalla edustettujen jäsenten lukumäärä.',
+  'fieldHelp.acts.attendeeName':
+    'Osallistuneen nimi sellaisena kuin sen on esiinnyttävä pöytäkirjassa.',
+  'fieldHelp.acts.attendeePresence':
+    'Läsnä, edustettuna tai poissa. Ratkaisee, mitä pöytäkirja tällä rivillä kertoo.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Tätä osallistujaa edustaneen nimi. Pakollinen, kun läsnäolo on ”Edustettuna”.',
+  'fieldHelp.acts.attendeeWeight':
+    'Tämän rivin äänipaino: pääoma sentteinä yhtiöissä, osuus promilleina taloyhtiöissä.',
   'fieldHelp.acts.telematicEvidence':
     'Alustan tallenne, nauhoitus tai muu todiste, joka tukee etä- tai hybridikokousta.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5066,14 +5090,16 @@ export const fiFI: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Laitteet',
   'pairing.connect.title': 'Yhdistä puhelin',
-  'pairing.lede': 'Paritä puhelin tämän instanssin kanssa käyttääksesi sitä oheissovelluksena. Luo koodi, skannaa se puhelimella ja viimeistele paritus.',
+  'pairing.lede':
+    'Paritä puhelin tämän instanssin kanssa käyttääksesi sitä oheissovelluksena. Luo koodi, skannaa se puhelimella ja viimeistele paritus.',
   'pairing.label.label': 'Laitteen nimi',
   'pairing.label.hint': 'Nimi, jolla tunnistat tämän puhelimen laiteluettelossa.',
   'pairing.label.placeholder': 'Amélian puhelin',
   'pairing.connect': 'Luo parituskoodi',
   'pairing.minting': 'Luodaan koodia…',
   'pairing.code.title': 'Skannaa parittaaksesi',
-  'pairing.code.instructions': 'Avaa puhelimen kamera ja skannaa koodi, tai avaa alla oleva linkki puhelimessa.',
+  'pairing.code.instructions':
+    'Avaa puhelimen kamera ja skannaa koodi, tai avaa alla oleva linkki puhelimessa.',
   'pairing.qr.alt': 'Parituksen QR-koodi',
   'pairing.deepLink.label': 'Parituslinkki',
   'pairing.deepLink.copy': 'Kopioi linkki',

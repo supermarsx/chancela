@@ -869,6 +869,20 @@ export const plPL: Catalog = {
   'acts.meetingDate': 'Data zebrania',
   'acts.local': 'Miejsce',
   'acts.attendanceRef': 'Odniesienie do obecności',
+  'acts.attendees': 'Obecności',
+  'acts.attendees.hint':
+    'Wskaż imiennie każdą osobę uczestniczącą, w jakim charakterze i — w razie reprezentacji — przez kogo. Bez wypełnionych wierszy protokół odsyła jedynie do odniesienia do obecności.',
+  'acts.attendees.nameAria': 'Imię i nazwisko uczestnika',
+  'acts.attendees.qualityAria': 'Charakter uczestnictwa',
+  'acts.attendees.presenceAria': 'Sposób obecności',
+  'acts.attendees.representedByAria': 'Reprezentowany przez',
+  'acts.attendees.representedByRequired': 'Wskaż, kto reprezentował tego uczestnika.',
+  'acts.attendees.capitalAria': 'Kapitał (grosze)',
+  'acts.attendees.capitalPlaceholder': 'grosze',
+  'acts.attendees.add': 'Dodaj uczestnika',
+  'acts.attendees.none': 'Brak wypełnionych wierszy obecności.',
+  'acts.attendees.summary':
+    '{present} obecnych · {represented} reprezentowanych · {absent} nieobecnych',
   'acts.telematicEvidence': 'Dowód telematyczny',
   'acts.telematicEvidenceHint': 'Zapis platformy / nagranie (CSC art. 377 ust. 8)',
   'acts.deliberacoes': 'Uchwały',
@@ -2099,6 +2113,9 @@ export const plPL: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Pełnomocnik',
   'enum.signatoryCapacity.CondoOwner': 'Właściciel lokalu',
   // Severities
+  'enum.presenceMode.InPerson': 'Obecny osobiście',
+  'enum.presenceMode.Represented': 'Reprezentowany',
+  'enum.presenceMode.Absent': 'Nieobecny',
   'enum.severity.Warning': 'Ostrzeżenie',
   'enum.severity.Error': 'Błąd',
   // Signature families
@@ -4171,6 +4188,14 @@ export const plPL: Catalog = {
     'Liczba obecnych członków na potrzeby szybkiego odczytu i kontroli kworum.',
   'fieldHelp.acts.membersRepresented':
     'Liczba członków reprezentowanych przez pełnomocnika lub w inny dopuszczalny sposób.',
+  'fieldHelp.acts.attendeeName':
+    'Imię i nazwisko osoby uczestniczącej, w brzmieniu, jakie ma znaleźć się w protokole.',
+  'fieldHelp.acts.attendeePresence':
+    'Obecny, reprezentowany lub nieobecny. Decyduje o treści tego wiersza protokołu.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Imię i nazwisko osoby reprezentującej tego uczestnika. Wymagane, gdy obecność to „Reprezentowany”.',
+  'fieldHelp.acts.attendeeWeight':
+    'Waga głosu tego wiersza: kapitał w groszach w spółkach, udział w promilach we wspólnotach.',
   'fieldHelp.acts.telematicEvidence':
     'Zapis platformy, nagranie lub inny dowód potwierdzający posiedzenie zdalne lub hybrydowe.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5075,14 +5100,16 @@ export const plPL: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Urządzenia',
   'pairing.connect.title': 'Połącz telefon',
-  'pairing.lede': 'Sparuj telefon z tą instancją, aby używać go jako aplikacji towarzyszącej. Wygeneruj kod, zeskanuj go na telefonie i zakończ parowanie.',
+  'pairing.lede':
+    'Sparuj telefon z tą instancją, aby używać go jako aplikacji towarzyszącej. Wygeneruj kod, zeskanuj go na telefonie i zakończ parowanie.',
   'pairing.label.label': 'Nazwa urządzenia',
   'pairing.label.hint': 'Nazwa pozwalająca rozpoznać ten telefon na liście urządzeń.',
   'pairing.label.placeholder': 'Telefon Amélii',
   'pairing.connect': 'Wygeneruj kod parowania',
   'pairing.minting': 'Generowanie kodu…',
   'pairing.code.title': 'Zeskanuj, aby sparować',
-  'pairing.code.instructions': 'Otwórz aparat telefonu i zeskanuj kod lub otwórz poniższy link na telefonie.',
+  'pairing.code.instructions':
+    'Otwórz aparat telefonu i zeskanuj kod lub otwórz poniższy link na telefonie.',
   'pairing.qr.alt': 'Kod QR parowania',
   'pairing.deepLink.label': 'Link parowania',
   'pairing.deepLink.copy': 'Kopiuj link',
@@ -5101,7 +5128,8 @@ export const plPL: Catalog = {
   'pairing.enrolled.done': 'Gotowe',
   'pairing.devices.title': 'Sparowane urządzenia',
   'pairing.devices.empty': 'Brak sparowanych urządzeń',
-  'pairing.devices.emptyBody': 'Nie sparowano jeszcze żadnego telefonu. Wygeneruj kod, aby rozpocząć.',
+  'pairing.devices.emptyBody':
+    'Nie sparowano jeszcze żadnego telefonu. Wygeneruj kod, aby rozpocząć.',
   'pairing.table.device': 'Urządzenie',
   'pairing.table.enrolled': 'Sparowano',
   'pairing.table.status': 'Status',

@@ -866,6 +866,20 @@ export const daDK: Catalog = {
   'acts.meetingDate': 'Mødedato',
   'acts.local': 'Sted',
   'acts.attendanceRef': 'Reference til fremmøde',
+  'acts.attendees': 'Fremmøde',
+  'acts.attendees.hint':
+    'Angiv navnene på alle deltagere, i hvilken egenskab og — ved repræsentation — af hvem. Uden udfyldte rækker henviser protokollen kun til referencen til fremmøde.',
+  'acts.attendees.nameAria': 'Deltagerens navn',
+  'acts.attendees.qualityAria': 'Deltagerens egenskab',
+  'acts.attendees.presenceAria': 'Form for fremmøde',
+  'acts.attendees.representedByAria': 'Repræsenteret af',
+  'acts.attendees.representedByRequired': 'Angiv, hvem der repræsenterede denne deltager.',
+  'acts.attendees.capitalAria': 'Kapital (øre)',
+  'acts.attendees.capitalPlaceholder': 'øre',
+  'acts.attendees.add': 'Tilføj deltager',
+  'acts.attendees.none': 'Ingen udfyldte fremmøderækker.',
+  'acts.attendees.summary':
+    '{present} til stede · {represented} repræsenteret · {absent} fraværende',
   'acts.telematicEvidence': 'Telematisk dokumentation',
   'acts.telematicEvidenceHint': 'Platformslog / optagelse (CSC art. 377, stk. 8)',
   'acts.deliberacoes': 'Beslutninger',
@@ -2091,6 +2105,9 @@ export const daDK: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Befuldmægtiget',
   'enum.signatoryCapacity.CondoOwner': 'Ejer',
   // Severities
+  'enum.presenceMode.InPerson': 'Personligt til stede',
+  'enum.presenceMode.Represented': 'Repræsenteret',
+  'enum.presenceMode.Absent': 'Fraværende',
   'enum.severity.Warning': 'Advarsel',
   'enum.severity.Error': 'Fejl',
   // Signature families
@@ -4156,6 +4173,13 @@ export const daDK: Catalog = {
     'Antal fremmødte medlemmer til hurtig aflæsning og beslutningsdygtighedskontrol.',
   'fieldHelp.acts.membersRepresented':
     'Antal medlemmer, der er repræsenteret ved fuldmagt eller andet tilladt middel.',
+  'fieldHelp.acts.attendeeName': 'Navnet på den, der deltog, som det skal fremgå af protokollen.',
+  'fieldHelp.acts.attendeePresence':
+    'Til stede, repræsenteret eller fraværende. Afgør, hvad protokollen gengiver i denne række.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Navnet på den, der repræsenterede denne deltager. Påkrævet, når fremmødet er “Repræsenteret”.',
+  'fieldHelp.acts.attendeeWeight':
+    'Stemmevægten for denne række: kapital i øre for selskaber, andel i promille for ejerforeninger.',
   'fieldHelp.acts.telematicEvidence':
     'Registrering af platformen, optagelse eller anden dokumentation, der understøtter fjern- eller hybridmødet.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5051,14 +5075,16 @@ export const daDK: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Enheder',
   'pairing.connect.title': 'Tilslut en telefon',
-  'pairing.lede': 'Par en telefon med denne instans for at bruge den som ledsager-app. Generér en kode, scan den på telefonen, og fuldfør parringen.',
+  'pairing.lede':
+    'Par en telefon med denne instans for at bruge den som ledsager-app. Generér en kode, scan den på telefonen, og fuldfør parringen.',
   'pairing.label.label': 'Enhedsnavn',
   'pairing.label.hint': 'Et navn til at genkende denne telefon på listen over enheder.',
   'pairing.label.placeholder': 'Amélias telefon',
   'pairing.connect': 'Generér parringskode',
   'pairing.minting': 'Genererer kode…',
   'pairing.code.title': 'Scan for at parre',
-  'pairing.code.instructions': 'Åbn telefonens kamera og scan koden, eller åbn linket nedenfor på telefonen.',
+  'pairing.code.instructions':
+    'Åbn telefonens kamera og scan koden, eller åbn linket nedenfor på telefonen.',
   'pairing.qr.alt': 'QR-kode til parring',
   'pairing.deepLink.label': 'Parringslink',
   'pairing.deepLink.copy': 'Kopiér link',
@@ -5077,7 +5103,8 @@ export const daDK: Catalog = {
   'pairing.enrolled.done': 'Færdig',
   'pairing.devices.title': 'Parrede enheder',
   'pairing.devices.empty': 'Ingen parrede enheder',
-  'pairing.devices.emptyBody': 'Du har endnu ikke parret en telefon. Generér en kode for at komme i gang.',
+  'pairing.devices.emptyBody':
+    'Du har endnu ikke parret en telefon. Generér en kode for at komme i gang.',
   'pairing.table.device': 'Enhed',
   'pairing.table.enrolled': 'Parret den',
   'pairing.table.status': 'Status',

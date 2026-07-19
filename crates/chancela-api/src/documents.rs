@@ -11565,6 +11565,7 @@ mod tests {
                 .expect("valid date"),
             required_signatories: vec!["Administrador do condomínio".to_string()],
             required_signatory_records: Vec::new(),
+            ..Default::default()
         };
         let generated = generate_for_encerramento(&termo, &book, &entity)
             .expect("generation ok")

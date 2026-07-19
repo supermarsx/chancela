@@ -35,6 +35,18 @@ export const ataFieldHelp = {
   get membersRepresented() {
     return t('fieldHelp.acts.membersRepresented');
   },
+  get attendeeName() {
+    return t('fieldHelp.acts.attendeeName');
+  },
+  get attendeePresence() {
+    return t('fieldHelp.acts.attendeePresence');
+  },
+  get attendeeRepresentedBy() {
+    return t('fieldHelp.acts.attendeeRepresentedBy');
+  },
+  get attendeeWeight() {
+    return t('fieldHelp.acts.attendeeWeight');
+  },
   get telematicEvidence() {
     return t('fieldHelp.acts.telematicEvidence');
   },

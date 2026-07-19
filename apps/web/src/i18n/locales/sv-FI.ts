@@ -870,6 +870,20 @@ export const svFI: Catalog = {
   'acts.meetingDate': 'Mötesdatum',
   'acts.local': 'Plats',
   'acts.attendanceRef': 'Närvaroreferens',
+  'acts.attendees': 'Närvaro',
+  'acts.attendees.hint':
+    'Namnge alla som deltog, i vilken egenskap och — vid företrädande — av vem. Utan ifyllda rader hänvisar protokollet bara till närvaroreferensen.',
+  'acts.attendees.nameAria': 'Deltagarens namn',
+  'acts.attendees.qualityAria': 'Deltagarens egenskap',
+  'acts.attendees.presenceAria': 'Närvaroform',
+  'acts.attendees.representedByAria': 'Företrädd av',
+  'acts.attendees.representedByRequired': 'Ange vem som företrädde den här deltagaren.',
+  'acts.attendees.capitalAria': 'Kapital (cent)',
+  'acts.attendees.capitalPlaceholder': 'cent',
+  'acts.attendees.add': 'Lägg till deltagare',
+  'acts.attendees.none': 'Inga ifyllda närvarorader.',
+  'acts.attendees.summary':
+    '{present} närvarande · {represented} företrädda · {absent} frånvarande',
   'acts.telematicEvidence': 'Telematiskt underlag',
   'acts.telematicEvidenceHint': 'Plattformslogg / inspelning (CSC art. 377.8)',
   'acts.deliberacoes': 'Beslut',
@@ -2097,6 +2111,9 @@ export const svFI: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Ombud',
   'enum.signatoryCapacity.CondoOwner': 'Delägare',
   // Severities
+  'enum.presenceMode.InPerson': 'Personligen närvarande',
+  'enum.presenceMode.Represented': 'Företrädd',
+  'enum.presenceMode.Absent': 'Frånvarande',
   'enum.severity.Warning': 'Varning',
   'enum.severity.Error': 'Fel',
   // Signature families
@@ -4167,6 +4184,13 @@ export const svFI: Catalog = {
     'Antal närvarande medlemmar för snabb avläsning och beslutsförhetskontroller.',
   'fieldHelp.acts.membersRepresented':
     'Antal medlemmar som företräds genom fullmakt eller annat tillåtet sätt.',
+  'fieldHelp.acts.attendeeName': 'Namnet på den som deltog, så som det ska framgå av protokollet.',
+  'fieldHelp.acts.attendeePresence':
+    'Närvarande, företrädd eller frånvarande. Avgör vad protokollet återger på den här raden.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Namnet på den som företrädde den här deltagaren. Krävs när närvaron är ”Företrädd”.',
+  'fieldHelp.acts.attendeeWeight':
+    'Röstvikten för den här raden: kapital i cent för bolag, andel i promille för bostadsaktiebolag.',
   'fieldHelp.acts.telematicEvidence':
     'Registrering av plattformen, inspelning eller annat bevis som stöder distans- eller hybridmötet.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5059,14 +5083,16 @@ export const svFI: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Enheter',
   'pairing.connect.title': 'Anslut en telefon',
-  'pairing.lede': 'Para ihop en telefon med den här instansen för att använda den som en följeslagarapp. Skapa en kod, skanna den på telefonen och slutför parkopplingen.',
+  'pairing.lede':
+    'Para ihop en telefon med den här instansen för att använda den som en följeslagarapp. Skapa en kod, skanna den på telefonen och slutför parkopplingen.',
   'pairing.label.label': 'Enhetens namn',
   'pairing.label.hint': 'Ett namn för att känna igen den här telefonen i enhetslistan.',
   'pairing.label.placeholder': 'Amélias telefon',
   'pairing.connect': 'Skapa en parkopplingskod',
   'pairing.minting': 'Skapar kod…',
   'pairing.code.title': 'Skanna för att parkoppla',
-  'pairing.code.instructions': 'Öppna telefonens kamera och skanna koden, eller öppna länken nedan på telefonen.',
+  'pairing.code.instructions':
+    'Öppna telefonens kamera och skanna koden, eller öppna länken nedan på telefonen.',
   'pairing.qr.alt': 'QR-kod för parkoppling',
   'pairing.deepLink.label': 'Parkopplingslänk',
   'pairing.deepLink.copy': 'Kopiera länken',
@@ -5085,7 +5111,8 @@ export const svFI: Catalog = {
   'pairing.enrolled.done': 'Färdig',
   'pairing.devices.title': 'Parkopplade enheter',
   'pairing.devices.empty': 'Inga parkopplade enheter',
-  'pairing.devices.emptyBody': 'Du har inte parkopplat någon telefon ännu. Skapa en kod för att börja.',
+  'pairing.devices.emptyBody':
+    'Du har inte parkopplat någon telefon ännu. Skapa en kod för att börja.',
   'pairing.table.device': 'Enhet',
   'pairing.table.enrolled': 'Parkopplad den',
   'pairing.table.status': 'Status',

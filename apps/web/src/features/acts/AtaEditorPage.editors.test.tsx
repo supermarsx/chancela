@@ -3,12 +3,15 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import {
   AgendaEditor,
   AttachmentsEditor,
+  AttendeesEditor,
   DeliberationItemsEditor,
   MesaEditor,
   ReferencedDocumentsEditor,
   SignatoriesEditor,
   StatementsEditor,
+  attendanceWeightKind,
 } from './AtaEditorPage';
+import type { ActAttendee } from '../../api/types';
 
 afterEach(cleanup);
 
@@ -190,6 +193,144 @@ describe('AtaEditorPage structured editors', () => {
     ]);
   });
 
+  it('edits every attendance field and supports collection maintenance', () => {
+    const onChange = vi.fn();
+    const attendees: ActAttendee[] = [
+      {
+        name: 'Ana Rocha',
+        quality: 'Member',
+        presence: 'InPerson',
+        represented_by: null,
+        weight: { Capital: 500000 },
+      },
+    ];
+    render(
+      <AttendeesEditor
+        attendees={attendees}
+        family="CommercialCompany"
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Nome do participante'), {
+      target: { value: 'Bruno Dias' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([{ ...attendees[0], name: 'Bruno Dias' }]);
+    fireEvent.change(screen.getByLabelText('Qualidade do participante'), {
+      target: { value: 'Attorney' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([{ ...attendees[0], quality: 'Attorney' }]);
+    fireEvent.change(screen.getByLabelText('Capital (cêntimos)'), {
+      target: { value: '250000.7' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([{ ...attendees[0], weight: { Capital: 250000 } }]);
+    fireEvent.change(screen.getByLabelText('Capital (cêntimos)'), { target: { value: '' } });
+    expect(onChange).toHaveBeenLastCalledWith([{ ...attendees[0], weight: null }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
+    expect(onChange).toHaveBeenLastCalledWith([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar presença' }));
+    expect(onChange).toHaveBeenLastCalledWith([
+      ...attendees,
+      {
+        name: '',
+        quality: 'Member',
+        presence: 'InPerson',
+        represented_by: null,
+        weight: null,
+      },
+    ]);
+    expect(screen.getByText('1 presentes · 0 representados · 0 ausentes')).toBeTruthy();
+  });
+
+  it('shows the proxy field only while represented, and drops the proxy on the way out', () => {
+    const onChange = vi.fn();
+    const attendees: ActAttendee[] = [
+      {
+        name: 'Ana Rocha',
+        quality: 'Member',
+        presence: 'Represented',
+        represented_by: 'Carla Neves',
+        weight: null,
+      },
+    ];
+    const { rerender } = render(
+      <AttendeesEditor
+        attendees={attendees}
+        family="CommercialCompany"
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Representado por'), { target: { value: 'Diogo' } });
+    expect(onChange).toHaveBeenLastCalledWith([{ ...attendees[0], represented_by: 'Diogo' }]);
+    fireEvent.change(screen.getByLabelText('Modo de presença'), { target: { value: 'Absent' } });
+    expect(onChange).toHaveBeenLastCalledWith([
+      { ...attendees[0], presence: 'Absent', represented_by: null },
+    ]);
+
+    // A represented row with no proxy named warns rather than silently failing the PATCH.
+    rerender(
+      <AttendeesEditor
+        attendees={[{ ...attendees[0], represented_by: '' }]}
+        family="CommercialCompany"
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByText('Indique quem representou este participante.')).toBeTruthy();
+
+    rerender(
+      <AttendeesEditor
+        attendees={[{ ...attendees[0], presence: 'InPerson', represented_by: null }]}
+        family="CommercialCompany"
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.queryByLabelText('Representado por')).toBeNull();
+  });
+
+  it('weights attendance by the family: capital, permilagem, or neither', () => {
+    expect(attendanceWeightKind('CommercialCompany')).toBe('Capital');
+    expect(attendanceWeightKind('Condominium')).toBe('Permilage');
+    expect(attendanceWeightKind('Association')).toBeNull();
+    expect(attendanceWeightKind(undefined)).toBe('Capital');
+
+    const onChange = vi.fn();
+    const attendees: ActAttendee[] = [
+      {
+        name: 'Ana Rocha',
+        quality: 'CondoOwner',
+        presence: 'InPerson',
+        represented_by: null,
+        weight: { Permilage: 125 },
+      },
+    ];
+    const { rerender } = render(
+      <AttendeesEditor
+        attendees={attendees}
+        family="Condominium"
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Permilagem (‰)'), { target: { value: '250' } });
+    expect(onChange).toHaveBeenLastCalledWith([{ ...attendees[0], weight: { Permilage: 250 } }]);
+
+    rerender(
+      <AttendeesEditor
+        attendees={[{ ...attendees[0], weight: null }]}
+        family="Association"
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.queryByLabelText('Permilagem (‰)')).toBeNull();
+    expect(screen.queryByLabelText('Capital (cêntimos)')).toBeNull();
+  });
+
   it('renders honest empty read-only states', () => {
     render(
       <>
@@ -200,6 +341,7 @@ describe('AtaEditorPage structured editors', () => {
         <ReferencedDocumentsEditor documents={[]} disabled onChange={vi.fn()} />
         <SignatoriesEditor signatories={[]} disabled onChange={vi.fn()} />
         <AttachmentsEditor attachments={[]} disabled onChange={vi.fn()} />
+        <AttendeesEditor attendees={[]} family="CommercialCompany" disabled onChange={vi.fn()} />
       </>,
     );
 
@@ -210,5 +352,6 @@ describe('AtaEditorPage structured editors', () => {
     expect(screen.getByText('Sem documentos referidos.')).toBeTruthy();
     expect(screen.getByText('Sem signatários.')).toBeTruthy();
     expect(screen.getByText('Sem anexos.')).toBeTruthy();
+    expect(screen.getByText('Sem presenças preenchidas.')).toBeTruthy();
   });
 });

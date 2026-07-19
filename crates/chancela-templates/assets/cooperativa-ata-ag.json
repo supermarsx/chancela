@@ -40,6 +40,20 @@
         { "key": "Referência à lista de presenças", "value": "{{ attendance_reference }}" }
       ]
     },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "{% if attendees %}Presenças{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "attendees",
+      "template": "{{ name }} — {{ quality | role_label }}{% if weight and weight.Capital %} — capital {{ weight.Capital }}{% elif weight and weight.Permilage %} — permilagem {{ weight.Permilage }}‰{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% else %}ausente{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if not attendees and attendance_reference %}A identificação nominal dos presentes e dos representados consta da lista de presenças autenticada que acompanha a presente ata e dela faz parte integrante: {{ attendance_reference }}{% endif %}"
+    },
     { "kind": "Heading", "level": 2, "template": "Ordem de trabalhos" },
     {
       "kind": "Paragraph",

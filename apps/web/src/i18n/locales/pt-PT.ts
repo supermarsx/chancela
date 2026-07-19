@@ -875,6 +875,19 @@ export const ptPT = {
   'acts.meetingDate': 'Data da reunião',
   'acts.local': 'Local',
   'acts.attendanceRef': 'Referência de presenças',
+  'acts.attendees': 'Presenças',
+  'acts.attendees.hint':
+    'Identifique nominalmente quem participou, em que qualidade e — quando representado — por quem. Sem linhas preenchidas, a ata limita-se a remeter para a referência à lista de presenças.',
+  'acts.attendees.nameAria': 'Nome do participante',
+  'acts.attendees.qualityAria': 'Qualidade do participante',
+  'acts.attendees.presenceAria': 'Modo de presença',
+  'acts.attendees.representedByAria': 'Representado por',
+  'acts.attendees.representedByRequired': 'Indique quem representou este participante.',
+  'acts.attendees.capitalAria': 'Capital (cêntimos)',
+  'acts.attendees.capitalPlaceholder': 'cêntimos',
+  'acts.attendees.add': 'Adicionar presença',
+  'acts.attendees.none': 'Sem presenças preenchidas.',
+  'acts.attendees.summary': '{present} presentes · {represented} representados · {absent} ausentes',
   'acts.telematicEvidence': 'Evidência telemática',
   'acts.telematicEvidenceHint': 'Registo da plataforma / gravação (CSC art. 377.º-8)',
   'acts.deliberacoes': 'Deliberações',
@@ -2117,6 +2130,9 @@ export const ptPT = {
   'enum.signatoryCapacity.Attorney': 'Mandatário',
   'enum.signatoryCapacity.CondoOwner': 'Condómino',
   // Severities
+  'enum.presenceMode.InPerson': 'Presente',
+  'enum.presenceMode.Represented': 'Representado',
+  'enum.presenceMode.Absent': 'Ausente',
   'enum.severity.Warning': 'Aviso',
   'enum.severity.Error': 'Erro',
   // Signature families
@@ -4234,6 +4250,13 @@ export const ptPT = {
     'Número de membros presentes para leitura rápida e verificações de quórum.',
   'fieldHelp.acts.membersRepresented':
     'Número de membros representados por procuração ou outro meio admitido.',
+  'fieldHelp.acts.attendeeName': 'Nome de quem participou, tal como deve constar da ata.',
+  'fieldHelp.acts.attendeePresence':
+    'Presente, representado ou ausente. Determina o que a ata recita nesta linha.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Nome de quem representou este participante. Obrigatório quando a presença é «Representado».',
+  'fieldHelp.acts.attendeeWeight':
+    'Peso de voto desta linha: capital em cêntimos nas sociedades, permilagem nos condomínios.',
   'fieldHelp.acts.telematicEvidence':
     'Registo da plataforma, gravação ou outra prova que suporte a reunião remota ou híbrida.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5063,14 +5086,16 @@ export const ptPT = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Dispositivos',
   'pairing.connect.title': 'Ligar um telemóvel',
-  'pairing.lede': 'Emparelhe um telemóvel com esta instância para o usar como aplicação companheira. Gere um código, digitalize-o no telemóvel e conclua o emparelhamento.',
+  'pairing.lede':
+    'Emparelhe um telemóvel com esta instância para o usar como aplicação companheira. Gere um código, digitalize-o no telemóvel e conclua o emparelhamento.',
   'pairing.label.label': 'Nome do dispositivo',
   'pairing.label.hint': 'Um nome para reconhecer este telemóvel na lista de dispositivos.',
   'pairing.label.placeholder': 'Telemóvel da Amélia',
   'pairing.connect': 'Gerar código de emparelhamento',
   'pairing.minting': 'A gerar código…',
   'pairing.code.title': 'Digitalize para emparelhar',
-  'pairing.code.instructions': 'Abra a câmara do telemóvel e digitalize o código, ou abra a ligação abaixo no telemóvel.',
+  'pairing.code.instructions':
+    'Abra a câmara do telemóvel e digitalize o código, ou abra a ligação abaixo no telemóvel.',
   'pairing.qr.alt': 'Código QR de emparelhamento',
   'pairing.deepLink.label': 'Ligação de emparelhamento',
   'pairing.deepLink.copy': 'Copiar ligação',
@@ -5089,7 +5114,8 @@ export const ptPT = {
   'pairing.enrolled.done': 'Concluir',
   'pairing.devices.title': 'Dispositivos emparelhados',
   'pairing.devices.empty': 'Sem dispositivos emparelhados',
-  'pairing.devices.emptyBody': 'Ainda não emparelhou nenhum telemóvel. Gere um código para começar.',
+  'pairing.devices.emptyBody':
+    'Ainda não emparelhou nenhum telemóvel. Gere um código para começar.',
   'pairing.table.device': 'Dispositivo',
   'pairing.table.enrolled': 'Emparelhado em',
   'pairing.table.status': 'Estado',

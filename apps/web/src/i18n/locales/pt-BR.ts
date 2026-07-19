@@ -870,6 +870,19 @@ export const ptBR: Catalog = {
   'acts.meetingDate': 'Data da reunião',
   'acts.local': 'Localização',
   'acts.attendanceRef': 'Referência de atendimento',
+  'acts.attendees': 'Presenças',
+  'acts.attendees.hint':
+    'Identifique nominalmente quem participou, em que qualidade e — quando representado — por quem. Sem linhas preenchidas, a ata apenas remete à referência da lista de presenças.',
+  'acts.attendees.nameAria': 'Nome do participante',
+  'acts.attendees.qualityAria': 'Qualidade do participante',
+  'acts.attendees.presenceAria': 'Forma de participação',
+  'acts.attendees.representedByAria': 'Representado por',
+  'acts.attendees.representedByRequired': 'Informe quem representou este participante.',
+  'acts.attendees.capitalAria': 'Capital (centavos)',
+  'acts.attendees.capitalPlaceholder': 'centavos',
+  'acts.attendees.add': 'Adicionar participante',
+  'acts.attendees.none': 'Nenhuma presença preenchida.',
+  'acts.attendees.summary': '{present} presentes · {represented} representados · {absent} ausentes',
   'acts.telematicEvidence': 'Evidência telemática',
   'acts.telematicEvidenceHint': 'Registro da plataforma / gravação (CSC art. 377.º-8)',
   'acts.deliberacoes': 'Deliberações',
@@ -2098,6 +2111,9 @@ export const ptBR: Catalog = {
   'enum.signatoryCapacity.Attorney': 'Obrigatório',
   'enum.signatoryCapacity.CondoOwner': 'Condômino',
   // Severities
+  'enum.presenceMode.InPerson': 'Presente',
+  'enum.presenceMode.Represented': 'Representado',
+  'enum.presenceMode.Absent': 'Ausente',
   'enum.severity.Warning': 'Perceber',
   'enum.severity.Error': 'Erro',
   // Signature families
@@ -4164,6 +4180,13 @@ export const ptBR: Catalog = {
     'Número de membros presentes para leitura rápida e verificação de quórum.',
   'fieldHelp.acts.membersRepresented':
     'Número de associados representados por procuração ou outro meio admitido.',
+  'fieldHelp.acts.attendeeName': 'Nome de quem participou, tal como deve constar da ata.',
+  'fieldHelp.acts.attendeePresence':
+    'Presente, representado ou ausente. Define o que a ata narra nesta linha.',
+  'fieldHelp.acts.attendeeRepresentedBy':
+    'Nome de quem representou este participante. Obrigatório quando a participação é “Representado”.',
+  'fieldHelp.acts.attendeeWeight':
+    'Peso de voto desta linha: capital em centavos nas sociedades, fração milesimal nos condomínios.',
   'fieldHelp.acts.telematicEvidence':
     'Registro da plataforma, gravação ou outra prova que sustente a reunião remota ou híbrida.',
   'fieldHelp.acts.conveningDispatchDate':
@@ -5063,14 +5086,16 @@ export const ptBR: Catalog = {
   // --- Companion pairing / device enrollment (wp27-e5) ---------------------------
   'pairing.tab': 'Aparelhos',
   'pairing.connect.title': 'Conectar um celular',
-  'pairing.lede': 'Pareie um celular com esta instância para usá-lo como aplicativo complementar. Gere um código, escaneie-o no celular e finalize o pareamento.',
+  'pairing.lede':
+    'Pareie um celular com esta instância para usá-lo como aplicativo complementar. Gere um código, escaneie-o no celular e finalize o pareamento.',
   'pairing.label.label': 'Nome do aparelho',
   'pairing.label.hint': 'Um nome para reconhecer este celular na lista de aparelhos.',
   'pairing.label.placeholder': 'Celular da Amélia',
   'pairing.connect': 'Gerar código de pareamento',
   'pairing.minting': 'Gerando código…',
   'pairing.code.title': 'Escaneie para parear',
-  'pairing.code.instructions': 'Abra a câmera do celular e escaneie o código, ou abra o link abaixo no celular.',
+  'pairing.code.instructions':
+    'Abra a câmera do celular e escaneie o código, ou abra o link abaixo no celular.',
   'pairing.qr.alt': 'Código QR de pareamento',
   'pairing.deepLink.label': 'Link de pareamento',
   'pairing.deepLink.copy': 'Copiar link',

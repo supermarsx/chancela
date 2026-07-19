@@ -2247,6 +2247,124 @@ mod tests {
         }
     }
 
+    /// Does any prose fragment or structural template in `spec` mention `needle`?
+    fn spec_binds(spec: &TemplateSpec, needle: &str) -> bool {
+        spec.blocks.iter().any(|block| match block {
+            BlockSpec::Heading { template, .. } | BlockSpec::Paragraph { template, .. } => {
+                template.contains(needle)
+            }
+            BlockSpec::KeyValue { rows, .. } => rows
+                .iter()
+                .any(|row| row.key.contains(needle) || row.value.contains(needle)),
+            BlockSpec::VoteTable {
+                label,
+                unanimous_total,
+                ..
+            } => {
+                label.contains(needle)
+                    || unanimous_total
+                        .as_deref()
+                        .is_some_and(|t| t.contains(needle))
+            }
+            BlockSpec::SignatureBlock { role, name, .. } => {
+                role.contains(needle) || name.contains(needle)
+            }
+            BlockSpec::PageBreak | BlockSpec::Rule => false,
+        })
+    }
+
+    /// G2, render half: an ata that recites an attendance *reference* must also be able to name the
+    /// people it counted. Both forms have to read correctly — the inline roll when `attendees` is
+    /// captured (name, quality, weight, presence, and the proxy for a represented member), and an
+    /// explicit pointer to the authenticated lista when it is not. Runs over every Ata-stage
+    /// template in the catalog, so a newly authored ata cannot reintroduce the gap.
+    #[test]
+    fn ata_templates_render_the_attendance_roll_and_its_by_reference_form() {
+        let reg = load_registry().expect("the full catalog loads");
+        let ata_specs: Vec<&TemplateSpec> = reg
+            .specs()
+            .iter()
+            .filter(|spec| spec.stage == LifecycleStage::Ata)
+            .filter(|spec| spec_binds(spec, "attendance_reference"))
+            .collect();
+        assert!(
+            ata_specs.len() >= 38,
+            "expected the ata spine across all five families, found {}",
+            ata_specs.len()
+        );
+
+        let mut roll_ctx = coverage_ctx();
+        roll_ctx["attendees"] = json!([
+            {
+                "name": "Ana Rocha",
+                "quality": "Member",
+                "presence": "InPerson",
+                "weight": { "Capital": 500000 }
+            },
+            {
+                "name": "Bruno Dias",
+                "quality": "Member",
+                "presence": "Represented",
+                "represented_by": "Carla Neves"
+            },
+            {
+                "name": "Diogo Faria",
+                "quality": "Member",
+                "presence": "Absent"
+            }
+        ]);
+
+        for spec in &ata_specs {
+            let id = &spec.id;
+            let text = doc_text(
+                &render(spec, &roll_ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}")),
+            );
+            assert!(text.contains("Presenças"), "{id}: no roll heading: {text}");
+            assert!(
+                text.contains("Ana Rocha") && text.contains("presente"),
+                "{id}: in-person attendee missing: {text}"
+            );
+            assert!(
+                text.contains("Bruno Dias") && text.contains("representado por Carla Neves"),
+                "{id}: represented attendee/proxy missing: {text}"
+            );
+            assert!(
+                text.contains("Diogo Faria") && text.contains("ausente"),
+                "{id}: absent attendee missing: {text}"
+            );
+            if spec.family == EntityFamily::CommercialCompany {
+                assert!(
+                    text.contains("capital 500000"),
+                    "{id}: capital weight missing from the roll: {text}"
+                );
+            }
+            assert!(
+                !text.contains("consta da lista de presenças autenticada"),
+                "{id}: by-reference recital must not appear alongside a named roll: {text}"
+            );
+        }
+
+        // The by-reference form: attendance recorded only as a pointer to the authenticated lista.
+        let reference_ctx = coverage_ctx();
+        assert_eq!(reference_ctx["attendees"], json!([]));
+        for spec in &ata_specs {
+            let id = &spec.id;
+            let text = doc_text(
+                &render(spec, &reference_ctx)
+                    .unwrap_or_else(|e| panic!("{id} failed to render: {e:?}")),
+            );
+            assert!(
+                text.contains("consta da lista de presenças autenticada")
+                    && text.contains("Lista de presenças anexa (Anexo I)"),
+                "{id}: empty roll must render the attendance reference, not nothing: {text}"
+            );
+            assert!(
+                !text.contains("Presenças"),
+                "{id}: roll heading must be omitted when no attendee is named: {text}"
+            );
+        }
+    }
+
     #[test]
     fn attendance_list_templates_render_structured_attendees_for_every_supported_family() {
         let reg = load_registry().expect("the full catalog loads");
@@ -2395,3 +2513,4 @@ mod tests {
         );
     }
 }
+
