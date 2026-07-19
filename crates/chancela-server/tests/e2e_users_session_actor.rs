@@ -167,12 +167,25 @@ async fn users_session_actor_and_persistence_across_restart() {
         "users.json persisted across restart"
     );
 
+    // The pre-restart bearer still resolves: sessions live in the shared session authority, and a
+    // restarted node reconstructs IDENTITY from it (deliberately without the unlocked signing key —
+    // that requires signing in on this process again). It must reconstruct the *same* identity.
     let (status, sess) = h.get_json_auth("/v1/session", &token).await;
     assert_eq!(status, 200);
     assert_eq!(
-        sess["user"],
+        sess["user"]["username"], "amelia.marques",
+        "the restarted node reconstructs the caller's identity, not somebody else's: {sess}"
+    );
+
+    // Reconstruction is not leniency: a bearer that was never issued still resolves to nothing.
+    let (status, forged) = h
+        .get_json_auth("/v1/session", "not-a-token-that-was-ever-issued")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        forged["user"],
         Value::Null,
-        "in-memory session did not survive the restart"
+        "an unissued bearer never resolves to a session: {forged}"
     );
 
     let (status, verify) = h.get_json("/v1/ledger/verify").await;
