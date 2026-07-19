@@ -40,9 +40,27 @@ const VERSION_M: Record<number, VersionSpec> = {
   5: { ecPerBlock: 24, groups: [[2, 43]] },
   6: { ecPerBlock: 16, groups: [[4, 27]] },
   7: { ecPerBlock: 18, groups: [[4, 31]] },
-  8: { ecPerBlock: 22, groups: [[2, 38], [2, 39]] },
-  9: { ecPerBlock: 22, groups: [[3, 36], [2, 37]] },
-  10: { ecPerBlock: 26, groups: [[4, 43], [1, 44]] },
+  8: {
+    ecPerBlock: 22,
+    groups: [
+      [2, 38],
+      [2, 39],
+    ],
+  },
+  9: {
+    ecPerBlock: 22,
+    groups: [
+      [3, 36],
+      [2, 37],
+    ],
+  },
+  10: {
+    ecPerBlock: 26,
+    groups: [
+      [4, 43],
+      [1, 44],
+    ],
+  },
 };
 
 /** Centre coordinates of the alignment patterns per version (level-independent). */

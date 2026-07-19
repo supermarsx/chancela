@@ -437,7 +437,9 @@ describe('RemoteBatchSigningPanel — per-act results', () => {
 
     // The counters come straight from the response.
     expect(screen.getByText('Inícios enviados')).toBeTruthy();
-    expect(screen.getByText('A resposta não mostra credenciais, códigos ou ativações.')).toBeTruthy();
+    expect(
+      screen.getByText('A resposta não mostra credenciais, códigos ou ativações.'),
+    ).toBeTruthy();
   });
 
   it('discards a result already on screen when the seal changes', async () => {

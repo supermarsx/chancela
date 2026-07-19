@@ -265,7 +265,9 @@ describe('GroupDetail', () => {
 
     const archive = await screen.findByRole('button', { name: /Arquivar grupo/ });
     expect(archive.hasAttribute('disabled')).toBe(true);
-    expect(screen.getByText('Remova todas as entidades antes de arquivar este grupo.')).toBeTruthy();
+    expect(
+      screen.getByText('Remova todas as entidades antes de arquivar este grupo.'),
+    ).toBeTruthy();
   });
 
   it('allows archiving an empty group and sends the delete', async () => {
@@ -301,10 +303,9 @@ describe('GroupDetail', () => {
       selector: '#operations-group-edit-description',
     })) as HTMLTextAreaElement;
     fireEvent.change(description, { target: { value: '   ' } });
-    fireEvent.change(
-      screen.getByLabelText('Nome', { selector: '#operations-group-edit-name' }),
-      { target: { value: '  Grupo Norte e Centro  ' } },
-    );
+    fireEvent.change(screen.getByLabelText('Nome', { selector: '#operations-group-edit-name' }), {
+      target: { value: '  Grupo Norte e Centro  ' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 
     await waitFor(() => expect(calls.some((call) => call.method === 'PATCH')).toBe(true));
@@ -339,7 +340,9 @@ describe('GroupDashboard', () => {
     );
     renderGroups(['/operacoes?group=group-1']);
 
-    await waitFor(() => expect(screen.getAllByText('Resumo indisponível').length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText('Resumo indisponível').length).toBeGreaterThan(0),
+    );
     expect(screen.getByRole('heading', { name: 'Detalhe do grupo' })).toBeTruthy();
   });
 });
@@ -431,7 +434,9 @@ describe('GroupLibraries', () => {
       template_ids: ['tpl-b'],
     });
     // The freshly created library becomes the deep-linked selection.
-    await waitFor(() => expect(screen.getByTestId('search').textContent).toContain('library=lib-new'));
+    await waitFor(() =>
+      expect(screen.getByTestId('search').textContent).toContain('library=lib-new'),
+    );
   });
 
   it('keeps the draft library on screen when the server refuses to create it', async () => {
@@ -444,9 +449,12 @@ describe('GroupLibraries', () => {
 
     const name = (await screen.findByLabelText('Nome da biblioteca')) as HTMLInputElement;
     fireEvent.change(name, { target: { value: 'Minutas do sul' } });
-    fireEvent.change(screen.getByLabelText('Descrição', {
-      selector: '#operations-library-description',
-    }), { target: { value: 'Rascunho' } });
+    fireEvent.change(
+      screen.getByLabelText('Descrição', {
+        selector: '#operations-library-description',
+      }),
+      { target: { value: 'Rascunho' } },
+    );
     selectMultiple(screen.getByLabelText('Minutas incluídas') as HTMLSelectElement, ['tpl-a']);
     fireEvent.click(screen.getByRole('button', { name: 'Criar biblioteca' }));
 
@@ -459,9 +467,7 @@ describe('GroupLibraries', () => {
     stubFetch();
     renderGroups(['/operacoes?group=group-1']);
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Minutas do norte · revisão 2' }),
-    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Minutas do norte · revisão 2' }));
 
     await waitFor(() =>
       expect(screen.getByTestId('search').textContent).toContain('library=lib-1'),
@@ -524,7 +530,9 @@ describe('LibraryDetail', () => {
     // The revision picker starts from the library's current revision, so it is submittable.
     expect(append.hasAttribute('disabled')).toBe(false);
     selectMultiple(
-      screen.getByLabelText('Minutas incluídas', { selector: '#operations-library-revision-templates' }) as HTMLSelectElement,
+      screen.getByLabelText('Minutas incluídas', {
+        selector: '#operations-library-revision-templates',
+      }) as HTMLSelectElement,
       ['tpl-a'],
     );
     fireEvent.click(append);
@@ -566,8 +574,7 @@ describe('LibraryDetail', () => {
     await waitFor(() =>
       expect(
         calls.some(
-          (call) =>
-            call.method === 'DELETE' && call.url.endsWith('/template-libraries/lib-1'),
+          (call) => call.method === 'DELETE' && call.url.endsWith('/template-libraries/lib-1'),
         ),
       ).toBe(true),
     );

@@ -12,11 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PairingCodeMinted, PairingDeviceView } from '../../api/types';
-import {
-  useCreatePairingCode,
-  usePairingDevices,
-  useRevokePairingDevice,
-} from '../../api/hooks';
+import { useCreatePairingCode, usePairingDevices, useRevokePairingDevice } from '../../api/hooks';
 import { resolveApiBaseUrl } from '../../api/baseUrl';
 import { useLocale, useT } from '../../i18n';
 import {
@@ -148,7 +144,9 @@ function ActiveCodePanel({
           </InlineWarning>
         ) : (
           <div className="pairing-code__status" role="status" aria-live="polite">
-            <Badge tone="accent">{t('pairing.expiresIn', { time: formatCountdown(remaining) })}</Badge>
+            <Badge tone="accent">
+              {t('pairing.expiresIn', { time: formatCountdown(remaining) })}
+            </Badge>
             <span className="field__hint">{t('pairing.waiting')}</span>
           </div>
         )}

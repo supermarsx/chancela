@@ -6,12 +6,7 @@
  * structure a scanner locks onto.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  encodeQr,
-  formatInformation,
-  rsGeneratorPoly,
-  versionInformation,
-} from './qr';
+import { encodeQr, formatInformation, rsGeneratorPoly, versionInformation } from './qr';
 
 /** GF(256) log table via the exponent list the encoder builds internally. */
 function gfLog(): number[] {

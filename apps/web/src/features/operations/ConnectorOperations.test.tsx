@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useSearchParams } from 'react-router-dom';
-import type {
-  ConnectorJobView,
-  ConnectorProbeView,
-  ConnectorTargetView,
-} from '../../api/types';
+import type { ConnectorJobView, ConnectorProbeView, ConnectorTargetView } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { ConnectorOperations } from './ConnectorOperations';
 import { connectorConfigTemplate } from './operatorModels';
@@ -229,9 +225,12 @@ describe('CreateConnectorForm', () => {
     const calls = stubFetch();
     renderConnectors();
 
-    fireEvent.change(await screen.findByLabelText('Nome', {
-      selector: '#operations-connector-name',
-    }), { target: { value: 'Destino novo' } });
+    fireEvent.change(
+      await screen.findByLabelText('Nome', {
+        selector: '#operations-connector-name',
+      }),
+      { target: { value: 'Destino novo' } },
+    );
     fireEvent.change(screen.getByLabelText('Configuração avançada JSON'), {
       target: { value: '{ not json' },
     });
@@ -245,9 +244,12 @@ describe('CreateConnectorForm', () => {
     const calls = stubFetch();
     renderConnectors();
 
-    fireEvent.change(await screen.findByLabelText('Nome', {
-      selector: '#operations-connector-name',
-    }), { target: { value: 'Destino novo' } });
+    fireEvent.change(
+      await screen.findByLabelText('Nome', {
+        selector: '#operations-connector-name',
+      }),
+      { target: { value: 'Destino novo' } },
+    );
     fireEvent.change(screen.getByLabelText('Configuração avançada JSON'), {
       target: {
         value: JSON.stringify({ kind: 'web_dav', id: 'pending-target', password: 'hunter2' }),
@@ -310,9 +312,7 @@ describe('CreateConnectorForm', () => {
     fireEvent.change(name, { target: { value: 'Arquivo WebDAV' } });
     fireEvent.click(screen.getByRole('button', { name: /Criar conector/ }));
 
-    expect(
-      (await screen.findAllByText('Já existe um destino com este nome')).length,
-    ).toBe(1);
+    expect((await screen.findAllByText('Já existe um destino com este nome')).length).toBe(1);
     expect(name.value).toBe('Arquivo WebDAV');
   });
 });
@@ -324,9 +324,7 @@ describe('TargetEditor', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Testar ligação/ }));
 
-    expect(
-      await screen.findByText('Ligação estabelecida com o servidor WebDAV.'),
-    ).toBeTruthy();
+    expect(await screen.findByText('Ligação estabelecida com o servidor WebDAV.')).toBeTruthy();
     expect(screen.getByText('upload, remote_checksum')).toBeTruthy();
   });
 
@@ -441,11 +439,14 @@ describe('TargetEditor', () => {
     const calls = stubFetch();
     renderConnectors(['/operacoes?view=connectors&target=target-1']);
 
-    fireEvent.change(await screen.findByLabelText('Configuração avançada JSON', {
-      selector: '#operations-target-edit-config',
-    }), {
-      target: { value: JSON.stringify({ kind: 'web_dav', id: 'x', token_ref: 'TOKEN' }) },
-    });
+    fireEvent.change(
+      await screen.findByLabelText('Configuração avançada JSON', {
+        selector: '#operations-target-edit-config',
+      }),
+      {
+        target: { value: JSON.stringify({ kind: 'web_dav', id: 'x', token_ref: 'TOKEN' }) },
+      },
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 
     expect(
@@ -595,16 +596,20 @@ describe('connector jobs', () => {
     );
     renderConnectors();
 
-    const jobRow = (await screen.findByText('atas/2026/ata-3.pdf'))
-      .closest('tr') as HTMLTableRowElement;
+    const jobRow = (await screen.findByText('atas/2026/ata-3.pdf')).closest(
+      'tr',
+    ) as HTMLTableRowElement;
     fireEvent.click(within(jobRow).getByRole('button', { name: 'Abrir' }));
 
-    const detail = (await screen.findByRole('heading', { name: 'Detalhe do trabalho' }))
-      .closest('section') as HTMLElement;
+    const detail = (await screen.findByRole('heading', { name: 'Detalhe do trabalho' })).closest(
+      'section',
+    ) as HTMLElement;
     expect(within(detail).getByText('Tentativa').nextElementSibling?.textContent).toBe('2');
     expect(within(detail).getByText('a'.repeat(64))).toBeTruthy();
     expect(
-      within(detail).getByText('4096 bytes remotos; evidência de integridade: confirmado pelo destino.'),
+      within(detail).getByText(
+        '4096 bytes remotos; evidência de integridade: confirmado pelo destino.',
+      ),
     ).toBeTruthy();
   });
 
@@ -636,9 +641,9 @@ describe('connector jobs', () => {
 
     const retry = await screen.findByRole('button', { name: 'Tentar novamente' });
     expect(retry.hasAttribute('disabled')).toBe(false);
-    expect(
-      screen.getByRole('button', { name: 'Cancelar trabalho' }).hasAttribute('disabled'),
-    ).toBe(true);
+    expect(screen.getByRole('button', { name: 'Cancelar trabalho' }).hasAttribute('disabled')).toBe(
+      true,
+    );
     fireEvent.click(retry);
 
     await waitFor(() => expect(calls.some((call) => call.url.endsWith('/retry'))).toBe(true));

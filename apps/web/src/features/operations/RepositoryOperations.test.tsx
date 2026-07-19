@@ -57,7 +57,9 @@ const TENANT_POLICY: TenantRepositoryPolicy = {
   updated_at: '2026-07-01T10:00:00Z',
 };
 
-function repository(overrides: Partial<StoredRepositoryPolicy['policy']> = {}): StoredRepositoryPolicy {
+function repository(
+  overrides: Partial<StoredRepositoryPolicy['policy']> = {},
+): StoredRepositoryPolicy {
   return {
     policy: {
       repository_id: 'repo-1',
@@ -139,9 +141,7 @@ function stubFetch(options: StubOptions = {}): Recorded[] {
       method: init?.method ?? 'GET',
       // Opaque ciphertext is PUT as raw bytes, so only JSON bodies are parsed.
       body:
-        typeof init?.body === 'string'
-          ? (JSON.parse(init.body) as Record<string, unknown>)
-          : null,
+        typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null,
     };
     calls.push(call);
     const custom = options.override?.(call);
@@ -415,14 +415,13 @@ describe('CreateRepository', () => {
     const name = (await screen.findByLabelText('Nome')) as HTMLInputElement;
     fireEvent.change(name, { target: { value: '  Arquivo novo  ' } });
     fireEvent.click(screen.getByLabelText('Herdar política da organização'));
-    expect(screen.queryByLabelText('Modo de cifragem', { selector: '#operations-repository-mode' }))
-      .toBeNull();
+    expect(
+      screen.queryByLabelText('Modo de cifragem', { selector: '#operations-repository-mode' }),
+    ).toBeNull();
 
     const create = screen.getByRole('button', { name: /Criar repositório/ });
     expect(create.hasAttribute('disabled')).toBe(true);
-    fireEvent.click(
-      within(name.closest('form') as HTMLFormElement).getByLabelText(GDPR_ACK),
-    );
+    fireEvent.click(within(name.closest('form') as HTMLFormElement).getByLabelText(GDPR_ACK));
     fireEvent.click(create);
 
     await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true));
@@ -487,10 +486,7 @@ describe('CreateRepository', () => {
 describe('repository list', () => {
   it('distinguishes a zero-knowledge repository from a standard one and names the policy source', async () => {
     stubFetch({
-      repositories: [
-        repository(),
-        { policy: ZK_REPOSITORY.policy, policy_source: 'tenant' },
-      ],
+      repositories: [repository(), { policy: ZK_REPOSITORY.policy, policy_source: 'tenant' }],
     });
     renderRepositories();
 
@@ -599,9 +595,7 @@ describe('RepositoryDetail', () => {
     })) as HTMLInputElement;
     fireEvent.change(name, { target: { value: 'Arquivo renomeado' } });
     const form = name.closest('form') as HTMLFormElement;
-    fireEvent.click(
-      within(form).getByLabelText(GDPR_ACK),
-    );
+    fireEvent.click(within(form).getByLabelText(GDPR_ACK));
     fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
 
     expect(await screen.findByText('Modo imutável')).toBeTruthy();
@@ -650,12 +644,15 @@ describe('ZkObjects', () => {
 
     const fileInput = (await screen.findByLabelText('Pacote de preservação')) as HTMLInputElement;
     attachFile(fileInput, 'conteudo do arquivo');
-    fireEvent.change(screen.getByLabelText('Chave BYOK de 32 bytes em base64', {
-      selector: '#operations-zk-byok',
-    }), { target: { value: bytesToBase64(new Uint8Array(31)) } });
-    expect(
-      screen.getByRole('button', { name: 'Cifrar e carregar' }).hasAttribute('disabled'),
-    ).toBe(false);
+    fireEvent.change(
+      screen.getByLabelText('Chave BYOK de 32 bytes em base64', {
+        selector: '#operations-zk-byok',
+      }),
+      { target: { value: bytesToBase64(new Uint8Array(31)) } },
+    );
+    expect(screen.getByRole('button', { name: 'Cifrar e carregar' }).hasAttribute('disabled')).toBe(
+      false,
+    );
     fireEvent.submit(fileInput.closest('form') as HTMLFormElement);
 
     expect(await screen.findByText('The client key must decode to exactly 32 bytes')).toBeTruthy();
@@ -673,16 +670,17 @@ describe('ZkObjects', () => {
 
     const fileInput = (await screen.findByLabelText('Pacote de preservação')) as HTMLInputElement;
     attachFile(fileInput, 'conteudo do arquivo');
-    fireEvent.change(
-      screen.getByLabelText('ID imutável do objeto'),
-      { target: { value: 'object-fixo' } },
-    );
+    fireEvent.change(screen.getByLabelText('ID imutável do objeto'), {
+      target: { value: 'object-fixo' },
+    });
     fireEvent.change(screen.getByLabelText('Versão'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('Rótulo público do custodiante'), {
       target: { value: 'custodiante-legal' },
     });
     fireEvent.change(
-      screen.getByLabelText('Chave BYOK de 32 bytes em base64', { selector: '#operations-zk-byok' }),
+      screen.getByLabelText('Chave BYOK de 32 bytes em base64', {
+        selector: '#operations-zk-byok',
+      }),
       { target: { value: OBJECT_KEY } },
     );
     fireEvent.submit(fileInput.closest('form') as HTMLFormElement);
@@ -746,9 +744,7 @@ describe('ZkObjectDetail downloads', () => {
   it('saves the opaque bytes once they match the immutable manifest', async () => {
     const { view, ciphertext } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext });
-    renderRepositories([
-      '/operacoes?view=repositories&repository=repo-1&object=object-1:1',
-    ]);
+    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Transferir bytes cifrados' }));
 
@@ -763,9 +759,7 @@ describe('ZkObjectDetail downloads', () => {
     const tampered = ciphertext.slice(0);
     new Uint8Array(tampered)[0] ^= 0xff;
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext: tampered });
-    renderRepositories([
-      '/operacoes?view=repositories&repository=repo-1&object=object-1:1',
-    ]);
+    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Transferir bytes cifrados' }));
 
@@ -778,9 +772,7 @@ describe('ZkObjectDetail downloads', () => {
   it('decrypts locally with the right key and clears it afterwards', async () => {
     const { view, ciphertext } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext });
-    renderRepositories([
-      '/operacoes?view=repositories&repository=repo-1&object=object-1:1',
-    ]);
+    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
 
     const keyField = (await screen.findByLabelText('Chave BYOK de 32 bytes em base64', {
       selector: '#operations-object-byok',
@@ -803,13 +795,14 @@ describe('ZkObjectDetail downloads', () => {
   it('reports a client key that is not a recipient of the object', async () => {
     const { view, ciphertext } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext });
-    renderRepositories([
-      '/operacoes?view=repositories&repository=repo-1&object=object-1:1',
-    ]);
+    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
 
-    fireEvent.change(await screen.findByLabelText('Chave BYOK de 32 bytes em base64', {
-      selector: '#operations-object-byok',
-    }), { target: { value: byok(99) } });
+    fireEvent.change(
+      await screen.findByLabelText('Chave BYOK de 32 bytes em base64', {
+        selector: '#operations-object-byok',
+      }),
+      { target: { value: byok(99) } },
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Desencriptar e guardar ZIP' }));
 
     expect(
@@ -823,9 +816,7 @@ describe('readability package', () => {
   it('offers only books belonging to entities of the current tenant', async () => {
     const { view, ciphertext } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext });
-    renderRepositories([
-      '/operacoes?view=repositories&repository=repo-1&object=object-1:1',
-    ]);
+    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
 
     const books = (await screen.findByLabelText('Livro associado')) as HTMLSelectElement;
     await waitFor(() => expect(books.options.length).toBe(2));
@@ -845,9 +836,7 @@ describe('readability package', () => {
             })
           : null,
     });
-    renderRepositories([
-      '/operacoes?view=repositories&repository=repo-1&object=object-1:1',
-    ]);
+    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
 
     fireEvent.change(await screen.findByLabelText('Modo de entrega'), {
       target: { value: 'encrypted_archive_with_portable_key_package' },
@@ -896,9 +885,7 @@ describe('readability package', () => {
           ? new Response(new Blob(['zip']), { headers: { 'Content-Type': 'application/zip' } })
           : null,
     });
-    renderRepositories([
-      '/operacoes?view=repositories&repository=repo-1&object=object-1:1',
-    ]);
+    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
 
     await screen.findByRole('option', { name: /book-1/ });
     fireEvent.change(screen.getByLabelText('Livro associado'), { target: { value: 'book-1' } });
@@ -939,9 +926,7 @@ describe('readability package', () => {
           ? jsonResponse({ error: 'Reautenticação recusada' }, 401)
           : null,
     });
-    renderRepositories([
-      '/operacoes?view=repositories&repository=repo-1&object=object-1:1',
-    ]);
+    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
 
     await screen.findByRole('option', { name: /book-1/ });
     fireEvent.change(screen.getByLabelText('Livro associado'), { target: { value: 'book-1' } });

@@ -250,9 +250,10 @@ describe('SigningPanel pending-session adoption', () => {
     // A session for a provider the picker no longer lists still resolves — with the id as label,
     // so a reload mid-flow can never render an empty provider name.
     expect(
-      providerFromPending({ session_id: 's1', provider_id: 'retired-qtsp' } as PendingSignatureInfo, [
-        cscProvider,
-      ]),
+      providerFromPending(
+        { session_id: 's1', provider_id: 'retired-qtsp' } as PendingSignatureInfo,
+        [cscProvider],
+      ),
     ).toEqual({ id: 'retired-qtsp', kind: 'csc', label: 'retired-qtsp' });
   });
 });
@@ -360,9 +361,9 @@ describe('SigningPanel external envelope labels', () => {
 
   it('labels every slot status', () => {
     expect(
-      (
-        ['pending', 'initiated', 'signed', 'declined', 'revoked', 'expired'] as const
-      ).map((status) => slotStatusLabel(status, t)),
+      (['pending', 'initiated', 'signed', 'declined', 'revoked', 'expired'] as const).map(
+        (status) => slotStatusLabel(status, t),
+      ),
     ).toEqual([
       'signing.envelopes.slot.status.pending',
       'signing.envelopes.slot.status.initiated',
@@ -476,7 +477,10 @@ describe('SigningPanel invite slot options', () => {
       {
         id: 'env-1',
         order_policy: 'parallel',
-        slots: [slot({ id: 'slot-1', status: 'signed' }), slot({ id: 'slot-2', status: 'revoked' })],
+        slots: [
+          slot({ id: 'slot-1', status: 'signed' }),
+          slot({ id: 'slot-2', status: 'revoked' }),
+        ],
       },
     ] as unknown as ExternalSigningEnvelopeView[];
 

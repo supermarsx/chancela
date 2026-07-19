@@ -952,7 +952,10 @@ export function hasMetadata(value: string | null | undefined): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-export function sameMetadata(left: string | null | undefined, right: string | null | undefined): boolean {
+export function sameMetadata(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
   return (
     hasMetadata(left) &&
     hasMetadata(right) &&
@@ -1406,7 +1409,10 @@ function ProviderChoice({
   );
 }
 
-export function providerEnvironmentLabel(environment: string | null | undefined, t: TFunction): string {
+export function providerEnvironmentLabel(
+  environment: string | null | undefined,
+  t: TFunction,
+): string {
   if (environment === 'preprod') return t('signing.provider.manifest.environment.preprod');
   if (environment === 'prod') return t('signing.provider.manifest.environment.prod');
   if (environment === 'sandbox') return t('signing.provider.manifest.environment.sandbox');
@@ -1508,7 +1514,10 @@ function slotStatusBadge(status: ExternalSignerSlotStatus, t: TFunction) {
   return <Badge tone="warn">{slotStatusLabel(status, t)}</Badge>;
 }
 
-export function slotIdentityRequirements(slot: ExternalSigningEnvelopeSlotView, t: TFunction): string {
+export function slotIdentityRequirements(
+  slot: ExternalSigningEnvelopeSlotView,
+  t: TFunction,
+): string {
   const requirements = slot.identity_requirements ?? [];
   return requirements.length
     ? requirements.map((requirement) => identityRequirementLabel(requirement, t)).join(', ')
