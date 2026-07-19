@@ -27,3 +27,7 @@ apps/web/dist/
 .DS_Store
 Thumbs.db
 SPEC-COVERAGE.md
+# Per-executor cargo target dirs (agents build in their own to avoid lock contention)
+/target-*
+# Scratch coverage snapshots taken while measuring
+/apps/web/coverage-*
