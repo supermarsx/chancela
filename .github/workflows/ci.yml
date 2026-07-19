@@ -30,6 +30,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # check:spec-coverage resolves the recorded implementation-snapshot
+          # commit with `git rev-parse <sha>^{commit}`; a shallow clone does not
+          # contain it. This is the only job that needs full history.
+          fetch-depth: 0
 
       - name: Install Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -652,8 +657,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Layout must match docker/worker-config.example.json (source_root and
+          # target roots) and the image's baked /var/lib/chancela/worker paths.
           data_dir="$(mktemp -d)"
-          mkdir -p "$data_dir/source" "$data_dir/sync" "$data_dir/backup" "$data_dir/queue"
+          mkdir -p \
+            "$data_dir/worker/sources" \
+            "$data_dir/worker/targets/sync" \
+            "$data_dir/worker/targets/backup" \
+            "$data_dir/worker/queue"
           chmod -R 777 "$data_dir"
           container=""
           cleanup() {
@@ -679,13 +690,13 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             --tmpfs /tmp \
-            -v "$data_dir:/var/lib/chancela-worker" \
+            -v "$data_dir:/var/lib/chancela" \
             -v "$PWD/docker/worker-config.example.json:/etc/chancela-worker/config.json:ro" \
             chancela-worker:ci)"
 
           for _ in {1..30}; do
             if docker exec "$container" /usr/local/bin/chancela-worker \
-              healthcheck --data-dir /var/lib/chancela-worker/queue --max-age-seconds 120; then
+              healthcheck --data-dir /var/lib/chancela/worker/queue --max-age-seconds 120; then
               exit 0
             fi
             sleep 1

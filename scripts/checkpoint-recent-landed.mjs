@@ -953,8 +953,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
+    "uiLiteral.bookDetailPage.noAcceptedOcrDraft",
+    "web paper-book OCR/dossier no-accepted-draft fallback key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Sem rascunho OCR aceite.",
-    "web paper-book OCR/dossier no-accepted-draft fallback marker",
+    "web paper-book OCR/dossier no-accepted-draft fallback pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
@@ -963,18 +968,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
+    "uiLiteral.bookDetailPage.ataCanonicaDocumentoCanonicoPacoteDeArquivoAssinatura",
+    "web paper-book OCR/dossier explicit exclusions key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Ata canónica, documento canónico, pacote de arquivo, assinatura, selo, PDF/A, PDF/UA e",
-    "web paper-book OCR/dossier explicit exclusions marker",
+    "web paper-book OCR/dossier explicit exclusions pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
+    "uiLiteral.bookDetailPage.soMetadadosSimAtaCanonicaNaoDocumentoCanonico",
+    "web paper-book OCR/dossier metadata-only no-claim flags key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Só metadados: sim · ata canónica: não · documento canónico: não · pacote de arquivo: não",
-    "web paper-book OCR/dossier metadata-only no-claim flags marker",
+    "web paper-book OCR/dossier metadata-only no-claim flags pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
-    "Relatório OCR/canónico local",
-    "web paper-book OCR canonical rehearsal local report marker",
+    "uiLiteral.bookDetailPage.relatorioOcrCanonicoLocal",
+    "web paper-book OCR canonical rehearsal local report key marker",
   );
   assertFileContains(
     "apps/web/src/features/books/books.test.tsx",
@@ -2068,8 +2083,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/rbac/FuncoesSection.tsx",
+    "uiLiteral.funcoesSection.aplicarDefaultsEmFalta",
+    "web RBAC seeded role drift explicit apply action key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Aplicar defaults em falta",
-    "web RBAC seeded role drift explicit apply action marker",
+    "web RBAC seeded role drift explicit apply action pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/rbac/rbac.test.tsx",
@@ -5183,8 +5203,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
+    "uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras",
+    "BookDetail legal-hold no-approval copy key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "não aprova descarte nem",
-    "BookDetail legal-hold no-approval copy marker",
+    "BookDetail legal-hold no-approval copy pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/i18n/locales/pt-PT.ts",
@@ -7713,7 +7738,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/documents.rs",
-    "document_by_id(document_id)",
+    "s.document_by_id(&document_id)",
     "API generated-document durable by-id lookup marker",
   );
   assertFileContains(
@@ -9221,8 +9246,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro",
+    "web backup recovery drill explicit bounded UI copy key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "sem restauro ao vivo, sem certificação",
-    "web backup recovery drill explicit bounded UI copy marker",
+    "web backup recovery drill explicit bounded UI copy pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -9446,8 +9476,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios",
+    "web sync handoff local-only UI key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "candidatos de backup, ensaios verificados",
-    "web sync handoff local-only UI marker",
+    "web sync handoff local-only UI pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -10285,7 +10320,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/ledger_events_page.rs",
-    ".ledger_events_page(&store_query(&query))",
+    ".ledger_events_page(&page_query)",
     "ledger archive store-backed selector marker",
   );
   assertFileContains(
@@ -10520,18 +10555,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave",
+    "web data management key custody readiness title key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Prontidão SQLCipher e custódia da chave",
-    "web data management key custody readiness title marker",
+    "web data management key custody readiness title pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao",
+    "web data management key custody secret-free boundary key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Sinais locais do backend com segredos redigidos",
-    "web data management key custody secret-free boundary marker",
+    "web data management key custody secret-free boundary pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
-    "Não certificam cifragem em repouso de\n          produção, migração plaintext concluída, runbook de custódia ou ciclo legal/GDPR",
-    "web data management key custody no-claim copy marker",
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Não certificam cifragem em repouso de produção, migração plaintext concluída, runbook de custódia ou ciclo legal/GDPR",
+    "web data management key custody no-claim copy pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
@@ -10645,13 +10690,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao",
+    "web data key rotation receipt summary UI key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Recibos locais de rotação",
-    "web data key rotation receipt summary UI marker",
+    "web data key rotation receipt summary UI pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "uiLiteral.gestaoDadosSection.semChaveGuardada",
+    "web data key rotation no-key receipt UI key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Sem chave guardada",
-    "web data key rotation no-key receipt UI marker",
+    "web data key rotation no-key receipt UI pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -12430,7 +12485,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docker-compose.hardened.yml",
-    "profiles: [single-node]",
+    "profiles: [single-node, worker]",
     "hardened compose single-node profile marker",
   );
   assertFileContains(
@@ -13645,7 +13700,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.tsx",
-    "const route = actConveningGuidanceRoute(reminderActRoute(reminder));",
+    "const route = actConveningGuidanceRoute(dashboardReminderActRoute(reminder));",
     "dashboard convocation reminder guidance route marker",
   );
   assertFileContains(
@@ -13780,7 +13835,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "A dedicated Postgres store backend lane runs the existing ignored\n  `runtime_reads_and_writes_roundtrip_on_postgres` test against a disposable\n  GitHub Actions `chancela_store_ci` database",
+    "A dedicated Postgres store backend lane runs the ignored\n  `runtime_reads_and_writes_roundtrip_on_postgres` and",
     "CI/E2E hardening plan narrow Postgres live CI marker",
   );
   assertFileContains(
@@ -14138,7 +14193,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "store.cluster_assert_writable()",
+    "s.cluster_assert_writable()",
     "API cluster write gate pre-append marker",
   );
   assertFileContains(
@@ -15082,18 +15137,33 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic",
+    "web ASiC inspector panel title key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Inspetor técnico ASiC",
-    "web ASiC inspector panel title marker",
+    "web ASiC inspector panel title pt-PT marker",
   );
   assertFileContainsNormalized(
     "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao",
+    "web ASiC inspector no-call/no-mutation boundary key marker",
+  );
+  assertFileContainsNormalized(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Não assina, não guarda artefactos, não chama prestadores e não consulta TSL/TSA/OCSP/CRL ao vivo.",
-    "web ASiC inspector no-call/no-mutation boundary marker",
+    "web ASiC inspector no-call/no-mutation boundary pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas",
+    "web ASiC inspector visible limitations key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Limitações explícitas",
-    "web ASiC inspector visible limitations marker",
+    "web ASiC inspector visible limitations pt-PT marker",
   );
   assertFileContains(
     "apps/web/src/features/ferramentas/ferramentas.test.tsx",
