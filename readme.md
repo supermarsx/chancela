@@ -65,6 +65,10 @@ The simplest way to run Chancela is the self-hosted single-node image:
 docker compose -f docker/docker-compose.yml --profile single-node up --build
 ```
 
+Chancela publishes no images to any registry — `--build` compiles
+`chancela-server` from this repository, which takes a few minutes the first
+time. There is nothing to `docker compose pull`.
+
 Then open <http://127.0.0.1:8080>. The container binds `0.0.0.0:8080` and stores durable
 state on the `chancela-data` volume; `GET /health` should report `persistent: true` and
 `ledger_verified: true`. The image is SQLCipher-capable — set `CHANCELA_DB_KEY_FILE` (or

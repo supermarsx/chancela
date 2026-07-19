@@ -80,6 +80,10 @@ services:
       context: .
       dockerfile: Dockerfile.hardened
     image: ${CHANCELA_SERVER_IMAGE:-chancela-server:hardened}
+    # This image is never published to a registry: chancela is self-hosted and
+    # every image is built from this repo. `build` makes `up` compile a missing
+    # image instead of attempting a registry pull that can only fail.
+    pull_policy: build
     user: "65532:65532"
     environment:
       CHANCELA_ADDR: 0.0.0.0:8080
@@ -122,6 +126,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.worker
     image: ${CHANCELA_WORKER_IMAGE:-chancela-worker:hardened}
+    # Built from source, never pulled — see the note on `server`.
+    pull_policy: build
     user: "65532:65532"
     tmpfs:
       - /tmp:size=64m
@@ -273,6 +279,8 @@ services:
       args:
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:hardened-postgres}
+    # Built from source, never pulled — see the note on `server`.
+    pull_policy: build
     user: "65532:65532"
     environment:
       CHANCELA_ADDR: 0.0.0.0:8080

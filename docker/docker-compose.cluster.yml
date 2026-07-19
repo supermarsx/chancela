@@ -34,6 +34,8 @@ services:
       args:
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
+    # Built from source; this image is never published to a registry.
+    pull_policy: build
     # --- identical container hardening posture to the base app service ---
     user: "65532:65532"
     read_only: true

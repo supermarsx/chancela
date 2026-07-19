@@ -30,6 +30,10 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.server
     image: ${CHANCELA_SERVER_IMAGE:-chancela-server:latest}
+    # This image is never published to a registry: chancela is self-hosted and
+    # every image is built from this repo. `build` makes `up` compile a missing
+    # image instead of attempting a registry pull that can only fail.
+    pull_policy: build
     # --- container hardening (ARC-41) ---
     user: "65532:65532"
     read_only: true
@@ -72,6 +76,11 @@ services:
     profiles:
       - validation-worker
     image: ${CHANCELA_SERVER_IMAGE:-chancela-server:latest}
+    # No `build:` of its own: this sidecar reuses the exact image the `server`
+    # service builds in the same profile, and Compose completes every build
+    # before it creates any container. `never` keeps that image local rather
+    # than reaching for a registry that does not host it.
+    pull_policy: never
     user: "65532:65532"
     read_only: true
     cap_drop:
@@ -119,6 +128,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.worker
     image: ${CHANCELA_WORKER_IMAGE:-chancela-worker:latest}
+    # Built from source, never pulled — see the note on `server`.
+    pull_policy: build
     user: "65532:65532"
     read_only: true
     cap_drop:
@@ -292,6 +303,8 @@ services:
         # Compile the Postgres backend + optional Redis cache into the binary.
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
+    # Built from source, never pulled — see the note on `server`.
+    pull_policy: build
     # --- container hardening (ARC-41), identical posture to `server` ---
     user: "65532:65532"
     read_only: true

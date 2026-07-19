@@ -31,6 +31,34 @@ hardened images described in
 | Hardened `single-node` / `postgres` | as above | Production posture: distroless, read-only rootfs, digest-pinned | `docker-compose.hardened.yml` |
 | Multi-node overlay | PostgreSQL 18.4 + Redis 8.8 | Leader + read-followers with failover (see [HA](#multi-node-leaderfollower)) | `docker/docker-compose.cluster.yml` |
 
+## Images are built from source
+
+Chancela publishes **no** container images to Docker Hub or any other registry.
+`chancela-server` and `chancela-worker` are built locally from this repository,
+so building is the first-run step — not an optimisation you can skip:
+
+```sh
+git clone <your-clone-url> chancela && cd chancela
+docker compose up --build -d          # builds, then starts the single-node profile
+```
+
+The first build compiles the Rust workspace in a container and takes several
+minutes; later builds reuse the layer cache. Nothing needs to be installed on
+the host beyond Docker itself.
+
+!!! warning "`docker compose pull` is not part of the flow"
+    There is nothing to pull for the app services. Every buildable service
+    declares `pull_policy: build`, so `docker compose up` builds a missing image
+    instead of asking a registry for one, and `docker compose pull` reports them
+    as `Skipped` and exits 0 — it only fetches the pinned third-party images
+    (Postgres, Redis, `alpine/openssl`). If you are on an older Compose that
+    still errors on buildable services, use `docker compose pull
+    --ignore-buildable`, or simply skip `pull` altogether.
+
+To rebuild after changing code, pass `--build` again (`docker compose up --build
+-d`) or run `docker compose build` first; a plain `up` reuses the image that is
+already tagged locally.
+
 ## Single node (SQLite)
 
 The simplest deployment. One `chancela-server` container, an embedded

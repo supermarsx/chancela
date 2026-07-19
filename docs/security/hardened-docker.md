@@ -99,9 +99,19 @@ CHANCELA_HOST_PORT=18080 docker compose -f docker-compose.hardened.yml --profile
 
 ### Build the image on its own
 
+The hardened `chancela-server` / `chancela-worker` images are never published to
+a registry — they are built from this repository, which is what lets you verify
+what is inside them. `--build` above does that as part of `up`; to build
+standalone:
+
 ```sh
 docker build -f Dockerfile.hardened -t chancela-server:hardened .
 ```
+
+Both services declare `pull_policy: build`, so `up` builds a missing image
+rather than attempting a registry pull, and `docker compose pull` skips them and
+fetches only the digest-pinned third-party images. See
+[Deployment](../deployment.md#images-are-built-from-source).
 
 ### Validate the compose file without building
 
