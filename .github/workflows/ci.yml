@@ -671,7 +671,12 @@ jobs:
             if [ -n "$container" ]; then
               docker rm -f "$container" >/dev/null 2>&1 || true
             fi
-            rm -rf "$data_dir"
+            # The container runs as a non-root uid and can leave files the runner user cannot
+            # unlink, so tidy-up is best-effort. Re-raise the real status explicitly: a trap
+            # otherwise hands the step whatever the last cleanup command returned, which
+            # turned a PASSING smoke into a red job.
+            rm -rf "$data_dir" 2>/dev/null || true
+            exit "$status"
           }
           trap cleanup EXIT
 
@@ -739,7 +744,12 @@ jobs:
             if [ -n "$container" ]; then
               docker rm -f "$container" >/dev/null 2>&1 || true
             fi
-            rm -rf "$data_dir"
+            # The container runs as a non-root uid and can leave files the runner user cannot
+            # unlink, so tidy-up is best-effort. Re-raise the real status explicitly: a trap
+            # otherwise hands the step whatever the last cleanup command returned, which
+            # turned a PASSING smoke into a red job.
+            rm -rf "$data_dir" 2>/dev/null || true
+            exit "$status"
           }
           trap cleanup EXIT
 
