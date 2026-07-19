@@ -348,8 +348,9 @@ async fn statute_two_thirds_majority_overlay_fires_then_clears() {
         .patch_json_auth(&format!("/v1/acts/{act_id}"), patch_vote(60, 40), &token)
         .await;
     assert_eq!(status, 200, "patch failing vote");
-    advance_to_signing(&h, &act_id, Some(&token)).await;
 
+    // Compliance is a pure read, so the overlay is evaluated while the act is still editable —
+    // which is the only time the vote can actually be corrected. Entering Signing closes mutation.
     // The overlay is active and its majority check fires on the 60% vote.
     let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
     assert_eq!(status, 200);
@@ -377,6 +378,22 @@ async fn statute_two_thirds_majority_overlay_fires_then_clears() {
             .iter()
             .any(|i| i["rule_id"] == "STATUTE/majority"),
         "70/100 meets the 2/3 majority, so the overlay finding is gone: {comp}"
+    );
+
+    // Only now advance: the text is settled, so freezing it for signature collection is correct.
+    advance_to_signing(&h, &act_id, Some(&token)).await;
+
+    // Re-read compliance in the state it will actually be sealed from, so the acknowledgement
+    // below reflects the advisories that apply at seal rather than the ones visible while drafting.
+    let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
+    assert_eq!(status, 200);
+    assert!(
+        !comp["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .any(|i| i["rule_id"] == "STATUTE/majority"),
+        "the majority finding stays cleared through the advance: {comp}"
     );
 
     // The now-compliant ata seals (acknowledging any residual advisories honestly).
