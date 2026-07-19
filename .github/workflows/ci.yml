@@ -216,8 +216,16 @@ jobs:
         run: cargo test --workspace --locked
 
   # ---------------------------------------------------------------------------
-  # PDF accessibility: generate the exact deterministic writer fixture and run
-  # an independent, current veraPDF machine-validation gate for both claims.
+  # PDF accessibility: run an independent, current veraPDF machine-validation
+  # gate for both claims over TWO corpora, which prove different things:
+  #
+  #   1. the deterministic hand-built writer fixture — a WRITER-level guarantee
+  #      that the PDF engine can emit conformant output; and
+  #   2. real atas + termos de abertura for all five entity families, rendered
+  #      through the shipped `chancela_templates::render` -> `pdfa::write` seam
+  #      — a TEMPLATE-level guarantee, which (1) cannot give: a template whose
+  #      authored structure renders non-conformantly would leave (1) green.
+  #
   # Human PDF/UA checkpoints remain a release/accessibility review boundary.
   # ---------------------------------------------------------------------------
   pdfua-external:
@@ -244,6 +252,16 @@ jobs:
           cargo run -p chancela-doc --example write_pdfua_fixture --locked -- \
             dist/pdf-validation/chancela-pdfua-fixture.pdf
 
+      # Ten real documents: one ata + one termo de abertura per family
+      # (csc, condominio, assoc, fundacao, cooperativa), each rendered from the
+      # embedded catalog template the API's spine auto-generation would pick.
+      # Same debug profile and same dev-dependency set as the fixture above, so
+      # this reuses that build and costs only the added crate compiles.
+      - name: Generate real catalog documents (ata + termo, 5 families)
+        run: |
+          cargo run -p chancela-doc --example write_catalog_pdfs --locked -- \
+            dist/pdf-validation/catalog
+
       - name: Install immutable veraPDF 1.30.2
         shell: bash
         run: |
@@ -261,7 +279,7 @@ jobs:
             sh ./verapdf-install "$GITHUB_WORKSPACE/scripts/verapdf-auto-install.xml"
           )
 
-      - name: Validate PDF/A-2u and PDF/UA-1 claims
+      - name: Validate PDF/A-2u and PDF/UA-1 claims (writer fixture)
         shell: bash
         run: |
           set -euo pipefail
@@ -275,6 +293,52 @@ jobs:
             dist/pdf-validation/chancela-pdfua-fixture.pdf
           /tmp/verapdf/verapdf --flavour ua1 --format text \
             dist/pdf-validation/chancela-pdfua-fixture.pdf
+
+      # One veraPDF invocation per (document, flavour) rather than one batch
+      # call over all ten: attribution is then ours, not something a reader has
+      # to reconstruct from a merged report. Every document is validated even
+      # after the first failure, so one run tells you the full blast radius of
+      # a template defect (one family, or all of them). Costs ~20 JVM starts.
+      - name: Validate PDF/A-2u and PDF/UA-1 claims (real catalog documents)
+        shell: bash
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          docs=(dist/pdf-validation/catalog/*.pdf)
+          if [ "${#docs[@]}" -eq 0 ]; then
+            echo "::error::the catalog generator produced no PDFs — the template-level gate validated nothing"
+            exit 1
+          fi
+          reports=dist/pdf-validation/catalog-reports
+          mkdir -p "$reports"
+
+          failures=()
+          for pdf in "${docs[@]}"; do
+            doc="$(basename "$pdf" .pdf)"
+            for flavour in 2u ua1; do
+              log="$reports/$doc.$flavour.txt"
+              echo "----- veraPDF --flavour $flavour  $doc -----"
+              if /tmp/verapdf/verapdf --flavour "$flavour" --format text "$pdf" \
+                   > "$log" 2>&1; then
+                cat "$log"
+                echo "PASS  flavour=$flavour  document=$doc"
+              else
+                cat "$log"
+                # The veraPDF text report names each failed rule (specification
+                # clause + test number + description), so this annotation plus
+                # the block above answers both "which document" and "which rule".
+                echo "::error file=crates/chancela-templates/assets::veraPDF REJECTED $doc under flavour $flavour — failed rules are listed in the block above and in $log"
+                failures+=("$doc ($flavour)")
+              fi
+            done
+          done
+
+          echo
+          echo "validated ${#docs[@]} real documents x 2 flavours; ${#failures[@]} rejection(s)"
+          if [ "${#failures[@]}" -ne 0 ]; then
+            printf 'REJECTED: %s\n' "${failures[@]}"
+            exit 1
+          fi
 
       - name: Upload external validation evidence
         if: always()

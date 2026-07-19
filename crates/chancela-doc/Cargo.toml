@@ -21,6 +21,12 @@ thiserror = { workspace = true }
 # checked in), mirroring `chancela-pades/src/tests.rs` — der-0.7-family pins are load-bearing.
 chancela-pades = { workspace = true }
 chancela-cades = { workspace = true }
+# The `write_catalog_pdfs` example (t10-e2): render REAL catalog templates through the shipped
+# render seam so the external veraPDF gate validates template output, not only writer output.
+# chancela-templates depends on chancela-core/minijinja/serde only — never on chancela-doc — so
+# this dev-dep introduces no cycle and adds no runtime dependency to the library.
+chancela-templates = { workspace = true }
+serde_json = { workspace = true }
 der = { workspace = true }
 x509-cert = { workspace = true }
 rsa = { workspace = true }
