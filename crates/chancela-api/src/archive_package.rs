@@ -18,7 +18,7 @@ use chancela_archive::{
     build_local_dglab_interchange_manifest, validate_package,
 };
 use chancela_authz::Permission;
-use chancela_core::{Act, ActId, ActState, BookId, BookState, LegalHold};
+use chancela_core::{Act, ActId, ActState, BookId, BookState, LegalHold, LifecycleStage};
 use chancela_store::{StoredDocument, StoredSignedDocument};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -73,6 +73,68 @@ const ARCHIVE_EVIDENCE_INDEX_PATH: &str = "evidence/index.json";
 const GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PREFIX: &str = "evidence/generated-dispatch/";
 const GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PATTERN: &str =
     "evidence/generated-dispatch/{document_id}.json";
+/// Where a document sits when the book is read the way it was written: termo de abertura first,
+/// then the atas in `ata_number` order, then the termo de encerramento.
+///
+/// This is computed once, while the inventory still knows each document's role and ata number, and
+/// it is what `package_docs` is sorted by. The old comparator ordered by `owner_kind`, then two
+/// UUIDs — so `"act" < "book"` put the termos after every ata, and the atas came out in id order
+/// even though `book_acts` had already been sorted by `ata_number`. Deriving reading order from a
+/// lexical comparison of unrelated identifiers is what made that wrong; an explicit ordinal cannot
+/// drift the same way.
+///
+/// The derived `Ord` is the reading order, so variant declaration order is load-bearing.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum BookPosition {
+    /// The termo de abertura — the instrument that opens the book and anchors its hash chain.
+    Opening,
+    /// A sealed ata, ordered by the number the book itself gives it.
+    Ata(u64),
+    /// A book-level instrument that neither opens nor closes the book (a termo de retificação keyed
+    /// to the book, say). It follows the atas — a retificação can only refer to atas that already
+    /// exist — and still precedes the closing termo, which has to stay last for the book to read as
+    /// a closed book.
+    Instrument,
+    /// The termo de encerramento, or a termo de transporte, which likewise closes this book.
+    Closing,
+}
+
+impl BookPosition {
+    /// The stable code published in the package sidecars, so a recipient can name the position
+    /// without re-deriving it from the template id.
+    fn code(self) -> &'static str {
+        match self {
+            Self::Opening => "termo_abertura",
+            Self::Ata(_) => "ata",
+            Self::Instrument => "book_instrument",
+            Self::Closing => "termo_encerramento",
+        }
+    }
+
+    /// The ata number, for the atas only.
+    fn ata_number(self) -> Option<u64> {
+        match self {
+            Self::Ata(number) => Some(number),
+            _ => None,
+        }
+    }
+}
+
+/// Classify a book-level instrument from the lifecycle stage of the template that produced it.
+/// Anything the registry does not recognize (or that carries some other stage) is an instrument:
+/// unknown book documents belong in the body of the book, never before the abertura or after the
+/// encerramento.
+fn book_instrument_position(template_id: &str) -> BookPosition {
+    match crate::documents::registry()
+        .get(template_id)
+        .map(|spec| spec.stage)
+    {
+        Some(LifecycleStage::TermoAbertura) => BookPosition::Opening,
+        Some(LifecycleStage::TermoEncerramento) => BookPosition::Closing,
+        _ => BookPosition::Instrument,
+    }
+}
+
 #[derive(Clone)]
 struct PackageDocument {
     owner_kind: &'static str,
@@ -81,6 +143,11 @@ struct PackageDocument {
     document_id: Uuid,
     document: StoredDocument,
     signed: Option<StoredSignedDocument>,
+    position: BookPosition,
+    /// 1-based reading position, assigned after the inventory is sorted. The package's ZIP members
+    /// are named by document id and the format requires them to be path-sorted, so the member order
+    /// cannot carry the book's order; this ordinal is how the order reaches a recipient.
+    reading_order: usize,
 }
 
 struct BookArchiveInventory {
@@ -240,8 +307,29 @@ pub struct WouldDeleteTarget {
 struct DocumentMetadataSidecar<'a> {
     package_profile: &'static str,
     owner: OwnerMetadata<'a>,
+    book_order: BookOrderMetadata,
     document: DocumentMetadata<'a>,
     signed: Option<SignedMetadata<'a>>,
+}
+
+/// The document's place in the book, published so a recipient never has to infer reading order from
+/// the id-named ZIP members (which the package format requires to be path-sorted).
+#[derive(Serialize)]
+struct BookOrderMetadata {
+    reading_order: usize,
+    position: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ata_number: Option<u64>,
+}
+
+impl From<&PackageDocument> for BookOrderMetadata {
+    fn from(doc: &PackageDocument) -> Self {
+        Self {
+            reading_order: doc.reading_order,
+            position: doc.position.code(),
+            ata_number: doc.position.ata_number(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -310,6 +398,12 @@ struct ArchiveEvidenceIndex {
 struct ArchiveDocumentEvidenceIndexEntry {
     document_id: Uuid,
     act_id: Option<Uuid>,
+    /// 1-based place in the book. The `documents` array is already emitted in this order; the
+    /// ordinal is repeated on each entry so the order survives any consumer that re-sorts.
+    reading_order: usize,
+    position: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ata_number: Option<u64>,
     canonical_pdf_path: String,
     document_metadata_path: String,
     signature_evidence_path: String,
@@ -928,6 +1022,7 @@ async fn load_book_archive_inventory(
 
     let mut package_docs = Vec::new();
     for document in load_owner_documents(state, ActId(book_id.0)).await? {
+        let position = book_instrument_position(&document.template_id);
         package_docs.push(PackageDocument {
             owner_kind: "book",
             owner_id: book_id.0,
@@ -935,6 +1030,8 @@ async fn load_book_archive_inventory(
             document_id: parse_document_id(&document)?,
             document,
             signed: None,
+            position,
+            reading_order: 0,
         });
     }
     for act in book_acts.iter().filter(|act| act.ata_number.is_some()) {
@@ -951,6 +1048,9 @@ async fn load_book_archive_inventory(
                 }
                 None => None,
             };
+            // The loop is already walking `book_acts` in `ata_number` order; carrying the number
+            // into the ordinal is what keeps that work instead of discarding it in a later sort.
+            let ata_number = act.ata_number.expect("filtered to numbered atas above");
             package_docs.push(PackageDocument {
                 owner_kind: "act",
                 owner_id: act.id.0,
@@ -958,15 +1058,23 @@ async fn load_book_archive_inventory(
                 document_id,
                 document,
                 signed,
+                position: BookPosition::Ata(ata_number),
+                reading_order: 0,
             });
         }
     }
+    // Book order: abertura → atas by ata number → other book instruments → encerramento. Ties (two
+    // documents in the same position, e.g. a re-rendered instrument) fall back to generation time
+    // and then to the document id, so the package stays byte-deterministic.
     package_docs.sort_by(|left, right| {
-        left.owner_kind
-            .cmp(right.owner_kind)
-            .then_with(|| left.owner_id.cmp(&right.owner_id))
+        left.position
+            .cmp(&right.position)
+            .then_with(|| left.document.created_at.cmp(&right.document.created_at))
             .then_with(|| left.document_id.cmp(&right.document_id))
     });
+    for (index, doc) in package_docs.iter_mut().enumerate() {
+        doc.reading_order = index + 1;
+    }
 
     Ok(BookArchiveInventory {
         entity_id,
@@ -1850,6 +1958,7 @@ fn metadata_sidecar_bytes(book_id: BookId, doc: &PackageDocument) -> Result<Vec<
             id: doc.owner_id,
             book_id: book_id.0,
         },
+        book_order: BookOrderMetadata::from(doc),
         document: DocumentMetadata {
             id: doc.document_id,
             template_id: &doc.document.template_id,
@@ -1949,6 +2058,9 @@ fn archive_document_evidence_index(doc: &PackageDocument) -> ArchiveDocumentEvid
     ArchiveDocumentEvidenceIndexEntry {
         document_id: doc.document_id,
         act_id: doc.act_id.map(|act_id| act_id.0),
+        reading_order: doc.reading_order,
+        position: doc.position.code(),
+        ata_number: doc.position.ata_number(),
         canonical_pdf_path: format!("documents/{}.pdf", doc.document_id),
         document_metadata_path: format!("metadata/{}.json", doc.document_id),
         signature_evidence_path: format!("evidence/{}.json", doc.document_id),
