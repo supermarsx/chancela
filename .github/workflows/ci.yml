@@ -1120,6 +1120,17 @@ jobs:
           workspaces: |
             apps/desktop/src-tauri -> target
 
+      # `tauri-build` refuses to run when `frontendDist` (apps/web/dist) is absent, and this
+      # gate deliberately never builds or loads the frontend — it only compiles the desktop
+      # crate against chancela-api's public surface. A placeholder keeps the gate honest about
+      # what it checks without dragging a full Node install + Vite build into a fast lane.
+      # (Desktop Smoke, which actually runs the app, builds the real bundle.)
+      - name: Provide a placeholder frontend bundle for tauri-build
+        shell: bash
+        run: |
+          mkdir -p apps/web/dist
+          printf '<!doctype html><title>compile-check placeholder</title>' > apps/web/dist/index.html
+
       - name: Compile-check desktop crate against chancela-api
         run: cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
 
@@ -1185,6 +1196,12 @@ jobs:
       - name: Install desktop dependencies
         working-directory: apps/desktop
         run: npm ci --no-audit --no-fund
+
+      # `tauri-build` (run by every cargo invocation on the desktop crate) requires the built
+      # frontend at apps/web/dist. `build:no-bundle` produces it via beforeBuildCommand, but the
+      # Rust test step runs first — so build the real bundle up front.
+      - name: Build web assets for tauri-build
+        run: npm run build --workspace apps/web
 
       - name: Test desktop Rust
         working-directory: apps/desktop
