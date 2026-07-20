@@ -7,9 +7,13 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { ledgerEventLabelsNlNL } from '../ledgerEventLabels';
+import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const nlNL: Catalog = {
   ...operationsEnglish,
+  ...ledgerEventLabelsNlNL,
+  ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'U hebt geen toestemming voor deze actie',
   'perm.denied.title': 'Geen toestemming',
@@ -149,7 +153,7 @@ export const nlNL: Catalog = {
   'nav.skipToContent': 'Naar inhoud gaan',
   'common.brand': 'Chancela',
   'splash.aria': 'Chancela wordt gestart',
-  'common.footer': 'Chancela · Interface-prototype · Conform het Portugese recht (CSC, AVG, eIDAS)',
+  'common.footer': 'Chancela · Livro de atas digital · v{version}',
 
   // --- Shared chrome -------------------------------------------------------------
   'common.loading': 'Laden…',
@@ -293,7 +297,7 @@ export const nlNL: Catalog = {
   'notifications.reminder.followUp.action': 'Notulen openen',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
-  'notifications.operation.title': 'Gebeurtenis {kind}',
+  'notifications.operation.title': '{kind}',
   'notifications.operation.detail': '{actor} heeft een gebeurtenis vastgelegd in {scope}.',
   'notifications.operation.meta': 'Sequentie {seq}',
   // --- Window controls (desktop) -------------------------------------------------
@@ -891,6 +895,10 @@ export const nlNL: Catalog = {
   'acts.signatories': 'Ondertekenaars',
   'acts.attachments': 'Bijlagen',
   'acts.lifecycle': 'Levenscyclus',
+  // --- Progress stepper (ui/Stepper.tsx) ------------------------------------------
+  'stepper.progress': 'Stap {current} van {total}',
+  'stepper.status.done': 'voltooid',
+  'stepper.status.current': 'huidige stap',
   'acts.compliance': 'Naleving',
   'acts.manualSignature.title': 'Alternatieve route: handmatig ondertekend origineel (SIG-03)',
   'acts.manualSignature.body':
@@ -1061,6 +1069,42 @@ export const nlNL: Catalog = {
   'ledger.archive.format.json': 'Uitwisselings-JSON (.json)',
   'ledger.archive.format.csv': 'Audit-CSV (.csv)',
   'ledger.archive.format.html': 'Audit-HTML (.html)',
+  'ledger.subnav.aria': 'Archiefsecties',
+  'ledger.subnav.registo': 'Logboek',
+  'ledger.subnav.exportacao': 'Export',
+  'ledger.export.document.title': 'Document van het auditlogboek',
+  'ledger.export.document.body':
+    'Exporteert de logboekregels precies zoals het tabblad Logboek ze toont: de daar actieve filters bepalen wat in het bestand terechtkomt.',
+  'ledger.export.document.editFilters': 'Filters wijzigen in Logboek',
+  'ledger.export.book.title': 'Boekexports',
+  'ledger.export.book.body':
+    'Twee verschillende pakketten voor twee verschillende doelen: één voor archiefoverbrenging en één om het boek naar een andere instantie te verplaatsen. Kies het boek en daarna het juiste pakket.',
+  'ledger.export.book.label': 'Te exporteren boek',
+  'ledger.export.book.help':
+    'Elk pakket omvat één boek; herhaal de export boek voor boek als het om meerdere boeken gaat.',
+  'ledger.export.book.empty': 'Geen boeken om te exporteren',
+  'ledger.export.book.emptyBody':
+    'Open een boek en bewaar de documenten ervan voordat u pakketten genereert.',
+  'ledger.export.preservation.title': 'Bewaarpakket — overbrenging en bewijs',
+  'ledger.export.preservation.body':
+    'Een deterministische, alleen-lezen ZIP bedoeld voor archiefoverbrenging en bewijs. Hij is niet terug te importeren en het genereren schrijft niets in het logboek.',
+  'ledger.export.preservation.contents':
+    'Het bevat de bewaarde PDF/A-bestanden van het boek, de bewijsindex, de bewijsrapporten per handtekening, de PDF-toegankelijkheidsrapporten, de rapporten van externe validators, het gegenereerde verzendbewijs en, als er een juridische bewaarplicht geldt, het bijbehorende JSON-record.',
+  'ledger.export.legalHold.label': 'Juridische bewaarplicht op deze export vermelden',
+  'ledger.export.legalHold.help':
+    'Dit raakt alleen het gegenereerde pakket: de server bewaart de bewaarplicht niet op het boek. Een al op het boek vastgelegde bewaarplicht reist ook zonder deze optie mee in het pakket.',
+  'ledger.export.legalHold.reason.label': 'Reden van de juridische bewaarplicht',
+  'ledger.export.legalHold.reason.placeholder': 'Rechtszaak nr. 123/26…',
+  'ledger.export.legalHold.reason.required':
+    'Geef de reden op voordat u een juridische bewaarplicht vermeldt.',
+  'ledger.export.bundle.title': 'Portabiliteitspakket — van instantie wisselen',
+  'ledger.export.bundle.body':
+    'Een zelfverifiërende ZIP en het enige formaat dat de boekimport accepteert. Gebruik hem om een boek naar een andere instantie te verplaatsen of daar te herstellen.',
+  'ledger.export.bundle.retainedTitle': 'Deze export wordt vastgelegd',
+  'ledger.export.bundle.retained':
+    'Anders dan bij het bewaarpakket houdt de server een kopie van dit pakket en voegt een gebeurtenis toe aan het auditlogboek.',
+  'ledger.export.bundle.download': 'Portabiliteitspakket exporteren',
+  'ledger.export.bundle.downloading': 'Pakket wordt geëxporteerd…',
   'toast.ledgerArchive.downloaded': 'Archief-PDF/A gedownload.',
   'ledger.actor.systemTooltip': 'Systeemactor (geen sessie)',
 
@@ -1191,6 +1235,10 @@ export const nlNL: Catalog = {
   'tools.section.legislacao': 'Wetgeving',
   'tools.section.trust': 'Vertrouwenslijst',
   'tools.section.externalSigning': 'Externe ondertekening',
+  'tools.pdf.subnav.aria': 'Sectie technische validator',
+  'tools.pdf.section.pdf': 'PDF-handtekeningen',
+  'tools.pdf.section.asic': 'ASiC-containers',
+  'tools.pdf.section.reports': 'Technische rapporten',
   'externalSigning.title': 'Workflows voor externe ondertekening',
   'externalSigning.notice.title': 'Operationele opvolging',
   'externalSigning.notice.body':
@@ -1263,6 +1311,16 @@ export const nlNL: Catalog = {
   'pdfValidator.failClosed.body':
     'De server heeft geweigerd het bestand te valideren. Behandel dit als fail-closed; als het bericht een afwijking in grootte of SHA-256 noemt, komen de ontvangen bytes niet overeen met wat de browser heeft opgegeven.',
   'pdfValidator.result.title': 'Resultaat',
+  'pdfValidator.table.caption': 'Technische PDF/PAdES-controles',
+  'pdfValidator.table.check': 'Controle',
+  'pdfValidator.table.verdict': 'Resultaat',
+  'pdfValidator.table.evidence': 'Bewijs',
+  'pdfValidator.verdict.pass': 'Geslaagd',
+  'pdfValidator.verdict.fail': 'Mislukt',
+  'pdfValidator.verdict.inconclusive': 'Niet sluitend',
+  'pdfValidator.verdict.info': 'Informatief',
+  'pdfValidator.section.file': 'Bestand',
+  'pdfValidator.field.integrity': 'Opgegeven integriteit',
   'pdfValidator.status.valid': 'Technisch geldig',
   'pdfValidator.status.invalid': 'Ongeldig',
   'pdfValidator.status.indeterminate': 'Onbepaald',
@@ -1471,6 +1529,7 @@ export const nlNL: Catalog = {
     'Officiële tekst vastgelegd en gecontroleerd door een geautomatiseerd proces. NIET juridisch goedgekeurd door een menselijke beoordelaar — een menselijke juridische controle wordt aanbevolen voordat u erop vertrouwt.',
   'legislacao.corpus.back': 'Terug naar de regelingen',
   'legislacao.corpus.backToDiploma': 'Terug naar {title}',
+  'legislacao.corpus.backToResults': 'Terug naar de resultaten',
   'legislacao.corpus.diploma.notFound': 'Regeling niet gevonden.',
   'legislacao.corpus.article.notFound': 'Artikel niet gevonden.',
   'legislacao.corpus.article.source': 'Bron',
@@ -1777,6 +1836,36 @@ export const nlNL: Catalog = {
   'settings.entityTable.hint':
     'Kies de zichtbare kolommen in de lijst van geregistreerde entiteiten.',
   'settings.entityTable.columns.aria': 'Kolommen van de entiteitentabel',
+  // --- Connector outbound egress allowlist (t21) --------------------------------
+  'settings.connectorEgress.title': 'Uitgaand netwerk van connectoren',
+  'settings.connectorEgress.intro':
+    'De hosts waarnaar een connector notulengegevens mag sturen. Dit is geen voorkeur: het is de grens die voorkomt dat een connector inhoud naar een willekeurige bestemming stuurt.',
+  'settings.connectorEgress.precedenceTitle': 'Welke lijst wint',
+  'settings.connectorEgress.precedenceCeiling':
+    'De implementatie heeft een plafond vastgelegd ({hosts}). Deze lijst kan dat alleen versmallen, nooit verbreden. Een host buiten dat plafond toestaan vergt een wijziging van de implementatieconfiguratie.',
+  'settings.connectorEgress.precedenceNoCeiling':
+    'De implementatie heeft geen plafond vastgelegd, dus deze lijst is de enige uitgaande grens. Stel CHANCELA_CONNECTOR_ALLOWED_HOSTS in de implementatie in om een plafond vast te leggen dat geen beheerder kan overschrijden.',
+  'settings.connectorEgress.hostsLabel': 'Toegestane hosts (één per regel)',
+  'settings.connectorEgress.hostsHint':
+    'Exacte hostnamen of IP-/CIDR-reeksen. Zonder schema, poort, pad of jokertekens.',
+  'settings.connectorEgress.placeholder': 'backup.voorbeeld.nl\n10.42.0.0/16',
+  'settings.connectorEgress.tooMany': 'Maximaal {max} vermeldingen.',
+  'settings.connectorEgress.rejected': '“{entry}”: {reason}',
+  'settings.connectorEgress.effect':
+    'Wijzigingen gelden vanaf de volgende connectorbewerking, in zowel de API als de worker, zonder herstart.',
+  'settings.connectorEgress.audited':
+    'Elke wijziging wordt in het auditlogboek vastgelegd met wie, wanneer, en de vorige en nieuwe lijst.',
+  'settings.connectorEgress.reason.format':
+    'moet een kale hostnaam of IP/CIDR zijn, zonder schema, poort, pad of inloggegevens.',
+  'settings.connectorEgress.reason.wildcard': 'jokertekens zijn niet toegestaan.',
+  'settings.connectorEgress.reason.metadata':
+    'het link-local-bereik bevat het metadata-eindpunt van de cloudinstantie en kan hier niet worden geopend.',
+  'settings.connectorEgress.reason.loopback':
+    'mag niet naar de host wijzen waarop Chancela draait.',
+  'settings.connectorEgress.reason.forbiddenRange':
+    'dit adresbereik is nooit een legitieme bestemming.',
+  'settings.connectorEgress.reason.broadPrefix':
+    'het bereik is te breed; gebruik een smaller prefix.',
   'settings.registryAutoUpdate.cardTitle': 'Automatische bijwerking van permanent uittreksel',
   'settings.registryAutoUpdate.refreshPlan': 'Plan vernieuwen',
   'settings.registryAutoUpdate.refreshingPlan': 'Vernieuwen…',
@@ -2190,6 +2279,21 @@ export const nlNL: Catalog = {
   'acts.convening': 'Oproeping',
   'acts.convening.hint':
     'Leg de datum en de wijze van oproeping en het bewaarde bewijs vast. Waarschuwingen ondersteunen de werkzaamheden en vervangen de juridische beoordeling niet.',
+  'acts.convening.waiver.title': 'Zonder oproeping',
+  'acts.convening.waiver.hint':
+    'Is de vergadering zonder voorafgaande oproeping gehouden, leg hier dan de grondslag vast waarop zij berustte; de notulen nemen die over. Chancela legt de opgegeven grondslag vast en bevestigt de geldigheid ervan niet — laat dit juridisch bevestigen.',
+  'acts.convening.waiver.toggle': 'De vergadering is zonder voorafgaande oproeping gehouden',
+  'acts.convening.waiver.basis': 'Grondslag',
+  'acts.convening.waiver.basis.universal':
+    'Universele vergadering — allen aanwezig en allen akkoord (CSC art. 54.º)',
+  'acts.convening.waiver.basis.other': 'Andere grondslag (beschrijf deze)',
+  'acts.convening.waiver.agreedToMeet':
+    'Allen verklaarden te willen dat de vergadering werd geconstitueerd',
+  'acts.convening.waiver.agreedToAgenda': 'Allen stemden in met de behandelde onderwerpen',
+  'acts.convening.waiver.grounds': 'Vastgelegde grondslag',
+  'acts.convening.waiver.evidenceReference': 'Bewijs van de instemming',
+  'acts.convening.waiver.conflict':
+    'Zowel een oproeping als het ontbreken daarvan is vastgelegd. Slechts één van beide kan deze vergadering beschrijven.',
   'acts.convening.dispatchDate': 'Datum van oproeping',
   'acts.convening.channel': 'Wijze van oproeping',
   'acts.convening.channelNone': 'Geen wijze vastgelegd',
@@ -2353,7 +2457,7 @@ export const nlNL: Catalog = {
   'onboarding.skip': 'Overslaan',
   'onboarding.finishing': 'Afronden…',
   'signin.title': 'Inloggen',
-  'signin.subtitle': 'Kies uw gebruiker om door te gaan.',
+  'signin.subtitle': 'Typ uw gebruikersnaam om door te gaan.',
   'signin.empty': 'Er zijn nog geen actieve gebruikers.',
   'signin.requiresPassword': 'Wachtwoord vereist',
   'signin.password.label': 'Wachtwoord',
@@ -2372,6 +2476,13 @@ export const nlNL: Catalog = {
   'signin.blocked.body':
     'Een nieuwe gebruiker aanmaken vereist een actieve sessie. Log in en open Gebruikers › Nieuw in de app.',
   'signin.blocked.action': 'Terug naar inloggen',
+  'signin.username.label': 'Gebruikersnaam',
+  'signin.username.placeholder': 'Uw gebruikersnaam',
+  'signin.badCredentials': 'Gebruikersnaam of wachtwoord onjuist.',
+  'signin.remember.label': 'Deze gebruiker op dit apparaat onthouden',
+  'signin.recent.title': 'Accounts die op dit apparaat zijn gebruikt',
+  'signin.recent.remove': '{username} uit de lijst verwijderen',
+  'signin.recent.note': 'Deze lijst blijft alleen in deze browser en bevat nooit wachtwoorden.',
   'session.gate.error': 'Kan de sessie niet laden.',
   'session.gate.retry': 'Opnieuw proberen',
   'settings.autosave.retry': 'Opnieuw proberen',
@@ -2523,6 +2634,8 @@ export const nlNL: Catalog = {
   'templates.card.rulePack': 'Regelpakket',
   'templates.card.channels': 'Kanalen',
   'templates.channels.none': 'Geen specifiek kanaal',
+  'templates.table.source': 'Bron',
+  'templates.table.actions': 'Acties',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Nieuw sjabloon',
   'templates.actions.edit': 'Bewerken',
@@ -4312,6 +4425,121 @@ export const nlNL: Catalog = {
   'fieldHelp.registry.deliberationDate':
     'Datum van het besluit vermeld in de inschrijving, indien aanwezig.',
   'fieldHelp.registry.formaObrigar': 'Geïmporteerde tekst over wie de entiteit bindt.',
+  // --- Email (SMTP) (t23) ---
+  'settings.email.cardTitle': 'E-mail',
+  'settings.email.lede':
+    'Configureer de SMTP-server waarmee de toepassing berichten verstuurt. Het wachtwoord wordt versleuteld bewaard en wordt nooit teruggegeven.',
+  'settings.email.enabled.label': 'E-mailverzending actief',
+  'settings.email.enabled.hint':
+    'Zolang dit uit staat, wordt er niets verstuurd. U kunt de configuratie invullen voordat u het inschakelt.',
+  'settings.email.host.label': 'Server',
+  'settings.email.host.hint':
+    'Naam van de SMTP-server. Het is ook de naam waarmee het TLS-certificaat moet overeenkomen.',
+  'settings.email.host.placeholder': 'smtp.voorbeeld.pt',
+  'settings.email.port.label': 'Poort',
+  'settings.email.port.hint': '587 voor STARTTLS, 465 voor impliciete TLS.',
+  'settings.email.encryptionField.label': 'Versleuteling',
+  'settings.email.encryptionField.hint':
+    'STARTTLS is de standaard. Biedt de server het niet aan, dan wordt de verbinding geweigerd in plaats van onversleuteld door te gaan.',
+  'settings.email.encryption.starttls': 'STARTTLS (aanbevolen)',
+  'settings.email.encryption.implicitTls': 'Impliciete TLS (poort 465)',
+  'settings.email.encryption.none': 'Zonder versleuteling',
+  'settings.email.insecure.title': 'Onversleutelde verbinding',
+  'settings.email.insecure.body':
+    'Zonder versleuteling gaan het serverwachtwoord en de inhoud van alle berichten onversleuteld over het netwerk. Gebruik deze optie alleen bij een relay in een gesloten netwerk dat niets anders biedt.',
+  'settings.email.insecure.confirm': 'Ik bevestig dat ik onversleuteld wil versturen',
+  'settings.email.username.label': 'Gebruiker',
+  'settings.email.username.hint': 'Laat leeg als de server geen authenticatie vereist.',
+  'settings.email.fromAddress.label': 'Afzenderadres',
+  'settings.email.fromAddress.hint':
+    'Adres dat wordt gebruikt in de envelop en in de kopregel Van: van alle berichten.',
+  'settings.email.fromAddress.placeholder': 'sistema@voorbeeld.pt',
+  'settings.email.fromName.label': 'Afzendernaam',
+  'settings.email.fromName.hint':
+    'Naam die naast het adres wordt getoond, bijvoorbeeld Encosto Estratégico Lda.',
+  'settings.email.heloName.label': 'EHLO-naam',
+  'settings.email.heloName.hint':
+    'Naam die aan de server wordt aangekondigd. Blijft die leeg, dan wordt het domein van het afzenderadres gebruikt.',
+
+  'settings.email.password.cardTitle': 'Serverwachtwoord',
+  'settings.email.password.lede':
+    'Versleuteld bewaard in de kluis met inloggegevens. Het wordt door geen enkel eindpunt teruggegeven — alleen de status hieronder geeft aan of het bestaat.',
+  'settings.email.password.label': 'Wachtwoord',
+  'settings.email.password.hint': 'Een nieuw wachtwoord typen vervangt het vorige.',
+  'settings.email.password.placeholder': 'Typ om in te stellen of te vervangen',
+  'settings.email.password.save': 'Wachtwoord opslaan',
+  'settings.email.password.clear': 'Wachtwoord verwijderen',
+  'settings.email.password.configured': 'Ingesteld',
+  'settings.email.password.notConfigured': 'Niet ingesteld',
+  'settings.email.password.savedToast': 'Serverwachtwoord opgeslagen',
+  'settings.email.password.clearedToast': 'Serverwachtwoord verwijderd',
+
+  'settings.email.test.cardTitle': 'Testbericht versturen',
+  'settings.email.test.lede':
+    'Opent een echte sessie met de geconfigureerde server en toont het antwoord dat die geeft, inclusief de SMTP-code.',
+  'settings.email.test.to.label': 'Ontvanger',
+  'settings.email.test.to.hint': 'Adres waarnaar het testbericht wordt gestuurd.',
+  'settings.email.test.to.placeholder': 'amelia.marques@voorbeeld.pt',
+  'settings.email.test.action': 'Test versturen',
+  'settings.email.test.warningTitle': 'Let op de configuratie',
+  'settings.email.test.okTitle': 'Bericht door de server aanvaard',
+  'settings.email.test.okBody':
+    'De server heeft het bericht aanvaard. Dat bevestigt geen bezorging in de inbox van de ontvanger.',
+  'settings.email.test.failTitle': 'Het versturen is mislukt',
+  'settings.email.test.failUnknown': 'De server heeft geen enkel detail teruggegeven.',
+  'settings.email.test.stage': 'Fase',
+  'settings.email.test.code': 'SMTP-code',
+  'settings.email.test.serverReply': 'Antwoord van de server',
+  'settings.email.test.relayReply': 'Antwoord van de server',
+  'settings.email.test.remedy': 'Wat te controleren',
+  'settings.email.test.tls': 'Versleuteld',
+  'settings.email.test.authenticated': 'Geauthenticeerd',
+
+  'settings.email.stage.connect': 'Verbinding met de server',
+  'settings.email.stage.tls': 'TLS-handshake',
+  'settings.email.stage.greeting': 'Begroeting van de server',
+  'settings.email.stage.ehlo': 'Aanmelding (EHLO)',
+  'settings.email.stage.starttls': 'Start van STARTTLS',
+  'settings.email.stage.auth': 'Authenticatie',
+  'settings.email.stage.mailFrom': 'Afzender (MAIL FROM)',
+  'settings.email.stage.rcptTo': 'Ontvanger (RCPT TO)',
+  'settings.email.stage.data': 'Versturen van het bericht',
+  'settings.email.stage.quit': 'Afsluiten van de sessie',
+
+  'settings.email.remedy.dns':
+    'De servernaam is niet omgezet. Controleer de spelling en of DNS hem kent.',
+  'settings.email.remedy.unreachable':
+    'De server antwoordde niet op de opgegeven poort. Controleer de poort en of een firewall blokkeert.',
+  'settings.email.remedy.tls':
+    'Het certificaat van de server is niet aanvaard. Controleer of het geldig is en overeenkomt met de geconfigureerde naam.',
+  'settings.email.remedy.tlsUnsupported':
+    'De server biedt geen STARTTLS. Herstel de server, gebruik impliciete TLS op poort 465, of schakel de versleuteling uitdrukkelijk uit.',
+  'settings.email.remedy.timeout':
+    'De server deed er te lang over om te antwoorden. Controleer het netwerk en of het adres klopt.',
+  'settings.email.remedy.configuration':
+    'De configuratie is zo niet bruikbaar. Controleer de gebruiker, de versleuteling en de poort.',
+  'settings.email.remedy.protocol':
+    'Het antwoord van de server werd niet begrepen of de verbinding viel weg. Bevestig dat de poort SMTP bedient.',
+  'settings.email.remedy.rejected':
+    'De server heeft het verzoek geweigerd. De code en de tekst hierboven zijn de reden die hij zelf gaf.',
+
+  'settings.email.help.enabled':
+    'Hoofdschakelaar voor de e-mailverzending. Uitgeschakeld verstuurt geen enkele functie berichten.',
+  'settings.email.help.host': 'Naam van de SMTP-server, bijvoorbeeld smtp.voorbeeld.pt.',
+  'settings.email.help.port': 'Verzendpoort: meestal 587 (STARTTLS) of 465 (impliciete TLS).',
+  'settings.email.help.encryption':
+    'Hoe de verbinding wordt beschermd. STARTTLS verbindt onversleuteld en gaat over op versleuteld vóór de authenticatie.',
+  'settings.email.help.username':
+    'Gebruiker voor SMTP-authenticatie, bijvoorbeeld sistema@voorbeeld.pt.',
+  'settings.email.help.password':
+    'Wachtwoord of app-wachtwoord van het verzendende account. Versleuteld bewaard en nooit teruggegeven.',
+  'settings.email.help.fromAddress':
+    'Adres dat als afzender verschijnt, bijvoorbeeld sistema@voorbeeld.pt.',
+  'settings.email.help.fromName':
+    'Leesbare naam naast het adres, bijvoorbeeld Encosto Estratégico Lda.',
+  'settings.email.help.heloName':
+    'Naam die bij de SMTP-aanmelding wordt aangekondigd. Sommige servers weigeren generieke namen.',
+
   'settings.providerCredentials.cardTitle': 'Ondertekeningsproviders',
   'settings.providerCredentials.lede':
     'Beheer de referenties van ondertekeningsproviders, met meerdere sleutels per provider, prioriteit en failover.',
@@ -5163,4 +5391,41 @@ export const nlNL: Catalog = {
   'pairing.revoke.confirm': 'Intrekken bevestigen',
   'pairing.revoking': 'Bezig met intrekken…',
   'pairing.revokedToast': 'Apparaat ingetrokken',
+  // --- Book detail sub-tabs (t25) ------------------------------------------------
+  'books.detail.subnav.imports': 'Importen',
+  'books.detail.subnav.aria': 'Secties van het boek',
+  'books.detail.termo.pending.title': 'Vastgelegde openingsakte',
+  'books.detail.termo.pending.body':
+    'Toont de velden van de openingsakte die bij het openen van het boek zijn vastgelegd. De akte is in deze interface nog geen invulbaar of ondertekenbaar instrument, en de gegenereerde PDF/A heeft geen eigen endpoint — die zit in het bewaarpakket dat in de paginakop wordt aangeboden.',
+  'books.detail.retention.scopeNote':
+    'Alleen de bewaarkandidaten die dit boek noemen. Bewaarbeleid beheert u onder Instellingen → Privacy.',
+  // --- t36: Assinaturas / Fornecedores configuration grids ---
+  'settings.signing.policy.cardTitle': 'Handtekeningbeleid',
+  'settings.signing.fallbackHint': 'Officiële Portugese standaardwaarde. Dient als terugval wanneer geen van de vermeldingen in de tabel hieronder actief is.',
+  'settings.signing.tslSources.caption': 'Geconfigureerde vertrouwenslijstbronnen',
+  'settings.signing.tsaProviders.caption': 'Geconfigureerde tijdstempelaanbieders',
+  'settings.signing.providers.caption': 'Modi van handtekeningaanbieders en hun status',
+  'settings.signing.table.status': 'Status',
+  'settings.signing.table.actions': 'Acties',
+  'settings.signing.table.limits': 'Limieten',
+  'settings.signing.table.limitsValue': '{digest} · {timeout} s · max. {maxBytes} bytes',
+  'settings.signing.table.provider': 'Aanbieder',
+  'settings.signing.table.mode': 'Modus',
+  'settings.signing.table.notes': 'Opmerkingen',
+  'settings.providerCredentials.protection.unavailable.title': 'Inloggegevens kunnen niet worden opgeslagen',
+  'settings.providerCredentials.protection.unavailable.body': 'Deze server kan aanbiedergeheimen niet versleutelen of opslaan. Er wordt niets bewaard totdat dit is opgelost — de inloggegevens worden niet met zwakkere bescherming bewaard, ze worden eenvoudigweg niet bewaard.',
+  'settings.providerCredentials.protection.reason.notPersistent': 'De server draait alleen in het geheugen, zonder gegevensmap. Stel CHANCELA_DATA_DIR in en start opnieuw op.',
+  'settings.providerCredentials.protection.reason.noKeySource': 'Er is geen sleutelbron beschikbaar. Schakel SQLCipher of verzegeling door het besturingssysteem in, of geef CHANCELA_CREDENTIAL_KEY_FILE op.',
+  'settings.providerCredentials.protection.reason.operatorKey': 'De door de beheerder opgegeven sleutel is ongeldig of is twee keer opgegeven. Behoud alleen CHANCELA_CREDENTIAL_KEY of CHANCELA_CREDENTIAL_KEY_FILE, met geldig sleutelmateriaal.',
+  'settings.providerCredentials.protection.reason.rootEnvelope': 'De envelop van de hoofdsleutel kon niet worden gelezen. Controleer de rechten van de gegevensmap en of het bestand bij deze machine hoort.',
+  'settings.providerCredentials.protection.reason.storeUnavailable': 'De inloggegevenskluis is niet beschikbaar. Raadpleeg de serverlogboeken.',
+  'settings.providerCredentials.entry.notConfigured': 'niet geconfigureerd',
+  'settings.providerCredentials.table.caption': 'Inloggegevensvermeldingen van {provider}',
+  'settings.providerCredentials.table.entry': 'Vermelding',
+  'settings.providerCredentials.table.priority': 'Prioriteit',
+  'settings.providerCredentials.table.state': 'Status',
+  'settings.providerCredentials.table.endpoint': 'Adres',
+  'settings.providerCredentials.table.endpointDefault': 'Standaardadres',
+  'settings.providerCredentials.table.fields': 'Velden',
+  'settings.providerCredentials.table.actions': 'Acties',
 };

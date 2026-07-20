@@ -7,7 +7,11 @@
  *  - **`delegation.grant` @ scope** gates the grant affordance (disable-with-explanation).
  *  - **Delegate only what you hold via a ROLE** — the permission picker offers only the
  *    non-meta permissions you hold via a role (mirrors `can_delegate`); the server re-checks
- *    hold-via-role at the scope and 403s otherwise (no escalation, no re-delegation).
+ *    hold-via-role at the scope, **per selected permission**, and 403s otherwise (no escalation,
+ *    no re-delegation). One offender refuses the whole delegation, naming it — nothing partial
+ *    is ever granted, so the toast the operator sees is the server's honest message.
+ *  - **Several permissions per delegation** — the picker is a multi-select. The set shares one
+ *    grantee, scope, start/expiry and legal basis, and is revoked as one unit.
  *  - **Meta-permissions are non-delegable** — excluded from the picker (the server hard-blocks
  *    them too).
  *  - **Revoke** — allowed to the grantor OR a `delegation.revoke` holder; a non-grantor
@@ -72,7 +76,9 @@ function GrantForm({ onClose }: { onClose: () => void }) {
 
   const selfId = session.data?.user?.id;
   const [to, setTo] = useState('');
-  const [permission, setPermission] = useState('');
+  // A delegation carries a SET of permissions sharing one scope, one lifetime and one legal basis.
+  // The server re-validates every element and refuses the whole grant if any one is not delegable.
+  const [permissions, setPermissions] = useState<ReadonlySet<string>>(new Set());
   const [scope, setScope] = useState<PermissionScope>({ kind: 'global' });
   const [startsAt, setStartsAt] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -97,18 +103,27 @@ function GrantForm({ onClose }: { onClose: () => void }) {
     .map((u) => ({ value: u.id, label: `${u.display_name} (${u.username})` }));
 
   const effectiveTo = to || granteeOptions[0]?.value || '';
-  const effectivePerm = permission || delegable[0] || '';
+  // Selection is kept in `delegable` order so the request lists the verbs as the picker shows them.
+  const selected = delegable.filter((p) => permissions.has(p));
   const scopeOk = scope.kind === 'global' || scope.id !== '';
   const trimmedLegalBasis = legalBasis.trim();
   const legalBasisOk =
     trimmedLegalBasis.length > 0 && trimmedLegalBasis.length <= MAX_DELEGATION_LEGAL_BASIS_CHARS;
   const canSubmit =
     !!effectiveTo &&
-    !!effectivePerm &&
+    selected.length > 0 &&
     scopeOk &&
     legalBasisOk &&
     !grant.isPending &&
     delegable.length > 0;
+
+  function togglePermission(permission: string) {
+    setPermissions((current) => {
+      const next = new Set(current);
+      if (!next.delete(permission)) next.add(permission);
+      return next;
+    });
+  }
 
   function submit() {
     if (!canSubmit) return;
@@ -118,7 +133,7 @@ function GrantForm({ onClose }: { onClose: () => void }) {
     grant.mutate(
       {
         to: effectiveTo,
-        permission: effectivePerm,
+        permissions: selected,
         scope,
         starts_at,
         expires_at,
@@ -167,14 +182,43 @@ function GrantForm({ onClose }: { onClose: () => void }) {
           />
         </Field>
 
-        <Field label={t('rbac.deleg.permission.label')} htmlFor="rbac-deleg-perm">
-          <Select
-            id="rbac-deleg-perm"
-            value={effectivePerm}
-            onChange={(e) => setPermission(e.target.value)}
-            options={delegable.map((p) => ({ value: p, label: p }))}
-          />
-        </Field>
+        {/* Not a `Field`: this is a group of checkboxes, not one control, so it carries its own
+            <legend> rather than a <label for=""> pointing at nothing. Several permissions may be
+            delegated at once; they share the scope, lifetime and legal basis below. */}
+        <fieldset className="rbac-matrix__group">
+          <legend className="rbac-matrix__legend">{t('rbac.deleg.permission.label')}</legend>
+          <div className="row-wrap">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={grant.isPending}
+              onClick={() => setPermissions(new Set(delegable))}
+            >
+              {t('rbac.matrix.selectAll')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={grant.isPending}
+              onClick={() => setPermissions(new Set())}
+            >
+              {t('rbac.matrix.clear')}
+            </Button>
+          </div>
+          <div className="rbac-matrix__perms">
+            {delegable.map((p) => (
+              <label className="rbac-matrix__perm" key={p}>
+                <input
+                  type="checkbox"
+                  checked={permissions.has(p)}
+                  disabled={grant.isPending}
+                  onChange={() => togglePermission(p)}
+                />
+                <code className="mono">{p}</code>
+              </label>
+            ))}
+          </div>
+        </fieldset>
 
         <ScopePicker value={scope} onChange={setScope} idPrefix="rbac-deleg-scope" />
 
@@ -281,7 +325,14 @@ function DelegationRow({ d, now }: { d: DelegationView; now: number }) {
   return (
     <tr>
       <td>
-        <code className="mono">{d.permission}</code>
+        {/* A delegation may carry several verbs; they are revoked together, as one unit. */}
+        <div className="rbac-matrix__perms">
+          {(d.permissions ?? [d.permission]).map((p) => (
+            <code className="mono" key={p}>
+              {p}
+            </code>
+          ))}
+        </div>
       </td>
       <td>{userName(d.from)}</td>
       <td>{userName(d.to)}</td>

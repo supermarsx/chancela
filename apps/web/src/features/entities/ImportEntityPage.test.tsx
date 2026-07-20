@@ -29,6 +29,7 @@ const ENTITY: Entity = {
     signature_policy: 'QualifiedPreferred',
     template_family: 'csc-commercial',
     calendar_presets: [],
+    attendee_qualities: ['Member'],
   },
   statute: null,
 };

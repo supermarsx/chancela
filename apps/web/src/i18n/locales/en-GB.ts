@@ -8,9 +8,19 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { ledgerEventLabelsEnglish } from '../ledgerEventLabels';
+import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const enGB: Catalog = {
   ...operationsEnglish,
+  ...ledgerEventLabelsEnglish,
+  ...attendeeQualityLabelsEnglish,
+  // --- Ledger event kinds: British spellings over the shared English slice ---------
+  'enum.ledgerEventKind.cae.updated': 'CAE catalogue updated',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Ledger reinitialised',
+  'enum.ledgerEventKind.tenant.created': 'Organisation created',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Organisation ZK policy deleted',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Organisation ZK policy set',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'You do not have permission for this action',
   'perm.denied.title': 'No permission',
@@ -149,8 +159,7 @@ export const enGB: Catalog = {
   'nav.skipToContent': 'Skip to content',
   'common.brand': 'Chancela',
   'splash.aria': 'Starting Chancela',
-  'common.footer':
-    'Chancela · Interface prototype · Compliant with Portuguese law (CSC, GDPR, eIDAS)',
+  'common.footer': 'Chancela · Livro de atas digital · v{version}',
 
   // --- Shared chrome -------------------------------------------------------------
   'common.loading': 'Loading…',
@@ -292,7 +301,7 @@ export const enGB: Catalog = {
   'notifications.reminder.followUp.action': 'Open act',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
-  'notifications.operation.title': 'Event {kind}',
+  'notifications.operation.title': '{kind}',
   'notifications.operation.detail': '{actor} recorded an event in {scope}.',
   'notifications.operation.meta': 'Sequence {seq}',
 
@@ -885,6 +894,10 @@ export const enGB: Catalog = {
   'acts.signatories': 'Signatories',
   'acts.attachments': 'Attachments',
   'acts.lifecycle': 'Lifecycle',
+  // --- Progress stepper (ui/Stepper.tsx) ------------------------------------------
+  'stepper.progress': 'Step {current} of {total}',
+  'stepper.status.done': 'completed',
+  'stepper.status.current': 'current step',
   'acts.compliance': 'Compliance',
   'acts.manualSignature.title': 'Alternative route: manually signed original (SIG-03)',
   'acts.manualSignature.body':
@@ -1052,6 +1065,41 @@ export const enGB: Catalog = {
   'ledger.archive.format.json': 'Interchange JSON (.json)',
   'ledger.archive.format.csv': 'Audit CSV (.csv)',
   'ledger.archive.format.html': 'Audit HTML (.html)',
+  'ledger.subnav.aria': 'Archive sections',
+  'ledger.subnav.registo': 'Log',
+  'ledger.subnav.exportacao': 'Export',
+  'ledger.export.document.title': 'Audit log document',
+  'ledger.export.document.body':
+    'Exports the log entries exactly as the Log tab shows them: the filters active there decide what goes into the file.',
+  'ledger.export.document.editFilters': 'Change filters in Log',
+  'ledger.export.book.title': 'Book exports',
+  'ledger.export.book.body':
+    'Two different packages for two different purposes: one for archival deposit, one for moving the book to another instance. Choose the book, then the right package.',
+  'ledger.export.book.label': 'Book to export',
+  'ledger.export.book.help':
+    'Each package covers a single book; for several books, repeat the export book by book.',
+  'ledger.export.book.empty': 'No books to export',
+  'ledger.export.book.emptyBody':
+    'Open a book and preserve its documents before generating packages.',
+  'ledger.export.preservation.title': 'Preservation package — deposit and evidence',
+  'ledger.export.preservation.body':
+    'A deterministic, read-only ZIP meant for archival deposit and evidence. It cannot be imported back, and generating it writes nothing to the log.',
+  'ledger.export.preservation.contents':
+    'It carries the book’s preserved PDF/A files, the evidence index, the per-signature evidence reports, the PDF accessibility reports, the external-validator reports, the generated dispatch evidence and, where a legal hold applies, its JSON record.',
+  'ledger.export.legalHold.label': 'Mark a legal hold on this export',
+  'ledger.export.legalHold.help':
+    'This affects only the generated package — the server does not store the hold on the book. A hold already recorded on the book travels in the package even with this off.',
+  'ledger.export.legalHold.reason.label': 'Legal hold reason',
+  'ledger.export.legalHold.reason.placeholder': 'Court case No. 123/26…',
+  'ledger.export.legalHold.reason.required': 'Give the reason before marking a legal hold.',
+  'ledger.export.bundle.title': 'Portability package — move instance',
+  'ledger.export.bundle.body':
+    'A self-verifying ZIP, and the only format the book import accepts. Use it to move or restore a book on another instance.',
+  'ledger.export.bundle.retainedTitle': 'This export is recorded',
+  'ledger.export.bundle.retained':
+    'Unlike the preservation package, the server keeps a copy of this one and appends an event to the audit log.',
+  'ledger.export.bundle.download': 'Export portability package',
+  'ledger.export.bundle.downloading': 'Exporting package…',
   'toast.ledgerArchive.downloaded': 'Archive PDF/A downloaded.',
   'ledger.actor.systemTooltip': 'System actor (no session)',
 
@@ -1181,6 +1229,10 @@ export const enGB: Catalog = {
   'tools.section.legislacao': 'Legislation',
   'tools.section.trust': 'Trust list',
   'tools.section.externalSigning': 'External signing',
+  'tools.pdf.subnav.aria': 'Technical validator section',
+  'tools.pdf.section.pdf': 'PDF signatures',
+  'tools.pdf.section.asic': 'ASiC containers',
+  'tools.pdf.section.reports': 'Technical reports',
   'externalSigning.title': 'External signing workflows',
   'externalSigning.notice.title': 'Operational tracking',
   'externalSigning.notice.body':
@@ -1252,6 +1304,16 @@ export const enGB: Catalog = {
   'pdfValidator.failClosed.body':
     'The server refused to validate the file. Treat this as fail-closed; if the message mentions a size or SHA-256 mismatch, the received bytes do not match what the browser declared.',
   'pdfValidator.result.title': 'Result',
+  'pdfValidator.table.caption': 'Technical PDF/PAdES validation checks',
+  'pdfValidator.table.check': 'Check',
+  'pdfValidator.table.verdict': 'Result',
+  'pdfValidator.table.evidence': 'Evidence',
+  'pdfValidator.verdict.pass': 'Pass',
+  'pdfValidator.verdict.fail': 'Fail',
+  'pdfValidator.verdict.inconclusive': 'Inconclusive',
+  'pdfValidator.verdict.info': 'Informational',
+  'pdfValidator.section.file': 'File',
+  'pdfValidator.field.integrity': 'Declared integrity',
   'pdfValidator.status.valid': 'Technically valid',
   'pdfValidator.status.invalid': 'Invalid',
   'pdfValidator.status.indeterminate': 'Indeterminate',
@@ -1459,6 +1521,7 @@ export const enGB: Catalog = {
     'Official text captured and reviewed by an automated process. NOT legally approved by a human reviewer — human legal review is recommended before relying on it.',
   'legislacao.corpus.back': 'Back to instruments',
   'legislacao.corpus.backToDiploma': 'Back to {title}',
+  'legislacao.corpus.backToResults': 'Back to results',
   'legislacao.corpus.diploma.notFound': 'Instrument not found.',
   'legislacao.corpus.article.notFound': 'Article not found.',
   'legislacao.corpus.article.source': 'Source',
@@ -1761,6 +1824,34 @@ export const enGB: Catalog = {
   'settings.entityTable.title': 'Entities table',
   'settings.entityTable.hint': 'Choose the columns visible in the registered entities list.',
   'settings.entityTable.columns.aria': 'Entities table columns',
+  // --- Connector outbound egress allowlist (t21) --------------------------------
+  'settings.connectorEgress.title': 'Connector outbound network',
+  'settings.connectorEgress.intro':
+    'The hosts a connector may send minute-book data to. This is not a preference: it is the boundary that stops a connector shipping content to an arbitrary destination.',
+  'settings.connectorEgress.precedenceTitle': 'Which list wins',
+  'settings.connectorEgress.precedenceCeiling':
+    'The deployment has pinned a ceiling ({hosts}). This list can only narrow it — never widen it. Permitting a host outside that ceiling requires a deployment configuration change.',
+  'settings.connectorEgress.precedenceNoCeiling':
+    'The deployment has pinned no ceiling, so this list is the only egress boundary. Set CHANCELA_CONNECTOR_ALLOWED_HOSTS in the deployment to pin a ceiling no administrator can exceed.',
+  'settings.connectorEgress.hostsLabel': 'Allowed hosts (one per line)',
+  'settings.connectorEgress.hostsHint':
+    'Exact hostnames or IP/CIDR ranges. No scheme, port, path, or wildcards.',
+  'settings.connectorEgress.placeholder': 'backup.example.com\n10.42.0.0/16',
+  'settings.connectorEgress.tooMany': 'At most {max} entries.',
+  'settings.connectorEgress.rejected': '“{entry}”: {reason}',
+  'settings.connectorEgress.effect':
+    'Changes take effect on the next connector operation, in both the API and the worker, with no restart.',
+  'settings.connectorEgress.audited':
+    'Every change is recorded in the audit ledger with who changed it, when, and the previous and new lists.',
+  'settings.connectorEgress.reason.format':
+    'must be a bare hostname or IP/CIDR, with no scheme, port, path, or credentials.',
+  'settings.connectorEgress.reason.wildcard': 'wildcards are not allowed.',
+  'settings.connectorEgress.reason.metadata':
+    'the link-local range carries the cloud instance-metadata endpoint and cannot be opened here.',
+  'settings.connectorEgress.reason.loopback': 'cannot point back at the host running Chancela.',
+  'settings.connectorEgress.reason.forbiddenRange':
+    'this address range is never a legitimate target.',
+  'settings.connectorEgress.reason.broadPrefix': 'the range is too broad; use a narrower prefix.',
   'settings.registryAutoUpdate.cardTitle': 'Permanent-certificate auto-update',
   'settings.registryAutoUpdate.refreshPlan': 'Refresh plan',
   'settings.registryAutoUpdate.refreshingPlan': 'Refreshing…',
@@ -2152,6 +2243,20 @@ export const enGB: Catalog = {
   'acts.convening': 'Convening notice',
   'acts.convening.hint':
     'Record the notice date, method, and retained evidence. Warnings support operations and do not replace legal review.',
+  'acts.convening.waiver.title': 'No convening notice',
+  'acts.convening.waiver.hint':
+    'When the meeting was held without a prior convening notice, record the basis it rested on here; the minutes will then recite it. Chancela records the declared basis and does not confirm its validity — confirm with legal counsel.',
+  'acts.convening.waiver.toggle': 'The meeting was held without a prior convening notice',
+  'acts.convening.waiver.basis': 'Basis',
+  'acts.convening.waiver.basis.universal':
+    'Universal assembly — all present and all in agreement (CSC art. 54.º)',
+  'acts.convening.waiver.basis.other': 'Another basis (describe it)',
+  'acts.convening.waiver.agreedToMeet': 'All agreed that the assembly should constitute itself',
+  'acts.convening.waiver.agreedToAgenda': 'All agreed to the matters deliberated',
+  'acts.convening.waiver.grounds': 'Recorded basis',
+  'acts.convening.waiver.evidenceReference': 'Evidence of the agreement',
+  'acts.convening.waiver.conflict':
+    'Both a convening notice and the absence of one are recorded. Only one of them can describe this meeting.',
   'acts.convening.dispatchDate': 'Notice date',
   'acts.convening.channel': 'Notice method',
   'acts.convening.channelNone': 'No method recorded',
@@ -2313,7 +2418,7 @@ export const enGB: Catalog = {
   'onboarding.skip': 'Skip',
   'onboarding.finishing': 'Finishing…',
   'signin.title': 'Sign in',
-  'signin.subtitle': 'Choose your user to continue.',
+  'signin.subtitle': 'Type your username to continue.',
   'signin.empty': 'There are no active users yet.',
   'signin.requiresPassword': 'Password required',
   'signin.password.label': 'Password',
@@ -2332,6 +2437,13 @@ export const enGB: Catalog = {
   'signin.blocked.body':
     'Creating a new user requires an active session. Sign in and open Users › New inside the app.',
   'signin.blocked.action': 'Back to sign in',
+  'signin.username.label': 'Username',
+  'signin.username.placeholder': 'Your username',
+  'signin.badCredentials': 'Incorrect username or password.',
+  'signin.remember.label': 'Remember this username on this device',
+  'signin.recent.title': 'Accounts used on this device',
+  'signin.recent.remove': 'Remove {username} from the list',
+  'signin.recent.note': 'This list stays in this browser only and never includes passwords.',
   'session.gate.error': 'Could not load the session.',
   'session.gate.retry': 'Try again',
   'settings.autosave.retry': 'Try again',
@@ -2484,6 +2596,8 @@ export const enGB: Catalog = {
   'templates.card.rulePack': 'Rule pack',
   'templates.card.channels': 'Channels',
   'templates.channels.none': 'No specific channel',
+  'templates.table.source': 'Source',
+  'templates.table.actions': 'Actions',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'New template',
   'templates.actions.edit': 'Edit',
@@ -4228,6 +4342,120 @@ export const enGB: Catalog = {
     'Capital realisation note transcribed from the certificate.',
   'fieldHelp.registry.deliberationDate': 'Resolution date stated in the entry, when present.',
   'fieldHelp.registry.formaObrigar': 'Imported text on who binds the entity.',
+  // --- Email (SMTP) (t23) ---
+  'settings.email.cardTitle': 'Email',
+  'settings.email.lede':
+    'Configure the SMTP server the application sends messages through. The password is stored encrypted and is never returned.',
+  'settings.email.enabled.label': 'Email sending active',
+  'settings.email.enabled.hint':
+    'While it is off, nothing is sent. You can fill in the configuration before turning it on.',
+  'settings.email.host.label': 'Server',
+  'settings.email.host.hint':
+    'SMTP server name. It is also the name the TLS certificate has to match.',
+  'settings.email.host.placeholder': 'smtp.example.pt',
+  'settings.email.port.label': 'Port',
+  'settings.email.port.hint': '587 for STARTTLS, 465 for implicit TLS.',
+  'settings.email.encryptionField.label': 'Encryption',
+  'settings.email.encryptionField.hint':
+    'STARTTLS is the default. If the server does not offer it, the connection is refused instead of continuing in the clear.',
+  'settings.email.encryption.starttls': 'STARTTLS (recommended)',
+  'settings.email.encryption.implicitTls': 'Implicit TLS (port 465)',
+  'settings.email.encryption.none': 'No encryption',
+  'settings.email.insecure.title': 'Unencrypted connection',
+  'settings.email.insecure.body':
+    'Without encryption, the server password and the contents of every message travel across the network in the clear. Use this option only on a closed-network relay that offers nothing else.',
+  'settings.email.insecure.confirm': 'I confirm that I want to send without encryption',
+  'settings.email.username.label': 'User',
+  'settings.email.username.hint': 'Leave empty if the server does not require authentication.',
+  'settings.email.fromAddress.label': 'Sender address',
+  'settings.email.fromAddress.hint':
+    'Address used in the envelope and in the From: header of every message.',
+  'settings.email.fromAddress.placeholder': 'sistema@example.pt',
+  'settings.email.fromName.label': 'Sender name',
+  'settings.email.fromName.hint':
+    'Name shown next to the address, for example Encosto Estratégico Lda.',
+  'settings.email.heloName.label': 'EHLO name',
+  'settings.email.heloName.hint':
+    'Name announced to the server. If left empty, the domain of the sender address is used.',
+
+  'settings.email.password.cardTitle': 'Server password',
+  'settings.email.password.lede':
+    'Stored encrypted in the credential vault. It is never returned by any endpoint — only the status below says whether one exists.',
+  'settings.email.password.label': 'Password',
+  'settings.email.password.hint': 'Typing a new password replaces the previous one.',
+  'settings.email.password.placeholder': 'Type to set or replace',
+  'settings.email.password.save': 'Save password',
+  'settings.email.password.clear': 'Remove password',
+  'settings.email.password.configured': 'Set',
+  'settings.email.password.notConfigured': 'Not set',
+  'settings.email.password.savedToast': 'Server password saved',
+  'settings.email.password.clearedToast': 'Server password removed',
+
+  'settings.email.test.cardTitle': 'Send a test message',
+  'settings.email.test.lede':
+    'Opens a real session with the configured server and shows the reply it gives, including the SMTP code.',
+  'settings.email.test.to.label': 'Recipient',
+  'settings.email.test.to.hint': 'Address to send the test message to.',
+  'settings.email.test.to.placeholder': 'amelia.marques@example.pt',
+  'settings.email.test.action': 'Send test',
+  'settings.email.test.warningTitle': 'Check the configuration',
+  'settings.email.test.okTitle': 'Message accepted by the server',
+  'settings.email.test.okBody':
+    'The server accepted the message. This does not confirm delivery to the recipient’s inbox.',
+  'settings.email.test.failTitle': 'Sending failed',
+  'settings.email.test.failUnknown': 'The server returned no detail at all.',
+  'settings.email.test.stage': 'Stage',
+  'settings.email.test.code': 'SMTP code',
+  'settings.email.test.serverReply': 'Server reply',
+  'settings.email.test.relayReply': 'Server reply',
+  'settings.email.test.remedy': 'What to check',
+  'settings.email.test.tls': 'Encrypted',
+  'settings.email.test.authenticated': 'Authenticated',
+
+  'settings.email.stage.connect': 'Connection to the server',
+  'settings.email.stage.tls': 'TLS handshake',
+  'settings.email.stage.greeting': 'Server greeting',
+  'settings.email.stage.ehlo': 'Introduction (EHLO)',
+  'settings.email.stage.starttls': 'STARTTLS start',
+  'settings.email.stage.auth': 'Authentication',
+  'settings.email.stage.mailFrom': 'Sender (MAIL FROM)',
+  'settings.email.stage.rcptTo': 'Recipient (RCPT TO)',
+  'settings.email.stage.data': 'Message transfer',
+  'settings.email.stage.quit': 'Session close',
+
+  'settings.email.remedy.dns':
+    'The server name did not resolve. Check that it is spelt correctly and that DNS knows it.',
+  'settings.email.remedy.unreachable':
+    'The server did not answer on the given port. Check the port and whether a firewall is blocking it.',
+  'settings.email.remedy.tls':
+    'The server certificate was not accepted. Check that it is valid and that it matches the configured name.',
+  'settings.email.remedy.tlsUnsupported':
+    'The server does not offer STARTTLS. Fix the server, use implicit TLS on port 465, or disable encryption explicitly.',
+  'settings.email.remedy.timeout':
+    'The server took too long to answer. Check the network and that the address is correct.',
+  'settings.email.remedy.configuration':
+    'The configuration is not usable as it stands. Review the user, the encryption and the port.',
+  'settings.email.remedy.protocol':
+    'The server reply was not understood or the connection dropped. Confirm that the port serves SMTP.',
+  'settings.email.remedy.rejected':
+    'The server refused the request. The code and the text above are the reason it gave itself.',
+
+  'settings.email.help.enabled':
+    'Master switch for email sending. Turned off, no feature sends messages.',
+  'settings.email.help.host': 'SMTP server name, for example smtp.example.pt.',
+  'settings.email.help.port': 'Submission port: usually 587 (STARTTLS) or 465 (implicit TLS).',
+  'settings.email.help.encryption':
+    'How the connection is protected. STARTTLS connects in the clear and switches to encrypted before authenticating.',
+  'settings.email.help.username': 'SMTP authentication user, for example sistema@example.pt.',
+  'settings.email.help.password':
+    'Password or application password of the sending account. Stored encrypted and never returned.',
+  'settings.email.help.fromAddress':
+    'Address that appears as the sender, for example sistema@example.pt.',
+  'settings.email.help.fromName':
+    'Human-readable name next to the address, for example Encosto Estratégico Lda.',
+  'settings.email.help.heloName':
+    'Name announced in the SMTP introduction. Some servers refuse generic names.',
+
   'settings.providerCredentials.cardTitle': 'Signing providers',
   'settings.providerCredentials.lede':
     'Manage signing-provider credentials, with multiple keys per provider, priority, and failover.',
@@ -5062,4 +5290,41 @@ export const enGB: Catalog = {
   'pairing.revoke.confirm': 'Confirm revocation',
   'pairing.revoking': 'Revoking…',
   'pairing.revokedToast': 'Device revoked',
+  // --- Book detail sub-tabs (t25) ------------------------------------------------
+  'books.detail.subnav.imports': 'Imports',
+  'books.detail.subnav.aria': 'Book sections',
+  'books.detail.termo.pending.title': 'Opening term on record',
+  'books.detail.termo.pending.body':
+    'Shows the opening-term fields recorded when the book was opened. The term is not yet a fillable or signable instrument in this interface, and the generated PDF/A has no endpoint of its own — it travels inside the preservation package offered in the page header.',
+  'books.detail.retention.scopeNote':
+    'Only the retention candidates naming this book. Retention policies are managed under Settings → Privacy.',
+  // --- t36: Assinaturas / Fornecedores configuration grids ---
+  'settings.signing.policy.cardTitle': 'Signature policy',
+  'settings.signing.fallbackHint': 'Official Portuguese default. Used as a fallback when none of the entries in the grid below is active.',
+  'settings.signing.tslSources.caption': 'Configured trust-list sources',
+  'settings.signing.tsaProviders.caption': 'Configured timestamp providers',
+  'settings.signing.providers.caption': 'Signature provider modes and their status',
+  'settings.signing.table.status': 'Status',
+  'settings.signing.table.actions': 'Actions',
+  'settings.signing.table.limits': 'Limits',
+  'settings.signing.table.limitsValue': '{digest} · {timeout}s · max {maxBytes} bytes',
+  'settings.signing.table.provider': 'Provider',
+  'settings.signing.table.mode': 'Mode',
+  'settings.signing.table.notes': 'Notes',
+  'settings.providerCredentials.protection.unavailable.title': 'Credentials cannot be stored',
+  'settings.providerCredentials.protection.unavailable.body': 'This server cannot encrypt or store provider secrets. Nothing will be saved until this is resolved — the credentials are not being kept with weaker protection, they are simply not being kept.',
+  'settings.providerCredentials.protection.reason.notPersistent': 'The server is running in memory only, with no data directory. Set CHANCELA_DATA_DIR and restart.',
+  'settings.providerCredentials.protection.reason.noKeySource': 'No key source is available. Enable SQLCipher or operating-system sealing, or supply CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey': 'The operator-supplied key is invalid or was given twice. Keep only CHANCELA_CREDENTIAL_KEY or CHANCELA_CREDENTIAL_KEY_FILE, with valid key material.',
+  'settings.providerCredentials.protection.reason.rootEnvelope': 'The root-key envelope could not be read. Check the data directory permissions and whether the file belongs to this machine.',
+  'settings.providerCredentials.protection.reason.storeUnavailable': 'The credential store is unavailable. Check the server logs.',
+  'settings.providerCredentials.entry.notConfigured': 'not configured',
+  'settings.providerCredentials.table.caption': 'Credential entries for {provider}',
+  'settings.providerCredentials.table.entry': 'Entry',
+  'settings.providerCredentials.table.priority': 'Priority',
+  'settings.providerCredentials.table.state': 'State',
+  'settings.providerCredentials.table.endpoint': 'Endpoint',
+  'settings.providerCredentials.table.endpointDefault': 'Default endpoint',
+  'settings.providerCredentials.table.fields': 'Fields',
+  'settings.providerCredentials.table.actions': 'Actions',
 };

@@ -9,9 +9,13 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { ledgerEventLabelsDaDK } from '../ledgerEventLabels';
+import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const daDK: Catalog = {
   ...operationsEnglish,
+  ...ledgerEventLabelsDaDK,
+  ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har ikke tilladelse til denne handling',
   'perm.denied.title': 'Ingen tilladelse',
@@ -149,8 +153,7 @@ export const daDK: Catalog = {
   'nav.skipToContent': 'Spring til indhold',
   'common.brand': 'Chancela',
   'splash.aria': 'Starter Chancela',
-  'common.footer':
-    'Chancela · Interface-prototype · I overensstemmelse med portugisisk ret (CSC, GDPR, eIDAS)',
+  'common.footer': 'Chancela · Livro de atas digital · v{version}',
 
   // --- Shared chrome -------------------------------------------------------------
   'common.loading': 'Indlæser…',
@@ -292,7 +295,7 @@ export const daDK: Catalog = {
   'notifications.reminder.followUp.action': 'Åbn protokol',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
-  'notifications.operation.title': 'Hændelse {kind}',
+  'notifications.operation.title': '{kind}',
   'notifications.operation.detail': '{actor} registrerede en hændelse i {scope}.',
   'notifications.operation.meta': 'Sekvens {seq}',
   // --- Window controls (desktop) -------------------------------------------------
@@ -889,6 +892,10 @@ export const daDK: Catalog = {
   'acts.signatories': 'Underskrivere',
   'acts.attachments': 'Bilag',
   'acts.lifecycle': 'Livscyklus',
+  // --- Progress stepper (ui/Stepper.tsx) ------------------------------------------
+  'stepper.progress': 'Trin {current} af {total}',
+  'stepper.status.done': 'fuldført',
+  'stepper.status.current': 'nuværende trin',
   'acts.compliance': 'Overholdelse',
   'acts.manualSignature.title': 'Alternativ rute: manuelt signeret original (SIG-03)',
   'acts.manualSignature.body':
@@ -1059,6 +1066,41 @@ export const daDK: Catalog = {
   'ledger.archive.format.json': 'Udvekslings-JSON (.json)',
   'ledger.archive.format.csv': 'Audit-CSV (.csv)',
   'ledger.archive.format.html': 'Audit-HTML (.html)',
+  'ledger.subnav.aria': 'Arkivafsnit',
+  'ledger.subnav.registo': 'Log',
+  'ledger.subnav.exportacao': 'Eksport',
+  'ledger.export.document.title': 'Dokument til revisionsloggen',
+  'ledger.export.document.body':
+    'Eksporterer logposterne præcis som fanen Log viser dem: de filtre, der er aktive dér, afgør, hvad der kommer med i filen.',
+  'ledger.export.document.editFilters': 'Ret filtre under Log',
+  'ledger.export.book.title': 'Bogeksporter',
+  'ledger.export.book.body':
+    'To forskellige pakker til to forskellige formål: en til arkivaflevering og en til at flytte bogen til en anden instans. Vælg bogen, og vælg derefter den rigtige pakke.',
+  'ledger.export.book.label': 'Bog, der skal eksporteres',
+  'ledger.export.book.help':
+    'Hver pakke dækker én bog; ved flere bøger gentages eksporten bog for bog.',
+  'ledger.export.book.empty': 'Ingen bøger at eksportere',
+  'ledger.export.book.emptyBody': 'Åbn en bog, og bevar dens dokumenter, før du danner pakker.',
+  'ledger.export.preservation.title': 'Bevaringspakke — aflevering og bevis',
+  'ledger.export.preservation.body':
+    'En deterministisk, skrivebeskyttet ZIP beregnet til arkivaflevering og bevisførelse. Den kan ikke importeres tilbage, og dannelsen skriver intet i loggen.',
+  'ledger.export.preservation.contents':
+    'Den indeholder bogens bevarede PDF/A-filer, bevisindekset, bevisrapporterne pr. signatur, PDF-tilgængelighedsrapporterne, rapporterne fra eksterne validatorer, den dannede forsendelsesdokumentation og, hvis der gælder en juridisk tilbageholdelse, dens JSON-post.',
+  'ledger.export.legalHold.label': 'Markér juridisk tilbageholdelse i denne eksport',
+  'ledger.export.legalHold.help':
+    'Det påvirker kun den dannede pakke — serveren gemmer ikke tilbageholdelsen på bogen. En tilbageholdelse, der allerede er noteret på bogen, følger med pakken, også når dette er slået fra.',
+  'ledger.export.legalHold.reason.label': 'Begrundelse for juridisk tilbageholdelse',
+  'ledger.export.legalHold.reason.placeholder': 'Retssag nr. 123/26…',
+  'ledger.export.legalHold.reason.required':
+    'Angiv begrundelsen, før du markerer en juridisk tilbageholdelse.',
+  'ledger.export.bundle.title': 'Portabilitetspakke — skift instans',
+  'ledger.export.bundle.body':
+    'En selvverificerende ZIP og det eneste format, bogimporten accepterer. Brug den til at flytte eller genskabe en bog på en anden instans.',
+  'ledger.export.bundle.retainedTitle': 'Denne eksport bliver logget',
+  'ledger.export.bundle.retained':
+    'I modsætning til bevaringspakken beholder serveren en kopi af denne pakke og føjer en hændelse til revisionsloggen.',
+  'ledger.export.bundle.download': 'Eksportér portabilitetspakke',
+  'ledger.export.bundle.downloading': 'Eksporterer pakke…',
   'toast.ledgerArchive.downloaded': 'Arkiv-PDF/A hentet.',
   'ledger.actor.systemTooltip': 'Systemaktør (ingen session)',
 
@@ -1188,6 +1230,10 @@ export const daDK: Catalog = {
   'tools.section.legislacao': 'Lovgivning',
   'tools.section.trust': 'Tillidsliste',
   'tools.section.externalSigning': 'Ekstern signering',
+  'tools.pdf.subnav.aria': 'Sektion for teknisk validator',
+  'tools.pdf.section.pdf': 'PDF-signaturer',
+  'tools.pdf.section.asic': 'ASiC-containere',
+  'tools.pdf.section.reports': 'Tekniske rapporter',
   'externalSigning.title': 'Arbejdsgange for ekstern signering',
   'externalSigning.notice.title': 'Driftssporing',
   'externalSigning.notice.body':
@@ -1260,6 +1306,16 @@ export const daDK: Catalog = {
   'pdfValidator.failClosed.body':
     'Serveren afviste at validere filen. Behandl dette som fail-closed; hvis meddelelsen nævner en afvigelse i størrelse eller SHA-256, svarer de modtagne bytes ikke til det, browseren deklarerede.',
   'pdfValidator.result.title': 'Resultat',
+  'pdfValidator.table.caption': 'Tekniske PDF/PAdES-kontroller',
+  'pdfValidator.table.check': 'Kontrol',
+  'pdfValidator.table.verdict': 'Resultat',
+  'pdfValidator.table.evidence': 'Dokumentation',
+  'pdfValidator.verdict.pass': 'Bestået',
+  'pdfValidator.verdict.fail': 'Fejlet',
+  'pdfValidator.verdict.inconclusive': 'Ikke afklaret',
+  'pdfValidator.verdict.info': 'Oplysning',
+  'pdfValidator.section.file': 'Fil',
+  'pdfValidator.field.integrity': 'Angivet integritet',
   'pdfValidator.status.valid': 'Teknisk gyldig',
   'pdfValidator.status.invalid': 'Ugyldig',
   'pdfValidator.status.indeterminate': 'Uafklaret',
@@ -1467,6 +1523,7 @@ export const daDK: Catalog = {
     'Officiel tekst indfanget og gennemgået af en automatiseret proces. IKKE juridisk godkendt af en menneskelig bedømmer — en menneskelig juridisk gennemgang anbefales, før du forlader dig på den.',
   'legislacao.corpus.back': 'Tilbage til retsakterne',
   'legislacao.corpus.backToDiploma': 'Tilbage til {title}',
+  'legislacao.corpus.backToResults': 'Tilbage til resultaterne',
   'legislacao.corpus.diploma.notFound': 'Retsakt ikke fundet.',
   'legislacao.corpus.article.notFound': 'Artikel ikke fundet.',
   'legislacao.corpus.article.source': 'Kilde',
@@ -1770,6 +1827,35 @@ export const daDK: Catalog = {
   'settings.entityTable.title': 'Enhedstabel',
   'settings.entityTable.hint': 'Vælg de synlige kolonner i listen over registrerede enheder.',
   'settings.entityTable.columns.aria': 'Kolonner i enhedstabellen',
+  // --- Connector outbound egress allowlist (t21) --------------------------------
+  'settings.connectorEgress.title': 'Konnektorernes udgående netværk',
+  'settings.connectorEgress.intro':
+    'De værter, en konnektor må sende protokoldata til. Det er ikke en præference: det er den grænse, der forhindrer en konnektor i at sende indhold til en vilkårlig destination.',
+  'settings.connectorEgress.precedenceTitle': 'Hvilken liste gælder',
+  'settings.connectorEgress.precedenceCeiling':
+    'Installationen har fastsat et loft ({hosts}). Denne liste kan kun indsnævre det, aldrig udvide det. At tillade en vært uden for loftet kræver en ændring af installationskonfigurationen.',
+  'settings.connectorEgress.precedenceNoCeiling':
+    'Installationen har ikke fastsat noget loft, så denne liste er den eneste udgående grænse. Sæt CHANCELA_CONNECTOR_ALLOWED_HOSTS i installationen for at fastsætte et loft, ingen administrator kan overskride.',
+  'settings.connectorEgress.hostsLabel': 'Tilladte værter (én pr. linje)',
+  'settings.connectorEgress.hostsHint':
+    'Præcise værtsnavne eller IP-/CIDR-intervaller. Uden skema, port, sti eller jokertegn.',
+  'settings.connectorEgress.placeholder': 'backup.eksempel.dk\n10.42.0.0/16',
+  'settings.connectorEgress.tooMany': 'Højst {max} poster.',
+  'settings.connectorEgress.rejected': '“{entry}”: {reason}',
+  'settings.connectorEgress.effect':
+    "Ændringer træder i kraft ved næste konnektorhandling, i både API'en og arbejderen, uden genstart.",
+  'settings.connectorEgress.audited':
+    'Hver ændring registreres i revisionsprotokollen med hvem, hvornår, og den tidligere og nye liste.',
+  'settings.connectorEgress.reason.format':
+    'skal være et rent værtsnavn eller en IP/CIDR uden skema, port, sti eller legitimationsoplysninger.',
+  'settings.connectorEgress.reason.wildcard': 'jokertegn er ikke tilladt.',
+  'settings.connectorEgress.reason.metadata':
+    'link-local-intervallet indeholder skyinstansens metadataendepunkt og kan ikke åbnes her.',
+  'settings.connectorEgress.reason.loopback': 'må ikke pege på den vært, der kører Chancela.',
+  'settings.connectorEgress.reason.forbiddenRange':
+    'dette adresseinterval er aldrig en legitim destination.',
+  'settings.connectorEgress.reason.broadPrefix':
+    'intervallet er for bredt; brug et smallere præfiks.',
   'settings.registryAutoUpdate.cardTitle': 'Automatisk opdatering af permanent attest',
   'settings.registryAutoUpdate.refreshPlan': 'Opdatér plan',
   'settings.registryAutoUpdate.refreshingPlan': 'Opdaterer…',
@@ -2178,6 +2264,20 @@ export const daDK: Catalog = {
   'acts.convening': 'Indkaldelse',
   'acts.convening.hint':
     'Registrér indkaldelsens dato, metode og bevaret dokumentation. Advarsler understøtter driften og erstatter ikke juridisk gennemgang.',
+  'acts.convening.waiver.title': 'Uden indkaldelse',
+  'acts.convening.waiver.hint':
+    'Blev mødet holdt uden forudgående indkaldelse, så registrér her det grundlag, det hvilede på; referatet gengiver det derefter. Chancela registrerer det angivne grundlag og bekræfter ikke dets gyldighed — få det bekræftet juridisk.',
+  'acts.convening.waiver.toggle': 'Mødet blev holdt uden forudgående indkaldelse',
+  'acts.convening.waiver.basis': 'Grundlag',
+  'acts.convening.waiver.basis.universal':
+    'Universalforsamling — alle til stede og alle enige (CSC art. 54.º)',
+  'acts.convening.waiver.basis.other': 'Andet grundlag (beskriv det)',
+  'acts.convening.waiver.agreedToMeet': 'Alle tilkendegav, at forsamlingen skulle konstituere sig',
+  'acts.convening.waiver.agreedToAgenda': 'Alle tiltrådte de behandlede punkter',
+  'acts.convening.waiver.grounds': 'Registreret grundlag',
+  'acts.convening.waiver.evidenceReference': 'Dokumentation for enigheden',
+  'acts.convening.waiver.conflict':
+    'Både en indkaldelse og fraværet af en indkaldelse er registreret. Kun det ene kan beskrive dette møde.',
   'acts.convening.dispatchDate': 'Indkaldelsesdato',
   'acts.convening.channel': 'Indkaldelsesmetode',
   'acts.convening.channelNone': 'Ingen metode registreret',
@@ -2342,7 +2442,7 @@ export const daDK: Catalog = {
   'onboarding.skip': 'Spring over',
   'onboarding.finishing': 'Afslutter…',
   'signin.title': 'Log ind',
-  'signin.subtitle': 'Vælg din bruger for at fortsætte.',
+  'signin.subtitle': 'Indtast dit brugernavn for at fortsætte.',
   'signin.empty': 'Der er endnu ingen aktive brugere.',
   'signin.requiresPassword': 'Adgangskode kræves',
   'signin.password.label': 'Adgangskode',
@@ -2361,6 +2461,13 @@ export const daDK: Catalog = {
   'signin.blocked.body':
     'Oprettelse af en ny bruger kræver en aktiv session. Log ind, og åbn Brugere › Ny inde i appen.',
   'signin.blocked.action': 'Tilbage til login',
+  'signin.username.label': 'Brugernavn',
+  'signin.username.placeholder': 'Dit brugernavn',
+  'signin.badCredentials': 'Forkert brugernavn eller adgangskode.',
+  'signin.remember.label': 'Gem denne bruger på denne enhed',
+  'signin.recent.title': 'Konti brugt på denne enhed',
+  'signin.recent.remove': 'Fjern {username} fra listen',
+  'signin.recent.note': 'Denne liste bliver kun i denne browser og indeholder aldrig adgangskoder.',
   'session.gate.error': 'Sessionen kunne ikke indlæses.',
   'session.gate.retry': 'Prøv igen',
   'settings.autosave.retry': 'Prøv igen',
@@ -2513,6 +2620,8 @@ export const daDK: Catalog = {
   'templates.card.rulePack': 'Regelpakke',
   'templates.card.channels': 'Kanaler',
   'templates.channels.none': 'Ingen specifik kanal',
+  'templates.table.source': 'Kilde',
+  'templates.table.actions': 'Handlinger',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Ny skabelon',
   'templates.actions.edit': 'Rediger',
@@ -4273,6 +4382,120 @@ export const daDK: Catalog = {
   'fieldHelp.registry.deliberationDate':
     'Beslutningsdato angivet i indførslen, når den er til stede.',
   'fieldHelp.registry.formaObrigar': 'Importeret tekst om, hvem der forpligter enheden.',
+  // --- Email (SMTP) (t23) ---
+  'settings.email.cardTitle': 'E-mail',
+  'settings.email.lede':
+    'Konfigurer den SMTP-server, som programmet sender beskeder igennem. Adgangskoden gemmes krypteret og returneres aldrig.',
+  'settings.email.enabled.label': 'E-mailafsendelse aktiv',
+  'settings.email.enabled.hint':
+    'Så længe den er slået fra, sendes der intet. Du kan udfylde konfigurationen, før du slår den til.',
+  'settings.email.host.label': 'Server',
+  'settings.email.host.hint':
+    'Navnet på SMTP-serveren. Det er også det navn, som TLS-certifikatet skal stemme overens med.',
+  'settings.email.host.placeholder': 'smtp.eksempel.pt',
+  'settings.email.port.label': 'Port',
+  'settings.email.port.hint': '587 til STARTTLS, 465 til implicit TLS.',
+  'settings.email.encryptionField.label': 'Kryptering',
+  'settings.email.encryptionField.hint':
+    'STARTTLS er standardvalget. Hvis serveren ikke tilbyder det, afvises forbindelsen i stedet for at fortsætte ukrypteret.',
+  'settings.email.encryption.starttls': 'STARTTLS (anbefales)',
+  'settings.email.encryption.implicitTls': 'Implicit TLS (port 465)',
+  'settings.email.encryption.none': 'Uden kryptering',
+  'settings.email.insecure.title': 'Ukrypteret forbindelse',
+  'settings.email.insecure.body':
+    'Uden kryptering sendes serverens adgangskode og indholdet af alle beskeder i klartekst over netværket. Brug kun denne mulighed til et relay på et lukket netværk, der ikke tilbyder andet.',
+  'settings.email.insecure.confirm': 'Jeg bekræfter, at jeg vil sende uden kryptering',
+  'settings.email.username.label': 'Bruger',
+  'settings.email.username.hint': 'Lad feltet stå tomt, hvis serveren ikke kræver godkendelse.',
+  'settings.email.fromAddress.label': 'Afsenderadresse',
+  'settings.email.fromAddress.hint':
+    'Adresse, der bruges i konvolutten og i Fra:-linjen i alle beskeder.',
+  'settings.email.fromAddress.placeholder': 'sistema@eksempel.pt',
+  'settings.email.fromName.label': 'Afsendernavn',
+  'settings.email.fromName.hint':
+    'Navn, der vises ved siden af adressen, for eksempel Encosto Estratégico Lda.',
+  'settings.email.heloName.label': 'EHLO-navn',
+  'settings.email.heloName.hint':
+    'Navn, der oplyses til serveren. Hvis det står tomt, bruges domænet fra afsenderadressen.',
+
+  'settings.email.password.cardTitle': 'Serverens adgangskode',
+  'settings.email.password.lede':
+    'Gemt krypteret i legitimationsboksen. Den returneres ikke af noget endepunkt — kun statussen nedenfor viser, om der findes en.',
+  'settings.email.password.label': 'Adgangskode',
+  'settings.email.password.hint': 'At skrive en ny adgangskode erstatter den forrige.',
+  'settings.email.password.placeholder': 'Skriv for at angive eller erstatte',
+  'settings.email.password.save': 'Gem adgangskode',
+  'settings.email.password.clear': 'Fjern adgangskode',
+  'settings.email.password.configured': 'Angivet',
+  'settings.email.password.notConfigured': 'Ikke angivet',
+  'settings.email.password.savedToast': 'Serverens adgangskode er gemt',
+  'settings.email.password.clearedToast': 'Serverens adgangskode er fjernet',
+
+  'settings.email.test.cardTitle': 'Send en testbesked',
+  'settings.email.test.lede':
+    'Åbner en rigtig session med den konfigurerede server og viser det svar, den giver, inklusive SMTP-koden.',
+  'settings.email.test.to.label': 'Modtager',
+  'settings.email.test.to.hint': 'Adresse, som testbeskeden skal sendes til.',
+  'settings.email.test.to.placeholder': 'amelia.marques@eksempel.pt',
+  'settings.email.test.action': 'Send test',
+  'settings.email.test.warningTitle': 'Vær opmærksom på konfigurationen',
+  'settings.email.test.okTitle': 'Beskeden blev accepteret af serveren',
+  'settings.email.test.okBody':
+    'Serveren accepterede beskeden. Det bekræfter ikke levering i modtagerens indbakke.',
+  'settings.email.test.failTitle': 'Afsendelsen mislykkedes',
+  'settings.email.test.failUnknown': 'Serveren returnerede ingen detaljer.',
+  'settings.email.test.stage': 'Fase',
+  'settings.email.test.code': 'SMTP-kode',
+  'settings.email.test.serverReply': 'Serverens svar',
+  'settings.email.test.relayReply': 'Serverens svar',
+  'settings.email.test.remedy': 'Hvad du skal kontrollere',
+  'settings.email.test.tls': 'Krypteret',
+  'settings.email.test.authenticated': 'Godkendt',
+
+  'settings.email.stage.connect': 'Forbindelse til serveren',
+  'settings.email.stage.tls': 'TLS-handshake',
+  'settings.email.stage.greeting': 'Serverens hilsen',
+  'settings.email.stage.ehlo': 'Præsentation (EHLO)',
+  'settings.email.stage.starttls': 'Start af STARTTLS',
+  'settings.email.stage.auth': 'Godkendelse',
+  'settings.email.stage.mailFrom': 'Afsender (MAIL FROM)',
+  'settings.email.stage.rcptTo': 'Modtager (RCPT TO)',
+  'settings.email.stage.data': 'Afsendelse af beskeden',
+  'settings.email.stage.quit': 'Lukning af sessionen',
+
+  'settings.email.remedy.dns':
+    'Servernavnet kunne ikke slås op. Kontrollér stavningen, og at DNS kender det.',
+  'settings.email.remedy.unreachable':
+    'Serveren svarede ikke på den angivne port. Kontrollér porten, og om en firewall blokerer.',
+  'settings.email.remedy.tls':
+    'Serverens certifikat blev ikke accepteret. Kontrollér, at det er gyldigt, og at det svarer til det konfigurerede navn.',
+  'settings.email.remedy.tlsUnsupported':
+    'Serveren tilbyder ikke STARTTLS. Ret serveren, brug implicit TLS på port 465, eller slå krypteringen udtrykkeligt fra.',
+  'settings.email.remedy.timeout':
+    'Serveren var for længe om at svare. Kontrollér netværket, og at adressen er korrekt.',
+  'settings.email.remedy.configuration':
+    'Konfigurationen kan ikke bruges, som den er. Gennemgå brugeren, krypteringen og porten.',
+  'settings.email.remedy.protocol':
+    'Serverens svar blev ikke forstået, eller forbindelsen faldt ud. Bekræft, at porten betjener SMTP.',
+  'settings.email.remedy.rejected':
+    'Serveren afviste anmodningen. Koden og teksten ovenfor er den begrundelse, den selv gav.',
+
+  'settings.email.help.enabled':
+    'Hovedafbryder for e-mailafsendelse. Slået fra sender ingen funktion beskeder.',
+  'settings.email.help.host': 'Navnet på SMTP-serveren, for eksempel smtp.eksempel.pt.',
+  'settings.email.help.port': 'Indleveringsport: normalt 587 (STARTTLS) eller 465 (implicit TLS).',
+  'settings.email.help.encryption':
+    'Hvordan forbindelsen beskyttes. STARTTLS forbinder i klartekst og skifter til krypteret, før der godkendes.',
+  'settings.email.help.username': 'Bruger til SMTP-godkendelse, for eksempel sistema@eksempel.pt.',
+  'settings.email.help.password':
+    'Adgangskode eller app-adgangskode til afsenderkontoen. Gemt krypteret og returneres aldrig.',
+  'settings.email.help.fromAddress':
+    'Adresse, der vises som afsender, for eksempel sistema@eksempel.pt.',
+  'settings.email.help.fromName':
+    'Læsbart navn ved siden af adressen, for eksempel Encosto Estratégico Lda.',
+  'settings.email.help.heloName':
+    'Navn, der oplyses ved SMTP-præsentationen. Nogle servere afviser generiske navne.',
+
   'settings.providerCredentials.cardTitle': 'Signeringsudbydere',
   'settings.providerCredentials.lede':
     'Administrer legitimationsoplysninger for signeringsudbydere med flere nøgler pr. udbyder, prioritet og failover.',
@@ -5115,4 +5338,41 @@ export const daDK: Catalog = {
   'pairing.revoke.confirm': 'Bekræft tilbagekaldelse',
   'pairing.revoking': 'Tilbagekalder…',
   'pairing.revokedToast': 'Enhed tilbagekaldt',
+  // --- Book detail sub-tabs (t25) ------------------------------------------------
+  'books.detail.subnav.imports': 'Import',
+  'books.detail.subnav.aria': 'Bogens afsnit',
+  'books.detail.termo.pending.title': 'Registreret åbningspåtegning',
+  'books.detail.termo.pending.body':
+    'Viser de felter i åbningspåtegningen, der blev registreret, da bogen blev åbnet. Påtegningen er endnu ikke et udfyldeligt eller underskriveligt instrument i denne grænseflade, og den genererede PDF/A har ikke sit eget endpoint — den ligger i bevaringspakken, der tilbydes i sidehovedet.',
+  'books.detail.retention.scopeNote':
+    'Kun de opbevaringskandidater, der nævner denne bog. Opbevaringspolitikker administreres under Indstillinger → Privatliv.',
+  // --- t36: Assinaturas / Fornecedores configuration grids ---
+  'settings.signing.policy.cardTitle': 'Signaturpolitik',
+  'settings.signing.fallbackHint': 'Officiel portugisisk standardværdi. Bruges som reserve, når ingen af posterne i tabellen nedenfor er aktive.',
+  'settings.signing.tslSources.caption': 'Konfigurerede tillidslistekilder',
+  'settings.signing.tsaProviders.caption': 'Konfigurerede tidsstempeludbydere',
+  'settings.signing.providers.caption': 'Signaturudbydertilstande og deres status',
+  'settings.signing.table.status': 'Status',
+  'settings.signing.table.actions': 'Handlinger',
+  'settings.signing.table.limits': 'Grænser',
+  'settings.signing.table.limitsValue': '{digest} · {timeout} s · maks. {maxBytes} byte',
+  'settings.signing.table.provider': 'Udbyder',
+  'settings.signing.table.mode': 'Tilstand',
+  'settings.signing.table.notes': 'Bemærkninger',
+  'settings.providerCredentials.protection.unavailable.title': 'Legitimationsoplysninger kan ikke gemmes',
+  'settings.providerCredentials.protection.unavailable.body': 'Denne server kan hverken kryptere eller gemme udbyderhemmeligheder. Intet bliver gemt, før dette er løst — legitimationsoplysningerne opbevares ikke med svagere beskyttelse, de opbevares slet ikke.',
+  'settings.providerCredentials.protection.reason.notPersistent': 'Serveren kører kun i hukommelsen uden datamappe. Angiv CHANCELA_DATA_DIR, og genstart.',
+  'settings.providerCredentials.protection.reason.noKeySource': 'Der er ingen nøglekilde tilgængelig. Aktivér SQLCipher eller forsegling via operativsystemet, eller angiv CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey': 'Den nøgle, operatøren har angivet, er ugyldig eller er angivet to gange. Behold kun CHANCELA_CREDENTIAL_KEY eller CHANCELA_CREDENTIAL_KEY_FILE med gyldigt nøglemateriale.',
+  'settings.providerCredentials.protection.reason.rootEnvelope': 'Konvolutten med rodnøglen kunne ikke læses. Kontrollér rettighederne til datamappen, og om filen hører til denne maskine.',
+  'settings.providerCredentials.protection.reason.storeUnavailable': 'Legitimationsboksen er utilgængelig. Se serverlogfilerne.',
+  'settings.providerCredentials.entry.notConfigured': 'ikke konfigureret',
+  'settings.providerCredentials.table.caption': 'Legitimationsposter for {provider}',
+  'settings.providerCredentials.table.entry': 'Post',
+  'settings.providerCredentials.table.priority': 'Prioritet',
+  'settings.providerCredentials.table.state': 'Status',
+  'settings.providerCredentials.table.endpoint': 'Adresse',
+  'settings.providerCredentials.table.endpointDefault': 'Standardadresse',
+  'settings.providerCredentials.table.fields': 'Felter',
+  'settings.providerCredentials.table.actions': 'Handlinger',
 };

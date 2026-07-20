@@ -15,7 +15,7 @@ import { useCreateSession, useDeleteSession, useSession, useUsers } from '../../
 import { ApiError } from '../../api/client';
 import type { UserView } from '../../api/types';
 import { useT } from '../../i18n';
-import { useToast } from '../../ui';
+import { Tooltip, useToast } from '../../ui';
 import { SignOut } from '../../ui/icons';
 
 export function CurrentUserPicker() {
@@ -141,24 +141,28 @@ export function CurrentUserPicker() {
 
   return (
     <div className="session-picker">
-      <button
-        type="button"
-        data-testid="session-trigger"
-        className={`session-picker__trigger${currentUser ? ' is-active' : ''}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        title={
+      <Tooltip
+        label={
           currentUser
             ? t('session.trigger.title.active', { username: currentUser.username })
             : t('session.trigger.title.none')
         }
+        placement="bottom"
       >
-        <span className="session-picker__avatar" aria-hidden="true">
-          {initial}
-        </span>
-        <span className="session-picker__name">{label}</span>
-      </button>
+        <button
+          type="button"
+          data-testid="session-trigger"
+          className={`session-picker__trigger${currentUser ? ' is-active' : ''}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span className="session-picker__avatar" aria-hidden="true">
+            {initial}
+          </span>
+          <span className="session-picker__name">{label}</span>
+        </button>
+      </Tooltip>
 
       {open ? (
         <>

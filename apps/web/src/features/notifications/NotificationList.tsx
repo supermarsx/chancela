@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useLocale, useT, type TFunction } from '../../i18n';
-import { Badge, EmptyState, Icon, Tooltip } from '../../ui';
+import { Badge, EmptyState, Icon, Tooltip, TooltipText } from '../../ui';
 import type { NotificationTriageStatus } from '../../api/types';
 import type { TriagedNotificationItem } from './triage';
 import { notificationTypeGlyph } from './icons';
@@ -145,14 +145,16 @@ export function NotificationList({
               <div className="notifications-list__head">
                 {compact ? null : <Badge tone={item.tone}>{item.badge}</Badge>}
                 {!compact && statusLabel ? <Badge>{statusLabel}</Badge> : null}
-                <span className="notifications-list__title" title={item.title}>
+                {/* The title is rendered in full below; the reveal engages only if the row
+                    is narrow enough to ellipsise it. */}
+                <TooltipText className="notifications-list__title" label={item.title} onlyWhenClipped>
                   {compactTitleTags.map((tag) => (
                     <span className="notifications-list__title-tag" key={tag}>
                       {tag}
                     </span>
                   ))}
                   <span className="notifications-list__title-text">{item.title}</span>
-                </span>
+                </TooltipText>
               </div>
               <p className="notifications-list__detail muted">{item.detail}</p>
               {item.meta.length > 0 || timestamp ? (

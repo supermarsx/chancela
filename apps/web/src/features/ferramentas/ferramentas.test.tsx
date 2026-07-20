@@ -577,20 +577,22 @@ function deferred<T>() {
 describe('Ferramentas — ASiC signature inspector', () => {
   it('renders the ASiC inspector with the action disabled until a container is selected', async () => {
     vi.stubGlobal('fetch', asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=asic']);
 
     expect(screen.getByText('Inspetor técnico ASiC')).toBeTruthy();
     expect(screen.getByText('Inspeção técnica local')).toBeTruthy();
     expect(
       (screen.getByRole('button', { name: 'Inspecionar ASiC' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    expect(await screen.findByText('Sem relatórios de validador externo')).toBeTruthy();
+    // The external-validator report shelf moved to its own sub-tab, so it is deliberately
+    // NOT mounted here; its empty state is asserted in that panel's own block.
+    expect(screen.queryByText('Sem relatórios de validador externo')).toBeNull();
   });
 
   it('uploads an ASiC container as base64 with declared SHA-256 and size', async () => {
     const fetchMock = vi.fn(asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=asic']);
 
     const file = new File(['asic zip'], 'sample.asice', { type: 'application/zip' });
     fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
@@ -622,7 +624,7 @@ describe('Ferramentas — ASiC signature inspector', () => {
 
   it('renders ASiC diagnostics and visible no-claim caveats from the backend response', async () => {
     vi.stubGlobal('fetch', asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=asic']);
 
     const file = new File(['asic zip'], 'sample.asice', { type: 'application/zip' });
     fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
@@ -655,7 +657,7 @@ describe('Ferramentas — ASiC signature inspector', () => {
         ),
       ),
     );
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=asic']);
 
     const file = new File(['asic zip'], 'mismatch.asice', { type: 'application/zip' });
     fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
@@ -686,7 +688,7 @@ describe('Ferramentas — ASiC signature inspector', () => {
       return Promise.reject(new Error(`no stub for ${url}`));
     });
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=asic']);
 
     const input = await screen.findByLabelText('Contentor ASiC');
     fireEvent.change(input, {
@@ -954,18 +956,22 @@ describe('Ferramentas — PDF signature validator', () => {
 });
 
 describe('Ferramentas — external-validator reports panel', () => {
-  it('renders under the PDF tools surface', async () => {
+  it('renders under its own sub-tab of the PDF tools surface', async () => {
     vi.stubGlobal('fetch', externalValidatorReportsFetch());
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
-    expect(screen.getByText('Validador técnico de assinaturas PDF')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Relatórios técnicos' }).getAttribute('aria-pressed'),
+    ).toBe('true');
     expect(screen.getByText('Relatórios técnicos de validador externo')).toBeTruthy();
     expect(await screen.findByText('Sem relatórios de validador externo')).toBeTruthy();
+    // The PDF validator is a sibling sub-tab now, not a co-tenant of this page.
+    expect(screen.queryByText('Validador técnico de assinaturas PDF')).toBeNull();
   });
 
   it('renders empty and list states from the redacted metadata endpoint', async () => {
     vi.stubGlobal('fetch', externalValidatorReportsFetch());
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
     expect(await screen.findByText('Sem relatórios de validador externo')).toBeTruthy();
     cleanup();
@@ -980,7 +986,7 @@ describe('Ferramentas — external-validator reports panel', () => {
         },
       }),
     );
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
     expect(await screen.findByText('CASE-001')).toBeTruthy();
     expect(screen.getByText('AMA DSS')).toBeTruthy();
@@ -999,7 +1005,7 @@ describe('Ferramentas — external-validator reports panel', () => {
   it('rejects invalid JSON in the browser without posting it', async () => {
     const fetchMock = vi.fn(externalValidatorReportsFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
     const file = new File(['{ not json'], 'bad.json', { type: 'application/json' });
     fireEvent.change(await screen.findByLabelText('JSON do validador externo'), {
@@ -1028,7 +1034,7 @@ describe('Ferramentas — external-validator reports panel', () => {
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
     const raw = '{\n  "case_id": "CASE-001",\n  "validator_family": "AMA DSS"\n}\n';
     const file = new File([raw], 'report.json', { type: 'application/json' });
@@ -1063,7 +1069,7 @@ describe('Ferramentas — external-validator reports panel', () => {
   it('selecting a raw report does not upload automatically', async () => {
     const fetchMock = vi.fn(externalValidatorReportsFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
     const metadata = new File(['{"case_id":"CASE-001"}'], 'metadata.json', {
       type: 'application/json',
@@ -1104,7 +1110,7 @@ describe('Ferramentas — external-validator reports panel', () => {
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
     const metadata = new File(
       ['{"case_id":"CASE-001","validator_family":"AMA DSS"}'],
@@ -1179,7 +1185,7 @@ describe('Ferramentas — external-validator reports panel', () => {
         },
       }),
     );
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
     expect(await screen.findByText('Resumo redigido do relatório bruto')).toBeTruthy();
     expect(screen.getByText('raw_report_attached')).toBeTruthy();
@@ -1210,7 +1216,7 @@ describe('Ferramentas — external-validator reports panel', () => {
         },
       }),
     );
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Guardar resumo de metadados' }));
 
@@ -1294,6 +1300,22 @@ describe('Ferramentas — CAE catalog panel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     expect(await screen.findByText('Fonte do catálogo indisponível')).toBeTruthy();
     expect(screen.queryByText('Configuração em falta')).toBeNull();
+  });
+});
+
+describe('Ferramentas — page title', () => {
+  it('shows the title exactly once, as the page level-1 heading', async () => {
+    vi.stubGlobal('fetch', asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
+    // The browser tab title is owned by index.html; no page may clobber it.
+    document.title = 'Chancela — Livro de Atas Digital';
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=asic']);
+
+    // The header used to carry a self-referential breadcrumb repeating "Ferramentas"
+    // above the title; only the <h1> survives.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Ferramentas' })).toBeTruthy();
+    expect(screen.getAllByText('Ferramentas')).toHaveLength(1);
+    expect(document.querySelector('.page-header__crumbs')).toBeNull();
+    expect(document.title).toBe('Chancela — Livro de Atas Digital');
   });
 });
 

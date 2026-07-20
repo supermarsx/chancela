@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { Route, Routes } from 'react-router-dom';
-import { renderWithProviders, fetchTable } from '../../test/utils';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { renderWithProviders, fetchTable, makeClient } from '../../test/utils';
+import { ToastProvider } from '../../ui/toast';
+import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
 
 const saveFileMock = vi.hoisted(() => ({
   saveBlobAs: vi.fn(),
@@ -30,6 +33,8 @@ import {
   type PaperBookOcrConversionExecutionArtifactView,
   type PaperBookOcrDraftView,
   type PaperBookOcrRunView,
+  type RetentionDueCandidate,
+  type RetentionDueCandidatesReport,
 } from '../../api/types';
 
 const ENTITY: Entity = {
@@ -49,6 +54,7 @@ const ENTITY: Entity = {
     signature_policy: 'QualifiedPreferred',
     template_family: 'csc-commercial',
     calendar_presets: [],
+    attendee_qualities: ['Member'],
   },
   statute: null,
 };
@@ -254,6 +260,23 @@ function blobText(blob: Blob): Promise<string> {
   });
 }
 
+/** A due-candidate scan that found nothing — the honest default for the Retenção sub-tab. */
+function emptyRetentionDueCandidatesReport(
+  candidates: RetentionDueCandidate[] = [],
+): RetentionDueCandidatesReport {
+  return {
+    generated_at: '2026-07-19T10:00:00Z',
+    scope: 'book_archive',
+    category: 'documents',
+    candidate_count: candidates.length,
+    suppressed_candidate_count: 0,
+    suppressed_by_bounded_evidence_count: 0,
+    candidate_resolution_record_count: 0,
+    candidates_with_resolution_count: 0,
+    candidates,
+  };
+}
+
 function bookDetailFetch(
   extra?: (url: string, method: string, body: Record<string, unknown> | null) => Response | null,
 ) {
@@ -285,6 +308,9 @@ function bookDetailFetch(
       return Promise.resolve(
         jsonResponse({ legal_hold: false, reason: null, actor: null, set_at: null }),
       );
+    }
+    if (url === '/v1/privacy/retention-due-candidates') {
+      return Promise.resolve(jsonResponse(emptyRetentionDueCandidatesReport()));
     }
     return Promise.reject(new Error(`no stub for ${url}`));
   }) as typeof fetch;
@@ -439,10 +465,11 @@ describe('BooksPage', () => {
     expect(tableShell.querySelector("th[data-book-column='Purpose']")?.textContent).toBe(
       'Finalidade',
     );
-    const purposeCell = tableShell.querySelector(
-      `td[data-book-column='Purpose'] .truncate[title='${longPurpose}']`,
-    );
+    // t31 replaced the native `title` with the themed tooltip; the ellipsis is still pure CSS,
+    // so the cell keeps the full purpose as its text and nothing is lost.
+    const purposeCell = tableShell.querySelector(`td[data-book-column='Purpose'] .truncate`);
     expect(purposeCell?.textContent).toBe(longPurpose);
+    expect(purposeCell?.getAttribute('title')).toBeNull();
     const actionCell = tableShell.querySelector(
       "td[data-book-column='Actions'].books-table__cell--actions",
     ) as HTMLElement;
@@ -680,8 +707,8 @@ describe('BookDetailPage — preservation package download', () => {
     expect(screen.getByText(/Não é exportação oficial DGLAB/i)).toBeTruthy();
     expect(screen.getByText(/submissão governamental/i)).toBeTruthy();
     expect(screen.getByText(/certificação arquivística legal/i)).toBeTruthy();
-    await screen.findByText('Sem retenção legal');
-    await screen.findByText('Sem importações preservadas');
+    // Legal hold and preserved imports now live behind their own sub-tabs (t25); they are
+    // asserted there, not incidentally from the default Atas view.
 
     const beforeClick = calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Manifesto DGLAB local (metadados JSON)' }));
@@ -780,7 +807,7 @@ describe('BookDetailPage — termo signatories', () => {
       <Routes>
         <Route path="/livros/:id" element={<BookDetailPage />} />
       </Routes>,
-      ['/livros/book-1'],
+      ['/livros/book-1?sec=termo'],
     );
 
     expect(await screen.findByText(/Amélia Marques/)).toBeTruthy();
@@ -798,7 +825,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       <Routes>
         <Route path="/livros/:id" element={<BookDetailPage />} />
       </Routes>,
-      ['/livros/book-1'],
+      ['/livros/book-1?sec=importacoes'],
     );
   }
 
@@ -2042,7 +2069,7 @@ describe('BookDetailPage — legal hold', () => {
       <Routes>
         <Route path="/livros/:id" element={<BookDetailPage />} />
       </Routes>,
-      ['/livros/book-1'],
+      ['/livros/book-1?sec=retencao'],
     );
   }
 
@@ -2311,5 +2338,190 @@ describe('CloseBookForm — structured termo signatories', () => {
         { name: 'Rui Nunes', capacity: 'Administrator', email: 'rui@example.pt' },
       ],
     });
+  });
+});
+
+describe('BookDetailPage — sub-tabs', () => {
+  /** Renders the router's live query string so the deep-link contract is assertable. */
+  function SearchProbe() {
+    return <span data-testid="search-probe">{useLocation().search}</span>;
+  }
+
+  function renderAtBook(entry = '/livros/book-1') {
+    return renderWithProviders(
+      <Routes>
+        <Route path="/livros/:id" element={<BookDetailPage />} />
+      </Routes>,
+      [entry],
+    );
+  }
+
+  it('reuses the shared SubNav pill with the four sections in the requested order', async () => {
+    vi.stubGlobal('fetch', bookDetailFetch().fn);
+    renderAtBook();
+
+    const subnav = await screen.findByRole('group', { name: 'Secções do livro' });
+    expect(within(subnav).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Atas',
+      'Termo de abertura',
+      'Retenção legal',
+      'Importações',
+    ]);
+  });
+
+  it('lands on Atas with no sec param, and marks only that tab pressed', async () => {
+    vi.stubGlobal('fetch', bookDetailFetch().fn);
+    renderAtBook();
+
+    expect(await screen.findByText('Sem atas neste livro')).toBeTruthy();
+    const subnav = screen.getByRole('group', { name: 'Secções do livro' });
+    expect(within(subnav).getByRole('button', { name: 'Atas' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(
+      within(subnav).getByRole('button', { name: 'Termo de abertura' }).getAttribute('aria-pressed'),
+    ).toBe('false');
+  });
+
+  it('reflects the chosen tab in the URL as ?sec=, matching the Configurações convention', async () => {
+    vi.stubGlobal('fetch', bookDetailFetch().fn);
+    // MemoryRouter keeps history in memory, so a sibling probe reports the live search.
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <ToastProvider>
+          <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
+            <MemoryRouter initialEntries={['/livros/book-1']}>
+              <SearchProbe />
+              <Routes>
+                <Route path="/livros/:id" element={<BookDetailPage />} />
+              </Routes>
+            </MemoryRouter>
+          </StaticPermissionsProvider>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+
+    const subnav = await screen.findByRole('group', { name: 'Secções do livro' });
+    expect(screen.getByTestId('search-probe').textContent).toBe('');
+
+    fireEvent.click(within(subnav).getByRole('button', { name: 'Retenção legal' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('?sec=retencao'),
+    );
+    expect(await screen.findByText('Sem retenção legal')).toBeTruthy();
+
+    // Back to the default section drops the param rather than writing `?sec=atas`.
+    fireEvent.click(within(subnav).getByRole('button', { name: 'Atas' }));
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe(''));
+  });
+
+  it('deep-links straight into the Termo de abertura tab', async () => {
+    vi.stubGlobal('fetch', bookDetailFetch().fn);
+    renderAtBook('/livros/book-1?sec=termo');
+
+    expect(await screen.findByText('Termo de abertura em registo')).toBeTruthy();
+    // The termo editor is deliberately absent: the instrument and its API are not built yet.
+    expect(screen.queryByRole('button', { name: /editar termo/i })).toBeNull();
+    expect(screen.queryByText('Sem atas neste livro')).toBeNull();
+  });
+
+  it('deep-links straight into the Retenção legal tab and shows retention alongside the hold', async () => {
+    vi.stubGlobal('fetch', bookDetailFetch().fn);
+    renderAtBook('/livros/book-1?sec=retencao');
+
+    expect(await screen.findByText('Sem retenção legal')).toBeTruthy();
+    expect(await screen.findByText('Sem candidatos vencidos')).toBeTruthy();
+  });
+
+  it('deep-links straight into the Importações tab', async () => {
+    vi.stubGlobal('fetch', bookDetailFetch().fn);
+    renderAtBook('/livros/book-1?sec=importacoes');
+
+    expect(await screen.findByText('Sem importações preservadas')).toBeTruthy();
+  });
+
+  it('falls back to Atas for an unknown sec value rather than rendering nothing', async () => {
+    vi.stubGlobal('fetch', bookDetailFetch().fn);
+    renderAtBook('/livros/book-1?sec=inventado');
+
+    expect(await screen.findByText('Sem atas neste livro')).toBeTruthy();
+  });
+
+  it('lists only the retention candidates that name this book', async () => {
+    const candidate = {
+      candidate_id: 'cand-1',
+      candidate_fingerprint: 'fp-1',
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'rec-1',
+      book_id: 'book-1',
+      entity_id: 'ent-1',
+      closing_date: '2026-01-31',
+      due_date: '2036-01-31',
+      overdue: true,
+      policy_id: 'pol-1',
+      policy_name: 'Arquivo de livros',
+      schedule_id: 'sched-1',
+      retention_period: 'P10Y',
+      disposal_action: 'review',
+      destructive_action: false,
+      legal_hold_blockers: [],
+      required_approvals: [],
+      blockers: [],
+      findings: [],
+      outcome: 'review',
+      status: 'due',
+      candidate_evidence_state: 'none',
+      evidence_next_step: 'Rever manualmente antes de qualquer ação.',
+      would_execute: false,
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      candidate_resolution_record_count: 0,
+      next_step: 'Rever',
+    } as unknown as RetentionDueCandidate;
+    const otherBook = { ...candidate, candidate_id: 'cand-2', book_id: 'book-9' };
+    const { fn } = bookDetailFetch((url) =>
+      url === '/v1/privacy/retention-due-candidates'
+        ? jsonResponse(emptyRetentionDueCandidatesReport([candidate, otherBook]))
+        : null,
+    );
+    vi.stubGlobal('fetch', fn);
+    renderAtBook('/livros/book-1?sec=retencao');
+
+    expect(await screen.findByText('rec-1')).toBeTruthy();
+    expect(screen.getByText('Arquivo de livros')).toBeTruthy();
+    expect(screen.queryByText('cand-2')).toBeNull();
+  });
+
+  it('says so honestly when the reader may not read retention, instead of firing a 403', async () => {
+    const { fn, calls } = bookDetailFetch();
+    vi.stubGlobal('fetch', fn);
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <ToastProvider>
+          <StaticPermissionsProvider
+            value={{
+              can: (perm: string) => perm !== 'user.manage' && perm !== 'settings.manage',
+              canAny: (perm: string) => perm !== 'user.manage' && perm !== 'settings.manage',
+              grants: [],
+              ready: true,
+            }}
+          >
+            <MemoryRouter initialEntries={['/livros/book-1?sec=retencao']}>
+              <Routes>
+                <Route path="/livros/:id" element={<BookDetailPage />} />
+              </Routes>
+            </MemoryRouter>
+          </StaticPermissionsProvider>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('Sem permissão')).toBeTruthy();
+    // The legal hold itself is still readable — only the retention scan is withheld.
+    expect(await screen.findByText('Sem retenção legal')).toBeTruthy();
+    await waitFor(() =>
+      expect(calls.some((c) => c.url === '/v1/privacy/retention-due-candidates')).toBe(false),
+    );
   });
 });

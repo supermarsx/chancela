@@ -101,6 +101,12 @@ export const ataFieldHelp = {
   get signatoryCapacity() {
     return t('fieldHelp.acts.signatoryCapacity');
   },
+  get attendeeQuality() {
+    return t('fieldHelp.acts.attendeeQuality');
+  },
+  get attendeeQualityNote() {
+    return t('fieldHelp.acts.attendeeQualityNote');
+  },
   get signatoryPermilage() {
     return t('fieldHelp.acts.signatoryPermilage');
   },

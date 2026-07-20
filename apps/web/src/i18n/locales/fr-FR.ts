@@ -8,9 +8,13 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { ledgerEventLabelsFrFR } from '../ledgerEventLabels';
+import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const frFR: Catalog = {
   ...operationsEnglish,
+  ...ledgerEventLabelsFrFR,
+  ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Vous n’avez pas la permission pour cette action',
   'perm.denied.title': 'Aucune permission',
@@ -152,8 +156,7 @@ export const frFR: Catalog = {
   'nav.skipToContent': 'Aller au contenu',
   'common.brand': 'Chancela',
   'splash.aria': 'Démarrage de Chancela',
-  'common.footer':
-    'Chancela · Prototype d’interface · Conforme au droit portugais (CSC, RGPD, eIDAS)',
+  'common.footer': 'Chancela · Livro de atas digital · v{version}',
 
   // --- Shared chrome -------------------------------------------------------------
   'common.loading': 'Chargement…',
@@ -299,7 +302,7 @@ export const frFR: Catalog = {
   'notifications.reminder.followUp.action': 'Ouvrir le procès-verbal',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
-  'notifications.operation.title': 'Événement {kind}',
+  'notifications.operation.title': '{kind}',
   'notifications.operation.detail': '{actor} a enregistré un événement dans {scope}.',
   'notifications.operation.meta': 'Séquence {seq}',
   // --- Window controls (desktop) -------------------------------------------------
@@ -900,6 +903,10 @@ export const frFR: Catalog = {
   'acts.signatories': 'Signataires',
   'acts.attachments': 'Pièces jointes',
   'acts.lifecycle': 'Cycle de vie',
+  // --- Progress stepper (ui/Stepper.tsx) ------------------------------------------
+  'stepper.progress': 'Étape {current} sur {total}',
+  'stepper.status.done': 'terminée',
+  'stepper.status.current': 'étape actuelle',
   'acts.compliance': 'Conformité',
   'acts.manualSignature.title': 'Voie alternative : original signé manuellement (SIG-03)',
   'acts.manualSignature.body':
@@ -1071,6 +1078,42 @@ export const frFR: Catalog = {
   'ledger.archive.format.json': "JSON d'échange (.json)",
   'ledger.archive.format.csv': "CSV d'audit (.csv)",
   'ledger.archive.format.html': "HTML d'audit (.html)",
+  'ledger.subnav.aria': 'Sections de l’archive',
+  'ledger.subnav.registo': 'Journal',
+  'ledger.subnav.exportacao': 'Exportation',
+  'ledger.export.document.title': 'Document du journal d’audit',
+  'ledger.export.document.body':
+    'Exporte les entrées du journal telles que l’onglet Journal les affiche : les filtres qui y sont actifs déterminent ce qui entre dans le fichier.',
+  'ledger.export.document.editFilters': 'Modifier les filtres dans Journal',
+  'ledger.export.book.title': 'Exportations d’un livre',
+  'ledger.export.book.body':
+    'Deux paquets différents pour deux usages différents : l’un pour le versement d’archives, l’autre pour déplacer le livre vers une autre instance. Choisissez le livre, puis le paquet adéquat.',
+  'ledger.export.book.label': 'Livre à exporter',
+  'ledger.export.book.help':
+    'Chaque paquet ne couvre qu’un livre ; pour plusieurs livres, répétez l’exportation livre par livre.',
+  'ledger.export.book.empty': 'Aucun livre à exporter',
+  'ledger.export.book.emptyBody':
+    'Ouvrez un livre et préservez ses documents avant de générer des paquets.',
+  'ledger.export.preservation.title': 'Paquet de préservation — versement et preuve',
+  'ledger.export.preservation.body':
+    'Une archive ZIP déterministe et en lecture seule, destinée au versement d’archives et à la preuve. Elle n’est pas réimportable et sa génération n’écrit rien dans le journal.',
+  'ledger.export.preservation.contents':
+    'Il contient les PDF/A préservés du livre, l’index de preuve, les rapports de preuve par signature, les rapports d’accessibilité PDF, les rapports de validateurs externes, la preuve d’expédition générée et, en cas de conservation légale, son enregistrement JSON.',
+  'ledger.export.legalHold.label': 'Marquer une conservation légale sur cette exportation',
+  'ledger.export.legalHold.help':
+    'Cela n’affecte que le paquet généré : le serveur n’enregistre pas la conservation sur le livre. Une conservation déjà consignée sur le livre voyage dans le paquet même si cette option est désactivée.',
+  'ledger.export.legalHold.reason.label': 'Motif de la conservation légale',
+  'ledger.export.legalHold.reason.placeholder': 'Affaire judiciaire n° 123/26…',
+  'ledger.export.legalHold.reason.required':
+    'Indiquez le motif avant de marquer une conservation légale.',
+  'ledger.export.bundle.title': 'Paquet de portabilité — changer d’instance',
+  'ledger.export.bundle.body':
+    'Une archive ZIP autovérifiable, seul format accepté par l’importation de livres. Utilisez-la pour déplacer ou restaurer un livre sur une autre instance.',
+  'ledger.export.bundle.retainedTitle': 'Cette exportation est journalisée',
+  'ledger.export.bundle.retained':
+    'Contrairement au paquet de préservation, le serveur en conserve une copie et ajoute un événement au journal d’audit.',
+  'ledger.export.bundle.download': 'Exporter le paquet de portabilité',
+  'ledger.export.bundle.downloading': 'Exportation du paquet…',
   'toast.ledgerArchive.downloaded': 'PDF/A des archives téléchargé.',
   'ledger.actor.systemTooltip': 'Acteur système (sans session)',
 
@@ -1201,6 +1244,10 @@ export const frFR: Catalog = {
   'tools.section.legislacao': 'Législation',
   'tools.section.trust': 'Liste de confiance',
   'tools.section.externalSigning': 'Signature externe',
+  'tools.pdf.subnav.aria': 'Section du validateur technique',
+  'tools.pdf.section.pdf': 'Signatures PDF',
+  'tools.pdf.section.asic': 'Conteneurs ASiC',
+  'tools.pdf.section.reports': 'Rapports techniques',
   'externalSigning.title': 'Flux de signature externe',
   'externalSigning.notice.title': 'Suivi opérationnel',
   'externalSigning.notice.body':
@@ -1272,6 +1319,16 @@ export const frFR: Catalog = {
   'pdfValidator.failClosed.body':
     'Le serveur a refusé de valider le fichier. Traitez ce résultat comme fail-closed ; si le message mentionne un écart de taille ou de SHA-256, les octets reçus ne correspondent pas à ce que le navigateur a déclaré.',
   'pdfValidator.result.title': 'Résultat',
+  'pdfValidator.table.caption': 'Contrôles techniques de validation PDF/PAdES',
+  'pdfValidator.table.check': 'Contrôle',
+  'pdfValidator.table.verdict': 'Résultat',
+  'pdfValidator.table.evidence': 'Preuve',
+  'pdfValidator.verdict.pass': 'Conforme',
+  'pdfValidator.verdict.fail': 'Échec',
+  'pdfValidator.verdict.inconclusive': 'Non concluant',
+  'pdfValidator.verdict.info': 'Informatif',
+  'pdfValidator.section.file': 'Fichier',
+  'pdfValidator.field.integrity': 'Intégrité déclarée',
   'pdfValidator.status.valid': 'Techniquement valide',
   'pdfValidator.status.invalid': 'Invalide',
   'pdfValidator.status.indeterminate': 'Indéterminé',
@@ -1480,6 +1537,7 @@ export const frFR: Catalog = {
     'Texte officiel capturé et vérifié par un processus automatisé. NON validé juridiquement par un relecteur humain — une révision juridique humaine est recommandée avant de s’y fier.',
   'legislacao.corpus.back': 'Retour aux textes',
   'legislacao.corpus.backToDiploma': 'Retour à {title}',
+  'legislacao.corpus.backToResults': 'Retour aux résultats',
   'legislacao.corpus.diploma.notFound': 'Texte introuvable.',
   'legislacao.corpus.article.notFound': 'Article introuvable.',
   'legislacao.corpus.article.source': 'Source',
@@ -1786,6 +1844,36 @@ export const frFR: Catalog = {
   'settings.entityTable.hint':
     'Choisissez les colonnes visibles dans la liste des entités enregistrées.',
   'settings.entityTable.columns.aria': 'Colonnes du tableau des entités',
+  // --- Connector outbound egress allowlist (t21) --------------------------------
+  'settings.connectorEgress.title': 'Réseau sortant des connecteurs',
+  'settings.connectorEgress.intro':
+    "Les hôtes auxquels un connecteur peut envoyer des données des registres. Ce n'est pas une préférence : c'est la limite qui empêche un connecteur d'expédier du contenu vers une destination arbitraire.",
+  'settings.connectorEgress.precedenceTitle': "Quelle liste l'emporte",
+  'settings.connectorEgress.precedenceCeiling':
+    "Le déploiement a fixé un plafond ({hosts}). Cette liste ne peut que le restreindre, jamais l'élargir. Autoriser un hôte hors de ce plafond exige de modifier la configuration du déploiement.",
+  'settings.connectorEgress.precedenceNoCeiling':
+    "Le déploiement n'a fixé aucun plafond : cette liste est donc la seule frontière de sortie. Définissez CHANCELA_CONNECTOR_ALLOWED_HOSTS dans le déploiement pour fixer un plafond qu'aucun administrateur ne peut dépasser.",
+  'settings.connectorEgress.hostsLabel': 'Hôtes autorisés (un par ligne)',
+  'settings.connectorEgress.hostsHint':
+    "Noms d'hôte exacts ou plages IP/CIDR. Sans schéma, port, chemin ni caractère générique.",
+  'settings.connectorEgress.placeholder': 'backup.exemple.fr\n10.42.0.0/16',
+  'settings.connectorEgress.tooMany': '{max} entrées au maximum.',
+  'settings.connectorEgress.rejected': '« {entry} » : {reason}',
+  'settings.connectorEgress.effect':
+    "Les modifications prennent effet à la prochaine opération du connecteur, dans l'API comme dans le travailleur, sans redémarrage.",
+  'settings.connectorEgress.audited':
+    "Chaque modification est consignée dans le registre d'audit avec son auteur, sa date et les listes précédente et nouvelle.",
+  'settings.connectorEgress.reason.format':
+    "doit être un nom d'hôte ou une IP/CIDR simple, sans schéma, port, chemin ni identifiants.",
+  'settings.connectorEgress.reason.wildcard': 'les caractères génériques ne sont pas autorisés.',
+  'settings.connectorEgress.reason.metadata':
+    "la plage lien-local porte le point de métadonnées de l'instance cloud et ne peut pas être ouverte ici.",
+  'settings.connectorEgress.reason.loopback':
+    "ne peut pas pointer vers l'hôte qui exécute Chancela.",
+  'settings.connectorEgress.reason.forbiddenRange':
+    "cette plage d'adresses n'est jamais une destination légitime.",
+  'settings.connectorEgress.reason.broadPrefix':
+    'la plage est trop large ; utilisez un préfixe plus restreint.',
   'settings.registryAutoUpdate.cardTitle': 'Mise à jour automatique du certificat permanent',
   'settings.registryAutoUpdate.refreshPlan': 'Actualiser le plan',
   'settings.registryAutoUpdate.refreshingPlan': 'Actualisation…',
@@ -2202,6 +2290,20 @@ export const frFR: Catalog = {
   'acts.convening': 'Convocation',
   'acts.convening.hint':
     'Consignez la date, le mode et les preuves conservées de la convocation. Les avertissements soutiennent l’exploitation et ne remplacent pas une revue juridique.',
+  'acts.convening.waiver.title': 'Sans convocation',
+  'acts.convening.waiver.hint':
+    'Lorsque la réunion s\'est tenue sans convocation préalable, indiquez ici le fondement retenu ; le procès-verbal le reprendra. Chancela enregistre le fondement déclaré et n\'en confirme pas la validité — faites-le confirmer par un conseil juridique.',
+  'acts.convening.waiver.toggle': 'La réunion s\'est tenue sans convocation préalable',
+  'acts.convening.waiver.basis': 'Fondement',
+  'acts.convening.waiver.basis.universal':
+    'Assemblée universelle — tous présents et tous d\'accord (CSC art. 54.º)',
+  'acts.convening.waiver.basis.other': 'Autre fondement (à décrire)',
+  'acts.convening.waiver.agreedToMeet': 'Tous ont exprimé la volonté que l\'assemblée se constitue',
+  'acts.convening.waiver.agreedToAgenda': 'Tous ont accepté les points délibérés',
+  'acts.convening.waiver.grounds': 'Fondement enregistré',
+  'acts.convening.waiver.evidenceReference': 'Preuve de l\'accord',
+  'acts.convening.waiver.conflict':
+    'Une convocation et l\'absence de convocation sont toutes deux enregistrées. Une seule peut décrire cette réunion.',
   'acts.convening.dispatchDate': 'Date de convocation',
   'acts.convening.channel': 'Mode de convocation',
   'acts.convening.channelNone': 'Aucun mode enregistré',
@@ -2364,7 +2466,7 @@ export const frFR: Catalog = {
   'onboarding.skip': 'Ignorer',
   'onboarding.finishing': 'Finalisation…',
   'signin.title': 'Se connecter',
-  'signin.subtitle': 'Choisissez votre utilisateur pour continuer.',
+  'signin.subtitle': 'Saisissez votre identifiant pour continuer.',
   'signin.empty': 'Il n’y a pas encore d’utilisateurs actifs.',
   'signin.requiresPassword': 'Mot de passe requis',
   'signin.password.label': 'Mot de passe',
@@ -2383,6 +2485,14 @@ export const frFR: Catalog = {
   'signin.blocked.body':
     'La création d’un nouvel utilisateur nécessite une session active. Connectez-vous et ouvrez Utilisateurs › Nouveau dans l’application.',
   'signin.blocked.action': 'Retour à la connexion',
+  'signin.username.label': 'Identifiant',
+  'signin.username.placeholder': 'Votre identifiant',
+  'signin.badCredentials': 'Identifiant ou mot de passe incorrect.',
+  'signin.remember.label': 'Enregistrer cet identifiant sur cet appareil',
+  'signin.recent.title': 'Comptes utilisés sur cet appareil',
+  'signin.recent.remove': 'Retirer {username} de la liste',
+  'signin.recent.note':
+    'Cette liste reste uniquement dans ce navigateur et ne contient jamais de mots de passe.',
   'session.gate.error': 'Impossible de charger la session.',
   'session.gate.retry': 'Réessayer',
   'settings.autosave.retry': 'Réessayer',
@@ -2536,6 +2646,8 @@ export const frFR: Catalog = {
   'templates.card.rulePack': 'Pack de règles',
   'templates.card.channels': 'Canaux',
   'templates.channels.none': 'Aucun canal spécifique',
+  'templates.table.source': 'Source',
+  'templates.table.actions': 'Actions',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Nouveau modèle',
   'templates.actions.edit': 'Modifier',
@@ -4322,6 +4434,122 @@ export const frFR: Catalog = {
   'fieldHelp.registry.deliberationDate':
     'Date de la résolution indiquée dans l’inscription, lorsqu’elle est présente.',
   'fieldHelp.registry.formaObrigar': 'Texte importé sur qui engage l’entité.',
+  // --- Email (SMTP) (t23) ---
+  'settings.email.cardTitle': 'E-mail',
+  'settings.email.lede':
+    'Configurez le serveur SMTP par lequel l’application envoie les messages. Le mot de passe est stocké chiffré et n’est jamais renvoyé.',
+  'settings.email.enabled.label': 'Envoi d’e-mails actif',
+  'settings.email.enabled.hint':
+    'Tant qu’il est désactivé, rien n’est envoyé. Vous pouvez renseigner la configuration avant de l’activer.',
+  'settings.email.host.label': 'Serveur',
+  'settings.email.host.hint':
+    'Nom du serveur SMTP. C’est aussi le nom auquel le certificat TLS doit correspondre.',
+  'settings.email.host.placeholder': 'smtp.exemple.pt',
+  'settings.email.port.label': 'Port',
+  'settings.email.port.hint': '587 pour STARTTLS, 465 pour TLS implicite.',
+  'settings.email.encryptionField.label': 'Chiffrement',
+  'settings.email.encryptionField.hint':
+    'STARTTLS est la valeur par défaut. Si le serveur ne le propose pas, la connexion est refusée au lieu de continuer en clair.',
+  'settings.email.encryption.starttls': 'STARTTLS (recommandé)',
+  'settings.email.encryption.implicitTls': 'TLS implicite (port 465)',
+  'settings.email.encryption.none': 'Sans chiffrement',
+  'settings.email.insecure.title': 'Connexion sans chiffrement',
+  'settings.email.insecure.body':
+    'Sans chiffrement, le mot de passe du serveur et le contenu de tous les messages circulent en clair sur le réseau. N’utilisez cette option que sur un relais de réseau fermé qui ne propose rien d’autre.',
+  'settings.email.insecure.confirm': 'Je confirme vouloir envoyer sans chiffrement',
+  'settings.email.username.label': 'Utilisateur',
+  'settings.email.username.hint': 'Laissez vide si le serveur n’exige pas d’authentification.',
+  'settings.email.fromAddress.label': 'Adresse d’expéditeur',
+  'settings.email.fromAddress.hint':
+    'Adresse utilisée dans l’enveloppe et dans l’en-tête De : de tous les messages.',
+  'settings.email.fromAddress.placeholder': 'sistema@exemple.pt',
+  'settings.email.fromName.label': 'Nom d’expéditeur',
+  'settings.email.fromName.hint':
+    'Nom affiché à côté de l’adresse, par exemple Encosto Estratégico Lda.',
+  'settings.email.heloName.label': 'Nom EHLO',
+  'settings.email.heloName.hint':
+    'Nom annoncé au serveur. S’il reste vide, le domaine de l’adresse d’expéditeur est utilisé.',
+
+  'settings.email.password.cardTitle': 'Mot de passe du serveur',
+  'settings.email.password.lede':
+    'Stocké chiffré dans le coffre d’identifiants. Il n’est renvoyé par aucun point d’accès — seul l’état ci-dessous indique s’il en existe un.',
+  'settings.email.password.label': 'Mot de passe',
+  'settings.email.password.hint': 'Saisir un nouveau mot de passe remplace le précédent.',
+  'settings.email.password.placeholder': 'Saisissez pour définir ou remplacer',
+  'settings.email.password.save': 'Enregistrer le mot de passe',
+  'settings.email.password.clear': 'Supprimer le mot de passe',
+  'settings.email.password.configured': 'Défini',
+  'settings.email.password.notConfigured': 'À définir',
+  'settings.email.password.savedToast': 'Mot de passe du serveur enregistré',
+  'settings.email.password.clearedToast': 'Mot de passe du serveur supprimé',
+
+  'settings.email.test.cardTitle': 'Envoyer un message de test',
+  'settings.email.test.lede':
+    'Ouvre une session réelle avec le serveur configuré et affiche la réponse qu’il donne, y compris le code SMTP.',
+  'settings.email.test.to.label': 'Destinataire',
+  'settings.email.test.to.hint': 'Adresse à laquelle envoyer le message de test.',
+  'settings.email.test.to.placeholder': 'amelia.marques@exemple.pt',
+  'settings.email.test.action': 'Envoyer le test',
+  'settings.email.test.warningTitle': 'Attention à la configuration',
+  'settings.email.test.okTitle': 'Message accepté par le serveur',
+  'settings.email.test.okBody':
+    'Le serveur a accepté le message. Cela ne confirme pas la remise dans la boîte de réception du destinataire.',
+  'settings.email.test.failTitle': 'L’envoi a échoué',
+  'settings.email.test.failUnknown': 'Le serveur n’a renvoyé aucun détail.',
+  'settings.email.test.stage': 'Phase',
+  'settings.email.test.code': 'Code SMTP',
+  'settings.email.test.serverReply': 'Réponse du serveur',
+  'settings.email.test.relayReply': 'Réponse du serveur',
+  'settings.email.test.remedy': 'Ce qu’il faut vérifier',
+  'settings.email.test.tls': 'Chiffrée',
+  'settings.email.test.authenticated': 'Authentifiée',
+
+  'settings.email.stage.connect': 'Connexion au serveur',
+  'settings.email.stage.tls': 'Poignée de main TLS',
+  'settings.email.stage.greeting': 'Salutation du serveur',
+  'settings.email.stage.ehlo': 'Présentation (EHLO)',
+  'settings.email.stage.starttls': 'Début de STARTTLS',
+  'settings.email.stage.auth': 'Authentification',
+  'settings.email.stage.mailFrom': 'Expéditeur (MAIL FROM)',
+  'settings.email.stage.rcptTo': 'Destinataire (RCPT TO)',
+  'settings.email.stage.data': 'Envoi du message',
+  'settings.email.stage.quit': 'Fermeture de la session',
+
+  'settings.email.remedy.dns':
+    'Le nom du serveur n’a pas été résolu. Vérifiez l’orthographe et que le DNS le connaît.',
+  'settings.email.remedy.unreachable':
+    'Le serveur n’a pas répondu sur le port indiqué. Vérifiez le port et qu’aucun pare-feu ne bloque.',
+  'settings.email.remedy.tls':
+    'Le certificat du serveur n’a pas été accepté. Vérifiez qu’il est valide et qu’il correspond au nom configuré.',
+  'settings.email.remedy.tlsUnsupported':
+    'Le serveur ne propose pas STARTTLS. Corrigez le serveur, utilisez TLS implicite sur le port 465, ou désactivez explicitement le chiffrement.',
+  'settings.email.remedy.timeout':
+    'Le serveur a mis trop de temps à répondre. Vérifiez le réseau et que l’adresse est correcte.',
+  'settings.email.remedy.configuration':
+    'La configuration n’est pas utilisable en l’état. Revoyez l’utilisateur, le chiffrement et le port.',
+  'settings.email.remedy.protocol':
+    'La réponse du serveur n’a pas été comprise ou la connexion est tombée. Confirmez que le port sert SMTP.',
+  'settings.email.remedy.rejected':
+    'Le serveur a refusé la demande. Le code et le texte ci-dessus sont la raison qu’il a lui-même donnée.',
+
+  'settings.email.help.enabled':
+    'Interrupteur général de l’envoi d’e-mails. Désactivé, aucune fonctionnalité n’envoie de messages.',
+  'settings.email.help.host': 'Nom du serveur SMTP, par exemple smtp.exemple.pt.',
+  'settings.email.help.port':
+    'Port de soumission : généralement 587 (STARTTLS) ou 465 (TLS implicite).',
+  'settings.email.help.encryption':
+    'Comment la connexion est protégée. STARTTLS se connecte en clair et passe au chiffré avant de s’authentifier.',
+  'settings.email.help.username':
+    'Utilisateur d’authentification SMTP, par exemple sistema@exemple.pt.',
+  'settings.email.help.password':
+    'Mot de passe ou mot de passe d’application du compte d’envoi. Stocké chiffré et jamais renvoyé.',
+  'settings.email.help.fromAddress':
+    'Adresse qui apparaît comme expéditeur, par exemple sistema@exemple.pt.',
+  'settings.email.help.fromName':
+    'Nom lisible à côté de l’adresse, par exemple Encosto Estratégico Lda.',
+  'settings.email.help.heloName':
+    'Nom annoncé lors de la présentation SMTP. Certains serveurs refusent les noms génériques.',
+
   'settings.providerCredentials.cardTitle': 'Fournisseurs de signature',
   'settings.providerCredentials.lede':
     'Gérez les identifiants des fournisseurs de signature, avec plusieurs clés par fournisseur, priorité et bascule automatique.',
@@ -5175,4 +5403,41 @@ export const frFR: Catalog = {
   'pairing.revoke.confirm': 'Confirmer la révocation',
   'pairing.revoking': 'Révocation…',
   'pairing.revokedToast': 'Appareil révoqué',
+  // --- Book detail sub-tabs (t25) ------------------------------------------------
+  'books.detail.subnav.imports': 'Importations',
+  'books.detail.subnav.aria': 'Sections du livre',
+  'books.detail.termo.pending.title': "Terme d'ouverture enregistré",
+  'books.detail.termo.pending.body':
+    "Affiche les champs du terme d'ouverture enregistrés à l'ouverture du livre. Le terme n'est pas encore un instrument remplissable ou signable dans cette interface, et le PDF/A généré n'a pas de point de terminaison propre — il voyage dans le paquet de préservation proposé dans l'en-tête de la page.",
+  'books.detail.retention.scopeNote':
+    'Uniquement les candidats de conservation nommant ce livre. Les politiques de conservation se gèrent dans Paramètres → Confidentialité.',
+  // --- t36: Assinaturas / Fornecedores configuration grids ---
+  'settings.signing.policy.cardTitle': 'Politique de signature',
+  'settings.signing.fallbackHint': 'Valeur portugaise officielle par défaut. Sert de recours lorsque aucune des entrées du tableau ci-dessous n’est active.',
+  'settings.signing.tslSources.caption': 'Sources de listes de confiance configurées',
+  'settings.signing.tsaProviders.caption': 'Prestataires d’horodatage configurés',
+  'settings.signing.providers.caption': 'Modes de prestataire de signature et leur état',
+  'settings.signing.table.status': 'État',
+  'settings.signing.table.actions': 'Actions',
+  'settings.signing.table.limits': 'Limites',
+  'settings.signing.table.limitsValue': '{digest} · {timeout} s · max. {maxBytes} octets',
+  'settings.signing.table.provider': 'Prestataire',
+  'settings.signing.table.mode': 'Mode',
+  'settings.signing.table.notes': 'Remarques',
+  'settings.providerCredentials.protection.unavailable.title': 'Impossible d’enregistrer des identifiants',
+  'settings.providerCredentials.protection.unavailable.body': 'Ce serveur ne peut ni chiffrer ni enregistrer les secrets de prestataire. Rien ne sera enregistré tant que ce point n’est pas résolu : les identifiants ne sont pas conservés avec une protection plus faible, ils ne sont tout simplement pas conservés.',
+  'settings.providerCredentials.protection.reason.notPersistent': 'Le serveur fonctionne uniquement en mémoire, sans répertoire de données. Définissez CHANCELA_DATA_DIR puis redémarrez.',
+  'settings.providerCredentials.protection.reason.noKeySource': 'Aucune source de clé n’est disponible. Activez SQLCipher ou le scellement par le système d’exploitation, ou fournissez CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey': 'La clé fournie par l’opérateur est invalide ou a été indiquée deux fois. Ne conservez que CHANCELA_CREDENTIAL_KEY ou CHANCELA_CREDENTIAL_KEY_FILE, avec un matériel de clé valide.',
+  'settings.providerCredentials.protection.reason.rootEnvelope': 'L’enveloppe de la clé racine n’a pas pu être lue. Vérifiez les droits du répertoire de données et si le fichier appartient à cette machine.',
+  'settings.providerCredentials.protection.reason.storeUnavailable': 'Le coffre d’identifiants est indisponible. Consultez les journaux du serveur.',
+  'settings.providerCredentials.entry.notConfigured': 'non configuré',
+  'settings.providerCredentials.table.caption': 'Entrées d’identifiants de {provider}',
+  'settings.providerCredentials.table.entry': 'Entrée',
+  'settings.providerCredentials.table.priority': 'Priorité',
+  'settings.providerCredentials.table.state': 'État',
+  'settings.providerCredentials.table.endpoint': 'Adresse',
+  'settings.providerCredentials.table.endpointDefault': 'Adresse par défaut',
+  'settings.providerCredentials.table.fields': 'Champs',
+  'settings.providerCredentials.table.actions': 'Actions',
 };

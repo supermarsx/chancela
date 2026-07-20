@@ -1,9 +1,34 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { Tooltip, IconButton } from './Tooltip';
+import { Tooltip, IconButton, TooltipText } from './Tooltip';
 import { Pencil } from './icons';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+// Same indirect dynamic import as Stepper.test.tsx / Skeleton.test.tsx: the web tsconfig
+// carries no @types/node.
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
+}
+
+/** Every `.tooltip*` rule body in theme.css, with comments stripped. */
+function tooltipRules(css: string): string {
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  return (withoutComments.match(/^\.tooltip[^{}]*\{[^}]*\}/gm) ?? []).join('\n');
+}
+
+/** Force the overflow probe in `useIsClipped` to report an ellipsised box (jsdom is 0×0). */
+function mockClipped() {
+  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(400);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(120);
+}
 
 describe('Tooltip', () => {
   it('wires aria-describedby from the trigger to the bubble', () => {
@@ -138,6 +163,48 @@ describe('Tooltip', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: origWidth });
   });
 
+  it('flips to the opposite side when the requested one has no room', () => {
+    render(
+      <Tooltip label="Editar" placement="top">
+        <button type="button">alvo</button>
+      </Tooltip>,
+    );
+    const trigger = screen.getByRole('button');
+    const bubble = screen.getByRole('tooltip');
+    const wrapper = document.querySelector('.tooltip') as HTMLElement;
+    const rect = (r: Partial<DOMRect>) => () => ({ toJSON: () => ({}), ...r }) as DOMRect;
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+    // Trigger pinned to the very top: only 4px above it, but plenty below.
+    wrapper.getBoundingClientRect = rect({ left: 100, right: 140, width: 40, top: 4, bottom: 24 });
+    bubble.getBoundingClientRect = rect({ width: 120, height: 40 });
+
+    fireEvent.focus(trigger);
+
+    // A `top` bubble would hang off the viewport, so it renders below instead.
+    expect(bubble.className).toContain('tooltip__bubble--bottom');
+    expect(bubble.className).not.toContain('tooltip__bubble--top');
+  });
+
+  it('keeps the requested side when it fits', () => {
+    render(
+      <Tooltip label="Editar" placement="top">
+        <button type="button">alvo</button>
+      </Tooltip>,
+    );
+    const trigger = screen.getByRole('button');
+    const bubble = screen.getByRole('tooltip');
+    const wrapper = document.querySelector('.tooltip') as HTMLElement;
+    const rect = (r: Partial<DOMRect>) => () => ({ toJSON: () => ({}), ...r }) as DOMRect;
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+    wrapper.getBoundingClientRect = rect({ left: 100, right: 140, width: 40, top: 400, bottom: 420 });
+    bubble.getBoundingClientRect = rect({ width: 120, height: 40 });
+
+    fireEvent.focus(trigger);
+    expect(bubble.className).toContain('tooltip__bubble--top');
+  });
+
   it('adds the prose modifier for the wrapping-sentence variant (FieldHelp)', () => {
     render(
       <Tooltip label="Explicação longa" variant="prose">
@@ -145,6 +212,113 @@ describe('Tooltip', () => {
       </Tooltip>,
     );
     expect(screen.getByRole('tooltip').className).toContain('tooltip__bubble--prose');
+  });
+});
+
+describe('Tooltip theming', () => {
+  it('drives every colour from a token — no hex/rgb()/hsl() literals in the tooltip CSS', async () => {
+    const rules = tooltipRules(await themeCss());
+    // Guard the guard: if the selector match ever silently returns nothing, the assertions
+    // below would pass vacuously.
+    expect(rules).toContain('.tooltip__bubble');
+    expect(rules).toContain('var(--');
+
+    expect(rules).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(rules).not.toMatch(/\brgba?\(/);
+    expect(rules).not.toMatch(/\bhsla?\(/);
+    // A themed bubble must survive a theme swap: colour comes only from custom properties.
+    for (const decl of rules.match(/^\s*(background|color|border|box-shadow):[^;]+;/gm) ?? []) {
+      expect(decl).toContain('var(--');
+    }
+  });
+});
+
+describe('TooltipText', () => {
+  it('reveals an abbreviated value: focusable, described, escapable', () => {
+    render(
+      <TooltipText label="a1b2c3d4e5f6" as="code">
+        a1b2…e5f6
+      </TooltipText>,
+    );
+    const trigger = screen.getByText('a1b2…e5f6');
+    const bubble = screen.getByRole('tooltip');
+    expect(trigger.tagName).toBe('CODE');
+    expect(bubble.textContent).toBe('a1b2c3d4e5f6');
+    expect(trigger.getAttribute('aria-describedby')).toBe(bubble.id);
+    // The full value exists ONLY in the bubble, so keyboard users must be able to reach it.
+    expect(trigger.getAttribute('tabindex')).toBe('0');
+    fireEvent.focus(trigger);
+    expect(bubble.className).toContain('is-open');
+    // Dismissible while the trigger keeps focus (WCAG 1.4.13).
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(bubble.className).not.toContain('is-open');
+  });
+
+  it('stays bare when clipped-only content is not actually clipped', () => {
+    render(
+      <TooltipText label="Assembleia Geral Ordinária" onlyWhenClipped>
+        Assembleia Geral Ordinária
+      </TooltipText>,
+    );
+    // Nothing is hidden, so there is no bubble and no aria-describedby repeating the text.
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    const trigger = screen.getByText('Assembleia Geral Ordinária');
+    expect(trigger.getAttribute('aria-describedby')).toBeNull();
+    expect(trigger.getAttribute('tabindex')).toBeNull();
+  });
+
+  it('attaches the reveal once the text is actually clipped, without a tab stop', () => {
+    mockClipped();
+    render(
+      <TooltipText label="Assembleia Geral Ordinária" onlyWhenClipped className="cell">
+        Assembleia Geral Ordinária
+      </TooltipText>,
+    );
+    const trigger = document.querySelector('.cell') as HTMLElement;
+    const bubble = document.querySelector('.tooltip__bubble') as HTMLElement;
+    expect(bubble.textContent).toBe('Assembleia Geral Ordinária');
+    fireEvent.mouseEnter(trigger);
+    expect(bubble.className).toContain('is-open');
+
+    // Clipped text is complete in the DOM, so assistive tech already reads all of it. The
+    // bubble is therefore a purely visual affordance: kept OUT of the accessibility tree
+    // rather than announced as a description duplicating the text the user just heard.
+    expect(bubble.getAttribute('aria-hidden')).toBe('true');
+    expect(bubble.getAttribute('role')).toBeNull();
+    expect(trigger.getAttribute('aria-describedby')).toBeNull();
+    expect(trigger.getAttribute('tabindex')).toBeNull();
+  });
+
+  it('drops the bubble when the label merely repeats the visible text', () => {
+    // The commonest shape of the native `title` this replaced: `title` set to the exact
+    // string already rendered. It revealed nothing then and must not be reinstated now.
+    const { container } = render(<TooltipText label="Selado">Selado</TooltipText>);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(container.querySelector('.tooltip__bubble')).toBeNull();
+    expect(screen.getByText('Selado').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('adds no wrapper box, so it cannot disturb the layout it is dropped into', () => {
+    const { container } = render(
+      <TooltipText label="valor completo" className="cell">
+        valor
+      </TooltipText>,
+    );
+    // The default Tooltip wraps its trigger in an inline-flex `.tooltip` span; TooltipText
+    // anchors against the trigger itself instead, so grid/flex sizing is untouched.
+    expect(container.querySelector('.tooltip')).toBeNull();
+    expect(container.childElementCount).toBe(1);
+    expect((container.firstElementChild as HTMLElement).className).toBe('cell');
+  });
+
+  it('never renders a native title, which is what made these unstyleable', () => {
+    mockClipped();
+    const { container } = render(
+      <TooltipText label="valor completo" onlyWhenClipped className="cell">
+        valor
+      </TooltipText>,
+    );
+    expect(container.querySelector('[title]')).toBeNull();
   });
 });
 

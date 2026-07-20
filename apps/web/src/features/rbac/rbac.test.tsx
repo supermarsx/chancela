@@ -188,6 +188,25 @@ describe('FuncoesSection — role create + gating', () => {
     vi.unstubAllGlobals();
   });
 
+  // The matrix is a checkbox group, not one control, so it used to carry a `<label for="">`
+  // — an orphan label naming nothing. It must be a named group instead.
+  it('names the permission matrix as a group instead of orphaning its label', async () => {
+    const { fn } = mockFetch([
+      { method: 'GET', match: '/v1/roles', body: [] },
+      { method: 'GET', match: '/v1/permissions', body: CATALOG },
+    ]);
+    vi.stubGlobal('fetch', fn);
+
+    renderRbac(<FuncoesSection />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova função' }));
+
+    const group = screen.getByRole('group', { name: 'Permissões' });
+    expect(group.contains(screen.getByText('entity.read'))).toBe(true);
+    expect(document.querySelectorAll('label[for=""]')).toHaveLength(0);
+
+    vi.unstubAllGlobals();
+  });
+
   it('a non-role.manage user sees the create affordance disabled-with-explanation', async () => {
     const { fn } = mockFetch([
       {
@@ -495,15 +514,19 @@ describe('DelegacoesSection — grant a held permission, revoke it', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Nova delegação' }));
-    // The delegable permission picker offers entity.read (non-meta, role-sourced) — NOT the
-    // meta role.manage. Submit the grant.
+    // The delegable permission picker is a multi-select offering entity.read (non-meta,
+    // role-sourced) — NOT the meta role.manage.
     // Wait for the catalog to resolve so the meta filter (role.manage excluded) has applied.
     await waitFor(() => {
-      const sel = screen.getByLabelText('Permissão') as HTMLSelectElement;
-      const options = [...sel.options].map((o) => o.value);
-      expect(options).toContain('entity.read');
-      expect(options).not.toContain('role.manage');
+      const group = screen.getByRole('group', { name: 'Permissão' });
+      expect(within(group).getByText('entity.read')).toBeTruthy();
+      expect(within(group).queryByText('role.manage')).toBeNull();
     });
+    // Nothing is pre-selected: delegating is an explicit act, never a default.
+    const boxes = () =>
+      within(screen.getByRole('group', { name: 'Permissão' })).getAllByRole('checkbox');
+    expect(boxes().every((b) => !(b as HTMLInputElement).checked)).toBe(true);
+    fireEvent.click(boxes()[0]);
 
     fireEvent.change(screen.getByLabelText('Início (opcional)'), {
       target: { value: startsAtInput },
@@ -517,12 +540,144 @@ describe('DelegacoesSection — grant a held permission, revoke it', () => {
       expect(post).toBeTruthy();
       expect(post!.body).toMatchObject({
         to: 'u2',
-        permission: 'entity.read',
+        permissions: ['entity.read'],
         scope: { kind: 'global' },
         starts_at: expectedStartsAt,
         legal_basis: 'Ata interna R-72',
       });
     });
+    vi.unstubAllGlobals();
+  });
+
+  it('grants SEVERAL permissions in one delegation, sharing one scope and lifetime', async () => {
+    const { fn, calls } = mockFetch([
+      { method: 'GET', match: '/v1/delegations', body: [] },
+      { method: 'GET', match: '/v1/permissions', body: CATALOG },
+      {
+        method: 'GET',
+        match: '/v1/users',
+        body: [
+          {
+            id: 'u2',
+            username: 'joao.silva',
+            display_name: 'João Silva',
+            active: true,
+            has_secret: true,
+            has_attestation_key: false,
+            has_recovery_phrase: false,
+            created_at: '2026-01-01',
+          },
+        ],
+      },
+      { method: 'GET', match: '/v1/entities', body: [] },
+      { method: 'GET', match: '/v1/books', body: [] },
+      { method: 'GET', match: '/v1/session', body: { user: { id: 'me' }, permissions: [] } },
+      {
+        method: 'POST',
+        match: '/v1/delegations',
+        body: {
+          id: 'd1',
+          from: 'me',
+          to: 'u2',
+          permission: 'book.open',
+          permissions: ['book.open', 'entity.read'],
+          scope: { kind: 'global' },
+          granted_at: '2026-07-08T00:00:00Z',
+          starts_at: '2026-07-08T00:00:00Z',
+          legal_basis: 'Ata interna R-73',
+          revoked: false,
+        },
+      },
+    ]);
+    vi.stubGlobal('fetch', fn);
+
+    renderRbac(
+      <DelegacoesSection />,
+      value(() => true, [
+        grant('entity.read', 'role'),
+        grant('book.open', 'role'),
+        grant('role.manage', 'role'),
+      ]),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova delegação' }));
+    await waitFor(() => {
+      const group = screen.getByRole('group', { name: 'Permissão' });
+      expect(within(group).getByText('book.open')).toBeTruthy();
+    });
+    // "Selecionar tudo" ticks every DELEGABLE verb — the meta role.manage is not among them, so
+    // the picker can never assemble a batch the server would have to refuse.
+    fireEvent.click(screen.getByRole('button', { name: 'Selecionar tudo' }));
+    fireEvent.change(screen.getByLabelText('Base/evidência local'), {
+      target: { value: 'Ata interna R-73' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Conceder' }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === 'POST' && c.url.includes('/v1/delegations'));
+      expect(post).toBeTruthy();
+      // One request, one delegation, both verbs — sharing the scope and legal basis.
+      expect(post!.body).toMatchObject({
+        to: 'u2',
+        permissions: ['book.open', 'entity.read'],
+        scope: { kind: 'global' },
+        legal_basis: 'Ata interna R-73',
+      });
+      expect((post!.body as { permissions: string[] }).permissions).not.toContain('role.manage');
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('lists every permission a delegation carries, and legacy single-permission rows', async () => {
+    const { fn } = mockFetch([
+      {
+        method: 'GET',
+        match: '/v1/delegations',
+        body: [
+          {
+            id: 'd1',
+            from: 'me',
+            to: 'u2',
+            permission: 'entity.read',
+            permissions: ['entity.read', 'book.open'],
+            scope: { kind: 'global' },
+            granted_at: '2026-07-08T00:00:00Z',
+            starts_at: '2026-07-08T00:00:00Z',
+            legal_basis: 'Ata interna R-74',
+            revoked: false,
+          },
+        ],
+      },
+      { method: 'GET', match: '/v1/permissions', body: CATALOG },
+      {
+        method: 'GET',
+        match: '/v1/users',
+        body: [
+          {
+            id: 'u2',
+            username: 'joao.silva',
+            display_name: 'João Silva',
+            active: true,
+            has_secret: true,
+            has_attestation_key: false,
+            has_recovery_phrase: false,
+            created_at: '2026-01-01',
+          },
+        ],
+      },
+      { method: 'GET', match: '/v1/session', body: { user: { id: 'me' }, permissions: [] } },
+    ]);
+    vi.stubGlobal('fetch', fn);
+
+    renderRbac(
+      <DelegacoesSection />,
+      value(() => true, [grant('entity.read', 'role'), grant('book.open', 'role')]),
+    );
+
+    // Both verbs appear in the SAME row — they are one delegation, revoked as one unit.
+    const row = (await screen.findByText('entity.read')).closest('tr')!;
+    expect(within(row).getByText('book.open')).toBeTruthy();
+    expect(within(row).getAllByRole('button', { name: 'Revogar' })).toHaveLength(1);
     vi.unstubAllGlobals();
   });
 

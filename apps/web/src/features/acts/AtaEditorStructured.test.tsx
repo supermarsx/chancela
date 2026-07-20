@@ -590,6 +590,51 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     );
   });
 
+  it('records a no-convocatória basis, and will not send an unspecified one with no ground', async () => {
+    const shared = stateful({ ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } });
+    vi.stubGlobal('fetch', shared.fetchImpl);
+
+    renderEditor();
+
+    // Hidden until the operator says there was no convening notice: the convened meeting is the
+    // ordinary case and should not have to dismiss anything.
+    const toggle = await screen.findByLabelText('A reunião realizou-se sem convocatória prévia');
+    expect(screen.queryByLabelText('Fundamento')).toBeNull();
+
+    fireEvent.click(toggle);
+    fireEvent.click(
+      screen.getByLabelText('Todos manifestaram a vontade de que a assembleia se constituísse'),
+    );
+    fireEvent.click(screen.getByLabelText('Todos acordaram nos assuntos deliberados'));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(shared.patches.length).toBeGreaterThan(0));
+    expect(shared.patches.at(-1)?.convening_waiver).toEqual({
+      basis: 'AssembleiaUniversal',
+      grounds: null,
+      all_agreed_to_meet: true,
+      all_agreed_to_agenda: true,
+      evidence_reference: null,
+    });
+
+    // An unspecified basis with nothing written in it is a 422 at the API, so the editor holds it
+    // back rather than sending a record that says nothing.
+    fireEvent.change(screen.getByLabelText('Fundamento'), { target: { value: 'Other' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(shared.patches.length).toBeGreaterThan(1));
+    expect(shared.patches.at(-1)?.convening_waiver).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Fundamento registado'), {
+      target: { value: 'Reunião do órgão realizada por acordo de todos os titulares.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(shared.patches.length).toBeGreaterThan(2));
+    expect(shared.patches.at(-1)?.convening_waiver).toMatchObject({
+      basis: 'Other',
+      grounds: 'Reunião do órgão realizada por acordo de todos os titulares.',
+    });
+  });
+
   it('clears the mesa-presidente compliance error once the chair is filled and saved', async () => {
     const shared = stateful(baseAct);
     vi.stubGlobal('fetch', shared.fetchImpl);

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { renderWithProviders } from '../../test/utils';
-import type { LedgerEventView, LedgerEventsPage } from '../../api/types';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useLocation } from 'react-router-dom';
+import { renderWithProviders, Wrapper } from '../../test/utils';
+import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
+import type { BookView, LedgerEventView, LedgerEventsPage } from '../../api/types';
 
 const saveFileMock = vi.hoisted(() => ({
   saveBlobAs: vi.fn(),
@@ -98,13 +100,50 @@ function page(events: LedgerEventView[], patch: Partial<LedgerEventsPage> = {}):
   };
 }
 
-function stubLedgerFetch(firstPage: LedgerEventsPage, olderPage = page([])) {
+function makeBook(patch: Partial<BookView> = {}): BookView {
+  return {
+    id: 'book-123456789',
+    entity_id: 'entity-1',
+    kind: 'AssembleiaGeral',
+    state: 'Open',
+    purpose: 'Atas da assembleia geral',
+    numbering_scheme: null,
+    opening_date: '2026-01-02',
+    closing_date: null,
+    closing_reason: null,
+    last_ata_number: 3,
+    predecessor: null,
+    required_signatories_abertura: null,
+    required_signatories_encerramento: null,
+    ...patch,
+  };
+}
+
+function stubLedgerFetch(
+  firstPage: LedgerEventsPage,
+  olderPage = page([]),
+  books: BookView[] = [makeBook()],
+) {
   const calls: RecordedCall[] = [];
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
     calls.push({ url, method });
 
+    if (url.includes('/v1/books/') && url.includes('/archive/package')) {
+      return Promise.resolve(
+        new Response('PK-preservation', {
+          status: 200,
+          headers: { 'Content-Type': 'application/zip' },
+        }),
+      );
+    }
+    if (url.includes('/v1/books/') && url.endsWith('/export')) {
+      return Promise.resolve(
+        new Response('PK-bundle', { status: 200, headers: { 'Content-Type': 'application/zip' } }),
+      );
+    }
+    if (url.includes('/v1/books')) return Promise.resolve(jsonResponse(books));
     if (url.includes('/v1/ledger/archive/document')) {
       const format = new URL(`http://test${url}`).searchParams.get('format') ?? 'pdfa';
       const contentType =
@@ -201,7 +240,7 @@ describe('LedgerPage', () => {
     const calls = stubLedgerFetch(page([makeEvent(88, { kind: 'act.sealed' })]));
     const { container } = renderWithProviders(<LedgerPage />);
 
-    expect(await screen.findByText('act.sealed')).toBeTruthy();
+    expect(await screen.findByText('Ata selada')).toBeTruthy();
     const searchRegion = screen.getByRole('search', { name: 'Pesquisar e filtrar arquivo' });
     expect(searchRegion.classList.contains('ledger-filters')).toBe(true);
 
@@ -285,6 +324,8 @@ describe('LedgerPage', () => {
     fireEvent.change(screen.getByLabelText('Filtrar por âmbito'), {
       target: { value: 'act:88' },
     });
+    // The filters live in Registo; the export controls they feed live in Exportação.
+    fireEvent.click(screen.getByRole('button', { name: 'Exportação' }));
     expect((screen.getByLabelText('Âmbito da exportação') as HTMLSelectElement).value).toBe(
       'current_page',
     );
@@ -340,6 +381,7 @@ describe('LedgerPage', () => {
     renderWithProviders(<LedgerPage />);
 
     expect(await screen.findByText('event.1050')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Exportação' }));
     fireEvent.change(screen.getByLabelText('Âmbito da exportação'), {
       target: { value: 'all_filtered' },
     });
@@ -399,5 +441,189 @@ describe('LedgerPage', () => {
       'flex-wrap: wrap;',
       'max-width: 100%;',
     ]);
+  });
+});
+
+/** Reads the live location so a `?sec=` assertion works under MemoryRouter (history in memory). */
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
+}
+
+function renderLedger(initialEntries = ['/arquivo']) {
+  return render(
+    <Wrapper initialEntries={initialEntries}>
+      <LedgerPage />
+      <LocationProbe />
+    </Wrapper>,
+  );
+}
+
+function locationValue(): string {
+  return screen.getByTestId('location').textContent ?? '';
+}
+
+describe('LedgerPage — sub-tabs', () => {
+  it('renders both sub-tabs from the shared SubNav with Registo pressed by default', async () => {
+    stubLedgerFetch(page([makeEvent(10)]));
+    renderLedger();
+
+    const nav = await screen.findByRole('group', { name: 'Secções do arquivo' });
+    const tabs = within(nav).getAllByRole('button');
+    expect(tabs.map((b) => b.textContent)).toEqual(['Registo', 'Exportação']);
+    expect(tabs[0].getAttribute('aria-pressed')).toBe('true');
+    expect(tabs[1].getAttribute('aria-pressed')).toBe('false');
+
+    // The default section carries no `sec` param.
+    expect(locationValue()).toBe('/arquivo');
+    expect(await screen.findByText('event.10')).toBeTruthy();
+  });
+
+  it('writes ?sec= when leaving Registo and drops it on the way back', async () => {
+    stubLedgerFetch(page([makeEvent(10)]));
+    renderLedger();
+
+    expect(await screen.findByText('event.10')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Exportação' }));
+    await waitFor(() => expect(locationValue()).toBe('/arquivo?sec=exportacao'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Registo' }));
+    await waitFor(() => expect(locationValue()).toBe('/arquivo'));
+  });
+
+  it('opens Exportação directly from a deep link and falls back to Registo for an unknown sec', async () => {
+    stubLedgerFetch(page([makeEvent(10)]));
+    const deep = renderLedger(['/arquivo?sec=exportacao']);
+
+    expect(await screen.findByText('Documento do registo de auditoria')).toBeTruthy();
+    expect(screen.getByText('Exportações de um livro')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+    deep.unmount();
+
+    renderLedger(['/arquivo?sec=nao-existe']);
+    expect(await screen.findByText('event.10')).toBeTruthy();
+    expect(screen.queryByText('Documento do registo de auditoria')).toBeNull();
+  });
+
+  it('keeps the Registo table, its filters and the chain badge in the first sub-tab', async () => {
+    stubLedgerFetch(page([makeEvent(88, { kind: 'act.sealed' })]));
+    renderLedger();
+
+    expect(await screen.findByText('Ata selada')).toBeTruthy();
+    expect(screen.getByRole('search', { name: 'Pesquisar e filtrar arquivo' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Limpar filtros do arquivo' })).toBeTruthy();
+    expect(screen.getByText('Filtros avançados')).toBeTruthy();
+    // The integrity headline belongs to the whole surface, so it survives a tab switch.
+    expect(screen.getByText('Cadeia verificada (1000 eventos)')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Exportação' }));
+    expect(screen.getByText('Cadeia verificada (1000 eventos)')).toBeTruthy();
+  });
+
+  it('echoes the Registo filter count in Exportação and offers a way back to change it', async () => {
+    stubLedgerFetch(page([makeEvent(88)]));
+    renderLedger();
+
+    expect(await screen.findByText('event.88')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Filtrar por âmbito'), { target: { value: 'act:88' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Exportação' }));
+
+    await waitFor(() => expect(screen.getByText('Filtros ativos: 1')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar filtros no Registo' }));
+    await waitFor(() => expect(locationValue()).toBe('/arquivo'));
+    expect((screen.getByLabelText('Filtrar por âmbito') as HTMLInputElement).value).toBe('act:88');
+  });
+
+  it('labels the preservation package and the portability bundle as different formats', async () => {
+    stubLedgerFetch(page([makeEvent(10)]));
+    renderLedger(['/arquivo?sec=exportacao']);
+
+    expect(await screen.findByText('Pacote de preservação — depósito e prova')).toBeTruthy();
+    expect(screen.getByText('Pacote de portabilidade — mudar de instância')).toBeTruthy();
+    expect(screen.getByText('chancela-internal-preservation-package/v1')).toBeTruthy();
+    expect(screen.getByText('chancela-book-bundle/v1')).toBeTruthy();
+    // The bundle's retained/logged side effect is stated, the preservation package's is not.
+    expect(screen.getByText('Esta exportação fica registada')).toBeTruthy();
+    expect(
+      await screen.findByRole('option', { name: 'Assembleia Geral · Atas da assembleia geral' }),
+    ).toBeTruthy();
+  });
+
+  it('downloads the preservation package with the export-time legal hold it was given', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-save',
+      filename: 'chancela-preservation-book-book-123456789.zip',
+      contentType: 'application/zip',
+      bytes: 15,
+    });
+    const calls = stubLedgerFetch(page([makeEvent(10)]));
+    renderLedger(['/arquivo?sec=exportacao']);
+
+    expect(
+      await screen.findByRole('option', { name: 'Assembleia Geral · Atas da assembleia geral' }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('switch', { name: 'Marcar retenção legal nesta exportação' }));
+    // A blank reason is a server 422, so the export is held back and the field says why.
+    fireEvent.click(screen.getByRole('button', { name: 'Pacote de preservação Chancela' }));
+    expect(screen.getByText('Indique o motivo antes de marcar a retenção legal.')).toBeTruthy();
+    expect(calls.some((c) => c.url.includes('/archive/package'))).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Motivo da retenção legal'), {
+      target: { value: 'Processo 44/26' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pacote de preservação Chancela' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    expect(calls.find((c) => c.url.includes('/archive/package'))?.url).toBe(
+      '/v1/books/book-123456789/archive/package?legal_hold=true&legal_hold_reason=Processo+44%2F26',
+    );
+    expect(saveFileMock.saveBlobAs.mock.calls[0][0].filename).toBe(
+      'chancela-preservation-book-book-123456789.zip',
+    );
+  });
+
+  it('exports the portability bundle through the POST endpoint the importer accepts', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-save',
+      filename: 'book-book-123456789.zip',
+      contentType: 'application/zip',
+      bytes: 9,
+    });
+    const calls = stubLedgerFetch(page([makeEvent(10)]));
+    renderLedger(['/arquivo?sec=exportacao']);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Exportar pacote de portabilidade' }),
+    );
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const bundleCall = calls.find((c) => c.url === '/v1/books/book-123456789/export');
+    expect(bundleCall?.method).toBe('POST');
+    expect(saveFileMock.saveBlobAs.mock.calls[0][0].filename).toBe('book-book-123456789.zip');
+  });
+
+  it('shows an honest empty state when there is no book to package', async () => {
+    stubLedgerFetch(page([makeEvent(10)]), page([]), []);
+    renderLedger(['/arquivo?sec=exportacao']);
+
+    expect(await screen.findByText('Sem livros para exportar')).toBeTruthy();
+    // The instance-wide ledger export does not depend on a book, so it stays available.
+    expect(screen.getByRole('button', { name: 'Exportar arquivo' })).toBeTruthy();
+  });
+
+  it('replaces the book exports with a permission note and fires no book request', async () => {
+    const calls = stubLedgerFetch(page([makeEvent(10)]));
+    render(
+      <Wrapper initialEntries={['/arquivo?sec=exportacao']}>
+        <StaticPermissionsProvider value={permissionsValue((perm) => perm !== 'book.export')}>
+          <LedgerPage />
+        </StaticPermissionsProvider>
+      </Wrapper>,
+    );
+
+    expect(await screen.findByText('Documento do registo de auditoria')).toBeTruthy();
+    expect(screen.getByText('Sem permissão')).toBeTruthy();
+    expect(screen.queryByLabelText('Livro a exportar')).toBeNull();
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/v1/ledger/verify'))).toBe(true));
+    expect(calls.some((c) => c.url.includes('/v1/books'))).toBe(false);
   });
 });

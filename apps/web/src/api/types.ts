@@ -133,6 +133,10 @@ export type SignatureFamily = (typeof SIGNATURE_FAMILIES)[number];
 export const THEME_MODES = ['system', 'light', 'dark'] as const;
 export type ThemeMode = (typeof THEME_MODES)[number];
 
+/**
+ * The capacities offered when choosing who **signs** an act or a book. A subset of the
+ * capacities the API models — see `ATTENDEE_ONLY_CAPACITIES`.
+ */
 export const SIGNATORY_CAPACITIES = [
   'Chair',
   'Secretary',
@@ -142,7 +146,24 @@ export const SIGNATORY_CAPACITIES = [
   'Attorney',
   'CondoOwner',
 ] as const;
-export type SignatoryCapacity = (typeof SIGNATORY_CAPACITIES)[number];
+
+/**
+ * Capacities an **attendance row** can carry that a signature slot is not offered
+ * (`crates/chancela-core/src/act.rs`). Which of the full set an entity actually offers is
+ * decided server-side per legal type and arrives as `EntityProfile.attendee_qualities` — a
+ * sociedade anónima offers `Shareholder`, a sociedade por quotas `Member`.
+ */
+export const ATTENDEE_ONLY_CAPACITIES = [
+  'Shareholder',
+  'Associate',
+  'Cooperator',
+  'StatutoryAuditor',
+  'Guest',
+  'Other',
+] as const;
+
+export type SignatoryCapacity =
+  (typeof SIGNATORY_CAPACITIES)[number] | (typeof ATTENDEE_ONLY_CAPACITIES)[number];
 
 export const PRESENCE_MODES = ['InPerson', 'Represented', 'Absent'] as const;
 export type PresenceMode = (typeof PRESENCE_MODES)[number];
@@ -183,6 +204,8 @@ export interface EntityProfile {
   signature_policy: SignaturePolicyHint;
   template_family: string;
   calendar_presets: EntityCalendarPreset[];
+  /** The qualidades an attendance row may be recorded under for this legal type (t28). */
+  attendee_qualities: SignatoryCapacity[];
 }
 
 // Statute overlay overrides (plan t31 §2.3, ENT-03). Any field may be null when the
@@ -428,6 +451,17 @@ export interface BookLegalHoldOperatorWorkflow {
   legal_compliance_claimed: false;
 }
 
+/**
+ * Query for `GET /v1/books/{id}/archive/package` — the only two knobs the endpoint accepts.
+ * `legal_hold` stamps an export-time-only hold into the package (the server never persists it,
+ * and rejects the request with 422 when the reason is missing or blank); a hold already
+ * persisted on the book travels in the package regardless of this flag.
+ */
+export interface BookArchivePackageParams {
+  legal_hold?: boolean;
+  legal_hold_reason?: string;
+}
+
 export type ArchivePackageFileRole =
   'pdf_a' | 'signing_report' | 'evidence_report' | 'metadata' | 'other' | string;
 
@@ -584,6 +618,11 @@ export type ActAttendanceWeight = { Capital: number } | { Permilage: number };
 export interface ActAttendee {
   name: string;
   quality: SignatoryCapacity;
+  /**
+   * Free-text qualidade. Accepted **only** alongside `quality: 'Other'` (the API 422s
+   * otherwise), so that reporting over `quality` stays a closed set.
+   */
+  quality_note: string | null;
   presence: PresenceMode;
   represented_by: string | null;
   weight: ActAttendanceWeight | null;
@@ -612,6 +651,21 @@ export interface ActConvening {
   evidence_reference: string | null;
   recipients: ActConveningRecipient[];
   second_call: ActSecondCall | null;
+}
+
+/** The lawful ground on which a meeting was held with no convocatória. */
+export type NoConveningBasis = 'AssembleiaUniversal' | 'Other';
+
+/**
+ * Recorded instead of `convening` when there was no convening notice at all. Deliberately not a
+ * bare "skip convening" flag: the ata recites this basis, so it has to say something.
+ */
+export interface ActConveningWaiver {
+  basis: NoConveningBasis;
+  grounds: string | null;
+  all_agreed_to_meet: boolean;
+  all_agreed_to_agenda: boolean;
+  evidence_reference: string | null;
 }
 
 export interface DispatchActConveningBody {
@@ -792,6 +846,7 @@ export interface ActView {
   seal_metadata: ActSealMetadata | null;
   retifies: string | null;
   convening?: ActConvening;
+  convening_waiver?: ActConveningWaiver;
   /** Skip-serialized when empty, so an act with nobody named carries no `attendees` key. */
   attendees?: ActAttendee[];
   ai_provenance?: AiProvenanceView | null;
@@ -2405,6 +2460,14 @@ export interface TenantRepositoryPolicy {
   updated_at: string;
 }
 
+/**
+ * `GET /v1/tenants/{id}/repository-policy`. Zero-knowledge custody is opt-in, so a tenant with
+ * no policy is a normal state, not a missing resource: `policy` is `null` until it opts in.
+ */
+export interface TenantRepositoryPolicyView {
+  policy: TenantRepositoryPolicy | null;
+}
+
 export interface StoredRepositoryPolicy {
   policy: RepositoryPolicy;
   policy_source: 'tenant' | 'repository';
@@ -3674,7 +3737,10 @@ export interface DelegationView {
   id: string;
   from: string;
   to: string;
+  /** The primary delegated verb — the first element of `permissions`, kept for back-compat. */
   permission: string;
+  /** Every delegated verb, in grant order. Always non-empty. Prefer this over `permission`. */
+  permissions: string[];
   scope: PermissionScope;
   granted_at: string;
   starts_at: string;
@@ -3686,16 +3752,23 @@ export interface DelegationView {
 }
 
 /**
- * Body of `POST /v1/delegations` (t64-E4). `to` is the grantee user id; `permission` a dotted
- * verb id the grantor holds VIA A ROLE at `scope` (meta verbs are non-delegable); `starts_at` and
- * `expires_at` are optional RFC-3339 timestamps (omit `starts_at` ⇒ grant time; omit `expires_at`
- * ⇒ until-revoked); `legal_basis` is required operator-supplied local evidence/rationale. The
- * server 403s a permission the grantor does not hold via a role, and 422s malformed timestamps or
- * a missing/blank/overlong `legal_basis`.
+ * Body of `POST /v1/delegations` (t64-E4; multi-permission t26). `to` is the grantee user id;
+ * `permissions` the dotted verb ids the grantor holds VIA A ROLE at `scope` (meta verbs are
+ * non-delegable); `starts_at` and `expires_at` are optional RFC-3339 timestamps (omit `starts_at`
+ * ⇒ grant time; omit `expires_at` ⇒ until-revoked); `legal_basis` is required operator-supplied
+ * local evidence/rationale. The whole set shares one scope, one lifetime and one legal basis.
+ *
+ * The server validates **every** verb independently and refuses the delegation **entirely** (403,
+ * naming the offending verb) if any one is meta or not held via a role — never a partial grant. It
+ * 422s malformed timestamps, an empty permission set, or a missing/blank/overlong `legal_basis`.
+ *
+ * The legacy singular `permission` is still accepted; when both are sent their union is delegated.
  */
 export interface GrantDelegationBody {
   to: string;
-  permission: string;
+  /** @deprecated Send `permissions` instead; retained so existing callers keep working. */
+  permission?: string;
+  permissions?: string[];
   scope: PermissionScope;
   starts_at?: string;
   expires_at?: string;
@@ -3830,10 +3903,30 @@ export interface ProviderCredentialGroupView {
   entries: ProviderCredentialEntryView[];
 }
 
-/** `GET /v1/signature/provider-credentials` — the whole management list (metadata only). */
+/** Sanitized reason the credential store cannot accept a secret at all. */
+export type CredentialStorageFailure =
+  | 'missing_key_source'
+  | 'not_persistent'
+  | 'ambiguous_operator_key'
+  | 'invalid_operator_key'
+  | 'missing_root_envelope'
+  | 'invalid_root_envelope'
+  | 'store_unavailable';
+
+/**
+ * `GET /v1/signature/provider-credentials` — the whole management list (metadata only).
+ *
+ * The storage triple carries one invariant the UI depends on: `protection_level` is present
+ * exactly when `can_store` is true. An absent level therefore means "nothing can be stored",
+ * never "stored with weaker protection" — the distinction the banner used to get wrong.
+ * `can_store` is absent on a server predating t36; treat that as "storable" so an older server
+ * keeps its previous (protection-level-driven) banner rather than claiming a blocked store.
+ */
 export interface ProviderCredentialsListView {
   strict: boolean;
   protection_level?: CredentialProtectionLevel;
+  can_store?: boolean;
+  storage_failure?: CredentialStorageFailure;
   providers: ProviderCredentialGroupView[];
 }
 
@@ -3902,28 +3995,18 @@ export interface SessionView {
 }
 
 /**
- * One sign-in-eligible user in the UNAUTHENTICATED roster (`GET /v1/session/roster`,
- * t45-e1). Deliberately minimal — EXACTLY these four keys; it never carries secret
- * material, the attestation fingerprint, `created_at` or `active`. `has_secret` exposes
- * legacy/no-hash state; sign-in still always requires a password.
- */
-export interface RosterUser {
-  id: string;
-  username: string;
-  display_name: string;
-  has_secret: boolean;
-}
-
-/**
- * `GET /v1/session/roster` (unauthenticated, t45-e1) — the signed-out sign-in roster
- * that breaks the chicken-and-egg lockout: it lets the UI decide onboarding-vs-sign-in
- * and list the users it may sign in as WITHOUT the auth-gated `GET /v1/users`.
+ * `GET /v1/session/roster` (unauthenticated, t45-e1; narrowed by t33-e2) — ONE boolean.
  * `onboarding_required` is true iff no user exists at all (the first-run bootstrap is
- * available → show the wizard). `users` holds active users only.
+ * available → show the wizard), which is all a signed-out client needs to decide
+ * onboarding-vs-sign-in without the auth-gated `GET /v1/users`.
+ *
+ * It used to also return `users: RosterUser[]` (`{id, username, display_name, has_secret}`).
+ * That was user enumeration: any anonymous caller could read the full valid-account list.
+ * Sign-in is now by typed identifier — `POST /v1/session {username, password}` — so no
+ * client needs the list, and `RosterUser` no longer exists.
  */
 export interface SessionRoster {
   onboarding_required: boolean;
-  users: RosterUser[];
 }
 
 /**
@@ -3968,11 +4051,19 @@ export interface PasswordPolicyView {
   rules: PasswordRuleView[];
 }
 
-export interface CreateSessionBody {
-  user_id: string;
-  /** Required for every sign-in; 401/409/429 on failure. */
-  password: string;
-}
+/**
+ * `POST /v1/session`. Address the user by `username` — the identifier the operator types,
+ * resolved server-side — or by `user_id` when the caller already holds it (the onboarding
+ * wizard and the signed-in account switcher do). `username` wins if both are sent.
+ *
+ * On failure the server answers a single opaque `401 "credenciais inválidas"`: an unknown
+ * username and a wrong password are deliberately indistinguishable, in wording and in
+ * timing. Never surface the raw message in a way that implies otherwise.
+ */
+export type CreateSessionBody = { password: string } & (
+  | { username: string; user_id?: never }
+  | { user_id: string; username?: never }
+);
 
 // Sign-in secret + attestation-key management bodies (t29). `current_password` is
 // required only when a secret already exists (verified server-side, 401 on mismatch).
@@ -4975,6 +5066,7 @@ export interface DraftActBody {
   channel: MeetingChannel;
   ai_provenance?: AiProvenanceInput | null;
   convening?: ActConvening | null;
+  convening_waiver?: ActConveningWaiver | null;
   retifies?: string;
 }
 
@@ -5014,6 +5106,7 @@ export interface UpdateActBody {
   attachments?: ActAttachment[];
   signatories?: ActSignatory[];
   convening?: ActConvening | null;
+  convening_waiver?: ActConveningWaiver | null;
   attendees?: ActAttendee[];
 }
 
@@ -6568,9 +6661,106 @@ export interface OnboardingSettings {
   completed_at: string | null;
 }
 
+/** Transport security for the outbound SMTP session (t23). `starttls` is the default; `none` is
+ *  only accepted by the backend alongside an explicit `allow_insecure` acknowledgement. */
+export const SMTP_ENCRYPTIONS = ['starttls', 'implicit_tls', 'none'] as const;
+export type SmtpEncryption = (typeof SMTP_ENCRYPTIONS)[number];
+
+/** Outbound email (SMTP) relay configuration (t23).
+ *
+ *  NOTE the absence of a password field: it is deliberate and load-bearing. The relay password is
+ *  write-only, stored AEAD-encrypted server-side, and is never part of the settings document in
+ *  either direction. It is set through `PUT /v1/settings/email/password` and observed only as
+ *  `EmailStatusView.password_configured`. */
+export interface EmailSettings {
+  enabled: boolean;
+  host: string | null;
+  port: number;
+  encryption: SmtpEncryption;
+  username: string | null;
+  from_address: string | null;
+  from_name: string | null;
+  /** Name announced in EHLO; null falls back to the `from_address` domain. */
+  helo_name: string | null;
+  /** Explicit operator acknowledgement that `encryption: 'none'` sends credentials in the clear.
+   *  The backend rejects the combination without it. */
+  allow_insecure: boolean;
+}
+
+/** `GET /v1/settings/email/status` — metadata only; by construction it cannot carry the password. */
+export interface EmailStatusView {
+  password_configured: boolean;
+  deliverable: boolean;
+  encrypted: boolean;
+  warnings: string[];
+}
+
+/** Where an SMTP session failed. Distinct stages point at distinct fixes (t23). */
+export const SMTP_STAGES = [
+  'connect',
+  'tls',
+  'greeting',
+  'ehlo',
+  'starttls',
+  'auth',
+  'mail_from',
+  'rcpt_to',
+  'data',
+  'quit',
+] as const;
+export type SmtpStage = (typeof SMTP_STAGES)[number];
+
+/** What kind of SMTP failure it was (t23). */
+export const SMTP_FAILURE_KINDS = [
+  'dns',
+  'unreachable',
+  'tls',
+  'tls_unsupported',
+  'timeout',
+  'rejected',
+  'protocol',
+  'configuration',
+] as const;
+export type SmtpFailureKind = (typeof SMTP_FAILURE_KINDS)[number];
+
+/** A structured SMTP failure carrying the relay's real reply, so the UI can show `535 5.7.8 …`
+ *  rather than a generic "could not send". */
+export interface SmtpFailure {
+  stage: SmtpStage;
+  kind: SmtpFailureKind;
+  /** The SMTP reply code, when the relay actually answered. */
+  code?: number;
+  /** The RFC 3463 enhanced status code, when the reply carried one. */
+  enhanced_code?: string;
+  /** The relay's reply text verbatim, or the OS/TLS error when it never replied. */
+  detail: string;
+}
+
+/** `POST /v1/settings/email/test` — a relay rejection is a 200 with `ok: false`, not an HTTP error. */
+export interface EmailTestResult {
+  ok: boolean;
+  tls: boolean;
+  authenticated: boolean;
+  accepted_detail?: string;
+  failure?: SmtpFailure;
+}
+
 /** Tenant-level gate for AI features and the MCP surface. Defaults disabled. */
 export interface AiSettings {
   enabled: boolean;
+}
+
+/**
+ * Connector outbound-egress allowlist (t21) — a containment boundary, not a preference.
+ *
+ * Entries are exact hostnames or IP/CIDR ranges; no scheme, port, path, or wildcard. When the
+ * deployment sets `CHANCELA_CONNECTOR_ALLOWED_HOSTS` that list is a ceiling this one can only
+ * narrow. An empty list means "no runtime allowlist" — it never means "allow everything".
+ */
+export interface ConnectorSettings {
+  allowed_hosts: string[];
+  /** Read-only mirror of the deployment ceiling, stamped by the server on GET. */
+  environment_ceiling?: string[] | null;
 }
 
 export interface Settings {
@@ -6583,10 +6773,12 @@ export interface Settings {
   registry_auto_update: RegistryAutoUpdateSettings;
   workflow: WorkflowSettings;
   data_management: DataManagementSettings;
+  connectors: ConnectorSettings;
   appearance: AppearanceSettings;
   ui: UiSettings;
   onboarding: OnboardingSettings;
   ai: AiSettings;
+  email: EmailSettings;
 }
 
 /** The server's default document (contract §2.8) — used as the pre-load fallback so
@@ -6741,6 +6933,7 @@ export const DEFAULT_SETTINGS: Settings = {
       target_rto_minutes: 4 * 60,
     },
   },
+  connectors: { allowed_hosts: [] },
   appearance: {
     theme: 'system',
     leather_texture: true,
@@ -6752,6 +6945,18 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   onboarding: { completed: false, completed_at: null },
   ai: { enabled: false },
+  // Mirrors `EmailSettings::default()`: off, submission port, STARTTLS, nothing acknowledged.
+  email: {
+    enabled: false,
+    host: null,
+    port: 587,
+    encryption: 'starttls',
+    username: null,
+    from_address: null,
+    from_name: null,
+    helo_name: null,
+    allow_insecure: false,
+  },
 };
 
 export interface HealthResponse {

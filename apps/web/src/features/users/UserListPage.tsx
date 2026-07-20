@@ -15,7 +15,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useUpdateUser, useUsers } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Badge, Card, EmptyState, ErrorNote, Icon, SkeletonTable, Table, useToast } from '../../ui';
+import { Badge, Card, EmptyState, ErrorNote, Icon, SkeletonRegion, SkeletonTable, Table, useToast } from '../../ui';
 import { GateButtonLink, GateIconButton } from '../session/permissions';
 import type { UserView } from '../../api/types';
 
@@ -119,7 +119,9 @@ export function UsersList() {
       }
     >
       {users.isLoading ? (
-        <SkeletonTable cols={5} />
+        <SkeletonRegion>
+          <SkeletonTable cols={5} />
+        </SkeletonRegion>
       ) : users.error ? (
         <ErrorNote error={users.error} />
       ) : (users.data ?? []).length === 0 ? (

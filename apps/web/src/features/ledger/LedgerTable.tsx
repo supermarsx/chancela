@@ -4,9 +4,10 @@
  * component (first/last eight, full value on hover, click-to-copy) so the table stays
  * legible without hiding the evidence.
  */
+import { ledgerEventKindLabel } from '../../api/labels';
 import type { LedgerEventView } from '../../api/types';
 import { useT, useLocale } from '../../i18n';
-import { Badge, Digest, EmptyState, Table } from '../../ui';
+import { Badge, Digest, EmptyState, Table, TooltipText } from '../../ui';
 
 function formatTimestamp(rfc3339: string, locale: string): string {
   const d = new Date(rfc3339);
@@ -53,7 +54,12 @@ export function LedgerTable({
         <tr key={e.id}>
           <td>{e.seq}</td>
           <td>
-            <Badge tone="accent">{e.kind}</Badge>
+            <Badge tone="accent">
+              {/* The dotted wire id stays reachable — it is the filter/export value, and the
+                  friendly label replaces it on screen, so it lives ONLY in the bubble (hence
+                  focusable by default). */}
+              <TooltipText label={e.kind}>{ledgerEventKindLabel(e.kind)}</TooltipText>
+            </Badge>
           </td>
           <td>
             <code className="mono">{e.scope}</code>
@@ -63,7 +69,8 @@ export function LedgerTable({
               <span className="ledger-chain-list">
                 {(e.chains ?? []).map((chain) => (
                   <Badge key={chain} tone="neutral">
-                    <span title={chain}>{shortChain(chain)}</span>
+                    {/* The full chain hash exists only here — the cell shows an abbreviation. */}
+                    <TooltipText label={chain}>{shortChain(chain)}</TooltipText>
                   </Badge>
                 ))}
               </span>
@@ -71,9 +78,9 @@ export function LedgerTable({
           ) : null}
           <td>
             {e.actor === 'api' ? (
-              <span className="muted" title={t('ledger.actor.systemTooltip')}>
+              <TooltipText className="muted" label={t('ledger.actor.systemTooltip')}>
                 {e.actor}
-              </span>
+              </TooltipText>
             ) : (
               e.actor
             )}

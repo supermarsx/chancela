@@ -7,6 +7,7 @@ import {
   Icon,
   PageHeader,
   SkeletonCards,
+  SkeletonRegion,
   SubNav,
   type SubNavItem,
 } from '../../ui';
@@ -99,21 +100,32 @@ export function NotificationsPage() {
         />
       </PageHeader>
 
-      <Card>
-        {isLoading || triage.isLoading ? (
-          <SkeletonCards count={4} />
-        ) : error || triage.error ? (
-          <ErrorNote error={error ?? triage.error} />
-        ) : (
-          <NotificationList
-            compact
-            items={visible}
-            emptyTitle={emptyTitle(filter, t)}
-            onTriage={triage.setStatus}
-            triageDisabled={triage.isUpdating}
-          />
-        )}
-      </Card>
+      {/* Keyed on the filter so switching sub-tab remounts and replays the shared panel
+          fade — the same treatment every other SubNav surface already had, and the only
+          one that was missing it. Nested inside the Layout's `.route-transition`, so it
+          picks up the riseless `panel-enter` variant automatically (theme.css). The
+          wrapper takes the `.stack` sibling margin the Card used to take, so spacing is
+          unchanged; and it never gates the content — the branch below renders on the same
+          paint, the fade only rides on top of whatever is already there. */}
+      <div className="route-transition" key={filter} data-subanim-key={filter}>
+        <Card>
+          {isLoading || triage.isLoading ? (
+            <SkeletonRegion>
+              <SkeletonCards count={4} />
+            </SkeletonRegion>
+          ) : error || triage.error ? (
+            <ErrorNote error={error ?? triage.error} />
+          ) : (
+            <NotificationList
+              compact
+              items={visible}
+              emptyTitle={emptyTitle(filter, t)}
+              onTriage={triage.setStatus}
+              triageDisabled={triage.isUpdating}
+            />
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
-import { Skeleton, SkeletonCards, SkeletonTable } from './Skeleton';
+import { cleanup, render, screen } from '@testing-library/react';
+import { Skeleton, SkeletonCards, SkeletonList, SkeletonRegion, SkeletonTable } from './Skeleton';
 
 afterEach(cleanup);
 
@@ -30,5 +30,104 @@ describe('Skeleton', () => {
   it('SkeletonCards renders the requested number of metric cards', () => {
     const { container } = render(<SkeletonCards count={5} />);
     expect(container.querySelectorAll('.card').length).toBe(5);
+  });
+
+  it('SkeletonList mirrors the dashboard list item box (head + meta rows)', () => {
+    const { container } = render(<SkeletonList items={3} />);
+    expect(container.querySelectorAll('.dashboard-list__item').length).toBe(3);
+    // Same class names as the real list, so the swap keeps the box model identical.
+    expect(container.querySelectorAll('.dashboard-list__head').length).toBe(3);
+    expect(container.querySelectorAll('.dashboard-list__meta').length).toBe(3);
+  });
+});
+
+describe('SkeletonRegion', () => {
+  it('announces loading politely while marking the subtree busy', () => {
+    render(
+      <SkeletonRegion>
+        <SkeletonTable rows={2} cols={2} />
+      </SkeletonRegion>,
+    );
+    const region = screen.getByRole('status');
+    expect(region.getAttribute('aria-busy')).toBe('true');
+    // The blocks themselves are aria-hidden, so this text is the only thing a screen
+    // reader gets during load — without it the surface is silent.
+    expect(region.querySelector('.sr-only')?.textContent).toBe('A carregar…');
+  });
+
+  it('accepts a surface-specific label', () => {
+    render(
+      <SkeletonRegion label="A carregar livros…">
+        <Skeleton />
+      </SkeletonRegion>,
+    );
+    expect(screen.getByRole('status').querySelector('.sr-only')?.textContent).toBe(
+      'A carregar livros…',
+    );
+  });
+
+  it('does not expose the decorative blocks to assistive tech', () => {
+    const { container } = render(
+      <SkeletonRegion>
+        <SkeletonList items={2} />
+      </SkeletonRegion>,
+    );
+    // Every skeleton subtree root hides itself; nothing below it is reachable.
+    expect(container.querySelector('.dashboard-list')?.getAttribute('aria-hidden')).toBe('true');
+  });
+});
+
+// Matches the convention in LedgerPage.test.tsx: an indirect dynamic import, since the
+// web tsconfig carries no @types/node.
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8');
+}
+
+describe('will-change budget', () => {
+  /** Selectors allowed a permanent promotion hint: small, few, animated on later input. */
+  const ALLOWED = ['.ferramentas-subnav__indicator', '.subnav__indicator'];
+
+  async function willChangeSelectors(): Promise<string[]> {
+    const css = (await themeCss()).replace(/\/\*[\s\S]*?\*\//g, '');
+    return css
+      .split('}')
+      .filter((block) => /will-change\s*:/.test(block))
+      .map((block) => block.slice(0, block.indexOf('{')).trim().replace(/\s+/g, ' '));
+  }
+
+  it('keeps will-change off large or heavily repeated elements', async () => {
+    const selectors = await willChangeSelectors();
+    // Firefox's budget is document surface x 3; once exceeded it ignores every further
+    // declaration, so hints on full-bleed or repeated elements disable the whole feature.
+    // `.route-transition` nests three deep, `.leather-bg::after` is the full viewport, and
+    // `.skeleton` matches dozens of blocks at once.
+    for (const banned of ['.route-transition', '.leather-bg::after', '.skeleton']) {
+      expect(selectors.some((sel) => sel.includes(banned))).toBe(false);
+    }
+  });
+
+  it('only the tightly-scoped subnav indicator keeps a hint, and not for width', async () => {
+    const selectors = await willChangeSelectors();
+    for (const sel of selectors) {
+      expect(ALLOWED.some((allowed) => sel.includes(allowed))).toBe(true);
+    }
+    const css = (await themeCss()).replace(/\/\*[\s\S]*?\*\//g, '');
+    // `width` is a layout property and cannot be composited; hinting it promotes for nothing.
+    expect(css).not.toMatch(/will-change:[^;]*width/);
+  });
+});
+
+describe('reduced motion', () => {
+  it('theme.css disables the shimmer sweep under prefers-reduced-motion', async () => {
+    // jsdom has no cascade, so assert the stylesheet rule itself: the animated
+    // background-image is removed, leaving a static tint.
+    const css = await themeCss();
+    const block = css.slice(css.indexOf('/* --- Skeleton loaders'));
+    const reduced = block.slice(block.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduced).toMatch(/\.skeleton\s*\{[^}]*background-image:\s*none/);
   });
 });

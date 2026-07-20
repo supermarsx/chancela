@@ -12,6 +12,7 @@
  * throwing.
  */
 import { Printer } from '../../ui/icons';
+import { Tooltip } from '../../ui';
 import { useT } from '../../i18n';
 
 export function PrintButton() {
@@ -23,16 +24,13 @@ export function PrintButton() {
   }
 
   return (
-    <button
-      type="button"
-      className="btn btn--print btn--icon"
-      onClick={print}
-      title={t('entities.print.title')}
-    >
-      <span className="btn__icon">
-        <Printer />
-      </span>
-      {t('common.print')}
-    </button>
+    <Tooltip label={t('entities.print.title')}>
+      <button type="button" className="btn btn--print btn--icon" onClick={print}>
+        <span className="btn__icon">
+          <Printer />
+        </span>
+        {t('common.print')}
+      </button>
+    </Tooltip>
   );
 }

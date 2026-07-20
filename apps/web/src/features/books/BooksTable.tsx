@@ -135,7 +135,9 @@ export function BooksTable({
                 <Truncate text={book.purpose ?? '—'} />
               </BookTableCell>
               <BookTableCell column="State">
-                <span className="books-table__state" title={bookStateLabels[book.state]}>
+                {/* No tooltip: the native `title` here repeated the badge's own visible text
+                    verbatim, so it revealed nothing (t31). */}
+                <span className="books-table__state">
                   <Badge tone={stateTone(book.state)}>{bookStateLabels[book.state]}</Badge>
                 </span>
               </BookTableCell>

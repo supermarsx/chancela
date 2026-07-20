@@ -31,6 +31,7 @@ const entity: Entity = {
     signature_policy: 'QualifiedPreferred',
     template_family: 'csc',
     calendar_presets: [],
+    attendee_qualities: ['Member'],
   },
   statute: null,
 };

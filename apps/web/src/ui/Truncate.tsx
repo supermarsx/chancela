@@ -1,9 +1,11 @@
 /**
  * Render a long value on a single line, abbreviated with an ellipsis when it overflows
- * its container (t13 item 4). The full value is always available through the native
- * `title` tooltip, so nothing is lost — the text merely shrinks to fit. When `href` is
- * given it renders a clickable link (external URLs open in a new tab) that stays
- * clickable across its whole visible span; otherwise a plain span.
+ * its container (t13 item 4). The full value is always available through the shared themed
+ * {@link Tooltip} — which replaced the unstyleable native `title` in t31 — so nothing is
+ * lost; the text merely shrinks to fit. The bubble is attached only while the ellipsis is
+ * actually engaged, so an unclipped value stays a plain element with no redundant
+ * description. When `href` is given it renders a clickable link (external URLs open in a
+ * new tab) that stays clickable across its whole visible span; otherwise a plain span.
  *
  * Truncation is pure CSS (`text-overflow: ellipsis`) so it reflows with the container
  * and needs no measurement. In a flex/grid parent the ellipsis only engages when the
@@ -15,8 +17,9 @@
  * middle-click / copy-link) keep the native anchor behaviour, which is why the `href`
  * and `target="_blank"` attributes are retained.
  */
-import type { AnchorHTMLAttributes, MouseEvent } from 'react';
+import { useRef, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 import { openExternal } from '../desktop/openExternal';
+import { Tooltip, TooltipText, useIsClipped } from './Tooltip';
 
 interface TruncateProps {
   /** The full value; shown verbatim in the tooltip and abbreviated visually. */
@@ -48,6 +51,11 @@ function isSafeUrl(url: string): boolean {
 export function Truncate({ text, href, mono, className }: TruncateProps) {
   const cls = `truncate ${mono ? 'mono' : ''} ${className ?? ''}`.trim().replace(/\s+/g, ' ');
   const safeHref = href && isSafeUrl(href) ? href : undefined;
+  const anchorRef = useRef<HTMLAnchorElement>(null);
+  // Only reveal the full value when the ellipsis has actually engaged; an unclipped link
+  // already shows everything, and a bubble repeating it would be noise (and a redundant
+  // `aria-describedby`). The anchor is focusable in its own right, so no tabIndex is needed.
+  const anchorClipped = useIsClipped(anchorRef, Boolean(safeHref));
   if (safeHref) {
     const external = /^https?:\/\//i.test(safeHref);
     const extra: AnchorHTMLAttributes<HTMLAnchorElement> = external
@@ -63,15 +71,25 @@ export function Truncate({ text, href, mono, className }: TruncateProps) {
           },
         }
       : {};
-    return (
-      <a className={cls} href={safeHref} title={text} {...extra}>
+    const anchor = (
+      <a ref={anchorRef} className={cls} href={safeHref} {...extra}>
         {text}
       </a>
     );
+    // `anchorRef` keeps the tooltip layout-transparent: `.truncate` is `display: block` and
+    // is routinely sized as a flex/grid child, so the default `.tooltip` inline-flex wrapper
+    // would change how the link sizes and where the ellipsis falls.
+    return anchorClipped ? (
+      <Tooltip label={text} variant="prose" anchorRef={anchorRef}>
+        {anchor}
+      </Tooltip>
+    ) : (
+      anchor
+    );
   }
   return (
-    <span className={cls} title={text}>
+    <TooltipText className={cls} label={text} onlyWhenClipped>
       {text}
-    </span>
+    </TooltipText>
   );
 }

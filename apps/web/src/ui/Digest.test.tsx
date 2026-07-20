@@ -22,9 +22,17 @@ describe('abbreviateDigest', () => {
 });
 
 describe('Digest', () => {
-  it('renders the abbreviated value with the full digest on the title', () => {
+  it('renders the abbreviated value with the full digest in the themed tooltip', () => {
     render(<Digest value={FULL} />);
-    const code = screen.getByTitle(FULL);
+    const code = screen.getByText(`${FULL.slice(0, 8)}…${FULL.slice(-8)}`);
+    // t31: the full digest moved off the unstyleable native `title` onto the shared bubble,
+    // wired up as a description rather than as an unreachable browser affordance.
+    expect(code.getAttribute('title')).toBeNull();
+    const bubble = document.getElementById(String(code.getAttribute('aria-describedby')));
+    expect(bubble?.getAttribute('role')).toBe('tooltip');
+    expect(bubble?.textContent).toBe(FULL);
+    // The abbreviation hides the value visually, so the reveal MUST be keyboard reachable.
+    expect(code.getAttribute('tabindex')).toBe('0');
     expect(code.textContent).toBe(`${FULL.slice(0, 8)}…${FULL.slice(-8)}`);
     // The full value never appears verbatim in the abbreviated text node.
     expect(code.textContent).not.toBe(FULL);

@@ -47,6 +47,43 @@ The additive operator surface follows the same review boundary in
 the complete English fallback slice until native review. Typed key parity and placeholder gates
 still apply, so a missing safety label fails CI instead of disappearing at runtime.
 
+### Ledger event-kind labels (t17) — a translated key group pending native review
+
+`src/i18n/ledgerEventLabels.ts` holds the display labels for the ledger's event kinds
+(`enum.ledgerEventKind.*`, 126 kinds) plus `dashboard.activity.sequence.title` — **127 keys**.
+Unlike `operationsFallback.ts` this slice is **fully translated into all 14 locales**, one
+`LedgerEventLabels` per locale in that single file, each spread by its own catalog. Keeping the
+14 columns in one file is deliberate: a reviewer can diff a language against pt-PT without
+opening 14 catalogs, and the shared `LedgerEventLabels` type makes a missing or invented key a
+compile error.
+
+| Tier                                | Locales          | Status                                                                                                                        |
+| ----------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| source                              | `pt-PT`          | Authoritative.                                                                                                                |
+| human                               | `en-US`, `en-GB` | Human-authored; en-GB overrides the 5 keys where British spelling diverges (`catalogue`, `reinitialised`, `Organisation` ×3). |
+| **machine · pending native review** | the other 11     | **Translated but NOT natively reviewed.** Same tier their catalogs already carry above.                                       |
+
+These are translated rather than left in English because an event kind is a short,
+system-generated status label ("Entidade criada", "Convite de assinatura externa criado"): a
+clumsy translation is an awkward phrase, not a false legal claim. Reviewers should treat the 11
+pending columns as draft copy — the terminology to check first is the per-locale minutes term
+(Protokoll / procès-verbal / verbale / notulen / pöytäkirja / protokół / protokoll), the
+GDPR-role vocabulary (processor/controller equivalents), and the commercial-registry extract term
+already fixed per locale in the table above.
+
+`sv-FI` follows its documented rule: seeded from `sv-SE` with the genuine Finland-Swedish
+divergence applied (`Registerutdrag`, not `Registerbevis`).
+
+**Not translated, by design:** `src/features/templates/templateNames.ts`. Those are the names of
+Portuguese legal document types ("Ata de assembleia geral", "Termo de abertura do livro de atas")
+and every template asset declares `"locale": "pt-PT"`; they follow the Legislação-shelf rule
+below and render verbatim in every locale. The distinction is _system event label_ (translate)
+versus _name of a legal instrument_ (do not).
+
+61 pt-BR labels are byte-identical to pt-PT — legitimately shared Portuguese — and are recorded
+in `reviewedIdenticalValues.ts` as part of this key group. es-ES, fr-FR and it-IT contribute none,
+which is the check that those columns are genuinely translated rather than copied.
+
 ### For the translation executors (t19-e3b / t19-e3c)
 
 Each owns a disjoint set of `src/i18n/locales/<tag>.ts` files. In each: replace the
@@ -74,7 +111,21 @@ pt-PT is legally authoritative (UX-21). This is a deliberate boundary, not a gap
   "resumo" descriptions), amendment notes and theme headings come from the `diplomas.ts`
   legal-content module and are rendered verbatim; only the page chrome (title, caveat,
   badges, PDF actions) is localized.
-- **Ledger event data** — event kind/scope/actor/timestamp/hash are data, not chrome.
+- **Ledger event data** — scope/actor/timestamp/hash are data, not chrome, and stay verbatim.
+  The event **kind** is the one exception (t17): the dotted identifier remains the filter,
+  export and `title`-attribute value everywhere, but the line an operator reads is now a
+  label localized into all 14 locales, resolved through `ledgerEventKindLabel`
+  (`src/api/labels.ts`). An unmapped kind falls back to the raw identifier, so a newer server
+  never blanks a row. See the event-kind section above for the review tiers.
+- **Built-in template names** — `src/features/templates/templateNames.ts` (t17). Portuguese legal
+  document types, extracted from the template assets' own authored headings and rendered verbatim
+  in every locale, exactly like the diploma shelf below.
+- **The shell footer** (`common.footer`, t37) — "Chancela · Livro de atas digital · v{version}".
+  Both segments are names, not chrome: `Chancela` is the product and _livro de atas_ is the
+  Portuguese legal instrument the product keeps, so the line renders verbatim in all 14 locales
+  (the same _legal-instrument name_ rule as the template names above). Only `{version}` varies,
+  and it is the real build version, not authored copy. The 13 identical values are recorded in
+  `reviewedIdenticalValues.ts`.
 - **The crash diagnostics bundle** (`buildDiagnostics`) and the version-skew console warning
   are technical diagnostics kept as authored, not UI chrome.
 

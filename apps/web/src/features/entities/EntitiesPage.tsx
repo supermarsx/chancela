@@ -13,6 +13,7 @@ import {
   closingReasonLabels,
   entityFamilyLabels,
   entityKindLabels,
+  ledgerEventKindLabel,
 } from '../../api/labels';
 import {
   BOOK_KINDS,
@@ -41,7 +42,9 @@ import {
   PageHeader,
   Select,
   SkeletonTable,
+  SkeletonRegion,
   Table,
+  TooltipText,
   Truncate,
 } from '../../ui';
 import { GateButtonLink } from '../session/permissions';
@@ -179,9 +182,18 @@ function CellLine({
   children: ReactNode;
 }) {
   return (
-    <span className={cx('entity-cell-line', className)} title={title}>
-      {children}
-    </span>
+    // No `onlyWhenClipped` here on purpose: a cell line's title is sometimes the same text
+    // de-truncated, but is often RICHER than what the cell shows (the compact type cell reads
+    // "Lda." while its title carries the full legal form and the rules reference). Letting
+    // TooltipText auto-detect keeps the richer case announced and keyboard reachable instead
+    // of hiding it behind a hover that only fires when the column happens to be narrow.
+    title ? (
+      <TooltipText className={cx('entity-cell-line', className)} label={title}>
+        {children}
+      </TooltipText>
+    ) : (
+      <span className={cx('entity-cell-line', className)}>{children}</span>
+    )
   );
 }
 
@@ -243,21 +255,13 @@ export function activityTone(kind: string): 'neutral' | 'accent' | 'ok' {
   return 'neutral';
 }
 
+/**
+ * Was a hand-written pt-PT subset of the event kinds; now the shared, exhaustive and
+ * localized map, so this feed cannot fall behind the ones on the Vista geral and Arquivo.
+ * Unmapped kinds still degrade to the raw identifier, which is what the filter uses.
+ */
 export function activityLabel(kind: string): string {
-  if (kind === 'registry.imported') return 'Registo importado';
-  if (kind === 'entity.statute_updated') return 'Entidade atualizada';
-  if (kind === 'entity.created') return 'Entidade criada';
-  if (kind === 'book.opened') return 'Livro aberto';
-  if (kind === 'book.closed') return 'Livro encerrado';
-  if (kind === 'book.start_over') return 'Livro recomeçado';
-  if (kind === 'act.drafted') return 'Ata rascunhada';
-  if (kind === 'act.advanced') return 'Ata avançada';
-  if (kind === 'act.sealed') return 'Ata selada';
-  if (kind === 'act.archived') return 'Ata arquivada';
-  if (kind === 'convening.dispatched') return 'Convocatória expedida';
-  if (kind === 'document.generated') return 'Documento gerado';
-  if (kind === 'document.signed') return 'Documento assinado';
-  return kind;
+  return ledgerEventKindLabel(kind);
 }
 
 export function activityCategory(kind: string): Exclude<ActivityFilter, 'all' | 'none'> | 'other' {
@@ -631,7 +635,13 @@ function ActivitySummary({
   }
   const timestamp = formatActivityTimestamp(activity.timestamp, locale);
   const activityDate = formatActivityDate(activity.timestamp, locale);
-  const title = joinCellParts([activityLabel(activity.kind), timestamp, activity.actor]);
+  // The wire id joins the hover line: it is what the Arquivo "Tipo de evento" filter takes.
+  const title = joinCellParts([
+    activityLabel(activity.kind),
+    activity.kind,
+    timestamp,
+    activity.actor,
+  ]);
   return (
     <CellLine title={title} className="entity-cell-line--compact entity-cell-line--activity">
       <Badge tone={activityTone(activity.kind)}>{activityLabel(activity.kind)}</Badge>
@@ -1018,7 +1028,9 @@ export function EntitiesPage() {
         }
       >
         {isLoading ? (
-          <SkeletonTable cols={12} />
+          <SkeletonRegion>
+            <SkeletonTable cols={12} />
+          </SkeletonRegion>
         ) : error ? (
           <ErrorNote error={error} />
         ) : !data || data.length === 0 ? (
@@ -1179,8 +1191,10 @@ export function EntitiesPage() {
                       {visibleColumns.map((column) => {
                         const label = t(ENTITY_COLUMN_LABEL_KEYS[column]);
                         return (
-                          <th key={column} data-entity-column={column} title={label}>
-                            {label}
+                          <th key={column} data-entity-column={column}>
+                            <TooltipText label={label} onlyWhenClipped>
+                              {label}
+                            </TooltipText>
                           </th>
                         );
                       })}

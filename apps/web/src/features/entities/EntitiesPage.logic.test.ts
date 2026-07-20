@@ -136,21 +136,24 @@ describe('entity list view-model helpers', () => {
     expect(activityTone('entity.statute_updated')).toBe('accent');
     expect(activityTone('unknown')).toBe('neutral');
 
+    // `book.start_over` is a permission, never an event kind (it emits ledger.exported +
+    // ledger.reinitialized + book.opened), so it now degrades like any unmapped kind.
     const labels: Record<string, string> = {
-      'registry.imported': 'Registo importado',
-      'entity.statute_updated': 'Entidade atualizada',
+      'registry.imported': 'Certidão do registo comercial importada',
+      'entity.statute_updated': 'Estatutos da entidade atualizados',
       'entity.created': 'Entidade criada',
       'book.opened': 'Livro aberto',
       'book.closed': 'Livro encerrado',
-      'book.start_over': 'Livro recomeçado',
+      'book.start_over': 'book.start_over',
       'act.drafted': 'Ata rascunhada',
-      'act.advanced': 'Ata avançada',
+      'act.advanced': 'Ata avançada de estado',
       'act.sealed': 'Ata selada',
       'act.archived': 'Ata arquivada',
       'convening.dispatched': 'Convocatória expedida',
       'document.generated': 'Documento gerado',
       'document.signed': 'Documento assinado',
       unknown: 'unknown',
+      '': '',
     };
     for (const [kind, label] of Object.entries(labels)) expect(activityLabel(kind)).toBe(label);
 

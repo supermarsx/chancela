@@ -1,3 +1,4 @@
+import { ledgerEventKindLabel } from '../../api/labels';
 import type {
   Dashboard,
   DashboardAlert,
@@ -598,7 +599,7 @@ function buildEventNotification(event: LedgerEventView, t: TFunction): Notificat
     sortTime: parseTimestamp(event.timestamp),
     tone: 'neutral',
     badge: t('notifications.badge.operation'),
-    title: t('notifications.operation.title', { kind: event.kind }),
+    title: t('notifications.operation.title', { kind: ledgerEventKindLabel(event.kind) }),
     detail: t('notifications.operation.detail', { actor: event.actor, scope: event.scope }),
     meta: [t('notifications.operation.meta', { seq: event.seq })],
     action: { href: '/arquivo', label: t('notifications.action.openLedger') },

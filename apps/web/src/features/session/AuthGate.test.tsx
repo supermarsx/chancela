@@ -123,7 +123,10 @@ describe('AuthGate', () => {
     renderGate();
 
     expect(await screen.findByText('Iniciar sessão')).toBeTruthy();
-    expect(screen.getByText('Amélia Marques')).toBeTruthy();
+    // The typed identifier field, NOT the roster — the sign-in screen never names the
+    // instance's accounts to a signed-out visitor (t33).
+    expect(screen.getByLabelText('Utilizador')).toBeTruthy();
+    expect(screen.queryByText('Amélia Marques')).toBeNull();
     expect(screen.queryByText('APP CHROME')).toBeNull();
   });
 
@@ -154,7 +157,7 @@ describe('AuthGate', () => {
 
     // The successful refetch resolves the signed-out roster → the sign-in surface.
     expect(await screen.findByText('Iniciar sessão')).toBeTruthy();
-    expect(screen.getByText('Amélia Marques')).toBeTruthy();
+    expect(screen.getByLabelText('Utilizador')).toBeTruthy();
     expect(rosterCalls).toBeGreaterThanOrEqual(2);
   });
 });

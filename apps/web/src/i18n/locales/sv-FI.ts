@@ -13,9 +13,13 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { ledgerEventLabelsSvFI } from '../ledgerEventLabels';
+import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const svFI: Catalog = {
   ...operationsEnglish,
+  ...ledgerEventLabelsSvFI,
+  ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har inte behörighet för den här åtgärden',
   'perm.denied.title': 'Ingen behörighet',
@@ -154,7 +158,7 @@ export const svFI: Catalog = {
   'nav.skipToContent': 'Hoppa till innehåll',
   'common.brand': 'Chancela',
   'splash.aria': 'Startar Chancela',
-  'common.footer': 'Chancela · Gränssnittsprototyp · Följer portugisisk rätt (CSC, GDPR, eIDAS)',
+  'common.footer': 'Chancela · Livro de atas digital · v{version}',
 
   // --- Shared chrome -------------------------------------------------------------
   'common.loading': 'Läser in…',
@@ -298,7 +302,7 @@ export const svFI: Catalog = {
   'notifications.reminder.followUp.action': 'Öppna protokoll',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
-  'notifications.operation.title': 'Händelse {kind}',
+  'notifications.operation.title': '{kind}',
   'notifications.operation.detail': '{actor} registrerade en händelse i {scope}.',
   'notifications.operation.meta': 'Sekvens {seq}',
   // --- Window controls (desktop) -------------------------------------------------
@@ -893,6 +897,10 @@ export const svFI: Catalog = {
   'acts.signatories': 'Undertecknare',
   'acts.attachments': 'Bilagor',
   'acts.lifecycle': 'Livscykel',
+  // --- Progress stepper (ui/Stepper.tsx) ------------------------------------------
+  'stepper.progress': 'Steg {current} av {total}',
+  'stepper.status.done': 'slutfört',
+  'stepper.status.current': 'aktuellt steg',
   'acts.compliance': 'Efterlevnad',
   'acts.manualSignature.title': 'Alternativ väg: manuellt signerat original (SIG-03)',
   'acts.manualSignature.body':
@@ -1063,6 +1071,41 @@ export const svFI: Catalog = {
   'ledger.archive.format.json': 'Utbytes-JSON (.json)',
   'ledger.archive.format.csv': 'Gransknings-CSV (.csv)',
   'ledger.archive.format.html': 'Gransknings-HTML (.html)',
+  'ledger.subnav.aria': 'Arkivavsnitt',
+  'ledger.subnav.registo': 'Logg',
+  'ledger.subnav.exportacao': 'Export',
+  'ledger.export.document.title': 'Dokument för granskningsloggen',
+  'ledger.export.document.body':
+    'Exporterar loggposterna precis så som fliken Logg visar dem: de filter som är aktiva där avgör vad som hamnar i filen.',
+  'ledger.export.document.editFilters': 'Ändra filtren under Logg',
+  'ledger.export.book.title': 'Bokexporter',
+  'ledger.export.book.body':
+    'Två olika paket för två olika ändamål: ett för arkivleverans och ett för att flytta boken till en annan instans. Välj bok och därefter rätt paket.',
+  'ledger.export.book.label': 'Bok som ska exporteras',
+  'ledger.export.book.help':
+    'Varje paket omfattar en enda bok; för flera böcker upprepar du exporten bok för bok.',
+  'ledger.export.book.empty': 'Inga böcker att exportera',
+  'ledger.export.book.emptyBody': 'Öppna en bok och bevara dess dokument innan du skapar paket.',
+  'ledger.export.preservation.title': 'Bevarandepaket — leverans och bevis',
+  'ledger.export.preservation.body':
+    'En deterministisk, skrivskyddad ZIP avsedd för arkivleverans och som bevis. Den kan inte importeras tillbaka, och att skapa den skriver ingenting i loggen.',
+  'ledger.export.preservation.contents':
+    'Det innehåller bokens bevarade PDF/A-filer, bevisregistret, bevisrapporterna per signatur, PDF-tillgänglighetsrapporterna, rapporterna från externa validerare, det skapade leveransbeviset och, när ett rättsligt bevarandekrav gäller, dess JSON-post.',
+  'ledger.export.legalHold.label': 'Markera rättsligt bevarandekrav i den här exporten',
+  'ledger.export.legalHold.help':
+    'Det påverkar bara det skapade paketet — servern sparar inte kravet på boken. Ett krav som redan noterats på boken följer med paketet även när det här är avstängt.',
+  'ledger.export.legalHold.reason.label': 'Skäl för det rättsliga bevarandekravet',
+  'ledger.export.legalHold.reason.placeholder': 'Domstolsmål nr 123/26…',
+  'ledger.export.legalHold.reason.required':
+    'Ange skälet innan du markerar ett rättsligt bevarandekrav.',
+  'ledger.export.bundle.title': 'Portabilitetspaket — byta instans',
+  'ledger.export.bundle.body':
+    'En självverifierande ZIP och det enda format som bokimporten godkänner. Använd det för att flytta eller återställa en bok på en annan instans.',
+  'ledger.export.bundle.retainedTitle': 'Den här exporten loggas',
+  'ledger.export.bundle.retained':
+    'Till skillnad från bevarandepaketet behåller servern en kopia av det här paketet och lägger till en händelse i granskningsloggen.',
+  'ledger.export.bundle.download': 'Exportera portabilitetspaket',
+  'ledger.export.bundle.downloading': 'Exporterar paket…',
   'toast.ledgerArchive.downloaded': 'Arkiv-PDF/A hämtad.',
   'ledger.actor.systemTooltip': 'Systemaktör (ingen session)',
 
@@ -1191,6 +1234,10 @@ export const svFI: Catalog = {
   'tools.section.legislacao': 'Lagstiftning',
   'tools.section.trust': 'Förtroendelista',
   'tools.section.externalSigning': 'Extern underskrift',
+  'tools.pdf.subnav.aria': 'Avsnitt för teknisk validator',
+  'tools.pdf.section.pdf': 'PDF-signaturer',
+  'tools.pdf.section.asic': 'ASiC-behållare',
+  'tools.pdf.section.reports': 'Tekniska rapporter',
   'externalSigning.title': 'Arbetsflöden för extern underskrift',
   'externalSigning.notice.title': 'Operativ spårning',
   'externalSigning.notice.body':
@@ -1262,6 +1309,16 @@ export const svFI: Catalog = {
   'pdfValidator.failClosed.body':
     'Servern nekade att validera filen. Behandla detta som fail-closed; om meddelandet nämner en avvikelse i storlek eller SHA-256 stämmer de mottagna byten inte med vad webbläsaren deklarerade.',
   'pdfValidator.result.title': 'Resultat',
+  'pdfValidator.table.caption': 'Tekniska PDF/PAdES-kontroller',
+  'pdfValidator.table.check': 'Kontroll',
+  'pdfValidator.table.verdict': 'Resultat',
+  'pdfValidator.table.evidence': 'Bevis',
+  'pdfValidator.verdict.pass': 'Godkänd',
+  'pdfValidator.verdict.fail': 'Underkänd',
+  'pdfValidator.verdict.inconclusive': 'Ej avgjort',
+  'pdfValidator.verdict.info': 'Information',
+  'pdfValidator.section.file': 'Fil',
+  'pdfValidator.field.integrity': 'Angiven integritet',
   'pdfValidator.status.valid': 'Tekniskt giltig',
   'pdfValidator.status.invalid': 'Ogiltig',
   'pdfValidator.status.indeterminate': 'Obestämd',
@@ -1470,6 +1527,7 @@ export const svFI: Catalog = {
     'Officiell text infångad och granskad av en automatiserad process. INTE juridiskt godkänd av en mänsklig granskare – en mänsklig juridisk granskning rekommenderas innan du förlitar dig på den.',
   'legislacao.corpus.back': 'Tillbaka till rättsakterna',
   'legislacao.corpus.backToDiploma': 'Tillbaka till {title}',
+  'legislacao.corpus.backToResults': 'Tillbaka till resultaten',
   'legislacao.corpus.diploma.notFound': 'Rättsakt hittades inte.',
   'legislacao.corpus.article.notFound': 'Artikel hittades inte.',
   'legislacao.corpus.article.source': 'Källa',
@@ -1773,6 +1831,35 @@ export const svFI: Catalog = {
   'settings.entityTable.title': 'Enhetstabell',
   'settings.entityTable.hint': 'Välj vilka kolumner som visas i listan över registrerade enheter.',
   'settings.entityTable.columns.aria': 'Kolumner i enhetstabellen',
+  // --- Connector outbound egress allowlist (t21) --------------------------------
+  'settings.connectorEgress.title': 'Konnektorernas utgående nätverk',
+  'settings.connectorEgress.intro':
+    'De värdar som en konnektor får skicka protokolldata till. Detta är ingen inställningsfråga: det är gränsen som hindrar en konnektor från att skicka innehåll till en godtycklig destination.',
+  'settings.connectorEgress.precedenceTitle': 'Vilken lista gäller',
+  'settings.connectorEgress.precedenceCeiling':
+    'Driftsättningen har fastställt ett tak ({hosts}). Den här listan kan bara begränsa det, aldrig vidga det. Att tillåta en värd utanför taket kräver en ändring av driftsättningskonfigurationen.',
+  'settings.connectorEgress.precedenceNoCeiling':
+    'Driftsättningen har inte fastställt något tak, så den här listan är den enda utgående gränsen. Sätt CHANCELA_CONNECTOR_ALLOWED_HOSTS i driftsättningen för att fastställa ett tak som ingen administratör kan överskrida.',
+  'settings.connectorEgress.hostsLabel': 'Tillåtna värdar (en per rad)',
+  'settings.connectorEgress.hostsHint':
+    'Exakta värdnamn eller IP-/CIDR-intervall. Utan schema, port, sökväg eller jokertecken.',
+  'settings.connectorEgress.placeholder': 'backup.exempel.se\n10.42.0.0/16',
+  'settings.connectorEgress.tooMany': 'Högst {max} poster.',
+  'settings.connectorEgress.rejected': '”{entry}”: {reason}',
+  'settings.connectorEgress.effect':
+    'Ändringar träder i kraft vid nästa konnektoråtgärd, i både API:et och arbetaren, utan omstart.',
+  'settings.connectorEgress.audited':
+    'Varje ändring registreras i revisionsboken med vem, när, samt föregående och ny lista.',
+  'settings.connectorEgress.reason.format':
+    'måste vara ett rent värdnamn eller en IP/CIDR utan schema, port, sökväg eller autentiseringsuppgifter.',
+  'settings.connectorEgress.reason.wildcard': 'jokertecken är inte tillåtna.',
+  'settings.connectorEgress.reason.metadata':
+    'link-local-intervallet innehåller molninstansens metadataslutpunkt och kan inte öppnas här.',
+  'settings.connectorEgress.reason.loopback': 'får inte peka på värden som kör Chancela.',
+  'settings.connectorEgress.reason.forbiddenRange':
+    'detta adressintervall är aldrig ett legitimt mål.',
+  'settings.connectorEgress.reason.broadPrefix':
+    'intervallet är för brett; använd ett smalare prefix.',
   'settings.registryAutoUpdate.cardTitle': 'Automatisk uppdatering av permanenta utdrag',
   'settings.registryAutoUpdate.refreshPlan': 'Uppdatera plan',
   'settings.registryAutoUpdate.refreshingPlan': 'Uppdaterar…',
@@ -2186,6 +2273,20 @@ export const svFI: Catalog = {
   'acts.convening': 'Kallelse',
   'acts.convening.hint':
     'Registrera kallelsens datum, sätt och bevarat underlag. Varningar stöder arbetet och ersätter inte en juridisk granskning.',
+  'acts.convening.waiver.title': 'Utan kallelse',
+  'acts.convening.waiver.hint':
+    'Hölls mötet utan föregående kallelse, registrera här den grund det vilade på; protokollet återger den sedan. Chancela registrerar den angivna grunden och bekräftar inte dess giltighet — låt den bekräftas juridiskt.',
+  'acts.convening.waiver.toggle': 'Mötet hölls utan föregående kallelse',
+  'acts.convening.waiver.basis': 'Grund',
+  'acts.convening.waiver.basis.universal':
+    'Universalstämma — alla närvarande och alla eniga (CSC art. 54.º)',
+  'acts.convening.waiver.basis.other': 'Annan grund (beskriv den)',
+  'acts.convening.waiver.agreedToMeet': 'Alla uttryckte viljan att stämman skulle konstituera sig',
+  'acts.convening.waiver.agreedToAgenda': 'Alla samtyckte till de ärenden som behandlades',
+  'acts.convening.waiver.grounds': 'Registrerad grund',
+  'acts.convening.waiver.evidenceReference': 'Bevis på överenskommelsen',
+  'acts.convening.waiver.conflict':
+    'Både en kallelse och avsaknaden av kallelse är registrerade. Endast den ena kan beskriva detta möte.',
   'acts.convening.dispatchDate': 'Kallelsedatum',
   'acts.convening.channel': 'Kallelsesätt',
   'acts.convening.channelNone': 'Inget sätt registrerat',
@@ -2347,7 +2448,7 @@ export const svFI: Catalog = {
   'onboarding.skip': 'Hoppa över',
   'onboarding.finishing': 'Slutför…',
   'signin.title': 'Logga in',
-  'signin.subtitle': 'Välj din användare för att fortsätta.',
+  'signin.subtitle': 'Skriv ditt användarnamn för att fortsätta.',
   'signin.empty': 'Det finns inga aktiva användare ännu.',
   'signin.requiresPassword': 'Lösenord krävs',
   'signin.password.label': 'Lösenord',
@@ -2366,6 +2467,14 @@ export const svFI: Catalog = {
   'signin.blocked.body':
     'Att skapa en ny användare kräver en aktiv session. Logga in och öppna Användare › Ny i appen.',
   'signin.blocked.action': 'Tillbaka till inloggning',
+  'signin.username.label': 'Användarnamn',
+  'signin.username.placeholder': 'Ditt användarnamn',
+  'signin.badCredentials': 'Fel användarnamn eller lösenord.',
+  'signin.remember.label': 'Spara den här användaren på den här enheten',
+  'signin.recent.title': 'Konton som använts på den här enheten',
+  'signin.recent.remove': 'Ta bort {username} från listan',
+  'signin.recent.note':
+    'Den här listan finns bara i den här webbläsaren och innehåller aldrig lösenord.',
   'session.gate.error': 'Sessionen kunde inte laddas.',
   'session.gate.retry': 'Försök igen',
   'settings.autosave.retry': 'Försök igen',
@@ -2517,6 +2626,8 @@ export const svFI: Catalog = {
   'templates.card.rulePack': 'Regelpaket',
   'templates.card.channels': 'Kanaler',
   'templates.channels.none': 'Ingen särskild kanal',
+  'templates.table.source': 'Källa',
+  'templates.table.actions': 'Åtgärder',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Ny mall',
   'templates.actions.edit': 'Redigera',
@@ -4283,6 +4394,121 @@ export const svFI: Catalog = {
     'Anteckning om kapitalinbetalning transkriberad från registerutdraget.',
   'fieldHelp.registry.deliberationDate': 'Beslutsdatum angivet i inskrivningen, när det finns.',
   'fieldHelp.registry.formaObrigar': 'Importerad text om vem som förpliktar enheten.',
+  // --- Email (SMTP) (t23) ---
+  'settings.email.cardTitle': 'E-post',
+  'settings.email.lede':
+    'Konfigurera den SMTP-server som programmet skickar meddelanden genom. Lösenordet lagras krypterat och returneras aldrig.',
+  'settings.email.enabled.label': 'E-postutskick aktivt',
+  'settings.email.enabled.hint':
+    'Så länge det är avstängt skickas ingenting. Du kan fylla i konfigurationen innan du slår på det.',
+  'settings.email.host.label': 'Server',
+  'settings.email.host.hint':
+    'SMTP-serverns namn. Det är också det namn som TLS-certifikatet måste stämma med.',
+  'settings.email.host.placeholder': 'smtp.exempel.pt',
+  'settings.email.port.label': 'Port',
+  'settings.email.port.hint': '587 för STARTTLS, 465 för implicit TLS.',
+  'settings.email.encryptionField.label': 'Kryptering',
+  'settings.email.encryptionField.hint':
+    'STARTTLS är standardvalet. Om servern inte erbjuder det avvisas anslutningen i stället för att fortsätta okrypterad.',
+  'settings.email.encryption.starttls': 'STARTTLS (rekommenderas)',
+  'settings.email.encryption.implicitTls': 'Implicit TLS (port 465)',
+  'settings.email.encryption.none': 'Utan kryptering',
+  'settings.email.insecure.title': 'Okrypterad anslutning',
+  'settings.email.insecure.body':
+    'Utan kryptering går serverns lösenord och innehållet i alla meddelanden i klartext över nätet. Använd bara det här alternativet för ett relä i ett slutet nät som inte erbjuder något annat.',
+  'settings.email.insecure.confirm': 'Jag bekräftar att jag vill skicka utan kryptering',
+  'settings.email.username.label': 'Användare',
+  'settings.email.username.hint': 'Lämna tomt om servern inte kräver autentisering.',
+  'settings.email.fromAddress.label': 'Avsändaradress',
+  'settings.email.fromAddress.hint':
+    'Adress som används i kuvertet och i Från:-huvudet i alla meddelanden.',
+  'settings.email.fromAddress.placeholder': 'sistema@exempel.pt',
+  'settings.email.fromName.label': 'Avsändarnamn',
+  'settings.email.fromName.hint':
+    'Namn som visas intill adressen, till exempel Encosto Estratégico Lda.',
+  'settings.email.heloName.label': 'EHLO-namn',
+  'settings.email.heloName.hint':
+    'Namn som anges för servern. Lämnas det tomt används domänen i avsändaradressen.',
+
+  'settings.email.password.cardTitle': 'Serverns lösenord',
+  'settings.email.password.lede':
+    'Lagras krypterat i autentiseringsvalvet. Det returneras inte av någon slutpunkt — bara statusen nedan visar om det finns ett.',
+  'settings.email.password.label': 'Lösenord',
+  'settings.email.password.hint': 'Att skriva ett nytt lösenord ersätter det tidigare.',
+  'settings.email.password.placeholder': 'Skriv för att ange eller ersätta',
+  'settings.email.password.save': 'Spara lösenord',
+  'settings.email.password.clear': 'Ta bort lösenord',
+  'settings.email.password.configured': 'Angivet',
+  'settings.email.password.notConfigured': 'Inte angivet',
+  'settings.email.password.savedToast': 'Serverns lösenord sparat',
+  'settings.email.password.clearedToast': 'Serverns lösenord borttaget',
+
+  'settings.email.test.cardTitle': 'Skicka ett testmeddelande',
+  'settings.email.test.lede':
+    'Öppnar en riktig session med den konfigurerade servern och visar svaret den ger, inklusive SMTP-koden.',
+  'settings.email.test.to.label': 'Mottagare',
+  'settings.email.test.to.hint': 'Adress dit testmeddelandet ska skickas.',
+  'settings.email.test.to.placeholder': 'amelia.marques@exempel.pt',
+  'settings.email.test.action': 'Skicka test',
+  'settings.email.test.warningTitle': 'Se över konfigurationen',
+  'settings.email.test.okTitle': 'Meddelandet togs emot av servern',
+  'settings.email.test.okBody':
+    'Servern tog emot meddelandet. Det bekräftar inte leverans till mottagarens inkorg.',
+  'settings.email.test.failTitle': 'Utskicket misslyckades',
+  'settings.email.test.failUnknown': 'Servern returnerade inga detaljer alls.',
+  'settings.email.test.stage': 'Fas',
+  'settings.email.test.code': 'SMTP-kod',
+  'settings.email.test.serverReply': 'Serverns svar',
+  'settings.email.test.relayReply': 'Serverns svar',
+  'settings.email.test.remedy': 'Vad du bör kontrollera',
+  'settings.email.test.tls': 'Krypterad',
+  'settings.email.test.authenticated': 'Autentiserad',
+
+  'settings.email.stage.connect': 'Anslutning till servern',
+  'settings.email.stage.tls': 'TLS-handskakning',
+  'settings.email.stage.greeting': 'Serverns hälsning',
+  'settings.email.stage.ehlo': 'Presentation (EHLO)',
+  'settings.email.stage.starttls': 'Start av STARTTLS',
+  'settings.email.stage.auth': 'Autentisering',
+  'settings.email.stage.mailFrom': 'Avsändare (MAIL FROM)',
+  'settings.email.stage.rcptTo': 'Mottagare (RCPT TO)',
+  'settings.email.stage.data': 'Sändning av meddelandet',
+  'settings.email.stage.quit': 'Avslut av sessionen',
+
+  'settings.email.remedy.dns':
+    'Serverns namn kunde inte slås upp. Kontrollera stavningen och att DNS känner till det.',
+  'settings.email.remedy.unreachable':
+    'Servern svarade inte på den angivna porten. Kontrollera porten och om en brandvägg blockerar.',
+  'settings.email.remedy.tls':
+    'Serverns certifikat godtogs inte. Kontrollera att det är giltigt och att det stämmer med det konfigurerade namnet.',
+  'settings.email.remedy.tlsUnsupported':
+    'Servern erbjuder inte STARTTLS. Åtgärda servern, använd implicit TLS på port 465, eller stäng av krypteringen uttryckligen.',
+  'settings.email.remedy.timeout':
+    'Servern tog för lång tid på sig att svara. Kontrollera nätet och att adressen är rätt.',
+  'settings.email.remedy.configuration':
+    'Konfigurationen går inte att använda som den är. Se över användaren, krypteringen och porten.',
+  'settings.email.remedy.protocol':
+    'Serverns svar gick inte att tolka eller så bröts anslutningen. Bekräfta att porten betjänar SMTP.',
+  'settings.email.remedy.rejected':
+    'Servern avvisade begäran. Koden och texten ovan är det skäl den själv angav.',
+
+  'settings.email.help.enabled':
+    'Huvudströmbrytare för e-postutskick. Avstängd skickar ingen funktion meddelanden.',
+  'settings.email.help.host': 'SMTP-serverns namn, till exempel smtp.exempel.pt.',
+  'settings.email.help.port': 'Inlämningsport: vanligen 587 (STARTTLS) eller 465 (implicit TLS).',
+  'settings.email.help.encryption':
+    'Hur anslutningen skyddas. STARTTLS ansluter i klartext och går över till krypterat innan autentiseringen.',
+  'settings.email.help.username':
+    'Användare för SMTP-autentisering, till exempel sistema@exempel.pt.',
+  'settings.email.help.password':
+    'Lösenord eller applösenord för avsändarkontot. Lagras krypterat och returneras aldrig.',
+  'settings.email.help.fromAddress':
+    'Adress som visas som avsändare, till exempel sistema@exempel.pt.',
+  'settings.email.help.fromName':
+    'Läsbart namn intill adressen, till exempel Encosto Estratégico Lda.',
+  'settings.email.help.heloName':
+    'Namn som anges vid SMTP-presentationen. Vissa servrar avvisar generiska namn.',
+
   'settings.providerCredentials.cardTitle': 'Signeringsleverantörer',
   'settings.providerCredentials.lede':
     'Hantera signeringsleverantörernas autentiseringsuppgifter, med flera nycklar per leverantör, prioritet och redundansväxling.',
@@ -5123,4 +5349,41 @@ export const svFI: Catalog = {
   'pairing.revoke.confirm': 'Bekräfta återkallandet',
   'pairing.revoking': 'Återkallar…',
   'pairing.revokedToast': 'Enheten återkallad',
+  // --- Book detail sub-tabs (t25) ------------------------------------------------
+  'books.detail.subnav.imports': 'Importer',
+  'books.detail.subnav.aria': 'Avsnitt i boken',
+  'books.detail.termo.pending.title': 'Registrerad öppningsanteckning',
+  'books.detail.termo.pending.body':
+    'Visar de fält i öppningsanteckningen som registrerades då boken öppnades. Anteckningen är ännu inte ett ifyllbart eller signerbart instrument i det här gränssnittet, och den genererade PDF/A-filen har ingen egen slutpunkt — den följer med bevarandepaketet som erbjuds i sidhuvudet.',
+  'books.detail.retention.scopeNote':
+    'Endast de bevarandekandidater som nämner den här boken. Bevarandepolicyer hanteras under Inställningar → Integritet.',
+  // --- t36: Assinaturas / Fornecedores configuration grids ---
+  'settings.signing.policy.cardTitle': 'Signaturpolicy',
+  'settings.signing.fallbackHint': 'Portugisiskt officiellt standardvärde. Används som reserv när ingen av posterna i tabellen nedan är aktiv.',
+  'settings.signing.tslSources.caption': 'Konfigurerade tillitslistekällor',
+  'settings.signing.tsaProviders.caption': 'Konfigurerade tidsstämplingsleverantörer',
+  'settings.signing.providers.caption': 'Signaturleverantörernas lägen och deras status',
+  'settings.signing.table.status': 'Status',
+  'settings.signing.table.actions': 'Åtgärder',
+  'settings.signing.table.limits': 'Gränser',
+  'settings.signing.table.limitsValue': '{digest} · {timeout} s · högst {maxBytes} byte',
+  'settings.signing.table.provider': 'Leverantör',
+  'settings.signing.table.mode': 'Läge',
+  'settings.signing.table.notes': 'Anmärkningar',
+  'settings.providerCredentials.protection.unavailable.title': 'Uppgifterna kan inte sparas',
+  'settings.providerCredentials.protection.unavailable.body': 'Den här servern kan varken kryptera eller spara leverantörshemligheter. Ingenting sparas förrän detta är åtgärdat — uppgifterna förvaras inte med svagare skydd, de förvaras inte alls.',
+  'settings.providerCredentials.protection.reason.notPersistent': 'Servern körs enbart i minnet, utan datakatalog. Ange CHANCELA_DATA_DIR och starta om.',
+  'settings.providerCredentials.protection.reason.noKeySource': 'Ingen nyckelkälla är tillgänglig. Aktivera SQLCipher eller operativsystemets försegling, eller ange CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey': 'Nyckeln som operatören angett är ogiltig eller har angetts två gånger. Behåll endast CHANCELA_CREDENTIAL_KEY eller CHANCELA_CREDENTIAL_KEY_FILE, med giltigt nyckelmaterial.',
+  'settings.providerCredentials.protection.reason.rootEnvelope': 'Rotnyckelns kuvert kunde inte läsas. Kontrollera behörigheterna för datakatalogen och om filen hör till den här maskinen.',
+  'settings.providerCredentials.protection.reason.storeUnavailable': 'Uppgiftsvalvet är otillgängligt. Se serverloggarna.',
+  'settings.providerCredentials.entry.notConfigured': 'inte konfigurerad',
+  'settings.providerCredentials.table.caption': 'Uppgiftsposter för {provider}',
+  'settings.providerCredentials.table.entry': 'Post',
+  'settings.providerCredentials.table.priority': 'Prioritet',
+  'settings.providerCredentials.table.state': 'Status',
+  'settings.providerCredentials.table.endpoint': 'Adress',
+  'settings.providerCredentials.table.endpointDefault': 'Standardadress',
+  'settings.providerCredentials.table.fields': 'Fält',
+  'settings.providerCredentials.table.actions': 'Åtgärder',
 };

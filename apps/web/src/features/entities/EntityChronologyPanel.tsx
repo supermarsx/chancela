@@ -9,7 +9,17 @@ import type {
   EntityChronologyView,
 } from '../../api/types';
 import { t as translateNow, useT, type TFunction } from '../../i18n';
-import { Badge, Button, Card, EmptyState, ErrorNote, Icon, Loading, useToast } from '../../ui';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorNote,
+  Icon,
+  Loading,
+  TooltipText,
+  useToast,
+} from '../../ui';
 
 type MermaidKey = keyof EntityChronologyMermaid;
 
@@ -405,9 +415,13 @@ function SealedActProjectionSection({
                   <code className="mono">{sealedActSourceLabel(event.source)}</code>
                 </td>
                 <td>
-                  <code className="mono" title={event.source.payload_digest ?? undefined}>
-                    {shortDigest(event.source.payload_digest)}
-                  </code>
+                  {event.source.payload_digest ? (
+                    <TooltipText as="code" className="mono" label={event.source.payload_digest}>
+                      {shortDigest(event.source.payload_digest)}
+                    </TooltipText>
+                  ) : (
+                    <code className="mono">{shortDigest(event.source.payload_digest)}</code>
+                  )}
                 </td>
               </tr>
             ))}

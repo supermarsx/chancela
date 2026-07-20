@@ -8,7 +8,7 @@
  * catalog's non-React `t()` for the active locale. Legal-basis strings for compliance
  * issues stay on the API side (UX-21) — these are UI labels only.
  */
-import { t } from '../i18n';
+import { t, LABELLED_LEDGER_EVENT_KINDS } from '../i18n';
 import type { MessageKey } from '../i18n';
 import type {
   ActState,
@@ -61,6 +61,11 @@ export const dispatchChannelLabels = enumLabels<DispatchChannel>('dispatchChanne
 export const actStateLabels = enumLabels<ActState>('actState');
 export const attachmentKindLabels = enumLabels<AttachmentKind>('attachmentKind');
 export const signatoryCapacityLabels = enumLabels<SignatoryCapacity>('signatoryCapacity');
+/**
+ * The same capacities as they read on an attendance roll — "na qualidade de …". `Member` is
+ * "Sócio" here and "Membro" under a signature block; see `i18n/attendeeQualityLabels.ts`.
+ */
+export const attendeeQualityLabels = enumLabels<SignatoryCapacity>('attendeeQuality');
 export const presenceModeLabels = enumLabels<PresenceMode>('presenceMode');
 export const severityLabels = enumLabels<Severity>('severity');
 export const localeLabels = enumLabels<Locale>('locale');
@@ -99,6 +104,24 @@ const KNOWN_REGISTRY_FIELDS = new Set<string>(['name', 'seat', 'nipc', 'kind']);
 /** Entity fields the import cross-check reports as `applied`/`conflict` (§2.7). */
 export function registryFieldLabel(field: string): string {
   return KNOWN_REGISTRY_FIELDS.has(field) ? t(`enum.registryField.${field}` as MessageKey) : field;
+}
+
+// --- Ledger event kinds (§2.4) ---------------------------------------------------
+
+/**
+ * Render a ledger event `kind` as readable copy in the active locale. The dotted wire
+ * identifier stays the filter/export value and the `title` of whatever renders the label;
+ * only the primary line an operator reads is localized.
+ *
+ * Server-side kinds grow over time, so an unmapped kind degrades to its raw identifier —
+ * never blank, never `undefined`.
+ */
+export function ledgerEventKindLabel(kind: string): string {
+  const trimmed = kind.trim();
+  if (!trimmed) return kind;
+  return LABELLED_LEDGER_EVENT_KINDS.has(trimmed)
+    ? t(`enum.ledgerEventKind.${trimmed}` as MessageKey)
+    : trimmed;
 }
 
 // --- CAE — Classificação das Atividades Económicas (§2.7, plan t14) --------------

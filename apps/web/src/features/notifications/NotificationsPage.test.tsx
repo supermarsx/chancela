@@ -261,4 +261,38 @@ describe('NotificationsPage', () => {
     expectIconOnlyControl(screen.getByRole('button', { name: 'Reconhecer' }), 'Reconhecer');
     expectIconOnlyControl(screen.getByRole('button', { name: 'Dispensar' }), 'Dispensar');
   });
+
+  it('re-keys the panel wrapper on a sub-tab change without gating the content', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/dashboard', body: dashboard({ alerts: [actionableActAlert()] }) },
+        {
+          match: '/v1/notifications/triage',
+          body: { durable: true, max_entries_per_owner: 500, entries: [] },
+        },
+      ]),
+    );
+
+    const { container } = renderWithProviders(<NotificationsPage />, ['/notificacoes']);
+    await screen.findByText('Rever conformidade da ata');
+
+    const before = container.querySelector('.route-transition');
+    expect(before?.getAttribute('data-subanim-key')).toBe('all');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Alertas' }));
+
+    const after = container.querySelector('.route-transition');
+    // A fresh node under a new key ⇒ the CSS enter replays. Same class, so the same shared
+    // motion (and the same reduced-motion / safe-mode collapse) governs it.
+    expect(after).not.toBe(before);
+    expect(after?.getAttribute('data-subanim-key')).toBe('alerts');
+    expect(after?.classList.contains('route-transition')).toBe(true);
+
+    // The point of the assertion: the incoming panel is in the DOM on the SAME synchronous
+    // paint as the click — no `await`, no animation-end callback in between. The fade is
+    // decoration riding on already-rendered content, never a gate in front of it.
+    expect(screen.getByText('Rever conformidade da ata')).toBeTruthy();
+    expect(after?.contains(screen.getByText('Rever conformidade da ata'))).toBe(true);
+  });
 });

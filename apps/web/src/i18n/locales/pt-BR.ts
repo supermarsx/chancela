@@ -8,9 +8,13 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { ledgerEventLabelsPtBR } from '../ledgerEventLabels';
+import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const ptBR: Catalog = {
   ...operationsEnglish,
+  ...ledgerEventLabelsPtBR,
+  ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sem permissão para esta ação',
   'perm.denied.title': 'Sem permissão',
@@ -150,8 +154,7 @@ export const ptBR: Catalog = {
   'nav.skipToContent': 'Pular para o conteúdo',
   'common.brand': 'Chancela',
   'splash.aria': 'Iniciando o Chancela',
-  'common.footer':
-    'Chancela · Protótipo de interface · De acordo com a lei portuguesa (CSC, GDPR, eIDAS)',
+  'common.footer': 'Chancela · Livro de atas digital · v{version}',
 
   // --- Shared chrome -------------------------------------------------------------
   'common.loading': 'Carregando…',
@@ -295,7 +298,7 @@ export const ptBR: Catalog = {
   'notifications.reminder.followUp.action': 'Atas abertos',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
-  'notifications.operation.title': 'Evento {kind}',
+  'notifications.operation.title': '{kind}',
   'notifications.operation.detail': '{actor} registrou evento em {scope}.',
   'notifications.operation.meta': 'Sequência {seq}',
 
@@ -892,6 +895,10 @@ export const ptBR: Catalog = {
   'acts.signatories': 'Signatários',
   'acts.attachments': 'Anexos',
   'acts.lifecycle': 'Vida útil',
+  // --- Progress stepper (ui/Stepper.tsx) ------------------------------------------
+  'stepper.progress': 'Etapa {current} de {total}',
+  'stepper.status.done': 'concluída',
+  'stepper.status.current': 'etapa atual',
   'acts.compliance': 'Conformidade',
   'acts.manualSignature.title': 'Rota alternativa: original assinado manualmente (SIG-03)',
   'acts.manualSignature.body':
@@ -1061,6 +1068,42 @@ export const ptBR: Catalog = {
   'ledger.archive.format.json': 'Intercâmbio JSON (.json)',
   'ledger.archive.format.csv': 'CSV de auditoria (.csv)',
   'ledger.archive.format.html': 'HTML de auditoria (.html)',
+  'ledger.subnav.aria': 'Seções do arquivo',
+  'ledger.subnav.registo': 'Registro',
+  'ledger.subnav.exportacao': 'Exportações',
+  'ledger.export.document.title': 'Documento do registro de auditoria',
+  'ledger.export.document.body':
+    'Exporta as entradas do registro exatamente como a aba Registro as mostra: os filtros ativos ali definem o que entra no pacote gerado.',
+  'ledger.export.document.editFilters': 'Alterar filtros no Registro',
+  'ledger.export.book.title': 'Exportações do livro',
+  'ledger.export.book.body':
+    'Dois pacotes diferentes para finalidades diferentes: um para depósito arquivístico, outro para levar o livro a outra instância. Escolha o livro e depois o pacote certo.',
+  'ledger.export.book.label': 'Livro para exportar',
+  'ledger.export.book.help':
+    'Cada pacote cobre um único livro; para vários, repita a exportação livro a livro.',
+  'ledger.export.book.empty': 'Nenhum livro para exportar',
+  'ledger.export.book.emptyBody':
+    'Abra um livro e preserve os documentos dele antes de gerar pacotes.',
+  'ledger.export.preservation.title': 'Pacote de preservação — depósito e evidência',
+  'ledger.export.preservation.body':
+    'ZIP determinístico e somente de leitura, destinado a depósito arquivístico e a evidência. Não é reimportável e sua geração não escreve no registro.',
+  'ledger.export.preservation.contents':
+    'Contém os PDF/A preservados do livro, o índice de evidências, os relatórios de evidência por assinatura, os relatórios de acessibilidade PDF, os relatórios de validador externo, a evidência de expedição gerada e, quando houver retenção legal, o JSON correspondente.',
+  'ledger.export.legalHold.label': 'Sinalizar retenção legal nesta exportação',
+  'ledger.export.legalHold.help':
+    'Afeta apenas o pacote gerado — o servidor não guarda essa retenção no livro. Uma retenção já anotada no livro segue no pacote mesmo com a opção desligada.',
+  'ledger.export.legalHold.reason.label': 'Justificativa da retenção legal',
+  'ledger.export.legalHold.reason.placeholder': 'Processo judicial n.º 123/26…',
+  'ledger.export.legalHold.reason.required':
+    'Informe a justificativa antes de sinalizar a retenção legal.',
+  'ledger.export.bundle.title': 'Pacote de portabilidade — trocar de instância',
+  'ledger.export.bundle.body':
+    'ZIP autoverificável e o único formato aceito pela importação de livros. Use-o para mover ou restaurar um livro em outra instância.',
+  'ledger.export.bundle.retainedTitle': 'Esta exportação fica registrada',
+  'ledger.export.bundle.retained':
+    'Diferentemente do pacote de preservação, o servidor guarda uma cópia deste pacote e acrescenta um evento ao registro de auditoria.',
+  'ledger.export.bundle.download': 'Baixar pacote de portabilidade',
+  'ledger.export.bundle.downloading': 'Exportando pacote…',
   'toast.ledgerArchive.downloaded': 'PDF/A do arquivo baixado.',
   'ledger.actor.systemTooltip': 'Ator do sistema (sem sessão)',
 
@@ -1189,6 +1232,10 @@ export const ptBR: Catalog = {
   'tools.section.legislacao': 'Legislação',
   'tools.section.trust': 'Lista de confiança',
   'tools.section.externalSigning': 'Assinatura externa',
+  'tools.pdf.subnav.aria': 'Seção do validador técnico',
+  'tools.pdf.section.pdf': 'Assinaturas PDF',
+  'tools.pdf.section.asic': 'Contêineres ASiC',
+  'tools.pdf.section.reports': 'Relatórios técnicos',
   'externalSigning.title': 'Fluxos de assinatura externos',
   'externalSigning.notice.title': 'Monitoramento operacional',
   'externalSigning.notice.body':
@@ -1261,6 +1308,16 @@ export const ptBR: Catalog = {
   'pdfValidator.failClosed.body':
     'O servidor recusou validar o arquivo. Trate isso como fail-closed; se a mensagem indicar divergência de tamanho ou SHA-256, os bytes recebidos não correspondem ao que o navegador declarou.',
   'pdfValidator.result.title': 'Resultado',
+  'pdfValidator.table.caption': 'Verificações técnicas de validação PDF/PAdES',
+  'pdfValidator.table.check': 'Verificação',
+  'pdfValidator.table.verdict': 'Resultado',
+  'pdfValidator.table.evidence': 'Evidência',
+  'pdfValidator.verdict.pass': 'Conforme',
+  'pdfValidator.verdict.fail': 'Falha',
+  'pdfValidator.verdict.inconclusive': 'Inconclusivo',
+  'pdfValidator.verdict.info': 'Informativo',
+  'pdfValidator.section.file': 'Arquivo',
+  'pdfValidator.field.integrity': 'Integridade declarada',
   'pdfValidator.status.valid': 'Tecnicamente válido',
   'pdfValidator.status.invalid': 'Inválido',
   'pdfValidator.status.indeterminate': 'Indeterminado',
@@ -1468,6 +1525,7 @@ export const ptBR: Catalog = {
     'Texto oficial capturado e revisado por um processo automático. NÃO aprovado juridicamente por revisor humano — recomenda-se revisão jurídica humana antes de confiar.',
   'legislacao.corpus.back': 'Voltar aos diplomas',
   'legislacao.corpus.backToDiploma': 'Voltar para {title}',
+  'legislacao.corpus.backToResults': 'Voltar aos resultados',
   'legislacao.corpus.diploma.notFound': 'Diploma não encontrado.',
   'legislacao.corpus.article.notFound': 'Artigo não encontrado.',
   'legislacao.corpus.article.source': 'Fonte',
@@ -1772,6 +1830,36 @@ export const ptBR: Catalog = {
   'settings.entityTable.title': 'Tabela de entidades',
   'settings.entityTable.hint': 'Escolha as colunas visíveis na lista de entidades registradas.',
   'settings.entityTable.columns.aria': 'Colunas da tabela de entidades',
+  // --- Connector outbound egress allowlist (t21) --------------------------------
+  'settings.connectorEgress.title': 'Rede de saída dos conectores',
+  'settings.connectorEgress.intro':
+    'Lista de hosts para os quais um conector pode enviar dados dos livros. Não é uma preferência: é o limite que impede um conector de enviar conteúdo para um destino arbitrário.',
+  'settings.connectorEgress.precedenceTitle': 'Qual lista prevalece',
+  'settings.connectorEgress.precedenceCeiling':
+    'A implantação fixou um teto ({hosts}). Esta lista só pode restringi-lo — nunca ampliá-lo. Permitir um host fora desse teto exige alterar a configuração da implantação.',
+  'settings.connectorEgress.precedenceNoCeiling':
+    'A implantação não fixou nenhum teto, portanto esta lista é a única fronteira de saída. Defina CHANCELA_CONNECTOR_ALLOWED_HOSTS na implantação para fixar um teto que nenhum administrador possa exceder.',
+  'settings.connectorEgress.hostsLabel': 'Hosts permitidos (um por linha)',
+  'settings.connectorEgress.hostsHint':
+    'Nomes de host exatos ou faixas IP/CIDR. Sem esquema, porta, caminho ou curingas.',
+  'settings.connectorEgress.placeholder': 'backup.exemplo.com.br\n10.42.0.0/16',
+  'settings.connectorEgress.tooMany': 'No máximo {max} entradas.',
+  'settings.connectorEgress.rejected': '“{entry}”: {reason}',
+  'settings.connectorEgress.effect':
+    'As alterações entram em vigor na próxima operação do conector, na API e no trabalhador, sem reinício.',
+  'settings.connectorEgress.audited':
+    'Cada alteração é registrada no livro de auditoria com o autor, a data e as listas anterior e nova.',
+  'settings.connectorEgress.reason.format':
+    'deve ser um nome de host ou IP/CIDR simples, sem esquema, porta, caminho ou credenciais.',
+  'settings.connectorEgress.reason.wildcard': 'curingas não são permitidos.',
+  'settings.connectorEgress.reason.metadata':
+    'a faixa link-local contém o endpoint de metadados da instância na nuvem e não pode ser aberta aqui.',
+  'settings.connectorEgress.reason.loopback':
+    'não pode apontar para o host que executa o Chancela.',
+  'settings.connectorEgress.reason.forbiddenRange':
+    'esta faixa de endereços nunca é um destino legítimo.',
+  'settings.connectorEgress.reason.broadPrefix':
+    'a faixa é ampla demais; use um prefixo mais restrito.',
   'settings.registryAutoUpdate.cardTitle': 'Atualização automática da certidão permanente',
   'settings.registryAutoUpdate.refreshPlan': 'Plano de atualização',
   'settings.registryAutoUpdate.refreshingPlan': 'Atualizando…',
@@ -2184,6 +2272,21 @@ export const ptBR: Catalog = {
   'acts.convening': 'Convocação',
   'acts.convening.hint':
     'Registre a data da convocação, o método e a evidência retida. Os avisos apoiam as operações e não substituem a revisão jurídica.',
+  'acts.convening.waiver.title': 'Sem convocação',
+  'acts.convening.waiver.hint':
+    'Quando a reunião ocorreu sem convocação prévia, registre aqui o fundamento em que ela se apoiou; a ata passa a recitá-lo. A Chancela registra o fundamento declarado e não confirma sua validade — confirme com apoio jurídico.',
+  'acts.convening.waiver.toggle': 'A reunião ocorreu sem convocação prévia',
+  'acts.convening.waiver.basis': 'Fundamento',
+  'acts.convening.waiver.basis.universal':
+    'Assembleia universal — todos presentes e todos de acordo (CSC art. 54.º)',
+  'acts.convening.waiver.basis.other': 'Outro fundamento (a descrever)',
+  'acts.convening.waiver.agreedToMeet':
+    'Todos manifestaram a vontade de que a assembleia se constituísse',
+  'acts.convening.waiver.agreedToAgenda': 'Todos concordaram com os assuntos deliberados',
+  'acts.convening.waiver.grounds': 'Fundamento registrado',
+  'acts.convening.waiver.evidenceReference': 'Prova do acordo',
+  'acts.convening.waiver.conflict':
+    'Estão registradas uma convocação e a ausência de convocação. Apenas uma delas pode descrever esta reunião.',
   'acts.convening.dispatchDate': 'Data da convocação',
   'acts.convening.channel': 'Método de convocação',
   'acts.convening.channelNone': 'Nenhum método registrado',
@@ -2347,7 +2450,7 @@ export const ptBR: Catalog = {
   'onboarding.skip': 'Ignorar',
   'onboarding.finishing': 'Concluindo…',
   'signin.title': 'Entrar',
-  'signin.subtitle': 'Escolha o seu usuário para continuar.',
+  'signin.subtitle': 'Digite o seu usuário para continuar.',
   'signin.empty': 'Ainda não há usuários ativos.',
   'signin.requiresPassword': 'Requer senha',
   'signin.password.label': 'Senha',
@@ -2366,6 +2469,13 @@ export const ptBR: Catalog = {
   'signin.blocked.body':
     'Para criar um novo usuário é necessária uma sessão ativa. Inicie sessão e abra Usuários › Novo dentro do aplicativo.',
   'signin.blocked.action': 'Voltar ao login',
+  'signin.username.label': 'Usuário',
+  'signin.username.placeholder': 'O seu nome de usuário',
+  'signin.badCredentials': 'Usuário ou senha incorretos.',
+  'signin.remember.label': 'Salvar este usuário neste dispositivo',
+  'signin.recent.title': 'Usuários usados neste dispositivo',
+  'signin.recent.remove': 'Remover {username} desta lista',
+  'signin.recent.note': 'Esta lista fica apenas neste navegador e nunca inclui senhas.',
   'session.gate.error': 'A sessão não pôde ser carregada.',
   'session.gate.retry': 'Tente novamente',
   'settings.autosave.retry': 'Tente novamente',
@@ -2517,6 +2627,8 @@ export const ptBR: Catalog = {
   'templates.card.rulePack': 'Pacote de regras',
   'templates.card.channels': 'Canais',
   'templates.channels.none': 'Nenhum canal específico',
+  'templates.table.source': 'Origem',
+  'templates.table.actions': 'Ações',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Novo modelo',
   'templates.actions.edit': 'Editar',
@@ -4278,6 +4390,121 @@ export const ptBR: Catalog = {
     'Nota de realização de capital transcrita do certificado.',
   'fieldHelp.registry.deliberationDate': 'Data da deliberação indicada no registro, se presente.',
   'fieldHelp.registry.formaObrigar': 'Texto importado sobre quem obriga a entidade.',
+  // --- Email (SMTP) (t23) ---
+  'settings.email.cardTitle': 'E-mail',
+  'settings.email.lede':
+    'Configure o servidor SMTP pelo qual o aplicativo envia mensagens. A senha é armazenada criptografada e nunca é devolvida.',
+  'settings.email.enabled.label': 'Envio de e-mail ativo',
+  'settings.email.enabled.hint':
+    'Enquanto estiver desativado, nada é enviado. Você pode preencher a configuração antes de ativá-la.',
+  'settings.email.host.label': 'Servidor',
+  'settings.email.host.hint':
+    'Nome do servidor SMTP. É também o nome com que o certificado TLS precisa corresponder.',
+  'settings.email.host.placeholder': 'smtp.exemplo.pt',
+  'settings.email.port.label': 'Porta',
+  'settings.email.port.hint': '587 para STARTTLS, 465 para TLS implícito.',
+  'settings.email.encryptionField.label': 'Criptografia',
+  'settings.email.encryptionField.hint':
+    'STARTTLS é o padrão. Se o servidor não oferecer, a conexão é recusada em vez de continuar em texto aberto.',
+  'settings.email.encryption.starttls': 'STARTTLS (recomendado)',
+  'settings.email.encryption.implicitTls': 'TLS implícito (porta 465)',
+  'settings.email.encryption.none': 'Sem criptografia',
+  'settings.email.insecure.title': 'Conexão sem criptografia',
+  'settings.email.insecure.body':
+    'Sem criptografia, a senha do servidor e o conteúdo de todas as mensagens trafegam em texto aberto na rede. Use esta opção apenas em um relay de rede fechada que não ofereça outra coisa.',
+  'settings.email.insecure.confirm': 'Confirmo que quero enviar sem criptografia',
+  'settings.email.username.label': 'Usuário',
+  'settings.email.username.hint': 'Deixe vazio se o servidor não exigir autenticação.',
+  'settings.email.fromAddress.label': 'Endereço do remetente',
+  'settings.email.fromAddress.hint':
+    'Endereço usado no envelope e no cabeçalho De: de todas as mensagens.',
+  'settings.email.fromAddress.placeholder': 'sistema@exemplo.pt',
+  'settings.email.fromName.label': 'Nome do remetente',
+  'settings.email.fromName.hint':
+    'Nome exibido junto ao endereço, por exemplo Encosto Estratégico Lda.',
+  'settings.email.heloName.label': 'Nome EHLO',
+  'settings.email.heloName.hint':
+    'Nome anunciado ao servidor. Se ficar vazio, é usado o domínio do endereço do remetente.',
+
+  'settings.email.password.cardTitle': 'Senha do servidor',
+  'settings.email.password.lede':
+    'Armazenada criptografada no cofre de credenciais. Nunca é devolvida por nenhum endpoint — apenas o status abaixo indica se existe.',
+  'settings.email.password.label': 'Senha',
+  'settings.email.password.hint': 'Digitar uma nova senha substitui a anterior.',
+  'settings.email.password.placeholder': 'Digite para definir ou substituir',
+  'settings.email.password.save': 'Salvar senha',
+  'settings.email.password.clear': 'Remover senha',
+  'settings.email.password.configured': 'Definida',
+  'settings.email.password.notConfigured': 'A definir',
+  'settings.email.password.savedToast': 'Senha do servidor salva',
+  'settings.email.password.clearedToast': 'Senha do servidor removida',
+
+  'settings.email.test.cardTitle': 'Enviar mensagem de teste',
+  'settings.email.test.lede':
+    'Abre uma sessão real com o servidor configurado e mostra a resposta que ele der, incluindo o código SMTP.',
+  'settings.email.test.to.label': 'Destinatário',
+  'settings.email.test.to.hint': 'Endereço para onde enviar a mensagem de teste.',
+  'settings.email.test.to.placeholder': 'amelia.marques@exemplo.pt',
+  'settings.email.test.action': 'Enviar teste',
+  'settings.email.test.warningTitle': 'Atenção à configuração',
+  'settings.email.test.okTitle': 'Mensagem aceita pelo servidor',
+  'settings.email.test.okBody':
+    'O servidor aceitou a mensagem. Isso não confirma a entrega na caixa de entrada do destinatário.',
+  'settings.email.test.failTitle': 'O envio falhou',
+  'settings.email.test.failUnknown': 'O servidor não devolveu nenhum detalhe.',
+  'settings.email.test.stage': 'Etapa',
+  'settings.email.test.code': 'Código SMTP',
+  'settings.email.test.serverReply': 'Resposta do servidor',
+  'settings.email.test.relayReply': 'Resposta do servidor',
+  'settings.email.test.remedy': 'O que verificar',
+  'settings.email.test.tls': 'Criptografada',
+  'settings.email.test.authenticated': 'Autenticada',
+
+  'settings.email.stage.connect': 'Conexão com o servidor',
+  'settings.email.stage.tls': 'Handshake TLS',
+  'settings.email.stage.greeting': 'Saudação do servidor',
+  'settings.email.stage.ehlo': 'Apresentação (EHLO)',
+  'settings.email.stage.starttls': 'Início do STARTTLS',
+  'settings.email.stage.auth': 'Autenticação',
+  'settings.email.stage.mailFrom': 'Remetente (MAIL FROM)',
+  'settings.email.stage.rcptTo': 'Destinatário (RCPT TO)',
+  'settings.email.stage.data': 'Envio da mensagem',
+  'settings.email.stage.quit': 'Encerramento da sessão',
+
+  'settings.email.remedy.dns':
+    'O nome do servidor não foi resolvido. Verifique se está escrito corretamente e se o DNS o conhece.',
+  'settings.email.remedy.unreachable':
+    'O servidor não respondeu na porta indicada. Verifique a porta e se há um firewall bloqueando.',
+  'settings.email.remedy.tls':
+    'O certificado do servidor não foi aceito. Verifique se está válido e se corresponde ao nome configurado.',
+  'settings.email.remedy.tlsUnsupported':
+    'O servidor não oferece STARTTLS. Corrija o servidor, use TLS implícito na porta 465 ou desative a criptografia de forma explícita.',
+  'settings.email.remedy.timeout':
+    'O servidor demorou demais para responder. Verifique a rede e se o endereço está correto.',
+  'settings.email.remedy.configuration':
+    'A configuração não é utilizável como está. Revise o usuário, a criptografia e a porta.',
+  'settings.email.remedy.protocol':
+    'A resposta do servidor não foi compreendida ou a conexão caiu. Confirme que a porta atende SMTP.',
+  'settings.email.remedy.rejected':
+    'O servidor recusou a solicitação. O código e o texto acima são a razão que ele mesmo deu.',
+
+  'settings.email.help.enabled':
+    'Chave geral do envio de e-mail. Desligada, nenhum recurso envia mensagens.',
+  'settings.email.help.host': 'Nome do servidor SMTP, por exemplo smtp.exemplo.pt.',
+  'settings.email.help.port':
+    'Porta de submissão: normalmente 587 (STARTTLS) ou 465 (TLS implícito).',
+  'settings.email.help.encryption':
+    'Como a conexão é protegida. O STARTTLS conecta em texto aberto e passa a criptografado antes de autenticar.',
+  'settings.email.help.username': 'Usuário de autenticação SMTP, por exemplo sistema@exemplo.pt.',
+  'settings.email.help.password':
+    'Senha ou senha de aplicativo da conta de envio. Armazenada criptografada e nunca devolvida.',
+  'settings.email.help.fromAddress':
+    'Endereço que aparece como remetente, por exemplo sistema@exemplo.pt.',
+  'settings.email.help.fromName':
+    'Nome legível junto ao endereço, por exemplo Encosto Estratégico Lda.',
+  'settings.email.help.heloName':
+    'Nome anunciado na apresentação SMTP. Alguns servidores recusam nomes genéricos.',
+
   'settings.providerCredentials.cardTitle': 'Provedores de assinatura',
   'settings.providerCredentials.lede':
     'Gerencie as credenciais dos provedores de assinatura, com várias chaves por provedor, prioridade e alternância automática.',
@@ -5125,4 +5352,41 @@ export const ptBR: Catalog = {
   'pairing.revoke.confirm': 'Confirmar revogação',
   'pairing.revoking': 'Revogando…',
   'pairing.revokedToast': 'Aparelho revogado',
+  // --- Book detail sub-tabs (t25) ------------------------------------------------
+  'books.detail.subnav.imports': 'Importações',
+  'books.detail.subnav.aria': 'Seções do livro',
+  'books.detail.termo.pending.title': 'Termo de abertura registrado',
+  'books.detail.termo.pending.body':
+    'Exibe os campos do termo registrados na abertura do livro. O termo ainda não é um instrumento preenchível nem assinável nesta interface, e o PDF/A gerado não tem endpoint próprio — ele segue dentro do pacote de preservação disponível no cabeçalho da página.',
+  'books.detail.retention.scopeNote':
+    'Apenas os candidatos de retenção que citam este livro. As políticas de retenção são gerenciadas em Configurações → Privacidade.',
+  // --- t36: Assinaturas / Fornecedores configuration grids ---
+  'settings.signing.policy.cardTitle': 'Política de assinatura',
+  'settings.signing.fallbackHint': 'Padrão oficial português. Serve de recurso quando nenhuma das entradas da grade abaixo está ativa.',
+  'settings.signing.tslSources.caption': 'Fontes de listas de confiança configuradas',
+  'settings.signing.tsaProviders.caption': 'Provedores de carimbo do tempo configurados',
+  'settings.signing.providers.caption': 'Modos de provedor de assinatura e respectiva situação',
+  'settings.signing.table.status': 'Situação',
+  'settings.signing.table.actions': 'Ações',
+  'settings.signing.table.limits': 'Limites',
+  'settings.signing.table.limitsValue': '{digest} · {timeout}s · máx. {maxBytes} bytes',
+  'settings.signing.table.provider': 'Provedor',
+  'settings.signing.table.mode': 'Modo',
+  'settings.signing.table.notes': 'Observações',
+  'settings.providerCredentials.protection.unavailable.title': 'Não é possível salvar credenciais',
+  'settings.providerCredentials.protection.unavailable.body': 'Este servidor não consegue cifrar nem salvar segredos de provedor. Nada será gravado enquanto isto não for resolvido — as credenciais não estão salvas com proteção mais fraca, simplesmente não são salvas.',
+  'settings.providerCredentials.protection.reason.notPersistent': 'O servidor está rodando apenas em memória, sem diretório de dados. Defina CHANCELA_DATA_DIR e reinicie.',
+  'settings.providerCredentials.protection.reason.noKeySource': 'Não há nenhuma fonte de chave disponível. Ative o SQLCipher ou o selamento pelo sistema operacional, ou forneça CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey': 'A chave fornecida pelo operador está inválida ou foi indicada em duplicidade. Deixe apenas CHANCELA_CREDENTIAL_KEY ou CHANCELA_CREDENTIAL_KEY_FILE, com material de chave válido.',
+  'settings.providerCredentials.protection.reason.rootEnvelope': 'O envelope da chave-raiz não pôde ser lido. Confirme as permissões do diretório de dados e se o arquivo pertence a esta máquina.',
+  'settings.providerCredentials.protection.reason.storeUnavailable': 'O cofre de credenciais está indisponível. Consulte os logs do servidor.',
+  'settings.providerCredentials.entry.notConfigured': 'não configurado',
+  'settings.providerCredentials.table.caption': 'Entradas de credencial de {provider}',
+  'settings.providerCredentials.table.entry': 'Entrada',
+  'settings.providerCredentials.table.priority': 'Prioridade',
+  'settings.providerCredentials.table.state': 'Situação',
+  'settings.providerCredentials.table.endpoint': 'Endereço',
+  'settings.providerCredentials.table.endpointDefault': 'Endereço padrão',
+  'settings.providerCredentials.table.fields': 'Campos',
+  'settings.providerCredentials.table.actions': 'Ações',
 };

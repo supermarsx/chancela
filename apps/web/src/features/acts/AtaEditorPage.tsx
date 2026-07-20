@@ -37,6 +37,7 @@ import {
   attachmentKindLabels,
   dispatchChannelLabels,
   meetingChannelLabels,
+  attendeeQualityLabels,
   optionsFrom,
   presenceModeLabels,
   severityLabels,
@@ -45,6 +46,7 @@ import {
 import {
   ACT_STATES,
   ATTACHMENT_KINDS,
+  ATTENDEE_ONLY_CAPACITIES,
   DISPATCH_CHANNELS,
   MEETING_CHANNELS,
   PRESENCE_MODES,
@@ -55,6 +57,7 @@ import {
   type ActAttendee,
   type ActConvening,
   type ActConveningRecipient,
+  type ActConveningWaiver,
   type ActDeliberationItem,
   type ActDocumentReference,
   type ActManualSignatureOriginalReference,
@@ -74,6 +77,7 @@ import {
   type EntityFamily,
   type HumanVerificationDecision,
   type MeetingChannel,
+  type NoConveningBasis,
   type PresenceMode,
   type SignatoryCapacity,
   type WrittenResolutionEvidenceInput,
@@ -103,6 +107,8 @@ import {
   Select,
   Skeleton,
   SkeletonText,
+  Stepper,
+  type StepperStep,
   TextArea,
   useToast,
 } from '../../ui';
@@ -135,6 +141,7 @@ interface Draft {
   deliberation_items: ActDeliberationItem[];
   telematic_evidence: string;
   convening: DraftConvening;
+  convening_waiver: DraftConveningWaiver;
   attachments: ActAttachment[];
   signatories: ActSignatory[];
 }
@@ -188,6 +195,31 @@ function toDraftConvening(convening: ActConvening | undefined): DraftConvening {
   };
 }
 
+/**
+ * The no-convocatória record as edited. `enabled` is the editor's own state — the wire shape has
+ * no such flag, an absent `convening_waiver` *is* "there was a convocatória" — so that switching
+ * the toggle off and on again does not silently discard what was already typed.
+ */
+interface DraftConveningWaiver {
+  enabled: boolean;
+  basis: NoConveningBasis;
+  grounds: string;
+  all_agreed_to_meet: boolean;
+  all_agreed_to_agenda: boolean;
+  evidence_reference: string;
+}
+
+function toDraftConveningWaiver(waiver: ActConveningWaiver | undefined): DraftConveningWaiver {
+  return {
+    enabled: waiver != null,
+    basis: waiver?.basis ?? 'AssembleiaUniversal',
+    grounds: waiver?.grounds ?? '',
+    all_agreed_to_meet: waiver?.all_agreed_to_meet ?? false,
+    all_agreed_to_agenda: waiver?.all_agreed_to_agenda ?? false,
+    evidence_reference: waiver?.evidence_reference ?? '',
+  };
+}
+
 function toDraft(act: ActView): Draft {
   return {
     title: act.title,
@@ -206,6 +238,7 @@ function toDraft(act: ActView): Draft {
     deliberation_items: act.deliberation_items,
     telematic_evidence: act.telematic_evidence ?? '',
     convening: toDraftConvening(act.convening),
+    convening_waiver: toDraftConveningWaiver(act.convening_waiver),
     attachments: act.attachments,
     signatories: act.signatories,
   };
@@ -271,6 +304,8 @@ function normalizedAttendees(attendees: ActAttendee[]): ActAttendee[] {
     .map((attendee) => ({
       name: attendee.name.trim(),
       quality: attendee.quality,
+      // The free-text qualidade is accepted only alongside `Other` (the API 422s otherwise).
+      quality_note: attendee.quality === 'Other' ? orNull(attendee.quality_note ?? '') : null,
       presence: attendee.presence,
       represented_by:
         attendee.presence === 'Represented' ? orNull(attendee.represented_by ?? '') : null,
@@ -1036,9 +1071,31 @@ function rowWeightKind(
 const weightValue = (weight: ActAttendanceWeight | null): string =>
   weight == null ? '' : String('Capital' in weight ? weight.Capital : weight.Permilage);
 
-const emptyAttendee = (): ActAttendee => ({
+/**
+ * The qualidades to offer for one attendance row: the entity's own list (derived server-side
+ * from its legal type, so a sociedade anonima offers Acionista and a condominio Condomino),
+ * plus whatever the row already carries.
+ *
+ * The row's own value is appended when the list does not contain it, so a qualidade captured
+ * before the entity's legal type changed - or by an API client - stays visible and selected
+ * instead of the picker silently snapping to another capacity. Falls back to the full
+ * vocabulary while the entity query is still in flight, rather than to an empty picker.
+ */
+export function attendeeQualityOptions(
+  offered: SignatoryCapacity[] | undefined,
+  current: SignatoryCapacity | undefined,
+): SignatoryCapacity[] {
+  const base =
+    offered && offered.length > 0
+      ? offered
+      : [...SIGNATORY_CAPACITIES, ...ATTENDEE_ONLY_CAPACITIES];
+  return current && !base.includes(current) ? [...base, current] : [...base];
+}
+
+const emptyAttendee = (offered: SignatoryCapacity[] | undefined): ActAttendee => ({
   name: '',
-  quality: 'Member',
+  quality: attendeeQualityOptions(offered, undefined)[0],
+  quality_note: null,
   presence: 'InPerson',
   represented_by: null,
   weight: null,
@@ -1047,11 +1104,14 @@ const emptyAttendee = (): ActAttendee => ({
 export function AttendeesEditor({
   attendees,
   family,
+  qualities,
   disabled,
   onChange,
 }: {
   attendees: ActAttendee[];
   family: EntityFamily | undefined;
+  /** `EntityProfile.attendee_qualities` - the qualidades this legal type offers. */
+  qualities: SignatoryCapacity[] | undefined;
   disabled: boolean;
   onChange: (next: ActAttendee[]) => void;
 }) {
@@ -1066,6 +1126,10 @@ export function AttendeesEditor({
       presence,
       ...(presence === 'Represented' ? {} : { represented_by: null }),
     });
+  // The free-text qualidade is only accepted alongside `Other` (the API 422s otherwise), so
+  // moving to a structured capacity drops the note the same way.
+  const setQuality = (i: number, quality: SignatoryCapacity) =>
+    update(i, { quality, ...(quality === 'Other' ? {} : { quality_note: null }) });
   const count = (presence: PresenceMode) => attendees.filter((a) => a.presence === presence).length;
 
   return (
@@ -1083,15 +1147,35 @@ export function AttendeesEditor({
                 onChange={(e) => update(i, { name: e.target.value })}
               />
             </Field>
-            <Field label={t('acts.capacityAria')} help={ataFieldHelp.signatoryCapacity}>
+            <Field label={t('acts.attendees.qualityAria')} help={ataFieldHelp.attendeeQuality}>
               <Select
                 aria-label={t('acts.attendees.qualityAria')}
                 value={attendee.quality}
                 disabled={disabled}
-                onChange={(e) => update(i, { quality: e.target.value as SignatoryCapacity })}
-                options={optionsFrom(SIGNATORY_CAPACITIES, signatoryCapacityLabels)}
+                onChange={(e) => setQuality(i, e.target.value as SignatoryCapacity)}
+                options={optionsFrom(
+                  attendeeQualityOptions(qualities, attendee.quality),
+                  attendeeQualityLabels,
+                )}
               />
             </Field>
+            {attendee.quality === 'Other' ? (
+              <Field
+                label={t('acts.attendees.qualityNoteAria')}
+                help={ataFieldHelp.attendeeQualityNote}
+              >
+                <Input
+                  aria-label={t('acts.attendees.qualityNoteAria')}
+                  placeholder={t('acts.attendees.qualityNotePlaceholder')}
+                  value={attendee.quality_note ?? ''}
+                  disabled={disabled}
+                  onChange={(e) => update(i, { quality_note: e.target.value })}
+                />
+                {(attendee.quality_note ?? '').trim() === '' ? (
+                  <InlineWarning>{t('acts.attendees.qualityNoteMissing')}</InlineWarning>
+                ) : null}
+              </Field>
+            ) : null}
             <Field label={t('acts.attendees.presenceAria')} help={ataFieldHelp.attendeePresence}>
               <Select
                 aria-label={t('acts.attendees.presenceAria')}
@@ -1175,7 +1259,7 @@ export function AttendeesEditor({
           type="button"
           variant="secondary"
           icon={<Icon.Plus />}
-          onClick={() => onChange([...attendees, emptyAttendee()])}
+          onClick={() => onChange([...attendees, emptyAttendee(qualities)])}
         >
           {t('acts.attendees.add')}
         </Button>
@@ -1535,6 +1619,131 @@ function ConvocationNoticeAdvisoryCue({
   );
 }
 
+/** True when the convening record carries anything at all — used only to flag the contradiction. */
+function conveningHasContent(convening: DraftConvening): boolean {
+  return (
+    convening.convener.trim() !== '' ||
+    convening.convener_capacity !== '' ||
+    convening.dispatch_date.trim() !== '' ||
+    convening.antecedence_days.trim() !== '' ||
+    convening.channel !== '' ||
+    convening.evidence_reference.trim() !== '' ||
+    convening.recipients.length > 0 ||
+    convening.second_call != null
+  );
+}
+
+/**
+ * Records that a meeting was held with **no** convening notice, and on what basis.
+ *
+ * Not a bare "skip convening" checkbox: the ata recites what is entered here, so the basis has to
+ * be a statement someone can stand behind. The copy names CSC art. 54.º for the assembleia
+ * universal option and otherwise defers to counsel — the rule packs, not this form, decide whether
+ * the recorded basis holds up.
+ */
+function ConveningWaiverEditor({
+  waiver,
+  convening,
+  disabled,
+  onChange,
+}: {
+  waiver: DraftConveningWaiver;
+  convening: DraftConvening;
+  disabled: boolean;
+  onChange: (next: DraftConveningWaiver) => void;
+}) {
+  const t = useT();
+  const set = <K extends keyof DraftConveningWaiver>(key: K, value: DraftConveningWaiver[K]) =>
+    onChange({ ...waiver, [key]: value });
+  const universal = waiver.basis === 'AssembleiaUniversal';
+
+  return (
+    <section className="stack--tight" aria-labelledby="ed-convening-waiver-title">
+      <p className="field__label" id="ed-convening-waiver-title">
+        {t('acts.convening.waiver.title')}
+      </p>
+      <p className="field__hint">{t('acts.convening.waiver.hint')}</p>
+      <label className="checkline">
+        <input
+          type="checkbox"
+          id="ed-convening-waiver-toggle"
+          checked={waiver.enabled}
+          disabled={disabled}
+          onChange={(e) => set('enabled', e.target.checked)}
+        />
+        {t('acts.convening.waiver.toggle')}
+      </label>
+
+      {waiver.enabled ? (
+        <>
+          {conveningHasContent(convening) ? (
+            <InlineWarning tone="warn" title={t('acts.convening.waiver.title')}>
+              <p>{t('acts.convening.waiver.conflict')}</p>
+            </InlineWarning>
+          ) : null}
+          <Field label={t('acts.convening.waiver.basis')} htmlFor="ed-convening-waiver-basis">
+            <Select
+              id="ed-convening-waiver-basis"
+              value={waiver.basis}
+              disabled={disabled}
+              options={[
+                {
+                  value: 'AssembleiaUniversal',
+                  label: t('acts.convening.waiver.basis.universal'),
+                },
+                { value: 'Other', label: t('acts.convening.waiver.basis.other') },
+              ]}
+              onChange={(e) => set('basis', e.target.value as NoConveningBasis)}
+            />
+          </Field>
+          {universal ? (
+            <>
+              <label className="checkline">
+                <input
+                  type="checkbox"
+                  checked={waiver.all_agreed_to_meet}
+                  disabled={disabled}
+                  onChange={(e) => set('all_agreed_to_meet', e.target.checked)}
+                />
+                {t('acts.convening.waiver.agreedToMeet')}
+              </label>
+              <label className="checkline">
+                <input
+                  type="checkbox"
+                  checked={waiver.all_agreed_to_agenda}
+                  disabled={disabled}
+                  onChange={(e) => set('all_agreed_to_agenda', e.target.checked)}
+                />
+                {t('acts.convening.waiver.agreedToAgenda')}
+              </label>
+            </>
+          ) : null}
+          <Field label={t('acts.convening.waiver.grounds')} htmlFor="ed-convening-waiver-grounds">
+            <TextArea
+              id="ed-convening-waiver-grounds"
+              rows={2}
+              value={waiver.grounds}
+              disabled={disabled}
+              onChange={(e) => set('grounds', e.target.value)}
+            />
+          </Field>
+          <Field
+            label={t('acts.convening.waiver.evidenceReference')}
+            htmlFor="ed-convening-waiver-evidence"
+          >
+            <Input
+              id="ed-convening-waiver-evidence"
+              value={waiver.evidence_reference}
+              disabled={disabled}
+              onChange={(e) => set('evidence_reference', e.target.value)}
+            />
+          </Field>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function ConveningEditor({
   convening,
   disabled,
@@ -1821,7 +2030,12 @@ function LifecycleStepper({
   scope: CanScope;
 }) {
   const t = useT();
-  const currentIdx = ACT_STATES.indexOf(current);
+  // `actStateLabels` is a live per-locale proxy, so the step list is built per render
+  // (never hoisted to a module const) to stay correct across a locale switch.
+  const steps: StepperStep<ActState>[] = ACT_STATES.map((state) => ({
+    id: state,
+    label: actStateLabels[state],
+  }));
   const next = nextState(current);
   const signingBlockedByAiReview =
     current === 'TextApproved' &&
@@ -1830,19 +2044,7 @@ function LifecycleStepper({
     aiHumanVerificationStatus !== 'accepted_by_human';
   return (
     <div className="stack--tight">
-      <ol className="stepper">
-        {ACT_STATES.map((state, i) => (
-          <li
-            key={state}
-            className={
-              i < currentIdx ? 'step step--done' : i === currentIdx ? 'step step--current' : 'step'
-            }
-            aria-current={i === currentIdx ? 'step' : undefined}
-          >
-            {actStateLabels[state]}
-          </li>
-        ))}
-      </ol>
+      <Stepper steps={steps} current={current} ariaLabel={t('acts.lifecycle')} />
       {next ? (
         <GateButton
           perm="act.advance"
@@ -2338,6 +2540,21 @@ function draftToPatch(draft: Draft) {
           second_call: draft.convening.second_call,
         };
 
+  // An `Other` basis with no stated ground is a 422 at the API, so it is never sent: the editor
+  // keeps it as an in-progress draft until the operator says what the ground was.
+  const waiverDraft = draft.convening_waiver;
+  const waiverGrounds = waiverDraft.grounds.trim();
+  const convening_waiver: ActConveningWaiver | null =
+    !waiverDraft.enabled || (waiverDraft.basis === 'Other' && waiverGrounds === '')
+      ? null
+      : {
+          basis: waiverDraft.basis,
+          grounds: waiverGrounds === '' ? null : waiverGrounds,
+          all_agreed_to_meet: waiverDraft.all_agreed_to_meet,
+          all_agreed_to_agenda: waiverDraft.all_agreed_to_agenda,
+          evidence_reference: orNull(waiverDraft.evidence_reference),
+        };
+
   return {
     title: draft.title,
     channel: draft.channel,
@@ -2355,6 +2572,7 @@ function draftToPatch(draft: Draft) {
     deliberation_items: draft.deliberation_items,
     telematic_evidence: orNull(draft.telematic_evidence),
     convening,
+    convening_waiver,
     attachments: draft.attachments,
     signatories: draft.signatories,
   };
@@ -2915,6 +3133,19 @@ export function AtaEditorPage() {
         </InlineWarning>
       ) : null}
 
+      {/* The lifecycle reads as a full-width form-progress bar above the two-column split,
+          not as a card squeezed into the 22rem aside. */}
+      <Card title={t('acts.lifecycle')}>
+        {advance.error ? <ErrorNote error={advance.error} /> : null}
+        <LifecycleStepper
+          current={a.state}
+          aiHumanVerificationStatus={aiHumanVerificationStatus}
+          pending={advance.isPending}
+          onAdvance={onAdvance}
+          scope={bookScope}
+        />
+      </Card>
+
       <div className="split">
         <div className="split__main stack">
           <Card
@@ -3055,6 +3286,7 @@ export function AtaEditorPage() {
             <AttendeesEditor
               attendees={draft.attendees}
               family={entity.data?.family}
+              qualities={entity.data?.profile?.attendee_qualities}
               disabled={readOnly}
               onChange={(next) => set('attendees', next)}
             />
@@ -3066,6 +3298,12 @@ export function AtaEditorPage() {
               <ConvocationNoticeAdvisoryCue
                 meetingDate={draft.meeting_date}
                 convening={draft.convening}
+              />
+              <ConveningWaiverEditor
+                waiver={draft.convening_waiver}
+                convening={draft.convening}
+                disabled={readOnly}
+                onChange={(next) => set('convening_waiver', next)}
               />
               <ConveningEditor
                 convening={draft.convening}
@@ -3189,17 +3427,6 @@ export function AtaEditorPage() {
         </div>
 
         <div className="split__aside stack">
-          <Card title={t('acts.lifecycle')}>
-            {advance.error ? <ErrorNote error={advance.error} /> : null}
-            <LifecycleStepper
-              current={a.state}
-              aiHumanVerificationStatus={aiHumanVerificationStatus}
-              pending={advance.isPending}
-              onAdvance={onAdvance}
-              scope={bookScope}
-            />
-          </Card>
-
           {a.ai_provenance ? (
             <Card title={t('acts.aiReview.title')}>
               <AiHumanReviewPanel

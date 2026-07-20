@@ -1,13 +1,22 @@
 /**
- * A single book, full width: its termo de abertura summary and the atas it holds (sealed
- * first by number, then drafts — the API orders them). While the book is Open, drafting an
- * ata (WFL-14) and closing the book (WFL-13) are neat buttons in the Atas panel header,
- * each opening its own route (`/livros/:id/nova-ata`, `/livros/:id/encerrar`) so the view
- * is no longer split by an aside (t13 item 7). The page header also exposes the read-only
- * Chancela internal preservation ZIP for this book.
+ * A single book, full width. The surface splits into four sub-tabs (t25) — Atas ·
+ * Termo de abertura · Retenção legal · Importações — reusing the SHARED `<SubNav>` and the
+ * `?sec=` deep-link convention already established by Configurações (`SettingsPage.tsx`),
+ * so there is exactly one sub-tab idiom in the app. `Atas` is the default and carries no
+ * `sec` param, so `/livros/:id` still lands on the minutes.
+ *
+ * Like the Ferramentas/Configurações pill, `<SubNav>` is a `role="group"` of `aria-pressed`
+ * buttons rather than an ARIA tablist — deliberately matched here rather than forked.
+ *
+ * Atas are sealed first by number, then drafts (the API orders them). While the book is
+ * Open, drafting an ata (WFL-14) and closing the book (WFL-13) are neat buttons in the Atas
+ * panel header, each opening its own route (`/livros/:id/nova-ata`, `/livros/:id/encerrar`)
+ * so the view is no longer split by an aside (t13 item 7). The page header (outside the
+ * tabs, because it applies to the whole book) exposes the read-only Chancela internal
+ * preservation ZIP and the local DGLAB interchange manifest.
  */
-import { Fragment, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   useBook,
   useBookActs,
@@ -26,6 +35,7 @@ import {
   usePaperBookOcrDrafts,
   usePaperBookImports,
   usePreservePaperBookImport,
+  usePrivacyRetentionDueCandidates,
   useReviewPaperBookOcrDraft,
   useRunPaperBookImportOcr,
   useSetBookLegalHold,
@@ -46,6 +56,7 @@ import type {
   PaperBookOcrDraftReviewPatchStatus,
   PaperBookOcrDraftView,
   PaperBookOcrStatus,
+  RetentionDueCandidate,
 } from '../../api/types';
 import {
   actStateLabels,
@@ -57,6 +68,7 @@ import {
   signatoryCapacityLabels,
 } from '../../api/labels';
 import { t as translateNow, useT } from '../../i18n';
+import type { MessageKey } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
@@ -73,12 +85,36 @@ import {
   Skeleton,
   SkeletonDeflist,
   SkeletonTable,
+  SubNav,
   Table,
   TextArea,
   useToast,
 } from '../../ui';
 import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
-import { GateButton, GateButtonLink, scopeBook } from '../session/permissions';
+import {
+  GateButton,
+  GateButtonLink,
+  PermissionDeniedNote,
+  scopeBook,
+  useCan,
+} from '../session/permissions';
+
+/**
+ * The book sub-tabs, in the order the operator asked for. Labels reuse the section titles
+ * they head (identical text), exactly as the Configurações sub-nav does.
+ */
+type BookSection = 'atas' | 'termo' | 'retencao' | 'importacoes';
+
+const BOOK_SECTIONS: { id: BookSection; label: MessageKey; icon: ReactNode }[] = [
+  { id: 'atas', label: 'books.atas', icon: <Icon.Layers /> },
+  { id: 'termo', label: 'books.termoAbertura', icon: <Icon.BookPlus /> },
+  { id: 'retencao', label: 'books.detail.legalHold.title', icon: <Icon.Scale /> },
+  // Short label: the imports card title is a full sentence, too long for a pill.
+  { id: 'importacoes', label: 'books.detail.subnav.imports', icon: <Icon.Tray /> },
+];
+
+const isBookSection = (value: string | null): value is BookSection =>
+  BOOK_SECTIONS.some((section) => section.id === value);
 
 function preservationPackageFilename(bookId: string): string {
   return `chancela-preservation-book-${bookId}.zip`;
@@ -491,6 +527,100 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
             </GateButton>
           </div>
         </form>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Retention information for THIS book, alongside the legal hold that blocks its disposal.
+ *
+ * There is no per-book retention endpoint: retention lives instance-wide under
+ * `/v1/privacy/retention-*`. What IS per-book is the read-only due-candidate scanner
+ * (`GET /v1/privacy/retention-due-candidates`), whose rows carry a `book_id` — so this
+ * panel loads that report and shows only the candidates naming this book, saying plainly
+ * that the policies themselves are managed in Configurações → Privacidade.
+ *
+ * The scanner is gated `user.manage|settings.manage@Global`, which a book reader may well
+ * not hold; rather than firing a request that 403s, the query is only enabled when the
+ * permission is held and an honest note replaces the table otherwise. Nothing here mutates.
+ */
+function BookRetentionPanel({ bookId }: { bookId: string }) {
+  const t = useT();
+  const can = useCan();
+  const canReadRetention = can('user.manage') || can('settings.manage');
+  const candidates = usePrivacyRetentionDueCandidates(canReadRetention);
+  const rows: RetentionDueCandidate[] = (candidates.data?.candidates ?? []).filter(
+    (candidate) => candidate.book_id === bookId,
+  );
+
+  return (
+    <Card title={t('settings.privacy.dueCandidates.title')}>
+      <div className="stack">
+        <InlineWarning tone="info" title={t('settings.privacy.retention.notice.title')}>
+          {t('books.detail.retention.scopeNote')}
+        </InlineWarning>
+
+        {!canReadRetention ? (
+          <PermissionDeniedNote />
+        ) : candidates.isLoading ? (
+          <SkeletonTable cols={3} />
+        ) : candidates.error ? (
+          <ErrorNote error={candidates.error} />
+        ) : rows.length === 0 ? (
+          <EmptyState title={t('settings.privacy.dueCandidates.empty.title')}>
+            <p>{t('settings.privacy.dueCandidates.empty.body')}</p>
+          </EmptyState>
+        ) : (
+          <Table
+            head={
+              <tr>
+                <th>{t('settings.privacy.dueCandidates.column.record')}</th>
+                <th>{t('settings.privacy.dueCandidates.column.policy')}</th>
+                <th>{t('settings.privacy.dueCandidates.column.due')}</th>
+              </tr>
+            }
+          >
+            {rows.map((candidate) => (
+              <tr key={candidate.candidate_id}>
+                <td data-label={t('settings.privacy.dueCandidates.column.record')}>
+                  <div className="stack--tight">
+                    <span className="mono">{candidate.record_id}</span>
+                    <span className="muted">
+                      {candidate.scope} / {candidate.category}
+                    </span>
+                  </div>
+                </td>
+                <td data-label={t('settings.privacy.dueCandidates.column.policy')}>
+                  <div className="stack--tight">
+                    <span>{candidate.policy_name}</span>
+                    <span className="muted">
+                      {candidate.schedule_id} · {candidate.retention_period}
+                    </span>
+                    <span>{candidate.disposal_action}</span>
+                  </div>
+                </td>
+                <td data-label={t('settings.privacy.dueCandidates.column.due')}>
+                  <div className="stack--tight">
+                    <span>
+                      {t('settings.privacy.dueCandidates.due')}:{' '}
+                      {candidate.due_date ?? t('settings.privacy.dueCandidates.noDueDate')}
+                    </span>
+                    <Badge tone={candidate.overdue ? 'warn' : 'neutral'}>
+                      {candidate.overdue
+                        ? t('settings.privacy.advisory.overdue')
+                        : t('settings.privacy.retention.active.true')}
+                    </Badge>
+                    <span className="muted">
+                      {t('settings.privacy.dueCandidates.evidenceNextStep')}:{' '}
+                      {candidate.evidence_next_step}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
       </div>
     </Card>
   );
@@ -1940,6 +2070,21 @@ export function BookDetailPage() {
   const t = useT();
   const toast = useToast();
   const { id = '' } = useParams();
+  const [params, setParams] = useSearchParams();
+  // Atas is the default and carries no `sec` param (so `/livros/:id` lands on it) — the
+  // exact convention Configurações uses for its own sub-nav.
+  const secParam = params.get('sec');
+  const section: BookSection = isBookSection(secParam) ? secParam : 'atas';
+  const selectSection = (next: BookSection) =>
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (next === 'atas') p.delete('sec');
+        else p.set('sec', next);
+        return p;
+      },
+      { replace: true },
+    );
   const book = useBook(id);
   const acts = useBookActs(id);
   const packageDownload = useDownloadBookArchivePackage(id);
@@ -2057,138 +2202,170 @@ export function BookDetailPage() {
             </GateButton>
           </div>
         }
-      />
+      >
+        <SubNav
+          items={BOOK_SECTIONS.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
+          active={section}
+          onSelect={selectSection}
+          ariaLabel={t('books.detail.subnav.aria')}
+        />
+      </PageHeader>
 
       <InlineWarning tone="info" title={t('books.detail.dglab.warningTitle')}>
         {' '}
         {t('uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson')}{' '}
       </InlineWarning>
 
-      <Card title={t('books.termoAbertura')}>
-        <dl className="deflist">
-          <div>
-            <dt>{t('books.purpose')}</dt>
-            <dd>{b.purpose ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>{t('books.numbering')}</dt>
-            <dd>{b.numbering_scheme ? numberingSchemeLabels[b.numbering_scheme] : '—'}</dd>
-          </div>
-          <div>
-            <dt>{t('books.openingDate')}</dt>
-            <dd>{b.opening_date ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>{t('books.signatories')}</dt>
-            <dd>
-              {formatBookSignatories(
-                b.required_signatory_records_abertura,
-                b.required_signatories_abertura,
-              )}
-            </dd>
-          </div>
-          {b.predecessor ? (
-            <div>
-              <dt>{t('books.predecessor')}</dt>
-              <dd>
-                <Link to={`/livros/${b.predecessor}`}>{b.predecessor}</Link>
-              </dd>
-            </div>
-          ) : null}
-          {b.state === 'Closed' ? (
-            <>
-              <div>
-                <dt>{t('books.closingReason')}</dt>
-                <dd>{b.closing_reason ? closingReasonLabels[b.closing_reason] : '—'}</dd>
-              </div>
-              <div>
-                <dt>{t('books.closingDate')}</dt>
-                <dd>{b.closing_date ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>{t('books.close.signatories')}</dt>
-                <dd>
-                  {formatBookSignatories(
-                    b.required_signatory_records_encerramento,
-                    b.required_signatories_encerramento,
-                  )}
-                </dd>
-              </div>
-            </>
-          ) : null}
-        </dl>
-      </Card>
+      {/* One section at a time; the panel replays the route-enter fade on each switch, as
+          the Configurações sub-nav does. */}
+      <div className="route-transition stack" key={section}>
+        {section === 'termo' ? (
+          <>
+            <Card title={t('books.termoAbertura')}>
+              <dl className="deflist">
+                <div>
+                  <dt>{t('books.purpose')}</dt>
+                  <dd>{b.purpose ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>{t('books.numbering')}</dt>
+                  <dd>{b.numbering_scheme ? numberingSchemeLabels[b.numbering_scheme] : '—'}</dd>
+                </div>
+                <div>
+                  <dt>{t('books.openingDate')}</dt>
+                  <dd>{b.opening_date ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>{t('books.signatories')}</dt>
+                  <dd>
+                    {formatBookSignatories(
+                      b.required_signatory_records_abertura,
+                      b.required_signatories_abertura,
+                    )}
+                  </dd>
+                </div>
+                {b.predecessor ? (
+                  <div>
+                    <dt>{t('books.predecessor')}</dt>
+                    <dd>
+                      <Link to={`/livros/${b.predecessor}`}>{b.predecessor}</Link>
+                    </dd>
+                  </div>
+                ) : null}
+                {b.state === 'Closed' ? (
+                  <>
+                    <div>
+                      <dt>{t('books.closingReason')}</dt>
+                      <dd>{b.closing_reason ? closingReasonLabels[b.closing_reason] : '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('books.closingDate')}</dt>
+                      <dd>{b.closing_date ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('books.close.signatories')}</dt>
+                      <dd>
+                        {formatBookSignatories(
+                          b.required_signatory_records_encerramento,
+                          b.required_signatories_encerramento,
+                        )}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
+              </dl>
+            </Card>
+            {/* Honest scope note: the termo is a sealed record whose fields are shown above.
+                `TermoInstrument` (chancela-core, t8) will make it a fillable/signable
+                instrument, but neither the API nor an editor exists yet, and the generated
+                termo PDF/A has no per-book retrieval endpoint — it travels inside the
+                preservation ZIP offered in the page header. Nothing is invented here. */}
+            <InlineWarning tone="info" title={t('books.detail.termo.pending.title')}>
+              {t('books.detail.termo.pending.body')}
+            </InlineWarning>
+          </>
+        ) : null}
 
-      <LegalHoldPanel bookId={b.id} />
+        {section === 'retencao' ? (
+          <>
+            <LegalHoldPanel bookId={b.id} />
+            <BookRetentionPanel bookId={b.id} />
+          </>
+        ) : null}
 
-      <PaperBookImportsPanel book={b} />
+        {section === 'importacoes' ? <PaperBookImportsPanel book={b} /> : null}
 
-      <Card
-        title={t('books.atas')}
-        actions={
-          isOpen ? (
-            <div className="row-wrap">
-              <GateButtonLink
-                perm="book.close"
-                scope={scopeBook(b.id)}
-                to={`/livros/${b.id}/encerrar`}
-                icon={<Icon.BookClosed />}
-              >
-                {t('books.closeBook')}
-              </GateButtonLink>
-              <GateButtonLink
-                perm="act.draft"
-                scope={scopeBook(b.id)}
-                to={`/livros/${b.id}/nova-ata`}
-                variant="primary"
-                icon={<Icon.Plus />}
-              >
-                {t('books.newAta')}
-              </GateButtonLink>
-            </div>
-          ) : null
-        }
-      >
-        {acts.isLoading ? (
-          <SkeletonTable cols={5} />
-        ) : acts.error ? (
-          <ErrorNote error={acts.error} />
-        ) : !acts.data || acts.data.length === 0 ? (
-          <EmptyState title={t('books.noAtas')}>
-            {isOpen ? <p>{t('books.createFirstAta')}</p> : null}
-          </EmptyState>
-        ) : (
-          <Table
-            head={
-              <tr>
-                <th>{t('books.th.number')}</th>
-                <th>{t('books.th.actTitle')}</th>
-                <th>{t('books.th.channel')}</th>
-                <th>{t('books.th.actState')}</th>
-                <th />
-              </tr>
+        {section === 'atas' ? (
+          <Card
+            title={t('books.atas')}
+            actions={
+              isOpen ? (
+                <div className="row-wrap">
+                  <GateButtonLink
+                    perm="book.close"
+                    scope={scopeBook(b.id)}
+                    to={`/livros/${b.id}/encerrar`}
+                    icon={<Icon.BookClosed />}
+                  >
+                    {t('books.closeBook')}
+                  </GateButtonLink>
+                  <GateButtonLink
+                    perm="act.draft"
+                    scope={scopeBook(b.id)}
+                    to={`/livros/${b.id}/nova-ata`}
+                    variant="primary"
+                    icon={<Icon.Plus />}
+                  >
+                    {t('books.newAta')}
+                  </GateButtonLink>
+                </div>
+              ) : null
             }
           >
-            {acts.data.map((act) => (
-              <tr key={act.id}>
-                <td>{act.ata_number ?? '—'}</td>
-                <td>{act.title}</td>
-                <td>{meetingChannelLabels[act.channel]}</td>
-                <td>
-                  <Badge
-                    tone={act.state === 'Sealed' || act.state === 'Archived' ? 'accent' : 'neutral'}
-                  >
-                    {actStateLabels[act.state]}
-                  </Badge>
-                </td>
-                <td>
-                  <Link to={`/atas/${act.id}`}>{t('common.open')}</Link>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        )}
-      </Card>
+            {acts.isLoading ? (
+              <SkeletonTable cols={5} />
+            ) : acts.error ? (
+              <ErrorNote error={acts.error} />
+            ) : !acts.data || acts.data.length === 0 ? (
+              <EmptyState title={t('books.noAtas')}>
+                {isOpen ? <p>{t('books.createFirstAta')}</p> : null}
+              </EmptyState>
+            ) : (
+              <Table
+                head={
+                  <tr>
+                    <th>{t('books.th.number')}</th>
+                    <th>{t('books.th.actTitle')}</th>
+                    <th>{t('books.th.channel')}</th>
+                    <th>{t('books.th.actState')}</th>
+                    <th />
+                  </tr>
+                }
+              >
+                {acts.data.map((act) => (
+                  <tr key={act.id}>
+                    <td>{act.ata_number ?? '—'}</td>
+                    <td>{act.title}</td>
+                    <td>{meetingChannelLabels[act.channel]}</td>
+                    <td>
+                      <Badge
+                        tone={
+                          act.state === 'Sealed' || act.state === 'Archived' ? 'accent' : 'neutral'
+                        }
+                      >
+                        {actStateLabels[act.state]}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Link to={`/atas/${act.id}`}>{t('common.open')}</Link>
+                    </td>
+                  </tr>
+                ))}
+              </Table>
+            )}
+          </Card>
+        ) : null}
+      </div>
     </div>
   );
 }

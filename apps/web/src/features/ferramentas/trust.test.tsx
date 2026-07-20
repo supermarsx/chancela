@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { renderWithProviders } from '../../test/utils';
+import { getByRevealedText, renderWithProviders } from '../../test/utils';
 import { FerramentasPage } from './FerramentasPage';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import type {
@@ -632,12 +632,14 @@ describe('Ferramentas — TSL trust catalog', () => {
     const acceptedHashGroup = screen.getByRole('group', {
       name: `Hash aceite completo: ${acceptedHash}`,
     });
-    const acceptedHashValue = within(acceptedHashGroup).getByTitle(acceptedHash);
+    const acceptedHashValue = getByRevealedText(acceptedHash, acceptedHashGroup);
     expect(acceptedHashValue.textContent).toBe('ba7816bf…f20015ad');
     expect(acceptedHashValue.textContent).not.toBe(acceptedHash);
     expect(acceptedHashGroup.classList.contains('trust-accepted-hash')).toBe(true);
     expect(acceptedHashValue.classList.contains('digest__value')).toBe(true);
-    expect(acceptedHashValue.getAttribute('title')).toBe(acceptedHash);
+    // t31: the full hash moved off the native `title` onto the described tooltip bubble —
+    // which `getByRevealedText` above already matched on, so it is announced, not just present.
+    expect(acceptedHashValue.getAttribute('title')).toBeNull();
     expect(acceptedHashGroup.closest('.trust-digest-cell')).toBeTruthy();
     fireEvent.click(within(acceptedHashGroup).getByRole('button', { name: /copiar/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(acceptedHash));
@@ -736,7 +738,7 @@ describe('Ferramentas — TSL trust catalog', () => {
     );
     expect(identities).toBeTruthy();
     expect(screen.getAllByText(matchText).length).toBeGreaterThanOrEqual(2);
-    const digestValue = within(identities!).getByTitle(certificateSha256);
+    const digestValue = getByRevealedText(certificateSha256, identities!);
     expect(digestValue.classList.contains('digest__value')).toBe(true);
     expect(digestValue.textContent).toBe('bbbbbbbb…bbbbbbbb');
     const timeoutSpy = vi.spyOn(window, 'setTimeout').mockReturnValue(0);
@@ -783,7 +785,7 @@ describe('Ferramentas — TSL trust catalog', () => {
     );
     expect(identities).toBeTruthy();
     expect(screen.getAllByText(matchText).length).toBeGreaterThanOrEqual(2);
-    const skiValue = within(identities!).getByTitle(ski);
+    const skiValue = getByRevealedText(ski, identities!);
     expect(skiValue.classList.contains('digest__value')).toBe(true);
     expect(skiValue.textContent).toBe('91b78a44…4d8528a6');
     const timeoutSpy = vi.spyOn(window, 'setTimeout').mockReturnValue(0);

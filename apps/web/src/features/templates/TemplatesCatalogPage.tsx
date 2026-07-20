@@ -13,17 +13,14 @@ import {
   type LifecycleStage,
   type MeetingChannel,
   type SignaturePolicyHint,
-  type TemplateLawReference,
   type TemplateSpec,
   type TemplateSummary,
 } from '../../api/types';
 import { useT } from '../../i18n';
 import {
-  Badge,
   ButtonLink,
   Card,
   ConfirmActionModal,
-  EmptyState,
   ErrorNote,
   Field,
   Icon,
@@ -32,13 +29,16 @@ import {
   Input,
   PageHeader,
   Select,
-  SkeletonCards,
+  SkeletonRegion,
+  SkeletonTable,
   useToast,
 } from '../../ui';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
-import { GateButton, GateIconButton } from '../session/permissions';
+import { GateButton } from '../session/permissions';
 import { TemplateEditorForm } from './TemplateEditorForm';
+import { templateDisplayName } from './templateNames';
 import { TemplateImportDialog } from './TemplateImportDialog';
+import { TemplatesTable } from './TemplatesTable';
 
 const ENTITY_FAMILIES: readonly EntityFamily[] = [
   'CommercialCompany',
@@ -72,6 +72,8 @@ function templateMatches(template: TemplateSummary, query: string): boolean {
   ]);
   return [
     template.id,
+    // Searching "conselho fiscal" must find the template now that the name is what is shown.
+    templateDisplayName(template.id),
     template.locale,
     template.family,
     template.stage,
@@ -83,33 +85,6 @@ function templateMatches(template: TemplateSummary, query: string): boolean {
     ...channelParts,
     ...lawReferenceParts,
   ].some((part) => searchText(part).includes(query));
-}
-
-function lawReferenceKey(reference: TemplateLawReference, index: number): string {
-  return [
-    reference.source_id,
-    reference.article ?? '',
-    reference.citation,
-    reference.threshold_id ?? '',
-    index,
-  ].join(':');
-}
-
-function lawReferenceTone(reference: TemplateLawReference): 'ok' | 'warn' {
-  return reference.verification === 'Verified' ? 'ok' : 'warn';
-}
-
-function lawReferenceBadgeKey(
-  reference: TemplateLawReference,
-): 'legislacao.corpus.badge.verified' | 'legislacao.corpus.badge.pending' {
-  return reference.verification === 'Verified'
-    ? 'legislacao.corpus.badge.verified'
-    : 'legislacao.corpus.badge.pending';
-}
-
-function lawReferenceSourceText(reference: TemplateLawReference): string {
-  const article = reference.article?.trim();
-  return [reference.source_label, article ? `art. ${article}` : ''].filter(Boolean).join(' · ');
 }
 
 /** Derive the export filename from the response `Content-Disposition`, or `<id>.json`. */
@@ -418,126 +393,20 @@ export function TemplatesCatalogPage() {
         </div>
 
         {templates.isLoading ? (
-          <SkeletonCards count={4} />
+          <SkeletonRegion>
+            <SkeletonTable cols={9} />
+          </SkeletonRegion>
         ) : templates.error ? (
           <ErrorNote error={templates.error} />
-        ) : filtered.length === 0 ? (
-          <EmptyState title={t('templates.empty.title')}>
-            <p>{t('templates.empty.body')}</p>
-          </EmptyState>
         ) : (
-          <div className="templates-grid">
-            {filtered.map((template) => {
-              const lawReferences = template.law_references ?? [];
-              const isUser = template.source === 'user';
-
-              return (
-                <article className="template-card" key={template.id}>
-                  <div className="template-card__head">
-                    <p className="card__label">{t('templates.card.id')}</p>
-                    <span className="template-card__channels">
-                      <Badge tone={isUser ? 'accent' : 'neutral'}>
-                        {isUser ? t('templates.source.user') : t('templates.source.builtin')}
-                      </Badge>
-                      <Badge tone="accent">{template.locale}</Badge>
-                    </span>
-                  </div>
-                  <code className="template-card__id">{template.id}</code>
-                  <dl className="template-card__meta">
-                    <div>
-                      <dt>{t('templates.card.family')}</dt>
-                      <dd>{entityFamilyLabels[template.family]}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('templates.card.stage')}</dt>
-                      <dd>{lifecycleStageLabels[template.stage]}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('templates.card.signature')}</dt>
-                      <dd>{signaturePolicyLabels[template.signature_policy]}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('templates.card.rulePack')}</dt>
-                      <dd>
-                        <code className="template-card__code">{template.rule_pack_id}</code>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{t('templates.card.channels')}</dt>
-                      <dd>
-                        {template.channels.length > 0 ? (
-                          <span className="template-card__channels">
-                            {template.channels.map((value) => (
-                              <Badge key={value}>{meetingChannelLabels[value]}</Badge>
-                            ))}
-                          </span>
-                        ) : (
-                          <span className="muted">{t('templates.channels.none')}</span>
-                        )}
-                      </dd>
-                    </div>
-                    {lawReferences.length > 0 ? (
-                      <div>
-                        <dt>{t('documents.metadata.legalSource')}</dt>
-                        <dd>
-                          <div className="stack--tight">
-                            {lawReferences.map((reference, index) => (
-                              <div key={lawReferenceKey(reference, index)} className="stack--tight">
-                                <span className="template-card__channels">
-                                  <Badge tone={lawReferenceTone(reference)}>
-                                    {t(lawReferenceBadgeKey(reference))}
-                                  </Badge>
-                                  <span className="mono">{reference.citation}</span>
-                                </span>
-                                <span className="muted">
-                                  {t('legislacao.corpus.article.source')}:{' '}
-                                  {lawReferenceSourceText(reference)}
-                                </span>
-                                {reference.verification === 'Pending' ? (
-                                  <span className="muted">
-                                    {t('legislacao.citations.pendingNote')}
-                                  </span>
-                                ) : null}
-                              </div>
-                            ))}
-                          </div>
-                        </dd>
-                      </div>
-                    ) : null}
-                  </dl>
-                  <div className="template-card__actions">
-                    {isUser ? (
-                      <>
-                        <GateIconButton
-                          perm="template.manage"
-                          icon={<Icon.Pencil />}
-                          label={t('templates.actions.edit')}
-                          disabled={loadTemplateSpec.isPending}
-                          onClick={() => void onEdit(template)}
-                        />
-                        <GateIconButton
-                          perm="template.manage"
-                          icon={<Icon.Archive />}
-                          label={t('templates.actions.export')}
-                          disabled={exportTemplate.isPending}
-                          onClick={() => void onExport(template)}
-                        />
-                        <GateIconButton
-                          perm="template.manage"
-                          icon={<Icon.Trash />}
-                          label={t('templates.actions.delete')}
-                          onClick={() => setDeleteTarget(template)}
-                        />
-                      </>
-                    ) : null}
-                    <ButtonLink to="/livros" icon={<Icon.ArrowRight />}>
-                      {t('templates.openAct')}
-                    </ButtonLink>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+          <TemplatesTable
+            templates={filtered}
+            onEdit={(template) => void onEdit(template)}
+            onExport={(template) => void onExport(template)}
+            onDelete={setDeleteTarget}
+            editPending={loadTemplateSpec.isPending}
+            exportPending={exportTemplate.isPending}
+          />
         )}
       </section>
 

@@ -177,12 +177,115 @@ function expectCssRule(css: string, selector: RegExp, declarations: string[]) {
   }
 }
 
+/** The catalog table's body rows, in render order. */
+function catalogRows(): HTMLTableRowElement[] {
+  return Array.from(document.querySelectorAll<HTMLTableRowElement>('.templates-table tbody tr'));
+}
+
+/** The leading label of each row: the document name, or the id when the catalog names none. */
+function rowNames(): string[] {
+  return catalogRows().map(
+    (row) =>
+      row.querySelector('.templates-table__name')?.textContent ??
+      row.querySelector('.templates-table__id')?.textContent ??
+      '',
+  );
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
 describe('TemplatesCatalogPage', () => {
+  it('leads each row with the document name and keeps the versioned id searchable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([{ match: '/v1/templates', body: [...CATALOG, USER_TEMPLATE] }]),
+    );
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    expect(await screen.findByText('Ata de assembleia geral')).toBeTruthy();
+    expect(screen.getByText('Certidão de ata')).toBeTruthy();
+    // The `/vN` is provenance, so it is demoted to a secondary line rather than dropped.
+    expect(screen.getByText('csc-ata-ag/v1')).toBeTruthy();
+    // A user-authored template the catalog cannot name keeps the id as its only label.
+    const userRow = screen.getByText('user-encosto-ata/v1').closest('tr') as HTMLElement;
+    expect(userRow.querySelector('.templates-table__name')).toBeNull();
+
+    // Searching by the readable name now finds the row.
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
+      target: { value: 'certidão' },
+    });
+    await waitFor(() => expect(catalogRows()).toHaveLength(1));
+    expect(screen.getByText('Certidão de ata')).toBeTruthy();
+  });
+
+  it('renders the catalog as a named, sortable table without losing a column', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([{ match: '/v1/templates', body: [...CATALOG, USER_TEMPLATE] }]),
+    );
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    const table = await screen.findByRole('table', { name: 'Catálogo de minutas' });
+    const headers = within(table).getAllByRole('columnheader');
+    expect(headers.map((header) => header.getAttribute('scope'))).toEqual(Array(9).fill('col'));
+    expect(headers.map((header) => header.textContent?.trim())).toEqual([
+      'Modelo',
+      'Família',
+      'Fase',
+      'Canais',
+      'Assinatura',
+      'Pacote de regras',
+      'Fonte legal',
+      'Origem',
+      'Ações',
+    ]);
+    expect(catalogRows()).toHaveLength(5);
+
+    // Every row carries the full metadata the cards used to spread over a <dl>.
+    const ataRow = screen.getByText('csc-ata-ag/v1').closest('tr') as HTMLElement;
+    expect(within(ataRow).getByText('Ata de assembleia geral')).toBeTruthy();
+    expect(within(ataRow).getByText('Sociedade comercial')).toBeTruthy();
+    expect(within(ataRow).getByText('Assinatura qualificada preferencial')).toBeTruthy();
+    expect(within(ataRow).getByText('csc-art63/v2')).toBeTruthy();
+    expect(within(ataRow).getByText('Deliberação por escrito')).toBeTruthy();
+    expect(within(ataRow).getByText('Incluído (só leitura)')).toBeTruthy();
+    expect(within(ataRow).getByText('pt-PT')).toBeTruthy();
+
+    // Sorting: unsorted by default, then ascending, then descending on a second click.
+    const nameHeader = headers[0];
+    expect(nameHeader.getAttribute('aria-sort')).toBe('none');
+    fireEvent.click(within(nameHeader).getByRole('button', { name: 'Modelo' }));
+    expect(nameHeader.getAttribute('aria-sort')).toBe('ascending');
+    expect(rowNames()[0]).toBe('Ata de assembleia geral');
+    fireEvent.click(within(nameHeader).getByRole('button', { name: 'Modelo' }));
+    expect(nameHeader.getAttribute('aria-sort')).toBe('descending');
+    expect(rowNames()[0]).toBe('user-encosto-ata/v1');
+
+    // Sorting another column releases the first one.
+    const familyHeader = headers[1];
+    fireEvent.click(within(familyHeader).getByRole('button', { name: 'Família' }));
+    expect(nameHeader.getAttribute('aria-sort')).toBe('none');
+    expect(familyHeader.getAttribute('aria-sort')).toBe('ascending');
+    expect(rowNames()[0]).toBe('Convocatória — Assembleia Geral');
+  });
+
+  it('shows the table skeleton while the catalog loads', async () => {
+    vi.stubGlobal('fetch', (() => new Promise<Response>(() => {})) as typeof fetch);
+
+    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    const loading = await screen.findByRole('status');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(within(loading).getByText('A carregar…')).toBeTruthy();
+    expect(container.querySelector('.skeleton-table')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
   it('browses the existing template catalog and points generation back to acts', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 
@@ -224,13 +327,13 @@ describe('TemplatesCatalogPage', () => {
     expect(within(advanced).getByLabelText('Pacote de regras')).toBeTruthy();
 
     const ataId = await screen.findByText('csc-ata-ag/v1');
-    const ataCard = ataId.closest('article');
-    expect(ataCard).toBeTruthy();
+    const ataRow = ataId.closest('tr');
+    expect(ataRow).toBeTruthy();
     expect(
-      within(ataCard as HTMLElement).getByText('Assinatura qualificada preferencial'),
+      within(ataRow as HTMLElement).getByText('Assinatura qualificada preferencial'),
     ).toBeTruthy();
-    expect(within(ataCard as HTMLElement).getByText('csc-art63/v2')).toBeTruthy();
-    expect(within(ataCard as HTMLElement).getByText('Deliberação por escrito')).toBeTruthy();
+    expect(within(ataRow as HTMLElement).getByText('csc-art63/v2')).toBeTruthy();
+    expect(within(ataRow as HTMLElement).getByText('Deliberação por escrito')).toBeTruthy();
     expect(screen.getByText('4 de 4 modelos')).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Escolher ata' })[0].getAttribute('href')).toBe(
       '/livros',
@@ -261,9 +364,9 @@ describe('TemplatesCatalogPage', () => {
       target: { value: 'QualifiedOrHandwritten' },
     });
     expect(screen.getByText('1 de 4 modelos')).toBeTruthy();
-    const condoCard = screen.getByText('condominio-lista-presencas/v1').closest('article');
-    expect(condoCard).toBeTruthy();
-    expect(within(condoCard as HTMLElement).getByText('Qualificada ou manuscrita')).toBeTruthy();
+    const condoRow = screen.getByText('condominio-lista-presencas/v1').closest('tr');
+    expect(condoRow).toBeTruthy();
+    expect(within(condoRow as HTMLElement).getByText('Qualificada ou manuscrita')).toBeTruthy();
 
     fireEvent.click(clearFilters);
     expect(await screen.findByText('csc-ata-ag/v1')).toBeTruthy();
@@ -271,8 +374,8 @@ describe('TemplatesCatalogPage', () => {
     fireEvent.change(screen.getByLabelText('Família da entidade'), {
       target: { value: 'Association' },
     });
-    const associationCard = await screen.findByText('assoc-convocatoria-ga/v1');
-    expect(associationCard).toBeTruthy();
+    const associationRow = await screen.findByText('assoc-convocatoria-ga/v1');
+    expect(associationRow).toBeTruthy();
     expect(screen.queryByText('condominio-lista-presencas/v1')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Fase da minuta'), {
@@ -374,16 +477,17 @@ describe('TemplatesCatalogPage', () => {
     renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
 
     const associationId = await screen.findByText('assoc-convocatoria-ga/v1');
-    const associationCard = associationId.closest('article');
-    expect(associationCard).toBeTruthy();
-    expect(within(associationCard as HTMLElement).getByText('Fonte legal')).toBeTruthy();
-    expect(within(associationCard as HTMLElement).getByText('Por verificar')).toBeTruthy();
-    expect(within(associationCard as HTMLElement).getByText('CC arts. 173.º e 175.º')).toBeTruthy();
+    const associationRow = associationId.closest('tr');
+    expect(associationRow).toBeTruthy();
+    // The "Fonte legal" label is now the column header the cell answers to.
+    expect(screen.getByRole('columnheader', { name: 'Fonte legal' })).toBeTruthy();
+    expect(within(associationRow as HTMLElement).getByText('Por verificar')).toBeTruthy();
+    expect(within(associationRow as HTMLElement).getByText('CC arts. 173.º e 175.º')).toBeTruthy();
     expect(
-      within(associationCard as HTMLElement).getByText('Fonte: Código Civil · art. 175'),
+      within(associationRow as HTMLElement).getByText('Fonte: Código Civil · art. 175'),
     ).toBeTruthy();
     expect(
-      within(associationCard as HTMLElement).getByText('Fonte pendente; não usar como verificada.'),
+      within(associationRow as HTMLElement).getByText('Fonte pendente; não usar como verificada.'),
     ).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Pesquisa'), {
@@ -409,18 +513,16 @@ describe('TemplatesCatalogPage', () => {
     expect(screen.getByRole('button', { name: 'Novo modelo' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Importar' })).toBeTruthy();
 
-    const userCard = (await screen.findByText('user-encosto-ata/v1')).closest(
-      'article',
-    ) as HTMLElement;
-    expect(within(userCard).getByText('Criado pelo utilizador')).toBeTruthy();
-    expect(within(userCard).getByRole('button', { name: 'Editar' })).toBeTruthy();
-    expect(within(userCard).getByRole('button', { name: 'Exportar' })).toBeTruthy();
-    expect(within(userCard).getByRole('button', { name: 'Eliminar' })).toBeTruthy();
+    const userRow = (await screen.findByText('user-encosto-ata/v1')).closest('tr') as HTMLElement;
+    expect(within(userRow).getByText('Criado pelo utilizador')).toBeTruthy();
+    expect(within(userRow).getByRole('button', { name: 'Editar' })).toBeTruthy();
+    expect(within(userRow).getByRole('button', { name: 'Exportar' })).toBeTruthy();
+    expect(within(userRow).getByRole('button', { name: 'Eliminar' })).toBeTruthy();
 
-    const builtinCard = screen.getByText('csc-ata-ag/v1').closest('article') as HTMLElement;
-    expect(within(builtinCard).getByText('Incluído (só leitura)')).toBeTruthy();
-    expect(within(builtinCard).queryByRole('button', { name: 'Editar' })).toBeNull();
-    expect(within(builtinCard).queryByRole('button', { name: 'Eliminar' })).toBeNull();
+    const builtinRow = screen.getByText('csc-ata-ag/v1').closest('tr') as HTMLElement;
+    expect(within(builtinRow).getByText('Incluído (só leitura)')).toBeTruthy();
+    expect(within(builtinRow).queryByRole('button', { name: 'Editar' })).toBeNull();
+    expect(within(builtinRow).queryByRole('button', { name: 'Eliminar' })).toBeNull();
   });
 
   it('creates a user template through the editor form', async () => {
@@ -484,10 +586,8 @@ describe('TemplatesCatalogPage', () => {
 
     renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
 
-    const userCard = (await screen.findByText('user-encosto-ata/v1')).closest(
-      'article',
-    ) as HTMLElement;
-    fireEvent.click(within(userCard).getByRole('button', { name: 'Eliminar' }));
+    const userRow = (await screen.findByText('user-encosto-ata/v1')).closest('tr') as HTMLElement;
+    fireEvent.click(within(userRow).getByRole('button', { name: 'Eliminar' }));
 
     const dialog = await screen.findByRole('dialog');
     expect(

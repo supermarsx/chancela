@@ -11,6 +11,17 @@ import {
 import { renderWithProviders } from '../../test/utils';
 import { EntitiesPage } from './EntitiesPage';
 
+/**
+ * The text a cell reveals BEYOND what it displays — the themed tooltip bubble it points at
+ * via `aria-describedby`. Replaces the old `getAttribute('title')` probes: t31 moved these
+ * reveals off the unstyleable native tooltip onto the shared `Tooltip` primitive.
+ */
+function describedText(el: Element | null | undefined): string | null {
+  const id = el?.getAttribute('aria-describedby');
+  return id ? (document.getElementById(id)?.textContent ?? null) : null;
+}
+
+
 type EntityActivitySummary = NonNullable<Entity['activity_summary']>;
 
 const PROFILE: Entity['profile'] = {
@@ -20,6 +31,7 @@ const PROFILE: Entity['profile'] = {
   signature_policy: 'QualifiedPreferred',
   template_family: 'csc-commercial',
   calendar_presets: [],
+  attendee_qualities: ['Member'],
 };
 
 const ENTITY_A: Entity = {
@@ -327,7 +339,8 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getByText('Compra e venda de bens imobiliários.')).toBeTruthy();
     expect(screen.queryByText('+1 CAE')).toBeNull();
     expect(screen.getAllByText('Dentro da validade').length).toBeGreaterThan(1);
-    expect(screen.getByText(/Válido até 2027-07-05/)).toBeTruthy();
+    // Scoped past the tooltip bubbles: a cell whose reveal restates its text matches twice.
+    expect(screen.getAllByText(/Válido até 2027-07-05/).length).toBeGreaterThan(0);
     expect(screen.getByText('CONSTITUIÇÃO DE SOCIEDADE')).toBeTruthy();
     expect(screen.getByText('06-30')).toBeTruthy();
     expect(screen.getByText('12-31 (por omissão)')).toBeTruthy();
@@ -339,7 +352,8 @@ describe('EntitiesPage enrichment and filtering', () => {
       expect(cell.className).toContain('entities-table__cell--truncate');
       const singleLine = cell.querySelector('.truncate, .entity-cell-line');
       expect(singleLine).toBeTruthy();
-      expect(singleLine?.getAttribute('title')).toBeTruthy();
+      // Each line conveys its value either on screen or through the themed tooltip.
+      expect(singleLine?.textContent || describedText(singleLine)).toBeTruthy();
     }
     expect(cells.at(-1)?.className).toContain('entities-table__cell--actions');
     expect(within(cells.at(-1) as HTMLElement).getByRole('button', { name: 'Abrir' })).toBeTruthy();
@@ -348,21 +362,21 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(typeLine?.textContent).toBe('Lda.');
     expect(typeLine?.className).toContain('entity-cell-line--compact');
     expect(typeLine?.textContent).not.toContain('Sociedade por Quotas');
-    expect(typeLine?.getAttribute('title')).toContain('Sociedade por Quotas');
-    expect(typeLine?.getAttribute('title')).toContain('Regras csc-art63/v2');
+    expect(describedText(typeLine)).toContain('Sociedade por Quotas');
+    expect(describedText(typeLine)).toContain('Regras csc-art63/v2');
 
     const bookLink = screen.getByRole('link', { name: 'Assembleia Geral' });
     expect(bookLink.getAttribute('href')).toBe('/livros/book-open');
     expect(screen.getAllByText('Aberto').length).toBeGreaterThan(0);
-    expect(screen.getByText(/Assembleia anual 2026/)).toBeTruthy();
-    expect(screen.getByText(/Última ata\s+4/)).toBeTruthy();
-    expect(screen.getByText(/Aberto em 2026-01-10/)).toBeTruthy();
+    expect(screen.getAllByText(/Assembleia anual 2026/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Última ata\s+4/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Aberto em 2026-01-10/).length).toBeGreaterThan(0);
     expect(screen.getByText('1 livro · Aberto: 1')).toBeTruthy();
 
     const activityLine = cells[12].querySelector('.entity-cell-line');
     expect(activityLine?.className).toContain('entity-cell-line--compact');
     expect(activityLine?.textContent).not.toContain('amelia.marques');
-    expect(activityLine?.getAttribute('title')).toContain('amelia.marques');
+    expect(describedText(activityLine)).toContain('amelia.marques');
     expect(screen.getAllByText('Sem livros').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Sem atividade').length).toBeGreaterThan(0);
     expect(screen.queryByRole('link', { name: 'Ver arquivo' })).toBeNull();
@@ -475,7 +489,7 @@ describe('EntitiesPage enrichment and filtering', () => {
 
     const latestBook = screen.getByRole('link', { name: 'Conselho Fiscal' });
     expect(latestBook.getAttribute('href')).toBe('/livros/book-closed');
-    expect(screen.getByText(/Fiscalização 2026/)).toBeTruthy();
+    expect(screen.getAllByText(/Fiscalização 2026/).length).toBeGreaterThan(0);
     expect(screen.getByText('2 livros · Aberto: 1 · Encerrado: 1')).toBeTruthy();
     expect(screen.getByText('Motivo Livro completo')).toBeTruthy();
 

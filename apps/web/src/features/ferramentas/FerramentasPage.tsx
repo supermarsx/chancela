@@ -7,9 +7,9 @@
  *    from the former standalone /cae page, which now redirects in.
  *  - **Legislação** (t24) — a curated law shelf: the diplomas that ground the product,
  *    each with a faithful extract, official links and a last-reviewed date.
- *  - **Validador PDF** — local technical PDF/PAdES evidence validation for an uploaded
- *    PDF, plus read-only ASiC inspection for uploaded containers, backed by
- *    `POST /v1/signature/pdf/validate` and `POST /v1/signature/asic/inspect`.
+ *  - **Validador PDF** — itself split into a second sub-tab level (`?sec=`, see
+ *    `ValidadorTecnicoSection`): PDF/PAdES validation, ASiC container inspection, and the
+ *    external-validator technical report shelf.
  *  - **Lista de confiança** — the read-only TSL trust catalog/status surface for
  *    checking the parsed scheme, provider and service trust metadata.
  *  - **Assinatura externa** — operational tracking for redacted external-signer invites
@@ -28,9 +28,7 @@ import { Icon, PageHeader } from '../../ui';
 import { CaeExplorer } from '../cae/CaeExplorer';
 import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
 import { LegislacaoPage } from '../legislacao/LegislacaoPage';
-import { PdfSignatureValidatorPanel } from './PdfSignatureValidatorPanel';
-import { AsicSignatureInspectorPanel } from './AsicSignatureInspectorPanel';
-import { ExternalValidatorReportsPanel } from './ExternalValidatorReportsPanel';
+import { ValidadorTecnicoSection } from './ValidadorTecnicoSection';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import { ExternalSigningWorkflowsPage } from './ExternalSigningWorkflowsPage';
 
@@ -122,7 +120,9 @@ export function FerramentasPage() {
 
   return (
     <div className="stack">
-      <PageHeader crumbs={t('tools.crumbs')} title={t('tools.title')}>
+      {/* No `crumbs`: Ferramentas is a top-level tab with no parent, so a breadcrumb
+          would only repeat the title on the line above it. */}
+      <PageHeader title={t('tools.title')}>
         <div
           className="ferramentas-subnav"
           role="group"
@@ -173,11 +173,7 @@ export function FerramentasPage() {
         {section === 'trust' ? (
           <TrustCatalogPage />
         ) : section === 'pdf' ? (
-          <div className="stack">
-            <PdfSignatureValidatorPanel />
-            <AsicSignatureInspectorPanel />
-            <ExternalValidatorReportsPanel />
-          </div>
+          <ValidadorTecnicoSection />
         ) : section === 'external-signing' ? (
           <ExternalSigningWorkflowsPage />
         ) : section === 'legislacao' ? (

@@ -8,6 +8,17 @@ import { EntityDetailPage } from './EntityDetailPage';
 import { entityFieldHelp } from './fieldHelp';
 import { DEFAULT_SETTINGS, type Entity, type LedgerEventView } from '../../api/types';
 
+/**
+ * The text a cell reveals BEYOND what it displays — the themed tooltip bubble it points at
+ * via `aria-describedby`. Replaces the old `getAttribute('title')` probes: t31 moved these
+ * reveals off the unstyleable native tooltip onto the shared `Tooltip` primitive.
+ */
+function describedText(el: Element | null | undefined): string | null {
+  const id = el?.getAttribute('aria-describedby');
+  return id ? (document.getElementById(id)?.textContent ?? null) : null;
+}
+
+
 const ENTITY: Entity = {
   id: 'new-ent-1',
   tenant_id: 'tenant-1',
@@ -26,6 +37,7 @@ const ENTITY: Entity = {
     signature_policy: 'QualifiedPreferred',
     template_family: 'csc-commercial',
     calendar_presets: [],
+    attendee_qualities: ['Member'],
   },
   statute: null,
 };
@@ -277,7 +289,9 @@ describe('EntitiesPage', () => {
 
     const name = await screen.findByText(longEntity.name);
     expect(name.className).toContain('truncate');
-    expect(name.getAttribute('title')).toBe(longEntity.name);
+    // t31: the name is clipped by CSS, not abbreviated, so it stays complete in the DOM (the
+    // themed tooltip de-truncates it visually in place of the old unstyleable `title`).
+    expect(name.textContent).toBe(longEntity.name);
 
     const row = name.closest('tr') as HTMLElement;
     const cells = within(row).getAllByRole('cell');
@@ -286,7 +300,8 @@ describe('EntitiesPage', () => {
       expect(cell.className).toContain('entities-table__cell--truncate');
       const singleLine = cell.querySelector('.truncate, .entity-cell-line');
       expect(singleLine).toBeTruthy();
-      expect(singleLine?.getAttribute('title')).toBeTruthy();
+      // Each line conveys its value either on screen or through the themed tooltip.
+      expect(singleLine?.textContent || describedText(singleLine)).toBeTruthy();
     }
     expect(cells[4].className).toContain('entities-table__cell--actions');
     expect(cells[4].className).not.toContain('entities-table__cell--truncate');
@@ -297,15 +312,15 @@ describe('EntitiesPage', () => {
     expect(typeLine?.className).toContain('entity-cell-line--compact');
     expect(typeLine?.textContent).not.toContain('Sociedade por Quotas');
     expect(typeLine?.textContent).not.toContain('Regras');
-    expect(typeLine?.getAttribute('title')).toContain('Sociedade por Quotas');
-    expect(typeLine?.getAttribute('title')).toContain('Regras csc-art63/v2');
+    expect(describedText(typeLine)).toContain('Sociedade por Quotas');
+    expect(describedText(typeLine)).toContain('Regras csc-art63/v2');
 
     const activityLine = cells[3].querySelector('.entity-cell-line');
     expect(activityLine?.className).toContain('entity-cell-line--compact');
     expect(activityLine?.textContent).not.toContain(activity.actor);
     expect(activityLine?.textContent).not.toContain('10:15');
-    expect(activityLine?.getAttribute('title')).toContain('Entidade criada');
-    expect(activityLine?.getAttribute('title')).toContain(activity.actor);
+    expect(describedText(activityLine)).toContain('Entidade criada');
+    expect(describedText(activityLine)).toContain(activity.actor);
   });
 
   it('opens an entity via an icon button carrying an accessible "Abrir" tooltip label', async () => {

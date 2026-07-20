@@ -425,7 +425,7 @@ describe('connector targets and durable jobs', () => {
 });
 
 describe('zero-knowledge repository caches', () => {
-  it('stores and removes the tenant repository policy', async () => {
+  it('wraps the saved tenant policy in the read shape and empties it on delete', async () => {
     const { qc, wrapper } = harness();
     const policy = { tenant_id: TENANT, mode: 'zero_knowledge' };
     vi.spyOn(api, 'putTenantRepositoryPolicy').mockResolvedValue(policy as never);
@@ -435,10 +435,11 @@ describe('zero-knowledge repository caches', () => {
       tenantId: TENANT,
       body: { mode: 'zero_knowledge' },
     });
-    expect(qc.getQueryData(keys.tenantRepositoryPolicy(TENANT))).toEqual(policy);
+    expect(qc.getQueryData(keys.tenantRepositoryPolicy(TENANT))).toEqual({ policy });
 
+    // Deleting leaves the resource in place with no policy — the same shape the API returns.
     await mutate(renderHook(() => useDeleteTenantRepositoryPolicy(), { wrapper }).result, TENANT);
-    expect(qc.getQueryData(keys.tenantRepositoryPolicy(TENANT))).toBeUndefined();
+    expect(qc.getQueryData(keys.tenantRepositoryPolicy(TENANT))).toEqual({ policy: null });
   });
 
   it('keys repository writes off the nested policy, not the top level', async () => {

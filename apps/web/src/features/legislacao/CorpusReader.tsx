@@ -20,9 +20,18 @@
  * informative-caveat pattern. The official publication in the Diário da República / EUR-Lex always
  * prevails.
  *
+ * ## Navigation (t34)
  * Navigation is deep-linkable: `?diploma=<id>` opens a diploma, `?diploma=<id>&artigo=<n>` an
- * article, and `?q=<text>` a search — so any view can be shared or reloaded. An old server that
- * predates the corpus API surfaces the endpoint error honestly via {@link ErrorNote}.
+ * article, and `?q=<text>` seeds a search — so any view can be shared or reloaded. Opening a
+ * diploma/article PUSHES a history entry (it used to `replace`, which silently destroyed the
+ * entry and made the browser Back button leave the whole Ferramentas tool instead of returning
+ * to the list). Reading is therefore reversible three ways: browser Back, the "Voltar" control in
+ * the panel header, and — from an article — the in-content "Voltar a <diploma>" one level up.
+ * An open selection takes precedence over the search results, so the search term is preserved as
+ * the context to come back TO; editing the search box abandons the selection.
+ *
+ * An old server that predates the corpus API surfaces the endpoint error honestly via
+ * {@link ErrorNote}.
  */
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -386,13 +395,11 @@ function DiplomaDetail({
   onOpenArticle,
   onPinArticle,
   pinPending,
-  onBack,
 }: {
   diplomaId: string;
   onOpenArticle: (diplomaId: string, number: string) => void;
   onPinArticle: (article: LawArticleView) => void;
   pinPending: boolean;
-  onBack: () => void;
 }) {
   const t = useT();
   const q = useLawDiploma(diplomaId);
@@ -405,9 +412,6 @@ function DiplomaDetail({
   const fullyVerified = d.pending_count === 0 && d.article_count > 0;
   return (
     <div className="stack--tight">
-      <Button type="button" variant="ghost" className="leg-corpus__back" onClick={onBack}>
-        {t('legislacao.corpus.back')}
-      </Button>
       <header className="leg-corpus__diploma-header">
         <h3 className="panel__title">{d.title}</h3>
         <p className="leg-card__ref mono">{d.ref}</p>
@@ -592,58 +596,60 @@ export function CorpusReader() {
   // Debounce the search box, mirroring the CAE explorer / curated-shelf idiom. The query is
   // seeded from `?q=` on mount (so a search is deep-linkable IN) but kept as local state —
   // it is deliberately NOT written back to the URL, so it never races the diploma/article
-  // navigation params below (react-router coalesces same-tick `setParams` calls).
+  // navigation params below (react-router coalesces same-tick `setParams` calls). It survives
+  // opening a law, which is what makes "Voltar" land back on the results.
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(term), 200);
     return () => window.clearTimeout(timer);
   }, [term]);
 
-  // Leaving search mode on a navigation click: clear both the input and the debounced value so
-  // the view switches to the selection immediately (not after the debounce window elapses).
-  function leaveSearch() {
-    setTerm('');
-    setDebounced('');
-  }
-
+  // Opening a diploma/article PUSHES a history entry (never `replace`) — the selection is the
+  // reader's navigation state, so the browser Back button must undo it and return to the list
+  // rather than leaving the Ferramentas tool entirely (t34).
   function openDiploma(id: string) {
-    leaveSearch();
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        p.set('diploma', id);
-        p.delete('artigo');
-        p.delete('q');
-        return p;
-      },
-      { replace: true },
-    );
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set('diploma', id);
+      p.delete('artigo');
+      return p;
+    });
   }
 
   function openArticle(id: string, number: string) {
-    leaveSearch();
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        p.set('diploma', id);
-        p.set('artigo', number);
-        p.delete('q');
-        return p;
-      },
-      { replace: true },
-    );
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set('diploma', id);
+      p.set('artigo', number);
+      return p;
+    });
   }
 
-  function backToCorpus() {
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        p.delete('diploma');
-        p.delete('artigo');
-        p.delete('q');
-        return p;
-      },
-      { replace: true },
-    );
+  // Returning to the list clears only the selection: the search term survives, so a reader who
+  // arrived from a full-text search lands back on their results instead of a reset corpus.
+  function backToList() {
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.delete('diploma');
+      p.delete('artigo');
+      return p;
+    });
+  }
+
+  // Editing the search box abandons the open diploma/article (the selection otherwise wins over
+  // the results below); `replace` so keystrokes never pile up history entries.
+  function changeTerm(next: string) {
+    setTerm(next);
+    if (diplomaId || articleNumber) {
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.delete('diploma');
+          p.delete('artigo');
+          return p;
+        },
+        { replace: true },
+      );
+    }
   }
 
   function pinArticle(article: LawArticleView) {
@@ -683,11 +689,25 @@ export function CorpusReader() {
 
   const query = debounced.trim();
   const searching = query.length > 0;
+  // The selection wins over the search results while it is open, so the search term can be kept
+  // as the context to return TO. Reading a law is therefore never a dead end: the header carries
+  // a "Voltar" control, and Back/reload/deep-link all work off `?diploma=`/`?artigo=`.
+  const reading = diplomaId.length > 0;
 
   return (
     <section className="panel leg-corpus">
       <header className="panel__head">
         <h3 className="panel__title">{t('legislacao.corpus.title')}</h3>
+        {reading ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className="leg-corpus__back"
+            onClick={backToList}
+          >
+            {searching ? t('legislacao.corpus.backToResults') : t('legislacao.corpus.back')}
+          </Button>
+        ) : null}
       </header>
       <div className="panel__body stack--tight">
         <p className="leg-corpus__lede muted">{t('legislacao.corpus.lede')}</p>
@@ -702,7 +722,7 @@ export function CorpusReader() {
           <Input
             type="search"
             value={term}
-            onChange={(e) => setTerm(e.target.value)}
+            onChange={(e) => changeTerm(e.target.value)}
             placeholder={t('legislacao.corpus.search.placeholder')}
             aria-label={t('legislacao.corpus.search.aria')}
             autoComplete="off"
@@ -713,7 +733,7 @@ export function CorpusReader() {
                 type="button"
                 variant="ghost"
                 className="leg-search__clear"
-                onClick={() => setTerm('')}
+                onClick={() => changeTerm('')}
               >
                 {t('legislacao.corpus.search.clear')}
               </Button>
@@ -721,9 +741,7 @@ export function CorpusReader() {
           ) : null}
         </div>
 
-        {searching ? (
-          <SearchResults term={query} onOpen={openArticle} />
-        ) : diplomaId && articleNumber ? (
+        {diplomaId && articleNumber ? (
           <ArticleView
             diplomaId={diplomaId}
             articleNumber={articleNumber}
@@ -737,8 +755,9 @@ export function CorpusReader() {
             onOpenArticle={openArticle}
             onPinArticle={pinArticle}
             pinPending={resolver.isPending}
-            onBack={backToCorpus}
           />
+        ) : searching ? (
+          <SearchResults term={query} onOpen={openArticle} />
         ) : (
           <CorpusOverview onOpenDiploma={openDiploma} />
         )}

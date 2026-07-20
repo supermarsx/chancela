@@ -45,6 +45,7 @@ const ENTITY: Entity = {
     signature_policy: 'QualifiedOrHandwritten',
     template_family: 'commercial',
     calendar_presets: [],
+    attendee_qualities: ['Member'],
   },
   statute: null,
 };

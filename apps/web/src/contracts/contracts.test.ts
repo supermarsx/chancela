@@ -59,6 +59,7 @@ import {
   RETENTION_POLICY_STATUSES,
   RETENTION_REVIEW_CLOSURE_DECISIONS,
   SIGNATURE_FAMILIES,
+  SMTP_ENCRYPTIONS,
   THEME_MODES,
   TSL_SERVICE_STATUS_KINDS,
   TSL_SIGNATURE_STATUSES,
@@ -79,6 +80,7 @@ import {
   type ActView,
   type AiSettings,
   type AppearanceSettings,
+  type EmailSettings,
   type BackupFile,
   type BackupManifest,
   type BackupRecoveryDrillIsolatedRestoreVerification,
@@ -221,9 +223,9 @@ import {
   type RegistryExtractView,
   type RegistryOfficerView,
   type RegistryProvenanceView,
+  type ConnectorSettings,
   type RegistryAutoUpdateSettings,
   type RetainedExportCleanupSettings,
-  type RosterUser,
   type SessionRoster,
   type SessionView,
   type Settings,
@@ -365,8 +367,9 @@ type OptionalKeys<T> = {
 }[keyof T];
 /** The always-present property keys of `T`. */
 type RequiredKeys<T> = Exclude<keyof T, OptionalKeys<T>>;
-type SettingsWire = Omit<Settings, 'registry_auto_update'> & {
+type SettingsWire = Omit<Settings, 'registry_auto_update' | 'connectors'> & {
   registry_auto_update?: RegistryAutoUpdateSettings;
+  connectors?: ConnectorSettings;
 };
 
 /**
@@ -3741,6 +3744,7 @@ describe('contract fixtures parse through the real client', () => {
         signature_policy: true,
         template_family: true,
         calendar_presets: true,
+        attendee_qualities: true,
       },
       'Entity.profile',
     );
@@ -4769,9 +4773,12 @@ describe('contract fixtures parse through the real client', () => {
         ui: true,
         onboarding: true,
         ai: true,
+        email: true,
       },
       'Settings',
-      ['registry_auto_update'],
+      // Both are `skip_serializing_if`-default on the server: `connectors` is absent whenever no
+      // runtime egress allowlist is set and no deployment ceiling is stamped.
+      ['registry_auto_update', 'connectors'],
     );
     expect(typeof settings.schema_version).toBe('number');
     assertExactKeys<OrganizationSettings>(
@@ -5064,6 +5071,29 @@ describe('contract fixtures parse through the real client', () => {
     if (onboarding.completed_at !== null) assertTimestamp(onboarding.completed_at, 'completed_at');
     const ai = assertExactKeys<AiSettings>(settings.ai, { enabled: true }, 'Settings.ai');
     expect(typeof ai.enabled).toBe('boolean');
+    const email = assertExactKeys<EmailSettings>(
+      settings.email,
+      {
+        enabled: true,
+        host: true,
+        port: true,
+        encryption: true,
+        username: true,
+        from_address: true,
+        from_name: true,
+        helo_name: true,
+        allow_insecure: true,
+      },
+      'Settings.email',
+    );
+    expect(typeof email.enabled).toBe('boolean');
+    expect(typeof email.port).toBe('number');
+    expect(typeof email.allow_insecure).toBe('boolean');
+    inEnum(SMTP_ENCRYPTIONS, email.encryption, 'Settings.email.encryption');
+    // The wire shape must have NO field that could carry the SMTP password: it is write-only and
+    // lives in the credential store. A future server that started echoing one would fail the
+    // `assertExactKeys` above, and this asserts the intent explicitly.
+    expect(Object.keys(settings.email)).not.toContain('password');
     const platform = assertExactKeys<PlatformSettings>(
       settings.platform,
       { logging: true, api_server: true, mcp_stdio_server: true, audit: true },
@@ -7329,27 +7359,14 @@ describe('contract fixtures parse through the real client', () => {
   it('session.roster.json → SessionRoster (GET /v1/session/roster, unauth)', async () => {
     stubFetch(fixture('session.roster.json'));
     const roster: SessionRoster = await api.getSessionRoster();
-    assertExactKeys<SessionRoster>(
-      roster,
-      { onboarding_required: true, users: true },
-      'SessionRoster',
-    );
+    // t33-e2: EXACTLY one key. This response used to also carry `users[]` with
+    // `{id, username, display_name, has_secret}`, which handed any unauthenticated caller
+    // the instance's full valid-account list. Pinning the single key here is what keeps a
+    // future change from quietly re-adding a user field to an unauthenticated endpoint.
+    assertExactKeys<SessionRoster>(roster, { onboarding_required: true }, 'SessionRoster');
     expect(typeof roster.onboarding_required).toBe('boolean');
-    expect(Array.isArray(roster.users)).toBe(true);
-    for (const u of roster.users) {
-      // The roster user object is deliberately minimal — EXACTLY these four keys, no
-      // secret material / fingerprint / created_at / active (t45-e1 freeze).
-      const ru = assertExactKeys<RosterUser>(
-        u,
-        { id: true, username: true, display_name: true, has_secret: true },
-        'SessionRoster.users[]',
-      );
-      expect(ru.username).toMatch(/^[a-z0-9._-]+$/);
-      expect(typeof ru.has_secret).toBe('boolean');
-      expect(u).not.toHaveProperty('active');
-      expect(u).not.toHaveProperty('has_attestation_key');
-      expect(u).not.toHaveProperty('attestation_key_fingerprint');
-      expect(u).not.toHaveProperty('created_at');
+    for (const forbidden of ['users', 'has_secret', 'username', 'display_name', 'id']) {
+      expect(roster).not.toHaveProperty(forbidden);
     }
   });
 

@@ -12,6 +12,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useEffect } from 'react';
 import type {
   AdvanceActBody,
+  BookArchivePackageParams,
   CaeRevision,
   CloseBookBody,
   CloseRetentionExecutionReviewBody,
@@ -206,6 +207,7 @@ export const keys = {
   dataKeyRotationExecution: ['data', 'key-rotation', 'execution'] as const,
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
+  emailStatus: ['settings', 'email', 'status'] as const,
   platformServices: ['platform', 'services'] as const,
   platformLogs: (params: PlatformLogsQueryParams = {}) =>
     [
@@ -495,9 +497,15 @@ export function useClearBookLegalHold(id: string) {
  * Download a book's Chancela internal preservation package
  * (`GET /v1/books/{id}/archive/package`, application/zip). This is a read-only package export,
  * distinct from the retained self-verifying book bundle (`POST /export`) used by recovery flows.
+ *
+ * The optional variables carry the endpoint's two query knobs (export-time legal hold + reason);
+ * `mutate(undefined)` keeps the plain no-options download working unchanged.
  */
 export function useDownloadBookArchivePackage(id: string) {
-  return useMutation({ mutationFn: () => api.fetchBookArchivePackage(id) });
+  return useMutation({
+    mutationFn: (params: BookArchivePackageParams | undefined) =>
+      api.fetchBookArchivePackage(id, params ?? {}),
+  });
 }
 
 /**
@@ -2291,25 +2299,37 @@ export function usePasswordPolicy() {
   });
 }
 
-/** Arguments for {@link useCreateSession}: the user to sign in as and their password. */
-export interface SignInArgs {
-  userId: string;
-  password: string;
-}
+/**
+ * Arguments for {@link useCreateSession}: the user to sign in as, and their password.
+ *
+ * Pass `username` — the typed identifier — from the signed-out sign-in form; the server
+ * resolves it (t33-e2), which is what let the unauthenticated user roster be removed.
+ * `userId` remains for the callers that already hold an id: the onboarding wizard (it just
+ * created the user) and the signed-in account switcher (it reads the auth-gated user list).
+ */
+export type SignInArgs = { password: string } & (
+  | { username: string; userId?: never }
+  | { userId: string; username?: never }
+);
 
 /**
  * Sign in as a user (`POST /v1/session`, t29). The issued token is stored in memory so
  * every subsequent request carries it; the session query is primed with a full session
  * read so RBAC-gated UI has the effective permission grants immediately. A password is
- * always sent; a wrong/missing password is a **401**, a legacy account with no password
- * verifier is a **409**, and too many attempts a **429** (backoff) — the caller surfaces
- * those distinctly.
+ * always sent; a wrong password **and an unknown username** are the same opaque **401**
+ * (deliberately indistinguishable — see {@link SignInArgs}), a legacy account with no
+ * password verifier reached *by id* is a **409**, and too many attempts a **429**
+ * (backoff).
  */
 export function useCreateSession() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, password }: SignInArgs) =>
-      api.createSession({ user_id: userId, password }),
+    mutationFn: (args: SignInArgs) =>
+      api.createSession(
+        args.username !== undefined
+          ? { username: args.username, password: args.password }
+          : { user_id: args.userId, password: args.password },
+      ),
     onSuccess: async (result) => {
       setSessionToken(result.token);
       qc.setQueryData(keys.session, await api.getSession());
@@ -2480,9 +2500,11 @@ export function useDelegations() {
 }
 
 /**
- * Grant a scoped delegation (`POST /v1/delegations`, t64-E4). Only a permission the grantor
- * holds VIA A ROLE at the scope is delegable (meta verbs are non-delegable); the server 403s
- * otherwise. Refetches the delegation list + ledger.
+ * Grant a scoped delegation over one or more permissions (`POST /v1/delegations`, t64-E4; the
+ * array form is t26). Only permissions the grantor holds VIA A ROLE at the scope are delegable
+ * (meta verbs are non-delegable); the server checks **every** element and 403s the whole
+ * delegation — naming the offender — if any one fails, so a grant is never partially applied.
+ * Refetches the delegation list + ledger.
  */
 export function useGrantDelegation() {
   const qc = useQueryClient();
@@ -2908,6 +2930,56 @@ export function useUpdateSettings() {
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.settings });
+    },
+  });
+}
+
+/** Outbound-email status (`GET /v1/settings/email/status`): whether a relay password is stored and
+ *  whether the configuration is complete enough to send. Never carries the password. `retry: false`
+ *  so a 403 for a non-administrator surfaces immediately rather than after a retry storm. */
+export function useEmailStatus() {
+  return useQuery({
+    queryKey: keys.emailStatus,
+    queryFn: () => api.getEmailStatus(),
+    retry: false,
+  });
+}
+
+/** Store the relay password. The plaintext is passed straight through to the request and is never
+ *  written into the query cache — only the returned status (a boolean) is. */
+export function useSetEmailPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (password: string) => api.putEmailPassword(password),
+    onSuccess: (status) => {
+      qc.setQueryData(keys.emailStatus, status);
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Remove the stored relay password. */
+export function useClearEmailPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.deleteEmailPassword(),
+    onSuccess: (status) => {
+      qc.setQueryData(keys.emailStatus, status);
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Send a test message through the configured relay. Mirrors the connector-probe hook: a plain
+ *  mutation with no cache invalidation, because the result is read straight off `.data` — including
+ *  the `failure` body, which is a successful response describing an unsuccessful send. */
+export function useTestEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (to: string) => api.testEmail(to),
+    onSuccess: () => {
+      // The attempt itself is audited, so the ledger view is stale either way.
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }
@@ -3496,6 +3568,11 @@ export function useRetryConnectorJob() {
 
 // --- Opt-in zero-knowledge repositories ---------------------------------------
 
+/**
+ * The tenant's opt-in zero-knowledge policy (`GET /v1/tenants/{id}/repository-policy`). The
+ * endpoint answers `200` with `policy: null` while the tenant has not opted in — the normal
+ * state — so an error here is a real failure and the caller can render `data.policy` directly.
+ */
 export function useTenantRepositoryPolicy(tenantId: string) {
   return useQuery({
     queryKey: keys.tenantRepositoryPolicy(tenantId),
@@ -3511,7 +3588,7 @@ export function usePutTenantRepositoryPolicy() {
     mutationFn: ({ tenantId, body }: { tenantId: string; body: PutTenantRepositoryPolicyBody }) =>
       api.putTenantRepositoryPolicy(tenantId, body),
     onSuccess: (updated) => {
-      qc.setQueryData(keys.tenantRepositoryPolicy(updated.tenant_id), updated);
+      qc.setQueryData(keys.tenantRepositoryPolicy(updated.tenant_id), { policy: updated });
       void qc.invalidateQueries({ queryKey: keys.repositories(updated.tenant_id) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
@@ -3523,7 +3600,9 @@ export function useDeleteTenantRepositoryPolicy() {
   return useMutation({
     mutationFn: (tenantId: string) => api.deleteTenantRepositoryPolicy(tenantId),
     onSuccess: (_, tenantId) => {
-      qc.removeQueries({ queryKey: keys.tenantRepositoryPolicy(tenantId) });
+      // The resource still exists after a delete — it is now the empty policy — so write that
+      // shape rather than dropping the entry and flashing a loading state on the way back.
+      qc.setQueryData(keys.tenantRepositoryPolicy(tenantId), { policy: null });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });

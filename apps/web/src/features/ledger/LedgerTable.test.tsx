@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, screen } from '@testing-library/react';
-import { renderWithProviders } from '../../test/utils';
+import { getByRevealedText, renderWithProviders } from '../../test/utils';
 import type { LedgerEventView } from '../../api/types';
 import { LedgerTable } from './LedgerTable';
 
@@ -35,6 +35,24 @@ describe('LedgerTable', () => {
     expect(screen.getByText('event.1')).toBeTruthy();
     expect(screen.getByText('event.2')).toBeTruthy();
     expect(screen.getAllByRole('row').length).toBe(3); // header + the two usable events
+  });
+
+  it('labels a known event kind and keeps the wire identifier one hover away', () => {
+    renderWithProviders(<LedgerTable events={[makeEvent(1, { kind: 'act.sealed' })]} />);
+
+    // The cell reads as copy; the dotted id — the Arquivo filter value — is still announced,
+    // now through the tooltip description rather than a native title.
+    expect(getByRevealedText('act.sealed').textContent).toBe('Ata selada');
+  });
+
+  it('renders an unmapped kind as its raw identifier instead of blank', () => {
+    renderWithProviders(<LedgerTable events={[makeEvent(2, { kind: 'act.teleported' })]} />);
+
+    // Nothing to reveal when the label already IS the visible id: it renders once, plainly,
+    // with no bubble and no redundant description for a screen reader to repeat.
+    const matches = screen.getAllByText('act.teleported');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].getAttribute('aria-describedby')).toBeNull();
   });
 
   it('falls back to the empty state when every row is malformed', () => {

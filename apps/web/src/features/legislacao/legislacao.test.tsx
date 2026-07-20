@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useNavigate } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
 import { LegislacaoPage } from './LegislacaoPage';
 import { CorpusReader } from './CorpusReader';
@@ -699,5 +700,97 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     const copied = String(writeText.mock.calls[0][0]);
     expect(copied).toContain('[Por verificar - fonte pendente]');
     expect(copied).not.toContain('[Verificado]');
+  });
+
+  // --- Getting back out of a law's full text (t34) ---------------------------------------------
+
+  /** Stands in for the browser's Back button inside the MemoryRouter. */
+  function BrowserBack() {
+    const navigate = useNavigate();
+    return (
+      <button type="button" onClick={() => navigate(-1)}>
+        browser-back
+      </button>
+    );
+  }
+
+  it('the browser Back button returns to the diploma list (the selection pushes history)', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(
+      <>
+        <BrowserBack />
+        <CorpusReader />
+      </>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Abrir Código das Sociedades Comerciais' }),
+    );
+    expect((await screen.findAllByText('Texto por verificar')).length).toBeGreaterThan(0);
+
+    // Back must undo the selection — NOT leave the reader (which is what `replace: true` caused).
+    fireEvent.click(screen.getByRole('button', { name: 'browser-back' }));
+    expect(await screen.findByText('Origem e autenticidade')).toBeTruthy();
+  });
+
+  it('offers a labelled, keyboard-reachable Voltar control beside the reader title', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />);
+
+    // No selection open ⇒ nothing to go back from.
+    expect(await screen.findByText('Origem e autenticidade')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Voltar aos diplomas' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir Regulamento eIDAS' }));
+    const back = await screen.findByRole('button', { name: 'Voltar aos diplomas' });
+
+    // A real, focusable <button> in the panel head next to "Texto integral da legislação" —
+    // reachable by keyboard and named in words, not an unlabelled glyph.
+    expect(back.tagName).toBe('BUTTON');
+    expect(back.hasAttribute('disabled')).toBe(false);
+    expect(back.getAttribute('tabindex')).toBeNull();
+    const head = back.closest('.panel__head') as HTMLElement;
+    expect(within(head).getByText('Texto integral da legislação')).toBeTruthy();
+
+    back.focus();
+    expect(document.activeElement).toBe(back);
+    fireEvent.click(back);
+    expect(await screen.findByText('Origem e autenticidade')).toBeTruthy();
+  });
+
+  it('returns from an article to the search results with the query intact', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />);
+
+    const box = (await screen.findByLabelText(
+      'Pesquisar em toda a legislação',
+    )) as HTMLInputElement;
+    fireEvent.change(box, { target: { value: 'assinatura' } });
+    expect(await screen.findByText('2 resultados')).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Abrir Artigo 25.º — Efeitos legais das assinaturas eletrónicas',
+      }),
+    );
+    expect(
+      await screen.findByText(/efeito legal equivalente ao de uma assinatura manuscrita/),
+    ).toBeTruthy();
+
+    // The control names the context it restores, and the search survives the round trip.
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar aos resultados' }));
+    expect(await screen.findByText('2 resultados')).toBeTruthy();
+    expect(box.value).toBe('assinatura');
+  });
+
+  it('deep-links straight into an article and still offers the way back', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />, ['/?diploma=eidas-910-2014&artigo=25']);
+
+    expect(
+      await screen.findByText(/efeito legal equivalente ao de uma assinatura manuscrita/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar aos diplomas' }));
+    expect(await screen.findByText('Origem e autenticidade')).toBeTruthy();
   });
 });

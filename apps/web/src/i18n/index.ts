@@ -19,3 +19,4 @@ export {
   type TranslationQuality,
 } from './registry';
 export { i18nStore } from './store';
+export { LABELLED_LEDGER_EVENT_KINDS } from './ledgerEventLabels';

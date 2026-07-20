@@ -26,6 +26,7 @@ import {
   PageHeader,
   Select,
   SkeletonTable,
+  SkeletonRegion,
 } from '../../ui';
 import { GateButtonLink } from '../session/permissions';
 import { BooksTable } from './BooksTable';
@@ -204,7 +205,9 @@ export function BooksPage() {
         }
       >
         {books.isLoading ? (
-          <SkeletonTable cols={5} />
+          <SkeletonRegion>
+            <SkeletonTable cols={5} />
+          </SkeletonRegion>
         ) : books.error ? (
           <ErrorNote error={books.error} />
         ) : !books.data || books.data.length === 0 ? (

@@ -115,9 +115,15 @@ function RoleEditor({
           />
         </Field>
 
-        <Field label={t('rbac.role.permissions.label')} htmlFor="">
+        {/* Not a `Field`: the matrix is a group of checkboxes, not one control, so a
+            `<label for>` has nothing to point at. Name the group with `aria-labelledby`
+            instead, so the label is actually announced with it. */}
+        <div className="field" role="group" aria-labelledby="rbac-role-permissions-label">
+          <span className="field__label" id="rbac-role-permissions-label">
+            {t('rbac.role.permissions.label')}
+          </span>
           <PermissionMatrix catalog={catalog} selected={selected} onChange={setSelected} />
-        </Field>
+        </div>
 
         <div className="form__actions">
           <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>

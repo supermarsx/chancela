@@ -10,6 +10,7 @@ import {
   SignatoriesEditor,
   StatementsEditor,
   attendanceWeightKind,
+  attendeeQualityOptions,
 } from './AtaEditorPage';
 import type { ActAttendee } from '../../api/types';
 
@@ -199,6 +200,7 @@ describe('AtaEditorPage structured editors', () => {
       {
         name: 'Ana Rocha',
         quality: 'Member',
+        quality_note: null,
         presence: 'InPerson',
         represented_by: null,
         weight: { Capital: 500000 },
@@ -208,6 +210,7 @@ describe('AtaEditorPage structured editors', () => {
       <AttendeesEditor
         attendees={attendees}
         family="CommercialCompany"
+        qualities={['Member', 'Chair', 'Other']}
         disabled={false}
         onChange={onChange}
       />,
@@ -218,9 +221,11 @@ describe('AtaEditorPage structured editors', () => {
     });
     expect(onChange).toHaveBeenLastCalledWith([{ ...attendees[0], name: 'Bruno Dias' }]);
     fireEvent.change(screen.getByLabelText('Qualidade do participante'), {
-      target: { value: 'Attorney' },
+      target: { value: 'Chair' },
     });
-    expect(onChange).toHaveBeenLastCalledWith([{ ...attendees[0], quality: 'Attorney' }]);
+    expect(onChange).toHaveBeenLastCalledWith([
+      { ...attendees[0], quality: 'Chair', quality_note: null },
+    ]);
     fireEvent.change(screen.getByLabelText('Capital (cêntimos)'), {
       target: { value: '250000.7' },
     });
@@ -235,6 +240,7 @@ describe('AtaEditorPage structured editors', () => {
       {
         name: '',
         quality: 'Member',
+        quality_note: null,
         presence: 'InPerson',
         represented_by: null,
         weight: null,
@@ -249,6 +255,7 @@ describe('AtaEditorPage structured editors', () => {
       {
         name: 'Ana Rocha',
         quality: 'Member',
+        quality_note: null,
         presence: 'Represented',
         represented_by: 'Carla Neves',
         weight: null,
@@ -258,6 +265,7 @@ describe('AtaEditorPage structured editors', () => {
       <AttendeesEditor
         attendees={attendees}
         family="CommercialCompany"
+        qualities={['Member', 'Chair', 'Other']}
         disabled={false}
         onChange={onChange}
       />,
@@ -275,6 +283,7 @@ describe('AtaEditorPage structured editors', () => {
       <AttendeesEditor
         attendees={[{ ...attendees[0], represented_by: '' }]}
         family="CommercialCompany"
+        qualities={['Member', 'Chair', 'Other']}
         disabled={false}
         onChange={onChange}
       />,
@@ -285,6 +294,7 @@ describe('AtaEditorPage structured editors', () => {
       <AttendeesEditor
         attendees={[{ ...attendees[0], presence: 'InPerson', represented_by: null }]}
         family="CommercialCompany"
+        qualities={['Member', 'Chair', 'Other']}
         disabled={false}
         onChange={onChange}
       />,
@@ -303,6 +313,7 @@ describe('AtaEditorPage structured editors', () => {
       {
         name: 'Ana Rocha',
         quality: 'CondoOwner',
+        quality_note: null,
         presence: 'InPerson',
         represented_by: null,
         weight: { Permilage: 125 },
@@ -312,6 +323,7 @@ describe('AtaEditorPage structured editors', () => {
       <AttendeesEditor
         attendees={attendees}
         family="Condominium"
+        qualities={['CondoOwner', 'Chair']}
         disabled={false}
         onChange={onChange}
       />,
@@ -323,12 +335,131 @@ describe('AtaEditorPage structured editors', () => {
       <AttendeesEditor
         attendees={[{ ...attendees[0], weight: null }]}
         family="Association"
+        qualities={['Associate', 'Chair']}
         disabled={false}
         onChange={onChange}
       />,
     );
     expect(screen.queryByLabelText('Permilagem (‰)')).toBeNull();
     expect(screen.queryByLabelText('Capital (cêntimos)')).toBeNull();
+  });
+
+  it('offers the qualidades of the entity legal type, not a fixed sócio/acionista pair', () => {
+    // The server derives the list from the legal type; the editor only renders what it is given.
+    expect(attendeeQualityOptions(['Member', 'Chair', 'Other'], 'Member')).toEqual([
+      'Member',
+      'Chair',
+      'Other',
+    ]);
+    // A qualidade the row already carries stays selectable even if the entity stopped offering
+    // it, so an existing roll is never silently rewritten by the picker.
+    expect(attendeeQualityOptions(['Shareholder', 'Chair'], 'CondoOwner')).toEqual([
+      'Shareholder',
+      'Chair',
+      'CondoOwner',
+    ]);
+    // While the entity query is in flight, offer everything rather than an empty picker.
+    const pending = attendeeQualityOptions(undefined, undefined);
+    expect(pending).toContain('Member');
+    expect(pending).toContain('Shareholder');
+
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <AttendeesEditor
+        attendees={[
+          {
+            name: 'Ana Rocha',
+            quality: 'Shareholder',
+            quality_note: null,
+            presence: 'InPerson',
+            represented_by: null,
+            weight: null,
+          },
+        ]}
+        family="CommercialCompany"
+        qualities={['Shareholder', 'Chair', 'Other']}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    // A sociedade anónima's roll says acionista and never offers sócio.
+    const picker = screen.getByLabelText('Qualidade do participante') as HTMLSelectElement;
+    const offered = Array.from(picker.options).map((o) => o.textContent);
+    expect(offered).toContain('Acionista');
+    expect(offered).not.toContain('Sócio');
+    // ...and `Member` reads as the concrete membership term where it *is* offered.
+    rerender(
+      <AttendeesEditor
+        attendees={[
+          {
+            name: 'Ana Rocha',
+            quality: 'Member',
+            quality_note: null,
+            presence: 'InPerson',
+            represented_by: null,
+            weight: null,
+          },
+        ]}
+        family="CommercialCompany"
+        qualities={['Member', 'Chair', 'Other']}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    const quotas = Array.from(
+      (screen.getByLabelText('Qualidade do participante') as HTMLSelectElement).options,
+    ).map((o) => o.textContent);
+    expect(quotas).toContain('Sócio');
+    expect(quotas).not.toContain('Acionista');
+    expect(quotas).not.toContain('Membro');
+  });
+
+  it('keeps the free-text qualidade paired with Other', () => {
+    const onChange = vi.fn();
+    const row: ActAttendee = {
+      name: 'Ana Rocha',
+      quality: 'Other',
+      quality_note: '',
+      presence: 'InPerson',
+      represented_by: null,
+      weight: null,
+    };
+    const { rerender } = render(
+      <AttendeesEditor
+        attendees={[row]}
+        family="CommercialCompany"
+        qualities={['Member', 'Other']}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    // Empty free text warns rather than silently rendering an ata with no qualidade.
+    expect(
+      screen.getByText(
+        'Indique a qualidade, ou escolha uma da lista — sem texto a ata não a menciona.',
+      ),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Qualidade (texto livre)'), {
+      target: { value: 'usufrutuário da quota' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([{ ...row, quality_note: 'usufrutuário da quota' }]);
+
+    // Moving back to a structured capacity drops the note — the API 422s on the pair.
+    fireEvent.change(screen.getByLabelText('Qualidade do participante'), {
+      target: { value: 'Member' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([{ ...row, quality: 'Member', quality_note: null }]);
+
+    rerender(
+      <AttendeesEditor
+        attendees={[{ ...row, quality: 'Member', quality_note: null }]}
+        family="CommercialCompany"
+        qualities={['Member', 'Other']}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.queryByLabelText('Qualidade (texto livre)')).toBeNull();
   });
 
   it('renders honest empty read-only states', () => {
@@ -341,7 +472,13 @@ describe('AtaEditorPage structured editors', () => {
         <ReferencedDocumentsEditor documents={[]} disabled onChange={vi.fn()} />
         <SignatoriesEditor signatories={[]} disabled onChange={vi.fn()} />
         <AttachmentsEditor attachments={[]} disabled onChange={vi.fn()} />
-        <AttendeesEditor attendees={[]} family="CommercialCompany" disabled onChange={vi.fn()} />
+        <AttendeesEditor
+          attendees={[]}
+          family="CommercialCompany"
+          qualities={['Member']}
+          disabled
+          onChange={vi.fn()}
+        />
       </>,
     );
 

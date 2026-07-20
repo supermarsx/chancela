@@ -38,6 +38,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -67,6 +68,40 @@ function anchorPoint(rect: DOMRect, placement: TooltipPlacement): { left: number
   }
 }
 
+/** The side directly opposite `placement`. */
+const OPPOSITE: Record<TooltipPlacement, TooltipPlacement> = {
+  top: 'bottom',
+  bottom: 'top',
+  left: 'right',
+  right: 'left',
+};
+
+/**
+ * Keep the bubble on screen by flipping to the opposite side when the requested one has no
+ * room (WCAG 1.4.13 wants hover/focus content to stay perceivable, and a bubble hanging off
+ * the viewport edge is not). Falls back to the requested side when NEITHER fits, so a bubble
+ * taller than the viewport degrades predictably rather than oscillating.
+ */
+function flipPlacement(
+  rect: DOMRect,
+  bubble: DOMRect | null,
+  placement: TooltipPlacement,
+): TooltipPlacement {
+  if (!bubble) return placement;
+  const gap = 8; // the 0.5rem the placement transforms add between trigger and bubble
+  const room: Record<TooltipPlacement, number> = {
+    top: rect.top,
+    bottom: window.innerHeight - rect.bottom,
+    left: rect.left,
+    right: window.innerWidth - rect.right,
+  };
+  const needed = placement === 'top' || placement === 'bottom' ? bubble.height : bubble.width;
+  const wanted = needed + gap;
+  if (room[placement] >= wanted) return placement;
+  const opposite = OPPOSITE[placement];
+  return room[opposite] >= wanted ? opposite : placement;
+}
+
 interface TooltipProps {
   label: string;
   /** Where the bubble sits relative to the trigger. Default `top`. */
@@ -78,16 +113,47 @@ interface TooltipProps {
    * primitives that consume Tooltip; it travels ON the bubble so it survives the portal.
    */
   variant?: 'label' | 'prose';
+  /**
+   * Measure and anchor against THIS element instead of wrapping the trigger in a
+   * `.tooltip` span (t31). The default wrapper is an `inline-flex` box, which silently
+   * changes layout when the trigger is a block-level or flex-sized element — notably the
+   * `display: block` ellipsised `.truncate`, and any span sized as a flex/grid child. When
+   * a caller already holds a ref to the trigger's own DOM node (as {@link TooltipText}
+   * does, since it renders that node itself), passing it here makes the tooltip add ZERO
+   * boxes to the layout: nothing is wrapped, so nothing can be resized.
+   */
+  anchorRef?: RefObject<HTMLElement | null>;
+  /**
+   * Expose the bubble to assistive tech via `aria-describedby` (default `true`).
+   *
+   * Set `false` ONLY when the bubble repeats text that is already complete in the DOM —
+   * the CSS-clipped case, where `text-overflow: ellipsis` hides characters visually but
+   * removes nothing from the accessibility tree. There the bubble is a sighted-mouse
+   * convenience; describing it would make a screen reader read the same string twice. The
+   * bubble is then also `aria-hidden`, so it contributes nothing to the tree at all.
+   */
+  describe?: boolean;
   /** The trigger — a single focusable element; it receives `aria-describedby`. */
   children: ReactElement;
 }
 
-export function Tooltip({ label, placement = 'top', variant = 'label', children }: TooltipProps) {
+export function Tooltip({
+  label,
+  placement = 'top',
+  variant = 'label',
+  anchorRef: externalAnchorRef,
+  describe = true,
+  children,
+}: TooltipProps) {
   const id = useId();
   const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLSpanElement>(null);
+  const ownAnchorRef = useRef<HTMLSpanElement>(null);
+  const anchorRef = externalAnchorRef ?? ownAnchorRef;
   const bubbleRef = useRef<HTMLSpanElement>(null);
   const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
+  // The placement actually used this frame. Starts as the requested one and flips to the
+  // opposite side when that side has no room (see `reposition`).
+  const [effective, setEffective] = useState<TooltipPlacement>(placement);
 
   const show = () => setOpen(true);
   const hide = () => setOpen(false);
@@ -101,12 +167,23 @@ export function Tooltip({ label, placement = 'top', variant = 'label', children 
   const reposition = useCallback(() => {
     const el = anchorRef.current;
     if (!el) return;
-    const next = anchorPoint(el.getBoundingClientRect(), placement);
+    const rect = el.getBoundingClientRect();
+    const bubbleBox = bubbleRef.current?.getBoundingClientRect() ?? null;
+
+    // FLIP first, then shift. The clamp below can only slide the bubble along its centred
+    // axis; it cannot rescue a bubble pushed off the LEADING edge (a `top` tooltip on a
+    // trigger near the top of the viewport). So if the requested side lacks room and the
+    // opposite side has it, use the opposite side — the standard flip. Measured against the
+    // real bubble box, including the 0.5rem gap the CSS transform adds.
+    const placed = flipPlacement(rect, bubbleBox, placement);
+    const next = anchorPoint(rect, placed);
+    setEffective((prev) => (prev === placed ? prev : placed));
+
     const bubble = bubbleRef.current;
     if (bubble) {
       const box = bubble.getBoundingClientRect();
       const margin = 8;
-      if (placement === 'top' || placement === 'bottom') {
+      if (placed === 'top' || placed === 'bottom') {
         const half = box.width / 2;
         const min = margin + half;
         const max = window.innerWidth - margin - half;
@@ -119,7 +196,11 @@ export function Tooltip({ label, placement = 'top', variant = 'label', children 
       }
     }
     setCoords((prev) => (prev && prev.left === next.left && prev.top === next.top ? prev : next));
-  }, [placement]);
+  }, [anchorRef, placement]);
+
+  // A changed request resets the flip, so the next open re-decides from the caller's choice
+  // rather than inheriting a flip made for a position the trigger has since left.
+  useLayoutEffect(() => setEffective(placement), [placement]);
 
   // While open, position once (synchronously before paint, so there is no first-frame flash)
   // and keep it pinned as the page scrolls (capture phase → nested scrollers count) or resizes.
@@ -143,7 +224,7 @@ export function Tooltip({ label, placement = 'top', variant = 'label', children 
     .join(' ');
 
   const trigger = cloneElement(child, {
-    'aria-describedby': describedBy,
+    'aria-describedby': describe ? describedBy : (existing ?? undefined),
     onMouseEnter: mergeHandler(childProps.onMouseEnter, show),
     onMouseLeave: mergeHandler(childProps.onMouseLeave, hide),
     onFocus: mergeHandler(childProps.onFocus, show),
@@ -165,9 +246,12 @@ export function Tooltip({ label, placement = 'top', variant = 'label', children 
     <span
       id={id}
       ref={bubbleRef}
-      role="tooltip"
+      // Undescribed bubbles are decorative duplicates of on-screen text, so they are kept
+      // out of the accessibility tree entirely rather than exposed as an orphan `tooltip`.
+      role={describe ? 'tooltip' : undefined}
+      aria-hidden={describe ? undefined : true}
       style={bubbleStyle}
-      className={`tooltip__bubble tooltip__bubble--${placement}${
+      className={`tooltip__bubble tooltip__bubble--${effective}${
         variant === 'prose' ? ' tooltip__bubble--prose' : ''
       }${open ? ' is-open' : ''}`}
     >
@@ -175,11 +259,138 @@ export function Tooltip({ label, placement = 'top', variant = 'label', children 
     </span>
   );
 
+  const portaled = typeof document !== 'undefined' ? createPortal(bubble, document.body) : bubble;
+
+  // Layout-transparent mode: the caller owns the trigger node and gave us its ref, so we add
+  // no wrapper at all (see `anchorRef`). The portal is a sibling but renders into <body>, so
+  // it contributes nothing to the local box tree either.
+  if (externalAnchorRef) {
+    return (
+      <>
+        {trigger}
+        {portaled}
+      </>
+    );
+  }
+
   return (
-    <span className="tooltip" ref={anchorRef}>
+    <span className="tooltip" ref={ownAnchorRef}>
       {trigger}
-      {typeof document !== 'undefined' ? createPortal(bubble, document.body) : bubble}
+      {portaled}
     </span>
+  );
+}
+
+/**
+ * Is this element's text currently ellipsised by CSS? `scrollWidth > clientWidth` is the
+ * standard probe; the 1px slack absorbs sub-pixel layout rounding, which would otherwise
+ * flag a perfectly-fitting cell as clipped. Re-measures via `ResizeObserver`, so the answer
+ * tracks column resizes and window reflows rather than going stale after first paint.
+ *
+ * `enabled: false` short-circuits the observer entirely for callers that always want the
+ * bubble (deliberately abbreviated values, where nothing is CSS-clipped to begin with).
+ */
+export function useIsClipped(ref: RefObject<HTMLElement | null>, enabled = true): boolean {
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setClipped(el.scrollWidth > el.clientWidth + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, enabled]);
+  return clipped;
+}
+
+interface TooltipTextProps {
+  /** The full value revealed in the bubble. */
+  label: string;
+  /**
+   * Reveal only when the element is actually clipped by CSS (`text-overflow: ellipsis`).
+   * An unclipped cell then renders bare, with no bubble and no redundant `aria-describedby`
+   * repeating text the user can already read.
+   *
+   * Defaults to AUTO-DETECT, which is what makes this safe to drop onto an old `title=`:
+   * if the label is exactly the rendered string, there is nothing extra to say and the
+   * bubble can only be a visual de-truncation; if it differs, the label carries information
+   * the cell does not show (a full type behind an abbreviation, a raw id behind a friendly
+   * label) and MUST be announced and keyboard reachable. Getting this backwards silently
+   * drops content, so it is inferred rather than left to each call site to remember.
+   */
+  onlyWhenClipped?: boolean;
+  /**
+   * Make the trigger a tab stop. Defaults to `!onlyWhenClipped`, which encodes the rule:
+   *
+   * - **Abbreviated** content (`Digest`'s `a1b2…c3d4`, a shortened chain hash, a raw event
+   *   kind behind a friendly label) keeps the full value ONLY in the bubble, so it must be
+   *   keyboard reachable — otherwise a non-mouse user can never obtain it.
+   * - **CSS-clipped** content is still complete in the DOM, so a screen reader already
+   *   announces all of it. The bubble is a sighted-mouse convenience, and adding a tab stop
+   *   to every clipped table cell would bury the page's real controls in noise.
+   */
+  focusable?: boolean;
+  /** Render as `<code>` (identifiers/hashes) instead of `<span>`. */
+  as?: 'span' | 'code';
+  className?: string;
+  placement?: TooltipPlacement;
+  children: ReactNode;
+}
+
+/**
+ * The themed replacement for a native `title=` on non-interactive text (t31).
+ *
+ * A raw `title` attribute is drawn by the browser, cannot be styled at all, ignores the
+ * app's theme, and appears only after a ~1s hover delay — so every one of them was a hole
+ * in the design system. This renders the same information through the shared {@link Tooltip}
+ * bubble instead, and adds the two things `title` never had: an `aria-describedby`
+ * association and Escape-to-dismiss.
+ *
+ * See {@link TooltipTextProps.focusable} for the keyboard-reachability rule.
+ */
+export function TooltipText({
+  label,
+  onlyWhenClipped,
+  focusable,
+  as: Tag = 'span',
+  className,
+  placement,
+  children,
+}: TooltipTextProps) {
+  const ref = useRef<HTMLElement>(null);
+  // Auto-detect (see `onlyWhenClipped`): a label that merely repeats the rendered string can
+  // only be de-truncating it; a label that differs is carrying extra content.
+  const clippedMode =
+    onlyWhenClipped ?? (typeof children === 'string' && children.trim() === label.trim());
+  const clipped = useIsClipped(ref, clippedMode);
+
+  const active = clippedMode ? clipped : true;
+  const isFocusable = focusable ?? !clippedMode;
+
+  const content = (
+    <Tag ref={ref as never} className={className} tabIndex={active && isFocusable ? 0 : undefined}>
+      {children}
+    </Tag>
+  );
+
+  // Not revealing anything the user cannot already read → render bare, so we neither mount a
+  // bubble nor point `aria-describedby` at a duplicate of the visible text.
+  if (!active) return content;
+  return (
+    <Tooltip
+      label={label}
+      placement={placement}
+      variant="prose"
+      anchorRef={ref}
+      // Clipped text is complete in the accessibility tree already; only an ABBREVIATED
+      // value genuinely needs describing (see the `focusable` note above).
+      describe={!clippedMode}
+    >
+      {content}
+    </Tooltip>
   );
 }
 

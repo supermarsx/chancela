@@ -194,6 +194,8 @@ import type {
   IssueRecoveryBody,
   RecoveryIssued,
   Settings,
+  EmailStatusView,
+  EmailTestResult,
   UpdateActBody,
   UpdateUserBody,
   UserView,
@@ -224,6 +226,7 @@ import type {
   DelegationView,
   GrantDelegationBody,
   BookView,
+  BookArchivePackageParams,
   BookLegalHoldView,
   ClearBookLegalHoldBody,
   HealthResponse,
@@ -274,6 +277,7 @@ import type {
   RunConnectorTargetBody,
   StoredRepositoryPolicy,
   TenantRepositoryPolicy,
+  TenantRepositoryPolicyView,
   ZkObjectVersionView,
 } from './types';
 import { clearSessionToken, getSessionToken } from './session';
@@ -729,6 +733,17 @@ export const api = {
   getSettings: () => get<Settings>('/v1/settings'),
   putSettings: (body: Settings) => put<Settings>('/v1/settings', body),
 
+  // Outbound email (t23). The non-secret configuration rides `putSettings` with the rest of the
+  // document; these three cover what cannot — the write-only relay password, the status that
+  // reports it without revealing it, and the test send.
+  getEmailStatus: () => get<EmailStatusView>('/v1/settings/email/status'),
+  putEmailPassword: (password: string) =>
+    put<EmailStatusView>('/v1/settings/email/password', { password }),
+  deleteEmailPassword: () => del<EmailStatusView>('/v1/settings/email/password'),
+  /** Resolves with `ok: false` and a structured `failure` when the RELAY rejects; it rejects with
+   *  an `ApiError` only when the request itself was bad (no permission, mail not configured). */
+  testEmail: (to: string) => post<EmailTestResult>('/v1/settings/email/test', { to }),
+
   // Platform operations — desired-state controls plus honest runtime limitations.
   listPlatformServices: () => get<PlatformServicesResponse>('/v1/platform/services'),
   controlPlatformService: (id: PlatformControllableServiceId, action: PlatformServiceAction) =>
@@ -873,7 +888,9 @@ export const api = {
 
   // Opt-in zero-knowledge repository policy, opaque ciphertext, and readability handoff.
   getTenantRepositoryPolicy: (tenantId: string) =>
-    get<TenantRepositoryPolicy>(`/v1/tenants/${encodeURIComponent(tenantId)}/repository-policy`),
+    get<TenantRepositoryPolicyView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/repository-policy`,
+    ),
   putTenantRepositoryPolicy: (tenantId: string, body: PutTenantRepositoryPolicyBody) =>
     put<TenantRepositoryPolicy>(
       `/v1/tenants/${encodeURIComponent(tenantId)}/repository-policy`,
@@ -939,7 +956,15 @@ export const api = {
     del<BookLegalHoldView | void>(`/v1/books/${id}/legal-hold`, body),
   // Internal Chancela preservation package (`GET .../archive/package`, application/zip).
   // Read-only and not a DGLAB-specific export; offered as a direct browser download.
-  fetchBookArchivePackage: (id: string) => fetchBlob(`/v1/books/${id}/archive/package`),
+  fetchBookArchivePackage: (id: string, params: BookArchivePackageParams = {}) =>
+    fetchBlob(
+      `/v1/books/${id}/archive/package${query({
+        // Only sent when asked for: the server defaults `legal_hold` to false, and it rejects
+        // `legal_hold=true` without a non-blank reason, so the reason rides along or neither does.
+        legal_hold: params.legal_hold ? 'true' : undefined,
+        legal_hold_reason: params.legal_hold ? params.legal_hold_reason : undefined,
+      })}`,
+    ),
   // Metadata-only local DGLAB interchange scaffold (`GET .../local-dglab-interchange-manifest`).
   // Read-only JSON derived from the internal package manifest; not an official DGLAB export.
   getBookLocalDglabInterchangeManifest: (id: string) =>
@@ -1316,7 +1341,9 @@ export const api = {
   unassignRole: (userId: string, body: RoleAssignmentInput) =>
     del<RoleAssignmentView[]>(`/v1/users/${userId}/roles`, body),
   // Scoped delegations. `GET` returns the delegations touching the caller (own) or all (for a
-  // `delegation.revoke` holder); grant/revoke are gated + invariant-enforced server-side.
+  // `delegation.revoke` holder); grant/revoke are gated + invariant-enforced server-side. A grant
+  // may carry SEVERAL permissions sharing one scope, lifetime and legal basis; revoke withdraws
+  // all of them at once (the delegation, not the permission, is the unit of revocation).
   listDelegations: () => get<DelegationView[]>('/v1/delegations'),
   grantDelegation: (body: GrantDelegationBody) => post<DelegationView>('/v1/delegations', body),
   revokeDelegation: (id: string) => del<void>(`/v1/delegations/${id}`),

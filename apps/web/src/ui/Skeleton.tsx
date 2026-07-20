@@ -4,13 +4,16 @@
  * content swaps in without any jank. The shimmer is a single gilt sweep over a muted
  * block; it is fully disabled under `prefers-reduced-motion` (the blocks then rest as
  * static tints), and every block is `aria-hidden` — a screen reader hears the busy
- * region's status text, not the decorative bars.
+ * region's status text, not the decorative bars. That busy region is `SkeletonRegion`
+ * below: because the blocks are all `aria-hidden`, a loading branch that omits it is
+ * silent to assistive tech, so wrap skeleton branches in it.
  *
  * The composites (`SkeletonTable`, `SkeletonCards`, `SkeletonDeflist`) match the shapes
  * of the corresponding `ui` primitives (Table, dashboard cards, deflist) so swapping a
  * `<Loading/>` for one of these keeps the box model identical before and after load.
  */
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { useT } from '../i18n';
 
 interface SkeletonProps {
   /** CSS width (e.g. '8rem', '60%'). Defaults to full width. */
@@ -73,6 +76,59 @@ export function SkeletonCards({ count = 6 }: { count?: number }) {
           <Skeleton height="0.7rem" width="45%" />
           <Skeleton height="2.2rem" width="3.5rem" style={{ marginTop: '0.7rem' }} />
           <Skeleton height="0.8rem" width="70%" style={{ marginTop: '0.7rem' }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The busy region the blocks above are silent in favour of. Every skeleton block is
+ * `aria-hidden`, so without a wrapper like this one a screen reader hears *nothing* while
+ * a surface loads — the placeholder bars are decorative by design. Wrap a loading branch
+ * in this to restore the announcement that `<Loading>` used to carry as visible text.
+ *
+ * `role="status"` is a polite live region, so the label is announced without interrupting;
+ * `aria-busy` marks the subtree as in-flux for assistive tech that reports it.
+ */
+export function SkeletonRegion({
+  label,
+  children,
+  className,
+}: {
+  /** Announced text. Defaults to the shared "A carregar…" string. */
+  label?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const t = useT();
+  return (
+    <div className={className} role="status" aria-busy="true">
+      <span className="sr-only">{label ?? t('common.loading')}</span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A stacked-list skeleton matching `.dashboard-list__item` (a badge + title head row over
+ * a muted meta row), for feed-shaped surfaces such as the dashboard "Atividade recente"
+ * panel. Sized from the real item's own box so the list does not jump on swap.
+ */
+export function SkeletonList({ items = 4 }: { items?: number }) {
+  return (
+    <div className="dashboard-list" aria-hidden="true">
+      {Array.from({ length: items }, (_, i) => (
+        <div className="dashboard-list__item" key={i}>
+          <div className="dashboard-list__head">
+            <Skeleton height="1.05rem" width="5.5rem" />
+            <Skeleton height="1.05rem" width="45%" />
+          </div>
+          <div className="dashboard-list__meta">
+            <Skeleton height="0.76rem" width="7rem" />
+            <Skeleton height="0.76rem" width="6rem" />
+            <Skeleton height="0.76rem" width="5rem" />
+          </div>
         </div>
       ))}
     </div>

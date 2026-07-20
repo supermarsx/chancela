@@ -9,9 +9,13 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { ledgerEventLabelsFiFI } from '../ledgerEventLabels';
+import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const fiFI: Catalog = {
   ...operationsEnglish,
+  ...ledgerEventLabelsFiFI,
+  ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sinulla ei ole oikeutta tähän toimintoon',
   'perm.denied.title': 'Ei oikeutta',
@@ -150,8 +154,7 @@ export const fiFI: Catalog = {
   'nav.skipToContent': 'Siirry sisältöön',
   'common.brand': 'Chancela',
   'splash.aria': 'Käynnistetään Chancela',
-  'common.footer':
-    'Chancela · Käyttöliittymän prototyyppi · Portugalin lain mukainen (CSC, GDPR, eIDAS)',
+  'common.footer': 'Chancela · Livro de atas digital · v{version}',
 
   // --- Shared chrome -------------------------------------------------------------
   'common.loading': 'Ladataan…',
@@ -295,7 +298,7 @@ export const fiFI: Catalog = {
   'notifications.reminder.followUp.action': 'Avaa pöytäkirja',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
-  'notifications.operation.title': 'Tapahtuma {kind}',
+  'notifications.operation.title': '{kind}',
   'notifications.operation.detail': '{actor} kirjasi tapahtuman kohteessa {scope}.',
   'notifications.operation.meta': 'Järjestysnumero {seq}',
   // --- Window controls (desktop) -------------------------------------------------
@@ -889,6 +892,10 @@ export const fiFI: Catalog = {
   'acts.signatories': 'Allekirjoittajat',
   'acts.attachments': 'Liitteet',
   'acts.lifecycle': 'Elinkaari',
+  // --- Progress stepper (ui/Stepper.tsx) ------------------------------------------
+  'stepper.progress': 'Vaihe {current}/{total}',
+  'stepper.status.done': 'valmis',
+  'stepper.status.current': 'nykyinen vaihe',
   'acts.compliance': 'Vaatimustenmukaisuus',
   'acts.manualSignature.title':
     'Vaihtoehtoinen reitti: manuaalisesti allekirjoitettu alkuperäinen (SIG-03)',
@@ -1061,6 +1068,41 @@ export const fiFI: Catalog = {
   'ledger.archive.format.json': 'Siirto-JSON (.json)',
   'ledger.archive.format.csv': 'Auditointi-CSV (.csv)',
   'ledger.archive.format.html': 'Auditointi-HTML (.html)',
+  'ledger.subnav.aria': 'Arkiston osiot',
+  'ledger.subnav.registo': 'Loki',
+  'ledger.subnav.exportacao': 'Vienti',
+  'ledger.export.document.title': 'Tarkastuslokin asiakirja',
+  'ledger.export.document.body':
+    'Vie lokimerkinnät juuri sellaisina kuin Loki-välilehti ne näyttää: siellä aktiiviset suodattimet ratkaisevat, mitä tiedostoon päätyy.',
+  'ledger.export.document.editFilters': 'Muuta suodattimia Loki-välilehdellä',
+  'ledger.export.book.title': 'Kirjan viennit',
+  'ledger.export.book.body':
+    'Kaksi eri pakettia kahteen eri tarkoitukseen: toinen arkistotalletusta varten ja toinen kirjan siirtämiseen toiseen instanssiin. Valitse kirja ja sitten oikea paketti.',
+  'ledger.export.book.label': 'Vietävä kirja',
+  'ledger.export.book.help':
+    'Kukin paketti kattaa yhden kirjan; useampaa kirjaa varten toista vienti kirja kerrallaan.',
+  'ledger.export.book.empty': 'Ei vietäviä kirjoja',
+  'ledger.export.book.emptyBody': 'Avaa kirja ja säilytä sen asiakirjat ennen pakettien luontia.',
+  'ledger.export.preservation.title': 'Säilytyspaketti — talletus ja todiste',
+  'ledger.export.preservation.body':
+    'Deterministinen, vain luettava ZIP arkistotalletukseen ja todisteeksi. Sitä ei voi tuoda takaisin, eikä sen luonti kirjoita lokiin mitään.',
+  'ledger.export.preservation.contents':
+    'Se sisältää kirjan säilytetyt PDF/A-tiedostot, todisteluettelon, allekirjoituskohtaiset todisteraportit, PDF-saavutettavuusraportit, ulkoisten validaattoreiden raportit, luodun lähetystodisteen ja, jos oikeudellinen säilytysmääräys on voimassa, sen JSON-tietueen.',
+  'ledger.export.legalHold.label': 'Merkitse oikeudellinen säilytysmääräys tähän vientiin',
+  'ledger.export.legalHold.help':
+    'Tämä koskee vain luotua pakettia — palvelin ei tallenna määräystä kirjaan. Kirjaan jo merkitty määräys kulkee paketissa mukana myös tämän ollessa pois päältä.',
+  'ledger.export.legalHold.reason.label': 'Oikeudellisen säilytysmääräyksen peruste',
+  'ledger.export.legalHold.reason.placeholder': 'Oikeudenkäynti nro 123/26…',
+  'ledger.export.legalHold.reason.required':
+    'Anna peruste ennen oikeudellisen säilytysmääräyksen merkitsemistä.',
+  'ledger.export.bundle.title': 'Siirrettävyyspaketti — vaihda instanssia',
+  'ledger.export.bundle.body':
+    'Itse todentuva ZIP ja ainoa muoto, jonka kirjan tuonti hyväksyy. Käytä sitä kirjan siirtämiseen tai palauttamiseen toisessa instanssissa.',
+  'ledger.export.bundle.retainedTitle': 'Tämä vienti kirjataan',
+  'ledger.export.bundle.retained':
+    'Toisin kuin säilytyspaketista, palvelin säilyttää tästä paketista kopion ja lisää tapahtuman tarkastuslokiin.',
+  'ledger.export.bundle.download': 'Vie siirrettävyyspaketti',
+  'ledger.export.bundle.downloading': 'Viedään pakettia…',
   'toast.ledgerArchive.downloaded': 'Arkiston PDF/A ladattu.',
   'ledger.actor.systemTooltip': 'Järjestelmätoimija (ei istuntoa)',
 
@@ -1188,6 +1230,10 @@ export const fiFI: Catalog = {
   'tools.section.legislacao': 'Lainsäädäntö',
   'tools.section.trust': 'Luottamuslista',
   'tools.section.externalSigning': 'Ulkoinen allekirjoitus',
+  'tools.pdf.subnav.aria': 'Teknisen tarkistimen osio',
+  'tools.pdf.section.pdf': 'PDF-allekirjoitukset',
+  'tools.pdf.section.asic': 'ASiC-säiliöt',
+  'tools.pdf.section.reports': 'Tekniset raportit',
   'externalSigning.title': 'Ulkoiset allekirjoitustyönkulut',
   'externalSigning.notice.title': 'Toiminnallinen seuranta',
   'externalSigning.notice.body':
@@ -1259,6 +1305,16 @@ export const fiFI: Catalog = {
   'pdfValidator.failClosed.body':
     'Palvelin hylkäsi tiedoston validoinnin. Käsittele tämä fail-closed-tilanteena; jos viestissä mainitaan koon tai SHA-256:n poikkeama, vastaanotetut tavut eivät vastaa selaimen ilmoittamia tietoja.',
   'pdfValidator.result.title': 'Tulos',
+  'pdfValidator.table.caption': 'Tekniset PDF/PAdES-tarkistukset',
+  'pdfValidator.table.check': 'Tarkistus',
+  'pdfValidator.table.verdict': 'Tulos',
+  'pdfValidator.table.evidence': 'Todiste',
+  'pdfValidator.verdict.pass': 'Hyväksytty',
+  'pdfValidator.verdict.fail': 'Hylätty',
+  'pdfValidator.verdict.inconclusive': 'Ei ratkaistu',
+  'pdfValidator.verdict.info': 'Tiedoksi',
+  'pdfValidator.section.file': 'Tiedosto',
+  'pdfValidator.field.integrity': 'Ilmoitettu eheys',
   'pdfValidator.status.valid': 'Teknisesti kelvollinen',
   'pdfValidator.status.invalid': 'Virheellinen',
   'pdfValidator.status.indeterminate': 'Määrittämätön',
@@ -1466,6 +1522,7 @@ export const fiFI: Catalog = {
     'Virallinen teksti kaapattu ja tarkistettu automaattisella prosessilla. EI ihmisen tekemää oikeudellista hyväksyntää – suositellaan ihmisen tekemää oikeudellista tarkistusta ennen siihen luottamista.',
   'legislacao.corpus.back': 'Takaisin säädöksiin',
   'legislacao.corpus.backToDiploma': 'Takaisin: {title}',
+  'legislacao.corpus.backToResults': 'Takaisin tuloksiin',
   'legislacao.corpus.diploma.notFound': 'Säädöstä ei löytynyt.',
   'legislacao.corpus.article.notFound': 'Artiklaa ei löytynyt.',
   'legislacao.corpus.article.source': 'Lähde',
@@ -1768,6 +1825,36 @@ export const fiFI: Catalog = {
   'settings.entityTable.title': 'Yhteisötaulukko',
   'settings.entityTable.hint': 'Valitse rekisteröityjen yhteisöjen luettelossa näkyvät sarakkeet.',
   'settings.entityTable.columns.aria': 'Yhteisötaulukon sarakkeet',
+  // --- Connector outbound egress allowlist (t21) --------------------------------
+  'settings.connectorEgress.title': 'Liittimien lähtevä verkkoliikenne',
+  'settings.connectorEgress.intro':
+    'Isännät, joihin liitin saa lähettää pöytäkirjatietoja. Tämä ei ole mieltymys vaan raja, joka estää liitintä lähettämästä sisältöä mielivaltaiseen kohteeseen.',
+  'settings.connectorEgress.precedenceTitle': 'Kumpi luettelo ratkaisee',
+  'settings.connectorEgress.precedenceCeiling':
+    'Asennus on kiinnittänyt ylärajan ({hosts}). Tämä luettelo voi vain kaventaa sitä, ei koskaan laajentaa. Ylärajan ulkopuolisen isännän salliminen vaatii asennuskokoonpanon muutoksen.',
+  'settings.connectorEgress.precedenceNoCeiling':
+    'Asennus ei ole kiinnittänyt ylärajaa, joten tämä luettelo on ainoa lähtevän liikenteen raja. Aseta CHANCELA_CONNECTOR_ALLOWED_HOSTS asennukseen kiinnittääksesi ylärajan, jota kukaan pääkäyttäjä ei voi ylittää.',
+  'settings.connectorEgress.hostsLabel': 'Sallitut isännät (yksi riviä kohti)',
+  'settings.connectorEgress.hostsHint':
+    'Tarkat isäntänimet tai IP-/CIDR-alueet. Ei skeemaa, porttia, polkua eikä jokerimerkkejä.',
+  'settings.connectorEgress.placeholder': 'backup.esimerkki.fi\n10.42.0.0/16',
+  'settings.connectorEgress.tooMany': 'Enintään {max} merkintää.',
+  'settings.connectorEgress.rejected': '”{entry}”: {reason}',
+  'settings.connectorEgress.effect':
+    'Muutokset tulevat voimaan seuraavassa liitinoperaatiossa sekä API:ssa että työntekijässä ilman uudelleenkäynnistystä.',
+  'settings.connectorEgress.audited':
+    'Jokainen muutos kirjataan tarkastuslokiin tekijän, ajankohdan sekä edellisen ja uuden luettelon kanssa.',
+  'settings.connectorEgress.reason.format':
+    'on oltava pelkkä isäntänimi tai IP/CIDR ilman skeemaa, porttia, polkua tai tunnuksia.',
+  'settings.connectorEgress.reason.wildcard': 'jokerimerkit eivät ole sallittuja.',
+  'settings.connectorEgress.reason.metadata':
+    'link-local-alue sisältää pilvi-instanssin metatietopäätepisteen, eikä sitä voi avata täältä.',
+  'settings.connectorEgress.reason.loopback':
+    'ei voi osoittaa isäntään, jossa Chancela on käynnissä.',
+  'settings.connectorEgress.reason.forbiddenRange':
+    'tämä osoitealue ei ole koskaan laillinen kohde.',
+  'settings.connectorEgress.reason.broadPrefix':
+    'alue on liian laaja; käytä kapeampaa etuliitettä.',
   'settings.registryAutoUpdate.cardTitle': 'Pysyvän todistuksen automaattipäivitys',
   'settings.registryAutoUpdate.refreshPlan': 'Päivitä suunnitelma',
   'settings.registryAutoUpdate.refreshingPlan': 'Päivitetään…',
@@ -2181,6 +2268,20 @@ export const fiFI: Catalog = {
   'acts.convening': 'Kokouskutsu',
   'acts.convening.hint':
     'Kirjaa kokouskutsun päivämäärä, tapa ja säilytetty näyttö. Varoitukset tukevat toimintaa eivätkä korvaa oikeudellista tarkastusta.',
+  'acts.convening.waiver.title': 'Ilman kokouskutsua',
+  'acts.convening.waiver.hint':
+    'Jos kokous pidettiin ilman ennakkokutsua, kirjaa tähän peruste, johon se nojasi; pöytäkirja toistaa sen. Chancela kirjaa ilmoitetun perusteen eikä vahvista sen pätevyyttä — varmista se lakimieheltä.',
+  'acts.convening.waiver.toggle': 'Kokous pidettiin ilman ennakkokutsua',
+  'acts.convening.waiver.basis': 'Peruste',
+  'acts.convening.waiver.basis.universal':
+    'Yleiskokous — kaikki läsnä ja kaikki yksimielisiä (CSC art. 54.º)',
+  'acts.convening.waiver.basis.other': 'Muu peruste (kuvaile se)',
+  'acts.convening.waiver.agreedToMeet': 'Kaikki ilmaisivat tahtonsa, että kokous järjestäytyy',
+  'acts.convening.waiver.agreedToAgenda': 'Kaikki hyväksyivät käsitellyt asiat',
+  'acts.convening.waiver.grounds': 'Kirjattu peruste',
+  'acts.convening.waiver.evidenceReference': 'Näyttö suostumuksesta',
+  'acts.convening.waiver.conflict':
+    'Kirjattuna on sekä kokouskutsu että sen puuttuminen. Vain toinen niistä voi kuvata tätä kokousta.',
   'acts.convening.dispatchDate': 'Kutsun päivämäärä',
   'acts.convening.channel': 'Kutsutapa',
   'acts.convening.channelNone': 'Tapaa ei kirjattu',
@@ -2344,7 +2445,7 @@ export const fiFI: Catalog = {
   'onboarding.skip': 'Ohita',
   'onboarding.finishing': 'Viimeistellään…',
   'signin.title': 'Kirjaudu sisään',
-  'signin.subtitle': 'Valitse käyttäjäsi jatkaaksesi.',
+  'signin.subtitle': 'Kirjoita käyttäjätunnuksesi jatkaaksesi.',
   'signin.empty': 'Aktiivisia käyttäjiä ei vielä ole.',
   'signin.requiresPassword': 'Salasana vaaditaan',
   'signin.password.label': 'Salasana',
@@ -2363,6 +2464,14 @@ export const fiFI: Catalog = {
   'signin.blocked.body':
     'Uuden käyttäjän luominen edellyttää aktiivista istuntoa. Kirjaudu sisään ja avaa Käyttäjät › Uusi sovelluksessa.',
   'signin.blocked.action': 'Takaisin kirjautumiseen',
+  'signin.username.label': 'Käyttäjätunnus',
+  'signin.username.placeholder': 'Käyttäjätunnuksesi',
+  'signin.badCredentials': 'Väärä käyttäjätunnus tai salasana.',
+  'signin.remember.label': 'Tallenna tämä käyttäjä tälle laitteelle',
+  'signin.recent.title': 'Tällä laitteella käytetyt tilit',
+  'signin.recent.remove': 'Poista {username} luettelosta',
+  'signin.recent.note':
+    'Tämä luettelo pysyy vain tässä selaimessa eikä sisällä koskaan salasanoja.',
   'session.gate.error': 'Istuntoa ei voitu ladata.',
   'session.gate.retry': 'Yritä uudelleen',
   'settings.autosave.retry': 'Yritä uudelleen',
@@ -2514,6 +2623,8 @@ export const fiFI: Catalog = {
   'templates.card.rulePack': 'Sääntöpaketti',
   'templates.card.channels': 'Kanavat',
   'templates.channels.none': 'Ei erityistä kanavaa',
+  'templates.table.source': 'Lähde',
+  'templates.table.actions': 'Toiminnot',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Uusi malli',
   'templates.actions.edit': 'Muokkaa',
@@ -4288,6 +4399,120 @@ export const fiFI: Catalog = {
     'Todistuksesta jäljennetty merkintä pääoman maksamisesta.',
   'fieldHelp.registry.deliberationDate': 'Merkinnässä ilmoitettu päätöspäivä, kun se on läsnä.',
   'fieldHelp.registry.formaObrigar': 'Tuotu teksti siitä, kuka sitoo yhteisön.',
+  // --- Email (SMTP) (t23) ---
+  'settings.email.cardTitle': 'Sähköposti',
+  'settings.email.lede':
+    'Määritä SMTP-palvelin, jonka kautta sovellus lähettää viestit. Salasana tallennetaan salattuna eikä sitä palauteta koskaan.',
+  'settings.email.enabled.label': 'Sähköpostin lähetys käytössä',
+  'settings.email.enabled.hint':
+    'Niin kauan kuin se on pois päältä, mitään ei lähetetä. Voit täyttää asetukset ennen sen käyttöönottoa.',
+  'settings.email.host.label': 'Palvelin',
+  'settings.email.host.hint':
+    'SMTP-palvelimen nimi. Se on myös nimi, johon TLS-varmenteen on täsmättävä.',
+  'settings.email.host.placeholder': 'smtp.esimerkki.pt',
+  'settings.email.port.label': 'Portti',
+  'settings.email.port.hint': '587 STARTTLS:lle, 465 implisiittiselle TLS:lle.',
+  'settings.email.encryptionField.label': 'Salaus',
+  'settings.email.encryptionField.hint':
+    'STARTTLS on oletus. Jos palvelin ei tarjoa sitä, yhteys torjutaan sen sijaan, että jatkettaisiin salaamattomana.',
+  'settings.email.encryption.starttls': 'STARTTLS (suositus)',
+  'settings.email.encryption.implicitTls': 'Implisiittinen TLS (portti 465)',
+  'settings.email.encryption.none': 'Ei salausta',
+  'settings.email.insecure.title': 'Salaamaton yhteys',
+  'settings.email.insecure.body':
+    'Ilman salausta palvelimen salasana ja kaikkien viestien sisältö kulkevat verkossa selkokielisinä. Käytä tätä vaihtoehtoa vain suljetun verkon välityspalvelimella, joka ei tarjoa muuta.',
+  'settings.email.insecure.confirm': 'Vahvistan, että haluan lähettää ilman salausta',
+  'settings.email.username.label': 'Käyttäjä',
+  'settings.email.username.hint': 'Jätä tyhjäksi, jos palvelin ei vaadi todennusta.',
+  'settings.email.fromAddress.label': 'Lähettäjän osoite',
+  'settings.email.fromAddress.hint':
+    'Osoite, jota käytetään kuoressa ja kaikkien viestien Lähettäjä:-otsakkeessa.',
+  'settings.email.fromAddress.placeholder': 'sistema@esimerkki.pt',
+  'settings.email.fromName.label': 'Lähettäjän nimi',
+  'settings.email.fromName.hint':
+    'Osoitteen vieressä näytettävä nimi, esimerkiksi Encosto Estratégico Lda.',
+  'settings.email.heloName.label': 'EHLO-nimi',
+  'settings.email.heloName.hint':
+    'Palvelimelle ilmoitettava nimi. Jos se jää tyhjäksi, käytetään lähettäjän osoitteen verkkotunnusta.',
+
+  'settings.email.password.cardTitle': 'Palvelimen salasana',
+  'settings.email.password.lede':
+    'Tallennettu salattuna tunnusten holviin. Mikään päätepiste ei palauta sitä — vain alla oleva tila kertoo, onko sellainen olemassa.',
+  'settings.email.password.label': 'Salasana',
+  'settings.email.password.hint': 'Uuden salasanan kirjoittaminen korvaa edellisen.',
+  'settings.email.password.placeholder': 'Kirjoita asettaaksesi tai korvataksesi',
+  'settings.email.password.save': 'Tallenna salasana',
+  'settings.email.password.clear': 'Poista salasana',
+  'settings.email.password.configured': 'Asetettu',
+  'settings.email.password.notConfigured': 'Asettamatta',
+  'settings.email.password.savedToast': 'Palvelimen salasana tallennettu',
+  'settings.email.password.clearedToast': 'Palvelimen salasana poistettu',
+
+  'settings.email.test.cardTitle': 'Lähetä testiviesti',
+  'settings.email.test.lede':
+    'Avaa todellisen istunnon määritetylle palvelimelle ja näyttää sen antaman vastauksen, mukaan lukien SMTP-koodin.',
+  'settings.email.test.to.label': 'Vastaanottaja',
+  'settings.email.test.to.hint': 'Osoite, johon testiviesti lähetetään.',
+  'settings.email.test.to.placeholder': 'amelia.marques@esimerkki.pt',
+  'settings.email.test.action': 'Lähetä testi',
+  'settings.email.test.warningTitle': 'Tarkista asetukset',
+  'settings.email.test.okTitle': 'Palvelin hyväksyi viestin',
+  'settings.email.test.okBody':
+    'Palvelin hyväksyi viestin. Tämä ei vahvista toimitusta vastaanottajan postilaatikkoon.',
+  'settings.email.test.failTitle': 'Lähetys epäonnistui',
+  'settings.email.test.failUnknown': 'Palvelin ei palauttanut mitään yksityiskohtia.',
+  'settings.email.test.stage': 'Vaihe',
+  'settings.email.test.code': 'SMTP-koodi',
+  'settings.email.test.serverReply': 'Palvelimen vastaus',
+  'settings.email.test.relayReply': 'Palvelimen vastaus',
+  'settings.email.test.remedy': 'Mitä tarkistaa',
+  'settings.email.test.tls': 'Salattu',
+  'settings.email.test.authenticated': 'Todennettu',
+
+  'settings.email.stage.connect': 'Yhteys palvelimeen',
+  'settings.email.stage.tls': 'TLS-kättely',
+  'settings.email.stage.greeting': 'Palvelimen tervehdys',
+  'settings.email.stage.ehlo': 'Esittely (EHLO)',
+  'settings.email.stage.starttls': 'STARTTLS:n aloitus',
+  'settings.email.stage.auth': 'Todennus',
+  'settings.email.stage.mailFrom': 'Lähettäjä (MAIL FROM)',
+  'settings.email.stage.rcptTo': 'Vastaanottaja (RCPT TO)',
+  'settings.email.stage.data': 'Viestin lähetys',
+  'settings.email.stage.quit': 'Istunnon päättäminen',
+
+  'settings.email.remedy.dns':
+    'Palvelimen nimeä ei saatu selvitettyä. Tarkista kirjoitusasu ja se, että DNS tuntee sen.',
+  'settings.email.remedy.unreachable':
+    'Palvelin ei vastannut ilmoitetussa portissa. Tarkista portti ja se, estääkö palomuuri liikenteen.',
+  'settings.email.remedy.tls':
+    'Palvelimen varmennetta ei hyväksytty. Tarkista, että se on voimassa ja vastaa määritettyä nimeä.',
+  'settings.email.remedy.tlsUnsupported':
+    'Palvelin ei tarjoa STARTTLS:ää. Korjaa palvelin, käytä implisiittistä TLS:ää portissa 465 tai poista salaus käytöstä nimenomaisesti.',
+  'settings.email.remedy.timeout':
+    'Palvelimen vastaus kesti liian kauan. Tarkista verkko ja se, että osoite on oikein.',
+  'settings.email.remedy.configuration':
+    'Asetukset eivät ole käyttökelpoiset sellaisinaan. Käy läpi käyttäjä, salaus ja portti.',
+  'settings.email.remedy.protocol':
+    'Palvelimen vastausta ei ymmärretty tai yhteys katkesi. Varmista, että portti palvelee SMTP:tä.',
+  'settings.email.remedy.rejected':
+    'Palvelin hylkäsi pyynnön. Yllä oleva koodi ja teksti ovat sen itsensä antama syy.',
+
+  'settings.email.help.enabled':
+    'Sähköpostin lähetyksen pääkytkin. Pois päältä mikään toiminto ei lähetä viestejä.',
+  'settings.email.help.host': 'SMTP-palvelimen nimi, esimerkiksi smtp.esimerkki.pt.',
+  'settings.email.help.port': 'Lähetysportti: yleensä 587 (STARTTLS) tai 465 (implisiittinen TLS).',
+  'settings.email.help.encryption':
+    'Miten yhteys suojataan. STARTTLS yhdistää selkokielisenä ja siirtyy salattuun ennen todennusta.',
+  'settings.email.help.username': 'SMTP-todennuksen käyttäjä, esimerkiksi sistema@esimerkki.pt.',
+  'settings.email.help.password':
+    'Lähettävän tilin salasana tai sovellussalasana. Tallennetaan salattuna eikä palauteta koskaan.',
+  'settings.email.help.fromAddress':
+    'Osoite, joka näkyy lähettäjänä, esimerkiksi sistema@esimerkki.pt.',
+  'settings.email.help.fromName':
+    'Osoitteen vieressä näkyvä luettava nimi, esimerkiksi Encosto Estratégico Lda.',
+  'settings.email.help.heloName':
+    'SMTP-esittelyssä ilmoitettava nimi. Jotkin palvelimet hylkäävät yleisluontoiset nimet.',
+
   'settings.providerCredentials.cardTitle': 'Allekirjoituspalveluntarjoajat',
   'settings.providerCredentials.lede':
     'Hallitse allekirjoituspalveluntarjoajien tunnistetietoja, joilla on useita avaimia palveluntarjoajaa kohti, prioriteetti ja vikasieto.',
@@ -5129,4 +5354,41 @@ export const fiFI: Catalog = {
   'pairing.revoke.confirm': 'Vahvista peruutus',
   'pairing.revoking': 'Perutaan…',
   'pairing.revokedToast': 'Laite peruttu',
+  // --- Book detail sub-tabs (t25) ------------------------------------------------
+  'books.detail.subnav.imports': 'Tuonnit',
+  'books.detail.subnav.aria': 'Kirjan osiot',
+  'books.detail.termo.pending.title': 'Kirjattu avausmerkintä',
+  'books.detail.termo.pending.body':
+    'Näyttää avausmerkinnän kentät sellaisina kuin ne kirjattiin kirjaa avattaessa. Merkintä ei ole tässä käyttöliittymässä vielä täytettävä tai allekirjoitettava asiakirja, eikä luodulla PDF/A-tiedostolla ole omaa päätepistettä — se kulkee sivun otsikossa tarjotussa säilytyspaketissa.',
+  'books.detail.retention.scopeNote':
+    'Vain tämän kirjan nimeävät säilytysehdokkaat. Säilytyskäytäntöjä hallitaan kohdassa Asetukset → Tietosuoja.',
+  // --- t36: Assinaturas / Fornecedores configuration grids ---
+  'settings.signing.policy.cardTitle': 'Allekirjoituskäytäntö',
+  'settings.signing.fallbackHint': 'Portugalin virallinen oletusarvo. Toimii varalla, kun mikään alla olevan taulukon merkinnöistä ei ole käytössä.',
+  'settings.signing.tslSources.caption': 'Määritetyt luottamuslistan lähteet',
+  'settings.signing.tsaProviders.caption': 'Määritetyt aikaleimapalvelut',
+  'settings.signing.providers.caption': 'Allekirjoituspalvelujen toimintatavat ja niiden tila',
+  'settings.signing.table.status': 'Tila',
+  'settings.signing.table.actions': 'Toiminnot',
+  'settings.signing.table.limits': 'Rajat',
+  'settings.signing.table.limitsValue': '{digest} · {timeout} s · enint. {maxBytes} tavua',
+  'settings.signing.table.provider': 'Palveluntarjoaja',
+  'settings.signing.table.mode': 'Toimintatapa',
+  'settings.signing.table.notes': 'Huomautukset',
+  'settings.providerCredentials.protection.unavailable.title': 'Tunnuksia ei voi tallentaa',
+  'settings.providerCredentials.protection.unavailable.body': 'Tämä palvelin ei pysty salaamaan eikä tallentamaan palveluntarjoajien salaisuuksia. Mitään ei tallenneta ennen kuin asia on korjattu — tunnuksia ei säilytetä heikommalla suojauksella, niitä ei säilytetä lainkaan.',
+  'settings.providerCredentials.protection.reason.notPersistent': 'Palvelin toimii vain muistissa ilman datahakemistoa. Aseta CHANCELA_DATA_DIR ja käynnistä uudelleen.',
+  'settings.providerCredentials.protection.reason.noKeySource': 'Avainlähdettä ei ole käytettävissä. Ota käyttöön SQLCipher tai käyttöjärjestelmän sinetöinti, tai anna CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey': 'Ylläpitäjän antama avain on virheellinen tai se on annettu kahdesti. Säilytä vain CHANCELA_CREDENTIAL_KEY tai CHANCELA_CREDENTIAL_KEY_FILE kelvollisella avainaineksella.',
+  'settings.providerCredentials.protection.reason.rootEnvelope': 'Pääavaimen kuorta ei voitu lukea. Tarkista datahakemiston oikeudet ja se, kuuluuko tiedosto tähän koneeseen.',
+  'settings.providerCredentials.protection.reason.storeUnavailable': 'Tunnusvarasto ei ole käytettävissä. Katso palvelimen lokit.',
+  'settings.providerCredentials.entry.notConfigured': 'ei määritetty',
+  'settings.providerCredentials.table.caption': 'Palvelun {provider} tunnusmerkinnät',
+  'settings.providerCredentials.table.entry': 'Merkintä',
+  'settings.providerCredentials.table.priority': 'Prioriteetti',
+  'settings.providerCredentials.table.state': 'Tila',
+  'settings.providerCredentials.table.endpoint': 'Osoite',
+  'settings.providerCredentials.table.endpointDefault': 'Oletusosoite',
+  'settings.providerCredentials.table.fields': 'Kentät',
+  'settings.providerCredentials.table.actions': 'Toiminnot',
 };

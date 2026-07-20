@@ -22,10 +22,25 @@ export { Truncate } from './Truncate';
 export { ButtonLink } from './ButtonLink';
 export { PageHeader } from './PageHeader';
 export { SubNav, type SubNavItem } from './SubNav';
-export { Tooltip, IconButton, type TooltipPlacement } from './Tooltip';
+export { Stepper, type StepperStep } from './Stepper';
+export {
+  Tooltip,
+  IconButton,
+  TooltipText,
+  useIsClipped,
+  type TooltipPlacement,
+} from './Tooltip';
 export { FieldHelp } from './FieldHelp';
 export * as Icon from './icons';
-export { Skeleton, SkeletonText, SkeletonTable, SkeletonCards, SkeletonDeflist } from './Skeleton';
+export {
+  Skeleton,
+  SkeletonText,
+  SkeletonTable,
+  SkeletonCards,
+  SkeletonDeflist,
+  SkeletonList,
+  SkeletonRegion,
+} from './Skeleton';
 export { ToastProvider, useToast, type ToastHandle, type ToastVariant } from './toast';
 export {
   ConfirmActionModal,
@@ -192,10 +207,23 @@ export function Panel({ children }: { children: ReactNode }) {
 
 // --- Table ----------------------------------------------------------------------
 
-export function Table({ head, children }: { head: ReactNode; children: ReactNode }) {
+export function Table({
+  head,
+  caption,
+  children,
+}: {
+  head: ReactNode;
+  /**
+   * The table's accessible name. Rendered as a visually hidden `<caption>`, so a screen
+   * reader announces what the grid is without the page repeating the heading visually.
+   */
+  caption?: string;
+  children: ReactNode;
+}) {
   return (
     <div className="table-wrap">
       <table className="table">
+        {caption ? <caption className="sr-only">{caption}</caption> : null}
         <thead>{head}</thead>
         <tbody>{children}</tbody>
       </table>

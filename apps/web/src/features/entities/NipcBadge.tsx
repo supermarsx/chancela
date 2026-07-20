@@ -5,13 +5,17 @@
  * is the at-a-glance flag so an unvalidated NIPC never reads as an ordinary one.
  */
 import { useT } from '../../i18n';
-import { Badge } from '../../ui';
+import { Badge, TooltipText } from '../../ui';
 
 export function NipcBadge() {
   const t = useT();
   return (
     <Badge tone="warn">
-      <span title={t('entities.nipcUnvalidated.aria')}>{t('entities.nipcUnvalidated.badge')}</span>
+      {/* The badge is a two-word flag; the sentence explaining WHY sits in the bubble, so it
+          must be keyboard reachable (TooltipText's default for non-clipped content). */}
+      <TooltipText label={t('entities.nipcUnvalidated.aria')}>
+        {t('entities.nipcUnvalidated.badge')}
+      </TooltipText>
     </Badge>
   );
 }
