@@ -52,6 +52,20 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM node:24.18.0-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS web-build
 WORKDIR /app
 
+# The pinned base image bundles npm 11.16.0, but the supply-chain policy
+# (scripts/check-supply-chain-pins.mjs) requires every environment to resolve
+# dependencies with exactly npm 12.0.1 — the same activation every CI job runs
+# after setup-node. Without this the image installed with a different package
+# manager than the one the policy pins, which is what EBADENGINE was reporting.
+# The version is exact, never a range, so the layer stays reproducible.
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --global --no-audit --no-fund npm@12.0.1
+
+# The pinned npm still prints an "update available" nag; it is noise against a
+# pinned toolchain, and reading it as an instruction is how the floor and the
+# images drifted apart in the first place.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+
 # Install dependencies first so the npm layer is cached independently of source
 # changes, using the committed root npm lockfile.
 COPY package.json package-lock.json ./
