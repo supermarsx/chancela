@@ -10,7 +10,7 @@ description = "ARC-20/21 sync and backup connector foundation for Chancela"
 
 [dependencies]
 async-trait = "0.1.89"
-aws-sdk-s3 = { version = "=1.138.0", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"] }
+aws-sdk-s3 = { version = "=1.138.1", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"] }
 base64 = "0.22.1"
 bytes.workspace = true
 percent-encoding = "2.3.2"
