@@ -27,7 +27,7 @@
     },
     {
       "kind": "Paragraph",
-      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' %} Estando todos os sócios presentes ou representados e tendo todos manifestado a vontade de que a assembleia se constituísse e deliberasse sobre os assuntos adiante tratados, a assembleia constituiu-se como assembleia universal, nos termos do artigo 54.º, n.º 1, do Código das Sociedades Comerciais.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
+      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' and convening_waiver.all_agreed_to_meet and convening_waiver.all_agreed_to_agenda %} Estando todos os sócios presentes ou representados e tendo todos manifestado a vontade de que a assembleia se constituísse e deliberasse sobre os assuntos adiante tratados, a assembleia constituiu-se como assembleia universal, nos termos do artigo 54.º, n.º 1, do Código das Sociedades Comerciais.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
     },
     {
       "kind": "KeyValue",

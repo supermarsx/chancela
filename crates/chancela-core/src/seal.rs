@@ -15,7 +15,7 @@ use serde::Serialize;
 use chancela_ledger::Ledger;
 
 use crate::act::{
-    Act, ActState, AgendaItem, Attachment, Attendee, Convening, DeliberationItem,
+    Act, ActState, AgendaItem, Attachment, Attendee, Convening, ConveningWaiver, DeliberationItem,
     DocumentReference, ManualSignatureOriginalReference, MeetingChannel, Mesa, SealMetadata,
     SignatorySlot, SupersededSigningSnapshot, WrittenResolutionEvidence,
 };
@@ -173,6 +173,16 @@ struct ActPayload<'a> {
     // therefore any already-frozen digest — is byte-identical to before this field existed.
     #[serde(skip_serializing_if = "Option::is_none")]
     superseded_signing_snapshots: Option<&'a [SupersededSigningSnapshot]>,
+    // The no-convocatória basis (append-only). `convening` above binds every detail of how a
+    // meeting **was** called; this binds the declared ground on which one lawfully **was not**.
+    // That is the more load-bearing of the two: under CSC art. 56.º/1 a) deliberações taken in an
+    // assembleia geral não convocada are null unless all sócios were present or represented, so
+    // the basis is what stands between a valid deliberação and a defective one — and the ata
+    // recites it. A legal justification printed on a sealed instrument has to be covered by that
+    // instrument's seal, or the document asserts something its own tamper-evidence does not.
+    // An act without a waiver emits no bytes, so every already-frozen digest is byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    convening_waiver: Option<&'a ConveningWaiver>,
 }
 
 impl<'a> ActPayload<'a> {
@@ -203,6 +213,7 @@ impl<'a> ActPayload<'a> {
             page_count: act.page_count,
             superseded_signing_snapshots: (!act.superseded_signing_snapshots.is_empty())
                 .then_some(act.superseded_signing_snapshots.as_slice()),
+            convening_waiver: act.convening_waiver.as_ref(),
         }
     }
 }
@@ -997,6 +1008,73 @@ mod tests {
             weight: Some(crate::act::AttendanceWeight::Permilage(250)),
         }];
         assert_ne!(bytes(&base), bytes(&with_attendees), "attendees must bind");
+    }
+
+    #[test]
+    fn the_no_convocatoria_basis_binds_into_the_seal_digest_when_present() {
+        // The ata recites this basis, and under CSC art. 56.º/1 a) it is what stands between a
+        // valid deliberação and a null one. A seal that attested every detail of how a meeting was
+        // called but not the declared ground on which one lawfully was *not* called would leave
+        // the most load-bearing datum about the convening uncovered — and the most attractive one
+        // to alter after the fact.
+        use crate::act::{ConveningWaiver, NoConveningBasis};
+
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let base = ready_act(&book);
+        let bytes = |a: &Act| serde_json::to_vec(&ActPayload::of(a)).unwrap();
+
+        // Absent ⇒ no bytes. Appended last and skip-serialized, so the preimage of an act carrying
+        // no waiver — every act that predates this field — is byte-identical to what it was.
+        // `digest_of_pre_existing_act_is_unchanged_by_the_f15_page_count`, which compares against a
+        // hand-written reconstruction of the older shape, is the standing proof of that and must
+        // keep passing unchanged.
+        assert!(base.convening_waiver.is_none());
+        assert!(
+            !String::from_utf8(bytes(&base))
+                .unwrap()
+                .contains("convening_waiver"),
+            "an act with no waiver must emit no bytes for it"
+        );
+
+        let mut with_waiver = base.clone();
+        with_waiver.convening_waiver = Some(ConveningWaiver {
+            basis: NoConveningBasis::AssembleiaUniversal,
+            grounds: None,
+            all_agreed_to_meet: true,
+            all_agreed_to_agenda: true,
+            evidence_reference: Some("Anexo I — declaração conjunta".into()),
+        });
+        assert_ne!(
+            bytes(&base),
+            bytes(&with_waiver),
+            "a recorded no-convocatória basis must bind"
+        );
+
+        // Not merely presence: the *content* binds, so the declared basis and the recorded
+        // agreement cannot be swapped under a frozen digest.
+        let mut agreement_withdrawn = with_waiver.clone();
+        agreement_withdrawn
+            .convening_waiver
+            .as_mut()
+            .expect("waiver")
+            .all_agreed_to_agenda = false;
+        assert_ne!(
+            bytes(&with_waiver),
+            bytes(&agreement_withdrawn),
+            "withdrawing the recorded agreement must change the preimage"
+        );
+
+        let mut basis_changed = with_waiver.clone();
+        {
+            let waiver = basis_changed.convening_waiver.as_mut().expect("waiver");
+            waiver.basis = NoConveningBasis::Other;
+            waiver.grounds = Some("Outro fundamento.".into());
+        }
+        assert_ne!(
+            bytes(&with_waiver),
+            bytes(&basis_changed),
+            "changing the declared basis must change the preimage"
+        );
     }
 
     #[test]

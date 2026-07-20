@@ -26,6 +26,16 @@
         "label": "Assembleia geral anual (CSC art. 376.º)",
         "months_after_fiscal_year_end": 3
       }
+    ],
+    "attendee_qualities": [
+      "Shareholder",
+      "Chair",
+      "Secretary",
+      "Administrator",
+      "Attorney",
+      "StatutoryAuditor",
+      "Guest",
+      "Other"
     ]
   },
   "statute": null

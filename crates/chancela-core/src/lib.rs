@@ -78,7 +78,7 @@ pub use profile::{
     ProfileCalendarRuleSupportStatus, ProfileCalendarScheduledRule, ProfileCalendarSourceStatus,
     ProfileCalendarSuppressedRule, ProfileCalendarSuppressionReason,
     ProfileCalendarUnsupportedReason, ProfileCalendarUnsupportedRule, ProfilePack,
-    SignaturePolicyHint, attendee_qualities, evaluate_profile_calendar_rule,
+    SignaturePolicyHint, attendee_qualities, evaluate_profile_calendar_rule, membership_qualities,
     profile_calendar_due_date_for_year, profile_calendar_plan_for, profile_for, rule_pack_for,
     supports_profile_calendar_plan,
 };

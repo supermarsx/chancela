@@ -163,28 +163,30 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
     .await;
     let book_id = open_book(&h, &entity_id, &token).await;
 
-    // A CSC ata complete in everything EXCEPT the mesa (time + agenda + place + attendance +
-    // deliberations all present, so only the presiding board is missing).
-    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
+    // Shared CSC ata contents: time + agenda + place + attendance + deliberations.
+    let contents = || {
+        json!({
+            "meeting_date": "2026-03-30",
+            "meeting_time": "10:00",
+            "place": "Sede social",
+            "agenda": [{ "number": 1, "text": "Aprovação das contas do exercício" }],
+            "attendance_reference": "Lista de presenças anexa",
+            "deliberations": "Aprovadas por unanimidade as contas do exercício de 2025.",
+        })
+    };
+
+    // --- Leg 1: an ata complete in everything EXCEPT the mesa is refused at seal ----------------
+    let no_mesa_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
     let (status, _) = h
-        .patch_json_auth(
-            &format!("/v1/acts/{act_id}"),
-            json!({
-                "meeting_date": "2026-03-30",
-                "meeting_time": "10:00",
-                "place": "Sede social",
-                "agenda": [{ "number": 1, "text": "Aprovação das contas do exercício" }],
-                "attendance_reference": "Lista de presenças anexa",
-                "deliberations": "Aprovadas por unanimidade as contas do exercício de 2025.",
-            }),
-            &token,
-        )
+        .patch_json_auth(&format!("/v1/acts/{no_mesa_id}"), contents(), &token)
         .await;
     assert_eq!(status, 200, "patch csc ata contents (no mesa)");
-    advance_to_signing(&h, &act_id, Some(&token)).await;
+    advance_to_signing(&h, &no_mesa_id, Some(&token)).await;
 
     // Compliance reports the blocking mesa Error and forbids the seal.
-    let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
+    let (status, comp) = h
+        .get_json(&format!("/v1/acts/{no_mesa_id}/compliance"))
+        .await;
     assert_eq!(status, 200);
     assert_eq!(comp["rule_pack"], "csc-art63/v2");
     assert!(comp["errors"].as_u64().expect("errors") >= 1);
@@ -201,7 +203,7 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
     // Sealing is refused with 422 and the refusal carries the mesa Error.
     let (status, body) = h
         .post_json_auth(
-            &format!("/v1/acts/{act_id}/seal"),
+            &format!("/v1/acts/{no_mesa_id}/seal"),
             manual_signature_seal_body("Arquivo E2E / CSC missing mesa ata"),
             &token,
         )
@@ -216,17 +218,25 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
         "the seal refusal explains the missing mesa: {body}"
     );
 
-    // Fill the mesa (presidente + secretários) through the wire.
+    // This act is now stuck, and that is a known product gap rather than a quirk of the test.
+    // `Signing` closes mutation (`Act::is_mutable`), `advance_to` has no reverse edge, and seal
+    // demands `Signing` — so an act that reaches Signing without a mesa can neither be repaired
+    // nor sealed. Gating the advance on the same blocking compliance errors, plus a supported way
+    // back for acts already in that state, is tracked as its own change; it touches the canonical
+    // signing snapshot persisted on entry to `Signing`, so it is not a test-side fix.
+    //
+    // Until then the successful-seal leg below uses a SECOND act, arranged the way an operator
+    // actually would: the mesa is filled while the ata is still a draft.
+
+    // --- Leg 2: the same ata WITH a mesa seals -------------------------------------------------
+    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
+    let mut with_mesa = contents();
+    with_mesa["mesa"] = json!({ "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] });
     let (status, _) = h
-        .patch_json_auth(
-            &format!("/v1/acts/{act_id}"),
-            json!({
-                "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] }
-            }),
-            &token,
-        )
+        .patch_json_auth(&format!("/v1/acts/{act_id}"), with_mesa, &token)
         .await;
-    assert_eq!(status, 200, "patch mesa onto the csc ata");
+    assert_eq!(status, 200, "patch csc ata contents (with mesa)");
+    advance_to_signing(&h, &act_id, Some(&token)).await;
 
     // Compliance is clean(er): no more blocking Errors.
     let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;

@@ -229,13 +229,12 @@ impl ServerHarness {
         let Some((user_id, password)) = self.default_login() else {
             return;
         };
+        // t33-e2: the unauthenticated roster no longer lists users (that was user enumeration), so
+        // this can only check that the instance has *some* user. Whether this particular one is
+        // still active is answered by the sign-in itself — an inactive user gets the same opaque
+        // 401 as any other failure, and the `status == 200` guard below already handles it.
         let (_s, roster) = self.get_json_noauth("/v1/session/roster").await;
-        let active = roster["users"].as_array().is_some_and(|users| {
-            users
-                .iter()
-                .any(|u| u["id"].as_str() == Some(user_id.as_str()))
-        });
-        if !active {
+        if roster["onboarding_required"].as_bool() != Some(false) {
             return;
         }
         let (status, s) = self

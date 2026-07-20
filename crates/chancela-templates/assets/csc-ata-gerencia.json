@@ -60,7 +60,7 @@
     },
     {
       "kind": "Paragraph",
-      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' %} Estavam presentes todos os titulares do órgão, que manifestaram a vontade de que a reunião se realizasse e deliberasse sobre os assuntos adiante tratados.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
+      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' and convening_waiver.all_agreed_to_meet and convening_waiver.all_agreed_to_agenda %} Estavam presentes todos os titulares do órgão, que manifestaram a vontade de que a reunião se realizasse e deliberasse sobre os assuntos adiante tratados.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
     },
     {
       "kind": "KeyValue",

@@ -1021,8 +1021,15 @@ pub struct Act {
     /// Distinct from `convening: None`, which only means no convening record was captured. The two
     /// are mutually exclusive in substance, and the rule packs warn when both are populated.
     ///
-    /// Skipped when absent so the canonical act payload — and therefore the frozen seal digest of
-    /// every act sealed before this field existed — is byte-identical to what it was.
+    /// **Bound into the seal preimage** ([`crate::seal`]'s `ActPayload`), alongside `convening`.
+    /// It has to be: the ata *recites* this basis, and under CSC art. 56.º/1 a) the basis is what
+    /// stands between a valid deliberação and a null one, so it would be backwards for the seal to
+    /// attest every detail of how a meeting was called but not the declared ground on which one
+    /// lawfully was not.
+    ///
+    /// Skipped when absent, in both the durable act JSON and the preimage, so an act carrying no
+    /// waiver — which is every act that predates this field — is byte-identical to what it was and
+    /// no frozen digest moves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub convening_waiver: Option<ConveningWaiver>,
     /// The structured lista de presenças (spec gap G2). Additive and **append-only**: defaults

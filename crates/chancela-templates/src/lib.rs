@@ -2304,6 +2304,19 @@ mod tests {
             "no CSC citation outside the CSC family: {text}"
         );
 
+        // The agreement clause is gated on the recorded flags, not merely on the basis: an ata must
+        // never assert that everyone agreed when nothing in the record says so. (The rule pack
+        // blocks that state anyway — this is the second guard, so a transient draft cannot render a
+        // claim it does not hold.)
+        ctx["convening_waiver"]["all_agreed_to_agenda"] = json!(false);
+        let doc = render(reg.get("csc-ata-ag/v1").expect("csc ata"), &ctx).expect("renders");
+        let text = doc_text(&doc);
+        assert!(text.contains("sem convocatória prévia"), "{text}");
+        assert!(
+            !text.contains("manifestado a vontade") && !text.contains("artigo 54.º"),
+            "an unrecorded agreement must not be recited: {text}"
+        );
+
         // An `Other` basis recites the operator's stated ground and nothing more.
         ctx["convening_waiver"] = json!({
             "basis": "Other",
@@ -2326,7 +2339,15 @@ mod tests {
     }
 
     #[test]
-    fn every_ata_in_the_catalog_can_recite_a_no_convocatoria_basis() {
+    fn every_deliberative_ata_can_recite_a_no_convocatoria_basis() {
+        // The set is derived, not listed: an ata of a *meeting* is one that binds
+        // `attendance_reference` — the same criterion the attendance-roll test uses — so a newly
+        // authored one is picked up automatically and must carry the recital.
+        //
+        // `assoc-ata-tomada-posse` is deliberately outside it. It records titleholders being sworn
+        // in, not an assembly deliberating ("procedeu-se à tomada de posse…"), and has no
+        // attendance section, agenda or votes. There is no convocatória for it to lack, so
+        // reciting "a reunião realizou-se sem convocatória prévia" there would be meaningless.
         let reg = load_registry().expect("the full catalog loads");
         let mut ctx = coverage_ctx();
         ctx["convening_waiver"] = json!({
@@ -2339,7 +2360,10 @@ mod tests {
 
         let mut checked = 0;
         for spec in reg.specs() {
-            if spec.stage != LifecycleStage::Ata || !spec.id.contains("-ata-") {
+            let binds_attendance = serde_json::to_string(&spec.blocks)
+                .expect("blocks serialize")
+                .contains("attendance_reference");
+            if spec.stage != LifecycleStage::Ata || !binds_attendance {
                 continue;
             }
             let doc = render(spec, &ctx)
@@ -2352,7 +2376,16 @@ mod tests {
             );
             checked += 1;
         }
-        assert!(checked >= 39, "expected the whole ata spine, saw {checked}");
+        assert!(checked >= 38, "expected the whole ata spine, saw {checked}");
+
+        let posse = reg
+            .get("assoc-ata-tomada-posse/v1")
+            .expect("tomada de posse template");
+        let doc = render(posse, &ctx).expect("renders");
+        assert!(
+            !doc_text(&doc).contains("sem convocatória prévia"),
+            "a tomada de posse is not a convened meeting and must not recite one"
+        );
     }
 
     #[test]

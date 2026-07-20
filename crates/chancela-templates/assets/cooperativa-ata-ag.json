@@ -27,7 +27,7 @@
     },
     {
       "kind": "Paragraph",
-      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' %} Estando todos os cooperadores presentes ou representados e tendo todos manifestado a vontade de que a assembleia se constituísse e deliberasse sobre os assuntos adiante tratados, a assembleia reuniu sem observância de formalidades prévias de convocação.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
+      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' and convening_waiver.all_agreed_to_meet and convening_waiver.all_agreed_to_agenda %} Estando todos os cooperadores presentes ou representados e tendo todos manifestado a vontade de que a assembleia se constituísse e deliberasse sobre os assuntos adiante tratados, a assembleia reuniu sem observância de formalidades prévias de convocação.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
     },
     {
       "kind": "KeyValue",

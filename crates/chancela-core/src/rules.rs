@@ -368,30 +368,57 @@ fn no_convening_issues(act: &Act, entity: &Entity) -> Vec<ComplianceIssue> {
                 ));
             }
 
-            let absent: Vec<&str> = act
+            // "Todos estejam presentes" is about the **members**. A presidente da mesa, a gerente
+            // holding no quota, a revisor oficial de contas, a procurador or a convidado attends
+            // without being one, and an absent guest plainly does not defeat an assembleia
+            // universal. So only membership rows can falsify the claim.
+            let membership = crate::profile::membership_qualities(entity.kind);
+            let absent_members: Vec<&str> = act
                 .attendees
                 .iter()
-                .filter(|a| a.presence == PresenceMode::Absent)
+                .filter(|a| a.presence == PresenceMode::Absent && membership.contains(&a.quality))
                 .map(|a| a.name.as_str())
                 .collect();
-            if !absent.is_empty() {
+            let member_rows = act
+                .attendees
+                .iter()
+                .filter(|a| membership.contains(&a.quality))
+                .count();
+
+            if !absent_members.is_empty() {
                 issues.push(ComplianceIssue::error(
                     "CSC-54/universal-assembly-attendance",
                     format!(
-                        "the act declares an assembleia universal (all present) but the lista de \
-                         presenças records {} absent: {}; under CSC art. 56.º/1 a) deliberações \
-                         taken in an assembly that was not convened are null unless all were \
-                         present or represented",
-                        absent.len(),
-                        absent.join(", ")
+                        "the act declares an assembleia universal (all members present or \
+                         represented) but the lista de presenças records {} absent: {}; CSC \
+                         art. 54.º/1 requires that all be present, and under art. 56.º/1 a) \
+                         deliberações taken in an assembly that was not convened are null unless \
+                         all were present or represented",
+                        absent_members.len(),
+                        absent_members.join(", ")
                     ),
                 ));
-            } else if act.attendees.is_empty() {
+            } else if member_rows == 0 {
                 issues.push(ComplianceIssue::warning(
                     "CSC-54/universal-assembly-unverified",
-                    "the act declares an assembleia universal, but carries no structured lista de \
-                     presenças against which 'all present' can be checked; capture the attendance \
-                     rows or confirm the condition manually",
+                    "the act declares an assembleia universal, but the lista de presenças carries \
+                     no row in a membership capacity against which 'all present' can be checked; \
+                     capture the attendance rows or confirm the condition manually",
+                ));
+            }
+
+            // A row outside the closed vocabulary might or might not be a member — that is a
+            // judgement Chancela does not make. Say so rather than deciding it silently, but only
+            // when it could change the answer.
+            let unclassified_absent = act.attendees.iter().any(|a| {
+                a.presence == PresenceMode::Absent && a.quality == SignatoryCapacity::Other
+            });
+            if unclassified_absent && absent_members.is_empty() {
+                issues.push(ComplianceIssue::warning(
+                    "CONV/universal-assembly-unclassified-absentee",
+                    "an absent attendee is recorded under a free-text qualidade, so Chancela \
+                     cannot tell whether they are a member; if they are, the assembleia universal \
+                     basis does not hold — confirm before sealing",
                 ));
             }
         }
@@ -1326,6 +1353,15 @@ mod tests {
 
     // --- no-convocatória basis (CSC art. 54.º assembleia universal) ----------------------------
 
+    fn condominio_entity() -> Entity {
+        Entity::new(
+            "Condomínio do Edifício Encosto",
+            Nipc::parse("503004642").unwrap(),
+            "Lisboa",
+            EntityKind::Condominio,
+        )
+    }
+
     /// A complete act plus a well-formed assembleia universal waiver and an all-present lista.
     fn universal_act() -> Act {
         let mut act = complete_act();
@@ -1358,16 +1394,49 @@ mod tests {
     }
 
     #[test]
-    fn no_waiver_recorded_fires_nothing() {
-        // The whole feature is opt-in: an act that records no waiver — which is every act sealed
-        // before the field existed — must be untouched by these checks.
-        let issues = CscArt63RulePack.check_act(&complete_act(), &sa_entity());
-        assert!(
-            !issues
-                .iter()
-                .any(|i| i.rule_id.starts_with("CONV/") || i.rule_id.starts_with("CSC-54/")),
-            "unexpected no-convocatória findings: {issues:?}"
-        );
+    fn no_waiver_recorded_fires_nothing_for_any_family() {
+        // The whole feature is opt-in, and this is the guard that keeps it so. Every act that
+        // predates the field — and every act whose meeting simply *was* convened — carries no
+        // waiver, and must be untouched by these checks.
+        //
+        // This matters more than a back-compat nicety: a blocking finding now refuses
+        // `TextApproved -> Signing` as well as the seal, so a rule that fired on an act with no
+        // convening data would stop existing atas being sent for signature. None of these rules
+        // can, because they all sit behind `act.convening_waiver.is_some()`.
+        let mut legacy = complete_act();
+        legacy.convening = None;
+        legacy.attendees.clear();
+        legacy.mesa.presidente = Some("Ana Presidente".into());
+
+        for (label, issues) in [
+            ("csc", CscArt63RulePack.check_act(&legacy, &sa_entity())),
+            (
+                "condominio",
+                CondominioRulePack.check_act(&legacy, &condominio_entity()),
+            ),
+            (
+                "assoc",
+                AssociacaoRulePack.check_act(&legacy, &sa_entity()),
+            ),
+            (
+                "cooperativa",
+                CooperativaRulePack.check_act(&legacy, &sa_entity()),
+            ),
+            ("fundacao", FundacaoRulePack.check_act(&legacy, &sa_entity())),
+        ] {
+            assert!(
+                !issues
+                    .iter()
+                    .any(|i| i.rule_id.starts_with("CONV/") || i.rule_id.starts_with("CSC-54/")),
+                "{label}: an act with no convening data must raise no no-convocatória finding: \
+                 {issues:?}"
+            );
+            assert!(
+                !issues.iter().any(|i| i.severity == Severity::Error),
+                "{label}: an act with no convening data must not be blocked from Signing: \
+                 {issues:?}"
+            );
+        }
     }
 
     #[test]
@@ -1376,20 +1445,77 @@ mod tests {
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
     }
 
+    /// One absent attendance row in `quality`.
+    fn absent(name: &str, quality: SignatoryCapacity) -> Attendee {
+        Attendee {
+            name: name.into(),
+            quality,
+            quality_note: if quality == SignatoryCapacity::Other {
+                Some("Contabilista convidado".into())
+            } else {
+                None
+            },
+            presence: PresenceMode::Absent,
+            represented_by: None,
+            weight: None,
+        }
+    }
+
     #[test]
-    fn universal_assembly_with_an_absent_attendee_blocks() {
+    fn only_an_absent_member_falsifies_a_universal_assembly() {
+        // "Todos estejam presentes" (art. 54.º/1) is about the **members**. A secretário, a ROC or
+        // a convidado who did not show up says nothing about whether the acionistas were all
+        // there, and blocking on their absence would refuse a perfectly good ata.
+        for quality in [
+            SignatoryCapacity::Chair,
+            SignatoryCapacity::Secretary,
+            SignatoryCapacity::Administrator,
+            SignatoryCapacity::Attorney,
+            SignatoryCapacity::StatutoryAuditor,
+            SignatoryCapacity::Guest,
+        ] {
+            let mut act = universal_act();
+            act.attendees.push(absent("Carla Neves", quality));
+            let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+            assert!(
+                !issues
+                    .iter()
+                    .any(|i| i.rule_id == "CSC-54/universal-assembly-attendance"),
+                "an absent {quality:?} must not falsify the basis: {issues:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_absent_row_of_unknown_qualidade_warns_rather_than_deciding() {
+        // `Other` carries free text, so Chancela cannot tell whether the person is a member. It
+        // says so instead of quietly assuming either answer.
+        let mut act = universal_act();
+        act.attendees
+            .push(absent("Carla Neves", SignatoryCapacity::Other));
+
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CONV/universal-assembly-unclassified-absentee")
+            .unwrap_or_else(|| panic!("missing unclassified-absentee advisory: {issues:?}"));
+        assert_eq!(issue.severity, Severity::Warning);
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id == "CSC-54/universal-assembly-attendance"),
+            "an unclassified row must not block: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn universal_assembly_with_an_absent_member_blocks() {
         // The act's own lista de presenças falsifies the basis it declares. Blocking, because the
         // ata would otherwise recite "all present" over a list that says otherwise — and for a
         // sociedade comercial that is the CSC art. 56.º/1 a) nullity case.
         let mut act = universal_act();
-        act.attendees.push(Attendee {
-            name: "Carla Neves".into(),
-            quality: SignatoryCapacity::Shareholder,
-            quality_note: None,
-            presence: PresenceMode::Absent,
-            represented_by: None,
-            weight: None,
-        });
+        act.attendees
+            .push(absent("Carla Neves", SignatoryCapacity::Shareholder));
 
         let issues = CscArt63RulePack.check_act(&act, &sa_entity());
         let issue = issues
@@ -1477,7 +1603,9 @@ mod tests {
             .iter()
             .find(|i| i.rule_id == "CONV/waiver-grounds")
             .unwrap_or_else(|| panic!("missing grounds finding: {issues:?}"));
-        assert_eq!(issue.severity, Severity::Error);
+        // Advisory, not blocking: no article requires the ground to be written down, and the API
+        // refuses a groundless `Other` with a 422 before it can reach an act.
+        assert_eq!(issue.severity, Severity::Warning);
         assert!(
             issue.legal_basis.is_empty(),
             "an operator-stated ground carries no citation Chancela can vouch for: {issue:?}"
@@ -1496,12 +1624,7 @@ mod tests {
     fn universal_basis_outside_the_csc_warns_that_the_regime_is_unverified() {
         // Art. 54.º governs sociedades comerciais. Chancela does not decide whether it reaches a
         // condomínio by analogy — CC art. 1432.º has no equivalent — so it says so instead.
-        let condo = Entity::new(
-            "Condomínio do Edifício Encosto",
-            Nipc::parse("503004642").unwrap(),
-            "Lisboa",
-            EntityKind::Condominio,
-        );
+        let condo = condominio_entity();
         let mut act = universal_act();
         act.mesa = crate::act::Mesa::default();
 

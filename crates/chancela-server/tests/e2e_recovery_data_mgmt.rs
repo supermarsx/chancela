@@ -89,11 +89,11 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
 
     // Re-authenticate BEFORE the gated reads below: the in-memory session dropped on restart, and
     // RBAC (t64-E3) gates the integrity report and entity reads (`ledger.read` / `entity.read`).
-    let user_id = create_user_or_signin(&h).await;
+    ensure_signin_identifier(&h, "e2e.operator", "E2E Operator").await;
     let (status, s) = h
         .post_json(
             "/v1/session",
-            json!({ "user_id": user_id, "password": E2E_TEST_PASSWORD }),
+            json!({ "username": "e2e.operator", "password": E2E_TEST_PASSWORD }),
         )
         .await;
     assert_eq!(status, 200, "re-open session with password: {s}");
@@ -225,10 +225,16 @@ async fn a_passwordless_owner_recovers_a_degraded_instance_without_step_up() {
     // the recovery handler with a real session and a persisted legacy user.
     let token = LEGACY_NO_HASH_SESSION_TOKEN.to_owned();
     h.set_default_token(&token);
+    // t33-e2: the unauthenticated roster answers `onboarding_required` and nothing else — it used
+    // to publish this very user's `{id, has_secret:false}`, which told any anonymous caller both
+    // that the account exists and that it has no password set.
     let (status, roster) = h.get_json_noauth("/v1/session/roster").await;
     assert_eq!(status, 200, "legacy roster: {roster}");
-    assert_eq!(roster["users"][0]["id"], user_id);
-    assert_eq!(roster["users"][0]["has_secret"], false);
+    assert_eq!(roster["onboarding_required"], false);
+    assert!(
+        roster.get("users").is_none(),
+        "roster must not list users: {roster}"
+    );
     let (status, session) = h.get_json_auth("/v1/session", &token).await;
     assert_eq!(status, 200, "seeded legacy session resolves: {session}");
     assert_eq!(session["user"]["id"], user_id);
@@ -355,14 +361,17 @@ async fn backend_domain_wipe_requires_step_up_reauth_and_preserves_the_ledger() 
     );
 }
 
-/// Create a fresh operator (post-restart, when the in-memory session is gone) or, if the first-run
-/// bootstrap is no longer available, sign in as an existing roster user. Returns a user id ready to
-/// open a session with.
-async fn create_user_or_signin(h: &ServerHarness) -> String {
+/// Make sure `username` can be signed in as after a restart: create it when the instance came back
+/// with no users at all (first-run bootstrap still open), otherwise assume the persisted directory
+/// still holds it.
+///
+/// t33-e2: this used to read the first user's **id** out of `GET /v1/session/roster`. That roster is
+/// unauthenticated and no longer publishes any user data — nor does it need to, because
+/// `POST /v1/session` now resolves a username server-side.
+async fn ensure_signin_identifier(h: &ServerHarness, username: &str, display_name: &str) {
     let (status, roster) = h.get_json("/v1/session/roster").await;
     assert_eq!(status, 200);
-    if let Some(first) = roster["users"].as_array().and_then(|u| u.first()) {
-        return first["id"].as_str().expect("roster user id").to_owned();
+    if roster["onboarding_required"] == true {
+        create_user(h, username, display_name).await;
     }
-    create_user(h, "recovery.operator", "Recovery Operator").await
 }
