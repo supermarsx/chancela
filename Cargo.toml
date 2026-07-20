@@ -114,7 +114,7 @@ clap = { version = "4", features = ["derive"] }
 # Do NOT bump der/spki/sha2/ecdsa/p256 to their "latest" — the newer generation breaks the
 # only stable cms/x509-cert 0.2. See .orchestration/plans/t4.md §1.1.
 der = { version = "0.7", features = ["oid", "pem"] }         # keep at 0.7 (0.8 breaks cms/x509-cert 0.2)
-spki = "0.7"                                                  # keep at 0.7 (matches cms/x509-cert 0.2)
+spki = "0.8"                                                  # keep at 0.7 (matches cms/x509-cert 0.2)
 cms = { version = "0.2", features = ["builder"] }            # RFC 5652 SignedData; builder = assemble CAdES
 x509-cert = { version = "0.2", features = ["builder", "pem"] } # cert parse/build + self-signed test certs
 x509-ocsp = "0.2.1"                                          # RFC 6960 ASN.1 types for OCSP request/response validation
