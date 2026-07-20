@@ -240,6 +240,7 @@ fn act(case: &FamilyCase) -> Act {
             } else {
                 SignatoryCapacity::Member
             },
+            quality_note: None,
             presence: PresenceMode::InPerson,
             represented_by: None,
             weight: case
@@ -253,6 +254,7 @@ fn act(case: &FamilyCase) -> Act {
             } else {
                 SignatoryCapacity::Member
             },
+            quality_note: None,
             presence: PresenceMode::Represented,
             represented_by: Some("Carla Neves".to_owned()),
             weight: case
@@ -260,12 +262,21 @@ fn act(case: &FamilyCase) -> Act {
                 .then_some(AttendanceWeight::Permilage(90)),
         },
         Attendee {
+            // The free-text escape hatch, exercised end-to-end in the catalog corpus: a
+            // qualidade outside the closed vocabulary is carried in `quality_note` and the
+            // templates print it in place of the structured label. Usufruto over a quota
+            // (CSC art. 23.º) and over a fração autónoma are both real, and neither is a
+            // membership capacity, so `Other` is the honest structured value.
             name: "Duarte Antunes".to_owned(),
-            quality: if case.weighted_attendance {
-                SignatoryCapacity::CondoOwner
-            } else {
-                SignatoryCapacity::Member
-            },
+            quality: SignatoryCapacity::Other,
+            quality_note: Some(
+                if case.weighted_attendance {
+                    "usufrutuário da fração autónoma"
+                } else {
+                    "usufrutuário da quota"
+                }
+                .to_owned(),
+            ),
             presence: PresenceMode::Absent,
             represented_by: None,
             weight: case

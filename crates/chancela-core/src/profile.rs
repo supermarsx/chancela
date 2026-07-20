@@ -11,7 +11,7 @@
 use serde::Serialize;
 use time::{Date, Month};
 
-use crate::act::MeetingChannel;
+use crate::act::{MeetingChannel, SignatoryCapacity};
 use crate::entity::{Entity, EntityFamily, EntityKind, StatuteOverrides};
 use crate::rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,
@@ -467,6 +467,10 @@ pub struct EntityProfile {
     pub template_family: &'static str,
     /// Calendar preset seeds (ENT-02(e); Wave E owns the engine).
     pub calendar_presets: Vec<CalendarPreset>,
+    /// The qualidades an attendance row may be recorded under for this legal type
+    /// (ENT-02(g)) — see [`attendee_qualities`]. Derived from the *kind*, not the family, so
+    /// a sociedade anónima offers *acionista* where a sociedade por quotas offers *sócio*.
+    pub attendee_qualities: Vec<SignatoryCapacity>,
 }
 
 /// The meeting channels a family permits (ENT-02(b)). Used by both [`profile_for`] and the
@@ -483,6 +487,76 @@ pub(crate) fn allowed_channels(family: EntityFamily) -> Vec<MeetingChannel> {
         EntityFamily::Foundation => vec![Physical, Hybrid, Telematic],
         EntityFamily::Cooperative => vec![Physical, Hybrid, Telematic, WrittenResolution],
     }
+}
+
+/// The **membership** qualidade(s) for a legal type — the capacities that make an attendance row a
+/// *member* of the entity rather than someone who merely attends.
+///
+/// Split out of [`attendee_qualities`] (whose return order is membership-first) so that callers who
+/// need the distinction do not have to recover it positionally. Rules that reason about "all the
+/// members" need exactly this: a presidente da mesa, a gerente who holds no quota, a revisor
+/// oficial de contas, a procurador or a convidado attends without being a member, and counting them
+/// toward a membership total — or letting an absent one falsify a unanimity claim — would be wrong.
+///
+/// Empty for a fundação, which has no members at all.
+pub fn membership_qualities(kind: EntityKind) -> Vec<SignatoryCapacity> {
+    use EntityKind::*;
+    use SignatoryCapacity::*;
+
+    match kind {
+        SociedadePorQuotas
+        | SociedadeUnipessoalPorQuotas
+        | SociedadeEmNomeColetivo
+        | SociedadeEmComanditaSimples => vec![Member],
+        SociedadeAnonima => vec![Shareholder],
+        // Comandita por ações: comanditados are sócios, comanditários hold shares.
+        SociedadeEmComanditaPorAcoes => vec![Shareholder, Member],
+        Condominio => vec![CondoOwner],
+        Associacao => vec![Associate],
+        Cooperativa => vec![Cooperator],
+        // A fundação has no members — only organ titleholders and guests attend.
+        Fundacao => vec![],
+    }
+}
+
+/// The qualidades an attendance row may be recorded under, for a given legal type (ENT-02(g)).
+///
+/// The *membership* term is a property of the legal type, not of the family: the members of a
+/// sociedade por quotas are **sócios**, those of a sociedade anónima are **acionistas**, of a
+/// condomínio **condóminos**, of an associação **associados**, of a cooperativa **cooperadores**.
+/// A sociedade em comandita por ações has both (comanditados are sócios, comanditários are
+/// acionistas), so it offers both; a fundação has no members at all and offers none.
+///
+/// On top of the membership term come the capacities that attend without being members: the
+/// mesa (presidente/secretário), the governing organ (gerente or administrador, per type), a
+/// procurador standing in for someone, the revisor oficial de contas where one exists, a
+/// convidado, and [`SignatoryCapacity::Other`] as the free-text escape hatch.
+///
+/// Returned in the order a picker should show them: membership first, since that is what most
+/// rows on a roll are.
+pub fn attendee_qualities(kind: EntityKind) -> Vec<SignatoryCapacity> {
+    use EntityKind::*;
+    use SignatoryCapacity::*;
+
+    let membership = membership_qualities(kind);
+
+    // The governing organ's own term: gerência in the quota-like types, administração elsewhere.
+    let organ = match kind {
+        SociedadePorQuotas
+        | SociedadeUnipessoalPorQuotas
+        | SociedadeEmNomeColetivo
+        | SociedadeEmComanditaSimples => Manager,
+        _ => Administrator,
+    };
+
+    let mut out = membership;
+    out.extend([Chair, Secretary, organ, Attorney]);
+    // A condomínio has no revisor oficial de contas; every other family may have one.
+    if kind != Condominio {
+        out.push(StatutoryAuditor);
+    }
+    out.extend([Guest, Other]);
+    out
 }
 
 /// Build the [`EntityProfile`] for a legal type (ENT-02). Facets are family-anchored.
@@ -558,6 +632,7 @@ pub fn profile_for(kind: EntityKind) -> EntityProfile {
         signature_policy,
         template_family,
         calendar_presets,
+        attendee_qualities: attendee_qualities(kind),
     }
 }
 
@@ -1381,6 +1456,7 @@ mod tests {
             Attendee {
                 name: "Fração A".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(300)),
@@ -1388,6 +1464,7 @@ mod tests {
             Attendee {
                 name: "Fração B".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Represented,
                 represented_by: Some("Fração A".into()),
                 weight: Some(AttendanceWeight::Permilage(200)),
@@ -1428,6 +1505,7 @@ mod tests {
             Attendee {
                 name: "Fração A".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: None,
@@ -1435,6 +1513,7 @@ mod tests {
             Attendee {
                 name: "Fração B".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Represented,
                 represented_by: Some("Fração A".into()),
                 weight: None,
@@ -1451,6 +1530,7 @@ mod tests {
         act.attendees.push(Attendee {
             name: "Fração C".into(),
             quality: SignatoryCapacity::CondoOwner,
+            quality_note: None,
             presence: PresenceMode::InPerson,
             represented_by: None,
             weight: None,
@@ -1475,5 +1555,85 @@ mod tests {
         act.mesa.presidente = Some("Presidente".into());
         let issues = rule_pack_for(&e).check_act(&act, &e);
         assert!(!issues.iter().any(|i| i.rule_id.starts_with("STATUTE/")));
+    }
+
+    /// The membership qualidade follows the *legal type*, not the family: a sociedade por
+    /// quotas records sócios where a sociedade anónima records acionistas.
+    #[test]
+    fn attendee_qualities_offer_the_membership_term_of_the_legal_type() {
+        use SignatoryCapacity::*;
+        let first = |k| attendee_qualities(k).first().copied();
+
+        assert_eq!(first(EntityKind::SociedadePorQuotas), Some(Member));
+        assert_eq!(
+            first(EntityKind::SociedadeUnipessoalPorQuotas),
+            Some(Member)
+        );
+        assert_eq!(first(EntityKind::SociedadeAnonima), Some(Shareholder));
+        assert_eq!(first(EntityKind::Condominio), Some(CondoOwner));
+        assert_eq!(first(EntityKind::Associacao), Some(Associate));
+        assert_eq!(first(EntityKind::Cooperativa), Some(Cooperator));
+
+        // A sociedade anónima never offers sócio, nor a sociedade por quotas acionista.
+        assert!(!attendee_qualities(EntityKind::SociedadeAnonima).contains(&Member));
+        assert!(!attendee_qualities(EntityKind::SociedadePorQuotas).contains(&Shareholder));
+        // ... and a condomínio is offered neither.
+        let condo = attendee_qualities(EntityKind::Condominio);
+        assert!(!condo.contains(&Member) && !condo.contains(&Shareholder));
+
+        // Comandita por ações has both classes of member.
+        let comandita = attendee_qualities(EntityKind::SociedadeEmComanditaPorAcoes);
+        assert!(comandita.contains(&Shareholder) && comandita.contains(&Member));
+
+        // A fundação has no members at all — the list starts at the mesa.
+        assert_eq!(first(EntityKind::Fundacao), Some(Chair));
+    }
+
+    /// Every list carries the capacities that attend without being members, and the organ term
+    /// follows the type (gerência vs. administração).
+    #[test]
+    fn attendee_qualities_carry_the_non_membership_capacities() {
+        use SignatoryCapacity::*;
+        for kind in [
+            EntityKind::SociedadePorQuotas,
+            EntityKind::SociedadeAnonima,
+            EntityKind::Condominio,
+            EntityKind::Associacao,
+            EntityKind::Fundacao,
+            EntityKind::Cooperativa,
+        ] {
+            let q = attendee_qualities(kind);
+            for expected in [Chair, Secretary, Attorney, Guest, Other] {
+                assert!(q.contains(&expected), "{kind:?} must offer {expected:?}");
+            }
+            // No duplicates, so a picker cannot show the same qualidade twice.
+            let mut seen = q.clone();
+            seen.sort_by_key(|c| format!("{c:?}"));
+            seen.dedup();
+            assert_eq!(seen.len(), q.len(), "{kind:?} offers a duplicate qualidade");
+        }
+
+        assert!(attendee_qualities(EntityKind::SociedadePorQuotas).contains(&Manager));
+        assert!(!attendee_qualities(EntityKind::SociedadePorQuotas).contains(&Administrator));
+        assert!(attendee_qualities(EntityKind::SociedadeAnonima).contains(&Administrator));
+        assert!(!attendee_qualities(EntityKind::SociedadeAnonima).contains(&Manager));
+
+        // A condomínio has no revisor oficial de contas; the other families may.
+        assert!(!attendee_qualities(EntityKind::Condominio).contains(&StatutoryAuditor));
+        assert!(attendee_qualities(EntityKind::SociedadeAnonima).contains(&StatutoryAuditor));
+    }
+
+    /// The derived profile carries the list, so the API/UI never re-derives it.
+    #[test]
+    fn profile_exposes_the_attendee_qualities_for_its_kind() {
+        assert_eq!(
+            profile_for(EntityKind::SociedadeAnonima).attendee_qualities,
+            attendee_qualities(EntityKind::SociedadeAnonima)
+        );
+        assert!(
+            profile_for(EntityKind::SociedadeAnonima)
+                .attendee_qualities
+                .contains(&SignatoryCapacity::Shareholder)
+        );
     }
 }

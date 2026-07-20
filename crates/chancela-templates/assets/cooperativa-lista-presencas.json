@@ -26,7 +26,7 @@
       "rows": [
         {
           "key": "{{ name }}",
-          "value": "{% if presence == 'InPerson' %}Presente{% elif presence == 'Represented' %}Representado{% if represented_by %} por {{ represented_by }}{% endif %}{% else %}Ausente{% endif %} — {{ quality | role_label }}"
+          "value": "{% if presence == 'InPerson' %}Presente{% elif presence == 'Represented' %}Representado{% if represented_by %} por {{ represented_by }}{% endif %}{% else %}Ausente{% endif %}{% if quality_note or quality | quality_label %} — {% endif %}{% if quality_note %}{{ quality_note }}{% elif quality | quality_label %}{{ quality | quality_label }}{% endif %}"
         }
       ]
     },

@@ -43,10 +43,11 @@ pub mod termo;
 
 pub use act::{
     Act, ActId, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
-    Convening, ConveningRecipient, DeliberationItem, DispatchChannel, DocumentReference,
-    MeetingChannel, MemberStatement, Mesa, PresenceMode, SealMetadata, SecondCall,
-    SignatoryCapacity, SignatorySlot, VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY,
-    WrittenResolutionEvidence, WrittenResolutionEvidenceItem, WrittenResolutionEvidenceStatus,
+    Convening, ConveningRecipient, ConveningWaiver, DeliberationItem, DispatchChannel,
+    DocumentReference, MeetingChannel, MemberStatement, Mesa, NoConveningBasis, PresenceMode,
+    SealMetadata, SecondCall, SignatoryCapacity, SignatorySlot, SupersededSigningSnapshot,
+    VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY, WrittenResolutionEvidence,
+    WrittenResolutionEvidenceItem, WrittenResolutionEvidenceStatus,
     WrittenResolutionEvidenceSummary, written_resolution_evidence_summary,
 };
 pub use book::{
@@ -77,8 +78,9 @@ pub use profile::{
     ProfileCalendarRuleSupportStatus, ProfileCalendarScheduledRule, ProfileCalendarSourceStatus,
     ProfileCalendarSuppressedRule, ProfileCalendarSuppressionReason,
     ProfileCalendarUnsupportedReason, ProfileCalendarUnsupportedRule, ProfilePack,
-    SignaturePolicyHint, evaluate_profile_calendar_rule, profile_calendar_due_date_for_year,
-    profile_calendar_plan_for, profile_for, rule_pack_for, supports_profile_calendar_plan,
+    SignaturePolicyHint, attendee_qualities, evaluate_profile_calendar_rule,
+    profile_calendar_due_date_for_year, profile_calendar_plan_for, profile_for, rule_pack_for,
+    supports_profile_calendar_plan,
 };
 pub use rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,

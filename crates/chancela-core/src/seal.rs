@@ -17,7 +17,7 @@ use chancela_ledger::Ledger;
 use crate::act::{
     Act, ActState, AgendaItem, Attachment, Attendee, Convening, DeliberationItem,
     DocumentReference, ManualSignatureOriginalReference, MeetingChannel, Mesa, SealMetadata,
-    SignatorySlot, WrittenResolutionEvidence,
+    SignatorySlot, SupersededSigningSnapshot, WrittenResolutionEvidence,
 };
 use crate::book::{Book, TermoDeAbertura};
 use crate::entity::Entity;
@@ -167,6 +167,12 @@ struct ActPayload<'a> {
     // count produce a byte-identical preimage.
     #[serde(skip_serializing_if = "Option::is_none")]
     page_count: Option<u32>,
+    // Reopen history (append-only). An act that was reopened for correction seals carrying the
+    // record of every canonical snapshot that reopen retired, so the seal binds the regression
+    // rather than hiding it. An act that was never reopened emits no bytes, so its preimage — and
+    // therefore any already-frozen digest — is byte-identical to before this field existed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    superseded_signing_snapshots: Option<&'a [SupersededSigningSnapshot]>,
 }
 
 impl<'a> ActPayload<'a> {
@@ -195,6 +201,8 @@ impl<'a> ActPayload<'a> {
             convening: act.convening.as_ref(),
             attendees: (!act.attendees.is_empty()).then_some(act.attendees.as_slice()),
             page_count: act.page_count,
+            superseded_signing_snapshots: (!act.superseded_signing_snapshots.is_empty())
+                .then_some(act.superseded_signing_snapshots.as_slice()),
         }
     }
 }
@@ -983,6 +991,7 @@ mod tests {
         with_attendees.attendees = vec![crate::act::Attendee {
             name: "Amélia Marques".into(),
             quality: crate::act::SignatoryCapacity::Member,
+            quality_note: None,
             presence: crate::act::PresenceMode::InPerson,
             represented_by: None,
             weight: Some(crate::act::AttendanceWeight::Permilage(250)),
@@ -1193,6 +1202,38 @@ mod tests {
         assert_ne!(without, with, "a frozen page count must bind");
         let json = String::from_utf8(with).unwrap();
         assert!(json.contains("\"page_count\":3"), "{json}");
+    }
+
+    #[test]
+    fn reopen_history_binds_into_the_seal_digest_without_moving_untouched_acts() {
+        // Two halves of one guarantee. An act that was never reopened must produce a preimage
+        // byte-identical to what it produced before the field existed; an act that *was* reopened
+        // must seal carrying that regression, not hiding it.
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let act = ready_act(&book);
+        assert!(act.superseded_signing_snapshots.is_empty());
+        let without = serde_json::to_vec(&ActPayload::of(&act)).unwrap();
+        assert!(
+            !String::from_utf8(without.clone())
+                .unwrap()
+                .contains("superseded_signing_snapshots"),
+            "an act that was never reopened must emit no bytes for the field"
+        );
+
+        let mut reopened = act.clone();
+        reopened.reopen_for_correction().unwrap();
+        reopened.record_superseded_signing_snapshot(crate::act::SupersededSigningSnapshot {
+            document_id: "doc-1".to_owned(),
+            pdf_digest: "aa".repeat(32),
+            actor: "amelia.marques".to_owned(),
+            superseded_at: time::OffsetDateTime::UNIX_EPOCH,
+            reason: "mesa em falta".to_owned(),
+        });
+        reopened.advance_to(ActState::Signing).unwrap();
+
+        let with = serde_json::to_vec(&ActPayload::of(&reopened)).unwrap();
+        assert_ne!(without, with, "a retired signing snapshot must bind");
+        assert!(String::from_utf8(with).unwrap().contains("doc-1"));
     }
 
     #[test]

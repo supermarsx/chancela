@@ -23,7 +23,7 @@
     {
       "kind": "Paragraph",
       "items": "attendees",
-      "template": "{{ name }} — {{ quality | role_label }}{% if weight and weight.Permilage %} — permilagem {{ weight.Permilage }}‰{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}ausente{% endif %}."
+      "template": "{{ name }}{% if quality_note %} — {{ quality_note }}{% elif quality | quality_label %} — {{ quality | quality_label }}{% endif %}{% if weight and weight.Permilage %} — permilagem {{ weight.Permilage }}‰{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}ausente{% endif %}."
     },
     {
       "kind": "Paragraph",

@@ -556,8 +556,9 @@ fn registry_from(assets: &[(&str, &str)]) -> Result<Registry, RegistryError> {
 ///
 /// minijinja filters registered for authors: `long_date` (`"2026-07-08"` → `"8 de julho de
 /// 2026"`), `channel_label` (`MeetingChannel` name → PT label), `role_label`
-/// ([`chancela_core::SignatoryCapacity`] name → PT role label). Built-in filters (`join`, …) are
-/// available too.
+/// ([`chancela_core::SignatoryCapacity`] name → PT role label, for signature blocks), and
+/// `quality_label` (the same enum → the qualidade as it reads on an attendance roll: `Member` is
+/// "Sócio", not "Membro"). Built-in filters (`join`, …) are available too.
 pub fn render(spec: &TemplateSpec, ctx: &Value) -> Result<DocumentModel, RenderError> {
     let env = build_env();
 
@@ -609,6 +610,7 @@ fn build_env() -> minijinja::Environment<'static> {
     env.add_filter("long_date", long_date);
     env.add_filter("channel_label", channel_label);
     env.add_filter("role_label", role_label);
+    env.add_filter("quality_label", quality_label);
     // `threshold("<id>")`: renders a legal threshold — the loud `[a definir: …]` placeholder while
     // unresolved (never a number), the resolved value once the lawyer fills it, or a render error
     // on an unknown id (typo-safe). See the `thresholds` module.
@@ -888,16 +890,63 @@ fn channel_label(value: String) -> String {
     .to_string()
 }
 
-/// [`chancela_core::SignatoryCapacity`] serialized name → PT role label.
+/// [`chancela_core::SignatoryCapacity`] serialized name → PT role label, as it reads under a
+/// signature block ("Presidente da mesa", "Gerente", …).
 fn role_label(value: String) -> String {
     match value.as_str() {
         "Chair" => "Presidente da mesa",
         "Secretary" => "Secretário",
         "Member" => "Membro",
+        "Shareholder" => "Acionista",
+        "Associate" => "Associado",
+        "Cooperator" => "Cooperador",
         "Manager" => "Gerente",
         "Administrator" => "Administrador",
         "Attorney" => "Mandatário",
         "CondoOwner" => "Condómino",
+        "StatutoryAuditor" => "Revisor oficial de contas",
+        "Guest" => "Convidado",
+        // A signature block has no free-text companion field, so the neutral term is all we can
+        // honestly print. Attendance rows use `quality_label` and carry `quality_note`.
+        "Other" => "Outra qualidade",
+        other => other,
+    }
+    .to_string()
+}
+
+/// [`chancela_core::SignatoryCapacity`] serialized name → the PT term as it reads on an
+/// **attendance roll** — the qualidade in which the person attended.
+///
+/// It differs from [`role_label`] in exactly one place that matters: on a roll, `Member` is the
+/// concrete membership term **sócio**, not the abstract "Membro". Which qualidades are offered
+/// for a given entity is decided upstream by [`chancela_core::attendee_qualities`], so a
+/// condomínio's roll never reaches "Sócio" here.
+///
+/// Terms are the masculine singular, which is the generic form Portuguese legal drafting uses and
+/// which the surrounding roll prose (`presente` / `representado` / `ausente`) already follows. The
+/// model records no gender for an attendee, so a feminine reading ("sócia") is available through
+/// the free-text `quality_note` rather than being guessed from a name. An unknown or empty value
+/// renders as the empty string, and the templates omit the clause entirely rather than printing a
+/// dangling "na qualidade de ,".
+fn quality_label(value: String) -> String {
+    match value.as_str() {
+        "" => "",
+        "Chair" => "Presidente da mesa",
+        "Secretary" => "Secretário",
+        "Member" => "Sócio",
+        "Shareholder" => "Acionista",
+        "Associate" => "Associado",
+        "Cooperator" => "Cooperador",
+        "Manager" => "Gerente",
+        "Administrator" => "Administrador",
+        "Attorney" => "Representante (procurador)",
+        "CondoOwner" => "Condómino",
+        "StatutoryAuditor" => "Revisor oficial de contas",
+        "Guest" => "Convidado",
+        // `Other` alone carries no information: the qualidade lives in `quality_note`, and the
+        // templates prefer that note. Rendering nothing here keeps an unfilled note from
+        // producing a meaningless clause.
+        "Other" => "",
         other => other,
     }
     .to_string()
@@ -1916,6 +1965,10 @@ mod tests {
                 "second_call": { "date": "2026-07-15", "time": "15:30", "reduced_quorum": true },
                 "recipients": []
             },
+            // Deliberately absent from the coverage fixture: `convening_waiver` is the
+            // *exceptional* record (a meeting held with no convocatória), so the catalog-wide
+            // sweep must prove the ata spine still renders when it is missing. The recital's own
+            // prose is exercised by `an_ata_recites_the_no_convocatoria_basis_when_one_is_recorded`.
             "represented": {
                 "name": "Bruno Cardoso",
                 "unit": "Fração B — 125‰"
@@ -2195,6 +2248,114 @@ mod tests {
     }
 
     #[test]
+    fn an_ata_recites_the_no_convocatoria_basis_when_one_is_recorded() {
+        // The ata is the record. When there was no convocatória, saying nothing would leave a
+        // reader unable to tell an unconvened meeting from a convened one whose notice simply was
+        // not captured — so the basis is recited on the face of the ata.
+        let reg = load_registry().expect("the full catalog loads");
+
+        // Silent by default: the overwhelmingly common convened ata gains no new prose.
+        let doc = render(
+            reg.get("csc-ata-ag/v1").expect("csc ata"),
+            &coverage_ctx(),
+        )
+        .expect("renders");
+        assert!(
+            !doc_text(&doc).contains("sem convocatória prévia"),
+            "a convened ata must not recite a waiver: {}",
+            doc_text(&doc)
+        );
+
+        let mut ctx = coverage_ctx();
+        ctx["convening_waiver"] = json!({
+            "basis": "AssembleiaUniversal",
+            "grounds": null,
+            "all_agreed_to_meet": true,
+            "all_agreed_to_agenda": true,
+            "evidence_reference": "Anexo I — declaração conjunta dos sócios"
+        });
+
+        let doc = render(reg.get("csc-ata-ag/v1").expect("csc ata"), &ctx).expect("renders");
+        let text = doc_text(&doc);
+        assert!(text.contains("sem convocatória prévia"), "{text}");
+        assert!(text.contains("assembleia universal"), "{text}");
+        assert!(
+            text.contains("artigo 54.º, n.º 1, do Código das Sociedades Comerciais"),
+            "the CSC assembly ata must cite the article it relies on: {text}"
+        );
+        assert!(
+            text.contains("Anexo I — declaração conjunta dos sócios"),
+            "{text}"
+        );
+
+        // The same basis on a condomínio ata recites the facts but cites **no** article: art. 54.º
+        // governs sociedades comerciais and Chancela does not extend it by analogy (the rules
+        // engine raises `CONV/basis-family-unverified` for exactly this case).
+        let doc = render(
+            reg.get("condominio-ata-assembleia/v1").expect("condo ata"),
+            &ctx,
+        )
+        .expect("renders");
+        let text = doc_text(&doc);
+        assert!(text.contains("sem convocatória prévia"), "{text}");
+        assert!(text.contains("todos os condóminos presentes"), "{text}");
+        assert!(
+            !text.contains("artigo 54.º"),
+            "no CSC citation outside the CSC family: {text}"
+        );
+
+        // An `Other` basis recites the operator's stated ground and nothing more.
+        ctx["convening_waiver"] = json!({
+            "basis": "Other",
+            "grounds": "Reunião do órgão realizada por acordo de todos os titulares.",
+            "all_agreed_to_meet": false,
+            "all_agreed_to_agenda": false,
+            "evidence_reference": null
+        });
+        let doc = render(reg.get("csc-ata-ag/v1").expect("csc ata"), &ctx).expect("renders");
+        let text = doc_text(&doc);
+        assert!(text.contains("sem convocatória prévia"), "{text}");
+        assert!(
+            text.contains("Reunião do órgão realizada por acordo de todos os titulares."),
+            "{text}"
+        );
+        assert!(
+            !text.contains("assembleia universal") && !text.contains("artigo 54.º"),
+            "an unspecified basis must not borrow the art. 54.º recital: {text}"
+        );
+    }
+
+    #[test]
+    fn every_ata_in_the_catalog_can_recite_a_no_convocatoria_basis() {
+        let reg = load_registry().expect("the full catalog loads");
+        let mut ctx = coverage_ctx();
+        ctx["convening_waiver"] = json!({
+            "basis": "AssembleiaUniversal",
+            "grounds": null,
+            "all_agreed_to_meet": true,
+            "all_agreed_to_agenda": true,
+            "evidence_reference": null
+        });
+
+        let mut checked = 0;
+        for spec in reg.specs() {
+            if spec.stage != LifecycleStage::Ata || !spec.id.contains("-ata-") {
+                continue;
+            }
+            let doc = render(spec, &ctx)
+                .unwrap_or_else(|e| panic!("{} failed to render: {e:?}", spec.id));
+            assert!(
+                doc_text(&doc).contains("sem convocatória prévia"),
+                "{}: an ata that cannot recite the absence of a convocatória would print a \
+                 meeting with no explanation of how it was called",
+                spec.id
+            );
+            checked += 1;
+        }
+        assert!(checked >= 39, "expected the whole ata spine, saw {checked}");
+    }
+
+    #[test]
     fn convocatoria_templates_render_dispatch_proof_for_every_notice_family() {
         let reg = load_registry().expect("the full catalog loads");
         let notice_ids = [
@@ -2362,6 +2523,153 @@ mod tests {
                 !text.contains("Presenças"),
                 "{id}: roll heading must be omitted when no attendee is named: {text}"
             );
+        }
+    }
+
+    /// The qualidade an attendee is recorded under reaches the page in Portuguese, an
+    /// out-of-vocabulary one falls back to its free text, and neither an `Other` with no note
+    /// nor a missing `quality` leaves a dangling separator behind (t28).
+    #[test]
+    fn attendance_rolls_render_the_qualidade_and_omit_it_cleanly_when_absent() {
+        let reg = load_registry().expect("the full catalog loads");
+        // Selected by the block's `items` binding, not by a text match: the five lista de
+        // presencas specs iterate `attendees` without ever naming it in a template string, so a
+        // text-based filter would silently skip the very family this fact belongs to.
+        // A block that iterates `attendees` *and* renders their qualidade. Selecting on the
+        // `items` binding rather than on a text match is what pulls in the five lista de
+        // presencas specs, which iterate `attendees` without ever naming it in a template
+        // string; requiring `quality` then excludes `condominio-comunicacao-ausentes`, which
+        // walks the same array to address absent owners and deliberately states no qualidade.
+        let renders_a_qualidade = |spec: &&TemplateSpec| {
+            spec.blocks.iter().any(|block| match block {
+                BlockSpec::Paragraph {
+                    items: Some(path),
+                    template,
+                } => path == "attendees" && template.contains("quality"),
+                BlockSpec::KeyValue {
+                    items: Some(path),
+                    rows,
+                } => {
+                    path == "attendees"
+                        && rows
+                            .iter()
+                            .any(|row| row.key.contains("quality") || row.value.contains("quality"))
+                }
+                _ => false,
+            })
+        };
+        let roll_specs: Vec<&TemplateSpec> =
+            reg.specs().iter().filter(renders_a_qualidade).collect();
+        assert!(
+            roll_specs.len() >= 43,
+            "expected every template that recites a roll, found {}",
+            roll_specs.len()
+        );
+        // The five lista de presencas specs are a *second* document family that renders the same
+        // fact, and they must be pinned by the same test as the ata roll - the same qualidade
+        // rendered two different ways across two documents of one book is exactly the kind of
+        // inconsistency this asserts against.
+        for expected in [
+            "csc-lista-presencas/v1",
+            "condominio-lista-presencas/v1",
+            "assoc-lista-presencas/v1",
+            "fundacao-lista-presencas/v1",
+            "cooperativa-lista-presencas/v1",
+        ] {
+            assert!(
+                roll_specs.iter().any(|spec| spec.id == expected),
+                "{expected} must be covered by the qualidade assertions too"
+            );
+        }
+
+        let mut ctx = coverage_ctx();
+        ctx["attendees"] = json!([
+            // A sociedade anónima's members are acionistas, a quotas' are sócios: both terms
+            // must be printable, and "Membro" must not leak onto a roll.
+            { "name": "Ana Rocha", "quality": "Shareholder", "presence": "InPerson" },
+            { "name": "Bruno Dias", "quality": "Member", "presence": "InPerson" },
+            { "name": "Carla Neves", "quality": "StatutoryAuditor", "presence": "InPerson" },
+            // Free text wins over the structured value when the capacity is `Other`.
+            {
+                "name": "Diogo Faria",
+                "quality": "Other",
+                "quality_note": "usufrutuário da quota",
+                "presence": "InPerson"
+            },
+            // `Other` with nothing to say, and a row with no `quality` key at all (the shape a
+            // pre-t28 act deserializes to on the wire): both must render the name alone.
+            { "name": "Elsa Pinto", "quality": "Other", "presence": "InPerson" },
+            { "name": "Filipe Sousa", "presence": "InPerson" },
+            // Both set at once. The API cannot produce this (a note is accepted only alongside
+            // `Other`), but a hand-written payload can, so the templates pin a precedence
+            // instead of printing the qualidade twice: the free text wins and `Sócio` does not
+            // also appear on that row.
+            {
+                "name": "Gabriela Lima",
+                "quality": "Member",
+                "quality_note": "sócia fundadora",
+                "presence": "InPerson"
+            }
+        ]);
+
+        for spec in &roll_specs {
+            let id = &spec.id;
+            let text = doc_text(
+                &render(spec, &ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}")),
+            );
+            assert!(
+                text.contains("Acionista"),
+                "{id}: the acionista qualidade is missing: {text}"
+            );
+            // On a roll `Member` is the concrete membership term, not the abstract "Membro" that
+            // `role_label` prints under a signature block. (Checked on the row itself: several
+            // atas legitimately say "Membros presentes" in their surrounding prose.)
+            let socio_row: String = text[text.find("Bruno Dias").expect("the sócio row renders")..]
+                .chars()
+                .take(30)
+                .collect();
+            assert!(
+                socio_row.contains("Sócio") && !socio_row.contains("Membro"),
+                "{id}: a roll says Sócio, never the abstract Membro: {socio_row}"
+            );
+            assert!(
+                text.contains("Revisor oficial de contas"),
+                "{id}: the ROC qualidade is missing: {text}"
+            );
+            assert!(
+                text.contains("usufrutuário da quota") && !text.contains("Outra qualidade"),
+                "{id}: the free-text qualidade must replace the Other placeholder: {text}"
+            );
+            // A row with no qualidade still names the person and still says how they attended;
+            // what it must not do is leave the separator that framed the qualidade behind as a
+            // doubled or empty clause ("Elsa Pinto — — presente", "Elsa Pinto, , presente").
+            let both: String = text[text.find("Gabriela Lima").expect("the row renders")..]
+                .chars()
+                .take(40)
+                .collect();
+            assert!(
+                both.contains("sócia fundadora") && !both.contains("Sócio"),
+                "{id}: with both set the free text must win, alone: {both}"
+            );
+
+            for name in ["Elsa Pinto", "Filipe Sousa"] {
+                let at = text
+                    .find(name)
+                    .unwrap_or_else(|| panic!("{id}: {name} dropped from the roll: {text}"));
+                let row: String = text[at..].chars().take(40).collect();
+                // `cooperativa-lista-presencas` puts the presence first and capitalises it;
+                // each template keeps its own prose order, so match either casing.
+                assert!(
+                    row.to_lowercase().contains("presente"),
+                    "{id}: {name}'s presence clause is missing: {row}"
+                );
+                for dangling in ["— —", "—  ", ", ,", ",,", "de ,", "de —"] {
+                    assert!(
+                        !row.contains(dangling),
+                        "{id}: an absent qualidade left {dangling:?} after {name}: {row}"
+                    );
+                }
+            }
         }
     }
 

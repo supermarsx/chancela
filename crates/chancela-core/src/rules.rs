@@ -7,8 +7,8 @@
 //! [`crate::seal::seal_act`]).
 
 use crate::act::{
-    Act, AttendanceWeight, MeetingChannel, PresenceMode, SignatoryCapacity, VoteResult,
-    WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY, WrittenResolutionEvidenceStatus,
+    Act, AttendanceWeight, MeetingChannel, NoConveningBasis, PresenceMode, SignatoryCapacity,
+    VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY, WrittenResolutionEvidenceStatus,
     written_resolution_evidence_summary,
 };
 use crate::entity::{Entity, EntityFamily, EntityKind, StatuteOverrides};
@@ -255,6 +255,10 @@ fn civil_baseline(act: &Act, entity: &Entity, prefix: &str) -> Vec<ComplianceIss
         ));
     }
 
+    // How the meeting was called: when the act records that there was *no* convocatória, the
+    // declared basis has to hold up. Silent for every act that records no waiver.
+    issues.extend(no_convening_issues(act, entity));
+
     issues
 }
 
@@ -275,6 +279,125 @@ fn missing_vote_warnings(act: &Act, prefix: &str) -> Vec<ComplianceIssue> {
             )
         })
         .collect()
+}
+
+/// Findings for an act recorded as having been held **without a convocatória**
+/// ([`Act::convening_waiver`]).
+///
+/// Empty for every act that records no waiver, which is every act that predates the field — the
+/// checks below can only fire on a record the operator deliberately created.
+///
+/// **Why exactly two of these block.** An `Error` is expensive: it refuses the seal *and* refuses
+/// `TextApproved → Signing`, so a badly-chosen one stops an operator sending an ata out for
+/// signature. The bar applied here is the one the product uses elsewhere — block only where a
+/// **statute** makes the act defective, and warn everywhere else. The two blocking cases are the
+/// two conditions CSC art. 54.º/1 states in terms, each of which the ata then recites in the
+/// operator's name:
+///
+/// * **all present.** The declared basis is *assembleia universal* but the act's own lista de
+///   presenças records a **member** absent. Art. 54.º/1 conditions the whole mechanism on "todos
+///   estejam presentes", and CSC art. 56.º/1 a) makes deliberações "tomadas em assembleia geral não
+///   convocada" **null** "salvo se todos os sócios tiverem estado presentes ou representados". The
+///   ata would assert that all were present over a list saying otherwise.
+/// * **all agreed.** The declared basis is *assembleia universal* but the agreement art. 54.º/1
+///   requires — "todos manifestem a vontade de que a assembleia se constitua e delibere sobre
+///   determinado assunto", with art. 54.º/2 confining it to "os assuntos consentidos por todos os
+///   sócios" — was never recorded. This is a constitutive condition of the article, not a
+///   documentary nicety.
+///
+/// Neither can strand pre-existing data: both fire only inside a `convening_waiver`, a record that
+/// did not exist until an operator created it. Both are cleared by editing the act, and
+/// `Act::reopen_for_correction` exists as the route back for an act already in `Signing`.
+///
+/// Everything else is advisory, including two cases that might look blocking but rest on product
+/// quality rather than on any article: an `Other` basis with no stated ground (the API already
+/// refuses that with a `422`, so the rule only sees records that arrived by another path), and a
+/// record carrying both a convocatória and a waiver. Likewise the fact that Chancela grounds the
+/// assembleia universal regime only for **sociedades comerciais**: art. 54.º sits in the CSC's
+/// *parte geral*, the Código Civil's associação rules (arts. 173.º/175.º) and the propriedade
+/// horizontal rules (art. 1432.º) contain no equivalent, and whether it reaches them by analogy is
+/// a question for counsel, which the advisory says rather than decides.
+fn no_convening_issues(act: &Act, entity: &Entity) -> Vec<ComplianceIssue> {
+    let Some(waiver) = &act.convening_waiver else {
+        return Vec::new();
+    };
+    let mut issues = Vec::new();
+
+    // A record that both was and was not convened describes no fact. Advisory: the operator may be
+    // mid-correction, and which one is stale is not ours to guess.
+    if act.convening.is_some() {
+        issues.push(ComplianceIssue::warning(
+            "CONV/waiver-conflict",
+            "the act records both a convocatória and a no-convocatória basis; only one of the two \
+             can describe how this meeting was called — remove the one that does not apply",
+        ));
+    }
+
+    match waiver.basis {
+        NoConveningBasis::Other => {
+            // Advisory, not blocking: no article requires the ground to be *written down*, and the
+            // API already refuses a groundless `Other` with a 422, so the only records that reach
+            // here arrived by import or another non-API path. Warning them is enough.
+            if waiver.grounds.as_deref().unwrap_or("").trim().is_empty() {
+                issues.push(ComplianceIssue::warning(
+                    "CONV/waiver-grounds",
+                    "the act records that there was no convocatória on an unspecified basis but \
+                     states no ground; the ata will say the meeting was held without a convocatória \
+                     and give no reason",
+                ));
+            }
+        }
+        NoConveningBasis::AssembleiaUniversal => {
+            // The regime Chancela can ground for this basis is the CSC's. Say so plainly for the
+            // other families instead of silently applying it to them.
+            if entity.family != EntityFamily::CommercialCompany {
+                issues.push(ComplianceIssue::warning(
+                    "CONV/basis-family-unverified",
+                    "the assembleia universal basis recorded here is grounded in CSC art. 54.º, \
+                     which governs sociedades comerciais; Chancela does not determine whether it \
+                     applies to this entity family — confirm the applicable regime with counsel",
+                ));
+            }
+
+            if !waiver.all_agreed_to_meet || !waiver.all_agreed_to_agenda {
+                issues.push(ComplianceIssue::error(
+                    "CSC-54/universal-assembly-agreement",
+                    "the act declares an assembleia universal but does not record that all agreed \
+                     both to the assembly constituting itself and to the matters deliberated \
+                     (CSC art. 54.º, n.os 1 e 2); record the agreement or choose another basis",
+                ));
+            }
+
+            let absent: Vec<&str> = act
+                .attendees
+                .iter()
+                .filter(|a| a.presence == PresenceMode::Absent)
+                .map(|a| a.name.as_str())
+                .collect();
+            if !absent.is_empty() {
+                issues.push(ComplianceIssue::error(
+                    "CSC-54/universal-assembly-attendance",
+                    format!(
+                        "the act declares an assembleia universal (all present) but the lista de \
+                         presenças records {} absent: {}; under CSC art. 56.º/1 a) deliberações \
+                         taken in an assembly that was not convened are null unless all were \
+                         present or represented",
+                        absent.len(),
+                        absent.join(", ")
+                    ),
+                ));
+            } else if act.attendees.is_empty() {
+                issues.push(ComplianceIssue::warning(
+                    "CSC-54/universal-assembly-unverified",
+                    "the act declares an assembleia universal, but carries no structured lista de \
+                     presenças against which 'all present' can be checked; capture the attendance \
+                     rows or confirm the condition manually",
+                ));
+            }
+        }
+    }
+
+    issues
 }
 
 /// Advisory when the act uses a meeting channel the family does not permit (ENT-02(b)).
@@ -1060,7 +1183,7 @@ fn statute_convocation_notice_antecedence_days(act: &Act) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::act::{Act, AgendaItem, Convening};
+    use crate::act::{AgendaItem, Convening, ConveningWaiver};
     use crate::book::BookId;
     use crate::entity::{Entity, EntityKind, Nipc};
     use time::macros::{date, time};
@@ -1198,6 +1321,207 @@ mod tests {
                 .iter()
                 .any(|issue| issue.rule_id.starts_with("STATUTE/convocation-notice")),
             "sufficient recorded antecedence should pass: {issues:?}"
+        );
+    }
+
+    // --- no-convocatória basis (CSC art. 54.º assembleia universal) ----------------------------
+
+    /// A complete act plus a well-formed assembleia universal waiver and an all-present lista.
+    fn universal_act() -> Act {
+        let mut act = complete_act();
+        act.convening_waiver = Some(ConveningWaiver {
+            basis: NoConveningBasis::AssembleiaUniversal,
+            grounds: None,
+            all_agreed_to_meet: true,
+            all_agreed_to_agenda: true,
+            evidence_reference: Some("Declaração conjunta arquivada (Anexo I)".into()),
+        });
+        act.attendees = vec![
+            Attendee {
+                name: "Amélia Marques".into(),
+                quality: SignatoryCapacity::Shareholder,
+                quality_note: None,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: None,
+            },
+            Attendee {
+                name: "Bruno Cardoso".into(),
+                quality: SignatoryCapacity::Shareholder,
+                quality_note: None,
+                presence: PresenceMode::Represented,
+                represented_by: Some("Amélia Marques".into()),
+                weight: None,
+            },
+        ];
+        act
+    }
+
+    #[test]
+    fn no_waiver_recorded_fires_nothing() {
+        // The whole feature is opt-in: an act that records no waiver — which is every act sealed
+        // before the field existed — must be untouched by these checks.
+        let issues = CscArt63RulePack.check_act(&complete_act(), &sa_entity());
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id.starts_with("CONV/") || i.rule_id.starts_with("CSC-54/")),
+            "unexpected no-convocatória findings: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn well_formed_universal_assembly_is_clean() {
+        let issues = CscArt63RulePack.check_act(&universal_act(), &sa_entity());
+        assert!(issues.is_empty(), "unexpected issues: {issues:?}");
+    }
+
+    #[test]
+    fn universal_assembly_with_an_absent_attendee_blocks() {
+        // The act's own lista de presenças falsifies the basis it declares. Blocking, because the
+        // ata would otherwise recite "all present" over a list that says otherwise — and for a
+        // sociedade comercial that is the CSC art. 56.º/1 a) nullity case.
+        let mut act = universal_act();
+        act.attendees.push(Attendee {
+            name: "Carla Neves".into(),
+            quality: SignatoryCapacity::Shareholder,
+            quality_note: None,
+            presence: PresenceMode::Absent,
+            represented_by: None,
+            weight: None,
+        });
+
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CSC-54/universal-assembly-attendance")
+            .unwrap_or_else(|| panic!("missing attendance contradiction: {issues:?}"));
+        assert_eq!(issue.severity, Severity::Error);
+        assert!(
+            issue.message.contains("Carla Neves"),
+            "the finding must name who was absent: {issue:?}"
+        );
+
+        let basis = issue.legal_basis.first().expect("legal basis");
+        assert_eq!(basis.article.as_deref(), Some("54"));
+        assert_eq!(
+            basis.verification,
+            LegalBasisVerification::Pending,
+            "art. 54.º is a structural citation only; no verified source text is claimed"
+        );
+    }
+
+    #[test]
+    fn universal_assembly_without_recorded_agreement_blocks() {
+        // CSC art. 54.º/1 requires that all manifest the will that the assembly constitute itself,
+        // and art. 54.º/2 that it deliberate only on matters all consented to. Both limbs.
+        for (meet, agenda) in [(false, true), (true, false), (false, false)] {
+            let mut act = universal_act();
+            let waiver = act.convening_waiver.as_mut().expect("waiver");
+            waiver.all_agreed_to_meet = meet;
+            waiver.all_agreed_to_agenda = agenda;
+
+            let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+            let issue = issues
+                .iter()
+                .find(|i| i.rule_id == "CSC-54/universal-assembly-agreement")
+                .unwrap_or_else(|| panic!("missing agreement finding for {meet}/{agenda}: {issues:?}"));
+            assert_eq!(issue.severity, Severity::Error);
+        }
+    }
+
+    #[test]
+    fn universal_assembly_without_structured_attendance_only_warns() {
+        // Nothing contradicts the claim; there is simply nothing to check it against. Advisory,
+        // because the free-text/simple ata path (R1/R3) legitimately carries no attendance rows.
+        let mut act = universal_act();
+        act.attendees.clear();
+
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CSC-54/universal-assembly-unverified")
+            .unwrap_or_else(|| panic!("missing unverified finding: {issues:?}"));
+        assert_eq!(issue.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn convocatoria_and_waiver_together_warn() {
+        let mut act = universal_act();
+        act.convening = Some(Convening {
+            antecedence_days: Some(15),
+            ..Convening::default()
+        });
+
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CONV/waiver-conflict")
+            .unwrap_or_else(|| panic!("missing conflict finding: {issues:?}"));
+        assert_eq!(issue.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn other_basis_without_stated_grounds_blocks() {
+        let mut act = complete_act();
+        act.convening_waiver = Some(ConveningWaiver {
+            basis: NoConveningBasis::Other,
+            grounds: Some("   ".into()),
+            all_agreed_to_meet: false,
+            all_agreed_to_agenda: false,
+            evidence_reference: None,
+        });
+
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CONV/waiver-grounds")
+            .unwrap_or_else(|| panic!("missing grounds finding: {issues:?}"));
+        assert_eq!(issue.severity, Severity::Error);
+        assert!(
+            issue.legal_basis.is_empty(),
+            "an operator-stated ground carries no citation Chancela can vouch for: {issue:?}"
+        );
+
+        act.convening_waiver.as_mut().expect("waiver").grounds =
+            Some("Reunião do órgão realizada por acordo de todos os titulares.".into());
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        assert!(
+            !issues.iter().any(|i| i.rule_id == "CONV/waiver-grounds"),
+            "a stated ground clears the finding: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn universal_basis_outside_the_csc_warns_that_the_regime_is_unverified() {
+        // Art. 54.º governs sociedades comerciais. Chancela does not decide whether it reaches a
+        // condomínio by analogy — CC art. 1432.º has no equivalent — so it says so instead.
+        let condo = Entity::new(
+            "Condomínio do Edifício Encosto",
+            Nipc::parse("503004642").unwrap(),
+            "Lisboa",
+            EntityKind::Condominio,
+        );
+        let mut act = universal_act();
+        act.mesa = crate::act::Mesa::default();
+
+        let issues = CondominioRulePack.check_act(&act, &condo);
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CONV/basis-family-unverified")
+            .unwrap_or_else(|| panic!("missing family advisory: {issues:?}"));
+        assert_eq!(issue.severity, Severity::Warning);
+        assert!(
+            issue.message.contains("counsel"),
+            "the advisory must defer to counsel rather than decide: {issue:?}"
+        );
+
+        // The same act under a sociedade comercial raises no such advisory.
+        assert!(
+            !CscArt63RulePack
+                .check_act(&universal_act(), &sa_entity())
+                .iter()
+                .any(|i| i.rule_id == "CONV/basis-family-unverified"),
         );
     }
 
@@ -1456,6 +1780,7 @@ mod tests {
             Attendee {
                 name: "Sócia A".into(),
                 quality: SignatoryCapacity::Member,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Capital(600_000)),
@@ -1463,6 +1788,7 @@ mod tests {
             Attendee {
                 name: "Sócio B".into(),
                 quality: SignatoryCapacity::Member,
+                quality_note: None,
                 presence: PresenceMode::Represented,
                 represented_by: Some("Sócia A".into()),
                 weight: Some(AttendanceWeight::Capital(400_000)),
@@ -1677,6 +2003,7 @@ mod tests {
             Attendee {
                 name: "Fração A".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(700)),
@@ -1684,6 +2011,7 @@ mod tests {
             Attendee {
                 name: "Fração B".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Represented,
                 represented_by: Some("Fração A".into()),
                 weight: Some(AttendanceWeight::Permilage(450)),
@@ -1691,6 +2019,7 @@ mod tests {
             Attendee {
                 name: "Fração C".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Absent,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(900)),
@@ -1728,6 +2057,7 @@ mod tests {
             Attendee {
                 name: "Fração A".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(450)),
@@ -1735,6 +2065,7 @@ mod tests {
             Attendee {
                 name: "Fração B".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Represented,
                 represented_by: Some("Fração A".into()),
                 weight: Some(AttendanceWeight::Permilage(250)),
@@ -1772,6 +2103,7 @@ mod tests {
             Attendee {
                 name: "Fração A".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(400)),
@@ -1779,6 +2111,7 @@ mod tests {
             Attendee {
                 name: "Fração B".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Absent,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(300)),

@@ -57,7 +57,7 @@
     {
       "kind": "Paragraph",
       "items": "attendees",
-      "template": "{{ name }} — {{ quality | role_label }}{% if weight and weight.Capital %} — capital {{ weight.Capital }}{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% else %}ausente{% endif %}{% if represented_by %} (representado por {{ represented_by }}){% endif %}"
+      "template": "{{ name }}{% if quality_note %} — {{ quality_note }}{% elif quality | quality_label %} — {{ quality | quality_label }}{% endif %}{% if weight and weight.Capital %} — capital {{ weight.Capital }}{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% else %}ausente{% endif %}{% if represented_by %} (representado por {{ represented_by }}){% endif %}"
     },
     {
       "kind": "Rule"

@@ -27,6 +27,10 @@
     },
     {
       "kind": "Paragraph",
+      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' %} Estando todos os condóminos presentes ou representados e tendo todos manifestado a vontade de que a assembleia se constituísse e deliberasse sobre os assuntos adiante tratados, a assembleia reuniu sem observância de formalidades prévias de convocação.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
       "template": "{% if convening.second_call and convening.second_call.reduced_quorum %}A assembleia reuniu em segunda convocação, deliberando por maioria dos condóminos presentes, independentemente da percentagem do valor total do prédio que representem, nos termos do artigo 1432.º, n.º 4, do Código Civil.{% endif %}"
     },
     {
@@ -45,7 +49,7 @@
     {
       "kind": "Paragraph",
       "items": "attendees",
-      "template": "{{ name }} — {{ quality | role_label }}{% if weight and weight.Permilage %}, permilagem {{ weight.Permilage }}‰{% endif %}{% if presence == 'InPerson' %}, presente{% elif presence == 'Represented' %}, representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}, ausente{% endif %}."
+      "template": "{{ name }}{% if quality_note %} — {{ quality_note }}{% elif quality | quality_label %} — {{ quality | quality_label }}{% endif %}{% if weight and weight.Permilage %}, permilagem {{ weight.Permilage }}‰{% endif %}{% if presence == 'InPerson' %}, presente{% elif presence == 'Represented' %}, representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}, ausente{% endif %}."
     },
     {
       "kind": "Paragraph",

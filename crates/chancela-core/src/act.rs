@@ -218,15 +218,27 @@ pub struct Attachment {
     pub beginning_of_proof: bool,
 }
 
-/// The capacity in which a signatory signs — part of the evidence (ROL-04 / SIG-04).
+/// The capacity in which a person signs an act or attends the meeting it records — part of the
+/// evidence (ROL-04 / SIG-04, and the `quality` of an [`Attendee`]).
+///
+/// The vocabulary is deliberately shared between the two uses, because most capacities are both
+/// (a gerente attends *and* signs). The two roles differ only in which subset is *offered*:
+/// [`attendee_qualities`](crate::attendee_qualities) narrows the list to the membership term the
+/// entity's legal type actually uses, plus the non-membership capacities that attend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SignatoryCapacity {
     /// Presidente da mesa / chair.
     Chair,
     /// Secretário.
     Secretary,
-    /// Member / sócio / associado.
+    /// Sócio — a member of a sociedade por quotas / em nome coletivo / em comandita.
     Member,
+    /// Acionista — a shareholder of a sociedade anónima or em comandita por ações.
+    Shareholder,
+    /// Associado — a member of an associação.
+    Associate,
+    /// Cooperador — a member of a cooperativa (Código Cooperativo).
+    Cooperator,
     /// Gerente.
     Manager,
     /// Administrador (SA / condomínio).
@@ -235,6 +247,15 @@ pub enum SignatoryCapacity {
     Attorney,
     /// Condómino (condominium owner).
     CondoOwner,
+    /// Revisor oficial de contas / ROC.
+    StatutoryAuditor,
+    /// Convidado — attends without any membership or organic capacity.
+    Guest,
+    /// A capacity outside this vocabulary. On an attendance row it is the escape hatch for a
+    /// legitimate but unmodelled qualidade, and the free text goes in
+    /// [`Attendee::quality_note`] — never into the structured value, so that reporting over
+    /// `quality` stays a closed set.
+    Other,
 }
 
 /// A signature slot on the act: who is expected to sign, in what capacity, and whether
@@ -675,6 +696,74 @@ pub struct Convening {
     pub second_call: Option<SecondCall>,
 }
 
+/// The lawful ground on which a meeting was held **without a prior convocatória**.
+///
+/// Recorded rather than inferred: a bare "no convocatória" flag would let Chancela produce an ata
+/// that is silently defective, because under CSC art. 56.º/1 a) deliberações "tomadas em
+/// assembleia geral não convocada" are **null** *unless* every sócio was present or represented.
+/// Naming the ground is what makes the omission legible on the face of the ata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NoConveningBasis {
+    /// **Assembleia universal** — CSC art. 54.º/1: the sócios may "reunir-se em assembleia geral,
+    /// sem observância de formalidades prévias, desde que todos estejam presentes e todos
+    /// manifestem a vontade de que a assembleia se constitua e delibere sobre determinado
+    /// assunto". Art. 54.º/2 adds that such an assembly "só pode deliberar sobre os assuntos
+    /// consentidos por todos os sócios", which is why the two limbs of the agreement are captured
+    /// separately on [`ConveningWaiver`].
+    ///
+    /// The article sits in the CSC's *parte geral* and so covers every company type. Chancela does
+    /// **not** assert that it extends by analogy to the other entity families it serves — see the
+    /// `CONV/basis-family-unverified` advisory in [`crate::rules`].
+    AssembleiaUniversal,
+    /// Some other ground, stated by the operator in [`ConveningWaiver::grounds`]. Chancela records
+    /// it verbatim and asserts nothing about it.
+    Other,
+}
+
+impl NoConveningBasis {
+    /// Stable wire/display token.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NoConveningBasis::AssembleiaUniversal => "assembleia_universal",
+            NoConveningBasis::Other => "other",
+        }
+    }
+}
+
+/// The record that a meeting was held **without a convocatória**, and on what ground.
+///
+/// This is the deliberate alternative to simply leaving [`Act::convening`] empty. An absent
+/// convening record is ambiguous — it may mean "not captured yet" as easily as "there was none" —
+/// and an ata rendered from it recites nothing at all about how the meeting came to be held. A
+/// waiver says *there was none, and here is why that was lawful*, which is the fact a reader of
+/// the livro de atas needs.
+///
+/// Nothing here is a legal conclusion. The agreement flags record **what the operator captured**,
+/// not a finding that the assembly was validly constituted; confirm any load-bearing case with
+/// counsel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConveningWaiver {
+    /// The lawful ground relied on.
+    pub basis: NoConveningBasis,
+    /// The operator's statement of the ground. Required by the API for
+    /// [`NoConveningBasis::Other`], where the enum carries no meaning on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounds: Option<String>,
+    /// Whether the record captures that **all** those entitled to take part agreed to the assembly
+    /// constituting itself (CSC art. 54.º/1, first limb).
+    #[serde(default)]
+    pub all_agreed_to_meet: bool,
+    /// Whether the record captures that **all** agreed to deliberate on the matters actually taken
+    /// (CSC art. 54.º/1 *in fine* and art. 54.º/2 — the assembly "só pode deliberar sobre os
+    /// assuntos consentidos por todos os sócios").
+    #[serde(default)]
+    pub all_agreed_to_agenda: bool,
+    /// Short reference to any retained evidence of that agreement (signed declaration, the lista de
+    /// presenças itself, an archive locator). The evidence lives in the document/archive store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_reference: Option<String>,
+}
+
 /// How an attendee took part in the meeting (spec gap G2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PresenceMode {
@@ -704,8 +793,18 @@ pub enum AttendanceWeight {
 pub struct Attendee {
     /// Attendee name.
     pub name: String,
-    /// The capacity in which they attend (reuses the signatory capacity vocabulary).
+    /// The capacity in which they attend — *na qualidade de* — from the shared, closed
+    /// [`SignatoryCapacity`] vocabulary. Which values are offered depends on the entity's legal
+    /// type: see [`attendee_qualities`](crate::attendee_qualities).
     pub quality: SignatoryCapacity,
+    /// Free-text qualidade, meaningful **only** when `quality` is [`SignatoryCapacity::Other`].
+    /// Kept separate from the structured value so that reporting over `quality` is never
+    /// poisoned by prose. The API rejects a note on any other capacity.
+    ///
+    /// Skipped when absent so that the canonical act payload — and therefore the seal digest of
+    /// every act sealed before this field existed — is byte-identical to what it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_note: Option<String>,
     /// Whether they were present in person, represented, or absent.
     pub presence: PresenceMode,
     /// When [`PresenceMode::Represented`], the proxy who stood in for them.
@@ -823,6 +922,28 @@ fn rule_pack_version(rule_pack_id: &str) -> String {
         .to_owned()
 }
 
+/// A canonical signing snapshot that a reopen (`Signing → TextApproved`) retired.
+///
+/// Entering `Signing` persists one immutable canonical PDF and the signing model is built on it.
+/// Reopening the act for correction invalidates that PDF: it is no longer the document anyone may
+/// sign or seal against. The bytes are **not** destroyed — the `document.generated` event that
+/// created them is part of the chain — so the retirement is recorded here instead, and the
+/// superseded row is skipped when the canonical signing document is resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SupersededSigningSnapshot {
+    /// Document id of the retired canonical snapshot.
+    pub document_id: String,
+    /// Lowercase SHA-256 the retired snapshot carried, so the retirement names exact bytes.
+    pub pdf_digest: String,
+    /// Actor who reopened the act.
+    pub actor: String,
+    /// When the reopen retired this snapshot (UTC).
+    #[serde(with = "time::serde::rfc3339")]
+    pub superseded_at: OffsetDateTime,
+    /// Operator's reason for the reopen.
+    pub reason: String,
+}
+
 /// An **ata**. Mutable through the pre-seal states; frozen at sealing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Act {
@@ -894,6 +1015,16 @@ pub struct Act {
     /// **append-only**: defaults to `None` so acts predating this field round-trip unchanged.
     #[serde(default)]
     pub convening: Option<Convening>,
+    /// Recorded when the meeting was held **without** a convocatória, naming the lawful ground
+    /// (CSC art. 54.º assembleia universal, or another ground the operator states).
+    ///
+    /// Distinct from `convening: None`, which only means no convening record was captured. The two
+    /// are mutually exclusive in substance, and the rule packs warn when both are populated.
+    ///
+    /// Skipped when absent so the canonical act payload — and therefore the frozen seal digest of
+    /// every act sealed before this field existed — is byte-identical to what it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub convening_waiver: Option<ConveningWaiver>,
     /// The structured lista de presenças (spec gap G2). Additive and **append-only**: defaults
     /// to empty so acts predating this field round-trip unchanged.
     #[serde(default)]
@@ -914,6 +1045,12 @@ pub struct Act {
     /// therefore its frozen digest — is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_count: Option<u32>,
+    /// Canonical signing snapshots retired by a `Signing → TextApproved` reopen, oldest first.
+    ///
+    /// Append-only history of a state regression on an evidentiary object. Empty for every act
+    /// that was never reopened, so it emits no bytes and no existing seal preimage moves.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub superseded_signing_snapshots: Vec<SupersededSigningSnapshot>,
 }
 
 impl Act {
@@ -946,9 +1083,11 @@ impl Act {
             seal_metadata: None,
             retifies: None,
             convening: None,
+            convening_waiver: None,
             attendees: Vec::new(),
             ai_provenance: None,
             page_count: None,
+            superseded_signing_snapshots: Vec::new(),
         }
     }
 
@@ -1043,6 +1182,56 @@ impl Act {
                 to,
             })
         }
+    }
+
+    /// Reopen a `Signing` act for correction (`Signing → TextApproved`).
+    ///
+    /// The one reverse edge in the lifecycle, and deliberately the *only* one. It exists because
+    /// entering `Signing` is otherwise terminal for an act that cannot be sealed: `is_mutable()`
+    /// is false there and sealing requires `Signing`, so an act that reached `Signing` carrying a
+    /// blocking compliance defect had no way out. [`Act::advance_to`] now refuses that entry, but
+    /// acts already stranded still need a route back.
+    ///
+    /// Refused once **any signature has been collected** ([`SignatorySlot::signed`]): a collected
+    /// signature is evidence of a person's assent to specific bytes, and silently invalidating it
+    /// to allow an edit is not a correction the operator gets to make. A signed act is corrected
+    /// the way every sealed act is — by a new act that retifies it (WFL-21).
+    ///
+    /// Returns the page count released by the reopen, if one had been frozen. The frozen count
+    /// (F15) describes the snapshot this reopen retires, so it is cleared and must be re-frozen
+    /// from the corrected content at the next `TextApproved → Signing`. **A capacity-aware caller
+    /// holding a `reserve_pages` reservation for this act must release it with the returned
+    /// count**, or the reservation leaks against the book's capacity.
+    ///
+    /// The canonical PDF snapshot is not touched here — it lives in the document store, not the
+    /// domain model. The caller records its retirement with
+    /// [`Act::record_superseded_signing_snapshot`], which is what stops it being resolved as the
+    /// act's signing document.
+    pub fn reopen_for_correction(&mut self) -> Result<Option<u32>, ActError> {
+        if self.state != ActState::Signing {
+            return Err(ActError::InvalidTransition {
+                from: self.state,
+                to: ActState::TextApproved,
+            });
+        }
+        if self.signatories.iter().any(|slot| slot.signed) {
+            return Err(ActError::SignaturesCollected);
+        }
+        self.state = ActState::TextApproved;
+        Ok(self.page_count.take())
+    }
+
+    /// Record that a canonical signing snapshot was retired by a reopen.
+    pub fn record_superseded_signing_snapshot(&mut self, snapshot: SupersededSigningSnapshot) {
+        self.superseded_signing_snapshots.push(snapshot);
+    }
+
+    /// Whether `document_id` names a canonical snapshot a reopen has retired.
+    #[must_use]
+    pub fn is_signing_snapshot_superseded(&self, document_id: &str) -> bool {
+        self.superseded_signing_snapshots
+            .iter()
+            .any(|snapshot| snapshot.document_id == document_id)
     }
 
     /// Whether an AI-assisted act still needs accepted human review before signing.
@@ -1246,6 +1435,156 @@ mod tests {
         assert!(act.signatories.is_empty());
     }
 
+    fn signing_act() -> Act {
+        let mut act = draft();
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+            ActState::Signing,
+        ] {
+            act.advance_to(state).unwrap();
+        }
+        act
+    }
+
+    fn slot(name: &str, signed: bool) -> SignatorySlot {
+        SignatorySlot {
+            name: name.to_owned(),
+            email: None,
+            capacity: SignatoryCapacity::Chair,
+            signed,
+            permilage: None,
+        }
+    }
+
+    #[test]
+    fn reopen_returns_a_stuck_signing_act_to_textapproved_and_mutability() {
+        let mut act = signing_act();
+        assert!(!act.is_mutable());
+
+        assert_eq!(act.reopen_for_correction(), Ok(None));
+        assert_eq!(act.state, ActState::TextApproved);
+        assert!(act.is_mutable());
+
+        // The whole point: the act can now be corrected and sent back out for signature.
+        act.mesa.presidente = Some("Ana Presidente".into());
+        act.set_deliberations("Aprovadas as contas.").unwrap();
+        act.advance_to(ActState::Signing).unwrap();
+        assert_eq!(act.state, ActState::Signing);
+    }
+
+    #[test]
+    fn reopen_releases_the_frozen_page_count_for_the_retired_snapshot() {
+        let mut act = signing_act();
+        act.page_count = Some(4);
+
+        // The count described the snapshot the reopen retires, so it comes back to the caller
+        // (who owes the book a `release_reserved_pages`) and is cleared for a fresh freeze.
+        assert_eq!(act.reopen_for_correction(), Ok(Some(4)));
+        assert_eq!(act.page_count, None);
+        act.freeze_page_count(6)
+            .expect("corrected content re-freezes at its own length");
+    }
+
+    #[test]
+    fn reopen_is_refused_once_a_signature_has_been_collected() {
+        let mut act = draft();
+        act.add_signatory(slot("Ana Presidente", false)).unwrap();
+        act.add_signatory(slot("Rui Secretário", false)).unwrap();
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+            ActState::Signing,
+        ] {
+            act.advance_to(state).unwrap();
+        }
+        act.signatories[1].signed = true;
+
+        assert_eq!(
+            act.reopen_for_correction(),
+            Err(ActError::SignaturesCollected)
+        );
+        // Refused means untouched: still frozen in Signing, signature intact.
+        assert_eq!(act.state, ActState::Signing);
+        assert!(act.signatories[1].signed);
+    }
+
+    #[test]
+    fn reopen_is_the_only_reverse_edge_and_only_from_signing() {
+        let mut act = draft();
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+        ] {
+            assert!(matches!(
+                act.reopen_for_correction(),
+                Err(ActError::InvalidTransition {
+                    to: ActState::TextApproved,
+                    ..
+                })
+            ));
+            act.advance_to(state).unwrap();
+        }
+        act.advance_to(ActState::Signing).unwrap();
+        act.reopen_for_correction().unwrap();
+
+        // Sealed and archived acts stay append-only: no reopen rescues them (WFL-20/21).
+        act.advance_to(ActState::Signing).unwrap();
+        act.mark_sealed(1, [0u8; 32], 0, seal_metadata()).unwrap();
+        assert!(matches!(
+            act.reopen_for_correction(),
+            Err(ActError::InvalidTransition {
+                from: ActState::Sealed,
+                to: ActState::TextApproved
+            })
+        ));
+        act.archive().unwrap();
+        assert!(matches!(
+            act.reopen_for_correction(),
+            Err(ActError::InvalidTransition {
+                from: ActState::Archived,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn superseded_snapshots_are_recorded_and_round_trip_additively() {
+        // An act that was never reopened emits no key at all, so stored rows do not churn.
+        let act = draft();
+        let value = serde_json::to_value(&act).unwrap();
+        assert!(
+            !value
+                .as_object()
+                .unwrap()
+                .contains_key("superseded_signing_snapshots")
+        );
+        let restored: Act = serde_json::from_value(value).unwrap();
+        assert!(restored.superseded_signing_snapshots.is_empty());
+
+        let mut reopened = signing_act();
+        reopened.reopen_for_correction().unwrap();
+        reopened.record_superseded_signing_snapshot(SupersededSigningSnapshot {
+            document_id: "doc-1".to_owned(),
+            pdf_digest: "aa".repeat(32),
+            actor: "amelia.marques".to_owned(),
+            superseded_at: OffsetDateTime::UNIX_EPOCH,
+            reason: "mesa em falta".to_owned(),
+        });
+        assert!(reopened.is_signing_snapshot_superseded("doc-1"));
+        assert!(!reopened.is_signing_snapshot_superseded("doc-2"));
+
+        let json = serde_json::to_string(&reopened).unwrap();
+        let restored: Act = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, reopened);
+    }
+
     #[test]
     fn archive_only_from_sealed() {
         let mut act = draft();
@@ -1296,6 +1635,43 @@ mod tests {
     }
 
     #[test]
+    fn an_act_without_a_convening_waiver_emits_no_bytes_for_it() {
+        // The seal digest is taken over the canonical act payload, so a new field that serialized
+        // even as `null` would move the preimage of every act sealed before it existed. It must be
+        // absent from the wire entirely until an operator records one.
+        let act = draft();
+        let json = serde_json::to_string(&act).unwrap();
+        assert!(
+            !json.contains("convening_waiver"),
+            "an absent waiver must not appear in the canonical payload: {json}"
+        );
+
+        let restored: Act = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.convening_waiver, None);
+        assert_eq!(restored, act);
+    }
+
+    #[test]
+    fn act_with_a_no_convocatoria_basis_round_trips() {
+        let mut act = draft();
+        act.convening_waiver = Some(ConveningWaiver {
+            basis: NoConveningBasis::AssembleiaUniversal,
+            grounds: None,
+            all_agreed_to_meet: true,
+            all_agreed_to_agenda: true,
+            evidence_reference: Some("Anexo I — declaração conjunta".into()),
+        });
+
+        let json = serde_json::to_string(&act).unwrap();
+        let restored: Act = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, act);
+        let waiver = restored.convening_waiver.expect("waiver");
+        assert_eq!(waiver.basis, NoConveningBasis::AssembleiaUniversal);
+        assert_eq!(waiver.basis.as_str(), "assembleia_universal");
+        assert!(waiver.all_agreed_to_meet && waiver.all_agreed_to_agenda);
+    }
+
+    #[test]
     fn act_with_convening_and_attendees_round_trips() {
         use time::macros::{date, time};
 
@@ -1324,6 +1700,7 @@ mod tests {
             Attendee {
                 name: "Amélia Marques".into(),
                 quality: SignatoryCapacity::Member,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Capital(500_000)),
@@ -1331,6 +1708,7 @@ mod tests {
             Attendee {
                 name: "Encosto Estratégico Lda".into(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Represented,
                 represented_by: Some("Amélia Marques".into()),
                 weight: Some(AttendanceWeight::Permilage(250)),

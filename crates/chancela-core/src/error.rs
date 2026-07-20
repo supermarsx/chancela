@@ -283,6 +283,15 @@ pub enum ActError {
         /// The count captured at the content freeze.
         frozen: u32,
     },
+    /// A reopen was attempted on an act that already carries a collected signature.
+    ///
+    /// Reopening would invalidate the bytes that signature was given for. A signed act is
+    /// corrected by a new act that retifies it (WFL-21), never by editing it back into shape.
+    #[error(
+        "act already carries a collected signature; reopening would invalidate it. \
+         Correct a signed act with a new act that retifies it (WFL-21)"
+    )]
+    SignaturesCollected,
 }
 
 /// Sealing an act or opening a book failed.

@@ -2780,6 +2780,7 @@ fn populated_g1_g2_act(book_id: chancela_core::BookId) -> Act {
         Attendee {
             name: "Amélia Marques".to_string(),
             quality: SignatoryCapacity::Member,
+            quality_note: None,
             presence: PresenceMode::InPerson,
             represented_by: None,
             weight: Some(AttendanceWeight::Capital(500_000)),
@@ -2787,6 +2788,7 @@ fn populated_g1_g2_act(book_id: chancela_core::BookId) -> Act {
         Attendee {
             name: "Encosto Estratégico Lda".to_string(),
             quality: SignatoryCapacity::CondoOwner,
+            quality_note: None,
             presence: PresenceMode::Represented,
             represented_by: Some("Amélia Marques".to_string()),
             weight: Some(AttendanceWeight::Permilage(250)),

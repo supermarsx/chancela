@@ -26,6 +26,10 @@
       "template": "No dia {{ meeting_date | long_date }}, pelas {{ meeting_time }} horas, em {{ place }}, reuniu a assembleia geral da associação {{ entity.name }}, NIPC {{ entity.nipc }}, para deliberar sobre a ordem de trabalhos abaixo transcrita, nos termos dos artigos 170.º e seguintes do Código Civil."
     },
     {
+      "kind": "Paragraph",
+      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' %} Estando todos os associados presentes ou representados e tendo todos manifestado a vontade de que a assembleia se constituísse e deliberasse sobre os assuntos adiante tratados, a assembleia reuniu sem observância de formalidades prévias de convocação.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
+    },
+    {
       "kind": "KeyValue",
       "rows": [
         { "key": "Presidente da mesa da assembleia geral", "value": "{{ mesa.presidente }}" },
@@ -48,7 +52,7 @@
     {
       "kind": "Paragraph",
       "items": "attendees",
-      "template": "{{ name }} — {{ quality | role_label }}{% if weight and weight.Capital %} — capital {{ weight.Capital }}{% elif weight and weight.Permilage %} — permilagem {{ weight.Permilage }}‰{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% else %}ausente{% endif %}"
+      "template": "{{ name }}{% if quality_note %} — {{ quality_note }}{% elif quality | quality_label %} — {{ quality | quality_label }}{% endif %}{% if weight and weight.Capital %} — capital {{ weight.Capital }}{% elif weight and weight.Permilage %} — permilagem {{ weight.Permilage }}‰{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% else %}ausente{% endif %}"
     },
     {
       "kind": "Paragraph",

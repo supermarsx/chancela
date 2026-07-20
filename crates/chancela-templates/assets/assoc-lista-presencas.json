@@ -26,7 +26,7 @@
       "kind": "KeyValue",
       "items": "attendees",
       "rows": [
-        { "key": "{{ name }}", "value": "{{ quality | role_label }} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}ausente{% endif %}" }
+        { "key": "{{ name }}", "value": "{% if quality_note %}{{ quality_note }}{% elif quality | quality_label %}{{ quality | quality_label }}{% endif %}{% if quality_note or quality | quality_label %} — {% endif %}{% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}ausente{% endif %}" }
       ]
     },
     {
