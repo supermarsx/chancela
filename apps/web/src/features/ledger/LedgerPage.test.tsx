@@ -184,6 +184,45 @@ afterEach(() => {
 });
 
 describe('LedgerPage', () => {
+  it('widens the Registo panel only, on a deep link as well as a tab switch', async () => {
+    stubLedgerFetch(page([makeEvent(100)]));
+    renderLedger();
+
+    expect(await screen.findByText('event.100')).toBeTruthy();
+    // Shared with the Minutas catalog: one wide-page rule, not a bespoke override per page.
+    const panel = () => document.querySelector('.route-transition');
+    expect(panel()?.classList.contains('wide-page')).toBe(true);
+
+    // Exportação is two cards, so it stays at the prose measure.
+    fireEvent.click(screen.getByRole('button', { name: 'Exportação' }));
+    expect(await screen.findByText('Documento do registo de auditoria')).toBeTruthy();
+    expect(panel()?.classList.contains('wide-page')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Registo' }));
+    await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(true));
+
+    expectCssRule(await themeCss(), /\.app:has\(\.wide-page\)\s*\{([^}]*)\}/, [
+      'max-width: 92rem;',
+    ]);
+  });
+
+  it('widens the Registo panel when it is reached by deep link, not only by first paint', async () => {
+    stubLedgerFetch(page([makeEvent(10)]));
+    renderLedger(['/arquivo?sec=exportacao']);
+
+    expect(await screen.findByText('Documento do registo de auditoria')).toBeTruthy();
+    expect(document.querySelector('.route-transition')?.classList.contains('wide-page')).toBe(
+      false,
+    );
+
+    cleanup();
+    stubLedgerFetch(page([makeEvent(10)]));
+    renderLedger(['/arquivo?sec=registo']);
+
+    expect(await screen.findByText('event.10')).toBeTruthy();
+    expect(document.querySelector('.route-transition')?.classList.contains('wide-page')).toBe(true);
+  });
+
   it('requests the first page newest-first and presents it in server order', async () => {
     const calls = stubLedgerFetch(page([makeEvent(100), makeEvent(99)]));
     renderWithProviders(<LedgerPage />);

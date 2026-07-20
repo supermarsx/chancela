@@ -218,7 +218,8 @@ export function TemplatesCatalogPage() {
   }
 
   return (
-    <div className="stack">
+    // `wide-page` widens the shell measure: nine columns do not fit the prose measure.
+    <div className="stack wide-page">
       <PageHeader
         title={t('templates.title')}
         lede={t('templates.lede')}

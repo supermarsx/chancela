@@ -471,6 +471,23 @@ describe('TemplatesCatalogPage', () => {
     ]);
   });
 
+  it('opts the catalog out of the shell prose measure so nine columns get the room', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    await screen.findByText('csc-ata-ag/v1');
+    // The page root carries the opt-in; the width itself is a CSS concern jsdom cannot lay out.
+    expect(document.querySelector('.wide-page')).toBeTruthy();
+
+    const css = await themeCss();
+    // The shell measure still applies by default — the opt-out is a separate rule, not a
+    // relaxation of `.app` that every prose page would inherit.
+    expectCssRule(css, /\.app\s*\{([^}]*)\}/, ['max-width: 1080px;']);
+    expectCssRule(css, /\.app:has\(\.wide-page\)\s*\{([^}]*)\}/, ['max-width: 92rem;']);
+    // The gutters are the shell's own padding, so widening must not have dropped it.
+    expectCssRule(css, /\.app\s*\{([^}]*)\}/, ['padding: clamp(1.25rem, 4vw, 3rem);']);
+  });
+
   it('renders pending law references and searches by citation or article text', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 

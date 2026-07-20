@@ -566,8 +566,15 @@ export function LedgerPage() {
         </div>
       </div>
 
-      {/* One sub-tab at a time; the panel replays the route-enter fade on each switch. */}
-      <div className="route-transition" key={section}>
+      {/* One sub-tab at a time; the panel replays the route-enter fade on each switch.
+          `wide-page` rides on the PANEL, not the page: Registo's seven-column chain table
+          wants the room, while Exportação is two cards that read better at the prose
+          measure. `section` is derived from `?sec=` on every render, so a deep link into
+          either tab gets the right width on first paint. */}
+      <div
+        className={section === 'registo' ? 'route-transition wide-page' : 'route-transition'}
+        key={section}
+      >
         {section === 'exportacao' ? (
           <div className="stack">
             <Card title={t('ledger.export.document.title')}>
