@@ -115,7 +115,8 @@ artifacts below `/var/lib/chancela/worker/sources`, and publishes audited jobs
 to `/var/lib/chancela/worker/queue`; the worker consumes that queue and writes
 status/receipts there. The config and secret directories are separate read-only
 mounts. Set `CHANCELA_CONNECTOR_ALLOWED_HOSTS` before selecting a network
-target, and set `CHANCELA_CONNECTOR_SECRETS_HOST_DIR` to a protected directory
+target — an administrator can then narrow it in-app, but never exceed it — and
+set `CHANCELA_CONNECTOR_SECRETS_HOST_DIR` to a protected directory
 for file-backed credentials. See [Sync, backup, and connector worker](connectors-worker.md).
 
 ## Postgres durability backend + Redis cache
@@ -145,6 +146,13 @@ See [Configuration → Secrets](configuration.md#secrets-postgres-profile) for w
 each secret does. The credential-store root key
 (`CHANCELA_CREDENTIAL_KEY_FILE`) is **required** on Postgres — there is no
 SQLCipher-derived key source on this backend.
+
+The same applies to **any Linux or macOS deployment**, in Docker or not: there is
+no OS credential-sealing provider outside Windows, so unless the SQLite store is
+SQLCipher-encrypted you must supply `CHANCELA_CREDENTIAL_KEY_FILE` or signature-
+provider credentials cannot be saved. The server says so at startup rather than
+waiting for someone to fail a save in Settings. See
+[Configuration → Where the root key comes from](configuration.md#where-the-root-key-comes-from).
 
 The app is built with
 `CARGO_FEATURES="chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"`

@@ -52,6 +52,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, Zeroizing};
 
+use crate::DATA_DIR_ENV;
+use crate::database::DB_KEY_ENV;
+
 /// Environment variable carrying an operator-supplied credential root key directly.
 pub const CREDENTIAL_KEY_ENV: &str = "CHANCELA_CREDENTIAL_KEY";
 /// Environment variable pointing at a file containing the operator-supplied credential root key.
@@ -147,10 +150,8 @@ impl fmt::Display for SecretStoreError {
         match self {
             Self::NoKeySource => write!(
                 f,
-                "refusing to store the credential: no credential root key is available. Provide an \
-                 OS-backed current-user key store, enable SQLCipher database encryption, or set \
-                 {CREDENTIAL_KEY_ENV} / {CREDENTIAL_KEY_FILE_ENV}; the store never persists \
-                 plaintext"
+                "refusing to store the credential: {}",
+                no_key_source_guidance()
             ),
             Self::StrictModeUnprotected { level } => write!(
                 f,
@@ -340,6 +341,9 @@ impl CredentialKeyReadOnlyStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CredentialKeyStatusFailure {
     NoKeySource,
+    /// The store has no on-disk backing at all, so no root key can be sealed or resolved. Distinct
+    /// from [`Self::NoKeySource`]: the fix is a data directory, not a key.
+    NotPersistent,
     AmbiguousOperatorKey,
     InvalidOperatorKey,
     MissingRootEnvelope,
@@ -772,6 +776,41 @@ fn resolve_root(
     }
 
     Err(SecretStoreError::NoKeySource)
+}
+
+/// Explain a [`SecretStoreError::NoKeySource`] the way an operator needs to hear it: which of the
+/// three sources [`resolve_root`] tried, why each was unavailable, and the concrete next step on
+/// *this* platform.
+///
+/// Every clause is a fact implied by the error itself rather than a re-probe: reaching
+/// `NoKeySource` means the protector was absent, `db_key` was `None`, and neither operator env var
+/// was set. Nothing here names or echoes key material — only whether a variable is configured.
+pub(crate) fn no_key_source_guidance() -> String {
+    // On Windows the DPAPI protector is always present, so `resolve_root` returns a `Provider` /
+    // `Io` / `Envelope` error long before it can fall through to `NoKeySource`. Say so plainly
+    // rather than telling a Windows operator to go set an env var they should never need.
+    let os_clause = if cfg!(windows) {
+        "OS sealing (Windows DPAPI) is compiled in but was not reached, which means this store has \
+         no data directory to seal a root into"
+    } else {
+        "this host has no OS credential-sealing provider (Windows DPAPI is the only one \
+         implemented)"
+    };
+    let next_step = if cfg!(windows) {
+        format!("set {DATA_DIR_ENV} to a writable directory and restart")
+    } else {
+        format!(
+            "point {CREDENTIAL_KEY_FILE_ENV} at a file holding a high-entropy secret (generate one \
+             with `openssl rand -base64 48`) or run a SQLCipher build with {DB_KEY_ENV}, then \
+             restart"
+        )
+    };
+    format!(
+        "no credential root key is available: {os_clause}; the database is not SQLCipher-encrypted, \
+         so there is no key to derive one from; and neither {CREDENTIAL_KEY_ENV} nor \
+         {CREDENTIAL_KEY_FILE_ENV} is set. To fix it, {next_step}. The store never persists \
+         plaintext."
+    )
 }
 
 /// Read operator credential-key material from the environment, rejecting an ambiguous or empty
@@ -1903,6 +1942,34 @@ mod tests {
         assert!(matches!(err, SecretStoreError::NoKeySource));
         // Nothing was written.
         assert!(!dir.path().join(ROOT_FILE_NAME).exists());
+    }
+
+    /// The refusal an operator reads must enumerate all three sources and end with a step they can
+    /// actually take on the platform they are on.
+    #[test]
+    fn no_key_source_guidance_names_every_source_and_a_next_step() {
+        let message = SecretStoreError::NoKeySource.to_string();
+        for expected in [
+            "OS",
+            "SQLCipher",
+            CREDENTIAL_KEY_ENV,
+            CREDENTIAL_KEY_FILE_ENV,
+            "never persists plaintext",
+        ] {
+            assert!(
+                message.contains(expected),
+                "missing {expected:?}: {message}"
+            );
+        }
+
+        // The next step is platform-specific: telling a Windows operator to set a credential key is
+        // what made the original report a dead end, since DPAPI is already compiled in there.
+        if cfg!(windows) {
+            assert!(message.contains(DATA_DIR_ENV), "{message}");
+        } else {
+            assert!(message.contains("openssl rand"), "{message}");
+            assert!(message.contains(DB_KEY_ENV), "{message}");
+        }
     }
 
     #[test]

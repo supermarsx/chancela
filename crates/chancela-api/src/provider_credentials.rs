@@ -184,9 +184,12 @@ fn key_source_provider(source: &CredentialKeySource) -> Option<&'static str> {
     }
 }
 
-fn key_failure_code(failure: CredentialKeyStatusFailure) -> &'static str {
+/// Sanitized wire code for a key-status failure. Shared with the management list
+/// ([`crate::provider_credentials_write`]) so both surfaces name the same cause identically.
+pub(crate) fn key_failure_code(failure: CredentialKeyStatusFailure) -> &'static str {
     match failure {
         CredentialKeyStatusFailure::NoKeySource => "missing_key_source",
+        CredentialKeyStatusFailure::NotPersistent => "not_persistent",
         CredentialKeyStatusFailure::AmbiguousOperatorKey => "ambiguous_operator_key",
         CredentialKeyStatusFailure::InvalidOperatorKey => "invalid_operator_key",
         CredentialKeyStatusFailure::MissingRootEnvelope => "missing_root_envelope",
@@ -199,6 +202,7 @@ fn sidecar_failure_code(err: &ProviderCredentialError) -> &'static str {
     match err {
         ProviderCredentialError::CorruptSidecar(_) => "corrupt_sidecar",
         ProviderCredentialError::Poisoned => "store_unavailable",
+        ProviderCredentialError::NotPersistent => "not_persistent",
         ProviderCredentialError::Secret(_)
         | ProviderCredentialError::RuntimeStrictModeUnprotected { .. }
         | ProviderCredentialError::UnknownField { .. }

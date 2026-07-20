@@ -37,7 +37,11 @@ pub use model::{
     CancellationToken, Capability, ChecksumEvidence, Connector, ConnectorKind, ConnectorStatus,
     DownloadReceipt, JobPurpose, ObjectInfo, ProbeState, UploadReceipt, UploadRequest,
 };
-pub use network::{ALLOWED_HOSTS_ENV, NetworkPolicy};
+pub use network::{
+    ALLOWED_HOSTS_ENV, DATA_DIR_ENV, MAX_RUNTIME_ALLOWLIST_ENTRIES, NetworkPolicy,
+    RUNTIME_ALLOWLIST_FILE, RUNTIME_ALLOWLIST_SCHEMA_VERSION, RuntimeAllowlist,
+    load_runtime_allowlist,
+};
 pub use retry::{RetryPolicy, retry_operation};
 pub use s3::S3Connector;
 pub use sftp::SftpConnector;

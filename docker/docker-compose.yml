@@ -49,6 +49,15 @@ services:
       CHANCELA_ADDR: 0.0.0.0:8080
       # Keep the server in durable mode; /health must report persistent: true.
       CHANCELA_DATA_DIR: /var/lib/chancela
+      # Signature-provider credentials (CMD/CSC/SCAP API keys and secrets) need a
+      # root key to encrypt at rest. Linux containers have no OS credential-sealing
+      # provider (that is Windows DPAPI only), so saving one is refused until you
+      # supply a key — the server warns about this at startup. Left unset here so a
+      # deployment that never configures a provider needs no secret file. To enable,
+      # create the secret (see docker/secrets/README.md) and uncomment both lines:
+      #   CHANCELA_CREDENTIAL_KEY_FILE: /run/secrets/credential_key
+      # plus a matching `secrets:` list on this service. Encrypting the whole SQLite
+      # database with CHANCELA_DB_KEY_FILE also satisfies it, and protects more.
     ports:
       - target: 8080
         published: "${CHANCELA_HOST_PORT:-8080}"

@@ -151,7 +151,7 @@ pub(crate) async fn validate_upload_session_url(
             format!("unsafe {provider} upload session URL"),
         ));
     }
-    crate::NetworkPolicy::from_env()?
+    crate::NetworkPolicy::effective()?
         .validate_url(value, &format!("{provider} upload session"))
         .await
 }

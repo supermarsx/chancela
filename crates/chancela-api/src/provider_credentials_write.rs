@@ -14,7 +14,8 @@
 //!   construction* (there is no secret-typed field anywhere in [`EntryView`]).
 //! - **Fail closed.** Storing a secret with no key source, or in strict mode with a non-confidential
 //!   protection level, is refused with an actionable 409 before anything is persisted (the store's
-//!   `wrap` enforces this; [`map_store_err`] renders the clean message).
+//!   `wrap` enforces this; [`map_store_err`] renders the clean message). A server with no data
+//!   directory is a 422 instead, because the operator's next step is persistence, not a key.
 //! - **Sanitized audit.** Every mutation appends a ledger event carrying only mode / provider_id /
 //!   entry_id / action / changed field NAMES / enabled / priority — never a secret value.
 //! - **Gating.** Mutations require `settings.manage`; the management list requires `settings.read`
@@ -210,12 +211,64 @@ pub struct ProviderEntriesView {
 }
 
 /// `GET …/provider-credentials` management list (metadata only).
+///
+/// The three storage fields are what the settings UI renders its banner from, and they hold one
+/// invariant: **`protection_level` is `Some` exactly when `can_store` is true.** Before t36 the
+/// field was simply the *current* root's level, so it went absent whenever no root key could be
+/// resolved — and the UI, reading "not confidential", told the operator their secrets were kept
+/// with weaker "obfuscation" protection in precisely the case where nothing could be stored at
+/// all. See [`storage_status`].
 #[derive(Debug, Serialize)]
 pub struct ProviderCredentialsListResponse {
     pub strict: bool,
+    /// The protection a secret stored through this store *would receive*, or `None` when no secret
+    /// can be stored at all.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protection_level: Option<crate::secretstore::ProtectionLevel>,
+    /// Whether the store can accept a secret right now.
+    pub can_store: bool,
+    /// Sanitized reason it cannot, when `can_store` is false. Same vocabulary as the `key_failure`
+    /// of the read-only status endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_failure: Option<&'static str>,
     pub providers: Vec<ProviderEntriesView>,
+}
+
+/// Resolve the honest storage triple from a read-only key-status probe.
+///
+/// The one case that is neither "available" nor "cannot store" is a Windows host whose DPAPI root
+/// envelope has not been written yet (`MissingRootEnvelope`): the key *source* is present and the
+/// first write seals the root, so storing works and the resulting protection is `Confidential`.
+/// Reporting that prospectively is what lets `protection_level.is_none()` mean exactly one thing.
+fn storage_status(
+    key_status: &crate::secretstore::CredentialKeyReadOnlyStatus,
+) -> (
+    Option<crate::secretstore::ProtectionLevel>,
+    bool,
+    Option<&'static str>,
+) {
+    use crate::secretstore::{CredentialKeySource, CredentialKeyStatusFailure, ProtectionLevel};
+
+    if key_status.available {
+        return (key_status.protection_level, true, None);
+    }
+    let pending_os_root = matches!(
+        key_status.failure,
+        Some(CredentialKeyStatusFailure::MissingRootEnvelope)
+    ) && matches!(
+        key_status.key_source,
+        Some(CredentialKeySource::OsProtected { .. })
+    );
+    if pending_os_root {
+        return (Some(ProtectionLevel::Confidential), true, None);
+    }
+    (
+        None,
+        false,
+        key_status
+            .failure
+            .map(crate::provider_credentials::key_failure_code),
+    )
 }
 
 // --- Handlers ------------------------------------------------------------------------------------
@@ -502,6 +555,11 @@ pub async fn list_provider_credentials(
         .map_err(map_store_err)?;
     let mut providers = Vec::with_capacity(statuses.len());
     for record in &statuses {
+        // The SMTP relay account rides the same store but is not a signing provider; it belongs to
+        // the mail settings screen, so it must not appear in the Assinaturas list.
+        if record.mode == CredentialMode::Smtp {
+            continue;
+        }
         let entries = state
             .provider_credentials
             .entry_metadata(record.mode, &record.provider_id)
@@ -516,10 +574,13 @@ pub async fn list_provider_credentials(
         });
     }
 
-    let protection_level = state.provider_credentials.key_status().protection_level;
+    let (protection_level, can_store, storage_failure) =
+        storage_status(&state.provider_credentials.key_status());
     Ok(Json(ProviderCredentialsListResponse {
         strict: state.provider_credentials.strict(),
         protection_level,
+        can_store,
+        storage_failure,
         providers,
     }))
 }
@@ -532,8 +593,17 @@ fn parse_body<T: for<'de> Deserialize<'de>>(body: &Bytes) -> Result<T, ApiError>
 }
 
 fn parse_mode(raw: &str) -> Result<CredentialMode, ApiError> {
-    CredentialMode::from_wire(raw)
-        .ok_or_else(|| ApiError::Unprocessable(format!("unknown credential mode {raw:?}")))
+    let mode = CredentialMode::from_wire(raw)
+        .ok_or_else(|| ApiError::Unprocessable(format!("unknown credential mode {raw:?}")))?;
+    // `smtp` shares the credential store but is NOT a signing provider: it is owned by the mail
+    // settings (`PUT /v1/settings/email`), which enforces its own shape. Rejecting it here keeps the
+    // two surfaces from writing the same record with different validation.
+    if mode == CredentialMode::Smtp {
+        return Err(ApiError::Unprocessable(format!(
+            "unknown credential mode {raw:?}"
+        )));
+    }
+    Ok(mode)
 }
 
 /// Resolve the path provider segment. The literal `_` denotes the single-instance provider (`""`).
@@ -545,7 +615,10 @@ fn resolve_provider(mode: CredentialMode, raw: &str) -> Result<String, ApiError>
         raw.to_owned()
     };
     match mode {
-        CredentialMode::Cmd | CredentialMode::Scap => {
+        // `Smtp` is unreachable here — `parse_mode` refuses it before this point — but it is
+        // single-instance, so it groups with the other single-instance modes rather than widening
+        // the match to a catch-all that would silently absorb a future mode.
+        CredentialMode::Cmd | CredentialMode::Scap | CredentialMode::Smtp => {
             if !provider_id.is_empty() {
                 return Err(ApiError::Unprocessable(format!(
                     "mode {} is single-instance; use \"_\" as the provider id",
@@ -688,12 +761,27 @@ async fn audit(
 
 /// Render a store error as a clean HTTP status. Never echoes secret material.
 fn map_store_err(err: ProviderCredentialError) -> ApiError {
+    map_store_err_for("provider-credential secrets", err)
+}
+
+/// [`map_store_err`] with the subject named, so the store's other owner (t23's SMTP relay password)
+/// gets the same fail-closed messages without saying "provider credential" to an operator who is
+/// configuring mail.
+pub(crate) fn map_store_err_for(subject: &str, err: ProviderCredentialError) -> ApiError {
     match err {
-        ProviderCredentialError::Secret(SecretStoreError::NoKeySource) => ApiError::Conflict(
-            "cannot store provider-credential secrets: no credential key source is available \
-             (enable SQLCipher or OS sealing, or set CHANCELA_CREDENTIAL_KEY)"
-                .to_owned(),
-        ),
+        ProviderCredentialError::Secret(SecretStoreError::NoKeySource) => {
+            ApiError::Conflict(format!(
+                "cannot store {subject}: {}",
+                crate::secretstore::no_key_source_guidance()
+            ))
+        }
+        // Mirrors the register of the other "this server has no data dir" refusals (`backup.rs`,
+        // `data_status.rs`, `connector_jobs.rs`): a 422 naming the variable to set.
+        ProviderCredentialError::NotPersistent => ApiError::Unprocessable(format!(
+            "cannot store {subject}: this server is running in-memory, so there is nowhere to \
+             persist them or to seal a credential key. Set {} to a writable directory and restart.",
+            crate::DATA_DIR_ENV
+        )),
         ProviderCredentialError::Secret(SecretStoreError::StrictModeUnprotected { level }) => {
             ApiError::Conflict(format!(
                 "strict credential storage is enabled but the protection level is {level} (not \
@@ -889,6 +977,64 @@ mod tests {
         let owner = seed_token(&state, OWNER_ROLE_ID).await;
         let (status, b) = send_with(state, body_req("POST", uri, body), Some(&owner)).await;
         assert_eq!(status, StatusCode::CREATED, "{b}");
+    }
+
+    /// The reported bug: saving a credential on a server with no data directory. The refusal must
+    /// point at persistence — the previous message blamed the credential key, which sent operators
+    /// off to set `CHANCELA_CREDENTIAL_KEY` and left them just as stuck.
+    #[tokio::test]
+    async fn create_entry_without_persistence_explains_the_data_dir() {
+        let state = AppState::default();
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        let uri = "/v1/signature/provider-credentials/csc/encosto-qtsp/entries";
+        let body = json!({ "label": "Primária", "set": { "client_secret": "sk_live_zzz" } });
+
+        let (status, b) = send_with(state, body_req("POST", uri, body), Some(&token)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{b}");
+        let message = b.to_string();
+        assert!(message.contains("CHANCELA_DATA_DIR"), "{message}");
+        assert!(message.contains("in-memory"), "{message}");
+        assert!(!message.contains("CHANCELA_CREDENTIAL_KEY"), "{message}");
+        assert!(!message.contains("sk_live_zzz"), "{message}");
+    }
+
+    /// The settings banner reads its whole story from three fields, and it may only claim a
+    /// protection level when a secret can actually be stored. An in-memory server stores nothing,
+    /// so it must report `can_store: false` and NO `protection_level` — the old response omitted
+    /// the level alone, which the UI read as "not confidential" and rendered as the weaker
+    /// obfuscation warning, telling operators their secrets were merely obfuscated when in truth
+    /// none could be saved at all.
+    #[tokio::test]
+    async fn list_never_claims_a_protection_level_it_cannot_deliver() {
+        let state = AppState::default();
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        let uri = "/v1/signature/provider-credentials";
+
+        let (status, body) = send_with(state, get(uri), Some(&token)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["can_store"], false, "{body}");
+        assert!(body["protection_level"].is_null(), "{body}");
+        assert_eq!(body["storage_failure"], "not_persistent", "{body}");
+    }
+
+    /// The mirror case: a real store with a usable key source reports the level it will deliver,
+    /// and says nothing about a failure.
+    #[tokio::test]
+    async fn list_reports_the_protection_level_a_usable_store_delivers() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+
+        let (status, body) = send_with(
+            state,
+            get("/v1/signature/provider-credentials"),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["can_store"], true, "{body}");
+        assert_eq!(body["protection_level"], "confidential", "{body}");
+        assert!(body["storage_failure"].is_null(), "{body}");
     }
 
     #[tokio::test]
@@ -1160,7 +1306,11 @@ mod tests {
 
     #[tokio::test]
     async fn create_without_key_source_fails_closed() {
-        // The default in-memory store has no key source, so storing a secret must fail closed.
+        // The default in-memory store cannot persist anything, so storing a secret must fail
+        // closed. Since t16 split the two causes apart this is the NotPersistent branch (422 —
+        // "set CHANCELA_DATA_DIR"), not the generic no-key-source 409: the operator's next step is
+        // a data directory, not a key. `create_entry_without_persistence_explains_the_data_dir`
+        // asserts the message; this asserts the status stays a refusal.
         let state = AppState::default();
         let token = seed_token(&state, OWNER_ROLE_ID).await;
         let (status, _) = send_with(
@@ -1173,7 +1323,7 @@ mod tests {
             Some(&token),
         )
         .await;
-        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[tokio::test]

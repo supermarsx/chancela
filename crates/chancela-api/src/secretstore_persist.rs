@@ -94,6 +94,9 @@ pub const FIELD_SECRET: &str = "secret";
 pub const FIELD_PKCS12_PFX: &str = "pfx_der";
 /// LocalPkcs12 PKCS#12 passphrase field.
 pub const FIELD_PKCS12_PASSPHRASE: &str = "passphrase";
+/// Outbound-SMTP account password field (t23). The only secret the mail settings hold; the host,
+/// port, username, encryption mode and sender identity are non-secret and live in `settings.json`.
+pub const FIELD_SMTP_PASSWORD: &str = "smtp_password";
 
 /// The entry id used by the legacy flat [`ProviderCredentialStore::put`]/[`read`](
 /// ProviderCredentialStore::read)/[`statuses`](ProviderCredentialStore::statuses) shims, which map
@@ -115,6 +118,12 @@ pub enum CredentialMode {
     Scap,
     /// Local PKCS#12 (PFX) software certificate held at rest (base64 blob + passphrase).
     LocalPkcs12,
+    /// Outbound SMTP relay account (t23). Not a signing provider — it rides this store purely so the
+    /// mail password gets the same AEAD-at-rest, write-only, fail-closed treatment as every other
+    /// secret, instead of a second secret path. It is single-instance (`provider_id` is always `""`)
+    /// and is deliberately excluded from the `/v1/signature/provider-credentials` surface; the mail
+    /// password is written and cleared only through `PUT /v1/settings/email`.
+    Smtp,
 }
 
 impl CredentialMode {
@@ -125,6 +134,7 @@ impl CredentialMode {
             Self::CscQtsp => "csc",
             Self::Scap => "scap",
             Self::LocalPkcs12 => "pkcs12",
+            Self::Smtp => "smtp",
         }
     }
 
@@ -135,6 +145,7 @@ impl CredentialMode {
             "csc" => Some(Self::CscQtsp),
             "scap" => Some(Self::Scap),
             "pkcs12" => Some(Self::LocalPkcs12),
+            "smtp" => Some(Self::Smtp),
             _ => None,
         }
     }
@@ -163,6 +174,7 @@ impl CredentialMode {
                 FIELD_HTTP_BASIC_PASSWORD,
             ],
             Self::LocalPkcs12 => &[FIELD_PKCS12_PFX, FIELD_PKCS12_PASSPHRASE],
+            Self::Smtp => &[FIELD_SMTP_PASSWORD],
         }
     }
 
@@ -306,6 +318,23 @@ impl CredentialFieldSet for Pkcs12CredentialFields {
         let mut pairs = Vec::new();
         push_pair(&mut pairs, FIELD_PKCS12_PFX, self.pfx_der_b64);
         push_pair(&mut pairs, FIELD_PKCS12_PASSPHRASE, self.passphrase);
+        pairs
+    }
+}
+
+/// Outbound-SMTP secret fields (t23): just the relay account password.
+#[derive(Default)]
+pub struct SmtpCredentialFields {
+    /// The SMTP AUTH password for [`crate::settings::EmailSettings::username`].
+    pub password: Option<Zeroizing<String>>,
+}
+
+impl CredentialFieldSet for SmtpCredentialFields {
+    const MODE: CredentialMode = CredentialMode::Smtp;
+
+    fn into_set_pairs(self) -> Vec<(&'static str, Zeroizing<String>)> {
+        let mut pairs = Vec::new();
+        push_pair(&mut pairs, FIELD_SMTP_PASSWORD, self.password);
         pairs
     }
 }
@@ -714,6 +743,11 @@ fn sidecar_tmp_path(path: &Path) -> PathBuf {
 pub enum ProviderCredentialError {
     /// A crypto-core failure (no key source, strict-mode refusal, AEAD auth failure, …).
     Secret(SecretStoreError),
+    /// The server is running with no data directory, so the store has nowhere to persist the
+    /// encrypted records *or* to seal a root key. Kept separate from
+    /// [`SecretStoreError::NoKeySource`] because the operator's next step is completely different:
+    /// configure persistence, not a credential key.
+    NotPersistent,
     /// Runtime plaintext use was refused because strict mode requires confidential protection.
     RuntimeStrictModeUnprotected {
         /// The current non-confidential protection level.
@@ -745,6 +779,11 @@ impl fmt::Display for ProviderCredentialError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Secret(e) => write!(f, "{e}"),
+            Self::NotPersistent => write!(
+                f,
+                "storing provider credentials requires on-disk persistence; set {}",
+                crate::DATA_DIR_ENV
+            ),
             Self::RuntimeStrictModeUnprotected { level } => write!(
                 f,
                 "refusing to read provider credentials at runtime: strict credential storage is \
@@ -947,7 +986,7 @@ impl ProviderCredentialStore {
 
         match &self.backing {
             Backing::InMemory => {
-                CredentialKeyReadOnlyStatus::unavailable(CredentialKeyStatusFailure::NoKeySource)
+                CredentialKeyReadOnlyStatus::unavailable(CredentialKeyStatusFailure::NotPersistent)
             }
             Backing::DataDir {
                 data_dir, db_key, ..
@@ -959,7 +998,8 @@ impl ProviderCredentialStore {
     }
 
     /// Resolve (and cache) the S1 crypto core, creating the OS-sealed root on first use. Fails closed
-    /// with [`SecretStoreError::NoKeySource`] when no root key is available.
+    /// with [`SecretStoreError::NoKeySource`] when no root key is available, or with
+    /// [`ProviderCredentialError::NotPersistent`] when there is no data directory to resolve one in.
     fn secretstore(&self) -> Result<CredentialSecretStore, ProviderCredentialError> {
         let mut slot = self
             .secretstore
@@ -975,7 +1015,10 @@ impl ProviderCredentialStore {
             | Backing::Db {
                 data_dir, db_key, ..
             } => (data_dir.as_path(), db_key.as_ref()),
-            Backing::InMemory => return Err(SecretStoreError::NoKeySource.into()),
+            // No data directory ⇒ nowhere to seal a root and nowhere to write the record. This is a
+            // persistence gap, not a key gap: every real key source (OS-sealed root, SQLCipher-
+            // derived, operator env) is still moot until the server persists at all.
+            Backing::InMemory => return Err(ProviderCredentialError::NotPersistent),
         };
         let store = CredentialSecretStore::resolve(
             data_dir,
@@ -2323,10 +2366,61 @@ mod tests {
                 &[],
             )
             .expect_err("must fail closed");
-        assert!(matches!(
-            err,
-            ProviderCredentialError::Secret(SecretStoreError::NoKeySource)
-        ));
+        // The refusal must name the *persistence* gap, not a missing key: an operator told to set
+        // CHANCELA_CREDENTIAL_KEY here would set it and still not be able to save anything.
+        assert!(matches!(err, ProviderCredentialError::NotPersistent));
+        let message = err.to_string();
+        assert!(message.contains("CHANCELA_DATA_DIR"), "{message}");
+        assert!(!message.contains("CHANCELA_CREDENTIAL_KEY"), "{message}");
+        assert_eq!(
+            store.key_status().failure,
+            Some(CredentialKeyStatusFailure::NotPersistent)
+        );
+    }
+
+    /// The production Windows path: a data-dir-backed store with **no** SQLCipher key and **no**
+    /// operator env var must still store and read back a secret, because DPAPI seals a root into the
+    /// data directory. This is the case the reported bug was mistakenly blamed on.
+    #[cfg(windows)]
+    #[test]
+    fn windows_data_dir_store_round_trips_without_any_operator_key() {
+        let dir = TempDir::new("windows-default");
+        // `load`, not `load_with_db_key`: exactly what `AppState::try_with_data_dir` builds.
+        let store = ProviderCredentialStore::load(dir.path(), false);
+        store
+            .put(
+                CredentialMode::Scap,
+                "encosto-scap",
+                ScapCredentialFields {
+                    secret: Some(zeroizing("dpapi-round-trip-secret")),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("store must resolve a DPAPI-sealed root with no operator configuration");
+
+        assert_eq!(
+            store.key_source().expect("key source"),
+            CredentialKeySource::OsProtected {
+                provider: "windows-current-user-dpapi"
+            }
+        );
+        assert_eq!(
+            store.protection_level().expect("protection level"),
+            ProtectionLevel::Confidential
+        );
+
+        // Read back through a *fresh* store over the same dir, so the sealed root really persisted.
+        let reloaded = ProviderCredentialStore::load(dir.path(), false);
+        let record = reloaded
+            .read(CredentialMode::Scap, "encosto-scap")
+            .expect("read")
+            .expect("record present");
+        assert_eq!(
+            record.fields.get(FIELD_SECRET).map(|z| z.as_str()),
+            Some("dpapi-round-trip-secret")
+        );
     }
 
     #[test]

@@ -55,11 +55,29 @@ configuration and credentials remain read-only runtime inputs.
 | Variable | Purpose |
 |---|---|
 | `CHANCELA_WORKER_CONFIG` | Host path to the worker JSON configuration mounted read-only at `/etc/chancela-worker/config.json`. |
-| `CHANCELA_CONNECTOR_ALLOWED_HOSTS` | Required comma-separated exact host/IP/CIDR allowlist for non-local targets. Wildcards are rejected; private DNS results also require an explicit IP/CIDR. |
+| `CHANCELA_CONNECTOR_ALLOWED_HOSTS` | Comma-separated exact host/IP/CIDR allowlist for non-local targets, and a **ceiling** the in-app setting can only narrow (see below). Wildcards are rejected; private DNS results also require an explicit IP/CIDR. |
 | `CHANCELA_CONNECTOR_SECRETS_DIR` | In-container canonical root for file-backed connector secrets. Compose fixes this to `/run/chancela-connector-secrets`. |
 | `CHANCELA_CONNECTOR_SECRETS_HOST_DIR` | Protected host directory mounted read-only at the connector secrets root. |
 | `CHANCELA_CONNECTOR_SECRET_<NAME>` | Direct runtime secret value. References in target configuration must use this strict namespace. |
 | `CHANCELA_CONNECTOR_SECRET_<NAME>_FILE` | File containing the secret; it must canonicalize beneath `CHANCELA_CONNECTOR_SECRETS_DIR` without symlink components and be at most 64 KiB. |
+
+### Connector egress allowlist: environment vs. Settings
+
+The outbound host allowlist is the one boundary configurable from both places, so its
+precedence is explicit:
+
+- **Environment variable set** — it is a hard ceiling. The in-app list (Settings →
+  Operações, `settings.manage` at Global) may only narrow it; an entry outside the ceiling
+  is rejected with a `422`. This is the recommended posture for a hardened deployment.
+- **Environment variable unset** — the in-app list is the sole egress boundary, and the UI
+  says so.
+- **Neither set** — network connectors fail closed, unchanged from before.
+
+Entries saved in-app are validated more strictly than the variable (no wildcards, schemes,
+ports or paths; no loopback, link-local/metadata, multicast or over-broad CIDRs), each
+change is ledgered as `connector.allowlist.updated`, and changes apply without restarting
+the API or the worker. See [Sync, backup, and connector worker](connectors-worker.md) for
+the full rule and the security trade-off.
 
 API-created jobs use server-derived paths below
 `<CHANCELA_DATA_DIR>/worker/sources` and the durable queue at
@@ -85,12 +103,47 @@ by an HKDF-SHA256-derived master key.
 
 | Variable | Purpose |
 |---|---|
-| `CHANCELA_CREDENTIAL_KEY` / `CHANCELA_CREDENTIAL_KEY_FILE` | Root key for the credential store. **Required** on the Postgres backend (no SQLCipher-derived source). |
+| `CHANCELA_CREDENTIAL_KEY` / `CHANCELA_CREDENTIAL_KEY_FILE` | Root key for the credential store. **Required** whenever no other source applies — see the table below. |
 | `CHANCELA_CREDENTIAL_STRICT` | Fail-closed unless the resolved protection level is confidential. |
 
-The root key can also come from an OS-sealed envelope (Windows DPAPI) or be
-derived from the SQLCipher DB key on SQLite. Treat it like a master key: back it
-up out of band, rotate it deliberately, never log or commit it. See
+### Where the root key comes from
+
+The store resolves a root key at the moment a credential is first saved, in this
+order, and **refuses to save anything** if none applies — it never falls back to
+storing a provider secret in plaintext.
+
+| # | Source | Applies when | Protection level |
+|---|---|---|---|
+| 1 | OS-sealed envelope (Windows DPAPI) | The server runs on **Windows** with a data directory. Nothing to configure: a random root is generated and sealed to the current Windows user in `provider-credentials-root.json`. | confidential |
+| 2 | Derived from the SQLCipher DB key | The SQLite store is encrypted (`sqlcipher` build + `CHANCELA_DB_KEY`/`_FILE`). | confidential |
+| 3 | `CHANCELA_CREDENTIAL_KEY` / `_FILE` | Set by the operator. | confidential with an encrypted DB, otherwise obfuscation |
+
+So in practice:
+
+- **Windows (desktop app or `chancela-server`)** — works out of the box via DPAPI.
+  The sealed root is bound to the Windows user account *and* machine: it does not
+  survive copying the data directory to another host or user, so back the
+  credentials up by re-entering them there.
+- **Linux/macOS, Docker, and every Postgres deployment** — there is no OS-sealing
+  provider, so you must supply source 2 or 3. Set
+  `CHANCELA_CREDENTIAL_KEY_FILE` to a file containing a high-entropy secret:
+
+    ```sh
+    openssl rand -base64 48 > /run/secrets/credential_key
+    chmod 600 /run/secrets/credential_key
+    ```
+
+  Prefer the `_FILE` form over `CHANCELA_CREDENTIAL_KEY`: an env var is visible to
+  anything that can read `/proc/<pid>/environ` and tends to end up in shell
+  history and process listings. Setting both is a fail-closed configuration error.
+- **In-memory mode (no `CHANCELA_DATA_DIR` and no `chancela-data/`)** — provider
+  credentials cannot be saved at all, because there is nowhere to persist them or
+  to seal a root. No credential key will help; set `CHANCELA_DATA_DIR`. The server
+  prints a warning at startup whenever credentials could not be stored.
+
+Treat the root key like a master key: back it up out of band, rotate it
+deliberately, never log or commit it. Losing it does not corrupt anything else —
+the stored provider secrets simply become unreadable and must be re-entered. See
 [`docs/security/hardened-docker.md`](security/hardened-docker.md#the-credential-root-key).
 
 ## Trust, signature, and integration variables
@@ -216,6 +269,7 @@ own data and self-gate on their own permissions.
 | **Identity** (`identidade`) | Organization name and the default audit-actor note. |
 | **Documents** (`documentos`) | Document locale, default *ata* numbering scheme, and the CAE update URL. |
 | **Signing** (`assinaturas`) | Preferred signature family, TSA/TSL URLs, and the multi-row TSL sources + TSA providers. |
+| **Email** (`email`) | The outbound SMTP relay: host, port, encryption, sender identity, the write-only relay password, and a test send (see below). |
 | **Management** (`gestao`) | Reminders, registry auto-update, retained-export cleanup, backup-recovery policy, entity columns, AI toggle. |
 | **Platform** (`operacoes`) | API server, MCP stdio server, logging overrides, audit, and a live platform-log tail. |
 | **Privacy** (`privacidade`) | GDPR/DSR tooling: privacy compliance, processor and DPIA registers. |
@@ -236,3 +290,49 @@ HTTP auth; **CSC and PKCS#12 support multiple ordered instances** with a priorit
 order you can reorder for **failover**. Every secret input is write-only — the
 API returns only a per-field `configured` flag plus the last four characters,
 never the stored value.
+
+### Outbound email (SMTP)
+
+The **Email** section configures the SMTP relay the application sends through.
+It is reserved to administrators: every endpoint below requires `settings.manage`
+at global scope — the same gate as `PUT /v1/settings` — which the **Owner** and
+**Platform Administrator** roles hold and **Tenant Administrator** deliberately
+does not.
+
+**Scope, stated plainly:** configuring SMTP makes the relay usable and verifiable.
+It does not by itself cause any feature to start sending mail — external-signer
+invites and notifications are unchanged and still surface in-app.
+
+| Setting | Notes |
+|---|---|
+| `email.enabled` | Master switch. Off by default. A half-filled configuration can be saved while `enabled` is false; turning it on requires `host` and `from_address`. |
+| `email.host` / `email.port` | Relay hostname (also the name the TLS certificate must match) and port. Defaults to `587`. |
+| `email.encryption` | `starttls` (default), `implicit_tls` (port 465), or `none`. |
+| `email.username` | SMTP AUTH user. Leave empty for a relay that takes no credentials. |
+| `email.from_address` / `email.from_name` | Envelope sender + `From:` header. |
+| `email.helo_name` | Name announced in `EHLO`; defaults to the `from_address` domain. |
+| `email.allow_insecure` | Explicit acknowledgement required to use `encryption: none`. |
+
+**TLS is on by default and cannot be dropped silently.** In `starttls` mode a
+relay that does not advertise `STARTTLS` is a hard failure, not a downgrade, and
+the client refuses the upgrade if the server pipelines data after its `STARTTLS`
+reply (STARTTLS response injection). Choosing `none` is rejected by the server
+with a `422` unless `allow_insecure` is also `true`, so an unencrypted relay is
+only ever reached deliberately.
+
+**The password is never in `settings.json`.** It is written through
+`PUT /v1/settings/email/password`, stored AEAD-encrypted in the same credential
+store as the signing-provider secrets, and cleared with
+`DELETE /v1/settings/email/password`. No endpoint returns it —
+`GET /v1/settings/email/status` reports a `password_configured` boolean and
+nothing else. Each change appends a ledger event (`email.password.updated` /
+`email.password.cleared`) recording who and when, never the value.
+
+**Test send.** `POST /v1/settings/email/test` with `{"to": "…"}` opens a real
+session and reports the relay's real answer. A relay rejection is a `200` whose
+body carries `ok: false` and a structured `failure` — the stage (`auth`,
+`rcpt_to`, `starttls`, …), the kind, the SMTP code, the RFC 3463 enhanced status
+code, and the server's own text — because `535 5.7.8 authentication failed` and
+`554 5.7.1 relay access denied` need different fixes. HTTP errors are reserved
+for genuine request problems (no permission, relay not configured, bad
+recipient).
