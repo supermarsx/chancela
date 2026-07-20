@@ -18,7 +18,7 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useSession, useSessionRoster } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Button } from '../../ui';
+import { Button, Loading } from '../../ui';
 import { SignIn } from './SignIn';
 
 export function AuthGate({ children }: { children: ReactNode }) {
@@ -32,8 +32,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (session.data?.user) return <>{children}</>;
 
   // Still resolving who we are — hold a quiet boot screen rather than flashing sign-in.
+  // `region={false}`: GateBoot is already the `role="status"` element, and nesting a
+  // second live region would announce the same wait twice.
   if (session.isLoading || roster.isLoading) {
-    return <GateBoot>{t('common.loading')}</GateBoot>;
+    return (
+      <GateBoot>
+        <Loading region={false} />
+      </GateBoot>
+    );
   }
 
   // Roster is the authoritative signed-out signal; if it could not load, offer a retry
