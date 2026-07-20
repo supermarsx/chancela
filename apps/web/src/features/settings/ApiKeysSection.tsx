@@ -287,7 +287,13 @@ function CreateApiKeyForm({
 
         <ScopePicker value={scope} onChange={setScope} idPrefix="api-key-scope" />
 
-        <Field label={t('settings.apiKeys.permissions.label')} htmlFor="">
+        {/* Not a `Field`: the checklist is a group of checkboxes, not one control, so a
+            `<label for>` has nothing to point at. Name the group with `aria-labelledby`
+            instead, so the label is actually announced with it. */}
+        <div className="field" role="group" aria-labelledby="api-key-permissions-label">
+          <span className="field__label" id="api-key-permissions-label">
+            {t('settings.apiKeys.permissions.label')}
+          </span>
           <PermissionChecklist
             catalog={catalog.data?.permissions ?? []}
             scope={scope}
@@ -295,7 +301,7 @@ function CreateApiKeyForm({
             onChange={setPermissions}
             disabled={create.isPending}
           />
-        </Field>
+        </div>
 
         <Field
           label={t('settings.apiKeys.expiry.label')}

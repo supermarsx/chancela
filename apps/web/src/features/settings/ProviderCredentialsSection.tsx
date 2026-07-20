@@ -7,9 +7,19 @@
  * Security posture mirrors the backend (plan §3/§6): secrets are WRITE-ONLY. Every secret
  * input is `type="password"`, `autoComplete="off"`, never pre-filled (the API never returns
  * a value — only a per-field `configured` flag), lives solely in component-local `useState`,
- * and is cleared on submit so it is never written into the react-query cache. The protection
- * level is surfaced honestly (obfuscation vs confidential); a strict + non-confidential store
- * disables the secret-writing controls with the same remedy the server would answer with.
+ * and is cleared on submit so it is never written into the react-query cache.
+ *
+ * ## Honest storage state (t36)
+ *
+ * The banner has THREE states, not two: confidential, obfuscation, and **cannot store at all**.
+ * It used to have two, so a store with no resolvable key source — where saving a credential is
+ * impossible — fell through to the obfuscation warning and told the operator their secrets were
+ * being kept with weaker protection. They were not being kept at all. {@link canStoreSecrets}
+ * decides, and `settings.providerCredentials.protection.reason.*` names the operator's next step.
+ *
+ * Entries render as a scannable grid (`Table`) rather than a stack of per-entry blocks: every
+ * entry answers the same six questions (which entry, what priority, active?, which endpoint,
+ * which fields are configured, what can I do to it), so they belong in aligned columns.
  *
  * Mirrors the `ApiKeysSection` idioms: `Card`/`Field`/`Input`/`GateButton`, disabled+pending
  * mutating controls (CONVENTIONS §5), inline error + toast (§2), `EmptyState` when empty, and
@@ -18,6 +28,8 @@
 import { useMemo, useState } from 'react';
 import type {
   CredentialMode,
+  CredentialProtectionLevel,
+  CredentialStorageFailure,
   CreateProviderCredentialEntryBody,
   ProviderCredentialEntryView,
   ProviderCredentialGroupView,
@@ -45,7 +57,9 @@ import {
   Input,
   Loading,
   Select,
+  Table,
   Toggle,
+  TooltipText,
   useToast,
 } from '../../ui';
 import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
@@ -211,15 +225,65 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/**
+ * Why the store cannot hold a secret. Several distinct failures share one operator remedy, so
+ * they share one sentence — the point is to name the next step, not to enumerate the enum.
+ */
+const STORAGE_FAILURE_KEYS: Record<CredentialStorageFailure, MessageKey> = {
+  not_persistent: 'settings.providerCredentials.protection.reason.notPersistent',
+  missing_key_source: 'settings.providerCredentials.protection.reason.noKeySource',
+  ambiguous_operator_key: 'settings.providerCredentials.protection.reason.operatorKey',
+  invalid_operator_key: 'settings.providerCredentials.protection.reason.operatorKey',
+  missing_root_envelope: 'settings.providerCredentials.protection.reason.rootEnvelope',
+  invalid_root_envelope: 'settings.providerCredentials.protection.reason.rootEnvelope',
+  store_unavailable: 'settings.providerCredentials.protection.reason.storeUnavailable',
+};
+
+/**
+ * Whether the store can hold a secret at all, from the two fields the server may send.
+ *
+ * A server predating t36 sends no `can_store`, but it already omitted `protection_level` in
+ * exactly the cases where no key could be resolved — so an absent level is the old server's own
+ * (slightly coarser) way of saying the same thing, and reading it that way is what closes the
+ * defect: the banner used to fall through to "obfuscation" here and tell operators their secrets
+ * were kept with weaker protection when in truth none could be stored.
+ */
+export function canStoreSecrets(view: {
+  can_store?: boolean;
+  protection_level?: CredentialProtectionLevel;
+}): boolean {
+  return view.can_store ?? view.protection_level !== undefined;
+}
+
 function ProtectionBanner({
   strict,
   level,
+  storable,
+  failure,
 }: {
   strict: boolean;
-  level: 'confidential' | 'obfuscation' | undefined;
+  level: CredentialProtectionLevel | undefined;
+  storable: boolean;
+  failure: CredentialStorageFailure | undefined;
 }) {
   const t = useT();
-  const blocked = strict && level !== 'confidential';
+  if (!storable) {
+    return (
+      <InlineWarning
+        tone="error"
+        title={t('settings.providerCredentials.protection.unavailable.title')}
+      >
+        <p>{t('settings.providerCredentials.protection.unavailable.body')}</p>
+        <p>
+          {t(
+            failure
+              ? STORAGE_FAILURE_KEYS[failure]
+              : 'settings.providerCredentials.protection.reason.noKeySource',
+          )}
+        </p>
+      </InlineWarning>
+    );
+  }
   if (level === 'confidential') {
     return (
       <InlineWarning
@@ -232,11 +296,11 @@ function ProtectionBanner({
   }
   return (
     <InlineWarning
-      tone={blocked ? 'error' : 'warn'}
+      tone={strict ? 'error' : 'warn'}
       title={t('settings.providerCredentials.protection.obfuscation.title')}
     >
       <p>{t('settings.providerCredentials.protection.obfuscation.body')}</p>
-      {blocked ? <p>{t('settings.providerCredentials.protection.strictBlocked')}</p> : null}
+      {strict ? <p>{t('settings.providerCredentials.protection.strictBlocked')}</p> : null}
     </InlineWarning>
   );
 }
@@ -690,29 +754,63 @@ function EntryRow({
   }
 
   const busy = reorder.isPending || del.isPending || update.isPending;
+  const label = entry.label || t('settings.providerCredentials.entry.unlabeled');
 
   return (
-    <div className="stack--tight" role="group" aria-label={entry.label || entry.entry_id}>
-      <div className="section-head">
-        <div>
-          <p className="card__label">
-            {entry.label || t('settings.providerCredentials.entry.unlabeled')}{' '}
-            <Badge tone="neutral">
-              {t('settings.providerCredentials.entry.priority', { priority: entry.priority })}
-            </Badge>
-          </p>
-          {entry.endpoint ? <p className="field__hint mono">{entry.endpoint}</p> : null}
-          <Toggle
-            label={
-              entry.enabled
-                ? t('settings.providerCredentials.entry.enabled')
-                : t('settings.providerCredentials.entry.disabled')
-            }
-            checked={entry.enabled}
-            disabled={busy}
-            onChange={toggleEnabled}
-          />
-        </div>
+    <tr role="group" aria-label={entry.label || entry.entry_id}>
+      <td data-label={t('settings.providerCredentials.table.entry')}>
+        <p className="card__label">{label}</p>
+        <TooltipText label={entry.entry_id} as="code" className="field__hint mono">
+          {entry.entry_id}
+        </TooltipText>
+      </td>
+      <td data-label={t('settings.providerCredentials.table.priority')}>
+        <Badge tone="neutral">
+          {t('settings.providerCredentials.entry.priority', { priority: entry.priority })}
+        </Badge>
+      </td>
+      <td data-label={t('settings.providerCredentials.table.state')}>
+        <Toggle
+          label={
+            entry.enabled
+              ? t('settings.providerCredentials.entry.enabled')
+              : t('settings.providerCredentials.entry.disabled')
+          }
+          checked={entry.enabled}
+          disabled={busy}
+          onChange={toggleEnabled}
+        />
+      </td>
+      <td className="mono" data-label={t('settings.providerCredentials.table.endpoint')}>
+        {entry.endpoint ? (
+          <TooltipText label={entry.endpoint} onlyWhenClipped className="truncate">
+            {entry.endpoint}
+          </TooltipText>
+        ) : (
+          <span className="muted">{t('settings.providerCredentials.table.endpointDefault')}</span>
+        )}
+      </td>
+      {/* Configured vs not-configured is the whole point of this column: the server sends a
+          per-field `configured` flag and never a value, so the badge must say WHICH it is. It
+          previously read "configurado" for every field and only varied its colour, which made an
+          unset field look set to anyone not reading the palette. */}
+      <td data-label={t('settings.providerCredentials.table.fields')}>
+        <span className="row-wrap">
+          {entry.fields.length === 0 ? (
+            <span className="muted">{t('settings.providerCredentials.entry.noFields')}</span>
+          ) : (
+            entry.fields.map((f) => (
+              <Badge key={f.field_name} tone={f.configured ? 'ok' : 'neutral'}>
+                {f.field_name} ·{' '}
+                {f.configured
+                  ? t('settings.providerCredentials.entry.configured')
+                  : t('settings.providerCredentials.entry.notConfigured')}
+              </Badge>
+            ))
+          )}
+        </span>
+      </td>
+      <td data-label={t('settings.providerCredentials.table.actions')}>
         <span className="row-wrap">
           <GateIconButton
             perm="settings.manage"
@@ -749,38 +847,26 @@ function EntryRow({
             {t('common.remove')}
           </GateButton>
         </span>
-      </div>
 
-      <div className="row-wrap">
-        {entry.fields.length === 0 ? (
-          <span className="muted">{t('settings.providerCredentials.entry.noFields')}</span>
-        ) : (
-          entry.fields.map((f) => (
-            <Badge key={f.field_name} tone={f.configured ? 'ok' : 'neutral'}>
-              {f.field_name} · {t('settings.providerCredentials.entry.configured')}
-            </Badge>
-          ))
-        )}
-      </div>
-
-      <ConfirmActionModal
-        open={confirming}
-        onClose={() => setConfirming(false)}
-        title={t('settings.providerCredentials.entry.deleteConfirm.title')}
-        intro={t('settings.providerCredentials.entry.deleteConfirm.intro', {
-          label: entry.label || entry.entry_id,
-        })}
-        confirmLabel={t('settings.providerCredentials.entry.deleteConfirm.confirm')}
-        pendingLabel={t('settings.providerCredentials.entry.deleteConfirm.pending')}
-        danger
-        pending={del.isPending}
-        onConfirm={async () => {
-          await del.mutateAsync({ mode: group.mode, providerId, entryId: entry.entry_id });
-          toast.success(t('settings.providerCredentials.deletedToast'));
-          setConfirming(false);
-        }}
-      />
-    </div>
+        <ConfirmActionModal
+          open={confirming}
+          onClose={() => setConfirming(false)}
+          title={t('settings.providerCredentials.entry.deleteConfirm.title')}
+          intro={t('settings.providerCredentials.entry.deleteConfirm.intro', {
+            label: entry.label || entry.entry_id,
+          })}
+          confirmLabel={t('settings.providerCredentials.entry.deleteConfirm.confirm')}
+          pendingLabel={t('settings.providerCredentials.entry.deleteConfirm.pending')}
+          danger
+          pending={del.isPending}
+          onConfirm={async () => {
+            await del.mutateAsync({ mode: group.mode, providerId, entryId: entry.entry_id });
+            toast.success(t('settings.providerCredentials.deletedToast'));
+            setConfirming(false);
+          }}
+        />
+      </td>
+    </tr>
   );
 }
 
@@ -797,6 +883,7 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
     group.provider_id === ''
       ? modeLabel(t, group.mode)
       : `${modeLabel(t, group.mode)} · ${group.provider_id}`;
+  const editing = entries.find((entry) => entry.entry_id === editingId);
 
   return (
     <Card
@@ -817,6 +904,9 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
     >
       <p className="field__hint">{t('settings.providerCredentials.failoverHint')}</p>
 
+      {/* The add/edit form sits ABOVE the grid rather than replacing a row: a form is a column of
+          labelled inputs and a row is a scanline, and swapping one for the other made the table
+          jump. The row being edited stays visible for comparison. */}
       {adding ? (
         <EntryForm
           mode={group.mode}
@@ -826,37 +916,48 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
           onCancel={() => setAdding(false)}
         />
       ) : null}
+      {editing ? (
+        <EntryForm
+          key={editing.entry_id}
+          mode={group.mode}
+          providerId={group.provider_id}
+          existing={editing}
+          disabled={false}
+          onDone={() => setEditingId(null)}
+          onCancel={() => setEditingId(null)}
+        />
+      ) : null}
 
       {entries.length === 0 ? (
         <EmptyState title={t('settings.providerCredentials.provider.noEntries')} />
       ) : (
-        <div className="stack--tight">
-          {entries.map((entry, index) =>
-            editingId === entry.entry_id ? (
-              <EntryForm
-                key={entry.entry_id}
-                mode={group.mode}
-                providerId={group.provider_id}
-                existing={entry}
-                disabled={false}
-                onDone={() => setEditingId(null)}
-                onCancel={() => setEditingId(null)}
-              />
-            ) : (
-              <EntryRow
-                key={entry.entry_id}
-                group={group}
-                entry={entry}
-                index={index}
-                count={entries.length}
-                onEdit={() => {
-                  setAdding(false);
-                  setEditingId(entry.entry_id);
-                }}
-              />
-            ),
-          )}
-        </div>
+        <Table
+          caption={t('settings.providerCredentials.table.caption', { provider: title })}
+          head={
+            <tr>
+              <th>{t('settings.providerCredentials.table.entry')}</th>
+              <th>{t('settings.providerCredentials.table.priority')}</th>
+              <th>{t('settings.providerCredentials.table.state')}</th>
+              <th>{t('settings.providerCredentials.table.endpoint')}</th>
+              <th>{t('settings.providerCredentials.table.fields')}</th>
+              <th>{t('settings.providerCredentials.table.actions')}</th>
+            </tr>
+          }
+        >
+          {entries.map((entry, index) => (
+            <EntryRow
+              key={entry.entry_id}
+              group={group}
+              entry={entry}
+              index={index}
+              count={entries.length}
+              onEdit={() => {
+                setAdding(false);
+                setEditingId(entry.entry_id);
+              }}
+            />
+          ))}
+        </Table>
       )}
     </Card>
   );
@@ -873,15 +974,24 @@ export function ProviderCredentialsSection() {
 
   const data = credentials.data;
   const providers = data?.providers ?? [];
+  // Nothing can be stored → creating an entry can only end in a server refusal, so the control is
+  // inert and the banner above carries the reason. Editing existing rows stays available: label,
+  // priority and enabled are plain metadata and do not touch the secret store.
+  const storable = data ? canStoreSecrets(data) : true;
 
   return (
     <div className="stack">
-      <ProtectionBanner strict={data?.strict ?? false} level={data?.protection_level} />
+      <ProtectionBanner
+        strict={data?.strict ?? false}
+        level={data?.protection_level}
+        storable={storable}
+        failure={data?.storage_failure}
+      />
 
       {creating ? (
         <EntryForm
           mode="csc"
-          disabled={!can('settings.manage')}
+          disabled={!can('settings.manage') || !storable}
           onDone={() => setCreating(false)}
           onCancel={() => setCreating(false)}
         />
@@ -893,6 +1003,7 @@ export function ProviderCredentialsSection() {
               perm="settings.manage"
               variant="primary"
               icon={<Icon.Plus />}
+              disabled={!storable}
               onClick={() => setCreating(true)}
             >
               {t('settings.providerCredentials.newEntry')}

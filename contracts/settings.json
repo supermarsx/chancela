@@ -167,6 +167,17 @@
     "completed": false,
     "completed_at": null
   },
+  "email": {
+    "enabled": true,
+    "host": "smtp.encosto-estrategico.pt",
+    "port": 587,
+    "encryption": "starttls",
+    "username": "sistema@encosto-estrategico.pt",
+    "from_address": "sistema@encosto-estrategico.pt",
+    "from_name": "Encosto Estratégico, S.A.",
+    "helo_name": null,
+    "allow_insecure": false
+  },
   "ai": {
     "enabled": false
   },

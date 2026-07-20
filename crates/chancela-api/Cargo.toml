@@ -85,6 +85,17 @@ tracing = "0.1"
 # the text ourselves from an axum handler, so we only need the recorder + `PrometheusHandle::render`.
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
+# t23 outbound SMTP (`src/smtp.rs`). DEPENDENCY NOTE: these four crates are ALREADY in `Cargo.lock`,
+# pulled in by reqwest's `rustls` feature, so declaring them here adds **zero** new crates to the
+# tree — it only makes the existing ones directly nameable. Deliberately NOT `lettre`: it would add
+# its own transport/MIME/IDNA tree, and its error type folds SMTP replies into coarse variants,
+# which is exactly the detail the "send test email" action exists to show (`535 5.7.8 …`).
+# `ring` is named explicitly because this workspace links both ring and aws-lc-rs, so relying on
+# rustls's process-wide default provider would be a coin flip.
+# `rustls` itself is reached through `tokio_rustls::rustls` rather than declared directly, so there
+# is exactly one place the version is pinned.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-native-certs = "0.8"
 
 [dev-dependencies]
 tower = { workspace = true }

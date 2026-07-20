@@ -29,6 +29,9 @@ use axum::body::Bytes;
 use axum::extract::{Query, State};
 use chancela_cae::{CaeSourceFormat, PreferredOfficialSource};
 use chancela_cmd::{CmdBasicAuth, CmdConfig, CmdEnv};
+use chancela_connectors::{
+    ALLOWED_HOSTS_ENV, MAX_RUNTIME_ALLOWLIST_ENTRIES, NetworkPolicy, RuntimeAllowlist,
+};
 use chancela_core::NumberingScheme;
 use chancela_csc::{CscAuthorization, CscConfig, CscSecrets};
 use serde::{Deserialize, Serialize};
@@ -39,6 +42,7 @@ use chancela_authz::{Permission, Scope};
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::require_permission;
 use crate::error::ApiError;
+use crate::smtp::SmtpEncryption;
 use crate::secretstore_persist::{
     FIELD_ACCESS_TOKEN, FIELD_AMA_CERT_PEM, FIELD_APPLICATION_ID, FIELD_CLIENT_ID,
     FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD, FIELD_HTTP_BASIC_USERNAME,
@@ -79,6 +83,12 @@ pub struct Settings {
     pub workflow: WorkflowSettings,
     /// Local data-management policy defaults. Does not authorize legal retention/disposal work.
     pub data_management: DataManagementSettings,
+    /// Connector outbound-egress boundary. Empty by default so an older document never widens it.
+    #[serde(default, skip_serializing_if = "ConnectorSettings::is_default")]
+    pub connectors: ConnectorSettings,
+    /// Outbound email (SMTP) relay configuration (t23). Non-secret only — the relay password lives
+    /// in the credential store, never here. Disabled by default.
+    pub email: EmailSettings,
     /// Tenant-level AI/MCP controls. Defaults off so older settings documents do not enable AI.
     pub ai: AiSettings,
     /// Platform operations controls: service desired state, logging levels, and audit metadata.
@@ -102,6 +112,8 @@ impl Default for Settings {
             registry_auto_update: RegistryAutoUpdateSettings::default(),
             workflow: WorkflowSettings::default(),
             data_management: DataManagementSettings::default(),
+            connectors: ConnectorSettings::default(),
+            email: EmailSettings::default(),
             ai: AiSettings::default(),
             platform: PlatformSettings::default(),
             appearance: AppearanceSettings::default(),
@@ -109,6 +121,78 @@ impl Default for Settings {
             onboarding: OnboardingSettings::default(),
         }
     }
+}
+
+/// Connector outbound-egress controls: the runtime half of the connector allowlist.
+///
+/// This is a containment boundary, not a preference. It decides which hosts a connector may ship
+/// minute-book bytes to, so it is deliberately the *narrowing* half of a two-source policy: when
+/// `CHANCELA_CONNECTOR_ALLOWED_HOSTS` is set, the deployment owns a ceiling that nothing saved
+/// here can exceed. See [`chancela_connectors::NetworkPolicy`] for the resolution rule and for the
+/// stricter validation applied to entries that arrive through this path.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ConnectorSettings {
+    /// Exact hostnames and IP/CIDR entries. Empty means "no runtime allowlist configured", which
+    /// leaves the deployment ceiling (if any) in force — it never means "allow everything".
+    pub allowed_hosts: Vec<String>,
+    /// Read-only mirror of `CHANCELA_CONNECTOR_ALLOWED_HOSTS`, stamped on `GET` so the UI can
+    /// state the precedence rule with the actual ceiling rather than in the abstract. Never
+    /// persisted and never trusted from a `PUT`: the handler clears whatever the client sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_ceiling: Option<Vec<String>>,
+}
+
+impl ConnectorSettings {
+    pub(crate) fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+
+    /// Normalized entries: trimmed, lowercased, blank-free, order-preserving, duplicate-free.
+    pub(crate) fn normalized(&self) -> Vec<String> {
+        let mut seen = BTreeSet::new();
+        self.allowed_hosts
+            .iter()
+            .map(|entry| entry.trim().to_ascii_lowercase())
+            .filter(|entry| !entry.is_empty())
+            .filter(|entry| seen.insert(entry.clone()))
+            .collect()
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        if self.allowed_hosts.len() > MAX_RUNTIME_ALLOWLIST_ENTRIES {
+            return Err(ApiError::Unprocessable(format!(
+                "connectors.allowed_hosts accepts at most {MAX_RUNTIME_ALLOWLIST_ENTRIES} entries"
+            )));
+        }
+        let entries = self.normalized();
+        if entries.is_empty() {
+            return Ok(());
+        }
+        // Parse with the strict administrative rules, then prove the result cannot exceed the
+        // deployment ceiling. Both failures are the operator's to fix, so both are a 422.
+        let policy = NetworkPolicy::parse_administrative(&entries).map_err(|error| {
+            ApiError::Unprocessable(format!("connectors.allowed_hosts: {error}"))
+        })?;
+        if let Some(ceiling) = environment_ceiling() {
+            let ceiling = NetworkPolicy::parse(&ceiling).map_err(|error| {
+                ApiError::Unprocessable(format!(
+                    "the deployment connector allowlist is itself invalid: {error}"
+                ))
+            })?;
+            policy.require_within(&ceiling).map_err(|error| {
+                ApiError::Unprocessable(format!("connectors.allowed_hosts: {error}"))
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// The deployment ceiling as configured, or `None` when unset/blank.
+pub(crate) fn environment_ceiling() -> Option<String> {
+    std::env::var(ALLOWED_HOSTS_ENV)
+        .ok()
+        .filter(|raw| !raw.trim().is_empty())
 }
 
 /// Commercial-registry auto-update controls.
@@ -483,6 +567,143 @@ pub struct RegistryAutoUpdateEntityDefaults {
     /// Optional entity-profile allow-list. Empty means every entity profile is eligible when
     /// `enabled` is true. The current backend profile is the entity kind name.
     pub enabled_profiles: Vec<String>,
+}
+
+/// The default submission port. 587 + STARTTLS is the modern submission norm.
+pub const DEFAULT_SMTP_PORT: u16 = 587;
+
+/// Outbound email (SMTP) relay configuration (t23).
+///
+/// **What is deliberately not here:** the relay password. It is written through
+/// `PUT /v1/settings/email/password` into the AEAD-encrypted credential store
+/// ([`CredentialMode::Smtp`](crate::CredentialMode::Smtp)) and is never returned by any endpoint —
+/// this document only ever carries a `configured` flag on the side. Putting it here would put a live
+/// mail credential in `settings.json` in the clear and echo it back on every `GET /v1/settings`.
+///
+/// Additive and serde-defaulted: an older `settings.json` that omits this section deserializes with
+/// mail disabled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EmailSettings {
+    /// Whether outbound mail is configured for use. Off by default.
+    pub enabled: bool,
+    /// Relay hostname. Also the name the TLS certificate must match.
+    pub host: Option<String>,
+    /// Relay port.
+    pub port: u16,
+    /// Transport security. Defaults to STARTTLS; see [`allow_insecure`](Self::allow_insecure) for
+    /// what it takes to turn it off.
+    pub encryption: SmtpEncryption,
+    /// SMTP AUTH username, or `null`/empty for a relay that takes no credentials.
+    pub username: Option<String>,
+    /// Envelope sender and `From:` address for every message the application sends.
+    pub from_address: Option<String>,
+    /// Optional display name for the `From:` header.
+    pub from_name: Option<String>,
+    /// The name announced in `EHLO`. Defaults to the `from_address` domain when unset.
+    pub helo_name: Option<String>,
+    /// The operator's **explicit** acknowledgement that [`encryption`](Self::encryption) is
+    /// [`SmtpEncryption::None`] and credentials will therefore cross the network in the clear.
+    ///
+    /// This is a server-enforced gate, not UI copy: `PUT /v1/settings` rejects `encryption = "none"`
+    /// unless this is `true`, so an unencrypted relay can only ever be reached by someone who said
+    /// so on purpose. It resets to `false` whenever encryption is re-enabled.
+    pub allow_insecure: bool,
+}
+
+impl Default for EmailSettings {
+    fn default() -> Self {
+        EmailSettings {
+            enabled: false,
+            host: None,
+            port: DEFAULT_SMTP_PORT,
+            encryption: SmtpEncryption::default(),
+            username: None,
+            from_address: None,
+            from_name: None,
+            helo_name: None,
+            allow_insecure: false,
+        }
+    }
+}
+
+impl EmailSettings {
+    /// The name to announce in `EHLO`: the operator's override, else the sender's domain, else a
+    /// literal `localhost` (which some relays reject — hence the override).
+    pub fn resolved_helo_name(&self) -> String {
+        if let Some(name) = self.helo_name.as_ref().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+            return name.to_owned();
+        }
+        self.from_address
+            .as_deref()
+            .and_then(|addr| addr.split_once('@'))
+            .map(|(_, domain)| domain.trim().to_owned())
+            .filter(|domain| !domain.is_empty())
+            .unwrap_or_else(|| "localhost".to_owned())
+    }
+
+    fn validate(&self) -> Result<(), ApiError> {
+        // A relay reachable in the clear is only allowed as a deliberate, recorded decision.
+        if self.encryption == SmtpEncryption::None && !self.allow_insecure {
+            return Err(ApiError::Unprocessable(
+                "email.encryption \"none\" sends the relay password and message content in the \
+                 clear; set email.allow_insecure to true to confirm that is intended"
+                    .to_owned(),
+            ));
+        }
+        if self.port == 0 {
+            return Err(ApiError::Unprocessable(
+                "email.port must be between 1 and 65535".to_owned(),
+            ));
+        }
+        for (field, value) in [
+            ("email.host", &self.host),
+            ("email.helo_name", &self.helo_name),
+        ] {
+            if let Some(raw) = value {
+                let trimmed = raw.trim();
+                if !trimmed.is_empty() && trimmed.chars().any(char::is_whitespace) {
+                    return Err(ApiError::Unprocessable(format!(
+                        "{field} must not contain whitespace, got {raw:?}"
+                    )));
+                }
+            }
+        }
+        // Addresses go into SMTP command lines, so a CR/LF would be command injection. The email
+        // validator already rejects whitespace, but the sender is checked explicitly here because it
+        // is the one field that reaches `MAIL FROM`.
+        if let Some(from) = &self.from_address {
+            crate::email::normalize_optional_email(Some(from.clone()), "email.from_address")?;
+        }
+        if let Some(username) = &self.username
+            && username.contains(['\r', '\n'])
+        {
+            return Err(ApiError::Unprocessable(
+                "email.username must not contain line breaks".to_owned(),
+            ));
+        }
+        // Only demand a complete configuration once the operator switches it on, so a half-filled
+        // form can still be saved while it is being set up.
+        if self.enabled {
+            let host_set = self.host.as_deref().map(str::trim).is_some_and(|h| !h.is_empty());
+            if !host_set {
+                return Err(ApiError::Unprocessable(
+                    "email.host is required when email.enabled is true".to_owned(),
+                ));
+            }
+            let from_set = self
+                .from_address
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|a| !a.is_empty());
+            if !from_set {
+                return Err(ApiError::Unprocessable(
+                    "email.from_address is required when email.enabled is true".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Tenant-level AI/MCP controls.
@@ -1690,6 +1911,8 @@ impl Settings {
         self.registry_auto_update.validate()?;
         self.workflow.validate()?;
         self.data_management.validate()?;
+        self.connectors.validate()?;
+        self.email.validate()?;
         self.platform.validate()?;
         Ok(())
     }
@@ -2363,6 +2586,101 @@ fn tmp_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
+/// The connector egress policy currently in force, resolved from live state.
+///
+/// The API resolves from its own in-memory settings rather than re-reading the sidecar, so a
+/// target is always checked against exactly the boundary the operator last saved — never against a
+/// file the worker has not observed yet.
+pub(crate) async fn effective_network_policy(
+    state: &AppState,
+) -> Result<NetworkPolicy, chancela_connectors::ConnectorError> {
+    let entries = state.settings.read().await.connectors.normalized();
+    let runtime =
+        (!entries.is_empty()).then(|| RuntimeAllowlist::new(entries, String::new(), String::new()));
+    NetworkPolicy::resolve(environment_ceiling().as_deref(), runtime.as_ref())
+}
+
+/// Entries present in `left` but not in `right`.
+fn difference(left: &[String], right: &[String]) -> Vec<String> {
+    let right: BTreeSet<&String> = right.iter().collect();
+    left.iter()
+        .filter(|entry| !right.contains(entry))
+        .cloned()
+        .collect()
+}
+
+/// The human-readable before/after carried in the ledger event's `justification`.
+///
+/// The ledger commits to a payload by **digest** and does not retain its bytes, so a change that
+/// must be reconstructable from the chain alone has to say what it was in a stored field. This is
+/// that field; the JSON payload remains as a digest commitment to the exact lists.
+fn allowlist_change_summary(previous: &[String], next: &[String], ceiling: Option<&str>) -> String {
+    let added = difference(next, previous);
+    let removed = difference(previous, next);
+    let mut summary = String::from("connector egress allowlist");
+    if !added.is_empty() {
+        summary.push_str(&format!(" +[{}]", added.join(" ")));
+    }
+    if !removed.is_empty() {
+        summary.push_str(&format!(" -[{}]", removed.join(" ")));
+    }
+    summary.push_str(&format!(
+        " · now [{}] · deployment ceiling {}",
+        next.join(" "),
+        match ceiling {
+            Some(ceiling) => format!("[{}]", ceiling.trim()),
+            None => "unset".to_owned(),
+        }
+    ));
+    summary
+}
+
+/// Write the runtime allowlist sidecar the connector stack enforces from.
+///
+/// The document lives in the shared data directory precisely because the connector *worker* is a
+/// separate process: it re-resolves the policy per job, so publishing the file is what makes a
+/// saved change effective without restarting anything. Without a data directory the API is a
+/// purely in-memory scaffold with no worker to inform, so there is nothing to publish.
+async fn publish_runtime_allowlist(
+    state: &AppState,
+    settings: &Settings,
+    actor: &str,
+) -> Result<(), ApiError> {
+    let Some(data_dir) = state.data_dir() else {
+        return Ok(());
+    };
+    let path = RuntimeAllowlist::path_in(&data_dir);
+    if settings.connectors.allowed_hosts.is_empty() {
+        // Removing the last entry restores the deployment ceiling as the sole boundary; it must
+        // never leave a stale file behind that keeps enforcing a boundary nobody can see.
+        return match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(ApiError::Internal(format!(
+                "unable to clear the connector allowlist: {error}"
+            ))),
+        };
+    }
+    let document = RuntimeAllowlist::new(
+        settings.connectors.allowed_hosts.clone(),
+        time::OffsetDateTime::now_utc()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned()),
+        actor.to_owned(),
+    );
+    let bytes = serde_json::to_vec_pretty(&document)?;
+    let temporary = tmp_path(&path);
+    std::fs::write(&temporary, &bytes).map_err(|error| {
+        ApiError::Internal(format!("unable to stage the connector allowlist: {error}"))
+    })?;
+    std::fs::rename(&temporary, &path).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        ApiError::Internal(format!(
+            "unable to publish the connector allowlist: {error}"
+        ))
+    })
+}
+
 // --- Handlers -----------------------------------------------------------------------------
 
 /// Query for `PUT /v1/settings`: an optional actor override for the audit event.
@@ -2382,6 +2700,14 @@ pub async fn get_settings(
     require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
     let mut settings = state.settings.read().await.clone();
     stamp_signing_provider_metadata(&state, &mut settings);
+    // Show the deployment ceiling next to the setting it constrains, so the precedence rule is
+    // visible where the change is made rather than only in the documentation.
+    settings.connectors.environment_ceiling = environment_ceiling().map(|raw| {
+        raw.split(',')
+            .map(|entry| entry.trim().to_ascii_lowercase())
+            .filter(|entry| !entry.is_empty())
+            .collect()
+    });
     Ok(Json(settings))
 }
 
@@ -2414,7 +2740,14 @@ pub async fn put_settings(
     // Always stamp the current schema version regardless of what the client sent.
     settings.schema_version = SETTINGS_SCHEMA_VERSION;
     stamp_signing_provider_metadata(&state, &mut settings);
+    // Store the egress allowlist normalized, so the ledger diff below compares boundaries rather
+    // than whitespace and casing. The stamped ceiling is server-owned: drop whatever came back.
+    settings.connectors.allowed_hosts = settings.connectors.normalized();
+    settings.connectors.environment_ceiling = None;
     settings.validate()?;
+
+    let previous_allowed_hosts = state.settings.read().await.connectors.normalized();
+    let allowlist_changed = previous_allowed_hosts != settings.connectors.allowed_hosts;
 
     // Persist before we acknowledge success, so we never report a write we did not make. wp16 P3b:
     // routes to the active source (Postgres `settings` row, else `settings.json`). File behaviour on
@@ -2429,6 +2762,13 @@ pub async fn put_settings(
         .unwrap_or_else(|| settings.organization.default_actor.clone());
     let actor = current_actor.resolve(&request_actor);
 
+    // The egress boundary is enforced from a sidecar the worker process also reads, so publish it
+    // before acknowledging. A failure here is a failure of the whole PUT: reporting success while
+    // the enforced boundary still differs from the stored one would be the worst outcome.
+    if allowlist_changed {
+        publish_runtime_allowlist(&state, &settings, &actor).await?;
+    }
+
     let payload = serde_json::to_vec(&settings)?;
     {
         let mut ledger = state.ledger.write().await;
@@ -2439,9 +2779,36 @@ pub async fn put_settings(
             Some("settings updated"),
             &payload,
         );
-        // Persist the audit event; the settings document itself is durable via `settings.json`.
+        // A dedicated event for the egress boundary. `settings.updated` already carries the whole
+        // document, but reconstructing "who opened which host, and when" from a sequence of full
+        // documents is exactly the reconstruction we do not want to depend on after an incident.
+        if allowlist_changed {
+            let ceiling = environment_ceiling();
+            let summary = allowlist_change_summary(
+                &previous_allowed_hosts,
+                &settings.connectors.allowed_hosts,
+                ceiling.as_deref(),
+            );
+            let diff = serde_json::to_vec(&serde_json::json!({
+                "previous_allowed_hosts": previous_allowed_hosts,
+                "allowed_hosts": settings.connectors.allowed_hosts,
+                "added": difference(&settings.connectors.allowed_hosts, &previous_allowed_hosts),
+                "removed": difference(&previous_allowed_hosts, &settings.connectors.allowed_hosts),
+                "environment_ceiling_configured": ceiling.is_some(),
+                "environment_ceiling": ceiling,
+            }))?;
+            ledger.append(
+                &actor,
+                "settings",
+                "connector.allowlist.updated",
+                Some(&summary),
+                &diff,
+            );
+        }
+        // Persist the audit event(s); the settings document itself is durable via `settings.json`.
+        let event_count = if allowlist_changed { 2 } else { 1 };
         state
-            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .persist_write_through(&mut ledger, event_count, |_tx| Ok(()))
             .await?;
         state.attest_latest(&attestor, &ledger).await;
     }

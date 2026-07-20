@@ -17,6 +17,7 @@
 //! - `POST|GET /v1/books`, `GET /v1/books/{id}`, `POST /v1/books/{id}/close`,
 //!   `GET /v1/books/{id}/acts` — book open/list/close and the acts-in-a-book feed (§2.4).
 //! - `POST /v1/acts`, `GET|PATCH /v1/acts/{id}`, `POST /v1/acts/{id}/advance`,
+//!   `POST /v1/acts/{id}/reopen` — the one reverse lifecycle edge (`Signing → TextApproved`),
 //!   `POST /v1/acts/{id}/human-verification`, `GET /v1/acts/{id}/compliance`,
 //!   `POST /v1/acts/{id}/seal`,
 //!   `POST /v1/acts/{id}/archive` — the ata lifecycle, compliance gate, and seal (§2.5).
@@ -170,6 +171,10 @@ mod settings;
 mod sidecar_store;
 mod signature;
 mod signature_pkcs12_stored;
+// t23: outbound SMTP. `smtp` is the protocol client; `smtp_settings` is the admin-facing
+// configuration + test-send surface over it.
+mod smtp;
+mod smtp_settings;
 mod sync_handoff;
 mod tenants;
 mod trust;
@@ -1608,6 +1613,7 @@ impl AppState {
         }
         state.cors = cors::CorsConfig::from_env()
             .map_err(|error| AppStateInitError::CorsConfiguration(error.to_string()))?;
+        warn_if_credential_key_unavailable(&state);
         Ok(state)
     }
 
@@ -1628,6 +1634,49 @@ impl AppState {
         }
         None
     }
+}
+
+/// Warn at startup when signature-provider credentials could never be saved on this deployment, so
+/// the operator learns it from the boot log instead of from a failed save in Settings weeks later.
+///
+/// Deliberately a **warning, not a hard failure**: plenty of instances never configure a remote
+/// signature provider, and refusing to boot over an unused subsystem would be a worse regression
+/// than the error it prevents. The probe is metadata-only — it never creates the sealed-root
+/// envelope, so first boot stays exactly as read-only as before.
+fn warn_if_credential_key_unavailable(state: &AppState) {
+    use secretstore::CredentialKeyStatusFailure as Failure;
+
+    let status = state.provider_credentials.key_status();
+    let Some(failure) = status.failure else {
+        return;
+    };
+    let detail = match failure {
+        // Normal on a fresh install with an OS protector: the envelope is created lazily by the
+        // first store, so this is not a misconfiguration and must not be reported as one.
+        Failure::MissingRootEnvelope | Failure::StoreUnavailable => return,
+        Failure::NotPersistent => {
+            format!("this server is running in-memory; set {DATA_DIR_ENV} to a writable directory")
+        }
+        Failure::NoKeySource => secretstore::no_key_source_guidance(),
+        Failure::AmbiguousOperatorKey => format!(
+            "{} and {} are both set; configure only one",
+            secretstore::CREDENTIAL_KEY_ENV,
+            secretstore::CREDENTIAL_KEY_FILE_ENV
+        ),
+        Failure::InvalidOperatorKey => format!(
+            "the credential key configured by {} / {} is empty or unreadable",
+            secretstore::CREDENTIAL_KEY_ENV,
+            secretstore::CREDENTIAL_KEY_FILE_ENV
+        ),
+        Failure::InvalidRootEnvelope => {
+            "the sealed credential-root envelope in the data directory is unreadable or was sealed \
+             by a different host/user"
+                .to_owned()
+        }
+    };
+    eprintln!(
+        "warning: signature-provider credentials cannot be stored on this deployment: {detail}"
+    );
 }
 
 #[cfg(feature = "sqlcipher")]
@@ -1864,6 +1913,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/acts", post(acts::draft_act))
         .route("/v1/acts/{id}", get(acts::get_act).patch(acts::patch_act))
         .route("/v1/acts/{id}/advance", post(acts::advance_act))
+        .route("/v1/acts/{id}/reopen", post(acts::reopen_act))
         .route(
             "/v1/acts/{id}/human-verification",
             post(acts::verify_ai_human_review),
@@ -2253,6 +2303,18 @@ pub fn router(state: AppState) -> Router {
             "/v1/settings",
             get(settings::get_settings).put(settings::put_settings),
         )
+        // t23 outbound email. The non-secret configuration rides `PUT /v1/settings` like every other
+        // section; these three exist for what cannot: the write-only relay password, the status that
+        // reports it without revealing it, and the test send.
+        .route(
+            "/v1/settings/email/status",
+            get(smtp_settings::get_email_status),
+        )
+        .route(
+            "/v1/settings/email/password",
+            put(smtp_settings::put_email_password).delete(smtp_settings::delete_email_password),
+        )
+        .route("/v1/settings/email/test", post(smtp_settings::post_email_test))
         .route("/v1/platform/services", get(platform_ops::list_services))
         .route("/v1/platform/logs", get(platform_logs::list_logs))
         .route(
@@ -3697,7 +3759,7 @@ mod tests {
         assert_eq!(body["storage"]["sidecar_status"], "available");
         assert_eq!(body["storage"]["crypto_status"], "unavailable_fail_closed");
         assert_eq!(body["storage"]["strict"], false);
-        assert_eq!(body["storage"]["key_failure"], "missing_key_source");
+        assert_eq!(body["storage"]["key_failure"], "not_persistent");
         assert!(body["records"].as_array().expect("records").is_empty());
     }
 
@@ -3775,7 +3837,7 @@ mod tests {
         assert_eq!(body["storage"]["strict"], true);
         assert_eq!(body["storage"]["sidecar_status"], "available");
         assert_eq!(body["storage"]["crypto_status"], "unavailable_fail_closed");
-        assert_eq!(body["storage"]["key_failure"], "missing_key_source");
+        assert_eq!(body["storage"]["key_failure"], "not_persistent");
         assert!(body["records"].as_array().expect("records").is_empty());
     }
 
@@ -4833,6 +4895,26 @@ mod tests {
             "pending_human_verification"
         );
         let act_id = act["id"].as_str().expect("act id").to_owned();
+
+        // Fill the CSC art. 63.º mandatory contents so the only thing standing between this act
+        // and `Signing` is the AI human-review gate under test, not a blocking compliance error.
+        let (status, _) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({
+                    "meeting_date": "2026-03-30",
+                    "meeting_time": "10:00",
+                    "place": "Sede social",
+                    "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] },
+                    "agenda": [{ "number": 1, "text": "Contas" }],
+                    "attendance_reference": "Lista de presenças",
+                    "deliberations": "Aprovadas as contas.",
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
 
         for to in ["Review", "Convened", "Deliberated", "TextApproved"] {
             let (status, advanced) = send(
@@ -8566,10 +8648,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn seal_with_missing_contents_is_422_with_issues() {
+    async fn missing_contents_are_422_with_issues_at_the_signing_gate() {
+        // The blocking-compliance refusal (422 + structured `Error` issues) is raised at entry to
+        // `Signing`, not only at the seal: `Signing` freezes the act, so an act that got in with a
+        // blocking defect could be neither corrected nor sealed. The refusal shape is unchanged —
+        // it just arrives while the operator can still act on it.
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
 
-        // Draft an empty act and push it to Signing without filling the mandatory contents.
+        // Draft an empty act and push it toward Signing without filling the mandatory contents.
         let (_, act) = send(
             state.clone(),
             post_json(
@@ -8579,13 +8665,7 @@ mod tests {
         )
         .await;
         let act_id = act["id"].as_str().expect("act id").to_owned();
-        for to in [
-            "Review",
-            "Convened",
-            "Deliberated",
-            "TextApproved",
-            "Signing",
-        ] {
+        for to in ["Review", "Convened", "Deliberated", "TextApproved"] {
             let (status, _) = send(
                 state.clone(),
                 post_json(&format!("/v1/acts/{act_id}/advance"), json!({ "to": to })),
@@ -8595,14 +8675,25 @@ mod tests {
         }
 
         let (status, body) = send(
-            state,
-            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/advance"),
+                json!({ "to": "Signing" }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         let issues = body["issues"].as_array().expect("issues array");
         assert!(!issues.is_empty());
         assert!(issues.iter().all(|i| i["severity"] == "Error"));
+
+        // The act never reached Signing, so it stays correctable and the seal reports the state.
+        let (status, body) = send(
+            state,
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
     }
 
     #[tokio::test]
@@ -9452,6 +9543,19 @@ mod tests {
                     "enabled": true,
                     "enabled_profiles": ["SociedadePorQuotas"]
                 }
+            },
+            // t23: mail stays at its defaults here — this fixture asserts a whole-document
+            // round-trip, and the email section's own behaviour is covered in `smtp_settings`.
+            "email": {
+                "enabled": false,
+                "host": null,
+                "port": 587,
+                "encryption": "starttls",
+                "username": null,
+                "from_address": null,
+                "from_name": null,
+                "helo_name": null,
+                "allow_insecure": false
             },
             "ai": { "enabled": true },
             "platform": {
@@ -14041,12 +14145,13 @@ mod tests {
 
     #[tokio::test]
     async fn csc_seal_blocked_without_mesa_then_passes_with_mesa() {
-        // The re-promoted mesa Error: a CSC ata missing its presidente da mesa is refused at the
-        // seal (422). Because Signing content is now frozen, the mesa can no longer be patched in
-        // after Signing — it must be present before Signing for a later act to seal clean.
+        // The re-promoted mesa Error: a CSC ata missing its presidente da mesa is refused with the
+        // same blocking issue that refuses the seal — but at entry to `Signing`, where the mesa can
+        // still be patched in. `Signing` freezes content, so raising it only at the seal left the
+        // act neither sealable nor correctable.
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
 
-        // --- Blocked: no mesa. Advance to Signing, then the seal is refused with the mesa Error. ---
+        // --- Blocked: no mesa. The advance into Signing is refused with the mesa Error. ---
         let (_, act) = send(
             state.clone(),
             post_json(
@@ -14074,9 +14179,19 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        advance_to_signing(&state, &blocked_id).await;
+        for to in ["Review", "Convened", "Deliberated", "TextApproved"] {
+            let (status, _) = send(
+                state.clone(),
+                post_json(
+                    &format!("/v1/acts/{blocked_id}/advance"),
+                    json!({ "to": to }),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "advance to {to}");
+        }
 
-        // Compliance reports the blocking mesa Error and refuses the seal.
+        // Compliance reports the blocking mesa Error.
         let (_, comp) = send(
             state.clone(),
             get(&format!("/v1/acts/{blocked_id}/compliance")),
@@ -14095,7 +14210,10 @@ mod tests {
 
         let (status, body) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{blocked_id}/seal"), seal_body()),
+            post_json(
+                &format!("/v1/acts/{blocked_id}/advance"),
+                json!({ "to": "Signing" }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -14105,10 +14223,11 @@ mod tests {
                 .expect("issues")
                 .iter()
                 .any(|i| i["rule_id"] == "CSC-63/mesa-presidente"),
-            "the seal refusal carries the mesa Error: {body}"
+            "the advance refusal carries the mesa Error: {body}"
         );
 
-        // Signing content is frozen: the mesa can no longer be patched in after Signing.
+        // The act stayed in TextApproved, so the operator can supply what the refusal named and
+        // carry on — the whole point of raising the block here rather than at the seal.
         let (status, _) = send(
             state.clone(),
             patch_json(
@@ -14119,9 +14238,18 @@ mod tests {
         .await;
         assert_eq!(
             status,
-            StatusCode::CONFLICT,
-            "Signing content is immutable; the mesa cannot be patched in after Signing"
+            StatusCode::OK,
+            "the refused act is still correctable"
         );
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{blocked_id}/advance"),
+                json!({ "to": "Signing" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "the corrected act advances");
 
         // --- Passes: the mesa is present before Signing, so the seal succeeds. ---
         let (_, act) = send(
@@ -14622,6 +14750,9 @@ mod tests {
     async fn restore_endpoint_accepts_encrypted_backup_passphrase() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
+        // t22: restore now requires step-up, so this needs an operator whose password can actually
+        // be verified — the default `send()` actor carries a placeholder hash by design.
+        let token = user_with_password(&state, "amelia.marques", "Restaurar-Base8!").await;
         let _ = seal_one(&state).await;
         let settings = tmp.dir.join(crate::settings::SETTINGS_FILE);
         std::fs::write(&settings, br#"{"schema_version":1}"#).expect("settings sidecar");
@@ -14652,12 +14783,16 @@ mod tests {
 
         let (status, restored) = send(
             state.clone(),
-            post_json(
-                "/v1/ledger/recovery/restore",
-                json!({
-                    "archive": archive,
-                    "passphrase": "correct horse battery staple"
-                }),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/restore",
+                    json!({
+                        "archive": archive,
+                        "passphrase": "correct horse battery staple",
+                        "reauth": { "password": "Restaurar-Base8!" }
+                    }),
+                ),
+                &token,
             ),
         )
         .await;
@@ -16695,11 +16830,11 @@ mod tests {
     async fn session_roster_is_unauthenticated_and_signals_onboarding() {
         let state = fresh_state().await;
 
-        // No users yet → onboarding required, empty roster, and NO session on the request.
+        // No users yet → onboarding required, and NO session on the request.
         let (status, roster) = send_raw(state.clone(), get("/v1/session/roster")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(roster["onboarding_required"], true);
-        assert_eq!(roster["users"].as_array().expect("users").len(), 0);
+        assert!(roster.get("users").is_none(), "roster must not list users");
 
         // Bootstrap amelia (no session), sign in, create bruno with that session — no auto-seeded
         // "test.actor" pollutes the roster this way.
@@ -16735,45 +16870,41 @@ mod tests {
             bruno.password_hash = None;
         }
 
-        // Still signed out on this call → onboarding no longer required, both users listed.
+        // Still signed out on this call → onboarding no longer required, and NO user data at all.
+        // t33-e2: this assertion used to pin the enumeration (both users listed, with `has_secret`).
+        // It now pins its **absence** — the endpoint answers one boolean and nothing else.
         let (status, roster) = send_raw(state.clone(), get("/v1/session/roster")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(roster["onboarding_required"], false);
-        let users = roster["users"].as_array().expect("users");
-        assert_eq!(users.len(), 2);
-
-        let amelia = users
-            .iter()
-            .find(|u| u["username"] == "amelia.marques")
-            .expect("amelia in roster");
-        assert_eq!(amelia["has_secret"], true);
-        assert_eq!(amelia["display_name"], "amelia.marques");
-        assert!(amelia["id"].is_string());
-        // NOTHING sensitive leaks to an anonymous caller: no fingerprint, no created_at, no
-        // has_attestation_key, no hash or wrapped-key material, not even `active`.
-        for forbidden in [
-            "attestation_key_fingerprint",
-            "has_attestation_key",
-            "created_at",
-            "active",
-            "password_hash",
-            "attestation_key",
+        let object = roster.as_object().expect("roster is an object");
+        assert_eq!(
+            object.keys().collect::<Vec<_>>(),
+            vec!["onboarding_required"],
+            "the unauthenticated roster must carry only onboarding_required: {roster}"
+        );
+        // Nothing an anonymous caller could enumerate appears anywhere in the payload — not the
+        // usernames, not the display names, not the ids, and not `has_secret`.
+        let body = roster.to_string();
+        for leaked in [
+            "amelia.marques",
+            "bruno",
+            "users",
+            "has_secret",
+            "display_name",
+            "username",
+            "id",
         ] {
             assert!(
-                amelia.get(forbidden).is_none(),
-                "roster user must not carry {forbidden}: {amelia}"
+                !body.contains(leaked),
+                "roster leaks {leaked} to an anonymous caller: {body}"
             );
         }
-        // A legacy no-hash user reads has_secret:false, but POST /v1/session still rejects it.
-        let bruno = users
-            .iter()
-            .find(|u| u["username"] == "bruno")
-            .expect("bruno in roster");
-        assert_eq!(bruno["has_secret"], false);
     }
 
+    /// t33-e2: an inactive user was already omitted from the old roster; now **no** user appears,
+    /// active or not, so the endpoint cannot even confirm that a guessed username exists.
     #[tokio::test]
-    async fn session_roster_omits_inactive_users() {
+    async fn session_roster_never_lists_users_active_or_inactive() {
         let state = fresh_state().await;
         let (status, u) = send_raw(
             state.clone(),
@@ -16812,13 +16943,236 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
 
         let (_, roster) = send_raw(state.clone(), get("/v1/session/roster")).await;
-        let users = roster["users"].as_array().expect("users");
+        assert_eq!(roster, json!({ "onboarding_required": false }));
+
+        // Inactive bruno is still not sign-in-able, and says so with the same opaque 401 an unknown
+        // username gets — the roster no longer distinguishes them, and neither does sign-in.
+        let (status, body) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "username": "bruno", "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body["error"], "credenciais inválidas");
+    }
+
+    // --- t33-e2: sign in by typed username, with no enumeration oracle ---------------------
+
+    /// Bootstrap one user and return `(state, id)`. Signed-out create, so nothing else pollutes.
+    async fn state_with_amelia() -> (AppState, String) {
+        let state = fresh_state().await;
+        let (status, amelia) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let id = amelia["id"].as_str().expect("id").to_owned();
+        (state, id)
+    }
+
+    #[tokio::test]
+    async fn create_session_accepts_a_username_and_matches_it_case_insensitively() {
+        let (state, id) = state_with_amelia().await;
+
+        for typed in ["amelia.marques", "Amelia.Marques", "AMELIA.MARQUES"] {
+            let (status, body) = send_raw(
+                state.clone(),
+                post_json(
+                    "/v1/session",
+                    json!({ "username": typed, "password": DEFAULT_TEST_PASSWORD }),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{typed} signs in: {body}");
+            assert!(body["token"].as_str().is_some_and(|t| !t.is_empty()));
+            assert_eq!(body["user"]["id"], id);
+            assert_eq!(body["user"]["username"], "amelia.marques");
+        }
+    }
+
+    /// `user_id` stays accepted: the onboarding wizard and the signed-in account switcher already
+    /// hold the id, as do every server test harness and e2e helper.
+    #[tokio::test]
+    async fn create_session_still_accepts_user_id_for_back_compat() {
+        let (state, id) = state_with_amelia().await;
+        let (status, body) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": id, "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["user"]["id"], id);
+    }
+
+    /// The whole point of resolving the identifier server-side: a caller cannot tell "no such user"
+    /// from "wrong password". Same status, same body, same wording — so probing a username list
+    /// against this endpoint yields exactly one bit for every guess: nothing.
+    #[tokio::test]
+    async fn create_session_unknown_user_and_wrong_password_are_indistinguishable() {
+        let (state, _) = state_with_amelia().await;
+
+        let (unknown_status, unknown_body) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "username": "nao.existe", "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        )
+        .await;
+        let (wrong_status, wrong_body) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "username": "amelia.marques", "password": "Palavra-Passe-Errada-9!" }),
+            ),
+        )
+        .await;
+        // And a body carrying no identifier at all takes the same shape.
+        let (empty_status, empty_body) = send_raw(
+            state.clone(),
+            post_json("/v1/session", json!({ "password": DEFAULT_TEST_PASSWORD })),
+        )
+        .await;
+
+        assert_eq!(unknown_status, StatusCode::UNAUTHORIZED);
+        assert_eq!(wrong_status, unknown_status);
+        assert_eq!(empty_status, unknown_status);
+        assert_eq!(unknown_body, json!({ "error": "credenciais inválidas" }));
         assert_eq!(
-            users.len(),
-            1,
-            "inactive bruno is not sign-in-able: {roster}"
+            wrong_body, unknown_body,
+            "the two failures must be identical"
         );
-        assert_eq!(users[0]["username"], "amelia.marques");
+        assert_eq!(empty_body, unknown_body);
+    }
+
+    /// The throttle must not become the oracle the response body no longer is. A failure against an
+    /// unknown identifier registers a backoff entry exactly like a failure against a real account —
+    /// without one, unknown names would be probeable at full speed while real ones are speed-bumped,
+    /// which is the same enumeration by another channel. Asserted on the state rather than by racing
+    /// the (argon2-paced, debug-build-slow) 1 s first delay, so it is deterministic.
+    #[tokio::test]
+    async fn create_session_backs_off_unknown_identifiers_like_real_ones() {
+        let (state, _) = state_with_amelia().await;
+        assert!(state.signin_backoff.read().await.is_empty());
+
+        let attempt = |username: &'static str| {
+            let state = state.clone();
+            async move {
+                send_raw(
+                    state,
+                    post_json(
+                        "/v1/session",
+                        json!({ "username": username, "password": "Palavra-Passe-Errada-9!" }),
+                    ),
+                )
+                .await
+                .0
+            }
+        };
+
+        assert_eq!(attempt("amelia.marques").await, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            state.signin_backoff.read().await.len(),
+            1,
+            "a wrong password against a real account arms the speed-bump"
+        );
+
+        assert_eq!(attempt("nao.existe").await, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            state.signin_backoff.read().await.len(),
+            2,
+            "an unknown identifier must arm it too, or it is a free unthrottled probe"
+        );
+
+        // Unknown identifiers are folded into a bounded set of buckets, so spraying names cannot
+        // grow that map without bound (memory exhaustion) — 4096 keys is the ceiling, not one key
+        // per guess.
+        for guess in ["a", "b", "c", "d", "e", "f"] {
+            let (status, _) = send_raw(
+                state.clone(),
+                post_json(
+                    "/v1/session",
+                    json!({ "username": guess, "password": "Palavra-Passe-Errada-9!" }),
+                ),
+            )
+            .await;
+            assert!(
+                status == StatusCode::UNAUTHORIZED || status == StatusCode::TOO_MANY_REQUESTS,
+                "unknown guesses only ever 401 or 429, never a distinguishable state: {status}"
+            );
+        }
+        assert!(
+            state.signin_backoff.read().await.len() <= 8,
+            "unknown-identifier keys are bucketed, not one per guess"
+        );
+    }
+
+    /// A legacy account with no verifier is the one place a state-specific refusal survives, and
+    /// only when the caller addressed it by **id** (unguessable, so it confirms nothing they did not
+    /// already know). By `username` it must fall back to the uniform 401 — otherwise the 409 would
+    /// re-create exactly the `has_secret` leak dropped from the roster.
+    #[tokio::test]
+    async fn create_session_hides_the_no_verifier_state_from_username_callers() {
+        let (state, amelia_id) = state_with_amelia().await;
+        let token = open_session(&state, &amelia_id).await;
+        let (status, bruno) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/users",
+                    json!({ "username": "bruno", "password": DEFAULT_TEST_PASSWORD }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let bruno_id = bruno["id"].as_str().expect("id").to_owned();
+        {
+            let mut users = state.users.write().await;
+            let bruno = users
+                .values_mut()
+                .find(|u| u.username == "bruno")
+                .expect("bruno created");
+            bruno.password_hash = None;
+        }
+
+        // By id — the honest, state-specific 409 the desktop/onboarding paths rely on.
+        let (status, body) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": bruno_id, "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(
+            body["error"],
+            "palavra-passe não configurada para este utilizador"
+        );
+
+        // By username — indistinguishable from a user that does not exist.
+        let (status, body) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "username": "bruno", "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body, json!({ "error": "credenciais inválidas" }));
     }
 
     // --- t45: last-active-user deactivation guard -----------------------------------------
@@ -17072,6 +17426,326 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    /// t22-A. Legal hold used to ride on `book.export`, which 9 of the 15 seeded roles hold — an
+    /// Auditor or an API key could lift the hold that is the only thing standing between a book and
+    /// disposal. The split is only real if the export-holding roles are actually refused, so this
+    /// exercises the before/after roles rather than just the new verb's happy path.
+    #[tokio::test]
+    async fn legal_hold_needs_its_own_verb_and_no_longer_rides_on_book_export() {
+        use chancela_authz::{AUDITOR_ROLE_ID, LEGAL_COUNSEL_ROLE_ID, RoleAssignment, Scope};
+        let state = persistent_state();
+        let owner_token = seed_session(&state, &make_user(&state, "owner.operator").await).await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &owner_token).await;
+
+        let auditor = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(AUDITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let auditor_token = seed_session(&state, &auditor.0.to_string()).await;
+
+        // Reading a hold stays on the broad export verb — visibility was never the risk.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/books/{book_id}/legal-hold")),
+                &auditor_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "auditor may still READ the hold");
+
+        // Setting one is not.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                put_json(
+                    &format!("/v1/books/{book_id}/legal-hold"),
+                    json!({ "reason": "litígio pendente" }),
+                ),
+                &auditor_token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "book.export must no longer let an Auditor SET a legal hold"
+        );
+
+        // Legal Counsel is the seeded compliance holder and may set it.
+        let counsel = seed_user(
+            &state,
+            "counsel.operator",
+            vec![RoleAssignment::new(LEGAL_COUNSEL_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let counsel_token = seed_session(&state, &counsel.0.to_string()).await;
+        let (status, hold) = send(
+            state.clone(),
+            with_session(
+                put_json(
+                    &format!("/v1/books/{book_id}/legal-hold"),
+                    json!({ "reason": "litígio pendente" }),
+                ),
+                &counsel_token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "legal counsel sets the hold: {hold}"
+        );
+
+        // RELEASE is the asymmetric-risk half: the Auditor must not be able to undo it either.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                delete(&format!("/v1/books/{book_id}/legal-hold")),
+                &auditor_token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "book.export must no longer let an Auditor RELEASE a legal hold"
+        );
+
+        // …and the hold really is still in force after the refusal.
+        let (_, view) = send(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/books/{book_id}/legal-hold")),
+                &counsel_token,
+            ),
+        )
+        .await;
+        assert_eq!(view["legal_hold"], true, "refused release changed nothing");
+    }
+
+    /// t22-A, disposal half. The dry-run stays a review step on `book.export`; recording an
+    /// execution is the act a hold exists to block, so it needs the hold verb.
+    #[tokio::test]
+    async fn archive_disposal_execution_needs_the_legal_hold_verb_but_the_dry_run_does_not() {
+        use chancela_authz::{AUDITOR_ROLE_ID, RoleAssignment, Scope};
+        let state = persistent_state();
+        let owner_token = seed_session(&state, &make_user(&state, "owner.operator").await).await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &owner_token).await;
+
+        let auditor = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(AUDITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let auditor_token = seed_session(&state, &auditor.0.to_string()).await;
+
+        // The dry-run is reachable on book.export alone: whatever it answers, it is NOT a 403.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/archive/disposal"),
+                    json!({ "dry_run": true }),
+                ),
+                &auditor_token,
+            ),
+        )
+        .await;
+        assert_ne!(
+            status,
+            StatusCode::FORBIDDEN,
+            "the disposal dry-run stays a book.export review step"
+        );
+
+        // Execution is refused at the gate, before any eligibility reasoning.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/archive/disposal"),
+                    json!({ "dry_run": false }),
+                ),
+                &auditor_token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "an Auditor must not be able to EXECUTE archive disposal"
+        );
+    }
+
+    /// t22-B. The TSL decides which signatures validate. It used to share `cae.refresh` with the
+    /// economic-activity reference table, which Gestor and Company Owner hold, and it was the only
+    /// critical mutation in the product that appended NO ledger event.
+    #[tokio::test]
+    async fn tsl_import_needs_trust_manage_and_is_recorded_in_the_ledger() {
+        use chancela_authz::{GESTOR_ROLE_ID, RoleAssignment, Scope};
+        let state = persistent_state();
+        let owner_token = seed_session(&state, &make_user(&state, "owner.operator").await).await;
+
+        // Gestor holds cae.refresh — and that must no longer be enough.
+        let gestor = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let gestor_token = seed_session(&state, &gestor.0.to_string()).await;
+        let (status, _) = send(
+            state.clone(),
+            with_session(post_json("/v1/cae/refresh", json!({})), &gestor_token),
+        )
+        .await;
+        assert_ne!(
+            status,
+            StatusCode::FORBIDDEN,
+            "the Gestor keeps the CAE reference refresh it is meant to have"
+        );
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json("/v1/trust/refresh", json!({ "path": "does-not-exist.xml" })),
+                &gestor_token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "cae.refresh must no longer carry a TSL import with it"
+        );
+        assert!(
+            !state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .any(|e| e.kind == "trust.tsl.imported"),
+            "a refused import must not append an event"
+        );
+
+        // The Owner reaches the import. The source is bogus, so the attempt FAILS closed — and that
+        // is precisely the attempt an incident review needs recorded, so the event is appended for
+        // the failed outcome too.
+        let (status, attempt) = send(
+            state.clone(),
+            with_session(
+                post_json("/v1/trust/refresh", json!({ "path": "does-not-exist.xml" })),
+                &owner_token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "owner reaches the import: {attempt}"
+        );
+        assert_eq!(attempt["outcome"], "Failed");
+
+        let ledger = state.ledger.read().await;
+        let imported: Vec<_> = ledger
+            .events()
+            .iter()
+            .filter(|e| e.kind == "trust.tsl.imported")
+            .collect();
+        assert_eq!(imported.len(), 1, "exactly one import event");
+        assert_eq!(
+            imported[0].links.len(),
+            1,
+            "the `trust` keyword scope joins one chain"
+        );
+        assert!(ledger.verify().is_ok(), "the chain still verifies");
+    }
+
+    /// t22-C. The route map claimed step-up on the whole-store restore and the per-book start-over
+    /// long before either handler enforced it. A request without `reauth` must now fail.
+    #[tokio::test]
+    async fn restore_and_per_book_start_over_genuinely_require_step_up() {
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "Passo-Acima4!").await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
+        seal_one_act(&state, &book_id, &token).await;
+
+        // A valid session, the right permission, no step-up proof → 403 on both.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/restore",
+                    json!({ "archive": "no-such-backup.zip" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "restore on the session token alone"
+        );
+
+        let start_over_body = |reauth: Value| {
+            json!({
+                "reason": "livro esgotado — recomeçar",
+                "purpose": "livro de atas da assembleia geral (sucessor)",
+                "opening_date": "2026-07-08",
+                "required_signatories": ["Administrador"],
+                "reauth": reauth,
+            })
+        };
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/start-over"),
+                    start_over_body(json!({})),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "start-over on the session token alone"
+        );
+
+        // A wrong password is refused with the same uniform 403 (never says which proof was tried).
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/start-over"),
+                    start_over_body(json!({ "password": "WRONG" })),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "wrong password is refused");
+
+        // The correct password gets through the gate.
+        let (status, resp) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/start-over"),
+                    start_over_body(json!({ "password": "Passo-Acima4!" })),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "step-up satisfied: {resp}");
     }
 
     #[tokio::test]
@@ -17875,6 +18549,264 @@ mod tests {
                 .iter()
                 .any(|p| p["permission"] == "act.advance")
         );
+    }
+
+    /// t26 — a delegation may carry an **array** of permissions. The set shares one scope, one
+    /// lifetime and one legal basis; every element is validated independently; a batch containing
+    /// one offender is refused **entirely** and names it; a legacy single-permission request is
+    /// unaffected; and the ledger records the whole set.
+    #[tokio::test]
+    async fn t26_delegating_an_array_of_permissions_is_all_or_nothing() {
+        use crate::delegations::{DelegationId, DelegationView, StoredDelegation};
+        use chancela_authz::{
+            Delegation, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleId, Scope,
+            UserId as AuthzUserId,
+        };
+        use time::format_description::well_known::Rfc3339;
+
+        let state = fresh_state().await;
+        let owner = seed_user(
+            &state,
+            "owner.a",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &owner.to_string()).await;
+        let grantee = seed_user(&state, "amelia.marques", vec![]).await;
+        let g_tok = seed_session(&state, &grantee.to_string()).await;
+
+        let held = |perms: &serde_json::Value, verb: &str| -> bool {
+            perms["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .any(|p| p["permission"] == verb && p["source"] == "delegation")
+        };
+
+        // ── An array grants exactly the listed permissions, no more ──────────────────────────
+        let (status, view) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({
+                        "to": grantee.to_string(),
+                        "permissions": ["act.advance", "act.read", "data.backup"],
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-26"
+                    }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(
+            view["permissions"],
+            json!(["act.advance", "act.read", "data.backup"])
+        );
+        // The legacy singular field still names the primary verb, so old consumers keep working.
+        assert_eq!(view["permission"], json!("act.advance"));
+        let del_id = view["id"].as_str().expect("id").to_owned();
+
+        let (_, perms) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(held(&perms, "act.advance"));
+        assert!(held(&perms, "act.read"));
+        assert!(held(&perms, "data.backup"));
+        // Exactly the listed set — nothing the Owner holds leaked in alongside it.
+        assert_eq!(
+            perms["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .filter(|p| p["source"] == "delegation")
+                .count(),
+            3
+        );
+
+        // ── The ledger entry commits the full set ───────────────────────────────────────────
+        let stored_view = {
+            let table = state.delegations.read().await;
+            let d = table
+                .get(&DelegationId(Uuid::parse_str(&del_id).unwrap()))
+                .expect("stored");
+            assert_eq!(
+                d.authz().permissions(),
+                vec![
+                    Permission::ActAdvance,
+                    Permission::ActRead,
+                    Permission::DataBackup
+                ]
+            );
+            DelegationView::from(d)
+        };
+        let expected = chancela_ledger::digest(&serde_json::to_vec(&stored_view).unwrap());
+        {
+            let ledger = state.ledger.read().await;
+            let event = ledger
+                .events()
+                .iter()
+                .find(|e| {
+                    e.kind == "delegation.granted" && e.scope == format!("delegation:{del_id}")
+                })
+                .expect("delegation.granted event");
+            // The committed payload is the view carrying every granted verb.
+            assert_eq!(event.payload_digest, expected);
+        }
+
+        // ── One meta verb hidden among delegable siblings refuses the WHOLE batch, by name ───
+        let before = state.delegations.read().await.len();
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({
+                        "to": grantee.to_string(),
+                        "permissions": ["book.open", "role.manage", "entity.read"],
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-27"
+                    }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let message = body["error"].as_str().expect("error");
+        assert!(
+            message.contains("role.manage"),
+            "names the offender: {message}"
+        );
+        // Nothing was persisted — a half-applied delegation must not exist.
+        assert_eq!(state.delegations.read().await.len(), before);
+        let (_, perms) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(!held(&perms, "book.open"));
+        assert!(!held(&perms, "entity.read"));
+
+        // ── The subset ceiling is enforced element-wise, not in aggregate ────────────────────
+        // Carlos holds delegation.grant + act.read VIA A ROLE, and data.wipe only by DELEGATION.
+        // Pairing the received verb with a role-held one must not launder it into the batch.
+        let limited = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: limited,
+            name: "Delegador".to_owned(),
+            permission_set: [Permission::DelegationGrant, Permission::ActRead]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
+        let carlos = seed_user(
+            &state,
+            "carlos.nunes",
+            vec![RoleAssignment::new(limited, Scope::Global)],
+        )
+        .await;
+        let granted_at = time::OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .expect("fmt");
+        let received = StoredDelegation::new(
+            DelegationId(Uuid::new_v4()),
+            granted_at,
+            Delegation::new(
+                AuthzUserId(owner.0),
+                AuthzUserId(carlos.0),
+                Permission::DataWipe,
+                Scope::Global,
+            ),
+        );
+        state
+            .delegations
+            .write()
+            .await
+            .insert(received.id, received);
+        let c_tok = seed_session(&state, &carlos.to_string()).await;
+        let dora = seed_user(&state, "dora.silva", vec![]).await;
+        let before = state.delegations.read().await.len();
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({
+                        "to": dora.to_string(),
+                        "permissions": ["act.read", "data.wipe"],
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-28"
+                    }),
+                ),
+                &c_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body["error"].as_str().expect("error").contains("data.wipe"));
+        assert_eq!(state.delegations.read().await.len(), before);
+
+        // ── A legacy single-permission request still works, unchanged ────────────────────────
+        let (status, legacy) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({
+                        "to": dora.to_string(),
+                        "permission": "act.read",
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-29"
+                    }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(legacy["permission"], json!("act.read"));
+        assert_eq!(legacy["permissions"], json!(["act.read"]));
+
+        // ── A delegation naming no permission at all is a 422 ────────────────────────────────
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({
+                        "to": dora.to_string(),
+                        "permissions": [],
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-30"
+                    }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+        // ── Revoking the delegation withdraws EVERY permission it carried, atomically ────────
+        let (status, rv) = send_raw(
+            state.clone(),
+            with_session(delete(&format!("/v1/delegations/{del_id}")), &tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(rv["revoked"], json!(true));
+        let (_, perms) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(!held(&perms, "act.advance"));
+        assert!(!held(&perms, "act.read"));
+        assert!(!held(&perms, "data.backup"));
     }
 
     #[tokio::test]
@@ -20048,7 +20980,8 @@ mod tests {
     #[tokio::test]
     async fn per_book_start_over_archives_and_opens_a_fresh_successor() {
         let state = persistent_state();
-        let token = seed_session(&state, &make_user(&state, "amelia.marques").await).await;
+        // t22: per-book start-over now requires step-up, so the operator needs a verifiable password.
+        let token = user_with_password(&state, "amelia.marques", "Recomecar-Livro9!").await;
         let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
         seal_one_act(&state, &book_id, &token).await;
 
@@ -20062,6 +20995,7 @@ mod tests {
                         "purpose": "livro de atas da assembleia geral (sucessor)",
                         "opening_date": "2026-07-08",
                         "required_signatories": ["Administrador"],
+                        "reauth": { "password": "Recomecar-Livro9!" },
                     }),
                 ),
                 &token,

@@ -93,3 +93,35 @@ export const providerCredentialsFieldHelp = {
 export function providerCredentialFieldHelp(name: string): string | undefined {
   return (providerCredentialsFieldHelp as Record<string, string>)[name];
 }
+
+/** Field help for the email (SMTP) section (t23). Same late-resolving getter idiom, keyed by the
+ *  backend field names in `EmailSettings`. */
+export const emailFieldHelp = {
+  get enabled() {
+    return t('settings.email.help.enabled');
+  },
+  get host() {
+    return t('settings.email.help.host');
+  },
+  get port() {
+    return t('settings.email.help.port');
+  },
+  get encryption() {
+    return t('settings.email.help.encryption');
+  },
+  get username() {
+    return t('settings.email.help.username');
+  },
+  get password() {
+    return t('settings.email.help.password');
+  },
+  get from_address() {
+    return t('settings.email.help.fromAddress');
+  },
+  get from_name() {
+    return t('settings.email.help.fromName');
+  },
+  get helo_name() {
+    return t('settings.email.help.heloName');
+  },
+} satisfies Record<string, string>;

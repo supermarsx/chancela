@@ -119,7 +119,10 @@ function serverStub(opts: {
         // must not be more helpful than the real thing.
         const known = opts.knownUsernames ?? [BRUNO.username, AMELIA.username];
         const unknownUser = typeof body?.username === 'string' && !known.includes(body.username);
-        if (unknownUser || (opts.wrongPassword !== undefined && body?.password === opts.wrongPassword)) {
+        if (
+          unknownUser ||
+          (opts.wrongPassword !== undefined && body?.password === opts.wrongPassword)
+        ) {
           return json({ error: 'credenciais inválidas' }, 401);
         }
         signedIn = true;
@@ -437,9 +440,7 @@ describe('SignIn — recently used identifiers (device-local)', () => {
     expect(screen.queryByText('bruno.dias')).toBeNull();
 
     fireEvent.click(screen.getByText('amelia.marques'));
-    expect((screen.getByLabelText('Utilizador') as HTMLInputElement).value).toBe(
-      'amelia.marques',
-    );
+    expect((screen.getByLabelText('Utilizador') as HTMLInputElement).value).toBe('amelia.marques');
   });
 
   it('the ✕ is a labelled, keyboard-reachable button and its removal survives a reload', async () => {

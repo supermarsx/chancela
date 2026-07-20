@@ -3,7 +3,8 @@
 //!
 //! A session maps an opaque token to a [`SessionEntry`] — the user, plus (when the user signed in
 //! with a password and holds an attestation key) the **decrypted signing key** held in memory for
-//! the life of the session. The UI mints one with `POST /v1/session {user_id, password}`, sends
+//! the life of the session. The UI mints one with `POST /v1/session {username, password}` (or the
+//! back-compat `{user_id, password}` when it already holds the id), sends
 //! the returned token as the `X-Chancela-Session` header on every subsequent request, and the
 //! [`CurrentActor`](crate::actor::CurrentActor) /
 //! [`CurrentAttestor`](crate::actor::CurrentAttestor) extractors resolve it.
@@ -436,9 +437,20 @@ pub(crate) fn backoff_secs(fails: u32) -> i64 {
     TABLE[idx].min(30)
 }
 
+/// `POST /v1/session` body. The user is addressed by **either** `username` (the identifier an
+/// operator types; preferred, and the only form a signed-out client can know) **or** `user_id`
+/// (kept for back-compat: the onboarding wizard and the signed-in account switcher already hold the
+/// id, as do the server test harnesses). `username` wins when both are sent.
+///
+/// Neither field is required by serde: a body carrying no identifier at all is rejected by
+/// [`create_session`] with the same opaque `401` as a bad credential, so nothing about the request
+/// shape can be probed either.
 #[derive(Deserialize)]
 pub struct CreateSession {
-    pub user_id: Uuid,
+    #[serde(default)]
+    pub user_id: Option<Uuid>,
+    #[serde(default)]
+    pub username: Option<String>,
     pub password: String,
 }
 
@@ -560,76 +572,148 @@ pub(crate) fn grant_views(eff: &chancela_authz::ScopedPermissionSet) -> Vec<Perm
     out
 }
 
-/// One entry in the signed-out sign-in roster: the minimum a sign-in picker needs, and nothing
-/// sensitive. **No** attestation fingerprint, **no** `created_at`, **no** secret material.
-#[derive(Serialize)]
-pub struct RosterUser {
-    pub id: String,
-    pub username: String,
-    pub display_name: String,
-    /// Whether the user holds a sign-in secret, so the UI knows to prompt for a password.
-    pub has_secret: bool,
-}
-
-impl From<&User> for RosterUser {
-    fn from(u: &User) -> Self {
-        RosterUser {
-            id: u.id.to_string(),
-            username: u.username.clone(),
-            display_name: u.display_name.clone(),
-            has_secret: u.password_hash.is_some(),
-        }
-    }
-}
-
-/// Response of `GET /v1/session/roster`.
+/// Response of `GET /v1/session/roster` — **one boolean and nothing else** (t33-e2).
+///
+/// This used to carry a `users: [{ id, username, display_name, has_secret }]` array. That was user
+/// enumeration by design: any anonymous caller could `curl` the complete list of valid accounts for
+/// credential stuffing and targeted phishing, and `has_secret` additionally told them which of those
+/// accounts had a password set. Nothing about *who* exists is answered without a session any more —
+/// the signed-in `GET /v1/users` is the only user directory.
 #[derive(Serialize)]
 pub struct SessionRoster {
     /// `true` when no user exists at all — the first-run bootstrap create is available and the UI
-    /// should show the onboarding wizard instead of a sign-in picker.
+    /// should show the onboarding wizard instead of a sign-in form.
     pub onboarding_required: bool,
-    /// The **active** users a signed-out operator may sign in as (an inactive user can never mint a
-    /// session), each reduced to the minimal, non-sensitive picker fields.
-    pub users: Vec<RosterUser>,
 }
 
-/// `GET /v1/session/roster` — the **unauthenticated** minimal sign-in roster (t45).
+/// `GET /v1/session/roster` — the **unauthenticated** first-run probe (t45, narrowed by t33-e2).
 ///
-/// The signed-out sign-in UI needs, without a session, to (a) decide onboarding-vs-sign-in and
-/// (b) list the users it may sign in as. `GET /v1/users` stays auth-gated (it returns the full
-/// [`UserView`], including attestation fingerprints, for signed-in management); this endpoint
-/// deliberately exposes only `{ id, username, display_name, has_secret }` for active users so no
-/// sensitive material leaks to an anonymous caller.
+/// A signed-out client needs exactly one thing without a session: does this instance have any user
+/// yet, i.e. should it show onboarding or a sign-in form? That is the whole response. It does not
+/// enumerate users, so signing in is by typed identifier (`POST /v1/session {username, password}`),
+/// not by picking off a served list.
+///
+/// `onboarding_required` is intentionally still answered anonymously — the bootstrap create it gates
+/// is itself unauthenticated on a fresh instance, and `create_user` fails closed via
+/// [`is_uninitialised_instance`](crate::users) regardless of what this endpoint reports.
 pub async fn session_roster(State(state): State<AppState>) -> Json<SessionRoster> {
     let users = state.users.read().await;
-    let onboarding_required = users.is_empty();
-    let mut active: Vec<&User> = users.values().filter(|u| u.active).collect();
-    active.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
     Json(SessionRoster {
-        onboarding_required,
-        users: active.into_iter().map(RosterUser::from).collect(),
+        onboarding_required: users.is_empty(),
     })
 }
 
-/// `POST /v1/session` — mint a token for a user. **t41 H1:** unknown user, inactive user, and
-/// wrong password all return a uniform `401 "credenciais inválidas"`. While in backoff → `429`.
-pub async fn create_session(
-    State(state): State<AppState>,
-    Json(req): Json<CreateSession>,
-) -> Result<Json<SessionCreated>, ApiError> {
-    let uid = UserId(req.user_id);
-    let mut user = {
-        let users = state.users.read().await;
-        match users.get(&uid).cloned() {
-            Some(u) if u.active => u,
-            _ => return Err(ApiError::Unauthorized("credenciais inválidas".to_owned())),
-        }
-    };
+/// How many throttle buckets an *unknown* sign-in identifier is folded into.
+const UNKNOWN_IDENTIFIER_BUCKETS: u64 = 4096;
 
+/// Fixed high half of the synthetic [`UserId`] used for unknown identifiers. Real user ids are
+/// `Uuid::new_v4()`, so the odds any of the 4096 synthetic ids equals a real one are negligible —
+/// and a collision would only share a *throttle bucket*, never authenticate anything.
+const UNKNOWN_IDENTIFIER_TAG: [u8; 8] = [0x9e, 0x3d, 0x7a, 0x11, 0x4c, 0x82, 0x05, 0xd6];
+
+/// A stable synthetic [`UserId`] standing in for an identifier that matched no active user.
+///
+/// The failed-sign-in speed-bump ([`Backoff`]) and the cluster-wide counter are both keyed by user
+/// id, so an unknown identifier needs *a* key or it would face no throttle at all — and "unlimited
+/// fast attempts" vs "throttled after one failure" is exactly the oracle username sign-in exists to
+/// remove. Identifiers are folded into a fixed number of buckets rather than keyed 1:1 so spraying
+/// arbitrary names cannot grow the backoff map without bound (a trivial memory exhaustion);
+/// collisions only ever make the throttle stricter, never looser.
+fn unknown_identifier_key(identifier: &str) -> UserId {
+    let digest = Sha256::digest(identifier.to_ascii_lowercase().as_bytes());
+    let bucket = u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes"))
+        % UNKNOWN_IDENTIFIER_BUCKETS;
+    let mut bytes = [0u8; 16];
+    bytes[..8].copy_from_slice(&UNKNOWN_IDENTIFIER_TAG);
+    bytes[8..].copy_from_slice(&bucket.to_be_bytes());
+    UserId(Uuid::from_bytes(bytes))
+}
+
+/// A verifier no submitted password can ever match, so the unknown-identifier path spends the *same*
+/// argon2 work a wrong password spends against a real account.
+///
+/// Returning early for an unknown user while a wrong password costs ~100 ms of argon2 is itself a
+/// user-enumeration oracle — an attacker times the response instead of reading it. So the unknown
+/// path runs the identical [`verify_secret_with_seed`] call against this. It is a legacy PHC hash of
+/// a per-process random secret: `verify_legacy_phc` and the hardened verifier both run
+/// `Argon2id/V0x13/Params::default()`, so the work matches, and the secret is never known to anyone.
+/// Computed once per process — hashing it per request would make the unknown path *slower* than the
+/// real one and simply invert the oracle.
+fn dummy_verifier() -> &'static str {
+    static DUMMY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    DUMMY.get_or_init(|| {
+        crate::attestation::hash_secret(&Uuid::new_v4().to_string())
+            .unwrap_or_else(|_| String::from("$argon2id$v=19$m=19456,t=2,p=1$YWFhYWFhYWE$"))
+    })
+}
+
+/// The stored verifier for a resolved user, or the state-specific refusal for a legacy account that
+/// has none. Only reachable when the caller already addressed the user by **id** — see
+/// [`create_session`].
+fn stored_verifier_for(user: &User) -> Result<String, ApiError> {
     let Some(stored) = user.password_hash.clone() else {
         return Err(ApiError::Conflict(
             "palavra-passe não configurada para este utilizador".to_owned(),
         ));
+    };
+    Ok(stored)
+}
+
+/// `POST /v1/session` — mint a token for a user addressed by `username` (preferred) or `user_id`
+/// (back-compat). **t41 H1 / t33-e2:** unknown identifier, inactive user, and wrong password all
+/// return a uniform `401 "credenciais inválidas"` — same status, same body, same wording, and the
+/// same argon2 work so the *timing* does not distinguish them either. While in backoff → `429`.
+pub async fn create_session(
+    State(state): State<AppState>,
+    Json(req): Json<CreateSession>,
+) -> Result<Json<SessionCreated>, ApiError> {
+    // Resolve the identifier server-side. `username` is matched case-insensitively, consistently
+    // with the uniqueness rule `create_user` enforces (`users.rs`), and only against **active**
+    // users — an inactive user can never mint a session, and must be indistinguishable from one that
+    // does not exist.
+    let resolved: Option<User> = {
+        let users = state.users.read().await;
+        match (&req.username, req.user_id) {
+            (Some(name), _) => users
+                .values()
+                .find(|u| u.active && u.username.eq_ignore_ascii_case(name))
+                .cloned(),
+            (None, Some(id)) => match users.get(&UserId(id)).cloned() {
+                Some(u) if u.active => Some(u),
+                _ => None,
+            },
+            // No identifier at all. Not an enumeration signal (it says nothing about who exists),
+            // but it takes the same opaque failure so there is only one shape to reason about.
+            (None, None) => None,
+        }
+    };
+
+    // Throttle key: the real user id when we resolved one, otherwise a synthetic bucket for the
+    // identifier so an unknown name is speed-bumped exactly like a known one.
+    let uid = match &resolved {
+        Some(u) => u.id,
+        None => {
+            let identifier = req
+                .username
+                .clone()
+                .or_else(|| req.user_id.map(|id| id.to_string()))
+                .unwrap_or_default();
+            unknown_identifier_key(&identifier)
+        }
+    };
+
+    // The verifier to check the submitted password against: the user's own, or the constant-work
+    // dummy. The legacy "user exists but has no verifier" 409 is only honest when the caller
+    // addressed the user by **id** — an id is unguessable, so whoever holds one already knows the
+    // account exists. Reached by `username` it would re-create precisely the `has_secret` leak this
+    // task removed from the roster, so there it degrades to the uniform 401 via the dummy.
+    let stored = match (&resolved, &req.username) {
+        (Some(u), None) => stored_verifier_for(u)?,
+        (Some(u), Some(_)) => u
+            .password_hash
+            .clone()
+            .unwrap_or_else(|| dummy_verifier().to_owned()),
+        (None, _) => dummy_verifier().to_owned(),
     };
     // wp16 P3a — GLOBAL sign-in throttle (cluster-wide when Redis is configured; a no-op single-node,
     // so the per-user backoff below stays the sole authority and behaviour is byte-identical). This
@@ -674,6 +758,12 @@ pub async fn create_session(
         return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
     }
     drop(backoff);
+    // The password proved out, so `stored` was a real account's verifier — the dummy is a hash of a
+    // per-process random secret and can never verify. Belt and braces: if it somehow did, fall
+    // through to the same opaque 401 rather than minting anything.
+    let Some(mut user) = resolved else {
+        return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
+    };
     state.signin_backoff.write().await.remove(&uid);
     // A successful sign-in clears the global counter too (cluster-wide reset).
     state.cluster_shared.signin_limiter.clear(&signin_limit_key);

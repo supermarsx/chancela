@@ -18,6 +18,7 @@ function listView(
   return {
     strict: false,
     protection_level: 'obfuscation',
+    can_store: true,
     providers: [
       {
         mode: 'csc',
@@ -106,8 +107,10 @@ describe('ProviderCredentialsSection', () => {
     vi.stubGlobal('fetch', stubFetch().fn);
     renderWithProviders(<ProviderCredentialsSection />);
 
-    // The group card title and both entries render.
-    expect(await screen.findByText(/QTSP CSC · encosto-qtsp/)).toBeTruthy();
+    // The group card title and both entries render. The title appears twice: as the card heading
+    // and inside the grid's visually-hidden caption, which names the table for a screen reader.
+    expect(await screen.findByRole('heading', { name: 'QTSP CSC · encosto-qtsp' })).toBeTruthy();
+    expect(screen.getByText('Entradas de credencial de QTSP CSC · encosto-qtsp')).toBeTruthy();
     expect(screen.getByText('Primária')).toBeTruthy();
     expect(screen.getByText('Secundária')).toBeTruthy();
     // The endpoint and a configured field badge are shown.
@@ -269,6 +272,94 @@ describe('ProviderCredentialsSection', () => {
     );
     renderWithProviders(<ProviderCredentialsSection />);
     expect(await screen.findByText(/modo estrito está ativo/i)).toBeTruthy();
+  });
+
+  // The t16 defect: a store that can hold NOTHING used to render the "obfuscation — defence in
+  // depth" warning, telling the operator their secrets were kept with weaker protection. They were
+  // not kept at all. The banner must now say so, name the remedy, and never claim a level.
+  it('says nothing can be stored — never "weaker protection" — when the store has no key', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        list: listView({
+          can_store: false,
+          protection_level: undefined,
+          storage_failure: 'not_persistent',
+          providers: [],
+        }),
+      }).fn,
+    );
+    renderWithProviders(<ProviderCredentialsSection />);
+
+    expect(await screen.findByText('Não é possível guardar credenciais')).toBeTruthy();
+    expect(screen.getByText(/simplesmente não são guardadas/)).toBeTruthy();
+    expect(screen.getByText(/CHANCELA_DATA_DIR/)).toBeTruthy();
+    // The obfuscation claim must be gone entirely, and creating an entry is inert.
+    expect(screen.queryByText('Ofuscação — defesa em profundidade')).toBeNull();
+    const create = screen.getByRole('button', { name: 'Nova entrada' }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+  });
+
+  // A server predating the `can_store` field omits `protection_level` in exactly the same case, so
+  // the honest banner has to hold there too rather than falling through to obfuscation.
+  it('reads an older server that omits both storage fields as "cannot store"', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        list: listView({ can_store: undefined, protection_level: undefined, providers: [] }),
+      }).fn,
+    );
+    renderWithProviders(<ProviderCredentialsSection />);
+
+    expect(await screen.findByText('Não é possível guardar credenciais')).toBeTruthy();
+    expect(screen.queryByText('Ofuscação — defesa em profundidade')).toBeNull();
+  });
+
+  it('renders every entry as one grid row and tells configured fields from unconfigured ones', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        list: listView({
+          providers: [
+            {
+              mode: 'csc',
+              provider_id: 'encosto-qtsp',
+              entries: [
+                {
+                  entry_id: 'entry-a',
+                  label: 'Primária',
+                  priority: 0,
+                  enabled: true,
+                  endpoint: 'https://qtsp.example/csc',
+                  selectors: {},
+                  fields: [
+                    { field_name: 'client_secret', configured: true },
+                    { field_name: 'access_token', configured: false },
+                  ],
+                  created_at: '2026-07-01T10:00:00Z',
+                  updated_at: '2026-07-01T10:00:00Z',
+                },
+              ],
+            },
+          ],
+        }),
+      }).fn,
+    );
+    renderWithProviders(<ProviderCredentialsSection />);
+
+    const row = (await screen.findByText('Primária')).closest('tr') as HTMLElement;
+    expect(row).toBeTruthy();
+    // Every column of the grid is populated from the entry.
+    expect(within(row).getByText(/client_secret · configurado/)).toBeTruthy();
+    expect(within(row).getByText(/access_token · por configurar/)).toBeTruthy();
+    expect(within(row).getByText('Prioridade 0')).toBeTruthy();
+    expect(within(row).getByRole('switch', { name: 'Ativa' })).toBeTruthy();
+    expect(within(row).getAllByText('https://qtsp.example/csc').length).toBeGreaterThan(0);
+    // The grid is a real table with a header naming each column.
+    expect(screen.getByRole('columnheader', { name: 'Campos' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Prioridade' })).toBeTruthy();
+    // A secret value is never echoed anywhere in the rendered surface.
+    expect(document.body.textContent).not.toContain('sk_live');
   });
 
   it('keeps create inert for a reader and never issues a mutation', async () => {

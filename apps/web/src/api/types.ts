@@ -4061,8 +4061,7 @@ export interface PasswordPolicyView {
  * timing. Never surface the raw message in a way that implies otherwise.
  */
 export type CreateSessionBody = { password: string } & (
-  | { username: string; user_id?: never }
-  | { user_id: string; username?: never }
+  { username: string; user_id?: never } | { user_id: string; username?: never }
 );
 
 // Sign-in secret + attestation-key management bodies (t29). `current_password` is
@@ -6734,6 +6733,8 @@ export interface SmtpFailure {
   enhanced_code?: string;
   /** The relay's reply text verbatim, or the OS/TLS error when it never replied. */
   detail: string;
+  /** Whether the session was already inside TLS when it failed. */
+  tls: boolean;
 }
 
 /** `POST /v1/settings/email/test` — a relay rejection is a 200 with `ok: false`, not an HTTP error. */

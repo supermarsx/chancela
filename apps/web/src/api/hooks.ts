@@ -2308,8 +2308,7 @@ export function usePasswordPolicy() {
  * created the user) and the signed-in account switcher (it reads the auth-gated user list).
  */
 export type SignInArgs = { password: string } & (
-  | { username: string; userId?: never }
-  | { userId: string; username?: never }
+  { username: string; userId?: never } | { userId: string; username?: never }
 );
 
 /**

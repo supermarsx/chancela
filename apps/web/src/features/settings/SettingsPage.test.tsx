@@ -2584,6 +2584,28 @@ describe('SettingsPage', () => {
     expect(screen.getByText('A usar as cores predefinidas do tema')).toBeTruthy();
   });
 
+  it('spaces the theme reset row on the appearance form rhythm, not a bespoke margin', async () => {
+    // The appearance form's rhythm is `.form > * + *` — a DIRECT-child selector. The reset row
+    // is nested inside `.color-customizer`, so it never matched and had no top spacing at all,
+    // which is what made it read as cramped next to the identically-shaped "baralhar" row two
+    // rows up. Pin the structural fix: the nested row steps by the SAME 1rem the section uses.
+    const nodeFs = 'node:fs';
+    const { readFileSync } = (await import(nodeFs)) as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    const css = readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
+
+    const sectionStep = css.match(/^\.form > \* \+ \* \{[^}]*margin-top:\s*([^;]+);/m);
+    expect(sectionStep).toBeTruthy();
+
+    const resetRow = css.match(/^\.color-customizer > \.form__actions \{[^}]*\}/m)?.[0] ?? '';
+    expect(resetRow).toContain('margin-top');
+    // Same value as the section rhythm — matching it, not inventing a new step.
+    expect(resetRow).toContain(`margin-top: ${sectionStep![1]};`);
+    // Wraps rather than overflowing the card when the settings column narrows.
+    expect(resetRow).toContain('flex-wrap: wrap');
+  });
+
   it('defaults the AI/MCP tenant gate off when the settings document omits it', async () => {
     const { fn } = settingsFetch(settingsWithoutAi());
     vi.stubGlobal('fetch', fn);
@@ -5227,11 +5249,11 @@ describe('SettingsPage', () => {
     const tsa = (await screen.findByLabelText(
       'URL da autoridade de selo temporal (TSA)',
     )) as HTMLInputElement;
-    // The reset control is now an icon-only button; its accessible name comes from the
-    // Tooltip `label` (aria-label), so `getByRole(..., { name })` still resolves it (the TSA
-    // field's reset is the first of the two).
+    // The reset control is an icon-only button; its accessible name comes from the Tooltip
+    // `label` (aria-label), so `getByRole(..., { name })` still resolves it. Since t36 each
+    // default URL sits in the card for the grid it backs, so TSL comes first and TSA second.
     const reset = () =>
-      screen.getAllByRole('button', { name: 'Repor predefinição' })[0] as HTMLButtonElement;
+      screen.getAllByRole('button', { name: 'Repor predefinição' })[1] as HTMLButtonElement;
 
     // At the default value the reset is inert…
     expect(reset().disabled).toBe(true);
@@ -5276,9 +5298,12 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
 
+    // Every source is now one grid row whose name is an editable cell, so the names read back as
+    // input values rather than headings — that is the point of the redesign: two sources can be
+    // compared down a column instead of across two stacked blocks.
     expect(await screen.findByText('Fontes TSL')).toBeTruthy();
-    expect(screen.getByText('Portugal GNS Trusted List')).toBeTruthy();
-    expect(screen.getByText('EU List of Trusted Lists')).toBeTruthy();
+    expect(screen.getByDisplayValue('Portugal GNS Trusted List')).toBeTruthy();
+    expect(screen.getByDisplayValue('EU List of Trusted Lists')).toBeTruthy();
     const cachedSource = screen.getByRole('group', { name: 'Operator cached TSL' });
     expect(within(cachedSource).getByDisplayValue('operator-cache')).toBeTruthy();
     expect(
@@ -5299,8 +5324,10 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
 
     const cachedSource = await screen.findByRole('group', { name: 'Operator cached TSL' });
+    // One control per row, and its label states the row's current state (t36) — the row used to
+    // carry a status badge AND a separately-worded switch saying the same thing.
     const enabled = within(cachedSource).getByRole('switch', {
-      name: 'Fonte TSL ativa',
+      name: 'Inativa',
     }) as HTMLInputElement;
     expect(enabled.checked).toBe(false);
     fireEvent.click(enabled);
@@ -5350,8 +5377,8 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
 
-    expect(await screen.findByText('Portugal GNS Trusted List')).toBeTruthy();
-    expect(screen.getByText('Portugal Cartao de Cidadao TSA')).toBeTruthy();
+    expect(await screen.findByDisplayValue('Portugal GNS Trusted List')).toBeTruthy();
+    expect(screen.getByDisplayValue('Portugal Cartao de Cidadao TSA')).toBeTruthy();
   });
 
   it('adds, normalizes, disables, and removes trust sources with collision-free ids', async () => {
@@ -5399,14 +5426,13 @@ describe('SettingsPage', () => {
     fireEvent.change(within(newSource).getByLabelText('Esquema'), {
       target: { value: '  eidas  ' },
     });
-    fireEvent.click(within(newSource).getByRole('switch', { name: 'Fonte TSL ativa' }));
+    fireEvent.click(within(newSource).getByRole('switch', { name: 'Inativa' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar TSA' }));
     const newTsa = screen.getByRole('group', { name: 'Novo prestador TSA' });
     expect(within(newTsa).getByText('tsa-provider-3')).toBeTruthy();
     expect(
-      (within(newTsa).getByRole('switch', { name: 'Prestador TSA ativo' }) as HTMLInputElement)
-        .checked,
+      (within(newTsa).getByRole('switch', { name: 'Ativa' }) as HTMLInputElement).checked,
     ).toBe(true);
     fireEvent.change(within(newTsa).getByLabelText('Nome'), {
       target: { value: '  TSA Three  ' },
@@ -5420,7 +5446,7 @@ describe('SettingsPage', () => {
     fireEvent.change(within(newTsa).getByLabelText('Política aceite'), {
       target: { value: '  1.2.3.4  ' },
     });
-    fireEvent.click(within(newTsa).getByRole('switch', { name: 'Prestador TSA ativo' }));
+    fireEvent.click(within(newTsa).getByRole('switch', { name: 'Ativa' }));
 
     await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
       timeout: 3000,
@@ -5474,6 +5500,21 @@ describe('SettingsPage', () => {
     expect(screen.getByText('chk_ab12cd34ef56')).toBeTruthy();
     expect(screen.getByText('60 req/min · rajada 20')).toBeTruthy();
     expect(screen.queryByText('chk_new_plaintext_secret')).toBeNull();
+  });
+
+  // The checklist is a checkbox group, not one control, so it used to carry a
+  // `<label for="">` — an orphan label naming nothing. It must be a named group instead.
+  it('names the API key permission checklist as a group instead of orphaning its label', async () => {
+    const { fn } = apiKeysFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova chave API' }));
+
+    const group = await screen.findByRole('group', { name: 'Permissões' });
+    expect(group.contains(await screen.findByLabelText('ledger.read'))).toBe(true);
+    expect(document.querySelectorAll('label[for=""]')).toHaveLength(0);
   });
 
   it('creates an API key with a scoped permission grant and shows the plaintext once', async () => {
@@ -5566,5 +5607,22 @@ describe('SettingsPage', () => {
       ),
     );
     expect(await screen.findByText('Revogada')).toBeTruthy();
+  });
+
+  it('shows the page title exactly once, as the level-1 heading', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    // The browser tab title is owned by index.html; no page may clobber it.
+    document.title = 'Chancela — Livro de Atas Digital';
+    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+
+    // The header used to repeat the title as a self-referential breadcrumb, in the
+    // singular ("Configuração") above the plural <h1>; only the <h1> survives.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Configurações' })).toBeTruthy();
+    expect(screen.getAllByText('Configurações')).toHaveLength(1);
+    expect(screen.queryByText('Configuração')).toBeNull();
+    expect(document.querySelector('.page-header__crumbs')).toBeNull();
+    expect(document.title).toBe('Chancela — Livro de Atas Digital');
   });
 });
