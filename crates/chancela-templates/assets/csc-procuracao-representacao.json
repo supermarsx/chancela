@@ -1,0 +1,46 @@
+{
+  "id": "csc-procuracao-representacao/v1",
+  "family": "CommercialCompany",
+  "stage": "Convocatoria",
+  "channels": ["Physical", "Hybrid", "Telematic"],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Procuração e carta de representação" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Sociedade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Reunião", "value": "{{ title }}" },
+        { "key": "Data da reunião", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Sócio representado", "value": "{{ represented.name }}" },
+        { "key": "Representante", "value": "{{ representative.name }}" },
+        { "key": "Documento do representante", "value": "{{ representative.document }}" },
+        { "key": "Âmbito", "value": "{{ representation.scope }}" },
+        { "key": "Limites ou instruções", "value": "{{ representation.instructions }}" },
+        { "key": "Referência de prova", "value": "{{ representation.evidence_reference }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "O sócio representado declara conferir ao representante acima identificado poderes para o representar na reunião indicada, incluindo a participação, discussão e votação dos pontos constantes da convocatória, nos termos dos estatutos e do Código das Sociedades Comerciais."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Quando aplicável a sociedade anónima, o presente instrumento serve também como carta de representação dirigida à mesa da assembleia geral, ficando associado à lista de presenças e ao registo de delegação utilizado para a ata."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if representation.instructions %}O representante deve observar as instruções ou limites acima registados, sem prejuízo da verificação substantiva dos poderes pela entidade e pelos seus órgãos competentes.{% endif %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "condominio-anexo-acordo-email/v1",
+  "family": "Condominium",
+  "stage": "Ata",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Anexo — acordo de comunicações por correio eletrónico" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "Ata de referência", "value": "{{ ata_number }}" },
+        { "key": "Data da assembleia", "value": "{{ meeting_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Fica registado que os condóminos abaixo identificados declararam aceitar que as convocatórias e as comunicações do condomínio lhes sejam remetidas por correio eletrónico, para os endereços indicados, produzindo tal envio os efeitos das comunicações escritas previstas na lei e no regulamento do condomínio."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "attachments",
+      "template": "{{ label }}{% if kind %} ({{ kind }}){% endif %}{% if digest %} — resumo criptográfico {{ digest }}{% endif %}."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

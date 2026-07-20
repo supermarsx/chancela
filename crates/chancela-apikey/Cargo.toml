@@ -1,0 +1,20 @@
+[package]
+name = "chancela-apikey"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "API-key model + the key→RBAC-principal seam for Chancela (t65): high-entropy shown-once keys hashed with sha256 at rest, constant-time verification, per-key rate limiting, and the attenuation invariant (a key's effective permissions can never exceed its creator's). An API key IS an RBAC principal — it resolves to the same scoped permission-set a session does, so one fail-closed gate serves web, integration API and MCP. Pure/deterministic: the caller supplies now and the book→entity relation; no clock, no network, no store."
+
+[dependencies]
+chancela-authz = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+rand_core = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

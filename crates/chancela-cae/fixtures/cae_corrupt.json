@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-01T00:00:00Z",
+  "source_note": "chancela-cae test corrupt fixture: parses as JSON but fails integrity (orphan subclasse)",
+  "rev3": [],
+  "rev4": [
+    { "code": "01111", "designation": "Subclasse órfã", "level": "Subclasse", "revision": "Rev4", "parent": "0111" }
+  ]
+}

@@ -1,0 +1,3 @@
+# Python bytecode cache produced when the soak driver is imported/run locally.
+__pycache__/
+*.pyc

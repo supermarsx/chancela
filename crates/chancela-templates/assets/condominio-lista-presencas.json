@@ -1,0 +1,39 @@
+{
+  "id": "condominio-lista-presencas/v1",
+  "family": "Condominium",
+  "stage": "Reuniao",
+  "channels": ["Physical", "Hybrid", "Telematic"],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Lista de presenças" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "Prédio / sede", "value": "{{ entity.seat }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Condóminos presentes", "value": "{{ members_present }}" },
+        { "key": "Condóminos representados", "value": "{{ members_represented }}" },
+        { "key": "Referência", "value": "{{ attendance_reference }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "items": "attendees",
+      "template": "{{ name }}{% if quality_note %} — {{ quality_note }}{% elif quality | quality_label %} — {{ quality | quality_label }}{% endif %}{% if weight and weight.Permilage %} — permilagem {{ weight.Permilage }}‰{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}ausente{% endif %}."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if not attendees %}Registam-se {{ members_present }} condóminos presentes e {{ members_represented }} condóminos representados; para a identificação individual e respetiva permilagem, ver {{ attendance_reference }}.{% endif %}"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,220 @@
+.dashboard-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.65rem;
+}
+
+.dashboard-metrics > .card {
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.dashboard-metrics .card__label {
+  font-size: 0.56rem;
+  line-height: 1.2;
+  margin-bottom: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-metrics .card__metric {
+  font-size: 1.55rem;
+}
+
+.dashboard-metrics .card__note {
+  font-size: 0.68rem;
+  line-height: 1.25;
+  margin-top: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-tab,
+.dashboard-tab--stats,
+.dashboard-card-section {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dashboard-card-section__title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.dashboard-card-section__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dashboard-activity-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr));
+}
+
+.dashboard-activity-metrics > .card {
+  padding-block: 0.65rem;
+}
+
+.dashboard-activity-metrics .card__label {
+  font-size: 0.54rem;
+}
+
+.dashboard-activity-metrics .card__metric {
+  font-size: 1.35rem;
+}
+
+@media (min-width: 960px) {
+  .dashboard-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.dashboard-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dashboard-section-grid > * {
+  min-width: 0;
+}
+
+.dashboard-section-grid .panel__head,
+.dashboard-section-grid .panel__body {
+  padding-inline: 1rem;
+}
+
+.dashboard-list {
+  display: grid;
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-list__item {
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.dashboard-list__head,
+.dashboard-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  min-width: 0;
+}
+
+.dashboard-list__title {
+  min-width: 0;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-list__detail {
+  margin: 0.35rem 0 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-list__meta {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.25;
+  margin-top: 0.3rem;
+}
+
+.dashboard-list__meta > span,
+.dashboard-workqueue__meta > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-list__more {
+  margin: 0.55rem 0 0;
+  font-size: 0.82rem;
+}
+
+.dashboard-workqueue {
+  gap: 0.5rem;
+}
+
+.dashboard-workqueue__item {
+  padding: 0.6rem 0.7rem;
+}
+
+.dashboard-workqueue__head,
+.dashboard-workqueue__meta {
+  gap: 0.35rem 0.55rem;
+}
+
+.dashboard-workqueue__title {
+  flex-basis: 10rem;
+  line-height: 1.25;
+}
+
+.dashboard-workqueue__action.btn--iconOnly {
+  width: 1.8rem;
+  min-width: 1.8rem;
+  height: 1.8rem;
+  min-height: 1.8rem;
+}
+
+.dashboard-workqueue__detail {
+  margin-top: 0.3rem;
+  line-height: 1.35;
+}
+
+.dashboard-workqueue__meta {
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+}
+
+.dashboard-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.dashboard-status-grid__item {
+  min-width: 0;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.dashboard-status-grid dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-status-grid dd {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  margin: 0.35rem 0 0;
+}
+
+@media (max-width: 860px) {
+  .dashboard-section-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

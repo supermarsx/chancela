@@ -1,0 +1,488 @@
+/**
+ * i18n framework tests: the completeness contract (every shipped locale carries exactly
+ * the source key set), `{param}` interpolation, and the store's locale fallback. The
+ * completeness matrix is the guard that lets t19-e3b/e3c fill their locale files without
+ * being able to drift the frozen key set.
+ */
+import { describe, it, expect } from 'vitest';
+import { ptPT } from './locales/pt-PT';
+import { enUS } from './locales/en-US';
+import { enGB } from './locales/en-GB';
+import { ptBR } from './locales/pt-BR';
+import { deDE } from './locales/de-DE';
+import { daDK } from './locales/da-DK';
+import { esES } from './locales/es-ES';
+import { fiFI } from './locales/fi-FI';
+import { frFR } from './locales/fr-FR';
+import { itIT } from './locales/it-IT';
+import { nlNL } from './locales/nl-NL';
+import { plPL } from './locales/pl-PL';
+import { svFI } from './locales/sv-FI';
+import { svSE } from './locales/sv-SE';
+import { interpolate } from './interpolate';
+import { i18nStore } from './store';
+import { LOCALE_LOADERS, LOCALE_QUALITY, SHIPPED_LOCALES } from './registry';
+
+const sourceKeys = Object.keys(ptPT).sort();
+
+describe('catalog completeness matrix', () => {
+  it('the source catalog has a non-trivial key set', () => {
+    expect(sourceKeys.length).toBeGreaterThan(200);
+  });
+
+  it('uses natural pt-PT wording for the registry catch-all filter', () => {
+    expect(ptPT['entities.filters.registry.all']).toBe('Qualquer estado');
+    expect(ptPT['entities.filters.registry.all']).not.toBe('Todo o registo');
+  });
+
+  it('keeps missing-attendance reminder copy in European Portuguese', () => {
+    expect(ptPT['notifications.reminder.act.attendance.title']).toBe(
+      'Registar presenças: {act_title}',
+    );
+    expect(ptPT['notifications.reminder.act.attendance.body']).toContain('Registe');
+    expect(ptPT['notifications.reminder.act.attendance.action']).toBe('Registar presenças');
+    expect(ptPT['notifications.reminder.act.attendance.title']).not.toContain('Registrar');
+    expect(ptPT['notifications.reminder.act.attendance.body']).not.toContain('Registre');
+  });
+
+  it('keeps absent-owner dispatch reminder copy advisory and status-aware', () => {
+    expect(ptPT['notifications.reminder.absentOwnerDispatch.title']).toBe(
+      'Evidência de expedição pendente: {act_title}',
+    );
+    expect(ptPT['notifications.reminder.absentOwnerDispatch.body']).toContain(
+      'O lembrete é apenas consultivo.',
+    );
+    expect(ptPT['dashboard.workQueue.status.pending']).toBe('Pendente');
+    expect(enUS['notifications.reminder.absentOwnerDispatch.body']).toContain(
+      'This reminder is advisory only.',
+    );
+    expect(enUS['dashboard.workQueue.status.pending']).toBe('Pending');
+  });
+
+  it('keeps missing-meeting-date convocation reminder copy non-computing and advisory', () => {
+    const key = 'notifications.reminder.act.conveningNotice.missingMeetingDate.body';
+    expect(ptPT[key]).toContain('não pode ser calculada');
+    expect(ptPT[key]).toContain('cálculo de prazo legal');
+    expect(ptPT[key]).toContain('aceitação por registo, DRE ou fornecedor');
+    expect(ptPT[key]).not.toContain('{notice_due_date}');
+    expect(enUS[key]).toContain('cannot be computed');
+    expect(enUS[key]).toContain('legal deadline computation');
+    expect(enUS[key]).toContain('registry/DRE acceptance');
+    expect(enUS[key]).not.toContain('{notice_due_date}');
+  });
+
+  it('keeps condominium annual reminder titles localized', () => {
+    expect(ptPT['notifications.reminder.annual.condominio.title']).toBe(
+      'Assembleia anual de condomínio pendente',
+    );
+    expect(enUS['notifications.reminder.annual.condominio.title']).toBe(
+      'Annual condominium assembly pending',
+    );
+    expect(deDE['notifications.reminder.annual.condominio.title']).not.toBe(
+      ptPT['notifications.reminder.annual.condominio.title'],
+    );
+  });
+
+  it('keeps delegation legal-basis copy local-evidence only', () => {
+    expect(ptPT['rbac.deleg.legalBasis.label']).toBe('Base/evidência local');
+    expect(ptPT['rbac.deleg.legalBasis.hint']).toContain('não certifica suficiência legal');
+    expect(ptPT['rbac.deleg.legalBasis.missing']).toBe('Em falta (legado)');
+    expect(enUS['rbac.deleg.legalBasis.label']).toBe('Local basis/evidence');
+    expect(enUS['rbac.deleg.legalBasis.hint']).toContain('does not certify legal sufficiency');
+    expect(enUS['rbac.deleg.legalBasis.missing']).toBe('Missing (legacy)');
+  });
+
+  it('keeps PDF validator copy localized in the English catalog', () => {
+    expect(enUS['tools.section.pdfValidator']).toBe('PDF validator');
+    expect(enUS['pdfValidator.file.label']).toBe('Signed PDF');
+    expect(enUS['pdfValidator.action.validate']).toBe('Validate PDF');
+    expect(enUS['pdfValidator.notice.title']).not.toBe('Validação técnica local');
+  });
+
+  it('keeps representative non-English PDF validator copy out of stale Portuguese', () => {
+    for (const catalog of [deDE, svSE]) {
+      expect(catalog['pdfValidator.notice.title']).not.toBe('Validação técnica local');
+      expect(catalog['pdfValidator.file.label']).not.toBe('PDF assinado');
+    }
+  });
+
+  it('keeps imported-document guardrail copy localized in the English catalog', () => {
+    expect(enUS['documents.import.guardrails.title']).toBe('Preservation limits');
+    expect(enUS['documents.import.guardrails.canonical.label']).toBe('Canonical record');
+    expect(enUS['documents.import.guardrails.signed.label']).toBe('Signed artifact');
+    expect(enUS['documents.import.guardrails.title']).not.toBe('Limites de preservação');
+    expect(enUS['documents.import.guardrails.canonical.label']).not.toBe('Registo canónico');
+  });
+
+  it('keeps representative non-English guardrail copy out of stale Portuguese', () => {
+    for (const catalog of [deDE, svSE]) {
+      expect(catalog['documents.import.guardrails.title']).not.toBe('Limites de preservação');
+      expect(catalog['documents.import.guardrails.canonical.label']).not.toBe('Registo canónico');
+    }
+  });
+
+  it('keeps generated absent-owner communication copy localized outside source and English fallback text', () => {
+    const portugueseLeakageKeys = [
+      'documents.generated.title',
+      'documents.generated.notice',
+      'documents.generated.noClaim.badge',
+      'documents.generated.status.title',
+      'documents.generated.status.coverage',
+      'documents.generated.noClaim.body',
+      'documents.generated.evidence.empty.title',
+      'documents.generated.form.noticeTitle',
+      'documents.generated.form.noticeBody',
+      'documents.generated.form.locatorHint',
+      'documents.generated.form.submit',
+    ] as const;
+    const englishFallbackKeys = [
+      'documents.generated.sectionAria',
+      'documents.generated.title',
+      'documents.generated.notice',
+      'documents.generated.noClaim.badge',
+      'documents.generated.empty.title',
+      'documents.generated.empty.body',
+      'documents.generated.listAria',
+      'documents.generated.downloadPath',
+      'documents.generated.viewEvidence',
+      'documents.generated.download',
+      'documents.generated.status.aria',
+      'documents.generated.status.title',
+      'documents.generated.status.notRequired',
+      'documents.generated.status.coverage',
+      'documents.generated.status.coverageValue',
+      'documents.generated.status.evidenceAttached',
+      'documents.generated.status.completionBasis',
+      'documents.generated.noClaim.title',
+      'documents.generated.noClaim.body',
+      'documents.generated.evidence.notIndicated',
+      'documents.generated.evidence.empty.title',
+      'documents.generated.evidence.empty.body',
+      'documents.generated.evidence.listAria',
+      'documents.generated.evidence.actor',
+      'documents.generated.evidence.recordedAt',
+      'documents.generated.evidence.flags',
+      'documents.generated.evidence.flagsValue',
+      'documents.generated.form.aria',
+      'documents.generated.form.noticeTitle',
+      'documents.generated.form.noticeBody',
+      'documents.generated.form.dispatchedAt',
+      'documents.generated.form.channel',
+      'documents.generated.form.reference',
+      'documents.generated.form.evidenceReference',
+      'documents.generated.form.importedDocument',
+      'documents.generated.form.noImportedDocument',
+      'documents.generated.form.locatorHint',
+      'documents.generated.form.recipients',
+      'documents.generated.form.operatorNote',
+      'documents.generated.form.submit',
+      'documents.generated.form.submitting',
+      'documents.generated.form.toast.success',
+    ] as const;
+    const portugueseSourcePhrases =
+      /Comunicações geradas|condóminos ausentes|Sem reivindicação|Evidência registada|Cobertura de destinatários|A Chancela não enviou|Sem linhas de evidência|Registo de evidência|Registe apenas|Indique pelo menos|Registar evidência/;
+
+    expect(enUS['documents.generated.title']).toBe('Generated communications');
+    expect(enUS['documents.generated.noClaim.badge']).toBe('No completion claim');
+    expect(enUS['documents.generated.form.submit']).toBe('Record evidence');
+    expect(deDE['documents.generated.title']).toBe('Generierte Mitteilungen');
+    expect(esES['documents.generated.form.submit']).toBe('Registrar evidencia');
+
+    const nonPortugueseCatalogs = [
+      ['da-DK', daDK],
+      ['de-DE', deDE],
+      ['en-GB', enGB],
+      ['en-US', enUS],
+      ['es-ES', esES],
+      ['fi-FI', fiFI],
+      ['fr-FR', frFR],
+      ['it-IT', itIT],
+      ['nl-NL', nlNL],
+      ['pl-PL', plPL],
+      ['sv-FI', svFI],
+      ['sv-SE', svSE],
+    ] as const;
+
+    for (const [locale, catalog] of nonPortugueseCatalogs) {
+      for (const key of portugueseLeakageKeys) {
+        expect(catalog[key], `${locale} ${key}`).not.toMatch(portugueseSourcePhrases);
+      }
+    }
+
+    const nonEnglishCatalogs = [
+      ['pt-PT', ptPT],
+      ['pt-BR', ptBR],
+      ['da-DK', daDK],
+      ['de-DE', deDE],
+      ['es-ES', esES],
+      ['fi-FI', fiFI],
+      ['fr-FR', frFR],
+      ['it-IT', itIT],
+      ['nl-NL', nlNL],
+      ['pl-PL', plPL],
+      ['sv-FI', svFI],
+      ['sv-SE', svSE],
+    ] as const;
+
+    for (const [locale, catalog] of nonEnglishCatalogs) {
+      for (const key of englishFallbackKeys) {
+        expect(catalog[key], `${locale} ${key}`).not.toBe(enUS[key]);
+      }
+    }
+  });
+
+  it('keeps local PKCS#12 signing copy localized outside source Portuguese', () => {
+    expect(enUS['signing.provider.pkcs12.title']).toBe('Local PKCS#12/PFX certificate');
+    expect(enUS['signing.pkcs12.file.label']).toBe('PKCS#12/PFX file');
+    expect(enUS['signing.pkcs12.notice']).not.toContain('ficheiro PFX');
+    for (const catalog of [deDE, svFI, svSE]) {
+      expect(catalog['signing.signed.localPkcs12Title']).not.toBe(
+        ptPT['signing.signed.localPkcs12Title'],
+      );
+      expect(catalog['signing.provider.pkcs12.title']).not.toBe(
+        ptPT['signing.provider.pkcs12.title'],
+      );
+      expect(catalog['signing.pkcs12.file.label']).not.toBe(ptPT['signing.pkcs12.file.label']);
+      expect(catalog['signing.pkcs12.notice']).not.toContain('ficheiro PFX');
+    }
+  });
+
+  it('keeps remote batch copy scoped to per-document remote activation', () => {
+    expect(ptPT['signing.remoteBatch.userRef.label']).toBe(
+      'Referência do utilizador para sessões remotas',
+    );
+    expect(enUS['signing.remoteBatch.userRef.label']).toBe('Remote session user reference');
+    expect(ptPT['signing.remoteBatch.boundary.title']).toBe('Uma ativação por documento');
+    expect(enUS['signing.remoteBatch.boundary.title']).toBe('One activation per document');
+    expect(enUS['signing.remoteBatch.description']).toContain('separate remote session');
+    expect(enUS['signing.remoteBatch.result.confirmNormally']).toContain('normal flow');
+    expect(
+      [
+        ptPT['signing.remoteBatch.description'],
+        ptPT['signing.remoteBatch.boundary.body'],
+        enUS['signing.remoteBatch.description'],
+        enUS['signing.remoteBatch.boundary.body'],
+      ].join(' '),
+    ).not.toMatch(/provider-native|single OTP|one OTP|shared PIN|shared SAD/i);
+  });
+
+  it('keeps external invite signed-PDF evidence copy localized outside source Portuguese', () => {
+    const keys = [
+      'externalInvite.tracking.title',
+      'externalInvite.tracking.body',
+      'externalInvite.alreadyAnswered',
+      'externalInvite.technical.title',
+      'externalInvite.technical.slotStatus',
+      'externalInvite.technical.blocked.title',
+      'externalInvite.technical.artifact.title',
+      'externalInvite.technical.evidenceLevel',
+      'externalInvite.technical.scope',
+      'externalInvite.technical.digest',
+      'externalInvite.technical.timestamp',
+      'externalInvite.technical.qualificationClaimed',
+      'externalInvite.technical.legalStatusClaimed',
+      'externalInvite.upload.guardrail.title',
+      'externalInvite.upload.guardrail.body',
+      'externalInvite.upload.file.label',
+      'externalInvite.upload.file.hint',
+      'externalInvite.upload.file.tooLarge',
+      'externalInvite.upload.ack',
+      'externalInvite.upload.submit',
+      'externalInvite.registering',
+      'externalInvite.accept',
+      'externalInvite.decline',
+      'signing.invites.workflow.slotStatus',
+    ] as const;
+    const portugueseSourcePhrases =
+      /Acompanhamento apenas|Resposta já registada|Este estado não é assinatura qualificada|Resultado técnico|Estado do slot|Atualização técnica|Artefacto técnico|Nível de evidência|Âmbito declarado|Qualificação reclamada|Estado legal reclamado|PDF assinado|Selo temporal|Carregamento de evidência|Carregue apenas|O ficheiro é enviado|pode ter no máximo|Reconheço que este carregamento|Carregar PDF|A registar|Aceitar acompanhamento|Declinar/;
+
+    expect(enUS['externalInvite.tracking.title']).toBe('Tracking only');
+    expect(enUS['externalInvite.technical.slotStatus']).toBe('Slot status');
+    expect(enUS['externalInvite.technical.scope']).toBe('Declared scope');
+    expect(enUS['externalInvite.technical.qualificationClaimed']).toBe('Qualification claimed');
+    expect(enUS['externalInvite.upload.file.label']).toBe('Signed PDF');
+    expect(enUS['externalInvite.upload.file.tooLarge']).toBe(
+      'The signed PDF can be at most {max}.',
+    );
+    expect(enUS['externalInvite.upload.submit']).toBe('Upload PDF and accept');
+    expect(enUS['externalInvite.decline']).toBe('Decline');
+    expect(enGB['externalInvite.technical.digest']).toBe('Signed PDF SHA-256');
+    expect(deDE['externalInvite.tracking.title']).toBe('Nur Nachverfolgung');
+    expect(deDE['externalInvite.upload.file.label']).toBe('Signiertes PDF');
+    expect(deDE['externalInvite.upload.submit']).toBe('PDF hochladen und annehmen');
+    expect(deDE['externalInvite.technical.digest']).toBe('SHA-256 des signierten PDF');
+
+    const nonPortugueseCatalogs = [
+      ['da-DK', daDK],
+      ['de-DE', deDE],
+      ['en-GB', enGB],
+      ['en-US', enUS],
+      ['es-ES', esES],
+      ['fi-FI', fiFI],
+      ['fr-FR', frFR],
+      ['it-IT', itIT],
+      ['nl-NL', nlNL],
+      ['pl-PL', plPL],
+      ['sv-FI', svFI],
+      ['sv-SE', svSE],
+    ] as const;
+
+    for (const [locale, catalog] of nonPortugueseCatalogs) {
+      for (const key of keys) {
+        expect(catalog[key], `${locale} ${key}`).not.toMatch(portugueseSourcePhrases);
+      }
+    }
+  });
+
+  it('keeps external-signing envelope evidence copy localized outside source Portuguese', () => {
+    const keys = [
+      'signing.envelopes.guardrail.title',
+      'signing.envelopes.guardrail.body',
+      'signing.envelopes.table.evidence',
+      'signing.envelopes.table.actions',
+      'signing.envelopes.evidence.none',
+      'signing.envelopes.evidence.record',
+      'signing.envelopes.evidence.noAction',
+      'signing.envelopes.evidence.formTitle',
+      'signing.envelopes.evidence.formNotice',
+      'signing.envelopes.evidence.defaultLabel',
+      'signing.envelopes.evidence.label',
+      'signing.envelopes.evidence.reference',
+      'signing.envelopes.evidence.digest',
+      'signing.envelopes.evidence.identityTitle',
+      'signing.envelopes.evidence.identityLabel',
+      'signing.envelopes.evidence.identityReference',
+      'signing.envelopes.evidence.identityHint',
+      'signing.envelopes.evidence.identityMissingTitle',
+      'signing.envelopes.evidence.identityMissingBody',
+      'signing.envelopes.evidence.submit',
+      'signing.envelopes.evidence.recording',
+      'signing.envelopes.evidence.recordedToast',
+      'signing.envelopes.identity.none',
+      'signing.envelopes.identity.contactControl',
+      'signing.envelopes.identity.providerIdentity',
+      'signing.envelopes.identity.governmentId',
+      'signing.envelopes.identity.representativeCapacity',
+    ] as const;
+    const portugueseSourcePhrases =
+      /Acompanhamento operacional|Envelopes e convites|evidência|Evidência|Registar|registar|registad[ao]|Sem ação|Ações|Etiqueta da evidência|Referência da evidência|Digest opcional|identidade incompleta|requisito de identidade|Adicione uma referência|marcar slot assinado|A registar|metadados técnicos|prestadores|assinatura qualificada|validação de confiança|estado legal|finalização da ata|conclusão do envelope|Sem requisito adicional|Controlo do contacto|Declaração de identidade do prestador|Verificação de documento oficial|Capacidade de representação/;
+
+    expect(enUS['signing.envelopes.evidence.formTitle']).toBe('Operator technical evidence');
+    expect(enGB['signing.envelopes.evidence.recording']).toBe('Recording…');
+    expect(deDE['signing.envelopes.evidence.formTitle']).toBe('Technischer Nachweis des Bedieners');
+    expect(svSE['signing.envelopes.evidence.record']).toBe('Registrera bevis');
+    expect(esES['signing.envelopes.identity.contactControl']).toBe('Control del contacto');
+    expect(deDE['signing.envelopes.identity.providerIdentity']).toBe(
+      'Identitätsbestätigung des Anbieters',
+    );
+    expect(svSE['signing.envelopes.identity.representativeCapacity']).toBe(
+      'Representationsbehörighet',
+    );
+
+    const nonPortugueseCatalogs = [
+      ['da-DK', daDK],
+      ['de-DE', deDE],
+      ['en-GB', enGB],
+      ['en-US', enUS],
+      ['es-ES', esES],
+      ['fi-FI', fiFI],
+      ['fr-FR', frFR],
+      ['it-IT', itIT],
+      ['nl-NL', nlNL],
+      ['pl-PL', plPL],
+      ['sv-FI', svFI],
+      ['sv-SE', svSE],
+    ] as const;
+
+    for (const [locale, catalog] of nonPortugueseCatalogs) {
+      for (const key of keys) {
+        expect(catalog[key], `${locale} ${key}`).not.toMatch(portugueseSourcePhrases);
+      }
+    }
+  });
+
+  it('keeps archive filter and export copy localized outside source Portuguese', () => {
+    expect(enUS['ledger.filters.aria']).toBe('Search and filter archive');
+    expect(enUS['ledger.archive.format.pdfa']).toBe('Canonical PDF/A (.pdf)');
+    expect(enUS['ledger.archive.scope.help']).toContain('1,000-record server safety cap');
+    expect(enUS['ledger.archive.format.help']).toContain('Events per page limit');
+    expect(enUS['ledger.archive.format.help']).toContain('streaming');
+    expect(enUS['ledger.order.newestFirst']).toBe('Newest first');
+    expect(enGB['ledger.filters.clear.aria']).toBe('Clear archive filters');
+    expect(deDE['ledger.archive.export']).toBe('Archiv exportieren');
+
+    for (const catalog of [enUS, enGB, deDE]) {
+      expect(catalog['ledger.filters.aria']).not.toBe(ptPT['ledger.filters.aria']);
+      expect(catalog['ledger.filters.advanced']).not.toBe(ptPT['ledger.filters.advanced']);
+      expect(catalog['ledger.filters.activeCount']).not.toBe(ptPT['ledger.filters.activeCount']);
+      expect(catalog['ledger.filters.clear.aria']).not.toBe(ptPT['ledger.filters.clear.aria']);
+      expect(catalog['ledger.search.placeholder']).not.toBe(ptPT['ledger.search.placeholder']);
+      expect(catalog['ledger.order.newestFirst']).not.toBe(ptPT['ledger.order.newestFirst']);
+      expect(catalog['ledger.archive.export']).not.toBe(ptPT['ledger.archive.export']);
+      expect(catalog['ledger.archive.format.label']).not.toBe(ptPT['ledger.archive.format.label']);
+      expect(catalog['ledger.archive.format.help']).not.toBe(ptPT['ledger.archive.format.help']);
+      expect(catalog['ledger.archive.format.txt']).not.toBe(ptPT['ledger.archive.format.txt']);
+    }
+  });
+
+  it('every shipped locale is registered with a quality tier', () => {
+    for (const locale of SHIPPED_LOCALES) {
+      expect(LOCALE_QUALITY[locale]).toBeDefined();
+    }
+  });
+
+  it('every non-source locale has exactly the source key set (no missing/extra keys)', async () => {
+    const catalogs = await Promise.all(
+      SHIPPED_LOCALES.filter((locale) => locale !== 'pt-PT').map(async (locale) => {
+        const loader = LOCALE_LOADERS[locale];
+        expect(loader, `missing loader for ${locale}`).toBeDefined();
+        const catalog = await loader!();
+        return { locale, catalog };
+      }),
+    );
+
+    for (const { locale, catalog } of catalogs) {
+      const keys = Object.keys(catalog).sort();
+      // Symmetric difference is empty ⇒ identical key sets.
+      const missing = sourceKeys.filter((k) => !(k in catalog));
+      const extra = keys.filter((k) => !(k in ptPT));
+      expect(missing, `${locale} missing keys`).toEqual([]);
+      expect(extra, `${locale} extra keys`).toEqual([]);
+      // No empty values (a stub seed still fills every key).
+      for (const k of keys) {
+        expect(catalog[k as keyof typeof catalog], `${locale}:${k} empty`).not.toBe('');
+      }
+    }
+  }, 15_000);
+});
+
+describe('interpolate', () => {
+  it('returns the template unchanged when there are no params', () => {
+    expect(interpolate('Sem eventos')).toBe('Sem eventos');
+  });
+
+  it('substitutes a named placeholder', () => {
+    expect(interpolate('Insc. {event}', { event: 'AP. 5' })).toBe('Insc. AP. 5');
+  });
+
+  it('coerces numbers to strings', () => {
+    expect(interpolate('Cadeia verificada ({count} eventos)', { count: 3 })).toBe(
+      'Cadeia verificada (3 eventos)',
+    );
+  });
+
+  it('substitutes multiple placeholders', () => {
+    expect(interpolate('{padded}/{year}', { padded: '0007', year: 2026 })).toBe('0007/2026');
+  });
+
+  it('leaves an unknown placeholder verbatim (a missing param is a visible bug)', () => {
+    expect(interpolate('{a} and {b}', { a: 'x' })).toBe('x and {b}');
+  });
+});
+
+describe('store fallback', () => {
+  it('serves the source string for a locale with no loaded catalog', () => {
+    // A pending/unloaded locale falls back to pt-PT rather than throwing.
+    expect(i18nStore.message('de-DE', 'nav.dashboard')).toBe(ptPT['nav.dashboard']);
+  });
+});

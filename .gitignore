@@ -1,0 +1,34 @@
+# Rust
+/target/
+/lib*.rlib
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/*
+!apps/desktop/src-tauri/gen/android/
+!apps/desktop/src-tauri/gen/android/**
+
+# Node
+node_modules/
+
+# Build / distribution artifacts
+dist/
+apps/web/dist/
+*.tar.gz
+
+# Orchestration scratch (not part of the shipped repo)
+.orchestration/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs and OS cruft
+*.log
+.DS_Store
+Thumbs.db
+SPEC-COVERAGE.md
+# Per-executor cargo target dirs (agents build in their own to avoid lock contention)
+/target-*
+# Scratch coverage snapshots taken while measuring
+/apps/web/coverage-*
+/Projectschancelatarget-tcmeasure

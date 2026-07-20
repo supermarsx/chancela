@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Chancela",
+  "version": "26.1.0",
+  "identifier": "pt.chancela.desktop",
+  "build": {
+    "beforeDevCommand": "cd ../.. && npm run dev --workspace apps/web",
+    "beforeBuildCommand": "cd ../.. && npm run build --workspace apps/web",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Chancela",
+        "width": 1200,
+        "height": 800,
+        "center": true,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Business",
+    "shortDescription": "Livro de Atas Digital",
+    "longDescription": "Chancela — Portugal-first corporate records and signing platform (livro de atas, corporate acts ledger and archive).",
+    "resources": {
+      "../../web/dist": "web-dist"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-07-09T14:00:00Z",
+  "scope": "book_archive",
+  "category": "documents",
+  "candidate_count": 1,
+  "suppressed_candidate_count": 2,
+  "suppressed_by_bounded_evidence_count": 2,
+  "candidate_resolution_record_count": 1,
+  "candidates_with_resolution_count": 1,
+  "suppression_summary": {
+    "suppressed_by_bounded_evidence_count": 2,
+    "note": "Due candidates with prior safe bounded archive/no-action evidence are omitted from the active candidate list; execution history remains queryable for review."
+  },
+  "candidates": [
+    {
+      "candidate_id": "retention-candidate-unsupported",
+      "candidate_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scope": "book_archive",
+      "category": "documents",
+      "record_id": "archive-doc-blocked",
+      "book_id": "book-archive-blocked",
+      "entity_id": "entity-2",
+      "closing_date": "2023-02-10",
+      "due_date": null,
+      "overdue": false,
+      "policy_id": "retention-unsupported",
+      "policy_name": "Unsupported archival period",
+      "schedule_id": "archive-unsupported-v1",
+      "retention_period": "PXBROKEN",
+      "disposal_action": "review",
+      "destructive_action": false,
+      "legal_hold_blockers": [
+        {
+          "policy_id": "retention-unsupported",
+          "name": "Board preservation hold",
+          "reason": "legal hold active on archived book"
+        }
+      ],
+      "required_approvals": [
+        {
+          "code": "unsupported_period_review",
+          "required_from": "privacy_or_settings_manager",
+          "reason": "unsupported period must be corrected before operational review"
+        }
+      ],
+      "blockers": [
+        {
+          "code": "unsupported_retention_period",
+          "message": "Retention period PXBROKEN is not supported."
+        }
+      ],
+      "findings": [
+        {
+          "code": "unsupported_retention_period",
+          "message": "Retention period PXBROKEN is not supported.",
+          "severity": "warning"
+        }
+      ],
+      "outcome": "blocked_unsupported_period",
+      "status": "blocked",
+      "candidate_evidence_state": "blocked",
+      "evidence_next_step": "Correct the retention schedule; this scan records evidence only.",
+      "would_execute": false,
+      "destructive_disposal_completed": false,
+      "full_erasure_completed": false,
+      "candidate_resolution_record_count": 1,
+      "latest_resolution": {
+        "id": "retention-candidate-resolution-1",
+        "candidate_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recorded_at": "2026-07-09T14:15:00Z",
+        "recorded_by": "privacy-manager",
+        "disposition": "blocked_follow_up",
+        "evidence_count": 1,
+        "note": "Blocked follow-up evidence recorded for governance queue.",
+        "evidence_only": true,
+        "destructive_disposal_completed": false,
+        "disposal_completed": false,
+        "full_erasure_completed": false,
+        "erasure_completed": false,
+        "legal_hold_mutated": false,
+        "legal_hold_resolved": false,
+        "retention_policy_mutated": false,
+        "retention_policy_changed": false,
+        "legal_completion_claimed": false,
+        "legal_disposal_completed": false,
+        "next_step": "Blocked follow-up evidence recorded; blockers remain active for separate governance review."
+      },
+      "next_step": "Correct the retention schedule; this scan records evidence only."
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+# syntax=docker/dockerfile:1
+#
+# chancela-server container image (ARC-40/41).
+#
+# Multi-stage:
+#   1. rust-build  — compiles the workspace binary `chancela-server` (release).
+#   2. web-build   — builds the Vite web shell into apps/web/dist.
+#   3. runtime     — minimal, non-root distroless image; no secrets baked in.
+#
+# Build context is the repo root:
+#   docker build -f docker/Dockerfile.server -t chancela-server .
+#
+# Hardening notes:
+#   - Final base is distroless (no shell, no package manager) -> minimal attack
+#     surface (ARC-41 "minimal base images").
+#   - Runs as the distroless `nonroot` user (UID 65532) (ARC-41 non-root).
+#   - No credentials/config are copied in; runtime config comes from the
+#     environment (CHANCELA_ADDR, CHANCELA_DATA_DIR) at start time (ARC-41
+#     secrets at runtime).
+#   - Designed to run with a read-only root filesystem (see docker-compose.yml):
+#     the process needs no writable image paths; scratch space is a tmpfs.
+
+########################  Stage 1: Rust build  ########################
+FROM rust:1.97.0-slim-trixie@sha256:466074ef42a9485c726d71017fa629f1954cd5e09b473dcd00467ddc6afdc753 AS rust-build
+WORKDIR /build
+
+# Cargo features compiled into `chancela-server`. Defaults to today's
+# SQLCipher-only build so the single-node (SQLite) image is unchanged. The
+# Postgres+Redis compose profile overrides this at build time with
+#   --build-arg CARGO_FEATURES="chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+# (space-separated; a single --features accepts the whole set).
+ARG CARGO_FEATURES="chancela-server/sqlcipher"
+
+# DEBIAN_FRONTEND is set per-invocation rather than as an ENV so it cannot leak
+# into anything built from this stage. Without it debconf probes Dialog, then
+# Readline, then Teletype, fails each one for want of a tty and prints six
+# warning lines before falling back to Noninteractive on its own — this simply
+# tells it the answer up front. Install behaviour is unchanged.
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        pkg-config libpcsclite-dev perl make \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the whole workspace (see .dockerignore for what is excluded: target,
+# node_modules, dist, apps/desktop, .git, .orchestration, ...).
+COPY . .
+
+# BuildKit cache mounts keep the cargo registry and the target directory warm
+# across builds without persisting them into the image layer. We copy the
+# finished binary out of the cache-mounted target dir before the mount is
+# unmounted.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release -p chancela-server --locked --features "${CARGO_FEATURES}" \
+    && cp target/release/chancela-server /chancela-server
+
+########################  Stage 2: Web build  ########################
+FROM node:24.18.0-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS web-build
+WORKDIR /app
+
+# The pinned base image bundles npm 11.16.0, but the supply-chain policy
+# (scripts/check-supply-chain-pins.mjs) requires every environment to resolve
+# dependencies with exactly npm 12.0.1 — the same activation every CI job runs
+# after setup-node. Without this the image installed with a different package
+# manager than the one the policy pins, which is what EBADENGINE was reporting.
+# The version is exact, never a range, so the layer stays reproducible.
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --global --no-audit --no-fund npm@12.0.1
+
+# The pinned npm still prints an "update available" nag; it is noise against a
+# pinned toolchain, and reading it as an instruction is how the floor and the
+# images drifted apart in the first place.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+
+# Install dependencies first so the npm layer is cached independently of source
+# changes, using the committed root npm lockfile.
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/
+# Vite 8 bundles Rolldown, not Rollup: `rollup` is absent from package-lock.json
+# entirely, so the former `@rollup/rollup-linux-x64-gnu` top-up could not work.
+# Its `node -p require('./node_modules/rollup/package.json')` threw
+# MODULE_NOT_FOUND on every build, the command substitution collapsed to an
+# empty string, and `npm install @rollup/rollup-linux-x64-gnu@` therefore
+# fetched the floating *latest* tag — an unpinned package outside the lockfile,
+# which the supply-chain pin policy exists to prevent. The lockfile carries
+# every @rolldown/binding-* platform package with correct os/cpu/libc fields, so
+# `npm ci` alone installs the right Linux binding at its pinned version.
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund
+
+# Build the web workspace (@chancela/web) -> apps/web/dist.
+COPY . .
+RUN npm run build --workspace apps/web
+
+########################  Stage 3: Runtime  ########################
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:d97bc0a941b8d4be647dc0ee75b264ddbb772f1ac5ba690a4309c00723b23775 AS runtime
+
+# distroless is shell-less; copy a single static busybox purely so HEALTHCHECK
+# has a tiny HTTP client. No other utilities are added.
+COPY --from=busybox:1.37.0-uclibc@sha256:39e0df8c4d65953b55c344f017e1ff2e0031a7454b3c24e6b76d402f207e315a /bin/busybox /usr/bin/busybox
+
+COPY --from=rust-build /chancela-server /usr/local/bin/chancela-server
+COPY --from=web-build /app/apps/web/dist /srv/web
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/.keep
+
+# Bind on all interfaces inside the container; the host maps the port.
+ENV CHANCELA_ADDR=0.0.0.0:8080
+# Durable store path used by the Compose volume and CI smoke. Operators may
+# override it, but production containers should keep this on a persistent mount.
+ENV CHANCELA_DATA_DIR=/var/lib/chancela
+# Point the server at the web build copied to /srv/web above. The binary would also
+# auto-detect this path, but setting it explicitly makes the container's intent clear and
+# avoids any dependence on the working directory.
+ENV CHANCELA_WEB_DIST=/srv/web
+EXPOSE 8080
+
+USER nonroot
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+
+ENTRYPOINT ["/usr/local/bin/chancela-server"]

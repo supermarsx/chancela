@@ -1,0 +1,5 @@
+# Canonicalization reference vectors are byte-exact: the expected `.out` bytes and the raw `.in.xml`
+# inputs (which deliberately exercise CR/LF handling) must never be subjected to end-of-line
+# conversion, or the byte-for-byte comparison in tests/c14n_vectors.rs would break on checkout.
+*.out -text
+*.in.xml -text

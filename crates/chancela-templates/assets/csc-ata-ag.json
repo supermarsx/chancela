@@ -1,0 +1,106 @@
+{
+  "id": "csc-ata-ag/v1",
+  "family": "CommercialCompany",
+  "stage": "Ata",
+  "channels": ["Physical", "Hybrid", "Telematic", "WrittenResolution"],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Ata n.º {{ ata_number }}" },
+    { "kind": "Heading", "level": 2, "template": "{{ title }}" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Sede", "value": "{{ entity.seat }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Hora", "value": "{{ meeting_time }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Modo de reunião", "value": "{{ channel | channel_label }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "No dia {{ meeting_date | long_date }}, pelas {{ meeting_time }} horas, em {{ place }}, reuniu a assembleia geral de {{ entity.name }}, NIPC {{ entity.nipc }}, para deliberar sobre a ordem de trabalhos abaixo transcrita, nos termos do artigo 63.º do Código das Sociedades Comerciais."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening_waiver %}A reunião realizou-se sem convocatória prévia.{% if convening_waiver.basis == 'AssembleiaUniversal' and convening_waiver.all_agreed_to_meet and convening_waiver.all_agreed_to_agenda %} Estando todos os sócios presentes ou representados e tendo todos manifestado a vontade de que a assembleia se constituísse e deliberasse sobre os assuntos adiante tratados, a assembleia constituiu-se como assembleia universal, nos termos do artigo 54.º, n.º 1, do Código das Sociedades Comerciais.{% endif %}{% if convening_waiver.grounds %} Fundamento registado: {{ convening_waiver.grounds }}{% endif %}{% if convening_waiver.evidence_reference %} Elementos de prova do acordo: {{ convening_waiver.evidence_reference }}.{% endif %}{% endif %}"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Presidente da mesa", "value": "{{ mesa.presidente }}" },
+        { "key": "Secretário(s)", "value": "{{ mesa.secretarios | join(', ') }}" }
+      ]
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Sócios presentes", "value": "{{ members_present }}" },
+        { "key": "Sócios representados", "value": "{{ members_represented }}" },
+        { "key": "Referência à lista de presenças", "value": "{{ attendance_reference }}" }
+      ]
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "{% if attendees %}Presenças{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "attendees",
+      "template": "{{ name }}{% if quality_note %} — {{ quality_note }}{% elif quality | quality_label %} — {{ quality | quality_label }}{% endif %}{% if weight and weight.Capital %} — capital {{ weight.Capital }}{% elif weight and weight.Permilage %} — permilagem {{ weight.Permilage }}‰{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% else %}ausente{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if not attendees and attendance_reference %}A identificação nominal dos presentes e dos representados consta da lista de presenças autenticada que acompanha a presente ata e dela faz parte integrante: {{ attendance_reference }}{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if channel == 'Telematic' %}Para os efeitos do disposto no artigo 377.º do Código das Sociedades Comerciais, regista-se a seguinte prova da reunião telemática (autenticidade, segurança das comunicações e gravação do conteúdo e dos participantes): {{ telematic_evidence }}{% endif %}"
+    },
+    { "kind": "Heading", "level": 2, "template": "Ordem de trabalhos" },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    { "kind": "Heading", "level": 2, "template": "Deliberações" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "VoteTable",
+      "items": "deliberation_items",
+      "label": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}",
+      "vote_field": "vote",
+      "unanimous_total": "{{ members_present + members_represented }}"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% for s in statements %}Declaração de voto de {{ s.member }}: {{ s.text }} {% endfor %}"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "referenced_documents",
+      "rows": [{ "key": "{{ label }}", "value": "{{ reference }}" }]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nada mais havendo a tratar, foi encerrada a sessão, da qual se lavrou a presente ata que, depois de lida e aprovada, vai ser assinada."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,297 @@
+/**
+ * Current-user picker (plan t14 §2.8) — a compact control at the right of the fixed
+ * tab bar. It shows the active user's display name, or the system actor "api" when no
+ * one is signed in. Opening it lists the active users; picking one prompts for a password
+ * and signs in (`POST /v1/session`), signing out clears the session (`DELETE /v1/session`).
+ * While signed in, the API client sends `X-Chancela-Session` on every request so the ledger
+ * attributes the actor to the chosen user.
+ *
+ * The token is held in tab-scoped `sessionStorage` (see `api/session`), so a page reload keeps
+ * the same user signed in rather than dropping to the system actor. Signing out clears it on
+ * both sides; closing the tab clears it here.
+ */
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useCreateSession, useDeleteSession, useSession, useUsers } from '../../api/hooks';
+import { ApiError } from '../../api/client';
+import type { UserView } from '../../api/types';
+import { useT } from '../../i18n';
+import { Tooltip, useToast } from '../../ui';
+import { SignOut } from '../../ui/icons';
+
+export function CurrentUserPicker() {
+  const t = useT();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  // The user being switched TO — reveals an inline password prompt.
+  const [pending, setPending] = useState<UserView | null>(null);
+  const [password, setPassword] = useState('');
+  const [wrongPassword, setWrongPassword] = useState(false);
+  const session = useSession();
+  const users = useUsers();
+  const signIn = useCreateSession();
+  const signOut = useDeleteSession();
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const currentUser = session.data?.user ?? null;
+  const label = currentUser ? currentUser.display_name : 'api';
+  const initial = label.charAt(0).toUpperCase();
+  const activeUsers = (users.data ?? []).filter((u) => u.active);
+  const busy = signIn.isPending || signOut.isPending;
+  const actionError = signOut.error;
+
+  // Close on Escape while open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  /** The `role="menuitemradio"` buttons currently rendered in the open popup (list mode). */
+  function menuItems(): HTMLElement[] {
+    const root = menuRef.current;
+    if (!root) return [];
+    return Array.from(root.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+  }
+
+  // On open (list mode), move focus to the currently-checked item, or the first — matching the
+  // ARIA menu pattern's initial-focus intent. Re-runs once the user list finishes loading so the
+  // items exist. In password mode the form's own `autoFocus` owns focus, so we skip it there.
+  useEffect(() => {
+    if (!open || pending) return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    const checked = items.find((el) => el.getAttribute('aria-checked') === 'true');
+    (checked ?? items[0]).focus();
+  }, [open, pending, activeUsers.length, users.isLoading]);
+
+  // Roving focus for the ARIA menu: Arrow keys step between menuitems (wrapping at the ends),
+  // Home/End jump to the first/last. Native button tabbing (and the trap-free Tab flow) is left
+  // untouched. A no-op in password mode, where `menuItems()` is empty.
+  function onMenuKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const { key } = e;
+    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'Home' && key !== 'End') return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    e.preventDefault();
+    const active = document.activeElement as HTMLElement | null;
+    const at = active ? items.indexOf(active) : -1;
+    let next: number;
+    if (key === 'Home') next = 0;
+    else if (key === 'End') next = items.length - 1;
+    else if (key === 'ArrowDown') next = at < 0 ? 0 : (at + 1) % items.length;
+    else next = at < 0 ? items.length - 1 : (at - 1 + items.length) % items.length;
+    items[next].focus();
+  }
+
+  function reset() {
+    setPending(null);
+    setPassword('');
+    setWrongPassword(false);
+  }
+
+  function attempt(user: UserView, secret: string) {
+    setWrongPassword(false);
+    signIn.mutate(
+      { userId: user.id, password: secret },
+      {
+        onSuccess: () => {
+          toast.success(t('toast.signin.success'));
+          reset();
+          setOpen(false);
+        },
+        onError: (e) => {
+          // 401 → wrong/missing password (inline); everything else (429 backoff…) → toast.
+          if (e instanceof ApiError && e.status === 401) {
+            setWrongPassword(true);
+            setPending(user);
+          } else {
+            toast.error(e);
+          }
+        },
+      },
+    );
+  }
+
+  function pick(user: UserView) {
+    if (user.id === currentUser?.id) {
+      setOpen(false);
+      return;
+    }
+    setPending(user);
+    setPassword('');
+    setWrongPassword(false);
+  }
+
+  function out() {
+    signOut.mutate(undefined, {
+      onSuccess: () => {
+        // Sign-in success is toasted in `attempt` (above); sign-out is toasted here — the
+        // two never fire together (t44-retrofit-b partition). R7: the inline `actionError`
+        // note below still renders on a sign-out failure.
+        toast.success(t('toast.signout.success'));
+        reset();
+        setOpen(false);
+      },
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  return (
+    <div className="session-picker">
+      <Tooltip
+        label={
+          currentUser
+            ? t('session.trigger.title.active', { username: currentUser.username })
+            : t('session.trigger.title.none')
+        }
+        placement="bottom"
+      >
+        <button
+          type="button"
+          data-testid="session-trigger"
+          className={`session-picker__trigger${currentUser ? ' is-active' : ''}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span className="session-picker__avatar" aria-hidden="true">
+            {initial}
+          </span>
+          <span className="session-picker__name">{label}</span>
+        </button>
+      </Tooltip>
+
+      {open ? (
+        <>
+          <div
+            className="session-picker__backdrop"
+            onClick={() => {
+              setOpen(false);
+              reset();
+            }}
+            aria-hidden="true"
+          />
+          <div className="session-picker__menu" role="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>
+            <p className="session-picker__head">
+              {currentUser ? (
+                <>
+                  {t('session.head.activePrefix')}
+                  <strong>{currentUser.display_name}</strong>
+                </>
+              ) : (
+                <>{t('session.head.none')}</>
+              )}
+            </p>
+
+            {pending ? (
+              <form
+                className="session-picker__pwform"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  attempt(pending, password);
+                }}
+              >
+                <label className="session-picker__pwlabel" htmlFor="picker-pw">
+                  {t('signin.requiresPassword')} — <strong>{pending.display_name}</strong>
+                </label>
+                <input
+                  id="picker-pw"
+                  className="control"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t('signin.password.placeholder')}
+                  autoComplete="current-password"
+                  autoFocus
+                />
+                {wrongPassword ? (
+                  <p className="session-picker__error" role="alert">
+                    {t('signin.wrongPassword')}
+                  </p>
+                ) : null}
+                <div className="session-picker__pwactions">
+                  <button
+                    type="button"
+                    className="session-picker__pwback"
+                    disabled={busy}
+                    onClick={reset}
+                  >
+                    {t('signin.back')}
+                  </button>
+                  <button
+                    type="submit"
+                    className="session-picker__pwsubmit"
+                    disabled={busy || password.length === 0}
+                  >
+                    {busy ? t('signin.submitting') : t('signin.submit')}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="session-picker__list">
+                {users.isLoading ? (
+                  <p className="muted session-picker__empty">{t('common.loading')}</p>
+                ) : activeUsers.length === 0 ? (
+                  <p className="muted session-picker__empty">{t('session.empty')}</p>
+                ) : (
+                  activeUsers.map((u) => {
+                    const isCurrent = currentUser?.id === u.id;
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isCurrent}
+                        className={`session-picker__item${isCurrent ? ' is-current' : ''}`}
+                        disabled={busy}
+                        onClick={() => pick(u)}
+                      >
+                        <span className="session-picker__item-name">{u.display_name}</span>
+                        <code className="mono session-picker__item-user">{u.username}</code>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {actionError ? (
+              <p className="session-picker__error" role="alert">
+                {actionError instanceof Error ? actionError.message : t('session.error.generic')}
+              </p>
+            ) : null}
+
+            <div className="session-picker__foot">
+              {currentUser ? (
+                <button
+                  type="button"
+                  className="session-picker__signout"
+                  disabled={busy}
+                  onClick={out}
+                >
+                  <span className="btn__icon">
+                    <SignOut />
+                  </span>
+                  {t('session.signOut')}
+                </button>
+              ) : (
+                <span />
+              )}
+              <Link
+                to="/configuracoes?sec=utilizadores"
+                className="session-picker__manage"
+                onClick={() => setOpen(false)}
+              >
+                {t('session.manage')}
+              </Link>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}

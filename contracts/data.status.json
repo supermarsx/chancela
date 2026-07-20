@@ -1,0 +1,353 @@
+{
+  "generated_at": "2026-07-10T10:20:30Z",
+  "persistence": {
+    "mode": "durable",
+    "data_dir_configured": true,
+    "durable_store_open": true,
+    "active_backend_family": "postgres",
+    "sidecar_storage_mode": "database",
+    "database_encryption_configured": false,
+    "database_encryption": {
+      "configured": false,
+      "sqlcipher_available": false,
+      "sqlcipher_backed": false,
+      "key_source": "none",
+      "hardware_derived_fallback": {
+        "available": false,
+        "selected": false,
+        "fail_closed_if_requested": true,
+        "status": "unavailable",
+        "message": "No hardware-bound database key derivation provider is wired; requests for it fail closed instead of using a static fallback key."
+      },
+      "database_format": "plaintext_sqlite",
+      "key_ops_plan": "open_plaintext_store",
+      "plaintext_migration_pending": true,
+      "plaintext_migration_blocked": false,
+      "key_ops": {
+        "sqlcipher_available": false,
+        "key_config": "unconfigured",
+        "database_file": "F:\\ChancelaData\\chancela.db",
+        "database_format": "plaintext_sqlite",
+        "plan": "open_plaintext_store",
+        "migration_plan": {
+          "required": false,
+          "status": "not_required",
+          "summary": "no plaintext-to-encrypted export/restore migration is required for this key-ops status",
+          "steps": [],
+          "evidence": {
+            "plan": "open_plaintext_store",
+            "database_format": "plaintext_sqlite",
+            "key_config": "unconfigured",
+            "sqlcipher_available": false,
+            "database_file": "F:\\ChancelaData\\chancela.db"
+          }
+        }
+      }
+    },
+    "store_schema_version": 7,
+    "ledger_length": 42,
+    "ledger_verified": true,
+    "degraded": false
+  },
+  "data_dir": {
+    "path": "F:\\ChancelaData",
+    "exists": true,
+    "is_directory": true
+  },
+  "permissions": {
+    "read_dir": {
+      "ok": true,
+      "checked": true,
+      "message": "directory can be read"
+    },
+    "create_file": {
+      "ok": true,
+      "checked": true,
+      "message": "probe file can be created"
+    },
+    "write_file": {
+      "ok": true,
+      "checked": true,
+      "message": "probe file can be written"
+    },
+    "delete_probe_file": {
+      "ok": true,
+      "checked": true,
+      "message": "probe file can be deleted"
+    },
+    "durable_store_open": {
+      "ok": true,
+      "checked": true,
+      "message": "durable store is open"
+    },
+    "sqlite_store_open": {
+      "ok": true,
+      "checked": true,
+      "message": "durable SQLite store is open"
+    }
+  },
+  "usage": {
+    "total_bytes": 4096,
+    "filesystem": [
+      {
+        "id": "database",
+        "label": "Database",
+        "bytes": 2048,
+        "basis": "sqlite_file",
+        "exact": true,
+        "file_count": 2,
+        "directory_count": 0,
+        "relative_roots": ["chancela.db", "chancela.db-wal"]
+      },
+      {
+        "id": "settings",
+        "label": "Settings",
+        "bytes": 1024,
+        "basis": "filesystem",
+        "exact": true,
+        "file_count": 1,
+        "directory_count": 0,
+        "relative_roots": ["settings.json"]
+      },
+      {
+        "id": "data_key_rotation_receipts",
+        "label": "Data key rotation receipts",
+        "bytes": 512,
+        "basis": "filesystem",
+        "exact": true,
+        "file_count": 1,
+        "directory_count": 0,
+        "relative_roots": ["data-key-rotation-receipts.json"]
+      }
+    ],
+    "logical_payload": [
+      {
+        "id": "ledger",
+        "label": "Ledger payloads",
+        "bytes": 1024,
+        "basis": "logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 3,
+        "relative_roots": ["ledger_events"]
+      },
+      {
+        "id": "sqlite_table_events",
+        "kind": "sqlite_logical_table",
+        "label": "Database table: events",
+        "bytes": 1024,
+        "basis": "logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 3,
+        "payload_stats": {
+          "table_name": "events",
+          "estimated_payload_bytes": 1024,
+          "row_count": 3,
+          "average_bytes_per_row": 341,
+          "estimate_method": "local_loaded_payload_estimate",
+          "estimate_basis": "logical_payload"
+        },
+        "relative_roots": ["events"]
+      },
+      {
+        "id": "sqlite_table_books",
+        "kind": "sqlite_logical_table",
+        "label": "Database table: books",
+        "bytes": 0,
+        "basis": "logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 0,
+        "payload_stats": {
+          "table_name": "books",
+          "estimated_payload_bytes": 0,
+          "row_count": 0,
+          "average_bytes_per_row": null,
+          "estimate_method": "local_loaded_payload_estimate",
+          "estimate_basis": "logical_payload"
+        },
+        "relative_roots": ["books"]
+      }
+    ],
+    "sidecars": [
+      {
+        "id": "users",
+        "kind": "sidecar_logical_store",
+        "label": "DB-backed sidecar: users",
+        "bytes": 512,
+        "basis": "sidecar_logical_payload",
+        "exact": true,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 2,
+        "payload_stats": {
+          "table_name": "users",
+          "estimated_payload_bytes": 512,
+          "row_count": 2,
+          "average_bytes_per_row": 256,
+          "estimate_method": "local_loaded_payload_estimate",
+          "estimate_basis": "sidecar_logical_payload"
+        },
+        "relative_roots": ["users.json"]
+      },
+      {
+        "id": "provider_credentials",
+        "kind": "sidecar_logical_store",
+        "label": "DB-backed sidecar: provider credentials",
+        "bytes": 256,
+        "basis": "sidecar_logical_payload",
+        "exact": true,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 1,
+        "payload_stats": {
+          "table_name": "provider_credentials",
+          "estimated_payload_bytes": 256,
+          "row_count": 1,
+          "average_bytes_per_row": 256,
+          "estimate_method": "local_loaded_payload_estimate",
+          "estimate_basis": "sidecar_logical_payload"
+        },
+        "relative_roots": ["provider-credentials.enc.json"]
+      }
+    ],
+    "largest_payload_table": {
+      "table_name": "events",
+      "estimated_payload_bytes": 1024,
+      "row_count": 3,
+      "average_bytes_per_row": 341,
+      "estimate_method": "local_loaded_payload_estimate",
+      "estimate_basis": "logical_payload"
+    },
+    "sqlite_logical": [
+      {
+        "id": "ledger",
+        "label": "Ledger payloads",
+        "bytes": 1024,
+        "basis": "sqlite_logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 3,
+        "relative_roots": ["ledger_events"]
+      },
+      {
+        "id": "sqlite_table_events",
+        "kind": "sqlite_logical_table",
+        "label": "SQLite table: events",
+        "bytes": 1024,
+        "basis": "sqlite_logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 3,
+        "payload_stats": {
+          "table_name": "events",
+          "estimated_payload_bytes": 1024,
+          "row_count": 3,
+          "average_bytes_per_row": 341,
+          "estimate_method": "local_loaded_payload_estimate",
+          "estimate_basis": "sqlite_logical_payload"
+        },
+        "relative_roots": ["events"]
+      },
+      {
+        "id": "sqlite_table_books",
+        "kind": "sqlite_logical_table",
+        "label": "SQLite table: books",
+        "bytes": 0,
+        "basis": "sqlite_logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 0,
+        "payload_stats": {
+          "table_name": "books",
+          "estimated_payload_bytes": 0,
+          "row_count": 0,
+          "average_bytes_per_row": null,
+          "estimate_method": "local_loaded_payload_estimate",
+          "estimate_basis": "sqlite_logical_payload"
+        },
+        "relative_roots": ["books"]
+      }
+    ],
+    "sqlite_largest_payload_table": {
+      "table_name": "events",
+      "estimated_payload_bytes": 1024,
+      "row_count": 3,
+      "average_bytes_per_row": 341,
+      "estimate_method": "local_loaded_payload_estimate",
+      "estimate_basis": "sqlite_logical_payload"
+    },
+    "scan_errors": ["failed to read exports: access denied"]
+  },
+  "key_rotation": {
+    "latest_receipt": {
+      "schema_version": 1,
+      "receipt_id": "0f4d87a0-7019-4f83-a770-b548f42a022d",
+      "rotated_at": "2026-07-10T09:15:00Z",
+      "actor_user_id": "6d5e4f00-0000-4000-8000-000000000005",
+      "mode": "guarded_sqlcipher_rekey",
+      "status": "rekey_applied",
+      "backend_family": "sqlite",
+      "rekey_executed": true,
+      "ledger_integrity_verified": true,
+      "ledger_length": 42,
+      "evidence": {
+        "operation": "sqlcipher_rekey",
+        "requested_key_config": "configured",
+        "sqlcipher_available": true,
+        "checkpointed_before_rekey": true,
+        "checkpointed_after_rekey": true,
+        "post_rekey_integrity_checked": true
+      },
+      "no_claims": {
+        "current_key_persisted": false,
+        "replacement_key_persisted": false,
+        "key_fingerprint_persisted": false,
+        "database_path_persisted": false,
+        "sqlcipher_at_rest_certified": false,
+        "plaintext_migration_performed": false,
+        "legal_disposal_or_erasure_certified": false
+      }
+    },
+    "history": [
+      {
+        "schema_version": 1,
+        "receipt_id": "0f4d87a0-7019-4f83-a770-b548f42a022d",
+        "rotated_at": "2026-07-10T09:15:00Z",
+        "actor_user_id": "6d5e4f00-0000-4000-8000-000000000005",
+        "mode": "guarded_sqlcipher_rekey",
+        "status": "rekey_applied",
+        "backend_family": "sqlite",
+        "rekey_executed": true,
+        "ledger_integrity_verified": true,
+        "ledger_length": 42,
+        "evidence": {
+          "operation": "sqlcipher_rekey",
+          "requested_key_config": "configured",
+          "sqlcipher_available": true,
+          "checkpointed_before_rekey": true,
+          "checkpointed_after_rekey": true,
+          "post_rekey_integrity_checked": true
+        },
+        "no_claims": {
+          "current_key_persisted": false,
+          "replacement_key_persisted": false,
+          "key_fingerprint_persisted": false,
+          "database_path_persisted": false,
+          "sqlcipher_at_rest_certified": false,
+          "plaintext_migration_performed": false,
+          "legal_disposal_or_erasure_certified": false
+        }
+      }
+    ],
+    "history_count": 1,
+    "history_limit": 10
+  }
+}

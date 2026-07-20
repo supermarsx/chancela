@@ -1,0 +1,6 @@
+{
+  "algorithm": "inclusive",
+  "mode": "document",
+  "rule": "start-tag node ordering (REC §3.3): namespace declarations are emitted first (default xmlns, then by prefix), followed by attributes sorted by (namespace URI, local name)",
+  "provenance": "W3C Canonical XML 1.0 REC (xml-c14n-20010315) §3.3 worked example, the e5 element transcribed verbatim; the surrounding §3.3 example's e9 element is omitted because its canonical form depends on a DTD ATTLIST attribute default that this canonicalizer does not apply"
+}

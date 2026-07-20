@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: Package (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            artifact-suffix: linux
+          - name: Windows
+            os: windows-latest
+            artifact-suffix: windows
+          - name: macOS
+            os: macos-latest
+            artifact-suffix: macos
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install PC/SC system deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install native Perl for SQLCipher vendored OpenSSL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install strawberryperl --version=5.40.4.1 --no-progress --yes
+
+          $perlBin = 'C:\Strawberry\perl\bin'
+          $cBin = 'C:\Strawberry\c\bin'
+          if (-not (Test-Path (Join-Path $perlBin 'perl.exe'))) {
+              throw "Pinned Strawberry Perl was not installed at $perlBin"
+          }
+
+          "$perlBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "$cBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "PERL=$perlBin\perl.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $env:Path = "$perlBin;$cBin;$env:Path"
+          perl -MConfig -e 'print qq(perl=$^X\narch=$Config{archname}\nversion=$]\n)'
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Check release metadata versions
+        run: npm run check:versions
+
+      - name: Build and stage package
+        run: npm run package
+
+      - name: Check package artifact integrity
+        run: npm run test:package-integrity -- --require-clean-source
+
+      - name: Collect manifest and checksum metadata
+        id: collect
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $tarballs = @(Get-ChildItem -Path dist -Filter 'chancela-*.tar.gz' -File)
+          if ($tarballs.Count -ne 1) {
+              $found = if ($tarballs.Count -eq 0) { '<none>' } else { ($tarballs.Name -join ', ') }
+              throw "Expected exactly one dist/chancela-*.tar.gz package artifact; found $found"
+          }
+
+          $tarball = $tarballs[0]
+          $stem = $tarball.Name -replace '\.tar\.gz$', ''
+          $stageDir = Join-Path $tarball.DirectoryName $stem
+          $manifestPath = Join-Path $stageDir 'manifest.json'
+          $packageSumsPath = Join-Path $stageDir 'SHA256SUMS'
+
+          if (-not (Test-Path -LiteralPath $stageDir -PathType Container)) {
+              throw "Expected staged package directory not found: $stageDir"
+          }
+          if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+              throw "Expected package manifest not found: $manifestPath"
+          }
+          if (-not (Test-Path -LiteralPath $packageSumsPath -PathType Leaf)) {
+              throw "Expected package checksums not found: $packageSumsPath"
+          }
+
+          $metadataDir = Join-Path 'dist' "$stem-release-metadata"
+          New-Item -ItemType Directory -Path $metadataDir -Force | Out-Null
+
+          $manifestOut = Join-Path $metadataDir "$stem-manifest.json"
+          $packageSumsOut = Join-Path $metadataDir "$stem-package-SHA256SUMS"
+          $tarballSumsOut = Join-Path $metadataDir "$stem-tarball-SHA256SUMS"
+          $releaseSummaryOut = Join-Path $metadataDir "$stem-release-artifact.json"
+
+          Copy-Item -LiteralPath $manifestPath -Destination $manifestOut
+          Copy-Item -LiteralPath $packageSumsPath -Destination $packageSumsOut
+
+          $tarballHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $tarball.FullName).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath $tarballSumsOut -Encoding ASCII -Value "$tarballHash  *$($tarball.Name)"
+
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $sourceSha = (& git rev-parse HEAD).Trim()
+          $codeSigning = $manifest.releaseIntegrity.codeSigning
+          $notarization = $manifest.releaseIntegrity.notarization
+          $summary = [ordered]@{
+              package = $tarball.Name
+              packageSha256 = $tarballHash
+              version = $manifest.version
+              platform = $manifest.platform
+              arch = $manifest.arch
+              source = [ordered]@{
+                  ref = $env:GITHUB_REF
+                  sha = $sourceSha
+                  runId = $env:GITHUB_RUN_ID
+                  runAttempt = $env:GITHUB_RUN_ATTEMPT
+              }
+              signing = [ordered]@{
+                  configured = $false
+                  note = 'No code signing or notarization step is configured in this workflow.'
+              }
+              releaseTrust = [ordered]@{
+                  mode = 'unsigned-dev'
+                  codeSigning = [ordered]@{
+                      status = $codeSigning.status
+                      reason = $codeSigning.reason
+                  }
+                  notarization = [ordered]@{
+                      status = $notarization.status
+                      reason = $notarization.reason
+                  }
+                  attestation = [ordered]@{
+                      status = 'not_attested'
+                      reason = 'GitHub artifact attestations are not configured in this workflow.'
+                  }
+              }
+          }
+          $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $releaseSummaryOut -Encoding UTF8
+
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### Release package"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Package: ``$($tarball.Name)``"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- SHA-256: ``$tarballHash``"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Code signing/notarization: not configured; uploaded artifacts are unsigned package outputs."
+
+          "package=dist/$($tarball.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "metadata=$metadataDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "manifest=$manifestOut" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "release_summary=$releaseSummaryOut" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Check release trust declaration
+        shell: pwsh
+        run: |
+          node scripts/check-release-trust.mjs package `
+            --input '${{ steps.collect.outputs.release_summary }}' `
+            --manifest '${{ steps.collect.outputs.manifest }}' `
+            --package '${{ steps.collect.outputs.package }}' `
+            --expect-mode unsigned-dev
+
+      - name: Generate dependency SBOM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sbomPath = Join-Path '${{ steps.collect.outputs.metadata }}' 'chancela-dependency-sbom.cdx.json'
+          node scripts/release-supply-chain.mjs sbom --output $sbomPath --package '${{ steps.collect.outputs.package }}'
+          node scripts/release-supply-chain.mjs check --input $sbomPath --package '${{ steps.collect.outputs.package }}'
+
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Dependency SBOM: ``$sbomPath``"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chancela-package-${{ matrix.artifact-suffix }}
+          path: ${{ steps.collect.outputs.package }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload manifest and checksum artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chancela-release-metadata-${{ matrix.artifact-suffix }}
+          path: ${{ steps.collect.outputs.metadata }}
+          if-no-files-found: error
+          retention-days: 30

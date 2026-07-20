@@ -1,0 +1,7 @@
+{
+  "algorithm": "inclusive",
+  "mode": "id",
+  "id": "target",
+  "rule": "canonicalizing an element subtree by Id under inclusive C14N renders all in-scope namespaces inherited from ancestors at the apex (both xmlns:a and xmlns:b)",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §2.4 and §3.7 (document-subset) rule that a subset's apex renders inherited in-scope namespace nodes; expected output computed by hand from the spec rule, not from a third-party tool."
+}

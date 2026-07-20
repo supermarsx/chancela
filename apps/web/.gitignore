@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.local
+*.tsbuildinfo
+
+# Playwright browser E2E output (t15-e2)
+test-results/
+playwright-report/
+playwright/.cache/

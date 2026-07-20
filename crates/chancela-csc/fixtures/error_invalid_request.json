@@ -1,0 +1,4 @@
+{
+  "error": "invalid_request",
+  "error_description": "The credentialID parameter is missing or invalid."
+}

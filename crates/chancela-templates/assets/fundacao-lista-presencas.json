@@ -1,0 +1,42 @@
+{
+  "id": "fundacao-lista-presencas/v1",
+  "family": "Foundation",
+  "stage": "Reuniao",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "fundacao-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Lista de presenças" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Membros presentes", "value": "{{ members_present }}" },
+        { "key": "Membros representados", "value": "{{ members_represented }}" },
+        { "key": "Referência", "value": "{{ attendance_reference }}" }
+      ]
+    },
+    {
+      "kind": "KeyValue",
+      "items": "attendees",
+      "rows": [
+        { "key": "{{ name }}", "value": "{% if quality_note %}{{ quality_note }}{% elif quality | quality_label %}{{ quality | quality_label }}{% endif %}{% if quality_note or quality | quality_label %} — {% endif %}{% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% else %}ausente{% endif %}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente lista regista {{ members_present }} membro(s) presente(s) e {{ members_represented }} membro(s) representado(s) na reunião do órgão da fundação {{ entity.name }}."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

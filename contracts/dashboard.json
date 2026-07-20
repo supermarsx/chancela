@@ -1,0 +1,568 @@
+{
+  "entities": 2,
+  "books_open": 1,
+  "books_total": 1,
+  "acts_total": 0,
+  "acts_draft": 0,
+  "acts_awaiting_signature": 0,
+  "acts_sealed": 0,
+  "unresolved_compliance": 0,
+  "failed_sync_jobs": 0,
+  "pending_backup_jobs": 0,
+  "ledger_length": 5,
+  "ledger_valid": true,
+  "current_work": {
+    "open_books": [
+      {
+        "book_id": "3f1c8e40-0000-4000-8000-000000000010",
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "entity_name": "Encosto Estratégico, S.A.",
+        "kind": "AssembleiaGeral",
+        "purpose": "Livro de atas da assembleia geral",
+        "opening_date": "2026-01-05",
+        "last_ata_number": 0,
+        "total_acts": 0,
+        "open_acts": 0,
+        "next_ata_number": 1,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+          "book": "/v1/books/3f1c8e40-0000-4000-8000-000000000010",
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=book:3f1c8e40-0000-4000-8000-000000000010"
+        }
+      }
+    ],
+    "act_counts_by_state": {
+      "Draft": 0,
+      "Review": 0,
+      "Convened": 0,
+      "Deliberated": 0,
+      "TextApproved": 0,
+      "Signing": 0,
+      "Sealed": 0,
+      "Archived": 0
+    }
+  },
+  "alerts": [
+    {
+      "code": "book.acts.none_recorded",
+      "label": "Advisory",
+      "category": "BookLifecycle",
+      "message": "Open book 3f1c8e40-0000-4000-8000-000000000010 has no acts recorded yet. Draft a new ata or import historical minutes when appropriate.",
+      "params": {
+        "act_id": "4b3c2d00-0000-4000-8000-000000000003",
+        "act_title": "Ata da Assembleia Geral Anual",
+        "book_id": "3f1c8e40-0000-4000-8000-000000000010",
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "current_state": "Sealed",
+        "recommended_actions": "archive_act"
+      },
+      "target": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "book_id": "3f1c8e40-0000-4000-8000-000000000010",
+        "act_id": null,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+          "book": "/v1/books/3f1c8e40-0000-4000-8000-000000000010",
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=book:3f1c8e40-0000-4000-8000-000000000010"
+        }
+      },
+      "source": "acts.by_book",
+      "severity": "Info",
+      "law_refs": [
+        {
+          "diploma_id": "dl-76-a-2006",
+          "article": "1",
+          "label": "Artigo 1",
+          "heading": "Objecto",
+          "verification": "automated_review",
+          "source_url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/76-a-2006-620286",
+          "source_complete": true,
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=731) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
+        }
+      ],
+      "action": {
+        "kind": "open_book",
+        "label_key": "notifications.alert.book.noActs.action",
+        "api_href": "/v1/books/3f1c8e40-0000-4000-8000-000000000010",
+        "route": "/livros/3f1c8e40-0000-4000-8000-000000000010"
+      },
+      "recommended_next_steps": [
+        "Draft the next ata in the open book.",
+        "Import historical minutes if the book is already in use elsewhere."
+      ],
+      "i18n": {
+        "title_key": "notifications.alert.book.noActs.title",
+        "body_key": "notifications.alert.book.noActs.body",
+        "action_key": "notifications.alert.book.noActs.action"
+      }
+    },
+    {
+      "code": "entity.book.no_open_book",
+      "label": "Advisory",
+      "category": "BookLifecycle",
+      "message": "Entity Norte Exemplo, Lda. has no open book recorded. Open a book or import an existing book before drafting new atas.",
+      "params": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+        "entity_name": "Norte Exemplo, Lda.",
+        "total_books": "0",
+        "open_books": "0",
+        "recommended_actions": "open_book,import_book"
+      },
+      "target": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+        "book_id": null,
+        "act_id": null,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000002",
+          "book": null,
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=company:2f1c8e40-0000-4000-8000-000000000002"
+        }
+      },
+      "source": "entities.books",
+      "severity": "Info",
+      "law_refs": [
+        {
+          "diploma_id": "dl-76-a-2006",
+          "article": "1",
+          "label": "Artigo 1",
+          "heading": "Objecto",
+          "verification": "automated_review",
+          "source_url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/76-a-2006-620286",
+          "source_complete": true,
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=731) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
+        },
+        {
+          "diploma_id": "dl-76-a-2006",
+          "article": "2",
+          "label": "Artigo 2",
+          "heading": "",
+          "verification": "Pending",
+          "source_url": null,
+          "source_complete": false,
+          "review_method": null,
+          "review_note": null
+        }
+      ],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.alert.entity.noOpenBook.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000002",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000002"
+      },
+      "recommended_next_steps": [
+        "Open a new digital book for the relevant organ.",
+        "Import an existing paper or external book if the entity already has one."
+      ],
+      "i18n": {
+        "title_key": "notifications.alert.entity.noOpenBook.title",
+        "body_key": "notifications.alert.entity.noOpenBook.body",
+        "action_key": "notifications.alert.entity.noOpenBook.action"
+      }
+    },
+    {
+      "code": "registry.provenance.expiring_soon",
+      "label": "Advisory",
+      "category": "RegistryProvenance",
+      "message": "Stored registry extract provenance has valid_until 2026-08-01, which expires in 23 days. Plan a registry refresh before relying on it as current evidence.",
+      "params": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "valid_until": "2026-08-01",
+        "days_until": "23"
+      },
+      "target": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "book_id": null,
+        "act_id": null,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+          "book": null,
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=company:2f1c8e40-0000-4000-8000-000000000001"
+        }
+      },
+      "source": "registry_extracts.provenance.valid_until",
+      "severity": "Info",
+      "law_refs": [],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.alert.registry.expiringSoon.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000001"
+      },
+      "recommended_next_steps": [
+        "Open the entity registry evidence.",
+        "Refresh the permanent certificate before using it as current evidence."
+      ],
+      "i18n": {
+        "title_key": "notifications.alert.registry.expiringSoon.title",
+        "body_key": "notifications.alert.registry.expiringSoon.body",
+        "action_key": "notifications.alert.registry.expiringSoon.action"
+      }
+    },
+    {
+      "code": "entity.administrator_remuneration.setup_recommended",
+      "label": "Advisory",
+      "severity": "Info",
+      "category": "GovernanceSetup",
+      "message": "Entity Atlântico Estratégico, S.A. has administration officers in the imported registry evidence, but no sealed remuneration or non-remuneration minutes are recorded. Record the remuneration setup when appropriate.",
+      "params": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000003",
+        "entity_name": "Atlântico Estratégico, S.A.",
+        "office": "administration",
+        "recommended_actions": "record_remuneration,record_non_remuneration"
+      },
+      "target": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000003",
+        "book_id": null,
+        "act_id": null,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000003",
+          "book": null,
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=company:2f1c8e40-0000-4000-8000-000000000003"
+        }
+      },
+      "source": "registry_extracts.orgaos",
+      "law_refs": [
+        {
+          "diploma_id": "csc",
+          "article": "399",
+          "label": "Artigo 399.º",
+          "heading": "Remuneração dos administradores",
+          "verification": "automated_review",
+          "source_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "source_complete": true,
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
+        }
+      ],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.alert.entity.administratorRemuneration.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000003",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000003"
+      },
+      "recommended_next_steps": [
+        "Review the registry officers and statutes.",
+        "Draft minutes for remuneration or explicit non-remuneration if required."
+      ],
+      "i18n": {
+        "title_key": "notifications.alert.entity.administratorRemuneration.title",
+        "body_key": "notifications.alert.entity.administratorRemuneration.body",
+        "action_key": "notifications.alert.entity.administratorRemuneration.action"
+      }
+    }
+  ],
+  "reminders": [
+    {
+      "due_date": "2026-03-31",
+      "severity": "Advisory",
+      "status": "Overdue",
+      "reason": "The commercial-company calendar preset \"Assembleia geral anual (CSC art. 376.º)\" produces a local advisory date of 2026-03-31 (using the default Dec 31 fiscal-year end because no fiscal_year_end is recorded). No sealed or archived Assembleia Geral act dated 2026 is recorded for this entity. Chancela does not claim a legal deadline, legal calendar authority, or legal compliance from this local plan.",
+      "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+      "entity_name": "Encosto Estratégico, S.A.",
+      "source_rule": "csc-art376-annual",
+      "source_profile": "csc-commercial",
+      "params": {
+        "calendar_preset_support": "supported",
+        "preset_id": "csc-art376-annual",
+        "preset_label": "Assembleia geral anual (CSC art. 376.º)",
+        "rule_kind": "commercial_company_annual_general_meeting",
+        "review_status": "pending_source_review",
+        "source_status": "pending_unverified",
+        "local_due_date_rule_configured": "true",
+        "local_due_date_calculated": "true",
+        "legal_deadline_calculated": "false",
+        "local_advisory_only": "true",
+        "legal_deadline_authority_claimed": "false",
+        "legal_calendar_authority_claimed": "false",
+        "legal_compliance_claimed": "false",
+        "external_delivery_claimed": "false",
+        "external_calendar_sync_claimed": "false",
+        "webhook_delivery_claimed": "false",
+        "workflow_completion_claimed": "false",
+        "compliance_status_claimed": "false",
+        "legal_review_claimed": "false",
+        "dre_verification_claimed": "false",
+        "provider_effect_claimed": "false",
+        "certification_claimed": "false",
+        "months_after_fiscal_year_end": "3",
+        "fiscal_year_end": "12-31",
+        "due_year": "2026",
+        "due_basis": "default_fiscal_year_end_missing_recorded_value"
+      },
+      "profile_calendar_plan": {
+        "preset_id": "csc-art376-annual",
+        "preset_label": "Assembleia geral anual (CSC art. 376.º)",
+        "rule_kind": "commercial_company_annual_general_meeting",
+        "support_status": "supported",
+        "review_status": "pending_source_review",
+        "source_status": "pending_unverified",
+        "due_rule": {
+          "kind": "fiscal_year_end_offset",
+          "months_after_fiscal_year_end": 3,
+          "default_fiscal_year_end": "12-31",
+          "annual_fixed_month": null,
+          "annual_fixed_day": null,
+          "unsupported_reason": null
+        },
+        "evaluation": {
+          "local_due_date_rule_configured": true,
+          "local_due_date_calculated": true,
+          "legal_deadline_calculated": false,
+          "fiscal_year_end": "12-31",
+          "due_year": 2026,
+          "due_basis": "default_fiscal_year_end_missing_recorded_value",
+          "unsupported_reason": null
+        },
+        "no_claims": {
+          "local_advisory_only": true,
+          "legal_deadline_authority_claimed": false,
+          "legal_calendar_authority_claimed": false,
+          "legal_compliance_claimed": false,
+          "compliance_status_claimed": false,
+          "workflow_completion_claimed": false,
+          "external_delivery_claimed": false,
+          "external_calendar_sync_claimed": false,
+          "webhook_delivery_claimed": false,
+          "legal_review_claimed": false,
+          "dre_verification_claimed": false,
+          "provider_effect_claimed": false,
+          "certification_claimed": false
+        }
+      },
+      "law_refs": [
+        {
+          "diploma_id": "csc",
+          "article": "376",
+          "label": "Artigo 376.º",
+          "heading": "",
+          "verification": "Pending",
+          "source_url": null,
+          "source_complete": false,
+          "review_method": null,
+          "review_note": null
+        }
+      ],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.reminder.annual.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000001"
+      },
+      "recommended_next_steps": [
+        "Review the annual general meeting record.",
+        "Seal or archive the annual minutes once approved."
+      ]
+    },
+    {
+      "due_date": "2026-01-15",
+      "severity": "Advisory",
+      "status": "DueSoon",
+      "reason": "The condominium calendar preset \"Assembleia ordinária anual de condóminos (DL 268/94)\" produces a local advisory date of 2026-01-15 (using the local fixed annual advisory date; profile-specific exceptions remain manual context). No sealed or archived condominium assembly act dated 2026 is recorded for this entity. Chancela does not claim a legal deadline, legal calendar authority, or legal compliance from this local plan.",
+      "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+      "entity_name": "Condomínio Horizonte",
+      "source_rule": "condominio-annual",
+      "source_profile": "condominio-dl268",
+      "params": {
+        "calendar_preset_support": "supported",
+        "preset_id": "condominio-annual",
+        "preset_label": "Assembleia ordinária anual de condóminos (DL 268/94)",
+        "rule_kind": "condominium_annual_assembly",
+        "review_status": "pending_source_review",
+        "source_status": "pending_unverified",
+        "local_due_date_rule_configured": "true",
+        "local_due_date_calculated": "true",
+        "legal_deadline_calculated": "false",
+        "local_advisory_only": "true",
+        "legal_deadline_authority_claimed": "false",
+        "legal_calendar_authority_claimed": "false",
+        "legal_compliance_claimed": "false",
+        "external_delivery_claimed": "false",
+        "external_calendar_sync_claimed": "false",
+        "webhook_delivery_claimed": "false",
+        "workflow_completion_claimed": "false",
+        "compliance_status_claimed": "false",
+        "legal_review_claimed": "false",
+        "dre_verification_claimed": "false",
+        "provider_effect_claimed": "false",
+        "certification_claimed": "false",
+        "annual_fixed_month": "1",
+        "annual_fixed_day": "15",
+        "due_year": "2026",
+        "due_basis": "annual_fixed_date"
+      },
+      "profile_calendar_plan": {
+        "preset_id": "condominio-annual",
+        "preset_label": "Assembleia ordinária anual de condóminos (DL 268/94)",
+        "rule_kind": "condominium_annual_assembly",
+        "support_status": "supported",
+        "review_status": "pending_source_review",
+        "source_status": "pending_unverified",
+        "due_rule": {
+          "kind": "annual_fixed_date",
+          "months_after_fiscal_year_end": null,
+          "default_fiscal_year_end": null,
+          "annual_fixed_month": 1,
+          "annual_fixed_day": 15,
+          "unsupported_reason": null
+        },
+        "evaluation": {
+          "local_due_date_rule_configured": true,
+          "local_due_date_calculated": true,
+          "legal_deadline_calculated": false,
+          "fiscal_year_end": null,
+          "due_year": 2026,
+          "due_basis": "annual_fixed_date",
+          "unsupported_reason": null
+        },
+        "no_claims": {
+          "local_advisory_only": true,
+          "legal_deadline_authority_claimed": false,
+          "legal_calendar_authority_claimed": false,
+          "legal_compliance_claimed": false,
+          "compliance_status_claimed": false,
+          "workflow_completion_claimed": false,
+          "external_delivery_claimed": false,
+          "external_calendar_sync_claimed": false,
+          "webhook_delivery_claimed": false,
+          "legal_review_claimed": false,
+          "dre_verification_claimed": false,
+          "provider_effect_claimed": false,
+          "certification_claimed": false
+        }
+      },
+      "law_refs": [
+        {
+          "diploma_id": "cc",
+          "article": "1431",
+          "label": "Artigo 1431.º",
+          "heading": "",
+          "verification": "Pending",
+          "source_url": null,
+          "source_complete": false,
+          "review_method": null,
+          "review_note": null
+        }
+      ],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.reminder.annual.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000002",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000002"
+      },
+      "recommended_next_steps": [
+        "Review the annual condominium assembly record.",
+        "Seal or archive the assembly minutes once approved."
+      ]
+    },
+    {
+      "due_date": "",
+      "severity": "Advisory",
+      "status": "Pending",
+      "reason": "Generated absent-owner communication document generated-absent-owner-1 for act \"Ata da assembleia de condóminos\" has pending dispatch evidence. This dashboard reminder is advisory only and does not claim sending, delivery, legal notice completion, or legal sufficiency.",
+      "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+      "entity_name": "Condomínio Horizonte",
+      "source_rule": "absent-owner-dispatch-evidence",
+      "source_profile": "condominium-generated-communication",
+      "params": {
+        "act_id": "2f1c8e40-0000-4000-8000-000000000020",
+        "act_title": "Ata da assembleia de condóminos",
+        "book_id": "2f1c8e40-0000-4000-8000-000000000010",
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+        "entity_name": "Condomínio Horizonte",
+        "document_id": "generated-absent-owner-1",
+        "template_id": "condominio-comunicacao-ausentes/v1",
+        "dispatch_evidence_status": "required_pending",
+        "required_recipient_count": "2",
+        "recorded_recipient_count": "0",
+        "missing_recipient_count": "2",
+        "missing_recipients": "Fração B, Fração C"
+      },
+      "law_refs": [],
+      "action": {
+        "kind": "open_absent_owner_dispatch_evidence",
+        "label_key": "notifications.reminder.absentOwnerDispatch.action",
+        "api_href": "/v1/documents/generated/generated-absent-owner-1/dispatch-evidence",
+        "route": "/atas/2f1c8e40-0000-4000-8000-000000000020"
+      },
+      "recommended_next_steps": [
+        "Open the sealed act's generated communication workflow.",
+        "Record operator dispatch evidence for the missing absent recipients when available."
+      ],
+      "i18n": {
+        "title_key": "notifications.reminder.absentOwnerDispatch.title",
+        "body_key": "notifications.reminder.absentOwnerDispatch.body",
+        "action_key": "notifications.reminder.absentOwnerDispatch.action"
+      }
+    },
+    {
+      "due_date": "",
+      "severity": "Advisory",
+      "status": "Pending",
+      "reason": "Privacy register item \"Suspected account compromise\" has no local review or drill receipt recorded. No next review date is derived because no local review cadence anchor exists. This dashboard reminder is local and advisory only; it does not notify authorities or subjects, approve or execute transfers, certify adequacy, or claim legal completion.",
+      "entity_id": "privacy",
+      "entity_name": "Privacidade",
+      "source_rule": "privacy-breach-playbook-review",
+      "source_profile": "privacy-breach-playbook",
+      "params": {
+        "record_id": "7d3992e1-96e1-49e5-96b8-9c1c0442939a",
+        "record_label": "Suspected account compromise",
+        "record_status": "Active",
+        "review_status": "NoReceipt",
+        "next_review_due_at": "",
+        "last_local_activity_at": "no local review/drill receipt",
+        "last_reviewed_at": "",
+        "last_drill_at": "",
+        "days_until_due": "",
+        "receipt_count": "0",
+        "review_receipt_count": "0",
+        "drill_receipt_count": "0",
+        "local_advisory_only": "true",
+        "authority_notification_claimed": "false",
+        "subject_notification_claimed": "false",
+        "transfer_approval_claimed": "false",
+        "transfer_execution_claimed": "false",
+        "external_delivery_configured": "false",
+        "legal_completion_claimed": "false"
+      },
+      "law_refs": [],
+      "action": {
+        "kind": "open_privacy_review",
+        "label_key": "notifications.reminder.privacy.review.action",
+        "api_href": "/v1/privacy/breach-playbooks",
+        "route": "/configuracoes?sec=privacidade"
+      },
+      "recommended_next_steps": [
+        "Open the privacy register item.",
+        "Record a local review or drill receipt when operator evidence exists."
+      ],
+      "i18n": {
+        "title_key": "notifications.reminder.privacy.review.title",
+        "body_key": "notifications.reminder.privacy.review.body",
+        "action_key": "notifications.reminder.privacy.review.action"
+      }
+    }
+  ],
+  "recent_events": [
+    {
+      "id": "5c4d3e00-0000-4000-8000-000000000004",
+      "seq": 1,
+      "actor": "amelia.marques",
+      "justification": "registry import",
+      "timestamp": "2026-07-07T10:15:30Z",
+      "scope": "2f1c8e40-0000-4000-8000-000000000001",
+      "kind": "entity.created",
+      "payload_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "chains": ["global", "company:2f1c8e40-0000-4000-8000-000000000001"],
+      "attestation": null
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "policy": {
+    "repository_id": "2e900000-0000-4000-8000-000000000001",
+    "tenant_id": "74656e61-6e74-0000-0000-000000000001",
+    "name": "Encrypted legal evidence",
+    "encryption_mode": "zero_knowledge",
+    "zk_scope": {
+      "kind": "repository",
+      "repository_id": "2e900000-0000-4000-8000-000000000001"
+    },
+    "custody": {
+      "bring_your_own_key": true,
+      "webauthn_prf_unsealing": false,
+      "split_key_recovery": null
+    },
+    "gdpr_obligations_remain": true,
+    "created_at": "2026-07-16T10:05:00Z",
+    "updated_at": "2026-07-16T10:05:00Z"
+  },
+  "policy_source": "repository"
+}

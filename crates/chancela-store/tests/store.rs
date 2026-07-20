@@ -1,0 +1,3819 @@
+//! Integration tests for the durable system of record (t30-e1).
+//!
+//! This crate is the durability guard for the whole application, so the coverage here is
+//! deliberately thorough: open/reopen idempotency, transactional atomicity (a mid-closure error
+//! must persist *nothing*), a full drop-and-reload round trip with chain re-verification, raw-SQL
+//! tamper detection, the schema-version-too-new rejection, and the `VACUUM INTO` hot backup
+//! (archive present, per-file digests match, snapshot re-openable and self-verifying).
+
+use std::collections::{HashMap, HashSet};
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use chancela_core::{
+    Act, ActId, AttendanceWeight, Attendee, Book, BookKind, Convening, ConveningRecipient,
+    DispatchChannel, Entity, EntityKind, LegalHold, MeetingChannel, Nipc, PresenceMode, SecondCall,
+    SignatoryCapacity,
+};
+use chancela_ledger::{ChainId, Event, Ledger, LedgerError};
+use chancela_registry::{RegistryExtract, RegistryProvenance};
+use chancela_store::{
+    EraseTarget, GeneratedDocumentDispatchEvidenceUpsert, LedgerEventPageQuery,
+    LedgerEventUpperBound, PaperBookOcrConversionDossierUpsert,
+    PaperBookOcrConversionExecutionArtifactUpsert, Store, StoreError, StoreKeyRotationStatus,
+    StoreOpenOptions, StoredCredentialRecord, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
+    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
+    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
+    StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
+    StoredPaperBookOcrStatus,
+};
+#[cfg(not(feature = "sqlcipher"))]
+use chancela_store::{StoreDatabaseFormat, StoreKeyConfigStatus, StoreKeyOpsPlan};
+use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
+
+// --- std-only tempdir (the crate's Cargo.toml is frozen; no `tempfile` dev-dep) -----------------
+
+static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// A unique scratch directory under the OS temp dir, removed on drop.
+struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    fn new() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "chancela-store-test-{}-{nanos}-{n}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        TempDir { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+// --- fixtures -----------------------------------------------------------------------------------
+
+fn sample_entity(name: &str) -> Entity {
+    Entity::new(
+        name,
+        Nipc::unvalidated("500002020"),
+        "Rua de Teste, Lisboa",
+        EntityKind::SociedadePorQuotas,
+    )
+}
+
+fn sample_extract(nipc: &str) -> RegistryExtract {
+    RegistryExtract {
+        matricula: Some("12345".to_string()),
+        nipc: Some(nipc.to_string()),
+        firma: Some("Firma de Teste, Lda".to_string()),
+        forma_juridica: None,
+        legal_form: None,
+        sede: Some("Lisboa".to_string()),
+        cae: Vec::new(),
+        objeto: None,
+        capital: None,
+        data_constituicao: None,
+        orgaos: Vec::new(),
+        inscricoes: Vec::new(),
+        anotacoes: Vec::new(),
+        provenance: RegistryProvenance {
+            access_code_masked: "****-****-1234".to_string(),
+            retrieved_at: "2026-07-07T00:00:00Z".to_string(),
+            source_url: "https://example.test/certidao".to_string(),
+            raw_digest: "deadbeef".to_string(),
+            conservatoria: None,
+            oficial: None,
+            subscribed_on: None,
+            valid_until: None,
+        },
+    }
+}
+
+/// A small fake PDF/A-2u byte blob (not a real PDF — the store crate does not depend on the
+/// document writer; it preserves whatever bytes it is handed).
+const FAKE_PDF: &[u8] = b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\nfake ata de Encosto Estrategico Lda\n%%EOF";
+
+/// Build a [`StoredDocument`] for `act_id` with `bytes`, computing its hex sha-256 digest.
+fn sample_document(id: &str, act_id: ActId, bytes: &[u8]) -> StoredDocument {
+    StoredDocument {
+        id: id.to_string(),
+        act_id,
+        template_id: "csc-ata-ag/v1".to_string(),
+        pdf_digest: hex(&Sha256::digest(bytes)),
+        profile: "csc/sq".to_string(),
+        created_at: OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap(),
+        pdf_bytes: bytes.to_vec(),
+    }
+}
+
+fn sample_generated_dispatch_evidence(
+    document_id: &str,
+    act_id: ActId,
+    idempotency_key: &str,
+) -> StoredGeneratedDocumentDispatchEvidence {
+    StoredGeneratedDocumentDispatchEvidence {
+        document_id: document_id.to_string(),
+        idempotency_key: idempotency_key.to_string(),
+        act_id,
+        template_id: "condominio-comunicacao-ausentes/v1".to_string(),
+        actor: "amelia.marques".to_string(),
+        dispatched_at: OffsetDateTime::from_unix_timestamp(1_780_000_100).unwrap(),
+        channel: Some("RegisteredLetter".to_string()),
+        reference: Some("RR123456789PT".to_string()),
+        evidence_reference: Some("archive:dispatch-proof-1".to_string()),
+        imported_document_id: Some("11111111-1111-4111-8111-111111111112".to_string()),
+        recipients: vec!["Fração B".to_string()],
+        operator_note: Some("operator-recorded postal locator only".to_string()),
+        recorded_at: OffsetDateTime::from_unix_timestamp(1_780_000_101).unwrap(),
+    }
+}
+
+fn sample_imported_document(
+    id: &str,
+    act_id: Option<ActId>,
+    bytes: &[u8],
+) -> StoredImportedDocument {
+    StoredImportedDocument {
+        meta: StoredImportedDocumentMeta {
+            id: id.to_string(),
+            act_id,
+            filename: Some("evidence.pdf".to_string()),
+            declared_content_type: Some("application/pdf".to_string()),
+            detected_content_type: "application/pdf".to_string(),
+            sha256: hex(&Sha256::digest(bytes)),
+            size_bytes: bytes.len(),
+            imported_at: OffsetDateTime::from_unix_timestamp(1_780_000_000).unwrap(),
+            imported_by: "amelia.marques".to_string(),
+            operator_review_status: StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+            operator_reviewed_at: None,
+            operator_reviewed_by: None,
+            operator_review_note: None,
+            operator_acknowledged_guardrail_ids: Vec::new(),
+            technical_validation_report_json: "{}".to_owned(),
+        },
+        bytes: bytes.to_vec(),
+    }
+}
+
+fn sample_paper_book_import(id: &str, bytes: &[u8]) -> StoredPaperBookImport {
+    StoredPaperBookImport {
+        meta: StoredPaperBookImportMeta {
+            import_id: id.to_string(),
+            entity_ref: "entity-legacy-001".to_string(),
+            entity_name: "Encosto Estrategico, S.A.".to_string(),
+            entity_nipc: "503004642".to_string(),
+            book_ref: "ag-book-1968-1971".to_string(),
+            date_from: time::macros::date!(1968 - 01 - 01),
+            date_to: time::macros::date!(1971 - 12 - 31),
+            page_count: 240,
+            page_from: 1,
+            page_to: 240,
+            original_number_from: Some(1),
+            original_number_to: Some(15),
+            sha256: hex(&Sha256::digest(bytes)),
+            size_bytes: bytes.len(),
+            content_type: "application/pdf".to_string(),
+            source_filename: Some("ag-1968-1971.pdf".to_string()),
+            notes: Some("Scanned from bound paper minute book.".to_string()),
+            imported_at: OffsetDateTime::from_unix_timestamp(1_780_000_001).unwrap(),
+            imported_by: "amelia.marques".to_string(),
+            ocr_status: StoredPaperBookOcrStatus::NotRun,
+        },
+        bytes: bytes.to_vec(),
+    }
+}
+
+fn sample_paper_book_ocr_draft(draft_id: &str, import_id: &str) -> StoredPaperBookOcrDraft {
+    StoredPaperBookOcrDraft {
+        draft_id: draft_id.to_string(),
+        import_id: import_id.to_string(),
+        extracted_text: Some("Ata manuscrita transcrita por OCR.".to_string()),
+        text_digest: Some(hex(&Sha256::digest("Ata manuscrita transcrita por OCR."))),
+        page_spans: vec![
+            StoredPaperBookOcrPageSpan {
+                start_page: 1,
+                end_page: 3,
+            },
+            StoredPaperBookOcrPageSpan {
+                start_page: 7,
+                end_page: 7,
+            },
+        ],
+        confidence: Some(0.82),
+        engine_name: "fixture-ocr".to_string(),
+        engine_version: Some("0.0.1".to_string()),
+        created_at: OffsetDateTime::from_unix_timestamp(1_780_000_002).unwrap(),
+        created_by: "amelia.marques".to_string(),
+        review_status: StoredPaperBookOcrReviewStatus::Unreviewed,
+        reviewed_at: None,
+        reviewed_by: None,
+        review_note: None,
+        superseded_by: None,
+    }
+}
+
+fn sample_paper_book_ocr_conversion_dossier(
+    dossier_id: &str,
+    draft: &StoredPaperBookOcrDraft,
+) -> StoredPaperBookOcrConversionDossier {
+    StoredPaperBookOcrConversionDossier {
+        dossier_id: dossier_id.to_string(),
+        import_id: draft.import_id.clone(),
+        draft_id: draft.draft_id.clone(),
+        source_text_digest: draft.text_digest.clone(),
+        source_page_spans: draft.page_spans.clone(),
+        source_review_status: StoredPaperBookOcrReviewStatus::Accepted,
+        source_reviewed_at: draft.reviewed_at,
+        source_reviewed_by: draft.reviewed_by.clone(),
+        created_at: OffsetDateTime::from_unix_timestamp(1_780_000_004).unwrap(),
+        created_by: "rui.secretario".to_string(),
+    }
+}
+
+fn sample_paper_book_ocr_conversion_execution_artifact(
+    artifact_id: &str,
+    draft: &StoredPaperBookOcrDraft,
+    target_act_id: &str,
+    dossier_id: Option<&str>,
+) -> StoredPaperBookOcrConversionExecutionArtifact {
+    StoredPaperBookOcrConversionExecutionArtifact {
+        artifact_id: artifact_id.to_string(),
+        import_id: draft.import_id.clone(),
+        draft_id: draft.draft_id.clone(),
+        dossier_id: dossier_id.map(str::to_string),
+        source_text_digest: draft.text_digest.clone(),
+        source_page_spans: draft.page_spans.clone(),
+        source_review_status: StoredPaperBookOcrReviewStatus::Accepted,
+        source_reviewed_at: draft.reviewed_at,
+        source_reviewed_by: draft.reviewed_by.clone(),
+        target_act_id: target_act_id.to_string(),
+        target_act_state: "Draft".to_string(),
+        mutable_draft_act_created: true,
+        created_at: OffsetDateTime::from_unix_timestamp(1_780_000_005).unwrap(),
+        created_by: "rui.secretario".to_string(),
+        canonical_conversion_claimed: false,
+        canonical_minutes_claimed: false,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        signed_document_created: false,
+        archive_package_created: false,
+        pdfa_created: false,
+        pdfua_created: false,
+        signature_created: false,
+        seal_created: false,
+        archive_certification_claimed: false,
+        legal_validity_claimed: false,
+        source_extracted_text_in_artifact: false,
+        source_extracted_text_in_ledger_event: false,
+    }
+}
+
+fn sample_follow_up(id: &str, act_id: ActId) -> StoredFollowUp {
+    StoredFollowUp {
+        id: id.to_string(),
+        act_id,
+        agenda_number: Some(1),
+        deliberation_index: Some(0),
+        title: "Entregar certidao atualizada".to_string(),
+        detail: Some("Enviar comprovativo ao orgao fiscal.".to_string()),
+        due_date: Some(time::macros::date!(2026 - 04 - 30)),
+        assignee: Some("amelia.marques".to_string()),
+        assignee_display: Some("Amelia Marques".to_string()),
+        status: StoredFollowUpStatus::Open,
+        created_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+        created_by: "rui.secretario".to_string(),
+        completed_at: None,
+        completed_by: None,
+    }
+}
+
+/// Append an event to `ledger` and persist it (event-only), returning the appended event.
+fn persist_event(store: &Store, ledger: &mut Ledger, scope: &str, kind: &str) -> Event {
+    persist_event_with(
+        store,
+        ledger,
+        "amelia.marques",
+        scope,
+        kind,
+        None,
+        scope.as_bytes(),
+    )
+}
+
+fn persist_event_with(
+    store: &Store,
+    ledger: &mut Ledger,
+    actor: &str,
+    scope: &str,
+    kind: &str,
+    justification: Option<&str>,
+    payload: &[u8],
+) -> Event {
+    let event = ledger
+        .append(actor, scope, kind, justification, payload)
+        .clone();
+    store
+        .persist(|tx| tx.append_event(&event))
+        .expect("persist event");
+    event
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+// --- tests --------------------------------------------------------------------------------------
+
+#[test]
+fn open_creates_db_and_reopen_is_idempotent() {
+    let dir = TempDir::new();
+    {
+        let store = Store::open(dir.path()).expect("open fresh");
+        let loaded = store.load().expect("load fresh");
+        assert!(loaded.entities.is_empty());
+        assert!(loaded.books.is_empty());
+        assert!(loaded.acts.is_empty());
+        assert!(loaded.registry_extracts.is_empty());
+        assert_eq!(loaded.chain_status, Ok(0));
+        assert_eq!(loaded.ledger.len(), 0);
+    }
+    // The db file was created and reopening the same directory succeeds without wiping it.
+    assert!(dir.path().join("chancela.db").exists());
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(reopened.load().expect("reload").chain_status, Ok(0));
+}
+
+#[test]
+fn ledger_events_page_walks_persisted_events_newest_first_without_duplicates() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-a",
+        "entity.created",
+        None,
+        b"company-a",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-b",
+        "entity.created",
+        None,
+        b"company-b",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-a/book:book-a",
+        "book.opened",
+        None,
+        b"book-a",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-b/book:book-b",
+        "book.opened",
+        None,
+        b"book-b",
+    );
+
+    for i in 0..1_100 {
+        let (company, book) = if i % 3 == 0 {
+            ("company-a", "book-a")
+        } else {
+            ("company-b", "book-b")
+        };
+        let scope = format!("entity:{company}/book:{book}/act:{i}");
+        let kind = if i % 5 == 0 {
+            "document.generated"
+        } else {
+            "act.sealed"
+        };
+        let actor = if company == "company-a" && i % 30 == 0 {
+            "rui.secretario"
+        } else {
+            "amelia.marques"
+        };
+        let justification =
+            (company == "company-a" && i % 30 == 0).then_some("needle archive cadeia a");
+        let payload = format!("{scope}:{kind}:{i}");
+        persist_event_with(
+            &store,
+            &mut ledger,
+            actor,
+            &scope,
+            kind,
+            justification,
+            payload.as_bytes(),
+        );
+    }
+
+    let expected_len = ledger.len();
+    assert!(expected_len > 1_000);
+    drop(store);
+    let store = Store::open(dir.path()).expect("reopen");
+
+    let mut before_seq = None;
+    let mut previous_seq = None;
+    let mut seen = HashSet::new();
+    let mut collected = Vec::new();
+    let mut page_count = 0;
+
+    loop {
+        let page = store
+            .ledger_events_page(&LedgerEventPageQuery {
+                before_seq,
+                limit: 137,
+                chain: None,
+                q: None,
+                scope: None,
+                kinds: Vec::new(),
+                actor: None,
+                from: None,
+                to: None,
+            })
+            .expect("ledger page");
+        page_count += 1;
+
+        assert_eq!(page.limit, 137);
+        assert!(page.events.len() <= 137);
+        if page_count == 1 {
+            assert_eq!(page.events.len(), 137);
+            assert!(page.has_more);
+            assert_eq!(
+                page.events.first().map(|event| event.seq),
+                Some(expected_len as u64 - 1)
+            );
+            assert_eq!(
+                page.events.last().map(|event| event.seq),
+                Some(expected_len as u64 - 137)
+            );
+        }
+        for event in &page.events {
+            if let Some(previous_seq) = previous_seq {
+                assert!(
+                    event.seq < previous_seq,
+                    "events must stay newest-first across pages"
+                );
+            }
+            previous_seq = Some(event.seq);
+            assert!(seen.insert(event.seq), "duplicate seq {}", event.seq);
+            collected.push(event.seq);
+        }
+
+        if page.has_more {
+            assert_eq!(page.events.len(), 137);
+            assert_eq!(page.next_cursor, page.events.last().map(|event| event.seq));
+            before_seq = page.next_cursor;
+        } else {
+            assert!(page.next_cursor.is_none());
+            break;
+        }
+    }
+
+    assert_eq!(collected.len(), expected_len);
+    assert!(
+        page_count > 1,
+        "walk should page lazily instead of returning all records at once"
+    );
+    assert_eq!(collected.first().copied(), Some(expected_len as u64 - 1));
+    assert_eq!(collected.last().copied(), Some(0));
+}
+
+#[test]
+fn ledger_events_page_fills_sparse_chain_and_text_filtered_pages() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-a",
+        "entity.created",
+        None,
+        b"company-a",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-a/book:book-a",
+        "book.opened",
+        None,
+        b"book-a",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-b",
+        "entity.created",
+        None,
+        b"company-b",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-b/book:book-b",
+        "book.opened",
+        None,
+        b"book-b",
+    );
+
+    for i in 0..1_050 {
+        let (company, book) = if i % 3 == 0 {
+            ("company-a", "book-a")
+        } else {
+            ("company-b", "book-b")
+        };
+        let scope = format!("entity:{company}/book:{book}/act:{i}");
+        let is_sparse_match = company == "company-a" && i % 30 == 0;
+        let actor = if is_sparse_match {
+            "rui.secretario"
+        } else {
+            "amelia.marques"
+        };
+        let justification = is_sparse_match.then_some("needle archive cadeia a");
+        let payload = format!("{scope}:{i}");
+        persist_event_with(
+            &store,
+            &mut ledger,
+            actor,
+            &scope,
+            "document.generated",
+            justification,
+            payload.as_bytes(),
+        );
+    }
+    drop(store);
+    let store = Store::open(dir.path()).expect("reopen");
+
+    let query = LedgerEventPageQuery {
+        before_seq: None,
+        limit: 7,
+        chain: Some(ChainId::Book("book-a".to_owned())),
+        q: Some("NEEDLE ARCHIVE".to_owned()),
+        scope: None,
+        kinds: vec!["act.sealed, document.generated".to_owned()],
+        actor: Some("rui.secretario".to_owned()),
+        from: Some(OffsetDateTime::from_unix_timestamp(0).unwrap()),
+        to: Some(LedgerEventUpperBound::Exclusive(
+            OffsetDateTime::from_unix_timestamp(4_000_000_000).unwrap(),
+        )),
+    };
+
+    let page = store
+        .ledger_events_page(&query)
+        .expect("sparse filtered page");
+    assert_eq!(page.limit, 7);
+    assert_eq!(page.events.len(), 7);
+    assert!(page.has_more);
+    assert_eq!(page.next_cursor, page.events.last().map(|event| event.seq));
+
+    let book_chain = ChainId::Book("book-a".to_owned());
+    for window in page.events.windows(2) {
+        assert!(window[0].seq > window[1].seq);
+    }
+    for event in &page.events {
+        assert_eq!(event.actor, "rui.secretario");
+        assert_eq!(event.kind, "document.generated");
+        assert!(
+            event
+                .justification
+                .as_deref()
+                .is_some_and(|value| value.contains("needle archive"))
+        );
+        assert!(
+            event.links.iter().any(|link| link.chain == book_chain),
+            "event {} should belong to book-a",
+            event.seq
+        );
+    }
+
+    let mut next_query = query.clone();
+    next_query.before_seq = page.next_cursor;
+    let next_page = store
+        .ledger_events_page(&next_query)
+        .expect("next sparse filtered page");
+    let first_page_seqs: HashSet<u64> = page.events.iter().map(|event| event.seq).collect();
+    assert_eq!(next_page.events.len(), 7);
+    assert!(
+        next_page
+            .events
+            .iter()
+            .all(|event| !first_page_seqs.contains(&event.seq))
+    );
+    assert!(
+        next_page
+            .events
+            .iter()
+            .all(|event| Some(event.seq) < page.next_cursor)
+    );
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+#[test]
+fn key_ops_status_requires_sqlcipher_without_creating_plaintext_db() {
+    let dir = TempDir::new();
+    let options = StoreOpenOptions::new().with_encryption_key("correct horse battery staple");
+
+    let status = Store::key_ops_status(dir.path(), &options).expect("key ops status");
+
+    assert!(!status.sqlcipher_available);
+    assert_eq!(status.key_config, StoreKeyConfigStatus::Configured);
+    assert_eq!(status.database_format, StoreDatabaseFormat::Missing);
+    assert_eq!(status.plan, StoreKeyOpsPlan::SqlcipherBuildRequired);
+    assert!(!status.rotation_ready());
+    assert!(!status.migration_plan.required);
+    assert_eq!(status.migration_plan.status, "not_required");
+    assert!(status.migration_plan.steps.is_empty());
+    assert_eq!(
+        status.migration_plan.evidence.plan,
+        "sqlcipher_build_required"
+    );
+    assert!(
+        status.operator_action().contains("lacks SQLCipher"),
+        "operator action should be actionable: {}",
+        status.operator_action()
+    );
+
+    let err = Store::open_with_options(dir.path(), options)
+        .expect_err("keyed open must fail without sqlcipher");
+    assert!(matches!(err, StoreError::EncryptionUnavailable));
+    assert!(
+        !dir.path().join("chancela.db").exists(),
+        "failed keyed open must not create a plaintext database"
+    );
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+#[test]
+fn key_ops_status_refuses_plaintext_to_encrypted_migration_without_sqlcipher() {
+    let dir = TempDir::new();
+    Store::open(dir.path()).expect("create plaintext store");
+    let options = StoreOpenOptions::new().with_encryption_key("correct horse battery staple");
+
+    let status = Store::key_ops_status(dir.path(), &options).expect("key ops status");
+
+    assert!(!status.sqlcipher_available);
+    assert_eq!(status.key_config, StoreKeyConfigStatus::Configured);
+    assert_eq!(status.database_format, StoreDatabaseFormat::PlaintextSqlite);
+    assert_eq!(
+        status.plan,
+        StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration
+    );
+    assert!(!status.rotation_ready());
+    assert!(
+        status
+            .operator_action()
+            .contains("backup/export-restore migration plan"),
+        "operator action should describe the supported migration path: {}",
+        status.operator_action()
+    );
+    assert!(status.migration_plan.required);
+    assert_eq!(
+        status.migration_plan.status,
+        "refuse_direct_plaintext_to_encrypted_migration"
+    );
+    assert!(
+        status
+            .migration_plan
+            .summary
+            .contains("backup/export-restore")
+    );
+    assert_eq!(status.migration_plan.steps.len(), 4);
+    assert!(
+        status
+            .migration_plan
+            .steps
+            .iter()
+            .all(|step| !step.source_destructive),
+        "migration plan must not rewrite/delete the source plaintext database: {:?}",
+        status.migration_plan.steps
+    );
+    assert_eq!(
+        status.migration_plan.steps[0].title,
+        "backup_export_plaintext"
+    );
+    assert_eq!(status.migration_plan.steps[2].title, "restore_and_verify");
+    assert_eq!(
+        status.migration_plan.evidence.plan,
+        "refuse_plaintext_to_encrypted_migration"
+    );
+    assert_eq!(
+        status.migration_plan.evidence.database_format,
+        "plaintext_sqlite"
+    );
+    assert_eq!(status.migration_plan.evidence.key_config, "configured");
+    assert!(
+        status
+            .migration_plan
+            .evidence
+            .database_file
+            .ends_with(chancela_store::DB_FILE)
+    );
+    let plan_json = serde_json::to_string(&status.migration_plan).expect("serialize plan");
+    assert!(plan_json.contains("backup/export-restore"));
+    assert!(plan_json.contains("restore_and_verify"));
+    assert!(!plan_json.contains("correct horse battery staple"));
+    let status_json = serde_json::to_string(&status).expect("serialize status");
+    assert!(status_json.contains("\"plan\":\"refuse_plaintext_to_encrypted_migration\""));
+    assert!(status_json.contains("\"database_format\":\"plaintext_sqlite\""));
+    assert!(!status_json.contains("correct horse battery staple"));
+
+    let err = Store::open_with_options(dir.path(), options)
+        .expect_err("direct keyed open must not convert plaintext in place");
+    let message = err.to_string();
+    assert!(
+        matches!(
+            err,
+            StoreError::PlaintextEncryptionMigrationUnsupported { .. }
+        ),
+        "got {message}"
+    );
+    assert!(!message.contains("correct horse battery staple"));
+    assert!(message.contains("refusing to rewrite plaintext SQLite database"));
+    assert!(message.contains("backup/export-restore"));
+    assert!(message.contains("verify the restored ledger"));
+
+    let reopened = Store::open(dir.path()).expect("plaintext store remains openable");
+    assert_eq!(reopened.load().expect("load plaintext").chain_status, Ok(0));
+}
+
+#[test]
+fn key_rotation_preflight_refuses_missing_plaintext_and_empty_requests_without_leaking_keys() {
+    let dir = TempDir::new();
+    let current = StoreOpenOptions::new().with_encryption_key("current rotation passphrase");
+
+    let missing = Store::key_rotation_preflight(dir.path(), &current, "replacement passphrase")
+        .expect("missing preflight");
+    assert_eq!(missing.status, StoreKeyRotationStatus::StoreMissing);
+    assert!(!missing.ready());
+    assert_eq!(missing.evidence.database_format, "missing");
+    assert_eq!(missing.evidence.current_key_config, "configured");
+    assert_eq!(missing.evidence.requested_key_config, "configured");
+    assert!(
+        !dir.path().join(chancela_store::DB_FILE).exists(),
+        "rotation preflight must not create a plaintext database"
+    );
+
+    let empty_new = Store::key_rotation_preflight(dir.path(), &current, " \t\n")
+        .expect("empty replacement preflight");
+    assert_eq!(empty_new.status, StoreKeyRotationStatus::RejectEmptyNewKey);
+    assert!(
+        empty_new
+            .operator_action()
+            .contains("non-empty replacement")
+    );
+
+    let empty_current = StoreOpenOptions::new().with_encryption_key("\n");
+    let empty_current_status =
+        Store::key_rotation_preflight(dir.path(), &empty_current, "replacement passphrase")
+            .expect("empty current preflight");
+    assert_eq!(
+        empty_current_status.status,
+        StoreKeyRotationStatus::RejectEmptyCurrentKey
+    );
+    assert_eq!(empty_current_status.evidence.current_key_config, "empty");
+
+    Store::open(dir.path()).expect("create plaintext store");
+    let plaintext = Store::key_rotation_preflight(dir.path(), &current, "replacement passphrase")
+        .expect("plaintext preflight");
+    assert_eq!(
+        plaintext.status,
+        StoreKeyRotationStatus::PlaintextStoreNotRotatable
+    );
+    assert!(!plaintext.ready());
+    assert_eq!(plaintext.evidence.database_format, "plaintext_sqlite");
+    assert!(
+        plaintext
+            .operator_action()
+            .contains("backup/export-restore migration plan"),
+        "plaintext preflight must point to the supported migration workflow: {}",
+        plaintext.operator_action()
+    );
+
+    let json = serde_json::to_string(&plaintext).expect("serialize rotation preflight");
+    assert!(json.contains("\"status\":\"plaintext_store_not_rotatable\""));
+    assert!(!json.contains("current rotation passphrase"));
+    assert!(!json.contains("replacement passphrase"));
+}
+
+#[test]
+fn key_rotation_preflight_requires_current_key_for_non_plaintext_store_header() {
+    let dir = TempDir::new();
+    std::fs::write(
+        dir.path().join(chancela_store::DB_FILE),
+        b"not a plaintext sqlite header",
+    )
+    .expect("write non-plaintext marker");
+
+    let preflight = Store::key_rotation_preflight(
+        dir.path(),
+        &StoreOpenOptions::default(),
+        "replacement passphrase",
+    )
+    .expect("rotation preflight");
+
+    assert_eq!(preflight.status, StoreKeyRotationStatus::CurrentKeyRequired);
+    assert!(!preflight.ready());
+    assert_eq!(
+        preflight.evidence.database_format,
+        "non_plaintext_or_encrypted"
+    );
+    assert_eq!(preflight.evidence.current_key_config, "unconfigured");
+    assert_eq!(preflight.evidence.requested_key_config, "configured");
+    let json = serde_json::to_string(&preflight).expect("serialize rotation preflight");
+    assert!(json.contains("\"status\":\"current_key_required\""));
+    assert!(!json.contains("replacement passphrase"));
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+#[test]
+fn key_rotation_preflight_and_execution_require_sqlcipher_without_leaking_keys() {
+    let dir = TempDir::new();
+    std::fs::write(
+        dir.path().join(chancela_store::DB_FILE),
+        b"not a plaintext sqlite header",
+    )
+    .expect("write non-plaintext marker");
+    let current = StoreOpenOptions::new().with_encryption_key("current rotation passphrase");
+
+    let preflight = Store::key_rotation_preflight(dir.path(), &current, "replacement passphrase")
+        .expect("rotation preflight");
+    assert_eq!(
+        preflight.status,
+        StoreKeyRotationStatus::SqlcipherBuildRequired
+    );
+    assert!(!preflight.ready());
+    assert!(!preflight.evidence.sqlcipher_available);
+    assert!(preflight.operator_action().contains("sqlcipher feature"));
+    let json = serde_json::to_string(&preflight).expect("serialize rotation preflight");
+    assert!(!json.contains("current rotation passphrase"));
+    assert!(!json.contains("replacement passphrase"));
+
+    let plaintext_dir = TempDir::new();
+    let store = Store::open(plaintext_dir.path()).expect("open plaintext store");
+    let err = store
+        .rotate_encryption_key_with_evidence("replacement passphrase")
+        .expect_err("rotation execution must require sqlcipher feature");
+    let message = err.to_string();
+    assert!(matches!(err, StoreError::EncryptionUnavailable));
+    assert!(!message.contains("replacement passphrase"));
+}
+
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn sqlcipher_keyed_open_creates_encrypted_db_and_reopens_with_same_key() {
+    let dir = TempDir::new();
+    let options = StoreOpenOptions::new().with_encryption_key("correct horse battery staple");
+    let entity = sample_entity("SQLCipher, Lda");
+
+    {
+        let store = Store::open_with_options(dir.path(), options.clone()).expect("keyed open");
+        store
+            .persist(|tx| tx.upsert_entity(&entity))
+            .expect("persist encrypted row");
+    }
+
+    let db_bytes = std::fs::read(dir.path().join("chancela.db")).expect("read db file");
+    assert!(
+        !db_bytes.starts_with(b"SQLite format 3"),
+        "keyed SQLCipher database must not have a plaintext SQLite header"
+    );
+
+    let reopened = Store::open_with_options(dir.path(), options).expect("reopen with same key");
+    let loaded = reopened.load().expect("load encrypted db");
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+}
+
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn sqlcipher_wrong_key_fails_loudly() {
+    let dir = TempDir::new();
+    let correct = StoreOpenOptions::new().with_encryption_key("right passphrase");
+    Store::open_with_options(dir.path(), correct).expect("create encrypted db");
+
+    let wrong = StoreOpenOptions::new().with_encryption_key("wrong passphrase");
+    let result = Store::open_with_options(dir.path(), wrong);
+    assert!(
+        matches!(result, Err(StoreError::EncryptionKeyRejected { .. })),
+        "wrong SQLCipher key must be a typed loud error, got {result:?}"
+    );
+}
+
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn sqlcipher_corrupt_keyed_database_fails_loudly() {
+    let dir = TempDir::new();
+    let options = StoreOpenOptions::new().with_encryption_key("right passphrase");
+    Store::open_with_options(dir.path(), options.clone()).expect("create encrypted db");
+
+    let db = dir.path().join("chancela.db");
+    let mut bytes = std::fs::read(&db).expect("read encrypted db");
+    bytes[32] ^= 0xA5;
+    std::fs::write(&db, bytes).expect("corrupt encrypted db");
+
+    let result = Store::open_with_options(dir.path(), options);
+    assert!(
+        matches!(result, Err(StoreError::EncryptionKeyRejected { .. })),
+        "corrupt keyed database must be a typed loud error, got {result:?}"
+    );
+}
+
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn sqlcipher_rekey_reopens_with_new_key_only_and_preserves_data_and_ledger() {
+    let dir = TempDir::new();
+    let old = StoreOpenOptions::new().with_encryption_key("old store passphrase");
+    let new = StoreOpenOptions::new().with_encryption_key("new store passphrase");
+    let entity = sample_entity("Rekey, Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata rekey", MeetingChannel::Telematic);
+    let extract = sample_extract("500002020");
+
+    {
+        let store = Store::open_with_options(dir.path(), old.clone()).expect("keyed open");
+        let mut ledger = Ledger::new();
+        let e0 = ledger
+            .append(
+                "amelia.marques",
+                "entity:rekey",
+                "entity.created",
+                None,
+                b"entity",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e0)?;
+                tx.upsert_entity(&entity)
+            })
+            .unwrap();
+        let e1 = ledger
+            .append("amelia.marques", "book:rekey", "book.opened", None, b"book")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e1)?;
+                tx.upsert_book(&book)
+            })
+            .unwrap();
+        let e2 = ledger
+            .append("amelia.marques", "act:rekey", "act.drafted", None, b"act")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e2)?;
+                tx.upsert_act(&act)
+            })
+            .unwrap();
+        let e3 = ledger
+            .append(
+                "amelia.marques",
+                "entity:rekey",
+                "registry.imported",
+                None,
+                b"extract",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e3)?;
+                tx.upsert_registry_extract(entity.id, &extract)
+            })
+            .unwrap();
+
+        let result = store.rotate_encryption_key("");
+        assert!(
+            matches!(result, Err(StoreError::EmptyEncryptionKey)),
+            "empty rekey must fail before mutating the database, got {result:?}"
+        );
+        let whitespace_result = store.rotate_encryption_key(" \t\n");
+        assert!(
+            matches!(whitespace_result, Err(StoreError::EmptyEncryptionKey)),
+            "whitespace-only rekey must fail before mutating the database, got {whitespace_result:?}"
+        );
+    }
+
+    let still_old =
+        Store::open_with_options(dir.path(), old.clone()).expect("empty rekey left old key valid");
+    assert_eq!(still_old.load().unwrap().chain_status, Ok(4));
+    drop(still_old);
+    assert!(
+        matches!(
+            Store::open_with_options(dir.path(), new.clone()),
+            Err(StoreError::EncryptionKeyRejected { .. })
+        ),
+        "new key must not work before a successful rekey"
+    );
+
+    {
+        let store = Store::open_with_options(dir.path(), old.clone()).expect("reopen old key");
+        let preflight = Store::key_rotation_preflight(dir.path(), &old, "new store passphrase")
+            .expect("rotation preflight");
+        assert!(preflight.ready());
+        assert_eq!(preflight.status, StoreKeyRotationStatus::Ready);
+        assert_eq!(
+            preflight.evidence.database_format,
+            "non_plaintext_or_encrypted"
+        );
+        assert_eq!(preflight.evidence.current_key_config, "configured");
+        assert_eq!(preflight.evidence.requested_key_config, "configured");
+        assert!(preflight.evidence.sqlcipher_available);
+        let preflight_json = serde_json::to_string(&preflight).expect("serialize preflight");
+        assert!(preflight_json.contains("\"status\":\"ready\""));
+        assert!(!preflight_json.contains("old store passphrase"));
+        assert!(!preflight_json.contains("new store passphrase"));
+
+        let execution = store
+            .rotate_encryption_key_with_evidence("new store passphrase")
+            .expect("rotate SQLCipher key");
+        assert_eq!(
+            execution.status,
+            chancela_store::StoreKeyRotationExecutionStatus::RekeyApplied
+        );
+        assert!(execution.rekey_executed);
+        assert!(execution.ledger_integrity_verified);
+        assert_eq!(execution.ledger_length, 4);
+        assert_eq!(execution.evidence.operation, "sqlcipher_rekey");
+        assert_eq!(execution.evidence.requested_key_config, "configured");
+        assert!(execution.evidence.sqlcipher_available);
+        assert!(execution.evidence.checkpointed_before_rekey);
+        assert!(execution.evidence.checkpointed_after_rekey);
+        assert!(execution.evidence.post_rekey_integrity_checked);
+        let execution_json = serde_json::to_string(&execution).expect("serialize execution");
+        assert!(execution_json.contains("\"status\":\"rekey_applied\""));
+        assert!(!execution_json.contains("old store passphrase"));
+        assert!(!execution_json.contains("new store passphrase"));
+
+        let loaded = store.load().expect("load after rekey on same handle");
+        assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+        assert_eq!(loaded.books.get(&book.id), Some(&book));
+        assert_eq!(loaded.acts.get(&act.id), Some(&act));
+        assert_eq!(loaded.registry_extracts.get(&entity.id), Some(&extract));
+        assert_eq!(loaded.chain_status, Ok(4));
+        assert_eq!(loaded.ledger.len(), 4);
+    }
+
+    let reopened = Store::open_with_options(dir.path(), new).expect("reopen with new key");
+    let loaded = reopened.load().expect("load rekeyed db");
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+    assert_eq!(loaded.books.get(&book.id), Some(&book));
+    assert_eq!(loaded.acts.get(&act.id), Some(&act));
+    assert_eq!(loaded.registry_extracts.get(&entity.id), Some(&extract));
+    assert_eq!(loaded.chain_status, Ok(4));
+    assert_eq!(loaded.ledger.len(), 4);
+    drop(reopened);
+
+    assert!(
+        matches!(
+            Store::open_with_options(dir.path(), old),
+            Err(StoreError::EncryptionKeyRejected { .. })
+        ),
+        "old key must fail after successful rekey"
+    );
+}
+
+#[test]
+fn persist_commits_event_and_aggregate_together() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+    let entity = sample_entity("Alfa, Lda");
+
+    let event = ledger
+        .append(
+            "amelia.marques",
+            "entity:alfa",
+            "entity.created",
+            None,
+            b"alfa",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&event)?;
+            tx.upsert_entity(&entity)?;
+            Ok(())
+        })
+        .expect("persist entity + event");
+
+    let loaded = store.load().expect("load");
+    assert_eq!(loaded.chain_status, Ok(1));
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+}
+
+#[test]
+fn mid_closure_error_rolls_back_the_whole_transaction() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+    let entity = sample_entity("Beta, Lda");
+
+    // The event is appended in-memory and the closure gets as far as upserting the aggregate, then
+    // fails. Because the transaction rolls back on the `Err`, neither the event row nor the entity
+    // row may survive.
+    let event = ledger
+        .append(
+            "amelia.marques",
+            "entity:beta",
+            "entity.created",
+            None,
+            b"beta",
+        )
+        .clone();
+    let result = store.persist(|tx| {
+        tx.append_event(&event)?;
+        tx.upsert_entity(&entity)?;
+        Err(StoreError::NotPersistent)
+    });
+    assert!(matches!(result, Err(StoreError::NotPersistent)));
+
+    let loaded = store.load().expect("load after rollback");
+    assert_eq!(loaded.ledger.len(), 0, "event row must have rolled back");
+    assert!(
+        loaded.entities.is_empty(),
+        "entity row must have rolled back"
+    );
+    assert_eq!(loaded.chain_status, Ok(0));
+
+    // A subsequent good persist of seq 0 still works (the failed attempt left no phantom seq).
+    store
+        .persist(|tx| {
+            tx.append_event(&event)?;
+            tx.upsert_entity(&entity)?;
+            Ok(())
+        })
+        .expect("retry persists cleanly");
+    assert_eq!(store.load().expect("reload").chain_status, Ok(1));
+}
+
+#[test]
+fn full_round_trip_survives_drop_and_reopen() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Gama, Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata n.º 1", MeetingChannel::Physical);
+    let extract = sample_extract("500002020");
+
+    let mut expected_entities = HashMap::new();
+    let mut expected_books = HashMap::new();
+    let mut expected_acts = HashMap::new();
+    let mut expected_extracts = HashMap::new();
+
+    {
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = Ledger::new();
+
+        // Four mutations, each in its own transaction, each persisting its event + aggregate.
+        let e0 = ledger
+            .append(
+                "amelia.marques",
+                "entity:gama",
+                "entity.created",
+                None,
+                b"gama",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e0)?;
+                tx.upsert_entity(&entity)
+            })
+            .unwrap();
+        expected_entities.insert(entity.id, entity.clone());
+
+        let e1 = ledger
+            .append("amelia.marques", "book:1", "book.opened", None, b"book")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e1)?;
+                tx.upsert_book(&book)
+            })
+            .unwrap();
+        expected_books.insert(book.id, book.clone());
+
+        let e2 = ledger
+            .append("amelia.marques", "act:1", "act.drafted", None, b"act")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e2)?;
+                tx.upsert_act(&act)
+            })
+            .unwrap();
+        expected_acts.insert(act.id, act.clone());
+
+        let e3 = ledger
+            .append(
+                "amelia.marques",
+                "entity:gama",
+                "registry.imported",
+                None,
+                b"cert",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e3)?;
+                tx.upsert_registry_extract(entity.id, &extract)
+            })
+            .unwrap();
+        expected_extracts.insert(entity.id, extract.clone());
+        // Store dropped here — the process "restarts".
+    }
+
+    let store = Store::open(dir.path()).expect("reopen");
+    let loaded = store.load().expect("reload");
+    assert_eq!(loaded.entities, expected_entities);
+    assert_eq!(loaded.books, expected_books);
+    assert_eq!(loaded.acts, expected_acts);
+    assert_eq!(loaded.registry_extracts, expected_extracts);
+    assert_eq!(loaded.chain_status, Ok(4));
+    assert_eq!(loaded.ledger.len(), 4);
+}
+
+#[test]
+fn book_legal_hold_survives_drop_and_reopen_without_schema_churn() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Retencao, Lda");
+    let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    book.legal_hold = Some(LegalHold {
+        reason: "litigation preservation request".to_owned(),
+        actor: "archive.owner".to_owned(),
+        set_at: OffsetDateTime::from_unix_timestamp(1_782_921_600).unwrap(),
+    });
+
+    {
+        let store = Store::open(dir.path()).expect("open");
+        store.persist(|tx| tx.upsert_book(&book)).unwrap();
+    }
+
+    let store = Store::open(dir.path()).expect("reopen");
+    let loaded = store.load().expect("reload");
+    assert_eq!(
+        loaded
+            .books
+            .get(&book.id)
+            .and_then(|book| book.legal_hold.as_ref()),
+        book.legal_hold.as_ref()
+    );
+
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let stamped: String = raw
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        stamped,
+        chancela_store::schema::SCHEMA_VERSION.to_string(),
+        "book JSON metadata did not require an extra schema bump"
+    );
+}
+
+#[test]
+fn upsert_replaces_the_previous_aggregate_row() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+
+    let mut entity = sample_entity("Delta, Lda");
+    let e0 = ledger
+        .append(
+            "amelia.marques",
+            "entity:delta",
+            "entity.created",
+            None,
+            b"d",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e0)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+
+    // Rename the entity and upsert again under the same id — the row is replaced, not duplicated.
+    entity.name = "Delta Renomeada, Lda".to_string();
+    let e1 = ledger
+        .append(
+            "amelia.marques",
+            "entity:delta",
+            "entity.renamed",
+            None,
+            b"d2",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e1)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+
+    let loaded = store.load().expect("load");
+    assert_eq!(loaded.entities.len(), 1);
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+}
+
+#[test]
+fn tampering_with_an_event_row_is_detected_on_load() {
+    let dir = TempDir::new();
+    {
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = Ledger::new();
+        persist_event(&store, &mut ledger, "book:1", "book.opened");
+        persist_event(&store, &mut ledger, "book:1", "act.sealed");
+        assert_eq!(store.load().unwrap().chain_status, Ok(2));
+    }
+
+    // Flip a field of the seq-1 event row directly, leaving its stored `hash` stale. On reload the
+    // recomputed hash no longer matches → HashMismatch at exactly that seq.
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        let changed = raw
+            .execute("UPDATE events SET actor = 'mallory' WHERE seq = 1", [])
+            .unwrap();
+        assert_eq!(changed, 1);
+    }
+
+    let store = Store::open(dir.path()).expect("reopen");
+    let loaded = store
+        .load()
+        .expect("load still succeeds (never refuse to start)");
+    assert_eq!(
+        loaded.chain_status,
+        Err(LedgerError::HashMismatch { seq: 1 })
+    );
+    // The events are still in hand so the operator can inspect them.
+    assert_eq!(loaded.ledger.len(), 2);
+}
+
+#[test]
+fn a_newer_schema_version_is_rejected() {
+    let dir = TempDir::new();
+    Store::open(dir.path()).expect("create at current schema");
+
+    // Simulate a file written by a future build.
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute(
+            "UPDATE meta SET value = '999' WHERE key = 'schema_version'",
+            [],
+        )
+        .unwrap();
+    }
+
+    match Store::open(dir.path()) {
+        Err(StoreError::UnsupportedSchemaVersion { found, supported }) => {
+            assert_eq!(found, 999);
+            assert_eq!(supported, chancela_store::schema::SCHEMA_VERSION);
+        }
+        other => panic!("expected UnsupportedSchemaVersion, got {other:?}"),
+    }
+}
+
+#[test]
+fn backup_bundles_a_verifiable_snapshot_and_sidecars() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+    let entity = sample_entity("Epsilon, Lda");
+
+    let e0 = ledger
+        .append(
+            "amelia.marques",
+            "entity:eps",
+            "entity.created",
+            None,
+            b"eps",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e0)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+    persist_event(&store, &mut ledger, "book:1", "book.opened");
+
+    // One real sidecar file, one sidecar directory (recursed), one missing path (skipped).
+    let settings = dir.path().join("settings.json");
+    std::fs::write(&settings, br#"{"default_actor":"amelia.marques"}"#).unwrap();
+    let laws = dir.path().join("laws");
+    std::fs::create_dir_all(&laws).unwrap();
+    std::fs::write(laws.join("csc.pdf"), b"%PDF-1.7 fake").unwrap();
+    let missing = dir.path().join("does-not-exist.json");
+
+    let sidecars = vec![settings.clone(), laws.clone(), missing];
+    let manifest = store.backup(dir.path(), &sidecars).expect("backup");
+
+    // Archive is where the manifest says, with the reported size, and ledger metadata matches.
+    let zip_path = Path::new(&manifest.path);
+    assert!(zip_path.exists(), "zip archive must exist at manifest.path");
+    assert_eq!(
+        std::fs::metadata(zip_path).unwrap().len(),
+        manifest.bytes,
+        "manifest.bytes must equal the archive size"
+    );
+    assert_eq!(manifest.ledger_length, 2);
+    assert!(manifest.ledger_verified);
+    assert_eq!(
+        manifest.store_schema_version,
+        chancela_store::schema::SCHEMA_VERSION
+    );
+    assert!(manifest.ledger_head.is_some());
+
+    // The manifest lists the db + both sidecar files (dir recursed), never the missing path.
+    let names: Vec<&str> = manifest.files.iter().map(|f| f.name.as_str()).collect();
+    assert!(names.contains(&"chancela.db"));
+    assert!(names.contains(&"settings.json"));
+    assert!(names.contains(&"laws/csc.pdf"));
+    assert!(!names.iter().any(|n| n.contains("does-not-exist")));
+
+    // Every manifest digest matches the actual archive member bytes.
+    let file = std::fs::File::open(zip_path).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
+    for entry in &manifest.files {
+        let mut member = archive.by_name(&entry.name).expect("member present");
+        let mut bytes = Vec::new();
+        member.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes.len() as u64, entry.bytes, "size for {}", entry.name);
+        assert_eq!(
+            hex(&Sha256::digest(&bytes)),
+            entry.sha256,
+            "digest for {}",
+            entry.name
+        );
+    }
+
+    // The embedded manifest.json is present for the restore path.
+    assert!(archive.by_name("manifest.json").is_ok());
+
+    // Extract the snapshot db into a clean data dir and prove a fresh Store opens + verifies it.
+    let restore = TempDir::new();
+    {
+        let mut db_member = archive.by_name("chancela.db").unwrap();
+        let mut db_bytes = Vec::new();
+        db_member.read_to_end(&mut db_bytes).unwrap();
+        std::fs::write(restore.path().join("chancela.db"), &db_bytes).unwrap();
+    }
+    let restored = Store::open(restore.path()).expect("open restored snapshot");
+    let loaded = restored.load().expect("load restored");
+    assert_eq!(loaded.chain_status, Ok(2));
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+}
+
+#[test]
+fn backup_reflects_a_broken_chain_without_failing() {
+    let dir = TempDir::new();
+    {
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = Ledger::new();
+        persist_event(&store, &mut ledger, "book:1", "book.opened");
+        persist_event(&store, &mut ledger, "book:1", "act.sealed");
+    }
+    // Corrupt seq 0 so the chain no longer verifies.
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute("UPDATE events SET actor = 'x' WHERE seq = 0", [])
+            .unwrap();
+    }
+
+    let store = Store::open(dir.path()).expect("reopen");
+    let manifest = store
+        .backup(dir.path(), &[])
+        .expect("backup still succeeds");
+    assert!(
+        !manifest.ledger_verified,
+        "a broken chain reports unverified"
+    );
+    assert_eq!(manifest.ledger_length, 2);
+}
+
+// --- documents table (schema v2, t48-e4) --------------------------------------------------------
+
+#[test]
+fn schema_version_is_current() {
+    // The documents table landed as schema v2; the `imported_books` isolation namespace (t54-E2)
+    // landed as schema v3; the qualified-signing tables (`signed_documents` + `pending_cmd_sessions`,
+    // t57-S3) landed as schema v4; non-canonical imported documents landed as schema v5; act
+    // follow-ups landed as schema v6; signed timestamp-trust diagnostics landed as schema v7;
+    // preserved paper-book imports landed as schema v8; paper-book OCR drafts landed as schema v9;
+    // paper-book original numbering/linking metadata landed as schema v10; imported-document
+    // operator review metadata landed as schema v11; paper-book OCR conversion dossiers landed as
+    // schema v12; generated-document dispatch evidence landed as schema v13; paper-book OCR
+    // conversion execution artifacts landed as schema v14; imported-document review history landed
+    // as schema v15; the non-ledger sidecar stores (users/roles/delegations/settings/
+    // provider_credentials — wp16 P3b) landed as schema v16; the user-authored template store
+    // (user_templates — wp23) landed as schema v17; the per-subject DEK-wrapping table
+    // (subject_keys — wp26 GDPR crypto-erasure) landed as schema v18; the tenant aggregate table
+    // (tenants — wp26 tenancy) landed as schema v19; company-group template libraries landed as
+    // schema v20; persisted imported-document technical validation evidence landed as schema v21; the
+    // durable companion-device pairing registry (pairing_devices — wp27 mobile companion) landed as
+    // schema v22; the ordered multi-signature history (instrument_signatures — t9-S2, fixing the
+    // single-row `signed_documents` data-loss defect) landed as schema v23. A fresh DB is stamped
+    // with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 23);
+    let dir = TempDir::new();
+    Store::open(dir.path()).expect("open fresh");
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let stamped: String = raw
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped, chancela_store::schema::SCHEMA_VERSION.to_string());
+    let pairing_devices_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pairing_devices'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        pairing_devices_table, 1,
+        "pairing_devices table (v22) present"
+    );
+    let ocr_draft_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_draft_table, 1);
+    let ocr_draft_import_index: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_paper_book_ocr_drafts_import'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_draft_import_index, 1);
+    let ocr_conversion_dossier_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_conversion_dossiers'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_conversion_dossier_table, 1);
+    let ocr_conversion_dossier_unique_index: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_paper_book_ocr_conversion_dossiers_import_draft'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_conversion_dossier_unique_index, 1);
+    let paper_linking_columns: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('paper_book_imports') \
+             WHERE name IN ('page_from', 'page_to', 'original_number_from', 'original_number_to')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(paper_linking_columns, 4);
+    let generated_dispatch_evidence_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'generated_document_dispatch_evidence'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(generated_dispatch_evidence_table, 1);
+    let ocr_conversion_execution_artifact_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_conversion_execution_artifacts'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_conversion_execution_artifact_table, 1);
+    let ocr_conversion_execution_artifact_unique_index: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_paper_book_ocr_conversion_execution_artifacts_import_draft_act'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_conversion_execution_artifact_unique_index, 1);
+}
+
+#[test]
+fn upsert_document_round_trips_bytes_and_metadata() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+
+    // Compose the write exactly as the seal transaction will: the act, its `act.sealed` event, the
+    // `document.generated` event, and the document row all land in one durable commit.
+    let entity = sample_entity("Encosto Estrategico Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata n.o 1", MeetingChannel::Physical);
+    let doc = sample_document("doc-1", act.id, FAKE_PDF);
+
+    let sealed = ledger
+        .append("amelia.marques", "act:1", "act.sealed", None, b"act")
+        .clone();
+    let generated = ledger
+        .append(
+            "amelia.marques",
+            "act:1",
+            "document.generated",
+            None,
+            doc.pdf_digest.as_bytes(),
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&sealed)?;
+            tx.append_event(&generated)?;
+            tx.upsert_act(&act)?;
+            tx.upsert_document(&doc)?;
+            Ok(())
+        })
+        .expect("persist seal + document in one commit");
+
+    // Read back by act id (the GET /v1/acts/{id}/document path) — bytes + metadata round-trip.
+    let by_act = store
+        .document_for_act(act.id)
+        .expect("read by act")
+        .expect("document present");
+    assert_eq!(by_act, doc);
+    assert_eq!(by_act.pdf_bytes, FAKE_PDF);
+    assert_eq!(by_act.pdf_digest, hex(&Sha256::digest(FAKE_PDF)));
+    assert_eq!(by_act.template_id, "csc-ata-ag/v1");
+
+    // Read back by document id (the seal-response additive field path).
+    let by_id = store
+        .document_by_id("doc-1")
+        .expect("read by id")
+        .expect("document present");
+    assert_eq!(by_id, doc);
+
+    // Unknown lookups are a clean None (the api's 404-until-sealed).
+    let other_act = Act::draft(book.id, "Ata n.o 2", MeetingChannel::Physical);
+    assert!(store.document_for_act(other_act.id).unwrap().is_none());
+    assert!(store.document_by_id("nope").unwrap().is_none());
+}
+
+#[test]
+fn upsert_document_is_idempotent_on_id() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let act = Act::draft(
+        Book::new(
+            sample_entity("Encosto Estrategico Lda").id,
+            BookKind::AssembleiaGeral,
+        )
+        .id,
+        "Ata n.o 1",
+        MeetingChannel::Physical,
+    );
+
+    let first = sample_document("doc-1", act.id, b"%PDF-1.7 first%%EOF");
+    store
+        .persist(|tx| tx.upsert_document(&first))
+        .expect("first upsert");
+
+    // Re-generate under the same document id: the row is replaced, not duplicated.
+    let mut second = sample_document("doc-1", act.id, b"%PDF-1.7 regenerated%%EOF");
+    second.template_id = "csc-ata-ag/v1".to_string();
+    store
+        .persist(|tx| tx.upsert_document(&second))
+        .expect("idempotent re-upsert");
+
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let count: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM documents WHERE act_id = ?1",
+            [act.id.to_string()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1, "same id replaces, never duplicates");
+    let read = store.document_by_id("doc-1").unwrap().unwrap();
+    assert_eq!(read, second);
+}
+
+#[test]
+fn generated_document_dispatch_evidence_round_trips_idempotently_by_idempotency_key() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    let entity = sample_entity("Condominio Encosto");
+    let book = Book::new(entity.id, BookKind::Condominio);
+    let act = Act::draft(book.id, "Ata n.o 1", MeetingChannel::Physical);
+    let mut doc = sample_document("dispatch-doc-1", act.id, FAKE_PDF);
+    doc.template_id = "condominio-comunicacao-ausentes/v1".to_string();
+    let evidence = sample_generated_dispatch_evidence(&doc.id, act.id, "idem-dispatch-1");
+
+    let first_insert = store
+        .persist_result(|tx| {
+            tx.upsert_entity(&entity)?;
+            tx.upsert_book(&book)?;
+            tx.upsert_act(&act)?;
+            tx.upsert_document(&doc)?;
+            tx.upsert_generated_document_dispatch_evidence(&evidence)
+        })
+        .expect("persist dispatch evidence");
+    assert_eq!(
+        first_insert,
+        GeneratedDocumentDispatchEvidenceUpsert::Inserted(evidence.clone())
+    );
+    assert!(first_insert.inserted());
+    assert_eq!(first_insert.evidence(), &evidence);
+
+    let rows = store
+        .generated_document_dispatch_evidence(&doc.id)
+        .expect("evidence list");
+    assert_eq!(rows, vec![evidence.clone()]);
+    let by_key = store
+        .generated_document_dispatch_evidence_by_key(&doc.id, &evidence.idempotency_key)
+        .expect("evidence by key")
+        .expect("evidence exists");
+    assert_eq!(by_key, evidence);
+
+    let mut duplicate = evidence.clone();
+    duplicate.recorded_at = OffsetDateTime::from_unix_timestamp(1_780_000_102).unwrap();
+    let duplicate_insert = store
+        .persist_result(|tx| tx.upsert_generated_document_dispatch_evidence(&duplicate))
+        .expect("duplicate dispatch evidence is idempotent");
+    assert_eq!(
+        duplicate_insert,
+        GeneratedDocumentDispatchEvidenceUpsert::Existing(evidence.clone()),
+        "duplicate idempotency-key insert returns the canonical stored row"
+    );
+    assert!(!duplicate_insert.inserted());
+    assert_eq!(duplicate_insert.evidence(), &evidence);
+    let rows_after_duplicate = store
+        .generated_document_dispatch_evidence(&doc.id)
+        .expect("evidence list after duplicate");
+    assert_eq!(
+        rows_after_duplicate,
+        vec![evidence.clone()],
+        "duplicate dispatch evidence must not create a second row"
+    );
+
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let reloaded = reopened
+        .generated_document_dispatch_evidence(&doc.id)
+        .expect("reloaded evidence");
+    assert_eq!(reloaded, rows);
+}
+
+#[test]
+fn an_older_schema_version_upgrades_forward_cleanly() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Encosto Estrategico Lda");
+
+    // Land some real data at the current version, then simulate a database written by the old v1
+    // build: roll the stamp back and drop the table v1 never had.
+    {
+        let store = Store::open(dir.path()).expect("open at current version");
+        let mut ledger = Ledger::new();
+        let e0 = ledger
+            .append("amelia.marques", "entity:e", "entity.created", None, b"e")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e0)?;
+                tx.upsert_entity(&entity)
+            })
+            .unwrap();
+    }
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute(
+            "UPDATE meta SET value = '1' WHERE key = 'schema_version'",
+            [],
+        )
+        .unwrap();
+        raw.execute("DROP TABLE documents", []).unwrap();
+    }
+
+    // Reopening upgrades forward: the additive DDL recreates `documents` (+ import/review tables),
+    // the stamp advances to the current version, and the pre-existing entity row is untouched.
+    let store = Store::open(dir.path()).expect("reopen upgrades v1 -> current");
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        let stamped: String = raw
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            stamped,
+            chancela_store::schema::SCHEMA_VERSION.to_string(),
+            "stamp advanced forward"
+        );
+    }
+    let loaded = store.load().expect("load after upgrade");
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+
+    // The recreated table is empty and usable.
+    let act = Act::draft(
+        Book::new(entity.id, BookKind::AssembleiaGeral).id,
+        "Ata n.o 1",
+        MeetingChannel::Physical,
+    );
+    assert!(store.document_for_act(act.id).unwrap().is_none());
+    let doc = sample_document("doc-1", act.id, FAKE_PDF);
+    store.persist(|tx| tx.upsert_document(&doc)).unwrap();
+    assert_eq!(store.document_by_id("doc-1").unwrap().unwrap(), doc);
+}
+
+// --- follow-ups table (schema v6) ---------------------------------------------------------------
+
+#[test]
+fn upsert_follow_up_round_trips_without_mutating_act_json() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let entity = sample_entity("Follow Ups, Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata com tarefas", MeetingChannel::Physical);
+    let follow_up = sample_follow_up("86b55d92-1424-4958-9909-2c3d8c4d395e", act.id);
+    let original_act = act.clone();
+
+    store
+        .persist(|tx| {
+            tx.upsert_act(&act)?;
+            tx.upsert_follow_up(&follow_up)
+        })
+        .expect("persist follow-up");
+
+    let loaded = store.load().expect("load");
+    assert_eq!(loaded.acts.get(&act.id), Some(&original_act));
+    assert_eq!(loaded.follow_ups.get(&follow_up.id), Some(&follow_up));
+    assert_eq!(
+        store
+            .follow_ups_for_act(act.id)
+            .expect("list by act")
+            .as_slice(),
+        std::slice::from_ref(&follow_up)
+    );
+    assert_eq!(
+        store.follow_up(&follow_up.id).expect("get by id").as_ref(),
+        Some(&follow_up)
+    );
+
+    let mut completed = follow_up.clone();
+    completed.status = StoredFollowUpStatus::Completed;
+    completed.completed_at = Some(OffsetDateTime::from_unix_timestamp(1_790_086_400).unwrap());
+    completed.completed_by = Some("amelia.marques".to_string());
+    store
+        .persist(|tx| tx.upsert_follow_up(&completed))
+        .expect("replace follow-up");
+
+    let reloaded = Store::open(dir.path()).expect("reopen").load().unwrap();
+    assert_eq!(reloaded.acts.get(&act.id), Some(&original_act));
+    assert_eq!(reloaded.follow_ups.get(&completed.id), Some(&completed));
+}
+
+#[test]
+fn a_document_survives_backup_and_restore() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let act = Act::draft(
+        Book::new(
+            sample_entity("Encosto Estrategico Lda").id,
+            BookKind::AssembleiaGeral,
+        )
+        .id,
+        "Ata n.o 1",
+        MeetingChannel::Physical,
+    );
+    let doc = sample_document("doc-1", act.id, FAKE_PDF);
+    store.persist(|tx| tx.upsert_document(&doc)).unwrap();
+
+    // Whole-file VACUUM INTO snapshot carries the documents table along automatically.
+    let manifest = store.backup(dir.path(), &[]).expect("backup");
+    let restore = TempDir::new();
+    {
+        let file = std::fs::File::open(&manifest.path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut db_member = archive.by_name("chancela.db").unwrap();
+        let mut db_bytes = Vec::new();
+        db_member.read_to_end(&mut db_bytes).unwrap();
+        std::fs::write(restore.path().join("chancela.db"), &db_bytes).unwrap();
+    }
+    let restored = Store::open(restore.path()).expect("open restored snapshot");
+    let read = restored
+        .document_for_act(act.id)
+        .expect("read restored")
+        .expect("document survived backup/restore");
+    assert_eq!(read, doc);
+    assert_eq!(read.pdf_bytes, FAKE_PDF);
+}
+
+#[test]
+fn imported_document_round_trips_lists_by_act_and_survives_reopen() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let act = Act::draft(
+        Book::new(
+            sample_entity("Encosto Estrategico Lda").id,
+            BookKind::AssembleiaGeral,
+        )
+        .id,
+        "Ata n.o 1",
+        MeetingChannel::Physical,
+    );
+    let mut linked = sample_imported_document(
+        "11111111-1111-4111-8111-111111111111",
+        Some(act.id),
+        FAKE_PDF,
+    );
+    linked.meta.technical_validation_report_json = serde_json::json!({
+        "report_kind": "document_import_validation",
+        "sha256": hex(&Sha256::digest(FAKE_PDF)),
+        "signature_evidence": { "validation_performed_count": 1 }
+    })
+    .to_string();
+    let global = sample_imported_document(
+        "22222222-2222-4222-8222-222222222222",
+        None,
+        b"%PDF-1.7\nunlinked\n%%EOF",
+    );
+
+    store
+        .persist(|tx| {
+            tx.upsert_imported_document(&linked)?;
+            tx.upsert_imported_document(&global)
+        })
+        .expect("persist imported docs");
+
+    let by_id = store
+        .imported_document(&linked.meta.id)
+        .expect("read by id")
+        .expect("linked import present");
+    assert_eq!(by_id, linked);
+    assert_eq!(by_id.bytes, FAKE_PDF);
+    assert_eq!(by_id.meta.sha256, hex(&Sha256::digest(FAKE_PDF)));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&by_id.meta.technical_validation_report_json)
+            .unwrap()["signature_evidence"]["validation_performed_count"],
+        1
+    );
+
+    let by_act = store.imported_documents(Some(act.id)).expect("list by act");
+    assert_eq!(by_act, vec![linked.meta.clone()]);
+
+    let all = store.imported_documents(None).expect("global list");
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().any(|meta| meta.id == linked.meta.id));
+    assert!(all.iter().any(|meta| meta.id == global.meta.id));
+    assert!(
+        store
+            .imported_document("33333333-3333-4333-8333-333333333333")
+            .unwrap()
+            .is_none()
+    );
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .imported_document(&linked.meta.id)
+            .unwrap()
+            .as_ref(),
+        Some(&linked)
+    );
+}
+
+#[test]
+fn imported_document_review_transition_updates_metadata_without_replacing_bytes() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_imported_document("11111111-1111-4111-8111-111111111112", None, FAKE_PDF);
+    let reviewed_at = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
+
+    store
+        .persist(|tx| tx.upsert_imported_document(&import))
+        .expect("persist imported doc");
+    store
+        .persist(|tx| {
+            tx.review_imported_document(
+                &import.meta.id,
+                StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly,
+                Some(reviewed_at),
+                Some("document.owner"),
+                Some("Kept as non-canonical supporting evidence."),
+                &[
+                    "preserved_original_bytes_remain_non_canonical_evidence".to_string(),
+                    "canonical_pdfa_record_is_not_replaced".to_string(),
+                    "signed_pdf_artifact_is_not_created_or_validated".to_string(),
+                    "ocr_or_conversion_output_is_not_promoted_to_canonical_records".to_string(),
+                ],
+            )
+        })
+        .expect("review imported doc");
+
+    let reviewed = store
+        .imported_document(&import.meta.id)
+        .expect("read reviewed import")
+        .expect("import still exists");
+    assert_eq!(reviewed.bytes, import.bytes);
+    assert_eq!(
+        reviewed.meta.operator_review_status,
+        StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly
+    );
+    assert_eq!(reviewed.meta.operator_reviewed_at, Some(reviewed_at));
+    assert_eq!(
+        reviewed.meta.operator_reviewed_by.as_deref(),
+        Some("document.owner")
+    );
+    assert_eq!(
+        reviewed.meta.operator_review_note.as_deref(),
+        Some("Kept as non-canonical supporting evidence.")
+    );
+    assert_eq!(
+        reviewed.meta.operator_acknowledged_guardrail_ids,
+        vec![
+            "preserved_original_bytes_remain_non_canonical_evidence",
+            "canonical_pdfa_record_is_not_replaced",
+            "signed_pdf_artifact_is_not_created_or_validated",
+            "ocr_or_conversion_output_is_not_promoted_to_canonical_records",
+        ]
+    );
+}
+
+#[test]
+fn imported_document_review_history_retains_multiple_decisions_in_order() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_imported_document("11111111-1111-4111-8111-111111111113", None, FAKE_PDF);
+    let first_reviewed_at = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
+    let second_reviewed_at = OffsetDateTime::from_unix_timestamp(1_790_000_120).unwrap();
+    let guardrails = vec![
+        "preserved_original_bytes_remain_non_canonical_evidence".to_string(),
+        "canonical_pdfa_record_is_not_replaced".to_string(),
+        "signed_pdf_artifact_is_not_created_or_validated".to_string(),
+        "ocr_or_conversion_output_is_not_promoted_to_canonical_records".to_string(),
+    ];
+
+    store
+        .persist(|tx| tx.upsert_imported_document(&import))
+        .expect("persist imported doc");
+    store
+        .persist(|tx| {
+            tx.review_imported_document(
+                &import.meta.id,
+                StoredImportedDocumentReviewStatus::RejectedNonCanonicalEvidence,
+                Some(first_reviewed_at),
+                Some("document.reviewer"),
+                Some("Initial rejection retained for audit."),
+                &guardrails,
+            )
+        })
+        .expect("first review");
+    store
+        .persist(|tx| {
+            tx.review_imported_document(
+                &import.meta.id,
+                StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly,
+                Some(second_reviewed_at),
+                Some("document.owner"),
+                Some("Later accepted as non-canonical technical evidence only."),
+                &guardrails,
+            )
+        })
+        .expect("second review");
+
+    let latest = store
+        .imported_document(&import.meta.id)
+        .expect("read latest imported doc")
+        .expect("import remains stored");
+    assert_eq!(
+        latest.meta.operator_review_status,
+        StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly
+    );
+    assert_eq!(
+        latest.meta.operator_review_note.as_deref(),
+        Some("Later accepted as non-canonical technical evidence only.")
+    );
+
+    let history = store
+        .imported_document_review_history(&import.meta.id)
+        .expect("read review history");
+    assert_eq!(history.len(), 2);
+    assert!(history[0].id < history[1].id);
+    assert_eq!(
+        history[0].review_status,
+        StoredImportedDocumentReviewStatus::RejectedNonCanonicalEvidence
+    );
+    assert_eq!(history[0].reviewed_at, Some(first_reviewed_at));
+    assert_eq!(history[0].reviewed_by.as_deref(), Some("document.reviewer"));
+    assert_eq!(
+        history[0].review_note.as_deref(),
+        Some("Initial rejection retained for audit.")
+    );
+    assert_eq!(
+        history[1].review_status,
+        StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly
+    );
+    assert_eq!(history[1].reviewed_at, Some(second_reviewed_at));
+    assert_eq!(
+        history[1].review_note.as_deref(),
+        Some("Later accepted as non-canonical technical evidence only.")
+    );
+    assert_eq!(history[1].acknowledged_guardrail_ids, guardrails);
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .imported_document_review_history(&import.meta.id)
+            .expect("read reopened history")
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn paper_book_import_package_round_trips_with_metadata_and_ocr_status() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333333",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+
+    store
+        .persist(|tx| tx.upsert_paper_book_import(&import))
+        .expect("persist paper-book package");
+
+    let by_id = store
+        .paper_book_import(&import.meta.import_id)
+        .expect("read by id")
+        .expect("paper-book import present");
+    assert_eq!(by_id, import);
+    assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::NotRun);
+    assert_eq!(by_id.meta.page_from, 1);
+    assert_eq!(by_id.meta.page_to, 240);
+    assert_eq!(by_id.meta.original_number_from, Some(1));
+    assert_eq!(by_id.meta.original_number_to, Some(15));
+    assert_eq!(by_id.meta.sha256, hex(&Sha256::digest(&by_id.bytes)));
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .paper_book_import(&import.meta.import_id)
+            .unwrap()
+            .as_ref(),
+        Some(&import)
+    );
+}
+
+#[test]
+fn older_paper_book_import_rows_gain_full_page_range_on_upgrade() {
+    let dir = TempDir::new();
+    let bytes = b"%PDF-1.7\nhistorical paper book scan package\n%%EOF";
+    let digest = hex(&Sha256::digest(bytes));
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute_batch(
+            "\
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;\
+            INSERT INTO meta (key, value) VALUES ('schema_version', '9');\
+            CREATE TABLE paper_book_imports (\
+                import_id TEXT PRIMARY KEY,\
+                entity_ref TEXT NOT NULL,\
+                entity_name TEXT NOT NULL,\
+                entity_nipc TEXT NOT NULL,\
+                book_ref TEXT NOT NULL,\
+                date_from TEXT NOT NULL,\
+                date_to TEXT NOT NULL,\
+                page_count INTEGER NOT NULL,\
+                sha256 TEXT NOT NULL,\
+                size_bytes INTEGER NOT NULL,\
+                content_type TEXT NOT NULL,\
+                source_filename TEXT,\
+                notes TEXT,\
+                imported_at TEXT NOT NULL,\
+                imported_by TEXT NOT NULL,\
+                ocr_status TEXT NOT NULL,\
+                bytes BLOB NOT NULL\
+            ) STRICT;",
+        )
+        .unwrap();
+        raw.execute(
+            "INSERT INTO paper_book_imports \
+             (import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
+              page_count, sha256, size_bytes, content_type, source_filename, notes, imported_at, \
+              imported_by, ocr_status, bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+            rusqlite::params![
+                "33333333-3333-4333-8333-333333333336",
+                "entity-legacy-001",
+                "Encosto Estrategico, S.A.",
+                "503004642",
+                "ag-book-1968-1971",
+                "1968-01-01",
+                "1971-12-31",
+                12_i64,
+                digest,
+                i64::try_from(bytes.len()).unwrap(),
+                "application/pdf",
+                "ag-1968-1971.pdf",
+                "legacy row before WFL-15",
+                "2026-05-29T01:46:41Z",
+                "amelia.marques",
+                "not_run",
+                bytes,
+            ],
+        )
+        .unwrap();
+    }
+
+    let store = Store::open(dir.path()).expect("open migrated v9 paper import db");
+    let row = store
+        .paper_book_import("33333333-3333-4333-8333-333333333336")
+        .expect("read migrated paper import")
+        .expect("row present");
+    assert_eq!(row.meta.page_count, 12);
+    assert_eq!(row.meta.page_from, 1);
+    assert_eq!(row.meta.page_to, 12);
+    assert_eq!(row.meta.original_number_from, None);
+    assert_eq!(row.meta.original_number_to, None);
+
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let stamped: String = raw
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped, chancela_store::schema::SCHEMA_VERSION.to_string());
+}
+
+#[test]
+fn paper_book_import_rejects_invalid_page_or_original_number_ranges() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut bad_pages = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333337",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    bad_pages.meta.page_from = 241;
+
+    assert!(
+        store
+            .persist(|tx| tx.upsert_paper_book_import(&bad_pages))
+            .is_err(),
+        "invalid page ranges must be rejected before persistence"
+    );
+    assert!(
+        store
+            .paper_book_import(&bad_pages.meta.import_id)
+            .expect("read after bad page range")
+            .is_none(),
+        "invalid page range row was not inserted"
+    );
+
+    let mut bad_original = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333338",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    bad_original.meta.original_number_to = None;
+
+    assert!(
+        store
+            .persist(|tx| tx.upsert_paper_book_import(&bad_original))
+            .is_err(),
+        "partial original ata-number ranges must be rejected before persistence"
+    );
+}
+
+#[test]
+fn paper_book_import_ocr_status_updates_metadata_only() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333334",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    let original_bytes = import.bytes.clone();
+
+    store
+        .persist(|tx| tx.upsert_paper_book_import(&import))
+        .expect("persist paper-book package");
+    store
+        .persist(|tx| {
+            tx.update_paper_book_import_ocr_status(
+                &import.meta.import_id,
+                StoredPaperBookOcrStatus::Queued,
+            )
+        })
+        .expect("queue OCR status");
+    assert!(
+        store
+            .update_paper_book_import_ocr_status(
+                &import.meta.import_id,
+                StoredPaperBookOcrStatus::Running,
+            )
+            .expect("direct status helper")
+    );
+
+    let by_id = store
+        .paper_book_import(&import.meta.import_id)
+        .expect("read by id")
+        .expect("paper-book import present");
+    assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::Running);
+    assert_eq!(by_id.bytes, original_bytes);
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let by_id = reopened
+        .paper_book_import(&import.meta.import_id)
+        .expect("read reopened")
+        .expect("paper-book import present");
+    assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::Running);
+    assert_eq!(by_id.bytes, original_bytes);
+}
+
+#[test]
+fn paper_book_ocr_draft_round_trips_and_reviews_without_mutating_import() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333335",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    let draft = sample_paper_book_ocr_draft(
+        "44444444-4444-4444-8444-444444444444",
+        &import.meta.import_id,
+    );
+    let original_import = import.clone();
+
+    store
+        .persist(|tx| {
+            tx.upsert_paper_book_import(&import)?;
+            tx.upsert_paper_book_ocr_draft(&draft)
+        })
+        .expect("persist import + OCR draft");
+
+    let by_id = store
+        .paper_book_ocr_draft(&draft.draft_id)
+        .expect("read draft")
+        .expect("draft present");
+    assert_eq!(by_id, draft);
+    assert_eq!(
+        by_id.review_status,
+        StoredPaperBookOcrReviewStatus::Unreviewed
+    );
+    assert_eq!(by_id.page_spans[0].start_page, 1);
+    assert_eq!(by_id.page_spans[0].end_page, 3);
+
+    let listed = store
+        .paper_book_ocr_drafts(&import.meta.import_id)
+        .expect("list drafts");
+    assert_eq!(listed, vec![draft.clone()]);
+
+    store
+        .persist(|tx| {
+            tx.review_paper_book_ocr_draft(
+                &draft.draft_id,
+                StoredPaperBookOcrReviewStatus::Accepted,
+                Some(OffsetDateTime::from_unix_timestamp(1_780_000_003).unwrap()),
+                Some("rui.secretario"),
+                Some("Checked against the scan."),
+                None,
+            )
+        })
+        .expect("review draft");
+
+    let reviewed = store
+        .paper_book_ocr_draft(&draft.draft_id)
+        .expect("read reviewed")
+        .expect("draft present");
+    assert_eq!(
+        reviewed.review_status,
+        StoredPaperBookOcrReviewStatus::Accepted
+    );
+    assert_eq!(reviewed.reviewed_by.as_deref(), Some("rui.secretario"));
+    assert_eq!(
+        reviewed.review_note.as_deref(),
+        Some("Checked against the scan.")
+    );
+
+    let unchanged_import = store
+        .paper_book_import(&import.meta.import_id)
+        .expect("read import")
+        .expect("import present");
+    assert_eq!(unchanged_import, original_import);
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .paper_book_ocr_draft(&draft.draft_id)
+            .unwrap()
+            .expect("draft survived")
+            .review_status,
+        StoredPaperBookOcrReviewStatus::Accepted
+    );
+}
+
+#[test]
+fn paper_book_ocr_conversion_dossier_round_trips_idempotent_metadata_only() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333338",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    let mut draft = sample_paper_book_ocr_draft(
+        "44444444-4444-4444-8444-444444444445",
+        &import.meta.import_id,
+    );
+    draft.review_status = StoredPaperBookOcrReviewStatus::Accepted;
+    draft.reviewed_at = Some(OffsetDateTime::from_unix_timestamp(1_780_000_003).unwrap());
+    draft.reviewed_by = Some("rui.secretario".to_string());
+    draft.review_note = Some("Checked against the scan.".to_string());
+    let dossier =
+        sample_paper_book_ocr_conversion_dossier("55555555-5555-4555-8555-555555555555", &draft);
+
+    let first_insert = store
+        .persist_result(|tx| {
+            tx.upsert_paper_book_import(&import)?;
+            tx.upsert_paper_book_ocr_draft(&draft)?;
+            tx.upsert_paper_book_ocr_conversion_dossier(&dossier)
+        })
+        .expect("persist accepted OCR conversion dossier");
+    assert_eq!(
+        first_insert,
+        PaperBookOcrConversionDossierUpsert::Inserted(dossier.clone())
+    );
+    assert!(first_insert.inserted());
+    assert_eq!(first_insert.dossier(), &dossier);
+
+    let by_pair = store
+        .paper_book_ocr_conversion_dossier_for_draft(&import.meta.import_id, &draft.draft_id)
+        .expect("read dossier by import/draft")
+        .expect("dossier present");
+    assert_eq!(by_pair, dossier);
+    assert_eq!(
+        by_pair.source_review_status,
+        StoredPaperBookOcrReviewStatus::Accepted
+    );
+    assert_eq!(by_pair.source_text_digest, draft.text_digest);
+    assert_eq!(by_pair.source_page_spans, draft.page_spans);
+
+    let listed = store
+        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+        .expect("list dossiers");
+    assert_eq!(listed, vec![dossier.clone()]);
+
+    let mut duplicate = dossier.clone();
+    duplicate.dossier_id = "66666666-6666-4666-8666-666666666666".to_string();
+    let duplicate_insert = store
+        .persist_result(|tx| tx.upsert_paper_book_ocr_conversion_dossier(&duplicate))
+        .expect("duplicate import/draft dossier is idempotent");
+    assert_eq!(
+        duplicate_insert,
+        PaperBookOcrConversionDossierUpsert::Existing(dossier.clone()),
+        "duplicate insert returns the canonical stored row, not the ignored generated row"
+    );
+    assert!(!duplicate_insert.inserted());
+    assert_eq!(duplicate_insert.dossier(), &dossier);
+    let listed_after_duplicate = store
+        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+        .expect("list after duplicate");
+    assert_eq!(
+        listed_after_duplicate,
+        vec![dossier.clone()],
+        "duplicate creation retains the original dossier row"
+    );
+
+    let mut non_accepted =
+        sample_paper_book_ocr_conversion_dossier("77777777-7777-4777-8777-777777777777", &draft);
+    non_accepted.draft_id = "88888888-8888-4888-8888-888888888888".to_string();
+    non_accepted.source_review_status = StoredPaperBookOcrReviewStatus::Unreviewed;
+    let err = store
+        .persist_result(|tx| tx.upsert_paper_book_ocr_conversion_dossier(&non_accepted))
+        .expect_err("non-accepted OCR draft snapshots cannot create dossiers");
+    assert!(
+        err.to_string().contains("accepted OCR draft"),
+        "error names accepted-review requirement: {err}"
+    );
+
+    let unchanged_import = store
+        .paper_book_import(&import.meta.import_id)
+        .expect("read import")
+        .expect("import present");
+    assert_eq!(unchanged_import, import);
+    drop(store);
+
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let reopened_dossiers = reopened
+        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+        .expect("list reopened dossiers");
+    assert_eq!(reopened_dossiers, vec![dossier]);
+}
+
+#[test]
+fn paper_book_ocr_conversion_execution_artifact_round_trips_idempotent_and_binds_dossier() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333339",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    let raw_ocr_text = "Ata manuscrita transcrita por OCR.";
+    let mut draft = sample_paper_book_ocr_draft(
+        "44444444-4444-4444-8444-444444444446",
+        &import.meta.import_id,
+    );
+    draft.review_status = StoredPaperBookOcrReviewStatus::Accepted;
+    draft.reviewed_at = Some(OffsetDateTime::from_unix_timestamp(1_780_000_003).unwrap());
+    draft.reviewed_by = Some("rui.secretario".to_string());
+    draft.review_note = Some("Checked against the scan.".to_string());
+    let target_act_id = "99999999-9999-4999-8999-999999999999";
+    let artifact = sample_paper_book_ocr_conversion_execution_artifact(
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        &draft,
+        target_act_id,
+        None,
+    );
+
+    let first_insert = store
+        .persist_result(|tx| {
+            tx.upsert_paper_book_import(&import)?;
+            tx.upsert_paper_book_ocr_draft(&draft)?;
+            tx.upsert_paper_book_ocr_conversion_execution_artifact(&artifact)
+        })
+        .expect("persist reviewed OCR conversion execution artifact");
+    assert_eq!(
+        first_insert,
+        PaperBookOcrConversionExecutionArtifactUpsert::Inserted(artifact.clone())
+    );
+    assert!(first_insert.inserted());
+    assert_eq!(first_insert.artifact(), &artifact);
+
+    let by_target = store
+        .paper_book_ocr_conversion_execution_artifact(
+            &import.meta.import_id,
+            &draft.draft_id,
+            target_act_id,
+        )
+        .expect("read artifact by import/draft/target act")
+        .expect("artifact present");
+    assert_eq!(by_target, artifact);
+    assert_eq!(by_target.source_text_digest, draft.text_digest);
+    assert_eq!(by_target.source_page_spans, draft.page_spans);
+    assert_eq!(
+        by_target.source_review_status,
+        StoredPaperBookOcrReviewStatus::Accepted
+    );
+    assert_eq!(by_target.target_act_state, "Draft");
+    assert!(by_target.mutable_draft_act_created);
+    assert!(!by_target.canonical_conversion_claimed);
+    assert!(!by_target.canonical_minutes_claimed);
+    assert!(!by_target.canonical_act_created);
+    assert!(!by_target.canonical_document_created);
+    assert!(!by_target.signed_document_created);
+    assert!(!by_target.archive_package_created);
+    assert!(!by_target.pdfa_created);
+    assert!(!by_target.pdfua_created);
+    assert!(!by_target.signature_created);
+    assert!(!by_target.seal_created);
+    assert!(!by_target.archive_certification_claimed);
+    assert!(!by_target.legal_validity_claimed);
+    assert!(!by_target.source_extracted_text_in_artifact);
+    assert!(!by_target.source_extracted_text_in_ledger_event);
+    assert!(
+        !format!("{by_target:?}").contains(raw_ocr_text),
+        "stored artifact model must not carry raw OCR text"
+    );
+
+    let mut duplicate = artifact.clone();
+    duplicate.artifact_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".to_string();
+    let duplicate_insert = store
+        .persist_result(|tx| tx.upsert_paper_book_ocr_conversion_execution_artifact(&duplicate))
+        .expect("duplicate import/draft/target-act artifact is idempotent");
+    assert_eq!(
+        duplicate_insert,
+        PaperBookOcrConversionExecutionArtifactUpsert::Existing(artifact.clone()),
+        "duplicate insert returns the first stored artifact row"
+    );
+    assert!(!duplicate_insert.inserted());
+
+    let dossier =
+        sample_paper_book_ocr_conversion_dossier("55555555-5555-4555-8555-555555555556", &draft);
+    let bound = store
+        .persist_result(|tx| {
+            tx.upsert_paper_book_ocr_conversion_dossier(&dossier)?;
+            tx.bind_paper_book_ocr_conversion_execution_artifacts_to_dossier(
+                &import.meta.import_id,
+                &draft.draft_id,
+                &dossier.dossier_id,
+            )
+        })
+        .expect("bind existing artifact to dossier");
+    assert_eq!(bound.len(), 1);
+    assert_eq!(
+        bound[0].dossier_id.as_deref(),
+        Some(dossier.dossier_id.as_str())
+    );
+
+    let listed = store
+        .paper_book_ocr_conversion_execution_artifacts_for_draft(
+            &import.meta.import_id,
+            &draft.draft_id,
+        )
+        .expect("list artifacts");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        listed[0].dossier_id.as_deref(),
+        Some(dossier.dossier_id.as_str())
+    );
+    assert!(
+        !format!("{listed:?}").contains(raw_ocr_text),
+        "listed artifacts must not expose raw OCR text"
+    );
+
+    let mut bad_claim = artifact.clone();
+    bad_claim.target_act_id = "99999999-9999-4999-8999-999999999998".to_string();
+    bad_claim.canonical_minutes_claimed = true;
+    let err = store
+        .persist_result(|tx| tx.upsert_paper_book_ocr_conversion_execution_artifact(&bad_claim))
+        .expect_err("canonical/legal claim flags are refused");
+    assert!(
+        err.to_string().contains("canonical_minutes_claimed"),
+        "error names forbidden claim flag: {err}"
+    );
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let reopened_artifacts = reopened
+        .paper_book_ocr_conversion_execution_artifacts_for_draft(
+            &import.meta.import_id,
+            &draft.draft_id,
+        )
+        .expect("list reopened artifacts");
+    assert_eq!(reopened_artifacts.len(), 1);
+    assert_eq!(
+        reopened_artifacts[0].dossier_id.as_deref(),
+        Some(dossier.dossier_id.as_str())
+    );
+}
+
+#[test]
+fn wal_mode_allows_a_concurrent_reader() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+    let entity = sample_entity("Zeta, Lda");
+    let e0 = ledger
+        .append(
+            "amelia.marques",
+            "entity:zeta",
+            "entity.created",
+            None,
+            b"z",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e0)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+
+    // A second independent connection reads the committed rows while the Store is still open
+    // (WAL lets a reader proceed without blocking on the writer connection).
+    let reader = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let entity_count: i64 = reader
+        .query_row("SELECT COUNT(*) FROM entities", [], |r| r.get(0))
+        .unwrap();
+    let event_count: i64 = reader
+        .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(entity_count, 1);
+    assert_eq!(event_count, 1);
+}
+
+// --- G1 (convening) + G2 (attendance) additive fields ride the acts json (t53-E2) --------------
+
+/// Build an act populated with the G1 `convening` record and the G2 `attendees` list, so the
+/// round-trip exercises every new nested type (channels, recipients, second call, weights, proxy).
+fn populated_g1_g2_act(book_id: chancela_core::BookId) -> Act {
+    // Split date/time built via the default `time` constructors (no `macros` feature needed here).
+    let mar_10 = time::Date::from_calendar_date(2026, time::Month::March, 10).unwrap();
+    let mar_30 = time::Date::from_calendar_date(2026, time::Month::March, 30).unwrap();
+    let at_10_30 = time::Time::from_hms(10, 30, 0).unwrap();
+
+    let mut act = Act::draft(
+        book_id,
+        "Ata n.o 1 (com convocatoria e presencas)",
+        MeetingChannel::Physical,
+    );
+    act.convening = Some(Convening {
+        convener: Some("Amélia Marques".to_string()),
+        convener_capacity: Some(SignatoryCapacity::Chair),
+        dispatch_date: Some(mar_10),
+        antecedence_days: Some(15),
+        channel: Some(DispatchChannel::RegisteredLetterAR),
+        evidence_reference: Some("doc:convocatoria-rr123456789pt".to_string()),
+        recipients: vec![ConveningRecipient {
+            name: "Encosto Estratégico Lda".to_string(),
+            contact: Some("socios@example.test".to_string()),
+            channel: Some(DispatchChannel::Email),
+            reference: Some("RR123456789PT".to_string()),
+            dispatched_at: Some(mar_10),
+        }],
+        second_call: Some(SecondCall {
+            date: Some(mar_30),
+            time: Some(at_10_30),
+            reduced_quorum: true,
+        }),
+    });
+    act.attendees = vec![
+        Attendee {
+            name: "Amélia Marques".to_string(),
+            quality: SignatoryCapacity::Member,
+            quality_note: None,
+            presence: PresenceMode::InPerson,
+            represented_by: None,
+            weight: Some(AttendanceWeight::Capital(500_000)),
+        },
+        Attendee {
+            name: "Encosto Estratégico Lda".to_string(),
+            quality: SignatoryCapacity::CondoOwner,
+            quality_note: None,
+            presence: PresenceMode::Represented,
+            represented_by: Some("Amélia Marques".to_string()),
+            weight: Some(AttendanceWeight::Permilage(250)),
+        },
+    ];
+    act
+}
+
+/// The store persists acts as one opaque `json` column, so the additive G1/G2 fields ride inside
+/// the same blob with no DDL and no `schema_version` bump. This drives the real durability path
+/// (persist → drop → reopen → load) for both an act carrying the new fields and an old-shape act
+/// that leaves them defaulted, asserting full round-trip equality for each — and confirms the
+/// stamped schema version is unchanged (the current schema stamp) across the whole exercise.
+#[test]
+fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Encosto Estratégico Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+
+    // (a) an act WITH the G1 convening record + the G2 attendance list populated,
+    // (b) an act WITHOUT them — plain `draft()`, so `convening: None` / `attendees: []` (old shape).
+    let full_act = populated_g1_g2_act(book.id);
+    let bare_act = Act::draft(
+        book.id,
+        "Ata n.o 2 (sem convocatoria)",
+        MeetingChannel::Physical,
+    );
+    // Precondition: the bare act really carries the additive defaults.
+    assert_eq!(bare_act.convening, None);
+    assert!(bare_act.attendees.is_empty());
+
+    // No schema bump: the current stamp is unchanged before and after persisting acts carrying the
+    // new fields.
+    let stamp = |path: &Path| -> String {
+        let raw = rusqlite::Connection::open(path.join("chancela.db")).unwrap();
+        raw.query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+
+    {
+        let store = Store::open(dir.path()).expect("open");
+        assert_eq!(
+            stamp(dir.path()),
+            chancela_store::schema::SCHEMA_VERSION.to_string(),
+            "fresh db stamped at current version"
+        );
+        let mut ledger = Ledger::new();
+
+        let e0 = ledger
+            .append("amelia.marques", "book:1", "book.opened", None, b"book")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e0)?;
+                tx.upsert_book(&book)
+            })
+            .unwrap();
+
+        let e1 = ledger
+            .append("amelia.marques", "act:1", "act.drafted", None, b"full")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e1)?;
+                tx.upsert_act(&full_act)
+            })
+            .unwrap();
+
+        let e2 = ledger
+            .append("amelia.marques", "act:2", "act.drafted", None, b"bare")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e2)?;
+                tx.upsert_act(&bare_act)
+            })
+            .unwrap();
+        // Store dropped here — the process "restarts". No migration ran; no DDL touched acts.
+        assert_eq!(
+            stamp(dir.path()),
+            chancela_store::schema::SCHEMA_VERSION.to_string(),
+            "no schema bump after writing G1/G2 acts"
+        );
+    }
+
+    // Reopen and reload: both acts survive byte-for-byte through the json column.
+    let store = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        stamp(dir.path()),
+        chancela_store::schema::SCHEMA_VERSION.to_string(),
+        "reopen did not bump the schema version"
+    );
+    let loaded = store.load().expect("reload");
+
+    let reloaded_full = loaded.acts.get(&full_act.id).expect("full act reloaded");
+    assert_eq!(
+        reloaded_full, &full_act,
+        "G1/G2 fields survive the store's json round-trip"
+    );
+    // Spot-check the nested new datums explicitly (not just whole-struct equality).
+    let convening = reloaded_full.convening.as_ref().expect("convening present");
+    assert_eq!(convening.antecedence_days, Some(15));
+    assert_eq!(
+        convening.evidence_reference.as_deref(),
+        Some("doc:convocatoria-rr123456789pt")
+    );
+    assert_eq!(convening.recipients.len(), 1);
+    assert_eq!(
+        convening.second_call.as_ref().map(|s| s.reduced_quorum),
+        Some(true)
+    );
+    assert_eq!(reloaded_full.attendees.len(), 2);
+    assert_eq!(
+        reloaded_full.attendees[1].weight,
+        Some(AttendanceWeight::Permilage(250))
+    );
+    assert_eq!(
+        reloaded_full.attendees[1].represented_by.as_deref(),
+        Some("Amélia Marques")
+    );
+
+    // The old-shape act round-trips too: the defaulted fields come back defaulted.
+    let reloaded_bare = loaded.acts.get(&bare_act.id).expect("bare act reloaded");
+    assert_eq!(
+        reloaded_bare, &bare_act,
+        "old-shape act round-trips (backward-compat)"
+    );
+    assert_eq!(reloaded_bare.convening, None);
+    assert!(reloaded_bare.attendees.is_empty());
+}
+
+// --- signed documents + pending CMD sessions (schema v4, t57-S3) ---------------------------------
+
+use chancela_store::{PendingCmdSession, StoredSignedDocument};
+
+const CAPACITY_EVIDENCE_JSON: &str = r#"{"requested_provider_capacity":"Administrador","source":"signature_request","verification_status":"not_checked_by_scap","verification_source":null,"verified_at":null,"authority_reference":null,"status_scope":"declared_capacity_evidence_only"}"#;
+
+fn sample_signed(act_id: ActId) -> StoredSignedDocument {
+    StoredSignedDocument {
+        act_id,
+        document_id: "doc-1".to_string(),
+        signed_pdf_digest: "abc123".to_string(),
+        signature_family: "ChaveMovelDigital".to_string(),
+        evidentiary_level: "Qualified".to_string(),
+        trusted_list_status: Some("Granted".to_string()),
+        signer_cert_subject: Some("CN=Amélia Marques".to_string()),
+        signing_time: OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap(),
+        signed_at: OffsetDateTime::from_unix_timestamp(1_750_000_050).unwrap(),
+        signer_cert_der: vec![0x30, 0x82, 0x01, 0x02],
+        timestamp_token_der: Some(vec![0x30, 0x03, 0x01, 0x01, 0xff]),
+        timestamp_trust_report_json: Some(r#"{"decision":"rejected","policy_oid":"1.2.3.4","policy_oid_accepted":null,"tsa_certificate_embedded":false,"embedded_certificate_count":0,"qtst_status":"unknown","qtst_authenticated":false,"qtst_matches":[],"trust_anchor_count":0,"certificate_path_valid":false,"certificate_path_anchor_index":null,"certificate_path_len":null,"failure_reasons":["fixture"],"status_scope":"technical_evidence_only"}"#.to_owned()),
+        signer_capacity_evidence_json: Some(CAPACITY_EVIDENCE_JSON.to_owned()),
+        signed_pdf_bytes: b"%PDF-1.7 signed".to_vec(),
+    }
+}
+
+fn sample_pending(session_id: &str, act_id: ActId) -> PendingCmdSession {
+    PendingCmdSession {
+        session_id: session_id.to_string(),
+        act_id,
+        actor: "amelia.marques".to_string(),
+        status: "otp_pending".to_string(),
+        masked_phone: "+351 9•••••678".to_string(),
+        doc_name: "ata.pdf".to_string(),
+        signer_capacity_evidence_json: Some(CAPACITY_EVIDENCE_JSON.to_owned()),
+        session_json: r#"{"process_id":"p1"}"#.to_string(),
+        prepared_json: r#"{"prepared":true}"#.to_string(),
+        created_at: OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap(),
+        expires_at: OffsetDateTime::from_unix_timestamp(1_750_000_300).unwrap(),
+    }
+}
+
+#[test]
+fn signed_document_round_trips_and_is_keyed_by_act() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let doc = sample_signed(act_id);
+    store.persist(|tx| tx.upsert_signed_document(&doc)).unwrap();
+
+    let back = store.signed_document_for_act(act_id).unwrap().unwrap();
+    assert_eq!(back, doc);
+    assert!(
+        back.signer_capacity_evidence_json
+            .as_deref()
+            .is_some_and(
+                |json| json.contains("\"verification_status\":\"not_checked_by_scap\"")
+                    && json.contains("\"status_scope\":\"declared_capacity_evidence_only\"")
+                    && !json.contains("verified_by_scap")
+            )
+    );
+    // Unknown act → None.
+    assert!(
+        store
+            .signed_document_for_act(ActId(uuid::Uuid::new_v4()))
+            .unwrap()
+            .is_none()
+    );
+    // Loads into the boot map.
+    let all = store.all_signed_documents().unwrap();
+    assert_eq!(all.get(&act_id), Some(&doc));
+
+    // Survives a reopen (durable).
+    drop(store);
+    let store = Store::open(dir.path()).unwrap();
+    assert_eq!(
+        store.signed_document_for_act(act_id).unwrap().as_ref(),
+        Some(&doc)
+    );
+}
+
+// --- instrument_signatures: multi-signature history (schema v23, t9-S2) -------------------------
+
+/// A distinct signature over the same subject: fresh signer, fresh bytes, hence a fresh digest.
+fn sample_nth_signature(act_id: ActId, signer: &str, nth: u8) -> StoredSignedDocument {
+    StoredSignedDocument {
+        signed_pdf_digest: format!("digest-{nth}"),
+        signer_cert_subject: Some(format!("CN={signer}")),
+        // Sequential PAdES: signer n+1 signs signer n's output, so the bytes grow and differ.
+        signed_pdf_bytes: format!("%PDF-1.7 signed x{nth}").into_bytes(),
+        signed_at: OffsetDateTime::from_unix_timestamp(1_750_000_050 + i64::from(nth)).unwrap(),
+        ..sample_signed(act_id)
+    }
+}
+
+/// The defect this table exists to fix: `signed_documents.act_id` is a PRIMARY KEY written with
+/// `INSERT OR REPLACE`, so before schema v23 a second signature on a subject silently destroyed the
+/// first signer's row *and bytes*. Both signatures must now survive, in signing order.
+#[test]
+fn a_second_signature_no_longer_destroys_the_first() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let first = sample_nth_signature(act_id, "Amélia Marques", 1);
+    let second = sample_nth_signature(act_id, "Rui Ferreira", 2);
+
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .unwrap();
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .unwrap();
+
+    // Both are retrievable, oldest first — this is the assertion that fails pre-v23.
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 2, "both signatures survive");
+    assert_eq!(history[0].seq, 1);
+    assert_eq!(history[1].seq, 2);
+    assert_eq!(
+        history[0].document, first,
+        "the first signer's row and bytes are intact"
+    );
+    assert_eq!(history[1].document, second);
+    // Order is the signing order, not an artefact of the storage engine.
+    assert_eq!(
+        history[0].document.signer_cert_subject.as_deref(),
+        Some("CN=Amélia Marques")
+    );
+
+    // `signed_documents` keeps its old meaning — the CURRENT artifact — so no reader regresses.
+    assert_eq!(
+        store.signed_document_for_act(act_id).unwrap(),
+        Some(second.clone())
+    );
+    assert_eq!(
+        store.all_signed_documents().unwrap().get(&act_id),
+        Some(&second)
+    );
+
+    // Durable across a restart, still in order.
+    drop(store);
+    let store = Store::open(dir.path()).unwrap();
+    let reopened = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(reopened, history);
+}
+
+#[test]
+fn a_third_signature_appends_after_the_first_two() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let signers = ["Amélia Marques", "Rui Ferreira", "Beatriz Nunes"];
+    for (idx, signer) in signers.iter().enumerate() {
+        let sig = sample_nth_signature(act_id, signer, u8::try_from(idx).unwrap() + 1);
+        store.persist(|tx| tx.upsert_signed_document(&sig)).unwrap();
+    }
+
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 3);
+    assert_eq!(
+        history.iter().map(|s| s.seq).collect::<Vec<_>>(),
+        vec![1, 2, 3],
+        "seq is 1-based and gapless"
+    );
+    assert_eq!(
+        history
+            .iter()
+            .map(|s| s.document.signer_cert_subject.clone().unwrap())
+            .collect::<Vec<_>>(),
+        signers
+            .iter()
+            .map(|s| format!("CN={s}"))
+            .collect::<Vec<_>>(),
+        "retrieval order is signing order"
+    );
+    // The slot model belongs to t8; v23 records no slot.
+    assert!(history.iter().all(|s| s.slot_id.is_none()));
+}
+
+/// The append is idempotent on the signature itself, matching `upsert_signed_document`'s existing
+/// idempotent-on-retry contract: a replayed write must not inflate the chain with a duplicate.
+#[test]
+fn rewriting_the_same_signature_keeps_its_position() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let first = sample_nth_signature(act_id, "Amélia Marques", 1);
+    let second = sample_nth_signature(act_id, "Rui Ferreira", 2);
+
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .unwrap();
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .unwrap();
+    // Replay both, in the same order.
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .unwrap();
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .unwrap();
+
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 2, "a replay adds nothing");
+    assert_eq!(history[0].document, first, "and does not reorder");
+    assert_eq!(history[1].document, second);
+}
+
+/// Back-compat, and the reason nothing is migrated: a subject signed before v23 has a
+/// `signed_documents` row and no history rows. It must stay readable and must not read as unsigned.
+#[test]
+fn a_pre_v23_signed_document_stays_readable_as_a_single_signature() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let legacy = sample_signed(act_id);
+    store
+        .persist(|tx| tx.upsert_signed_document(&legacy))
+        .unwrap();
+
+    // Simulate a database written before v23: the artifact row exists, the history does not.
+    drop(store);
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute("DELETE FROM instrument_signatures", [])
+            .unwrap();
+    }
+    let store = Store::open(dir.path()).unwrap();
+
+    // The old lookup is untouched — `GET /v1/acts/{id}/document/signed`, export and recovery.
+    assert_eq!(
+        store.signed_document_for_act(act_id).unwrap(),
+        Some(legacy.clone())
+    );
+    assert_eq!(
+        store.all_signed_documents().unwrap().get(&act_id),
+        Some(&legacy)
+    );
+
+    // The raw history is genuinely empty — the fallback is doing the work, not a hidden migration.
+    assert!(
+        store
+            .instrument_signatures_for_subject(act_id)
+            .unwrap()
+            .is_empty()
+    );
+
+    // And the history read reports it as the subject's single, first signature.
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].seq, 1);
+    assert_eq!(history[0].document, legacy);
+
+    // A later signature on that legacy subject still appends rather than replacing. It lands at
+    // seq 1 of the real history: pre-v23 rows were never recorded there and are not backfilled.
+    let next = sample_nth_signature(act_id, "Rui Ferreira", 2);
+    store
+        .persist(|tx| tx.upsert_signed_document(&next))
+        .unwrap();
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].document, next);
+    // The legacy artifact is still where it always was, and still fetchable.
+    assert_eq!(store.signed_document_for_act(act_id).unwrap(), Some(next));
+}
+
+/// Idempotency must hold for *any* replayed signature, not only the most recent one.
+///
+/// `rewriting_the_same_signature_keeps_its_position` replays two signatures in order, which cannot
+/// distinguish "kept its position" from "appended at the end anyway". Replaying the **first**
+/// signature after later ones have landed can: if the append were keyed on anything but the
+/// signature's own digest, signer 1 would reappear at seq 4 and the chain would claim signer 1
+/// countersigned signer 3's output. In sequential PAdES that is not a cosmetic ordering error —
+/// signature n+1 signs signature n's bytes, so a chain replayed in the wrong order verifies
+/// inconsistently.
+#[test]
+fn replaying_an_earlier_signature_after_later_ones_leaves_the_chain_ordered() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let signers = ["Amélia Marques", "Rui Ferreira", "Beatriz Nunes"];
+    let signatures: Vec<_> = signers
+        .iter()
+        .enumerate()
+        .map(|(idx, signer)| sample_nth_signature(act_id, signer, u8::try_from(idx).unwrap() + 1))
+        .collect();
+    for sig in &signatures {
+        store.persist(|tx| tx.upsert_signed_document(sig)).unwrap();
+    }
+
+    // Replay out of order: the first, then the second, then the first again.
+    for replayed in [&signatures[0], &signatures[1], &signatures[0]] {
+        store
+            .persist(|tx| tx.upsert_signed_document(replayed))
+            .unwrap();
+    }
+
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 3, "no replay inflated the chain");
+    assert_eq!(
+        history.iter().map(|s| s.seq).collect::<Vec<_>>(),
+        vec![1, 2, 3],
+        "seq stays gapless"
+    );
+    assert_eq!(
+        history
+            .iter()
+            .map(|s| s.document.signer_cert_subject.clone().unwrap())
+            .collect::<Vec<_>>(),
+        signers
+            .iter()
+            .map(|s| format!("CN={s}"))
+            .collect::<Vec<_>>(),
+        "and each signer keeps the position they actually signed in"
+    );
+}
+
+/// Every history row carries **its own** signed bytes.
+///
+/// The alternative encoding — leaving the newest signature's bytes only in `signed_documents` and
+/// letting history rows point at it — silently re-points a superseded signature at the wrong
+/// artifact the moment the next signature lands. A superseded signature's bytes are the only
+/// evidence of what that signer actually assented to, so the duplication is deliberate and the
+/// absence of aliasing is the property under test.
+#[test]
+fn a_superseded_signature_keeps_its_own_bytes_after_a_later_one_lands() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let first = sample_nth_signature(act_id, "Amélia Marques", 1);
+    let second = sample_nth_signature(act_id, "Rui Ferreira", 2);
+    assert_ne!(
+        first.signed_pdf_bytes, second.signed_pdf_bytes,
+        "the fixture must present genuinely different artifacts"
+    );
+
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .unwrap();
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .unwrap();
+
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(
+        history[0].document.signed_pdf_bytes, first.signed_pdf_bytes,
+        "the superseded signature's bytes are still its own, not the current artifact's"
+    );
+    assert_eq!(
+        history[0].document.signed_pdf_digest, first.signed_pdf_digest,
+        "and its digest still describes those bytes"
+    );
+    assert_ne!(
+        history[0].document.signed_pdf_bytes,
+        store
+            .signed_document_for_act(act_id)
+            .unwrap()
+            .unwrap()
+            .signed_pdf_bytes,
+    );
+}
+
+/// An unsigned subject has neither a history nor a current artifact.
+#[test]
+fn signature_history_for_an_unsigned_subject_is_empty() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let unknown = ActId(uuid::Uuid::new_v4());
+    assert!(
+        store
+            .signature_history_for_subject(unknown)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// Two subjects signed independently must not bleed into each other's chain.
+#[test]
+fn signature_chains_are_scoped_per_subject() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let (a, b) = (ActId(uuid::Uuid::new_v4()), ActId(uuid::Uuid::new_v4()));
+    for (subject, count) in [(a, 2u8), (b, 1u8)] {
+        for nth in 1..=count {
+            let sig = sample_nth_signature(subject, "Amélia Marques", nth);
+            store.persist(|tx| tx.upsert_signed_document(&sig)).unwrap();
+        }
+    }
+    assert_eq!(store.signature_history_for_subject(a).unwrap().len(), 2);
+    let b_history = store.signature_history_for_subject(b).unwrap();
+    assert_eq!(b_history.len(), 1);
+    assert_eq!(b_history[0].seq, 1, "b's chain starts at 1, not after a's");
+}
+
+#[test]
+fn pending_cmd_session_round_trips_persists_and_deletes() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let pending = sample_pending("sess-1", act_id);
+    store
+        .persist(|tx| tx.upsert_pending_cmd_session(&pending))
+        .unwrap();
+
+    // Fetch by id + load-all both see it (survives a simulated restart via reopen).
+    drop(store);
+    let store = Store::open(dir.path()).unwrap();
+    assert_eq!(
+        store.pending_cmd_session("sess-1").unwrap().as_ref(),
+        Some(&pending)
+    );
+    assert_eq!(store.all_pending_cmd_sessions().unwrap().len(), 1);
+
+    // The persisted blobs carry NO secret material (structural: only the non-secret json blobs).
+    let loaded = store.pending_cmd_session("sess-1").unwrap().unwrap();
+    assert!(!loaded.session_json.contains("pin"));
+    assert!(!loaded.prepared_json.contains("otp"));
+    assert!(
+        loaded
+            .signer_capacity_evidence_json
+            .as_deref()
+            .is_some_and(
+                |json| json.contains("\"requested_provider_capacity\":\"Administrador\"")
+                    && json.contains("\"verification_status\":\"not_checked_by_scap\"")
+                    && !json.contains("authority_verified")
+            )
+    );
+
+    // Delete consumes it (single-use).
+    store
+        .persist(|tx| tx.delete_pending_cmd_session("sess-1"))
+        .unwrap();
+    assert!(store.pending_cmd_session("sess-1").unwrap().is_none());
+    assert!(store.all_pending_cmd_sessions().unwrap().is_empty());
+}
+
+// --- wp16 P3b: non-ledger sidecar stores (users / roles / delegations / settings / credentials) ---
+
+#[test]
+fn sidecar_document_stores_round_trip_update_and_order() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    // Empty stores read as empty.
+    assert!(store.users().unwrap().is_empty());
+    assert!(store.roles().unwrap().is_empty());
+    assert!(store.delegations().unwrap().is_empty());
+
+    // Upsert three of each, deliberately out of id order to prove the read orders by id.
+    store
+        .persist(|tx| {
+            tx.upsert_user("u-charlie", r#"{"username":"amelia.marques"}"#)?;
+            tx.upsert_user("u-alfa", r#"{"username":"first"}"#)?;
+            tx.upsert_user("u-bravo", r#"{"username":"second"}"#)?;
+            tx.upsert_role("r-viewer", r#"{"perm":"read"}"#)?;
+            tx.upsert_role("r-admin", r#"{"perm":"all"}"#)?;
+            tx.upsert_delegation("d-2", r#"{"state":"revoked"}"#)?;
+            tx.upsert_delegation("d-1", r#"{"state":"active"}"#)?;
+            Ok(())
+        })
+        .expect("persist sidecars");
+
+    // Ordering is deterministic by id.
+    let users = store.users().unwrap();
+    assert_eq!(
+        users,
+        vec![
+            ("u-alfa".to_owned(), r#"{"username":"first"}"#.to_owned()),
+            ("u-bravo".to_owned(), r#"{"username":"second"}"#.to_owned()),
+            (
+                "u-charlie".to_owned(),
+                r#"{"username":"amelia.marques"}"#.to_owned()
+            ),
+        ]
+    );
+    assert_eq!(
+        store.roles().unwrap(),
+        vec![
+            ("r-admin".to_owned(), r#"{"perm":"all"}"#.to_owned()),
+            ("r-viewer".to_owned(), r#"{"perm":"read"}"#.to_owned()),
+        ]
+    );
+    assert_eq!(
+        store.delegations().unwrap(),
+        vec![
+            ("d-1".to_owned(), r#"{"state":"active"}"#.to_owned()),
+            ("d-2".to_owned(), r#"{"state":"revoked"}"#.to_owned()),
+        ]
+    );
+
+    // Upsert is idempotent on id: a second write replaces the json, never duplicates the row.
+    store
+        .persist(|tx| tx.upsert_user("u-alfa", r#"{"username":"updated"}"#))
+        .expect("update user");
+    let users = store.users().unwrap();
+    assert_eq!(users.len(), 3);
+    assert_eq!(users[0].1, r#"{"username":"updated"}"#);
+
+    // Delete drops exactly one row; deleting an unknown id is a no-op.
+    store
+        .persist(|tx| {
+            tx.delete_user("u-bravo")?;
+            tx.delete_user("u-does-not-exist")?;
+            tx.delete_role("r-viewer")?;
+            tx.delete_delegation("d-2")?;
+            Ok(())
+        })
+        .expect("delete sidecars");
+    assert_eq!(
+        store
+            .users()
+            .unwrap()
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>(),
+        vec!["u-alfa".to_owned(), "u-charlie".to_owned()]
+    );
+    assert_eq!(store.roles().unwrap().len(), 1);
+    assert_eq!(store.delegations().unwrap().len(), 1);
+
+    // The rows survive a reopen (durable, not in-memory).
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(reopened.users().unwrap().len(), 2);
+    assert_eq!(reopened.roles().unwrap().len(), 1);
+    assert_eq!(reopened.delegations().unwrap().len(), 1);
+}
+
+#[test]
+fn settings_singleton_document_round_trips_and_updates() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    // No settings persisted yet.
+    assert!(store.settings().unwrap().is_none());
+
+    store
+        .persist(|tx| {
+            tx.put_settings(r#"{"schema_version":16,"office":"Encosto Estrategico Lda"}"#)
+        })
+        .expect("put settings");
+    assert_eq!(
+        store.settings().unwrap().as_deref(),
+        Some(r#"{"schema_version":16,"office":"Encosto Estrategico Lda"}"#)
+    );
+
+    // Put is a singleton upsert: a second write replaces the one document, never adds a second row.
+    store
+        .persist(|tx| tx.put_settings(r#"{"schema_version":16,"office":"changed"}"#))
+        .expect("update settings");
+    assert_eq!(
+        store.settings().unwrap().as_deref(),
+        Some(r#"{"schema_version":16,"office":"changed"}"#)
+    );
+
+    // Durable across reopen.
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened.settings().unwrap().as_deref(),
+        Some(r#"{"schema_version":16,"office":"changed"}"#)
+    );
+}
+
+#[test]
+fn credential_records_preserve_opaque_bytes_and_order() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    assert!(store.read_credential_records().unwrap().is_empty());
+
+    // A deliberately non-UTF8 opaque blob (0xFF/0xFE/0x00 are invalid UTF-8) to prove the store
+    // preserves the ciphertext bytes exactly and never treats the record as text.
+    let non_utf8: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x10, b'{', 0x80, 0x81, b'}'];
+    let csc_blob: Vec<u8> = b"encosto-estrategico-ciphertext".to_vec();
+
+    store
+        .persist(|tx| {
+            // Insert out of (mode, provider_id) order to prove the read orders them.
+            tx.put_credential_record("scap", "", 3, "2026-07-14T10:00:00Z", &non_utf8)?;
+            tx.put_credential_record(
+                "csc",
+                "encosto-estrategico",
+                1,
+                "2026-07-14T09:00:00Z",
+                &csc_blob,
+            )?;
+            tx.put_credential_record("cmd", "", 2, "2026-07-14T08:00:00Z", b"cmd-ct")?;
+            Ok(())
+        })
+        .expect("put credential records");
+
+    let records = store.read_credential_records().unwrap();
+    assert_eq!(
+        records
+            .iter()
+            .map(|r| (r.mode.clone(), r.provider_id.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("cmd".to_owned(), String::new()),
+            ("csc".to_owned(), "encosto-estrategico".to_owned()),
+            ("scap".to_owned(), String::new()),
+        ]
+    );
+
+    // The SCAP record's opaque, non-UTF8 blob and its metadata round-trip byte-for-byte.
+    let scap = records.iter().find(|r| r.mode == "scap").unwrap();
+    assert_eq!(
+        scap,
+        &StoredCredentialRecord {
+            mode: "scap".to_owned(),
+            provider_id: String::new(),
+            key_version: 3,
+            updated_at: "2026-07-14T10:00:00Z".to_owned(),
+            record_blob: non_utf8.clone(),
+        }
+    );
+
+    // Upsert is idempotent on (mode, provider_id): a rotation replaces the blob + key_version in place.
+    let rotated: Vec<u8> = vec![0x01, 0x02, 0x03, 0xFF];
+    store
+        .persist(|tx| tx.put_credential_record("scap", "", 4, "2026-07-14T11:00:00Z", &rotated))
+        .expect("rotate scap");
+    let records = store.read_credential_records().unwrap();
+    assert_eq!(records.len(), 3, "rotation must not add a row");
+    let scap = records.iter().find(|r| r.mode == "scap").unwrap();
+    assert_eq!(scap.key_version, 4);
+    assert_eq!(scap.record_blob, rotated);
+
+    // Delete removes exactly the addressed record; an unknown key is a no-op.
+    store
+        .persist(|tx| {
+            tx.delete_credential_record("scap", "")?;
+            tx.delete_credential_record("csc", "no-such-provider")?;
+            Ok(())
+        })
+        .expect("delete credential record");
+    let records = store.read_credential_records().unwrap();
+    assert_eq!(
+        records.iter().map(|r| r.mode.clone()).collect::<Vec<_>>(),
+        vec!["cmd".to_owned(), "csc".to_owned()]
+    );
+
+    // Durable across reopen: the csc ciphertext survives verbatim.
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let csc = reopened
+        .read_credential_records()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.mode == "csc")
+        .unwrap();
+    assert_eq!(csc.record_blob, csc_blob);
+    assert_eq!(csc.provider_id, "encosto-estrategico");
+    assert_eq!(csc.key_version, 1);
+}
+
+// --- wp26: per-subject GDPR erasure primitives (subject_keys + multi-collection erase + vacuum) ---
+
+#[test]
+fn subject_key_roundtrips_and_crypto_erase_empties_wrapped_dek() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    let subject_id = "8f3b1e2a-0c4d-4e6f-9a1b-2c3d4e5f6a7b"; // Amélia Marques' subject UUID
+    assert!(
+        store.get_subject_key(subject_id).unwrap().is_none(),
+        "unknown subject reads as None"
+    );
+
+    // A deliberately non-UTF8 opaque wrapped-DEK blob to prove the store preserves the wrapping bytes
+    // exactly and never treats the record as text.
+    let wrapped_dek: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x10, 0x80, 0x81, 0x7F];
+    store
+        .persist(|tx| tx.put_subject_key(subject_id, &wrapped_dek, 1, "2026-07-15T09:00:00Z"))
+        .expect("put subject key");
+
+    let live = store
+        .get_subject_key(subject_id)
+        .unwrap()
+        .expect("row present");
+    assert_eq!(live.subject_id, subject_id);
+    assert_eq!(live.wrapped_dek, wrapped_dek);
+    assert_eq!(live.key_version, 1);
+    assert_eq!(live.created_at, "2026-07-15T09:00:00Z");
+    assert_eq!(live.erased_at, None, "a live DEK has no erasure stamp");
+
+    // The in-transaction read agrees with the non-tx read.
+    store
+        .persist(|tx| {
+            let seen = tx.get_subject_key_tx(subject_id)?.expect("tx read present");
+            assert_eq!(seen.wrapped_dek, wrapped_dek);
+            assert_eq!(seen.erased_at, None);
+            Ok(())
+        })
+        .expect("tx read");
+
+    // Crypto-erase: the wrapping bytes are physically overwritten with an empty blob and erased_at
+    // is stamped. Destroying an unknown subject is a no-op (no error, no row created).
+    store
+        .persist(|tx| {
+            tx.destroy_subject_key(subject_id, "2026-07-15T10:00:00Z")?;
+            tx.destroy_subject_key("no-such-subject", "2026-07-15T10:00:00Z")?;
+            Ok(())
+        })
+        .expect("destroy subject key");
+
+    let erased = store
+        .get_subject_key(subject_id)
+        .unwrap()
+        .expect("erased row still present");
+    assert!(
+        erased.wrapped_dek.is_empty(),
+        "crypto-erase must empty the wrapped DEK, leaving no wrapping bytes: {:?}",
+        erased.wrapped_dek
+    );
+    assert_eq!(
+        erased.erased_at.as_deref(),
+        Some("2026-07-15T10:00:00Z"),
+        "erased_at marks the DEK destroyed"
+    );
+    assert!(
+        store.get_subject_key("no-such-subject").unwrap().is_none(),
+        "destroying an unknown subject must not create a row"
+    );
+
+    // The erased state is durable across reopen.
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let after = reopened.get_subject_key(subject_id).unwrap().unwrap();
+    assert!(after.wrapped_dek.is_empty());
+    assert_eq!(after.erased_at.as_deref(), Some("2026-07-15T10:00:00Z"));
+}
+
+#[test]
+fn put_subject_key_rewrap_replaces_blob_and_rearms_erased_at() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let subject_id = "a1b2c3d4-e5f6-4718-9a0b-1c2d3e4f5061";
+
+    store
+        .persist(|tx| {
+            tx.put_subject_key(subject_id, b"dek-v1", 1, "2026-07-15T09:00:00Z")?;
+            tx.destroy_subject_key(subject_id, "2026-07-15T10:00:00Z")
+        })
+        .expect("put + erase");
+    assert!(
+        store
+            .get_subject_key(subject_id)
+            .unwrap()
+            .unwrap()
+            .erased_at
+            .is_some()
+    );
+
+    // Re-wrapping (a fresh put) replaces the blob and clears the erasure stamp — the subject is live
+    // again, idempotent on the id (no duplicate row).
+    store
+        .persist(|tx| tx.put_subject_key(subject_id, b"dek-v2", 2, "2026-07-15T11:00:00Z"))
+        .expect("rewrap");
+    let row = store.get_subject_key(subject_id).unwrap().unwrap();
+    assert_eq!(row.wrapped_dek, b"dek-v2");
+    assert_eq!(row.key_version, 2);
+    assert_eq!(row.erased_at, None, "a rewrap re-arms the subject");
+}
+
+#[test]
+fn erase_subject_deletes_across_collections_and_vacuum_succeeds() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    // Seed erasable subject rows across several id-keyed collections (Amélia Marques of Encosto
+    // Estratégico Lda). Ids are the subject's per-collection row ids the API would enumerate.
+    let user_id = "u-amelia";
+    let role_id = "r-amelia-personal";
+    let deleg_id = "d-amelia";
+    let template_id = "t-amelia";
+    store
+        .persist(|tx| {
+            tx.upsert_user(user_id, r#"{"username":"amelia.marques"}"#)?;
+            tx.upsert_role(role_id, r#"{"holder":"amelia.marques"}"#)?;
+            tx.upsert_delegation(deleg_id, r#"{"grantee":"amelia.marques"}"#)?;
+            tx.upsert_user_template(template_id, r#"{"author":"amelia.marques"}"#)?;
+            // An unrelated user that must survive the erasure untouched.
+            tx.upsert_user("u-rui", r#"{"username":"rui.secretario"}"#)?;
+            Ok(())
+        })
+        .expect("seed subject rows");
+
+    let targets = vec![
+        EraseTarget {
+            collection: "users".to_owned(),
+            id: user_id.to_owned(),
+        },
+        EraseTarget {
+            collection: "roles".to_owned(),
+            id: role_id.to_owned(),
+        },
+        EraseTarget {
+            collection: "delegations".to_owned(),
+            id: deleg_id.to_owned(),
+        },
+        EraseTarget {
+            collection: "user_templates".to_owned(),
+            id: template_id.to_owned(),
+        },
+        // An absent id contributes deleted=0 (idempotent no-op).
+        EraseTarget {
+            collection: "follow_ups".to_owned(),
+            id: "fu-absent".to_owned(),
+        },
+    ];
+    let report = store
+        .erase_subject("amelia.marques", &targets)
+        .expect("erase subject");
+
+    assert_eq!(report.subject_id, "amelia.marques");
+    assert_eq!(report.outcomes.len(), targets.len());
+    for outcome in report.outcomes.iter().take(4) {
+        assert_eq!(
+            outcome.deleted, 1,
+            "seeded row {outcome:?} should delete exactly one"
+        );
+    }
+    assert_eq!(
+        report.outcomes[4].deleted, 0,
+        "an absent id is an idempotent no-op"
+    );
+
+    // Follow-up reads confirm the subject's rows are gone and the unrelated user survived.
+    assert!(store.users().unwrap().iter().all(|(id, _)| id != user_id));
+    assert!(store.roles().unwrap().is_empty());
+    assert!(store.delegations().unwrap().is_empty());
+    assert!(
+        store.users().unwrap().iter().any(|(id, _)| id == "u-rui"),
+        "unrelated user must survive"
+    );
+
+    // VACUUM runs Ok after the deletes (reclaims the freed pages so the PII bytes do not linger).
+    store.vacuum().expect("vacuum after erasure");
+
+    // The database remains openable and consistent after the vacuum rewrite.
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen after vacuum");
+    assert_eq!(reopened.users().unwrap().len(), 1);
+}
+
+#[test]
+fn erase_subject_rejects_unknown_collection_and_deletes_nothing() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    store
+        .persist(|tx| tx.upsert_user("u-amelia", r#"{"username":"amelia.marques"}"#))
+        .expect("seed user");
+
+    // A target naming a non-allowlisted collection (a SQL-injection attempt on the interpolated
+    // table name) must be rejected before any DELETE runs.
+    let targets = vec![
+        EraseTarget {
+            collection: "users".to_owned(),
+            id: "u-amelia".to_owned(),
+        },
+        EraseTarget {
+            collection: "events; DROP TABLE users --".to_owned(),
+            id: "x".to_owned(),
+        },
+    ];
+    let err = store.erase_subject("amelia.marques", &targets).unwrap_err();
+    assert!(
+        matches!(err, StoreError::UnknownErasableCollection { ref collection }
+            if collection == "events; DROP TABLE users --"),
+        "unexpected error: {err:?}"
+    );
+
+    // All-or-nothing: the valid target's row must NOT have been deleted (the transaction rolled back).
+    assert_eq!(
+        store.users().unwrap().len(),
+        1,
+        "a rejected target must roll back the whole erasure, deleting nothing"
+    );
+
+    // The append-only ledger table is never a valid erasure target either.
+    let ledger_target = vec![EraseTarget {
+        collection: "events".to_owned(),
+        id: "1".to_owned(),
+    }];
+    assert!(matches!(
+        store
+            .erase_subject("amelia.marques", &ledger_target)
+            .unwrap_err(),
+        StoreError::UnknownErasableCollection { .. }
+    ));
+}

@@ -1,0 +1,37 @@
+# Repo-root entry point for the deployment profiles in docker/docker-compose.yml.
+#
+# It exists so that a bare `docker compose build` / `docker compose up` works
+# from the repo ROOT as well as from the `docker/` directory. Compose only
+# auto-discovers a compose file in the current directory, and the real
+# definitions live in docker/, so this file simply pulls them in.
+#
+#   docker compose up --build                       # single-node (default)
+#   docker compose --profile worker up --build      # + sync/backup worker
+#
+# The `postgres` profile is the exception and MUST be launched with the
+# explicit `-f` form, which suppresses the override files:
+#
+#   docker compose -f docker/docker-compose.yml --profile postgres up --build
+#
+# There the `chancela` service REPLACES `server`, but docker-compose.override.yml
+# makes `server` unconditional, so a bare `--profile postgres up` starts both and
+# the second one to bind ${CHANCELA_HOST_PORT:-8080} dies with "port is already
+# allocated". `sh docker/up.sh -d --build` is a wrapper that pins that form.
+#
+# The profile's three secrets need no preparation: they live in the
+# chancela-secrets volume and are created on `up` by the secrets-init service
+# (create-if-absent -- it never rotates an existing value). Files left in
+# docker/secrets/ are adopted instead. See docs/deployment.md.
+#
+# `include` resolves the included file's relative paths (build context `..`,
+# `./secrets`, `./secrets-init.sh`, `./postgres-tls-init.sh`) against docker/, so
+# both invocation points produce the identical configuration.
+#
+# `name` is pinned here and in docker/docker-compose.yml so running from either
+# directory targets the SAME project, containers, volumes and network — without
+# it Compose would derive the project name from the current directory and
+# silently create a second, parallel stack.
+name: chancela
+
+include:
+  - path: docker/docker-compose.yml

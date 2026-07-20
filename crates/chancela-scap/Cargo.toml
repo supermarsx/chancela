@@ -1,0 +1,31 @@
+[package]
+name = "chancela-scap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "AMA SCAP (Sistema de Certificação de Atributos Profissionais) client: attribute-provider listing, attribute fetch, and professional-attribute-qualified signatures (spec 04, t67 §1.2)."
+
+[dependencies]
+# Consumes the cades signature seam (RawSignature contract + CAdES-B assembly) for the
+# professional-attribute signature; must NOT be depended on by it (no cycle). Mock transport is the
+# default; real preprod/prod is config-gated.
+#
+# The XAdES binding is intentionally NOT a dependency here: the chancela-xades public surface is
+# built concurrently (t67-e2) and is not yet stable. Per .orchestration/plans/t67.md §1.2 / e4, the
+# XAdES hook is kept behind the small `binder::AttributeSignatureBinder` trait defined in-crate, so
+# a XAdES binder can be supplied by the API layer (e10) once that crate stabilises — without editing
+# this crate or waiting on e2.
+chancela-cades = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+# Direct (non-workspace) pin, mirroring chancela-cmd: transient SCAP credential material is held in
+# `Zeroizing` so it is scrubbed on drop and never lands in Debug output or logs.
+zeroize = "1"

@@ -1,0 +1,6 @@
+# Direct documentation dependency. Compile this file under the Python version
+# used by .github/workflows/docs.yml:
+#   python -m pip install --upgrade pip==26.1.2
+#   python -m pip install pip-tools==7.5.3
+#   pip-compile --generate-hashes --strip-extras --resolver=backtracking requirements-docs.in
+mkdocs-material==9.7.6

@@ -1,0 +1,32 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Baseline capability for the Chancela desktop shell. Grants Tauri core defaults plus the FULL window-control permission set the custom (decorationless) title bar drives: drag, minimize, maximize/unmaximize/toggle-maximize, close, position/size, set-always-on-top, and the double-click-to-maximize the drag region performs; `core:window:allow-destroy`, which the unsaved-work close guard (t52) REQUIRES: the web layer registers a `close-requested` listener so it can veto a close while an ata is half-written, and once Tauri hands the veto to JS the window can only be closed by `destroy()` — without this permission the guard would make the window unclosable; `opener:open-url` so external http(s) links open in the user's DEFAULT browser (allow-open-url grants the command, allow-default-urls grants the mailto/tel/http(s) URL scope open_url enforces); `process:allow-restart` so the crash screen's 'Reiniciar aplicação' action can relaunch the process (t26); and the export save bridge (`dialog:allow-save` + `fs:allow-write-file`) so generated files are written only after the user chooses a path in the native save dialog. This is our own trusted first-party UI. The `remote` clause is REQUIRED because the shell serves that UI from an in-process embedded server and navigates the main window to it at http://127.0.0.1:<ephemeral-port> (and, in `tauri dev`, http://localhost:5173) — a REMOTE origin as far as the ACL is concerned. Without it, every `plugin:window|*`, `plugin:opener|*`, `plugin:dialog|*`, `plugin:fs|*` and process IPC used here is rejected by the ACL. Both patterns are loopback-only (unreachable off-device); the granted file access is limited to the path scoped by the save dialog.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-unminimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-always-on-top",
+    "opener:allow-open-url",
+    "opener:allow-default-urls",
+    "process:allow-restart",
+    "dialog:allow-save",
+    "fs:allow-write-file"
+  ]
+}

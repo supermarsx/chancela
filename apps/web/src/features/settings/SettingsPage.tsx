@@ -1,0 +1,2354 @@
+/**
+ * Configurações — the end-to-end configuration surface (user request: "make the
+ * whole app fully configurable end to end and allow the user to configure it too").
+ *
+ * It consumes the frozen §2.8 settings document (GET/PUT /v1/settings), holds a full
+ * working copy, and — for the Aparência section — previews changes *live* as the
+ * operator edits (theme, grain intensity, re-roll), reverting any unsaved preview to
+ * the committed settings when leaving the page. Saving PUTs the whole document; the
+ * mutation updates the shared cache optimistically, so the global appearance layer
+ * (mounted in the shell) stays in step everywhere else in the app.
+ *
+ * Sections are reached through a segmented sub-nav (the Ferramentas idiom, via the shared
+ * `<SubNav>`): Aparência · Documentos · Assinaturas · Gestão · Sobre. The
+ * active section is deep-linkable (`?sec=`); the working copy spans all of them, so the
+ * save flow stays a single whole-document PUT (global draft) reachable from every section.
+ */
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import {
+  useHealth,
+  useLedgerVerify,
+  usePlatformLogs,
+  useSettings,
+  useUpdateSettings,
+} from '../../api/hooks';
+import { useAutosave } from '../../hooks/useAutosave';
+import { useToast } from '../../ui';
+import {
+  localeLabels,
+  numberingSchemeLabels,
+  optionsFrom,
+  signatureFamilyLabels,
+  themeModeLabels,
+} from '../../api/labels';
+import {
+  DEFAULT_SETTINGS,
+  LOCALES,
+  NUMBERING_SCHEMES,
+  PLATFORM_EMITTED_LOG_LEVELS,
+  PLATFORM_SERVICE_IDS,
+  REGISTERED_ENTITY_COLUMNS,
+  SIGNATURE_FAMILIES,
+  THEME_MODES,
+  type AiSettings,
+  type ConnectorSettings,
+  type EmailSettings,
+  type AppearanceSettings,
+  type BackupRecoveryPolicySettings,
+  type CatalogSettings,
+  type DataManagementSettings,
+  type DocumentSettings,
+  type Locale,
+  type NumberingScheme,
+  type OrganizationSettings,
+  type PlatformEmittedLogLevel,
+  type PlatformLogEntry,
+  type PlatformLogsQueryParams,
+  type PlatformSettings,
+  type PlatformServiceId,
+  type RegisteredEntityColumn,
+  type RegistryAutoUpdateSettings,
+  type RetainedExportCleanupSettings,
+  type Settings,
+  type SignatureFamily,
+  type SigningProviderMetadata,
+  type SigningSettings,
+  type ThemeMode,
+  type TsaProviderSettings,
+  type TslSourceSettings,
+  type UiSettings,
+  type WorkflowReminderSettings,
+  type WorkflowReminderSourceSettings,
+  type WorkflowSettings,
+} from '../../api/types';
+import { UI_VERSION, displayVersion } from '../../api/versionCheck';
+import { useT } from '../../i18n';
+import type { MessageKey } from '../../i18n';
+import { grainStore } from '../../theme/grainStore';
+import { colorStore } from '../../theme/colorStore';
+import { applyAppearance, applyLocale, COLOR_OVERRIDE_FIELDS } from '../../theme/appearance';
+import type { ColorOverrideField } from '../../theme/appearance';
+import { LivrosIntegridadeSection } from '../recovery/LivrosIntegridadeSection';
+import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
+import { FuncoesSection } from '../rbac/FuncoesSection';
+import { DelegacoesSection } from '../rbac/DelegacoesSection';
+import { ApiKeysSection } from './ApiKeysSection';
+import { ConnectorEgressSection, parseAllowedHosts } from './ConnectorEgressSection';
+import { EmailSection } from './EmailSection';
+import { ProviderCredentialsSection } from './ProviderCredentialsSection';
+import { PairingPanel } from '../pairing/PairingPanel';
+import { PlatformOperationsSection } from './PlatformOperationsSection';
+import { PrivacyComplianceSection } from './PrivacyComplianceSection';
+import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
+import { useCan } from '../session/permissions';
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Card,
+  ErrorNote,
+  Field,
+  FieldHelp,
+  Icon,
+  IconButton,
+  InlineWarning,
+  Input,
+  Loading,
+  PageHeader,
+  Select,
+  SkeletonDeflist,
+  SubNav,
+  Table,
+  Toggle,
+  TooltipText,
+} from '../../ui';
+import { EditUserPanel } from '../users/EditUserPage';
+import { NewUserPanel } from '../users/NewUserPage';
+import { UsersList } from '../users/UserListPage';
+
+/** Trim to a value or `null` (the contract's "unset" for nullable strings). */
+const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
+
+/**
+ * Seed colours for the picker swatches when a field is UNSET — representative theme hexes
+ * so the picker opens on a sensible value. They do not override anything until the
+ * operator commits a choice (which is what actually writes {@link colorStore}).
+ */
+const COLOR_SEEDS: Record<ColorOverrideField, string> = {
+  primary: '#b8963e',
+  secondary: '#6b4d12',
+  background: '#f7f3ea',
+  surface: '#fffdf8',
+};
+
+function numberValue(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function boundedNumberValue(value: string, fallback: number, min: number, max: number): number {
+  const parsed = numberValue(value, fallback);
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function integerValue(value: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.trunc(value) : fallback;
+}
+
+const TRUST_SOURCE_ID_PREFIX = 'trust-source';
+const TSA_PROVIDER_ID_PREFIX = 'tsa-provider';
+const RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS = 3650;
+const RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST = 100;
+const BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS = 3650;
+const BACKUP_RECOVERY_MAX_TARGET_MINUTES = 60 * 24 * 365;
+
+function normalizeConfigId(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^[^a-z0-9]+/, '')
+    .replace(/-+/g, '-')
+    .slice(0, 64);
+  return normalized || 'source';
+}
+
+function nextConfigId(prefix: string, rows: readonly { id: string }[]): string {
+  const existing = new Set(rows.map((row) => row.id));
+  let index = rows.length + 1;
+  let candidate = normalizeConfigId(`${prefix}-${index}`);
+  while (existing.has(candidate)) {
+    index += 1;
+    candidate = normalizeConfigId(`${prefix}-${index}`);
+  }
+  return candidate;
+}
+
+function makeTslSource(rows: readonly TslSourceSettings[], name: string): TslSourceSettings {
+  return {
+    id: nextConfigId(TRUST_SOURCE_ID_PREFIX, rows),
+    name,
+    enabled: false,
+    url: DEFAULT_SETTINGS.signing.tsl_url,
+    path: null,
+    country: null,
+    scheme: 'eidas',
+    digest: null,
+    timeout_seconds: 30,
+    max_bytes: 26214400,
+    refresh: { enabled: false, cadence: { kind: 'manual' } },
+  };
+}
+
+function makeTsaProvider(
+  rows: readonly TsaProviderSettings[],
+  name: string,
+  enabledDefault: boolean,
+): TsaProviderSettings {
+  return {
+    id: nextConfigId(TSA_PROVIDER_ID_PREFIX, rows),
+    name,
+    enabled: enabledDefault,
+    url: DEFAULT_SETTINGS.signing.tsa_url,
+    path: null,
+    default: enabledDefault,
+    policy: null,
+    digest: 'sha256',
+    timeout_seconds: 30,
+    max_bytes: 1048576,
+  };
+}
+
+function normalizeRefreshCadence(cadence: TslSourceSettings['refresh']['cadence']) {
+  if (cadence.kind === 'daily') {
+    return { kind: 'daily' as const, hour_utc: Math.min(Math.max(cadence.hour_utc ?? 0, 0), 23) };
+  }
+  if (cadence.kind === 'interval_hours') {
+    return {
+      kind: 'interval_hours' as const,
+      hours: Math.min(Math.max(cadence.hours ?? 24, 1), 720),
+    };
+  }
+  return { kind: 'manual' as const };
+}
+
+function normalizeTslSource(source: TslSourceSettings): TslSourceSettings {
+  return {
+    ...source,
+    id: normalizeConfigId(source.id),
+    name: source.name.trim() || source.id,
+    url: orNull(source.url ?? ''),
+    path: orNull(source.path ?? ''),
+    country: orNull(source.country ?? ''),
+    scheme: orNull(source.scheme ?? ''),
+    digest: orNull(source.digest ?? ''),
+    timeout_seconds: Math.min(Math.max(source.timeout_seconds, 1), 300),
+    max_bytes: Math.min(Math.max(source.max_bytes, 1024), 104857600),
+    refresh: {
+      enabled: source.refresh.enabled,
+      cadence: normalizeRefreshCadence(source.refresh.cadence),
+    },
+  };
+}
+
+function normalizeTsaProvider(provider: TsaProviderSettings): TsaProviderSettings {
+  return {
+    ...provider,
+    id: normalizeConfigId(provider.id),
+    name: provider.name.trim() || provider.id,
+    url: orNull(provider.url ?? ''),
+    path: orNull(provider.path ?? ''),
+    policy: orNull(provider.policy ?? ''),
+    digest: provider.digest.trim() || 'sha256',
+    timeout_seconds: Math.min(Math.max(provider.timeout_seconds, 1), 300),
+    max_bytes: Math.min(Math.max(provider.max_bytes, 1024), 1048576),
+  };
+}
+
+function ensureOneEnabledDefaultProvider(
+  providers: readonly TsaProviderSettings[],
+): TsaProviderSettings[] {
+  const enabledProviders = providers.filter((provider) => provider.enabled);
+  if (enabledProviders.length === 0) {
+    return providers.map((provider) => ({ ...provider, default: false }));
+  }
+  const defaultId =
+    enabledProviders.find((provider) => provider.default)?.id ?? enabledProviders[0].id;
+  return providers.map((provider) => ({
+    ...provider,
+    default: provider.enabled && provider.id === defaultId,
+  }));
+}
+
+type SettingsWithMaybeAi = Omit<
+  Settings,
+  | 'ai'
+  | 'signing'
+  | 'registry_auto_update'
+  | 'ui'
+  | 'platform'
+  | 'workflow'
+  | 'data_management'
+  | 'connectors'
+  | 'email'
+> & {
+  ai?: Partial<AiSettings> | null;
+  // Absent on a server predating t23; defaulted to "mail off, STARTTLS" rather than assumed.
+  email?: Partial<EmailSettings> | null;
+  // Absent whenever no runtime allowlist is set and no deployment ceiling is stamped.
+  connectors?: Partial<ConnectorSettings> | null;
+  ui?: Partial<UiSettings> | null;
+  platform?: Partial<PlatformSettings> | null;
+  registry_auto_update?: Partial<RegistryAutoUpdateSettings> | null;
+  workflow?:
+    | (Partial<Omit<WorkflowSettings, 'reminders'>> & {
+        reminders?:
+          | (Partial<Omit<WorkflowReminderSettings, 'sources'>> & {
+              sources?: Partial<WorkflowReminderSourceSettings> | null;
+            })
+          | null;
+      })
+    | null;
+  data_management?:
+    | (Partial<Omit<DataManagementSettings, 'retained_export_cleanup' | 'backup_recovery'>> & {
+        retained_export_cleanup?: Partial<RetainedExportCleanupSettings> | null;
+        backup_recovery?: Partial<BackupRecoveryPolicySettings> | null;
+      })
+    | null;
+  signing: Omit<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'> &
+    Partial<Pick<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'>>;
+};
+
+function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
+  const platform: Partial<PlatformSettings> = settings.platform ?? {};
+  const platformLogging: Partial<PlatformSettings['logging']> = platform.logging ?? {};
+  const workflow = settings.workflow ?? {};
+  const workflowReminders = workflow.reminders ?? {};
+  const workflowReminderSources = workflowReminders.sources ?? {};
+  const dataManagement = settings.data_management ?? {};
+  const retainedExportCleanup = dataManagement.retained_export_cleanup ?? {};
+  const backupRecovery = dataManagement.backup_recovery ?? {};
+  return {
+    ...settings,
+    signing: {
+      ...DEFAULT_SETTINGS.signing,
+      ...settings.signing,
+      cmd: { ...DEFAULT_SETTINGS.signing.cmd, ...(settings.signing.cmd ?? {}) },
+      tsl_sources: settings.signing.tsl_sources ?? DEFAULT_SETTINGS.signing.tsl_sources,
+      tsa_providers: settings.signing.tsa_providers ?? DEFAULT_SETTINGS.signing.tsa_providers,
+      providers: settings.signing.providers ?? DEFAULT_SETTINGS.signing.providers,
+    },
+    ai: { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) },
+    ui: {
+      ...DEFAULT_SETTINGS.ui,
+      ...(settings.ui ?? {}),
+      registered_entity_columns:
+        settings.ui?.registered_entity_columns ?? DEFAULT_SETTINGS.ui.registered_entity_columns,
+    },
+    platform: {
+      ...DEFAULT_SETTINGS.platform,
+      ...platform,
+      logging: {
+        ...DEFAULT_SETTINGS.platform.logging,
+        ...platformLogging,
+        service_overrides:
+          platformLogging.service_overrides ?? DEFAULT_SETTINGS.platform.logging.service_overrides,
+      },
+      api_server: {
+        ...DEFAULT_SETTINGS.platform.api_server,
+        ...(platform.api_server ?? {}),
+      },
+      mcp_stdio_server: {
+        ...DEFAULT_SETTINGS.platform.mcp_stdio_server,
+        ...(platform.mcp_stdio_server ?? {}),
+      },
+      audit: platform.audit ?? DEFAULT_SETTINGS.platform.audit,
+    },
+    registry_auto_update: {
+      ...DEFAULT_SETTINGS.registry_auto_update,
+      ...(settings.registry_auto_update ?? {}),
+      cadence:
+        settings.registry_auto_update?.cadence ?? DEFAULT_SETTINGS.registry_auto_update.cadence,
+      entity_defaults: {
+        ...DEFAULT_SETTINGS.registry_auto_update.entity_defaults,
+        ...(settings.registry_auto_update?.entity_defaults ?? {}),
+        enabled_profiles:
+          settings.registry_auto_update?.entity_defaults?.enabled_profiles ??
+          DEFAULT_SETTINGS.registry_auto_update.entity_defaults.enabled_profiles,
+      },
+    },
+    workflow: {
+      ...DEFAULT_SETTINGS.workflow,
+      ...workflow,
+      reminders: {
+        ...DEFAULT_SETTINGS.workflow.reminders,
+        ...workflowReminders,
+        sources: {
+          ...DEFAULT_SETTINGS.workflow.reminders.sources,
+          ...workflowReminderSources,
+        },
+      },
+    },
+    data_management: {
+      ...DEFAULT_SETTINGS.data_management,
+      ...dataManagement,
+      retained_export_cleanup: {
+        ...DEFAULT_SETTINGS.data_management.retained_export_cleanup,
+        ...retainedExportCleanup,
+      },
+      backup_recovery: {
+        ...DEFAULT_SETTINGS.data_management.backup_recovery,
+        ...backupRecovery,
+      },
+    },
+    connectors: {
+      ...DEFAULT_SETTINGS.connectors,
+      ...(settings.connectors ?? {}),
+      allowed_hosts:
+        settings.connectors?.allowed_hosts ?? DEFAULT_SETTINGS.connectors.allowed_hosts,
+    },
+    email: { ...DEFAULT_SETTINGS.email, ...(settings.email ?? {}) },
+  };
+}
+
+/**
+ * Normalise the whole working copy to the wire shape (empty → null for nullables; a
+ * blank actor falls back to the server default so the audit event stays attributed).
+ * Pure, so both the debounced autosave and an explicit "Guardar agora" persist an
+ * identical document, and change-detection compares the *normalised* form (so typing a
+ * trailing space that normalises away never triggers a save).
+ */
+function toWireBody(draft: Settings): Settings {
+  return {
+    ...draft,
+    organization: {
+      name: orNull(draft.organization.name ?? ''),
+      // The audit actor is attributed from the session (topbar picker), not entered here;
+      // the stored default is passed through, falling back to the system actor.
+      default_actor: draft.organization.default_actor.trim() || 'api',
+    },
+    catalog: {
+      // Pass through the strict-chain fields untouched (the CAE-source editor is t23-e3);
+      // only the legacy single URL is edited here.
+      ...draft.catalog,
+      cae_update_url: orNull(draft.catalog.cae_update_url ?? ''),
+    },
+    signing: {
+      ...draft.signing,
+      tsa_url: orNull(draft.signing.tsa_url ?? ''),
+      tsl_url: orNull(draft.signing.tsl_url ?? ''),
+      tsl_sources: draft.signing.tsl_sources.map(normalizeTslSource),
+      tsa_providers: ensureOneEnabledDefaultProvider(
+        draft.signing.tsa_providers.map(normalizeTsaProvider),
+      ),
+    },
+    ai: {
+      enabled: draft.ai.enabled === true,
+    },
+    email: {
+      ...draft.email,
+      host: orNull(draft.email.host ?? ''),
+      username: orNull(draft.email.username ?? ''),
+      from_address: orNull(draft.email.from_address ?? '')?.toLowerCase() ?? null,
+      from_name: orNull(draft.email.from_name ?? ''),
+      helo_name: orNull(draft.email.helo_name ?? ''),
+      port: boundedNumberValue(String(draft.email.port), DEFAULT_SETTINGS.email.port, 1, 65535),
+      // The cleartext acknowledgement is only meaningful while encryption is actually off; clearing
+      // it on the way out means re-enabling TLS and disabling it again asks the operator afresh.
+      allow_insecure: draft.email.encryption === 'none' && draft.email.allow_insecure === true,
+    },
+    registry_auto_update: {
+      ...draft.registry_auto_update,
+      entity_defaults: {
+        ...draft.registry_auto_update.entity_defaults,
+        enabled_profiles: draft.registry_auto_update.entity_defaults.enabled_profiles
+          .map((profile) => profile.trim())
+          .filter(Boolean),
+      },
+    },
+    workflow: {
+      ...draft.workflow,
+      reminders: {
+        ...draft.workflow.reminders,
+        enabled: draft.workflow.reminders.enabled === true,
+        dashboard_limit: integerValue(
+          draft.workflow.reminders.dashboard_limit,
+          DEFAULT_SETTINGS.workflow.reminders.dashboard_limit,
+        ),
+        due_soon_days: integerValue(
+          draft.workflow.reminders.due_soon_days,
+          DEFAULT_SETTINGS.workflow.reminders.due_soon_days,
+        ),
+        attendance_lookahead_days: integerValue(
+          draft.workflow.reminders.attendance_lookahead_days,
+          DEFAULT_SETTINGS.workflow.reminders.attendance_lookahead_days,
+        ),
+        sources: {
+          profile_calendar: draft.workflow.reminders.sources.profile_calendar === true,
+          act_follow_ups: draft.workflow.reminders.sources.act_follow_ups === true,
+          attendance_hygiene: draft.workflow.reminders.sources.attendance_hygiene === true,
+          privacy_control_reviews:
+            draft.workflow.reminders.sources.privacy_control_reviews === true,
+        },
+      },
+    },
+    data_management: {
+      ...draft.data_management,
+      retained_export_cleanup: {
+        minimum_age_days: boundedNumberValue(
+          String(draft.data_management.retained_export_cleanup.minimum_age_days),
+          DEFAULT_SETTINGS.data_management.retained_export_cleanup.minimum_age_days,
+          0,
+          RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS,
+        ),
+        keep_latest: boundedNumberValue(
+          String(draft.data_management.retained_export_cleanup.keep_latest),
+          DEFAULT_SETTINGS.data_management.retained_export_cleanup.keep_latest,
+          0,
+          RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
+        ),
+      },
+      backup_recovery: {
+        max_drill_age_days: boundedNumberValue(
+          String(draft.data_management.backup_recovery.max_drill_age_days),
+          DEFAULT_SETTINGS.data_management.backup_recovery.max_drill_age_days,
+          1,
+          BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
+        ),
+        target_rpo_minutes: boundedNumberValue(
+          String(draft.data_management.backup_recovery.target_rpo_minutes),
+          DEFAULT_SETTINGS.data_management.backup_recovery.target_rpo_minutes,
+          1,
+          BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+        ),
+        target_rto_minutes: boundedNumberValue(
+          String(draft.data_management.backup_recovery.target_rto_minutes),
+          DEFAULT_SETTINGS.data_management.backup_recovery.target_rto_minutes,
+          1,
+          BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+        ),
+      },
+    },
+    connectors: {
+      // The stamped ceiling is server-owned and read-only; never echo it back on save.
+      allowed_hosts: parseAllowedHosts(draft.connectors.allowed_hosts.join('\n')),
+    },
+  };
+}
+
+/** The sub-tabs, in order. Each label reuses its section card title (identical text).
+ *  The array is appended cleanly by peers (t60 Utilizadores, t62 Administração). */
+type SettingsSection =
+  | 'aparencia'
+  | 'documentos'
+  | 'assinaturas'
+  | 'email'
+  | 'gestao'
+  | 'operacoes'
+  | 'privacidade'
+  | 'utilizadores'
+  | 'chaves-api'
+  | 'fornecedores-assinatura'
+  | 'dispositivos'
+  | 'funcoes'
+  | 'delegacoes'
+  | 'integridade'
+  | 'dados'
+  | 'sobre';
+
+type SettingsSectionNav =
+  | { id: SettingsSection; label: MessageKey; icon: ReactNode; literal?: never }
+  | { id: SettingsSection; label?: never; icon: ReactNode; literal: string };
+
+const SETTINGS_SECTIONS: SettingsSectionNav[] = [
+  { id: 'aparencia', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
+  { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
+  { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
+  { id: 'email', label: 'settings.email.cardTitle', icon: <Icon.Tray /> },
+  { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
+  { id: 'operacoes', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
+  { id: 'privacidade', label: 'settings.privacy.tab', icon: <Icon.Seal /> },
+  { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
+  { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
+  {
+    id: 'fornecedores-assinatura',
+    label: 'settings.providerCredentials.cardTitle',
+    icon: <Icon.PenNib />,
+  },
+  { id: 'dispositivos', label: 'pairing.tab', icon: <Icon.IdCard /> },
+  { id: 'funcoes', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
+  { id: 'delegacoes', label: 'rbac.delegacoes.tab', icon: <Icon.ArrowRight /> },
+  { id: 'integridade', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
+  { id: 'dados', label: 'data.cardTitle', icon: <Icon.Archive /> },
+  { id: 'sobre', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
+];
+
+/** The sub-tabs that manage their OWN data (not the settings working copy), so the
+ *  autosave savebar is not shown for them. The RBAC tabs (Funções, Delegações) self-gate
+ *  their own `role.manage`/`delegation.*` affordances, so they are standalone too. */
+const STANDALONE_SECTIONS: readonly SettingsSection[] = [
+  'utilizadores',
+  'privacidade',
+  'funcoes',
+  'delegacoes',
+  'integridade',
+  'dados',
+  'chaves-api',
+  'fornecedores-assinatura',
+  'dispositivos',
+];
+
+/**
+ * Whether autosave is enabled. Autosave is always-on today (t49) — there is no
+ * server-side disable toggle yet (a deferred t60 slice needing an `autosave_enabled`
+ * settings field). The persistent "Guardar agora" flush is therefore hidden: it would
+ * only ever return when a future toggle turns autosave OFF (`!autosaveEnabled`). A failed
+ * save still exposes a retry affordance regardless (see the savebar), so nothing is stuck.
+ * When the field lands, replace this constant with `draft.<…>.autosave_enabled ?? true`.
+ */
+const AUTOSAVE_ENABLED = true;
+
+const ENTITY_COLUMN_LABEL_KEYS: Record<RegisteredEntityColumn, MessageKey> = {
+  Name: 'entities.columns.name',
+  Nipc: 'entities.columns.nipc',
+  Seat: 'entities.columns.seat',
+  Type: 'entities.columns.type',
+  Matricula: 'entities.columns.matricula',
+  Constitution: 'entities.columns.constitution',
+  Capital: 'entities.columns.capital',
+  Cae: 'entities.columns.cae',
+  Registry: 'entities.columns.registry',
+  LastRegistryChange: 'entities.columns.lastRegistryChange',
+  FiscalYearEnd: 'entities.columns.fiscalYearEnd',
+  LastBook: 'entities.columns.lastBook',
+  LastActivity: 'entities.columns.lastActivity',
+  Actions: 'entities.columns.actions',
+};
+
+const isSettingsSection = (v: string | null): v is SettingsSection =>
+  SETTINGS_SECTIONS.some((s) => s.id === v);
+
+/** Retired sub-tabs, kept resolvable so their deep links still land where the content went.
+ *  `identidade` (the organisation name printed ON generated documents) merged into
+ *  Documentos as its own card — same subject matter, one fewer sub-tab. The old link
+ *  therefore opens Documentos and scrolls to the moved card rather than 404ing. */
+const RETIRED_SECTIONS: Record<string, SettingsSection> = { identidade: 'documentos' };
+
+/** Anchor for the moved Identidade card, targeted by the retired `?sec=identidade` link. */
+const IDENTITY_ANCHOR_ID = 'settings-identidade';
+
+function providerModeLabel(provider: SigningProviderMetadata, t: ReturnType<typeof useT>): string {
+  switch (provider.mode) {
+    case 'CMD':
+      return t('settings.signing.providerMode.cmd');
+    case 'CC':
+      return t('settings.signing.providerMode.cc');
+    case 'CSC_QTSP':
+      return t('settings.signing.providerMode.cscQtsp');
+    case 'LOCAL_PKCS12':
+      return t('settings.signing.providerMode.localPkcs12');
+  }
+}
+
+function providerStatus(
+  provider: SigningProviderMetadata,
+  t: ReturnType<typeof useT>,
+): {
+  tone: 'ok' | 'error' | 'accent' | 'warn';
+  label: string;
+} {
+  if (provider.production_blocked) {
+    return { tone: 'error', label: t('settings.signing.providerStatus.productionBlocked') };
+  }
+  if (provider.configured)
+    return { tone: 'ok', label: t('settings.signing.providerStatus.configured') };
+  if (provider.local_only)
+    return { tone: 'accent', label: t('settings.signing.providerStatus.localOnly') };
+  return { tone: 'warn', label: t('settings.signing.providerStatus.unconfigured') };
+}
+
+const PLATFORM_LOG_TAIL_OPTIONS = [25, 50, 100, 200] as const;
+
+function platformLogServiceLabel(serviceId: PlatformServiceId, t: ReturnType<typeof useT>) {
+  return t(`settings.platform.service.${serviceId}` as MessageKey);
+}
+
+function platformLogLevelTone(
+  level: PlatformEmittedLogLevel,
+): 'neutral' | 'accent' | 'warn' | 'error' | 'ok' {
+  if (level === 'error') return 'error';
+  if (level === 'warn') return 'warn';
+  if (level === 'info') return 'accent';
+  return 'neutral';
+}
+
+function platformLogContextText(context: PlatformLogEntry['context']): string {
+  if (context === undefined) return '';
+  try {
+    return JSON.stringify(context, null, 2) ?? String(context);
+  } catch {
+    return String(context);
+  }
+}
+
+function platformLogSequenceText(seq: number | null): string {
+  return seq === null ? 'n/a' : String(seq);
+}
+
+function PlatformLogTailPanel() {
+  const t = useT();
+  const [serviceId, setServiceId] = useState<PlatformServiceId | ''>('');
+  const [level, setLevel] = useState<PlatformEmittedLogLevel | ''>('');
+  const [tail, setTail] = useState<number>(100);
+  const params = useMemo<PlatformLogsQueryParams>(
+    () => ({
+      service_id: serviceId || undefined,
+      level: level || undefined,
+      tail,
+    }),
+    [level, serviceId, tail],
+  );
+  const logs = usePlatformLogs(params);
+  const serviceOptions = useMemo(
+    () => [
+      { value: '', label: t('settings.platform.logs.filter.service.all') },
+      ...PLATFORM_SERVICE_IDS.map((id) => ({
+        value: id,
+        label: platformLogServiceLabel(id, t),
+      })),
+    ],
+    [t],
+  );
+  const levelOptions = useMemo(
+    () => [
+      { value: '', label: t('settings.platform.logs.filter.level.all') },
+      ...PLATFORM_EMITTED_LOG_LEVELS.map((item) => ({
+        value: item,
+        label: t(`settings.platform.logLevel.${item}` as MessageKey),
+      })),
+    ],
+    [t],
+  );
+  const tailOptions = useMemo(
+    () => PLATFORM_LOG_TAIL_OPTIONS.map((item) => ({ value: String(item), label: String(item) })),
+    [],
+  );
+  const orderLabel =
+    logs.data?.order === 'chronological'
+      ? t('settings.platform.logs.order.chronological')
+      : (logs.data?.order ?? t('settings.platform.logs.order.unknown'));
+
+  return (
+    <Card
+      title={t('settings.platform.logs.cardTitle')}
+      actions={
+        <IconButton
+          type="button"
+          icon={<Icon.Refresh />}
+          label={
+            logs.isFetching
+              ? t('settings.platform.logs.refreshing')
+              : t('settings.platform.logs.refresh')
+          }
+          disabled={logs.isFetching}
+          onClick={() => void logs.refetch()}
+        />
+      }
+    >
+      <div className="form">
+        <p className="field__hint">{t('settings.platform.logs.hint')}</p>
+        <div className="platform-log-controls">
+          <Field label={t('settings.platform.logs.filter.service')} htmlFor="platform-log-service">
+            <Select
+              id="platform-log-service"
+              value={serviceId}
+              options={serviceOptions}
+              onChange={(e) => setServiceId(e.target.value as PlatformServiceId | '')}
+            />
+          </Field>
+          <Field label={t('settings.platform.logs.filter.level')} htmlFor="platform-log-level">
+            <Select
+              id="platform-log-level"
+              value={level}
+              options={levelOptions}
+              onChange={(e) => setLevel(e.target.value as PlatformEmittedLogLevel | '')}
+            />
+          </Field>
+          <Field label={t('settings.platform.logs.filter.tail')} htmlFor="platform-log-tail">
+            <Select
+              id="platform-log-tail"
+              value={String(tail)}
+              options={tailOptions}
+              onChange={(e) => setTail(Number(e.target.value))}
+            />
+          </Field>
+        </div>
+
+        {logs.isLoading ? <SkeletonDeflist rows={4} /> : null}
+        {logs.error ? <ErrorNote error={logs.error} /> : null}
+
+        {logs.data ? (
+          <div className="stack--tight">
+            <InlineWarning tone="info" title={t('settings.platform.logs.limitations.title')}>
+              <ul className="platform-log-limitations">
+                {logs.data.limitations.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </InlineWarning>
+            <dl
+              className="platform-log-retention"
+              aria-label={t('settings.platform.logs.retention.title')}
+            >
+              <div>
+                <dt>{t('settings.platform.logs.retention.limit')}</dt>
+                <dd>{logs.data.retention.retention_limit}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.retained')}</dt>
+                <dd>{logs.data.retention.retained_count}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.oldest')}</dt>
+                <dd>{platformLogSequenceText(logs.data.retention.oldest_seq)}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.newest')}</dt>
+                <dd>{platformLogSequenceText(logs.data.retention.newest_seq)}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.droppedBefore')}</dt>
+                <dd>{platformLogSequenceText(logs.data.retention.dropped_before_seq)}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.basis')}</dt>
+                <dd>
+                  {logs.data.retention.durable
+                    ? t('settings.platform.logs.retention.basis.durable')
+                    : t('settings.platform.logs.retention.basis.memory')}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.source')}</dt>
+                <dd className="mono">{logs.data.retention.source}</dd>
+              </div>
+            </dl>
+            <p className="field__hint">
+              {t('settings.platform.logs.summary', {
+                count: logs.data.logs.length,
+                tail: logs.data.tail,
+                order: orderLabel,
+              })}
+            </p>
+            {logs.data.logs.length === 0 ? (
+              <InlineWarning tone="info" title={t('settings.platform.logs.empty.title')}>
+                {t('settings.platform.logs.empty.body')}
+              </InlineWarning>
+            ) : (
+              <div className="platform-log-table-wrap">
+                <table className="table platform-log-table">
+                  <thead>
+                    <tr>
+                      <th>{t('settings.platform.logs.column.seq')}</th>
+                      <th>{t('settings.platform.logs.column.time')}</th>
+                      <th>{t('settings.platform.logs.column.service')}</th>
+                      <th>{t('settings.platform.logs.column.level')}</th>
+                      <th>{t('settings.platform.logs.column.target')}</th>
+                      <th>{t('settings.platform.logs.column.message')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.data.logs.map((entry) => {
+                      const context = platformLogContextText(entry.context);
+                      return (
+                        <tr key={entry.id}>
+                          <td className="mono" data-label={t('settings.platform.logs.column.seq')}>
+                            {entry.seq}
+                          </td>
+                          <td className="mono" data-label={t('settings.platform.logs.column.time')}>
+                            <time dateTime={entry.timestamp}>{entry.timestamp}</time>
+                          </td>
+                          <td data-label={t('settings.platform.logs.column.service')}>
+                            {platformLogServiceLabel(entry.service_id, t)}
+                          </td>
+                          <td data-label={t('settings.platform.logs.column.level')}>
+                            <Badge tone={platformLogLevelTone(entry.level)}>
+                              {t(`settings.platform.logLevel.${entry.level}` as MessageKey)}
+                            </Badge>
+                          </td>
+                          <td
+                            className="mono"
+                            data-label={t('settings.platform.logs.column.target')}
+                          >
+                            {entry.target}
+                          </td>
+                          <td
+                            className="platform-log-message-cell"
+                            data-label={t('settings.platform.logs.column.message')}
+                          >
+                            <p>{entry.message}</p>
+                            {context ? (
+                              <details className="platform-log-context">
+                                <summary>{t('settings.platform.logs.context.show')}</summary>
+                                <pre>{context}</pre>
+                              </details>
+                            ) : (
+                              <p className="field__hint">
+                                {t('settings.platform.logs.context.empty')}
+                              </p>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+export function SettingsPage() {
+  const t = useT();
+  const toast = useToast();
+  const [params, setParams] = useSearchParams();
+  // Aparência is the default and carries no `sec` param (so `/configuracoes` lands on it).
+  const secParam = params.get('sec');
+  const retired = secParam === null ? undefined : RETIRED_SECTIONS[secParam];
+  const section: SettingsSection =
+    retired ?? (isSettingsSection(secParam) ? secParam : 'aparencia');
+  const selectedUser = section === 'utilizadores' ? params.get('user') : null;
+  const selectSection = (next: SettingsSection) =>
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (next === 'aparencia') p.delete('sec');
+        else p.set('sec', next);
+        if (next !== 'utilizadores') p.delete('user');
+        return p;
+      },
+      { replace: true },
+    );
+  const selectUser = (next: string | null) =>
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.set('sec', 'utilizadores');
+        if (next) p.set('user', next);
+        else p.delete('user');
+        return p;
+      },
+      { replace: true },
+    );
+  const settings = useSettings();
+  const health = useHealth();
+  const ledger = useLedgerVerify();
+  const save = useUpdateSettings();
+  // Writing the settings document requires `settings.manage` (PUT /v1/settings, t64-E3).
+  // Without it the whole-document autosave is suspended and the working-copy sections are
+  // disabled-with-explanation; the standalone sub-tabs (Utilizadores/Integridade/Dados)
+  // gate their OWN actions, and "Sobre" is read-only info — so only the editable sections
+  // lock. Reads (`settings.read`) still render everything.
+  const can = useCan();
+  const canManageSettings = can('settings.manage');
+  // Lock only the editable working-copy sections (not the self-gating standalone sub-tabs,
+  // nor the read-only "Sobre").
+  const editingLocked =
+    !canManageSettings && !STANDALONE_SECTIONS.includes(section) && section !== 'sobre';
+
+  // The committed (persisted) document, tracked in a ref so the unmount cleanup can
+  // restore it if the operator navigated away mid-preview without saving.
+  const committed = useMemo(
+    () => withSettingsDefaults(settings.data ?? DEFAULT_SETTINGS),
+    [settings.data],
+  );
+  const committedRef = useRef(committed);
+  committedRef.current = committed;
+
+  // Full working copy, seeded once when the document first loads.
+  const [draft, setDraft] = useState<Settings | null>(null);
+  useEffect(() => {
+    if (settings.data && !draft) setDraft(withSettingsDefaults(settings.data));
+  }, [settings.data, draft]);
+
+  // Live preview: apply the draft appearance/locale as it is edited so the operator
+  // sees the theme switch, grain fade and language flip immediately.
+  useEffect(() => {
+    if (!draft) return;
+    applyAppearance(draft.appearance);
+    applyLocale(draft.documents.locale);
+    // Keyed on the appearance/locale slices only; `draft` as a whole would re-apply
+    // on unrelated edits (org name, etc.).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.appearance, draft?.documents.locale]);
+
+  // On leaving the page, drop any unsaved preview and restore the committed look.
+  useEffect(() => {
+    return () => {
+      applyAppearance(committedRef.current.appearance);
+      applyLocale(committedRef.current.documents.locale);
+    };
+  }, []);
+
+  // Custom colour overrides (client-only, localStorage-backed). Edited directly on the
+  // store so they apply + persist live — the shell's AppearanceEffects subscribes too, so
+  // a picker change repaints the whole app immediately (no draft/save round-trip, exactly
+  // like the leather re-roll). An empty store means the theme defaults are in force.
+  const colors = useSyncExternalStore(colorStore.subscribe, colorStore.get, colorStore.get);
+  const hasColorOverrides = COLOR_OVERRIDE_FIELDS.some((f) => colors[f] !== undefined);
+
+  // The normalised wire document the operator's edits currently amount to. Autosave
+  // debounces every edit across all sub-tabs and PUTs this whole document (the §2.8
+  // contract is a single whole-document PUT); the optimistic `useUpdateSettings` keeps
+  // the shared cache — and thus the global appearance layer — in step. A committed save
+  // raises a normal success toast (no inline "Guardado" — the save bar stays hidden on a
+  // clean form); a failure raises an error toast AND keeps an inline error + retry, and
+  // the fields stay editable so it self-heals on the next edit or a manual retry.
+  const body = useMemo(() => (draft ? toWireBody(draft) : null), [draft]);
+  const autosave = useAutosave<Settings | null>({
+    value: body,
+    enabled: !!draft && canManageSettings,
+    onSave: (b) => (b ? save.mutateAsync(b) : Promise.resolve()),
+    onSuccess: () => toast.success(t('toast.settings.saved')),
+    onError: (e) => toast.error(e),
+  });
+
+  // A retired deep link opens the section that absorbed it; once the section has actually
+  // rendered, take the operator to the card that moved rather than to the top of a section
+  // they did not ask for. (`scrollIntoView` is absent in jsdom, hence the optional call.)
+  useEffect(() => {
+    if (!retired || !draft) return;
+    document.getElementById(IDENTITY_ANCHOR_ID)?.scrollIntoView?.({ block: 'start' });
+  }, [retired, draft]);
+
+  if (settings.isLoading) return <Loading />;
+  if (settings.error) return <ErrorNote error={settings.error} />;
+  if (!draft) return <Loading />;
+
+  const setOrganization = <K extends keyof OrganizationSettings>(
+    key: K,
+    value: OrganizationSettings[K],
+  ) => setDraft((d) => (d ? { ...d, organization: { ...d.organization, [key]: value } } : d));
+  const setDocuments = <K extends keyof DocumentSettings>(key: K, value: DocumentSettings[K]) =>
+    setDraft((d) => (d ? { ...d, documents: { ...d.documents, [key]: value } } : d));
+  const setCatalog = <K extends keyof CatalogSettings>(key: K, value: CatalogSettings[K]) =>
+    setDraft((d) => (d ? { ...d, catalog: { ...d.catalog, [key]: value } } : d));
+  const setSigning = <K extends keyof SigningSettings>(key: K, value: SigningSettings[K]) =>
+    setDraft((d) => (d ? { ...d, signing: { ...d.signing, [key]: value } } : d));
+  const setAppearance = <K extends keyof AppearanceSettings>(
+    key: K,
+    value: AppearanceSettings[K],
+  ) => setDraft((d) => (d ? { ...d, appearance: { ...d.appearance, [key]: value } } : d));
+  const setEmail = <K extends keyof EmailSettings>(key: K, value: EmailSettings[K]) =>
+    setDraft((d) => (d ? { ...d, email: { ...d.email, [key]: value } } : d));
+  const setAi = <K extends keyof AiSettings>(key: K, value: AiSettings[K]) =>
+    setDraft((d) => (d ? { ...d, ai: { ...d.ai, [key]: value } } : d));
+  const setUi = <K extends keyof UiSettings>(key: K, value: UiSettings[K]) =>
+    setDraft((d) => (d ? { ...d, ui: { ...d.ui, [key]: value } } : d));
+  const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
+    setDraft((d) => (d ? { ...d, registry_auto_update } : d));
+  const setConnectors = (connectors: ConnectorSettings) =>
+    setDraft((d) => (d ? { ...d, connectors } : d));
+  const setWorkflowReminder = <K extends keyof WorkflowReminderSettings>(
+    key: K,
+    value: WorkflowReminderSettings[K],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            workflow: {
+              ...d.workflow,
+              reminders: { ...d.workflow.reminders, [key]: value },
+            },
+          }
+        : d,
+    );
+  const setWorkflowReminderSource = <K extends keyof WorkflowReminderSourceSettings>(
+    key: K,
+    value: WorkflowReminderSourceSettings[K],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            workflow: {
+              ...d.workflow,
+              reminders: {
+                ...d.workflow.reminders,
+                sources: { ...d.workflow.reminders.sources, [key]: value },
+              },
+            },
+          }
+        : d,
+    );
+  const setRetainedExportCleanupPolicy = <K extends keyof RetainedExportCleanupSettings>(
+    key: K,
+    value: RetainedExportCleanupSettings[K],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            data_management: {
+              ...d.data_management,
+              retained_export_cleanup: {
+                ...d.data_management.retained_export_cleanup,
+                [key]: value,
+              },
+            },
+          }
+        : d,
+    );
+  const setBackupRecoveryPolicy = <K extends keyof BackupRecoveryPolicySettings>(
+    key: K,
+    value: BackupRecoveryPolicySettings[K],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            data_management: {
+              ...d.data_management,
+              backup_recovery: {
+                ...d.data_management.backup_recovery,
+                [key]: value,
+              },
+            },
+          }
+        : d,
+    );
+  const setPlatform = (platform: PlatformSettings) => setDraft((d) => (d ? { ...d, platform } : d));
+  const setTslSources = (updater: (sources: TslSourceSettings[]) => TslSourceSettings[]) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            signing: {
+              ...d.signing,
+              tsl_sources: updater(d.signing.tsl_sources),
+            },
+          }
+        : d,
+    );
+  const setTsaProviders = (updater: (providers: TsaProviderSettings[]) => TsaProviderSettings[]) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            signing: {
+              ...d.signing,
+              tsa_providers: ensureOneEnabledDefaultProvider(updater(d.signing.tsa_providers)),
+            },
+          }
+        : d,
+    );
+
+  const updateTslSource = (id: string, patch: Partial<TslSourceSettings>) =>
+    setTslSources((sources) =>
+      sources.map((source) => (source.id === id ? { ...source, ...patch } : source)),
+    );
+  const updateTsaProvider = (id: string, patch: Partial<TsaProviderSettings>) =>
+    setTsaProviders((providers) =>
+      providers.map((provider) => (provider.id === id ? { ...provider, ...patch } : provider)),
+    );
+  const addTslSource = () =>
+    setTslSources((sources) => [
+      ...sources,
+      makeTslSource(sources, t('settings.signing.tslSources.newName')),
+    ]);
+  const addTsaProvider = () =>
+    setTsaProviders((providers) => {
+      const enabledDefault = !providers.some((provider) => provider.enabled);
+      return [
+        ...providers,
+        makeTsaProvider(providers, t('settings.signing.tsaProviders.newName'), enabledDefault),
+      ];
+    });
+  const removeTslSource = (id: string) =>
+    setTslSources((sources) => sources.filter((source) => source.id !== id));
+  const removeTsaProvider = (id: string) =>
+    setTsaProviders((providers) => providers.filter((provider) => provider.id !== id));
+  const makeDefaultTsaProvider = (id: string) =>
+    setTsaProviders((providers) =>
+      providers.map((provider) => ({
+        ...provider,
+        enabled: provider.id === id ? true : provider.enabled,
+        default: provider.id === id,
+      })),
+    );
+
+  const toggleEntityColumn = (column: RegisteredEntityColumn, checked: boolean) => {
+    const current = draft.ui.registered_entity_columns;
+    const next = checked
+      ? REGISTERED_ENTITY_COLUMNS.filter(
+          (candidate) => candidate === column || current.includes(candidate),
+        )
+      : current.filter((candidate) => candidate !== column);
+    setUi('registered_entity_columns', next.length > 0 ? next : ['Actions']);
+  };
+
+  const a = draft.appearance;
+  const reminderPolicy = draft.workflow.reminders;
+  const retainedExportCleanupPolicy = draft.data_management.retained_export_cleanup;
+  const backupRecoveryPolicy = draft.data_management.backup_recovery;
+
+  return (
+    <div className="stack">
+      {/* No `crumbs`: Configurações is a top-level tab with no parent, so a breadcrumb
+          would only restate the title (and did so in the singular, "Configuração"). */}
+      <PageHeader title={t('settings.page.title')}>
+        <SubNav
+          items={SETTINGS_SECTIONS.map((s) => ({
+            id: s.id,
+            label: 'literal' in s ? s.literal : t(s.label),
+            icon: s.icon,
+          }))}
+          active={section}
+          onSelect={selectSection}
+          ariaLabel={t('settings.subnav.aria')}
+        />
+      </PageHeader>
+
+      {/* Honest disable-with-explanation for the editable settings when the user lacks
+          `settings.manage`: the working-copy sections are inerted (a disabled fieldset) and
+          this note explains why. Standalone sub-tabs manage their own gating. */}
+      {editingLocked ? (
+        <InlineWarning tone="info" title={t('perm.denied.title')}>
+          {t('perm.denied.body')}
+        </InlineWarning>
+      ) : null}
+
+      {/* One section at a time; the working copy spans all of them and the save bar below
+          is always reachable. The panel replays the route-enter fade on each switch. */}
+      <fieldset className="settings-fieldset" disabled={editingLocked}>
+        <div className="route-transition settings-section" key={section}>
+          {/* Aparência --------------------------------------------------------------- */}
+          {section === 'aparencia' ? (
+            <Card title={t('settings.appearance.cardTitle')}>
+              <div className="form">
+                <Field
+                  label={t('settings.appearance.theme.label')}
+                  htmlFor="set-theme"
+                  hint={t('settings.appearance.theme.hint')}
+                  help={t('settings.appearance.theme.help')}
+                >
+                  <Select
+                    id="set-theme"
+                    value={a.theme}
+                    onChange={(e) => setAppearance('theme', e.target.value as ThemeMode)}
+                    options={optionsFrom(THEME_MODES, themeModeLabels)}
+                  />
+                </Field>
+
+                <Toggle
+                  label={
+                    <>
+                      {t('settings.appearance.leatherBg.label')}{' '}
+                      <FieldHelp text={t('settings.appearance.leatherBg.help')} />
+                    </>
+                  }
+                  checked={a.leather_texture}
+                  onChange={(v) => setAppearance('leather_texture', v)}
+                />
+
+                <Toggle
+                  label={
+                    <>
+                      {t('settings.appearance.leatherButtons.label')}{' '}
+                      <FieldHelp text={t('settings.appearance.leatherButtons.help')} />
+                    </>
+                  }
+                  checked={a.button_texture}
+                  onChange={(v) => setAppearance('button_texture', v)}
+                />
+
+                <Field
+                  label={t('settings.appearance.intensity.label', { value: a.texture_intensity })}
+                  htmlFor="set-intensity"
+                  hint={t('settings.appearance.intensity.hint')}
+                  help={t('settings.appearance.intensity.help')}
+                >
+                  <input
+                    id="set-intensity"
+                    className="control control--range"
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={a.texture_intensity}
+                    disabled={!a.leather_texture}
+                    onChange={(e) => setAppearance('texture_intensity', Number(e.target.value))}
+                  />
+                </Field>
+
+                <div className="form__actions">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    icon={<Icon.Shuffle />}
+                    disabled={!a.leather_texture}
+                    onClick={() => grainStore.reroll()}
+                  >
+                    {t('settings.appearance.reroll')}
+                  </Button>
+                </div>
+
+                {/* Custom colours — operator-set primary/secondary/background/surface, with
+                    a reset to the app's default theme. Applied live via colorStore. */}
+                <div className="color-customizer">
+                  <div className="field__labelrow">
+                    <p className="color-customizer__title">
+                      {t('settings.appearance.colors.title')}
+                    </p>
+                    <FieldHelp text={t('settings.appearance.colors.help')} />
+                  </div>
+                  <p className="field__hint">{t('settings.appearance.colors.hint')}</p>
+
+                  <div className="color-customizer__grid">
+                    {COLOR_OVERRIDE_FIELDS.map((fieldKey) => {
+                      const inputId = `set-color-${fieldKey}`;
+                      const value = colors[fieldKey] ?? COLOR_SEEDS[fieldKey];
+                      const isSet = colors[fieldKey] !== undefined;
+                      return (
+                        <div key={fieldKey} className="color-customizer__field">
+                          <label className="field__label" htmlFor={inputId}>
+                            {t(`settings.appearance.colors.${fieldKey}.label`)}
+                          </label>
+                          <div className="color-customizer__row">
+                            <input
+                              id={inputId}
+                              className="color-customizer__swatch"
+                              type="color"
+                              value={value}
+                              onChange={(e) => colorStore.setField(fieldKey, e.target.value)}
+                            />
+                            {isSet ? (
+                              <IconButton
+                                type="button"
+                                variant="ghost"
+                                icon={<Icon.Refresh />}
+                                label={t('settings.appearance.colors.clearField')}
+                                onClick={() => colorStore.setField(fieldKey, undefined)}
+                              />
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="form__actions">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      icon={<Icon.Refresh />}
+                      disabled={!hasColorOverrides}
+                      onClick={() => colorStore.reset()}
+                    >
+                      {t('settings.appearance.colors.reset')}
+                    </Button>
+                    {!hasColorOverrides ? (
+                      <span className="field__hint color-customizer__status">
+                        {t('settings.appearance.colors.usingDefault')}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
+          {/* Documentos -------------------------------------------------------------- */}
+          {/* Identidade used to be its own sub-tab, but the organisation name it holds is
+              what appears ON generated documents — the same subject matter. It lives here
+              now as its own card (t36's grouping idiom: one card per concern, stacked),
+              kept as a distinct heading rather than interleaved with the document defaults
+              so it stays findable. `?sec=identidade` still resolves here, anchored below. */}
+          {section === 'documentos' ? (
+            <div className="stack">
+              <div id={IDENTITY_ANCHOR_ID}>
+                <Card title={t('settings.identity.cardTitle')}>
+                  <div className="form">
+                    <Field
+                      label={t('settings.identity.orgName.label')}
+                      htmlFor="set-org-name"
+                      hint={t('settings.identity.orgName.hint')}
+                      help={t('settings.identity.orgName.help')}
+                    >
+                      <Input
+                        id="set-org-name"
+                        value={draft.organization.name ?? ''}
+                        placeholder={t('settings.identity.orgName.placeholder')}
+                        onChange={(e) => setOrganization('name', e.target.value)}
+                      />
+                    </Field>
+                    <p className="field__hint">{t('settings.identity.actorNote')}</p>
+                  </div>
+                </Card>
+              </div>
+              <Card title={t('settings.documents.cardTitle')}>
+                <div className="form">
+                  <Field
+                    label={t('settings.documents.locale.label')}
+                    htmlFor="set-locale"
+                    hint={t('settings.documents.locale.hint')}
+                    help={t('settings.documents.locale.help')}
+                  >
+                    <Select
+                      id="set-locale"
+                      value={draft.documents.locale}
+                      onChange={(e) => setDocuments('locale', e.target.value as Locale)}
+                      options={optionsFrom(LOCALES, localeLabels)}
+                    />
+                  </Field>
+                  <Field
+                    label={t('settings.documents.numbering.label')}
+                    htmlFor="set-numbering"
+                    hint={t('settings.documents.numbering.hint')}
+                    help={t('settings.documents.numbering.help')}
+                  >
+                    <Select
+                      id="set-numbering"
+                      value={draft.documents.numbering_scheme_default}
+                      onChange={(e) =>
+                        setDocuments('numbering_scheme_default', e.target.value as NumberingScheme)
+                      }
+                      options={optionsFrom(NUMBERING_SCHEMES, numberingSchemeLabels)}
+                    />
+                  </Field>
+                  <Field
+                    label={t('settings.documents.caeUrl.label')}
+                    htmlFor="set-cae-url"
+                    hint={t('settings.documents.caeUrl.hint')}
+                    help={t('settings.documents.caeUrl.help')}
+                  >
+                    <Input
+                      id="set-cae-url"
+                      type="url"
+                      value={draft.catalog.cae_update_url ?? ''}
+                      placeholder={t('settings.documents.caeUrl.placeholder')}
+                      onChange={(e) => setCatalog('cae_update_url', e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </Card>
+            </div>
+          ) : null}
+
+          {/* Assinaturas ------------------------------------------------------------- */}
+          {/* Four cards by concern, not one column of forty controls (t36). The policy that
+              governs every signature comes FIRST — `require_qualified_for_seal` used to sit ~300
+              lines down, below both provider lists. The two repeated lists are grids: every TSL
+              source and every TSA answers the same questions, so their answers belong in aligned
+              columns where two rows can be compared without scrolling. The read-only inventories
+              (provider modes, CMD) are last and visually separate, because nothing there is
+              editable here. */}
+          {section === 'assinaturas' ? (
+            <div className="stack">
+              <Card title={t('settings.signing.policy.cardTitle')}>
+                <div className="form">
+                  <Field
+                    label={t('settings.signing.family.label')}
+                    htmlFor="set-family"
+                    hint={t('settings.signing.family.hint')}
+                    help={t('settings.signing.family.help')}
+                  >
+                    <Select
+                      id="set-family"
+                      value={draft.signing.preferred_family}
+                      onChange={(e) =>
+                        setSigning('preferred_family', e.target.value as SignatureFamily)
+                      }
+                      options={optionsFrom(SIGNATURE_FAMILIES, signatureFamilyLabels)}
+                    />
+                  </Field>
+                  <Toggle
+                    label={
+                      <>
+                        {t('settings.signing.requireQualified.label')}{' '}
+                        <FieldHelp text={t('settings.signing.requireQualified.help')} />
+                      </>
+                    }
+                    checked={draft.signing.require_qualified_for_seal}
+                    onChange={(v) => setSigning('require_qualified_for_seal', v)}
+                  />
+                  <p className="field__hint">{t('settings.signing.requireQualified.hint')}</p>
+                  <p className="field__hint">{t('settings.signing.note')}</p>
+                </div>
+              </Card>
+
+              <Card title={t('settings.signing.tslSources.title')}>
+                <div className="form">
+                  <p className="field__hint">{t('settings.signing.tslSources.hint')}</p>
+
+                  <Field
+                    label={t('settings.signing.tslUrl.label')}
+                    htmlFor="set-tsl"
+                    hint={t('settings.signing.fallbackHint')}
+                    help={t('settings.signing.tslUrl.help')}
+                  >
+                    <div className="input-reset">
+                      <Input
+                        id="set-tsl"
+                        type="url"
+                        value={draft.signing.tsl_url ?? ''}
+                        placeholder={t('settings.signing.tslUrl.placeholder')}
+                        onChange={(e) => setSigning('tsl_url', e.target.value)}
+                      />
+                      <IconButton
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Refresh />}
+                        label={t('settings.signing.reset')}
+                        disabled={
+                          (draft.signing.tsl_url ?? '') === (DEFAULT_SETTINGS.signing.tsl_url ?? '')
+                        }
+                        onClick={() =>
+                          setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '')
+                        }
+                      />
+                    </div>
+                  </Field>
+
+                  <div className="section-head">
+                    <p className="field__hint">{t('settings.signing.source.urlOrPath')}</p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.Plus />}
+                      onClick={addTslSource}
+                    >
+                      {t('settings.signing.tslSources.add')}
+                    </Button>
+                  </div>
+
+                  {draft.signing.tsl_sources.length === 0 ? (
+                    <InlineWarning tone="info" title={t('settings.signing.tslSources.empty.title')}>
+                      {t('settings.signing.tslSources.empty.body')}
+                    </InlineWarning>
+                  ) : (
+                    <Table
+                      caption={t('settings.signing.tslSources.caption')}
+                      head={
+                        <tr>
+                          <th>{t('settings.signing.source.name')}</th>
+                          <th>{t('settings.signing.table.status')}</th>
+                          <th>{t('settings.signing.source.url')}</th>
+                          <th>{t('settings.signing.source.path')}</th>
+                          <th>{t('settings.signing.source.country')}</th>
+                          <th>{t('settings.signing.source.scheme')}</th>
+                          <th>{t('settings.signing.table.actions')}</th>
+                        </tr>
+                      }
+                    >
+                      {draft.signing.tsl_sources.map((source) => {
+                        const rowTitle = source.name.trim() || source.id;
+                        return (
+                          <tr key={source.id} role="group" aria-label={rowTitle}>
+                            <td data-label={t('settings.signing.source.name')}>
+                              <Input
+                                aria-label={t('settings.signing.source.name')}
+                                value={source.name}
+                                onChange={(e) =>
+                                  updateTslSource(source.id, { name: e.target.value })
+                                }
+                              />
+                              <TooltipText label={source.id} as="code" className="field__hint mono">
+                                {source.id}
+                              </TooltipText>
+                            </td>
+                            <td data-label={t('settings.signing.table.status')}>
+                              <Toggle
+                                label={
+                                  source.enabled
+                                    ? t('settings.signing.sourceStatus.enabled')
+                                    : t('settings.signing.sourceStatus.disabled')
+                                }
+                                checked={source.enabled}
+                                onChange={(enabled) => updateTslSource(source.id, { enabled })}
+                              />
+                            </td>
+                            <td data-label={t('settings.signing.source.url')}>
+                              <Input
+                                aria-label={t('settings.signing.source.url')}
+                                type="url"
+                                value={source.url ?? ''}
+                                placeholder={t('settings.signing.tslUrl.placeholder')}
+                                onChange={(e) => updateTslSource(source.id, { url: e.target.value })}
+                              />
+                            </td>
+                            <td data-label={t('settings.signing.source.path')}>
+                              <Input
+                                aria-label={t('settings.signing.source.path')}
+                                value={source.path ?? ''}
+                                onChange={(e) =>
+                                  updateTslSource(source.id, { path: e.target.value })
+                                }
+                              />
+                            </td>
+                            <td data-label={t('settings.signing.source.country')}>
+                              <Input
+                                aria-label={t('settings.signing.source.country')}
+                                value={source.country ?? ''}
+                                placeholder="PT"
+                                onChange={(e) =>
+                                  updateTslSource(source.id, { country: e.target.value })
+                                }
+                              />
+                            </td>
+                            <td data-label={t('settings.signing.source.scheme')}>
+                              <Input
+                                aria-label={t('settings.signing.source.scheme')}
+                                value={source.scheme ?? ''}
+                                placeholder="eidas"
+                                onChange={(e) =>
+                                  updateTslSource(source.id, { scheme: e.target.value })
+                                }
+                              />
+                            </td>
+                            <td data-label={t('settings.signing.table.actions')}>
+                              <IconButton
+                                type="button"
+                                variant="ghost"
+                                icon={<Icon.Trash />}
+                                label={t('common.remove')}
+                                onClick={() => removeTslSource(source.id)}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </Table>
+                  )}
+                </div>
+              </Card>
+
+              <Card title={t('settings.signing.tsaProviders.title')}>
+                <div className="form">
+                  <p className="field__hint">{t('settings.signing.tsaProviders.hint')}</p>
+
+                  <Field
+                    label={t('settings.signing.tsaUrl.label')}
+                    htmlFor="set-tsa"
+                    hint={t('settings.signing.fallbackHint')}
+                    help={t('settings.signing.tsaUrl.help')}
+                  >
+                    <div className="input-reset">
+                      <Input
+                        id="set-tsa"
+                        type="url"
+                        value={draft.signing.tsa_url ?? ''}
+                        placeholder={t('settings.signing.tsaUrl.placeholder')}
+                        onChange={(e) => setSigning('tsa_url', e.target.value)}
+                      />
+                      <IconButton
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Refresh />}
+                        label={t('settings.signing.reset')}
+                        disabled={
+                          (draft.signing.tsa_url ?? '') === (DEFAULT_SETTINGS.signing.tsa_url ?? '')
+                        }
+                        onClick={() =>
+                          setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '')
+                        }
+                      />
+                    </div>
+                  </Field>
+
+                  <div className="section-head">
+                    <p className="field__hint">{t('settings.signing.source.urlOrPath')}</p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.Plus />}
+                      onClick={addTsaProvider}
+                    >
+                      {t('settings.signing.tsaProviders.add')}
+                    </Button>
+                  </div>
+
+                  {draft.signing.tsa_providers.length === 0 ? (
+                    <InlineWarning
+                      tone="info"
+                      title={t('settings.signing.tsaProviders.empty.title')}
+                    >
+                      {t('settings.signing.tsaProviders.empty.body')}
+                    </InlineWarning>
+                  ) : (
+                    <Table
+                      caption={t('settings.signing.tsaProviders.caption')}
+                      head={
+                        <tr>
+                          <th>{t('settings.signing.source.name')}</th>
+                          <th>{t('settings.signing.table.status')}</th>
+                          <th>{t('settings.signing.source.url')}</th>
+                          <th>{t('settings.signing.source.path')}</th>
+                          <th>{t('settings.signing.tsaProviders.policy')}</th>
+                          <th>{t('settings.signing.table.limits')}</th>
+                          <th>{t('settings.signing.table.actions')}</th>
+                        </tr>
+                      }
+                    >
+                      {draft.signing.tsa_providers.map((provider) => {
+                        const rowTitle = provider.name.trim() || provider.id;
+                        return (
+                          <tr key={provider.id} role="group" aria-label={rowTitle}>
+                            <td data-label={t('settings.signing.source.name')}>
+                              <Input
+                                aria-label={t('settings.signing.source.name')}
+                                value={provider.name}
+                                onChange={(e) =>
+                                  updateTsaProvider(provider.id, { name: e.target.value })
+                                }
+                              />
+                              <TooltipText
+                                label={provider.id}
+                                as="code"
+                                className="field__hint mono"
+                              >
+                                {provider.id}
+                              </TooltipText>
+                            </td>
+                            <td data-label={t('settings.signing.table.status')}>
+                              <Toggle
+                                label={
+                                  provider.enabled
+                                    ? t('settings.signing.sourceStatus.enabled')
+                                    : t('settings.signing.sourceStatus.disabled')
+                                }
+                                checked={provider.enabled}
+                                onChange={(enabled) =>
+                                  updateTsaProvider(provider.id, { enabled })
+                                }
+                              />
+                              {/* Exactly one enabled provider is the default, enforced by
+                                  `ensureOneEnabledDefaultProvider` on every edit — so this is a
+                                  badge OR a promote button, never both. */}
+                              {provider.enabled && provider.default ? (
+                                <Badge tone="accent">
+                                  {t('settings.signing.tsaProviders.defaultBadge')}
+                                </Badge>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  icon={<Icon.Check />}
+                                  onClick={() => makeDefaultTsaProvider(provider.id)}
+                                >
+                                  {t('settings.signing.tsaProviders.makeDefault')}
+                                </Button>
+                              )}
+                            </td>
+                            <td data-label={t('settings.signing.source.url')}>
+                              <Input
+                                aria-label={t('settings.signing.source.url')}
+                                type="url"
+                                value={provider.url ?? ''}
+                                placeholder={t('settings.signing.tsaUrl.placeholder')}
+                                onChange={(e) =>
+                                  updateTsaProvider(provider.id, { url: e.target.value })
+                                }
+                              />
+                            </td>
+                            <td data-label={t('settings.signing.source.path')}>
+                              <Input
+                                aria-label={t('settings.signing.source.path')}
+                                value={provider.path ?? ''}
+                                onChange={(e) =>
+                                  updateTsaProvider(provider.id, { path: e.target.value })
+                                }
+                              />
+                            </td>
+                            <td data-label={t('settings.signing.tsaProviders.policy')}>
+                              <Input
+                                aria-label={t('settings.signing.tsaProviders.policy')}
+                                value={provider.policy ?? ''}
+                                placeholder="1.2.3.4"
+                                onChange={(e) =>
+                                  updateTsaProvider(provider.id, { policy: e.target.value })
+                                }
+                              />
+                            </td>
+                            {/* Server-owned, not editable here — shown so a row is complete. */}
+                            <td
+                              className="mono"
+                              data-label={t('settings.signing.table.limits')}
+                            >
+                              {t('settings.signing.table.limitsValue', {
+                                digest: provider.digest,
+                                timeout: provider.timeout_seconds,
+                                maxBytes: provider.max_bytes,
+                              })}
+                            </td>
+                            <td data-label={t('settings.signing.table.actions')}>
+                              <IconButton
+                                type="button"
+                                variant="ghost"
+                                icon={<Icon.Trash />}
+                                label={t('common.remove')}
+                                onClick={() => removeTsaProvider(provider.id)}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </Table>
+                  )}
+                </div>
+              </Card>
+
+              <Card title={t('settings.signing.providers.title')}>
+                <div className="form">
+                  <p className="field__hint">{t('settings.signing.providers.hint')}</p>
+                  <Table
+                    caption={t('settings.signing.providers.caption')}
+                    head={
+                      <tr>
+                        <th>{t('settings.signing.table.provider')}</th>
+                        <th>{t('settings.signing.table.mode')}</th>
+                        <th>{t('settings.signing.table.status')}</th>
+                        <th>{t('settings.signing.table.notes')}</th>
+                      </tr>
+                    }
+                  >
+                    {draft.signing.providers.map((provider) => {
+                      const status = providerStatus(provider, t);
+                      return (
+                        <tr key={provider.id}>
+                          <td data-label={t('settings.signing.table.provider')}>{provider.label}</td>
+                          <td data-label={t('settings.signing.table.mode')}>
+                            {providerModeLabel(provider, t)}
+                          </td>
+                          <td data-label={t('settings.signing.table.status')}>
+                            <span className="row-wrap">
+                              <Badge tone={status.tone}>{status.label}</Badge>
+                              {provider.configured && provider.production_blocked ? (
+                                <Badge tone="warn">
+                                  {t('settings.signing.providerStatus.incomplete')}
+                                </Badge>
+                              ) : null}
+                              {provider.local_only ? (
+                                <Badge tone="accent">
+                                  {t('settings.signing.providerStatus.localOnly')}
+                                </Badge>
+                              ) : null}
+                            </span>
+                          </td>
+                          <td data-label={t('settings.signing.table.notes')}>{provider.note}</td>
+                        </tr>
+                      );
+                    })}
+                  </Table>
+                </div>
+              </Card>
+
+              {/* Chave Móvel Digital — read-only config. The non-secret selectors (env,
+                  ApplicationId) plus the "AMA cert configured?" flag come from the server; the
+                  AMA secret material itself is supplied via environment variables, never the
+                  settings document, so it is surfaced here for transparency, not edited. */}
+              <Card title={t('settings.signing.cmd.title')}>
+                <div className="form">
+                  <p className="field__hint">{t('settings.signing.cmd.intro')}</p>
+                  <dl className="deflist">
+                    <div>
+                      <dt>{t('settings.signing.cmd.env')}</dt>
+                      <dd>
+                        {draft.signing.cmd.env === 'prod'
+                          ? t('settings.signing.cmd.envProd')
+                          : t('settings.signing.cmd.envPreprod')}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.signing.cmd.applicationId')}</dt>
+                      <dd className="mono">
+                        {draft.signing.cmd.application_id ?? t('settings.signing.cmd.unset')}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.signing.cmd.amaCert')}</dt>
+                      <dd>
+                        {draft.signing.cmd.ama_cert_configured ? (
+                          <Badge tone="ok">{t('settings.signing.cmd.configured')}</Badge>
+                        ) : (
+                          <Badge tone="warn">{t('settings.signing.cmd.notConfigured')}</Badge>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </Card>
+            </div>
+          ) : null}
+
+          {/* Gestão ------------------------------------------------------------------ */}
+          {section === 'gestao' ? (
+            <div className="stack">
+              <Card title={t('settings.management.cardTitle')}>
+                <div className="form">
+                  {canManageSettings ? (
+                    <>
+                      <Toggle
+                        label={t('settings.management.ai.label')}
+                        checked={draft.ai.enabled}
+                        onChange={(v) => setAi('enabled', v)}
+                      />
+                      <p className="field__hint">{t('settings.management.ai.hint')}</p>
+                    </>
+                  ) : null}
+                  <p className="field__hint">{t('settings.management.note')}</p>
+                  <div className="row-wrap">
+                    <ButtonLink to="/configuracoes?sec=utilizadores" icon={<Icon.Users />}>
+                      {t('settings.management.usersLink')}
+                    </ButtonLink>
+                    <ButtonLink to="/ferramentas" icon={<Icon.Wrench />}>
+                      {t('settings.management.toolsLink')}
+                    </ButtonLink>
+                  </div>
+                </div>
+              </Card>
+              <Card title={t('settings.reminders.cardTitle')}>
+                <div className="form">
+                  <Toggle
+                    label={t('settings.reminders.enabled.label')}
+                    checked={reminderPolicy.enabled}
+                    onChange={(enabled) => setWorkflowReminder('enabled', enabled)}
+                  />
+                  <p className="field__hint">{t('settings.reminders.note')}</p>
+
+                  <div className="registry-auto-update-grid">
+                    <Field
+                      label={t('settings.reminders.dashboardLimit.label')}
+                      htmlFor="workflow-reminders-dashboard-limit"
+                      hint={t('settings.reminders.dashboardLimit.hint')}
+                    >
+                      <Input
+                        id="workflow-reminders-dashboard-limit"
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={reminderPolicy.dashboard_limit}
+                        onChange={(e) =>
+                          setWorkflowReminder(
+                            'dashboard_limit',
+                            numberValue(e.target.value, reminderPolicy.dashboard_limit),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t('settings.reminders.dueSoon.label')}
+                      htmlFor="workflow-reminders-due-soon-days"
+                      hint={t('settings.reminders.dueSoon.hint')}
+                    >
+                      <Input
+                        id="workflow-reminders-due-soon-days"
+                        type="number"
+                        min={0}
+                        max={365}
+                        value={reminderPolicy.due_soon_days}
+                        onChange={(e) =>
+                          setWorkflowReminder(
+                            'due_soon_days',
+                            numberValue(e.target.value, reminderPolicy.due_soon_days),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t('settings.reminders.attendanceLookahead.label')}
+                      htmlFor="workflow-reminders-attendance-lookahead-days"
+                      hint={t('settings.reminders.attendanceLookahead.hint')}
+                    >
+                      <Input
+                        id="workflow-reminders-attendance-lookahead-days"
+                        type="number"
+                        min={0}
+                        max={365}
+                        value={reminderPolicy.attendance_lookahead_days}
+                        onChange={(e) =>
+                          setWorkflowReminder(
+                            'attendance_lookahead_days',
+                            numberValue(e.target.value, reminderPolicy.attendance_lookahead_days),
+                          )
+                        }
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="stack--tight">
+                    <p className="card__label">{t('settings.reminders.sources.title')}</p>
+                    <div
+                      className="checkbox-grid"
+                      role="group"
+                      aria-label={t('settings.reminders.sources.aria')}
+                    >
+                      <Toggle
+                        label={t('settings.reminders.sources.profileCalendar')}
+                        checked={reminderPolicy.sources.profile_calendar}
+                        onChange={(checked) =>
+                          setWorkflowReminderSource('profile_calendar', checked)
+                        }
+                      />
+                      <Toggle
+                        label={t('settings.reminders.sources.actFollowUps')}
+                        checked={reminderPolicy.sources.act_follow_ups}
+                        onChange={(checked) => setWorkflowReminderSource('act_follow_ups', checked)}
+                      />
+                      <Toggle
+                        label={t('settings.reminders.sources.attendanceHygiene')}
+                        checked={reminderPolicy.sources.attendance_hygiene}
+                        onChange={(checked) =>
+                          setWorkflowReminderSource('attendance_hygiene', checked)
+                        }
+                      />
+                      <Toggle
+                        label={t('settings.reminders.sources.privacyReviews')}
+                        checked={reminderPolicy.sources.privacy_control_reviews}
+                        onChange={(checked) =>
+                          setWorkflowReminderSource('privacy_control_reviews', checked)
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+              <Card title={t('settings.retainedExportCleanup.cardTitle')}>
+                <div className="form">
+                  <p className="field__hint">{t('settings.retainedExportCleanup.note')}</p>
+                  <div className="registry-auto-update-grid">
+                    <Field
+                      label={t('settings.retainedExportCleanup.minimumAge.label')}
+                      htmlFor="retained-export-cleanup-minimum-age-days"
+                      hint={t('settings.retainedExportCleanup.minimumAge.hint')}
+                    >
+                      <Input
+                        id="retained-export-cleanup-minimum-age-days"
+                        type="number"
+                        min={0}
+                        max={RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS}
+                        value={retainedExportCleanupPolicy.minimum_age_days}
+                        onChange={(e) =>
+                          setRetainedExportCleanupPolicy(
+                            'minimum_age_days',
+                            boundedNumberValue(
+                              e.target.value,
+                              retainedExportCleanupPolicy.minimum_age_days,
+                              0,
+                              RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t('settings.retainedExportCleanup.keepLatest.label')}
+                      htmlFor="retained-export-cleanup-keep-latest"
+                      hint={t('settings.retainedExportCleanup.keepLatest.hint')}
+                    >
+                      <Input
+                        id="retained-export-cleanup-keep-latest"
+                        type="number"
+                        min={0}
+                        max={RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST}
+                        value={retainedExportCleanupPolicy.keep_latest}
+                        onChange={(e) =>
+                          setRetainedExportCleanupPolicy(
+                            'keep_latest',
+                            boundedNumberValue(
+                              e.target.value,
+                              retainedExportCleanupPolicy.keep_latest,
+                              0,
+                              RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                  </div>
+                </div>
+              </Card>
+              <Card title={t('settings.backupRecovery.cardTitle')}>
+                <div className="form">
+                  <p className="field__hint">{t('settings.backupRecovery.note')}</p>
+                  <div className="registry-auto-update-grid">
+                    <Field
+                      label={t('settings.backupRecovery.maxDrillAge.label')}
+                      htmlFor="backup-recovery-max-drill-age-days"
+                      hint={t('settings.backupRecovery.maxDrillAge.hint')}
+                    >
+                      <Input
+                        id="backup-recovery-max-drill-age-days"
+                        type="number"
+                        min={1}
+                        max={BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS}
+                        value={backupRecoveryPolicy.max_drill_age_days}
+                        onChange={(e) =>
+                          setBackupRecoveryPolicy(
+                            'max_drill_age_days',
+                            boundedNumberValue(
+                              e.target.value,
+                              backupRecoveryPolicy.max_drill_age_days,
+                              1,
+                              BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t('settings.backupRecovery.targetRpo.label')}
+                      htmlFor="backup-recovery-target-rpo-minutes"
+                      hint={t('settings.backupRecovery.targetRpo.hint')}
+                    >
+                      <Input
+                        id="backup-recovery-target-rpo-minutes"
+                        type="number"
+                        min={1}
+                        max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
+                        value={backupRecoveryPolicy.target_rpo_minutes}
+                        onChange={(e) =>
+                          setBackupRecoveryPolicy(
+                            'target_rpo_minutes',
+                            boundedNumberValue(
+                              e.target.value,
+                              backupRecoveryPolicy.target_rpo_minutes,
+                              1,
+                              BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t('settings.backupRecovery.targetRto.label')}
+                      htmlFor="backup-recovery-target-rto-minutes"
+                      hint={t('settings.backupRecovery.targetRto.hint')}
+                    >
+                      <Input
+                        id="backup-recovery-target-rto-minutes"
+                        type="number"
+                        min={1}
+                        max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
+                        value={backupRecoveryPolicy.target_rto_minutes}
+                        onChange={(e) =>
+                          setBackupRecoveryPolicy(
+                            'target_rto_minutes',
+                            boundedNumberValue(
+                              e.target.value,
+                              backupRecoveryPolicy.target_rto_minutes,
+                              1,
+                              BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                  </div>
+                </div>
+              </Card>
+              <RegistryAutoUpdateSection
+                value={draft.registry_auto_update}
+                onChange={setRegistryAutoUpdate}
+              />
+              <Card title={t('settings.entityTable.title')}>
+                <div className="form">
+                  <p className="field__hint">{t('settings.entityTable.hint')}</p>
+                  <div
+                    className="checkbox-grid"
+                    role="group"
+                    aria-label={t('settings.entityTable.columns.aria')}
+                  >
+                    {REGISTERED_ENTITY_COLUMNS.map((column) => (
+                      <Toggle
+                        key={column}
+                        label={t(ENTITY_COLUMN_LABEL_KEYS[column])}
+                        checked={draft.ui.registered_entity_columns.includes(column)}
+                        onChange={(checked) => toggleEntityColumn(column, checked)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            </div>
+          ) : null}
+
+          {/* Operações -------------------------------------------------------------- */}
+          {section === 'operacoes' ? (
+            <div className="stack">
+              <PlatformOperationsSection
+                value={draft.platform}
+                audit={committed.platform.audit}
+                canManage={canManageSettings}
+                onChange={setPlatform}
+                logsPanel={<PlatformLogTailPanel />}
+              />
+              {/* The connector egress boundary sits with the other platform-operations
+                  controls: it is deployment-adjacent, and `settings.manage` at Global — the
+                  highest privilege this document is gated by — is what may move it. */}
+              <ConnectorEgressSection value={draft.connectors} onChange={setConnectors} />
+            </div>
+          ) : null}
+
+          {/* Utilizadores ------------------------------------------------------------ */}
+          {/* The roster, create flow and edit/access managers are all hosted inside this
+            settings sub-tab. Legacy `/utilizadores/*` routes redirect here. */}
+          {section === 'utilizadores' ? (
+            <div className="stack">
+              <UsersList />
+              {selectedUser ? (
+                <div className="stack">
+                  <div className="form__actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.Users />}
+                      onClick={() => selectUser(null)}
+                    >
+                      {t('users.breadcrumb.self')}
+                    </Button>
+                  </div>
+                  {selectedUser === 'novo' ? (
+                    <NewUserPanel onCreated={(user) => selectUser(user.id)} />
+                  ) : (
+                    <EditUserPanel id={selectedUser} />
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Email (SMTP) — t23. The non-secret fields are part of the settings working copy and
+              autosave with everything else; the password and the test send are the section's own
+              endpoints, so it takes both the draft slice and manages that part itself. --------- */}
+          {section === 'email' ? <EmailSection email={draft.email} onChange={setEmail} /> : null}
+
+          {/* Chaves API ------------------------------------------------------------- */}
+          {section === 'chaves-api' ? <ApiKeysSection /> : null}
+
+          {/* Fornecedores de assinatura (wp13) -------------------------------------- */}
+          {section === 'fornecedores-assinatura' ? <ProviderCredentialsSection /> : null}
+
+          {/* Dispositivos — companion phone pairing (wp27) -------------------------- */}
+          {section === 'dispositivos' ? <PairingPanel /> : null}
+
+          {/* Privacidade e conformidade ------------------------------------------- */}
+          {section === 'privacidade' ? <PrivacyComplianceSection /> : null}
+
+          {/* Funções e permissões (t64-E6) ------------------------------------------ */}
+          {section === 'funcoes' ? <FuncoesSection /> : null}
+
+          {/* Delegações (t64-E6) ---------------------------------------------------- */}
+          {section === 'delegacoes' ? <DelegacoesSection /> : null}
+
+          {/* Livros & Integridade ---------------------------------------------------- */}
+          {section === 'integridade' ? <LivrosIntegridadeSection /> : null}
+
+          {/* Gestão de Dados --------------------------------------------------------- */}
+          {section === 'dados' ? <GestaoDadosSection /> : null}
+
+          {/* Sobre ------------------------------------------------------------------- */}
+          {section === 'sobre' ? (
+            <Card title={t('settings.about.cardTitle')}>
+              <dl className="deflist">
+                <div>
+                  <dt>{t('settings.about.serverVersion')}</dt>
+                  <dd className="mono">
+                    {health.data?.version ? displayVersion(health.data.version) : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('settings.about.uiVersion')}</dt>
+                  <dd className="mono">
+                    {displayVersion(UI_VERSION)}
+                    {health.data?.version && health.data.version !== UI_VERSION && (
+                      <>
+                        {' '}
+                        <Badge tone="error">{t('settings.about.serverOutdated')}</Badge>
+                      </>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('settings.about.ledger')}</dt>
+                  <dd>
+                    {ledger.data ? (
+                      ledger.data.valid ? (
+                        <Badge tone="ok">
+                          {t('settings.about.ledger.valid', { count: ledger.data.length })}
+                        </Badge>
+                      ) : (
+                        <Badge tone="error">{t('settings.about.ledger.compromised')}</Badge>
+                      )
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('settings.about.schemaVersion')}</dt>
+                  <dd className="mono">{draft.schema_version}</dd>
+                </div>
+              </dl>
+            </Card>
+          ) : null}
+        </div>
+      </fieldset>
+
+      {/* Save bar ------------------------------------------------------------------ */}
+      {/* Edits across every sub-tab persist automatically (debounced whole-document PUT).
+          A committed save confirms with a normal success toast (not an inline block), so
+          there is no persistent status block to clutter a clean form. The bar therefore
+          renders ONLY when it has something to act on:
+            • Autosave ON (today): a *failed* save — an inline error plus a retry. Success
+              is the toast; a clean or in-flight form shows nothing (no "Guardar agora").
+            • Autosave OFF (a future toggle): whenever there are unsaved changes, to host
+              the "Guardar agora" flush; a clean form shows nothing.
+          The standalone sub-tabs (Utilizadores, Integridade, Dados…) manage their own data
+          and never touch the settings document, so the bar is hidden there entirely. */}
+      {!STANDALONE_SECTIONS.includes(section) &&
+      (AUTOSAVE_ENABLED ? autosave.status === 'error' : autosave.isDirty) ? (
+        <Card>
+          <div className="stack--tight">
+            {autosave.status === 'error' ? <ErrorNote error={autosave.error} /> : null}
+            <div className="row-wrap settings-savebar">
+              {/* In manual mode the bar carries a live status beside the flush button;
+                  success never shows inline (it is a toast), so there is no "Guardado". */}
+              {!AUTOSAVE_ENABLED ? (
+                <span className="settings-autosave muted" role="status" aria-live="polite">
+                  {autosave.status === 'saving'
+                    ? t('common.saving')
+                    : autosave.status === 'dirty'
+                      ? t('settings.autosave.pending')
+                      : autosave.status === 'error'
+                        ? t('settings.autosave.error')
+                        : ''}
+                </span>
+              ) : null}
+              {/* Persistent manual flush only when autosave is OFF (never today). When it is
+                  ON, the only manual control is an error-state retry, so a failed save is
+                  always recoverable without a standing "Guardar agora" button. */}
+              {!AUTOSAVE_ENABLED ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.Save />}
+                  disabled={!autosave.isDirty || autosave.isSaving}
+                  onClick={() => autosave.flush()}
+                >
+                  {t('settings.saveNow')}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.Refresh />}
+                  disabled={autosave.isSaving}
+                  onClick={() => autosave.flush()}
+                >
+                  {t('settings.autosave.retry')}
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+      ) : null}
+    </div>
+  );
+}

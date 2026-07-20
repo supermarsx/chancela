@@ -1,0 +1,2096 @@
+/**
+ * Ledger event-kind display labels.
+ *
+ * The ledger stores a dotted machine identifier per event (`act.sealed`, `entity.created`,
+ * …). Those identifiers are data (UX-21) and stay verbatim in filters, exports and the
+ * `title` of every badge that renders one — but the *primary* line an operator reads is UI
+ * chrome and is localized, so the Vista geral, the Arquivo table, the entity activity feed
+ * and the notification centre all resolve a kind through `ledgerEventKindLabel`
+ * (`src/api/labels.ts`) instead of printing the raw id.
+ *
+ * The key set is the exhaustive list of kinds the Rust API can append — every kind reaching
+ * `Ledger::append` is a `&'static str` (`crates/chancela-ledger/src/lib.rs:545`), so a static
+ * map is complete by construction. It still degrades: an unmapped kind (a newer server) falls
+ * back to the raw identifier rather than rendering blank.
+ *
+ * TRANSLATION STATUS. pt-PT is the source and en-US/en-GB are human-authored. The remaining 11
+ * slices below are **machine-authored and pending native review** — the same tier their catalogs
+ * already carry in TRANSLATIONS.md, which now lists this key group explicitly so a reviewer can
+ * find it. They are translated (not left in English) because an event kind is a short,
+ * system-generated status label: a clumsy translation is an awkward phrase, not a false legal
+ * claim. Template *titles* are the opposite case and stay Portuguese — see
+ * `src/features/templates/templateNames.ts`.
+ *
+ * Keeping every locale in one typed file (each slice is a `LedgerEventLabels`, so the compiler
+ * rejects a missing or invented key) means 13 catalogs cannot silently lose a label, and a
+ * reviewer can diff one language against the pt-PT column without opening 14 files.
+ */
+export const ledgerEventLabelsPtPT = {
+  'dashboard.activity.sequence.title': 'Posição verificável na cadeia de registo',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Evidência de expedição a interessado ausente registada',
+  'enum.ledgerEventKind.act.advanced': 'Ata avançada de estado',
+  'enum.ledgerEventKind.act.ai_human_verification':
+    'Conteúdo assistido por IA verificado por pessoa',
+  'enum.ledgerEventKind.act.archived': 'Ata arquivada',
+  'enum.ledgerEventKind.act.drafted': 'Ata rascunhada',
+  'enum.ledgerEventKind.act.sealed': 'Ata selada',
+  'enum.ledgerEventKind.act.updated': 'Ata atualizada',
+  'enum.ledgerEventKind.api_key.created': 'Chave de API criada',
+  'enum.ledgerEventKind.api_key.revoked': 'Chave de API revogada',
+  'enum.ledgerEventKind.api_key.rotated': 'Chave de API rodada',
+  'enum.ledgerEventKind.backup.created': 'Cópia de segurança criada',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Eliminação arquivística do livro registada',
+  'enum.ledgerEventKind.book.closed': 'Livro encerrado',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Retenção legal do livro levantada',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Retenção legal do livro aplicada',
+  'enum.ledgerEventKind.book.opened': 'Livro aberto',
+  'enum.ledgerEventKind.cae.updated': 'Catálogo CAE atualizado',
+  'enum.ledgerEventKind.company_group.archived': 'Grupo de entidades arquivado',
+  'enum.ledgerEventKind.company_group.created': 'Grupo de entidades criado',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Entidade adicionada ao grupo',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Entidade removida do grupo',
+  'enum.ledgerEventKind.company_group.updated': 'Grupo de entidades atualizado',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Lista de anfitriões permitidos dos conetores atualizada',
+  'enum.ledgerEventKind.connector_job.cancel_requested':
+    'Cancelamento de trabalho de conector pedido',
+  'enum.ledgerEventKind.connector_job.queued': 'Trabalho de conector colocado em fila',
+  'enum.ledgerEventKind.connector_job.replayed': 'Trabalho de conector reexecutado',
+  'enum.ledgerEventKind.connector_job.retry_requested':
+    'Nova tentativa de trabalho de conector pedida',
+  'enum.ledgerEventKind.connector_target.archived': 'Destino de conector arquivado',
+  'enum.ledgerEventKind.connector_target.created': 'Destino de conector criado',
+  'enum.ledgerEventKind.connector_target.updated': 'Destino de conector atualizado',
+  'enum.ledgerEventKind.convening.dispatched': 'Convocatória expedida',
+  'enum.ledgerEventKind.data.wiped': 'Dados da instância apagados',
+  'enum.ledgerEventKind.delegation.granted': 'Delegação concedida',
+  'enum.ledgerEventKind.delegation.revoked': 'Delegação revogada',
+  'enum.ledgerEventKind.document.generated': 'Documento gerado',
+  'enum.ledgerEventKind.document.imported': 'Documento importado',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Revisão de documento importado atualizada',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    'Selo temporal de arquivo acrescentado',
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Dados de validação da assinatura anexados',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Validação de longo prazo da assinatura executada',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Validação de longo prazo da assinatura renovada',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Evidência de revogação recolhida',
+  'enum.ledgerEventKind.document.signature.validated_for_seal': 'Assinatura validada para selagem',
+  'enum.ledgerEventKind.document.signed': 'Documento assinado',
+  'enum.ledgerEventKind.entity.created': 'Entidade criada',
+  'enum.ledgerEventKind.entity.statute_updated': 'Estatutos da entidade atualizados',
+  'enum.ledgerEventKind.follow_up.completed': 'Seguimento concluído',
+  'enum.ledgerEventKind.follow_up.created': 'Seguimento criado',
+  'enum.ledgerEventKind.follow_up.updated': 'Seguimento atualizado',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Evidência de expedição de documento gerado registada',
+  'enum.ledgerEventKind.group_template_library.archived':
+    'Biblioteca de minutas do grupo arquivada',
+  'enum.ledgerEventKind.group_template_library.created': 'Biblioteca de minutas do grupo criada',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revisão da biblioteca de minutas criada',
+  'enum.ledgerEventKind.group_template_library.updated':
+    'Biblioteca de minutas do grupo atualizada',
+  'enum.ledgerEventKind.law.fetched': 'Fonte legal obtida',
+  'enum.ledgerEventKind.law.removed': 'Fonte legal removida',
+  'enum.ledgerEventKind.ledger.exported': 'Registo exportado',
+  'enum.ledgerEventKind.ledger.imported': 'Registo importado',
+  'enum.ledgerEventKind.ledger.reanchored': 'Registo reancorado',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Registo reinicializado',
+  'enum.ledgerEventKind.ledger.restored': 'Registo restaurado',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'Dossiê de conversão de OCR criado',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted': 'Ata rascunhada a partir de OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'Rascunho de OCR criado',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'Rascunho de OCR revisto',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'Estado do OCR atualizado',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Livro em papel preservado',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Registos reencaminhados aceites',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Registos reencaminhados recusados',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Registos reencaminhados rejeitados',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Registos reencaminhados suprimidos',
+  'enum.ledgerEventKind.platform.service.control': 'Serviço da plataforma controlado',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Plano de resposta a violação de dados criado',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Plano de resposta a violação de dados atualizado',
+  'enum.ledgerEventKind.privacy.dpia.created':
+    'Avaliação de impacto sobre a proteção de dados criada',
+  'enum.ledgerEventKind.privacy.dpia.updated':
+    'Avaliação de impacto sobre a proteção de dados atualizada',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Pedido de titular de dados concluído',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Pedido de titular de dados criado',
+  'enum.ledgerEventKind.privacy.processor.created': 'Subcontratante registado',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Subcontratante atualizado',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Decisão sobre candidato a retenção registada',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Execução de retenção pedida',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Revisão de execução de retenção encerrada',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Política de retenção criada',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Política de retenção atualizada',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Controlo de transferência internacional criado',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Controlo de transferência internacional atualizado',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Credenciais de fornecedor reordenadas',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Credencial de fornecedor criada',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Credencial de fornecedor eliminada',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Credencial de fornecedor atualizada',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Atualização automática do registo comercial tentada',
+  'enum.ledgerEventKind.registry.imported': 'Certidão do registo comercial importada',
+  'enum.ledgerEventKind.role.assigned': 'Função atribuída',
+  'enum.ledgerEventKind.role.created': 'Função criada',
+  'enum.ledgerEventKind.role.deleted': 'Função eliminada',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Desvio das funções de base reconciliado',
+  'enum.ledgerEventKind.role.unassigned': 'Função retirada',
+  'enum.ledgerEventKind.role.updated': 'Função atualizada',
+  'enum.ledgerEventKind.settings.updated': 'Definições atualizadas',
+  'enum.ledgerEventKind.signature.external_envelope.created':
+    'Envelope de assinatura externa criado',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Envelope de assinatura externa atualizado',
+  'enum.ledgerEventKind.signature.external_invite.accepted': 'Convite de assinatura externa aceite',
+  'enum.ledgerEventKind.signature.external_invite.created': 'Convite de assinatura externa criado',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Convite de assinatura externa declinado',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Convite de assinatura externa revogado',
+  'enum.ledgerEventKind.subject.erased': 'Dados do titular apagados',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Tratamento do titular restringido',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Retificação do titular anotada',
+  'enum.ledgerEventKind.template.created': 'Minuta criada',
+  'enum.ledgerEventKind.template.deleted': 'Minuta eliminada',
+  'enum.ledgerEventKind.template.updated': 'Minuta atualizada',
+  'enum.ledgerEventKind.tenant.created': 'Organização criada',
+  'enum.ledgerEventKind.user.created': 'Utilizador criado',
+  'enum.ledgerEventKind.user.recovery.issued': 'Recuperação de conta emitida',
+  'enum.ledgerEventKind.user.secret.reset': 'Segredo do utilizador reposto',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Reposição de segredo recusada',
+  'enum.ledgerEventKind.user.updated': 'Utilizador atualizado',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'Criptograma ZK submetido',
+  'enum.ledgerEventKind.zk.manifest.registered': 'Manifesto ZK registado',
+  'enum.ledgerEventKind.zk.readability.exported': 'Legibilidade ZK exportada',
+  'enum.ledgerEventKind.zk.repository.created': 'Repositório ZK criado',
+  'enum.ledgerEventKind.zk.repository.deleted': 'Repositório ZK eliminado',
+  'enum.ledgerEventKind.zk.repository.updated': 'Repositório ZK atualizado',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Política ZK da organização eliminada',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Política ZK da organização definida',
+};
+
+/** One locale's complete slice: exactly the pt-PT key set, no additions, no omissions. */
+export type LedgerEventLabels = Record<keyof typeof ledgerEventLabelsPtPT, string>;
+
+/** en-US / en-GB — human-authored. en-GB overrides the five British spellings in its own file. */
+export const ledgerEventLabelsEnglish: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Verifiable position in the ledger chain',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Absent-party dispatch evidence recorded',
+  'enum.ledgerEventKind.act.advanced': 'Minutes advanced to the next state',
+  'enum.ledgerEventKind.act.ai_human_verification': 'AI-assisted content verified by a person',
+  'enum.ledgerEventKind.act.archived': 'Minutes archived',
+  'enum.ledgerEventKind.act.drafted': 'Minutes drafted',
+  'enum.ledgerEventKind.act.sealed': 'Minutes sealed',
+  'enum.ledgerEventKind.act.updated': 'Minutes updated',
+  'enum.ledgerEventKind.api_key.created': 'API key created',
+  'enum.ledgerEventKind.api_key.revoked': 'API key revoked',
+  'enum.ledgerEventKind.api_key.rotated': 'API key rotated',
+  'enum.ledgerEventKind.backup.created': 'Backup created',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Book archival disposal recorded',
+  'enum.ledgerEventKind.book.closed': 'Book closed',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Book legal hold lifted',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Book legal hold applied',
+  'enum.ledgerEventKind.book.opened': 'Book opened',
+  'enum.ledgerEventKind.cae.updated': 'CAE catalog updated',
+  'enum.ledgerEventKind.company_group.archived': 'Entity group archived',
+  'enum.ledgerEventKind.company_group.created': 'Entity group created',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Entity added to group',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Entity removed from group',
+  'enum.ledgerEventKind.company_group.updated': 'Entity group updated',
+  'enum.ledgerEventKind.connector.allowlist.updated': 'Connector allowed-host list updated',
+  'enum.ledgerEventKind.connector_job.cancel_requested': 'Connector job cancellation requested',
+  'enum.ledgerEventKind.connector_job.queued': 'Connector job queued',
+  'enum.ledgerEventKind.connector_job.replayed': 'Connector job replayed',
+  'enum.ledgerEventKind.connector_job.retry_requested': 'Connector job retry requested',
+  'enum.ledgerEventKind.connector_target.archived': 'Connector target archived',
+  'enum.ledgerEventKind.connector_target.created': 'Connector target created',
+  'enum.ledgerEventKind.connector_target.updated': 'Connector target updated',
+  'enum.ledgerEventKind.convening.dispatched': 'Convening notice dispatched',
+  'enum.ledgerEventKind.data.wiped': 'Instance data wiped',
+  'enum.ledgerEventKind.delegation.granted': 'Delegation granted',
+  'enum.ledgerEventKind.delegation.revoked': 'Delegation revoked',
+  'enum.ledgerEventKind.document.generated': 'Document generated',
+  'enum.ledgerEventKind.document.imported': 'Document imported',
+  'enum.ledgerEventKind.document.imported.review_updated': 'Imported document review updated',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    'Archive timestamp appended',
+  'enum.ledgerEventKind.document.signature.dss_attached': 'Signature validation data attached',
+  'enum.ledgerEventKind.document.signature.ltv_executed': 'Signature long-term validation executed',
+  'enum.ledgerEventKind.document.signature.ltv_renewed': 'Signature long-term validation renewed',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Revocation evidence collected',
+  'enum.ledgerEventKind.document.signature.validated_for_seal': 'Signature validated for sealing',
+  'enum.ledgerEventKind.document.signed': 'Document signed',
+  'enum.ledgerEventKind.entity.created': 'Entity created',
+  'enum.ledgerEventKind.entity.statute_updated': 'Entity statutes updated',
+  'enum.ledgerEventKind.follow_up.completed': 'Follow-up completed',
+  'enum.ledgerEventKind.follow_up.created': 'Follow-up created',
+  'enum.ledgerEventKind.follow_up.updated': 'Follow-up updated',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Generated document dispatch evidence recorded',
+  'enum.ledgerEventKind.group_template_library.archived': 'Group template library archived',
+  'enum.ledgerEventKind.group_template_library.created': 'Group template library created',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Template library revision created',
+  'enum.ledgerEventKind.group_template_library.updated': 'Group template library updated',
+  'enum.ledgerEventKind.law.fetched': 'Legal source fetched',
+  'enum.ledgerEventKind.law.removed': 'Legal source removed',
+  'enum.ledgerEventKind.ledger.exported': 'Ledger exported',
+  'enum.ledgerEventKind.ledger.imported': 'Ledger imported',
+  'enum.ledgerEventKind.ledger.reanchored': 'Ledger re-anchored',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Ledger reinitialized',
+  'enum.ledgerEventKind.ledger.restored': 'Ledger restored',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'OCR conversion dossier created',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted': 'Minutes drafted from OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'OCR draft created',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'OCR draft reviewed',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'OCR status updated',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Paper book preserved',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Forwarded logs accepted',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Forwarded logs denied',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Forwarded logs rejected',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Forwarded logs suppressed',
+  'enum.ledgerEventKind.platform.service.control': 'Platform service controlled',
+  'enum.ledgerEventKind.privacy.breach.playbook.created': 'Data breach response plan created',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated': 'Data breach response plan updated',
+  'enum.ledgerEventKind.privacy.dpia.created': 'Data protection impact assessment created',
+  'enum.ledgerEventKind.privacy.dpia.updated': 'Data protection impact assessment updated',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Data subject request completed',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Data subject request created',
+  'enum.ledgerEventKind.privacy.processor.created': 'Processor registered',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Processor updated',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Retention candidate decision recorded',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Retention execution requested',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Retention execution review closed',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Retention policy created',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Retention policy updated',
+  'enum.ledgerEventKind.privacy.transfer.control.created': 'International transfer control created',
+  'enum.ledgerEventKind.privacy.transfer.control.updated': 'International transfer control updated',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered': 'Provider credentials reordered',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Provider credential created',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Provider credential deleted',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Provider credential updated',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Automatic commercial registry update attempted',
+  'enum.ledgerEventKind.registry.imported': 'Commercial registry extract imported',
+  'enum.ledgerEventKind.role.assigned': 'Role assigned',
+  'enum.ledgerEventKind.role.created': 'Role created',
+  'enum.ledgerEventKind.role.deleted': 'Role deleted',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Seeded role drift reconciled',
+  'enum.ledgerEventKind.role.unassigned': 'Role unassigned',
+  'enum.ledgerEventKind.role.updated': 'Role updated',
+  'enum.ledgerEventKind.settings.updated': 'Settings updated',
+  'enum.ledgerEventKind.signature.external_envelope.created': 'External signing envelope created',
+  'enum.ledgerEventKind.signature.external_envelope.updated': 'External signing envelope updated',
+  'enum.ledgerEventKind.signature.external_invite.accepted': 'External signing invite accepted',
+  'enum.ledgerEventKind.signature.external_invite.created': 'External signing invite created',
+  'enum.ledgerEventKind.signature.external_invite.declined': 'External signing invite declined',
+  'enum.ledgerEventKind.signature.external_invite.revoked': 'External signing invite revoked',
+  'enum.ledgerEventKind.subject.erased': 'Data subject erased',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Data subject processing restricted',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Data subject rectification noted',
+  'enum.ledgerEventKind.template.created': 'Template created',
+  'enum.ledgerEventKind.template.deleted': 'Template deleted',
+  'enum.ledgerEventKind.template.updated': 'Template updated',
+  'enum.ledgerEventKind.tenant.created': 'Organization created',
+  'enum.ledgerEventKind.user.created': 'User created',
+  'enum.ledgerEventKind.user.recovery.issued': 'Account recovery issued',
+  'enum.ledgerEventKind.user.secret.reset': 'User secret reset',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'User secret reset denied',
+  'enum.ledgerEventKind.user.updated': 'User updated',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'ZK ciphertext committed',
+  'enum.ledgerEventKind.zk.manifest.registered': 'ZK manifest registered',
+  'enum.ledgerEventKind.zk.readability.exported': 'ZK readability exported',
+  'enum.ledgerEventKind.zk.repository.created': 'ZK repository created',
+  'enum.ledgerEventKind.zk.repository.deleted': 'ZK repository deleted',
+  'enum.ledgerEventKind.zk.repository.updated': 'ZK repository updated',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Organization ZK policy deleted',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Organization ZK policy set',
+};
+
+/** pt-BR — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsPtBR: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Posição verificável na cadeia do registro',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Evidência de expedição a interessado ausente registrada',
+  'enum.ledgerEventKind.act.advanced': 'Ata avançada de estado',
+  'enum.ledgerEventKind.act.ai_human_verification':
+    'Conteúdo assistido por IA verificado por pessoa',
+  'enum.ledgerEventKind.act.archived': 'Ata arquivada',
+  'enum.ledgerEventKind.act.drafted': 'Ata rascunhada',
+  'enum.ledgerEventKind.act.sealed': 'Ata selada',
+  'enum.ledgerEventKind.act.updated': 'Ata atualizada',
+  'enum.ledgerEventKind.api_key.created': 'Chave de API criada',
+  'enum.ledgerEventKind.api_key.revoked': 'Chave de API revogada',
+  'enum.ledgerEventKind.api_key.rotated': 'Chave de API rotacionada',
+  'enum.ledgerEventKind.backup.created': 'Cópia de segurança criada',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Eliminação arquivística do livro registrada',
+  'enum.ledgerEventKind.book.closed': 'Livro encerrado',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Retenção legal do livro levantada',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Retenção legal do livro aplicada',
+  'enum.ledgerEventKind.book.opened': 'Livro aberto',
+  'enum.ledgerEventKind.cae.updated': 'Catálogo CAE atualizado',
+  'enum.ledgerEventKind.company_group.archived': 'Grupo de entidades arquivado',
+  'enum.ledgerEventKind.company_group.created': 'Grupo de entidades criado',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Entidade adicionada ao grupo',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Entidade removida do grupo',
+  'enum.ledgerEventKind.company_group.updated': 'Grupo de entidades atualizado',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Lista de hosts permitidos dos conectores atualizada',
+  'enum.ledgerEventKind.connector_job.cancel_requested':
+    'Cancelamento de trabalho de conector solicitado',
+  'enum.ledgerEventKind.connector_job.queued': 'Trabalho de conector colocado na fila',
+  'enum.ledgerEventKind.connector_job.replayed': 'Trabalho de conector reexecutado',
+  'enum.ledgerEventKind.connector_job.retry_requested':
+    'Nova tentativa de trabalho de conector solicitada',
+  'enum.ledgerEventKind.connector_target.archived': 'Destino de conector arquivado',
+  'enum.ledgerEventKind.connector_target.created': 'Destino de conector criado',
+  'enum.ledgerEventKind.connector_target.updated': 'Destino de conector atualizado',
+  'enum.ledgerEventKind.convening.dispatched': 'Convocação expedida',
+  'enum.ledgerEventKind.data.wiped': 'Dados da instância apagados',
+  'enum.ledgerEventKind.delegation.granted': 'Delegação concedida',
+  'enum.ledgerEventKind.delegation.revoked': 'Delegação revogada',
+  'enum.ledgerEventKind.document.generated': 'Documento gerado',
+  'enum.ledgerEventKind.document.imported': 'Documento importado',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Revisão de documento importado atualizada',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    'Carimbo do tempo de arquivamento anexado',
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Dados de validação da assinatura anexados',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Validação de longo prazo da assinatura executada',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Validação de longo prazo da assinatura renovada',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Evidência de revogação coletada',
+  'enum.ledgerEventKind.document.signature.validated_for_seal': 'Assinatura validada para o selo',
+  'enum.ledgerEventKind.document.signed': 'Documento assinado',
+  'enum.ledgerEventKind.entity.created': 'Entidade criada',
+  'enum.ledgerEventKind.entity.statute_updated': 'Estatuto da entidade atualizado',
+  'enum.ledgerEventKind.follow_up.completed': 'Acompanhamento concluído',
+  'enum.ledgerEventKind.follow_up.created': 'Acompanhamento criado',
+  'enum.ledgerEventKind.follow_up.updated': 'Acompanhamento atualizado',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Evidência de expedição de documento gerado registrada',
+  'enum.ledgerEventKind.group_template_library.archived':
+    'Biblioteca de minutas do grupo arquivada',
+  'enum.ledgerEventKind.group_template_library.created': 'Biblioteca de minutas do grupo criada',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revisão da biblioteca de minutas criada',
+  'enum.ledgerEventKind.group_template_library.updated':
+    'Biblioteca de minutas do grupo atualizada',
+  'enum.ledgerEventKind.law.fetched': 'Fonte legal obtida',
+  'enum.ledgerEventKind.law.removed': 'Fonte legal removida',
+  'enum.ledgerEventKind.ledger.exported': 'Registro exportado',
+  'enum.ledgerEventKind.ledger.imported': 'Registro importado',
+  'enum.ledgerEventKind.ledger.reanchored': 'Registro reancorado',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Registro reinicializado',
+  'enum.ledgerEventKind.ledger.restored': 'Registro restaurado',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'Dossiê de conversão de OCR criado',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted': 'Ata rascunhada a partir de OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'Rascunho de OCR criado',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'Rascunho de OCR revisado',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'Status do OCR atualizado',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Livro em papel preservado',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Logs encaminhados aceitos',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Logs encaminhados negados',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Logs encaminhados rejeitados',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Logs encaminhados suprimidos',
+  'enum.ledgerEventKind.platform.service.control': 'Serviço da plataforma controlado',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Plano de resposta a violação de dados criado',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Plano de resposta a violação de dados atualizado',
+  'enum.ledgerEventKind.privacy.dpia.created': 'Relatório de impacto à proteção de dados criado',
+  'enum.ledgerEventKind.privacy.dpia.updated':
+    'Relatório de impacto à proteção de dados atualizado',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Solicitação de titular de dados concluída',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Solicitação de titular de dados criada',
+  'enum.ledgerEventKind.privacy.processor.created': 'Operador de dados cadastrado',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Operador de dados atualizado',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Decisão sobre candidato a retenção registrada',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Execução de retenção solicitada',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Revisão de execução de retenção encerrada',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Política de retenção criada',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Política de retenção atualizada',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Controle de transferência internacional criado',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Controle de transferência internacional atualizado',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Credenciais de provedor reordenadas',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Credencial de provedor criada',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Credencial de provedor excluída',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Credencial de provedor atualizada',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Atualização automática do registro comercial tentada',
+  'enum.ledgerEventKind.registry.imported': 'Certidão do registro comercial importada',
+  'enum.ledgerEventKind.role.assigned': 'Função atribuída',
+  'enum.ledgerEventKind.role.created': 'Função criada',
+  'enum.ledgerEventKind.role.deleted': 'Função excluída',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled':
+    'Divergência das funções padrão reconciliada',
+  'enum.ledgerEventKind.role.unassigned': 'Função removida',
+  'enum.ledgerEventKind.role.updated': 'Função atualizada',
+  'enum.ledgerEventKind.settings.updated': 'Configurações atualizadas',
+  'enum.ledgerEventKind.signature.external_envelope.created':
+    'Envelope de assinatura externa criado',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Envelope de assinatura externa atualizado',
+  'enum.ledgerEventKind.signature.external_invite.accepted': 'Convite de assinatura externa aceito',
+  'enum.ledgerEventKind.signature.external_invite.created': 'Convite de assinatura externa criado',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Convite de assinatura externa recusado',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Convite de assinatura externa revogado',
+  'enum.ledgerEventKind.subject.erased': 'Dados do titular apagados',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Tratamento do titular restringido',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Retificação do titular anotada',
+  'enum.ledgerEventKind.template.created': 'Minuta criada',
+  'enum.ledgerEventKind.template.deleted': 'Minuta excluída',
+  'enum.ledgerEventKind.template.updated': 'Minuta atualizada',
+  'enum.ledgerEventKind.tenant.created': 'Organização criada',
+  'enum.ledgerEventKind.user.created': 'Usuário criado',
+  'enum.ledgerEventKind.user.recovery.issued': 'Recuperação de conta emitida',
+  'enum.ledgerEventKind.user.secret.reset': 'Segredo do usuário redefinido',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Redefinição de segredo negada',
+  'enum.ledgerEventKind.user.updated': 'Usuário atualizado',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'Criptograma ZK confirmado',
+  'enum.ledgerEventKind.zk.manifest.registered': 'Manifesto ZK cadastrado',
+  'enum.ledgerEventKind.zk.readability.exported': 'Legibilidade ZK exportada',
+  'enum.ledgerEventKind.zk.repository.created': 'Repositório ZK criado',
+  'enum.ledgerEventKind.zk.repository.deleted': 'Repositório ZK excluído',
+  'enum.ledgerEventKind.zk.repository.updated': 'Repositório ZK atualizado',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Política ZK da organização excluída',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Política ZK da organização definida',
+};
+
+/** da-DK — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsDaDK: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Verificerbar position i registerkæden',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Forsendelsesbevis til fraværende part registreret',
+  'enum.ledgerEventKind.act.advanced': 'Protokol rykket til næste status',
+  'enum.ledgerEventKind.act.ai_human_verification':
+    'AI-understøttet indhold verificeret af en person',
+  'enum.ledgerEventKind.act.archived': 'Protokol arkiveret',
+  'enum.ledgerEventKind.act.drafted': 'Protokoludkast oprettet',
+  'enum.ledgerEventKind.act.sealed': 'Protokol forseglet',
+  'enum.ledgerEventKind.act.updated': 'Protokol opdateret',
+  'enum.ledgerEventKind.api_key.created': 'API-nøgle oprettet',
+  'enum.ledgerEventKind.api_key.revoked': 'API-nøgle tilbagekaldt',
+  'enum.ledgerEventKind.api_key.rotated': 'API-nøgle roteret',
+  'enum.ledgerEventKind.backup.created': 'Sikkerhedskopi oprettet',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Arkivmæssig kassation af bogen registreret',
+  'enum.ledgerEventKind.book.closed': 'Bog lukket',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Juridisk tilbageholdelse af bogen ophævet',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Juridisk tilbageholdelse af bogen fastsat',
+  'enum.ledgerEventKind.book.opened': 'Bog åbnet',
+  'enum.ledgerEventKind.cae.updated': 'CAE-katalog opdateret',
+  'enum.ledgerEventKind.company_group.archived': 'Enhedsgruppe arkiveret',
+  'enum.ledgerEventKind.company_group.created': 'Enhedsgruppe oprettet',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Enhed føjet til gruppen',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Enhed fjernet fra gruppen',
+  'enum.ledgerEventKind.company_group.updated': 'Enhedsgruppe opdateret',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Liste over tilladte konnektorværter opdateret',
+  'enum.ledgerEventKind.connector_job.cancel_requested': 'Annullering af konnektorjob anmodet',
+  'enum.ledgerEventKind.connector_job.queued': 'Konnektorjob sat i kø',
+  'enum.ledgerEventKind.connector_job.replayed': 'Konnektorjob kørt igen',
+  'enum.ledgerEventKind.connector_job.retry_requested': 'Nyt forsøg på konnektorjob anmodet',
+  'enum.ledgerEventKind.connector_target.archived': 'Konnektormål arkiveret',
+  'enum.ledgerEventKind.connector_target.created': 'Konnektormål oprettet',
+  'enum.ledgerEventKind.connector_target.updated': 'Konnektormål opdateret',
+  'enum.ledgerEventKind.convening.dispatched': 'Indkaldelse afsendt',
+  'enum.ledgerEventKind.data.wiped': 'Instansdata slettet',
+  'enum.ledgerEventKind.delegation.granted': 'Fuldmagt tildelt',
+  'enum.ledgerEventKind.delegation.revoked': 'Fuldmagt tilbagekaldt',
+  'enum.ledgerEventKind.document.generated': 'Dokument genereret',
+  'enum.ledgerEventKind.document.imported': 'Dokument importeret',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Gennemgang af importeret dokument opdateret',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended': 'Arkivtidsstempel tilføjet',
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Valideringsdata for signaturen vedhæftet',
+  'enum.ledgerEventKind.document.signature.ltv_executed': 'Langtidsvalidering af signaturen udført',
+  'enum.ledgerEventKind.document.signature.ltv_renewed': 'Langtidsvalidering af signaturen fornyet',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Spærringsbevis indsamlet',
+  'enum.ledgerEventKind.document.signature.validated_for_seal': 'Signatur valideret til forsegling',
+  'enum.ledgerEventKind.document.signed': 'Dokument underskrevet',
+  'enum.ledgerEventKind.entity.created': 'Enhed oprettet',
+  'enum.ledgerEventKind.entity.statute_updated': 'Enhedens vedtægter opdateret',
+  'enum.ledgerEventKind.follow_up.completed': 'Opfølgning afsluttet',
+  'enum.ledgerEventKind.follow_up.created': 'Opfølgning oprettet',
+  'enum.ledgerEventKind.follow_up.updated': 'Opfølgning opdateret',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Forsendelsesbevis for genereret dokument registreret',
+  'enum.ledgerEventKind.group_template_library.archived': 'Gruppens skabelonbibliotek arkiveret',
+  'enum.ledgerEventKind.group_template_library.created': 'Gruppens skabelonbibliotek oprettet',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revision af skabelonbiblioteket oprettet',
+  'enum.ledgerEventKind.group_template_library.updated': 'Gruppens skabelonbibliotek opdateret',
+  'enum.ledgerEventKind.law.fetched': 'Retskilde hentet',
+  'enum.ledgerEventKind.law.removed': 'Retskilde fjernet',
+  'enum.ledgerEventKind.ledger.exported': 'Register eksporteret',
+  'enum.ledgerEventKind.ledger.imported': 'Register importeret',
+  'enum.ledgerEventKind.ledger.reanchored': 'Register forankret på ny',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Register geninitialiseret',
+  'enum.ledgerEventKind.ledger.restored': 'Register gendannet',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'OCR-konverteringsdossier oprettet',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted':
+    'Protokoludkast oprettet ud fra OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'OCR-udkast oprettet',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'OCR-udkast gennemgået',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'OCR-status opdateret',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Papirbog bevaret',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Videresendte logfiler accepteret',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Videresendte logfiler nægtet',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Videresendte logfiler afvist',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Videresendte logfiler undertrykt',
+  'enum.ledgerEventKind.platform.service.control': 'Platformtjeneste styret',
+  'enum.ledgerEventKind.privacy.breach.playbook.created': 'Beredskabsplan for databrud oprettet',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated': 'Beredskabsplan for databrud opdateret',
+  'enum.ledgerEventKind.privacy.dpia.created':
+    'Konsekvensanalyse vedrørende databeskyttelse oprettet',
+  'enum.ledgerEventKind.privacy.dpia.updated':
+    'Konsekvensanalyse vedrørende databeskyttelse opdateret',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Anmodning fra registreret afsluttet',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Anmodning fra registreret oprettet',
+  'enum.ledgerEventKind.privacy.processor.created': 'Databehandler registreret',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Databehandler opdateret',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Afgørelse om opbevaringskandidat registreret',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Udførelse af opbevaring anmodet',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Gennemgang af opbevaringsudførelse afsluttet',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Opbevaringspolitik oprettet',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Opbevaringspolitik opdateret',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Kontrol af international overførsel oprettet',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Kontrol af international overførsel opdateret',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Udbyderlegitimationsoplysninger omordnet',
+  'enum.ledgerEventKind.provider.credentials.entry.created':
+    'Udbyderlegitimationsoplysning oprettet',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted':
+    'Udbyderlegitimationsoplysning slettet',
+  'enum.ledgerEventKind.provider.credentials.entry.updated':
+    'Udbyderlegitimationsoplysning opdateret',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Automatisk opdatering af handelsregistret forsøgt',
+  'enum.ledgerEventKind.registry.imported': 'Registerattest importeret',
+  'enum.ledgerEventKind.role.assigned': 'Rolle tildelt',
+  'enum.ledgerEventKind.role.created': 'Rolle oprettet',
+  'enum.ledgerEventKind.role.deleted': 'Rolle slettet',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Afvigelse i basisroller afstemt',
+  'enum.ledgerEventKind.role.unassigned': 'Rolle frataget',
+  'enum.ledgerEventKind.role.updated': 'Rolle opdateret',
+  'enum.ledgerEventKind.settings.updated': 'Indstillinger opdateret',
+  'enum.ledgerEventKind.signature.external_envelope.created':
+    'Kuvert til ekstern signering oprettet',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Kuvert til ekstern signering opdateret',
+  'enum.ledgerEventKind.signature.external_invite.accepted':
+    'Invitation til ekstern signering accepteret',
+  'enum.ledgerEventKind.signature.external_invite.created':
+    'Invitation til ekstern signering oprettet',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Invitation til ekstern signering afvist',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Invitation til ekstern signering tilbagekaldt',
+  'enum.ledgerEventKind.subject.erased': 'Den registreredes data slettet',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Behandling af den registrerede begrænset',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Berigtigelse for den registrerede noteret',
+  'enum.ledgerEventKind.template.created': 'Skabelon oprettet',
+  'enum.ledgerEventKind.template.deleted': 'Skabelon slettet',
+  'enum.ledgerEventKind.template.updated': 'Skabelon opdateret',
+  'enum.ledgerEventKind.tenant.created': 'Organisation oprettet',
+  'enum.ledgerEventKind.user.created': 'Bruger oprettet',
+  'enum.ledgerEventKind.user.recovery.issued': 'Kontogendannelse udstedt',
+  'enum.ledgerEventKind.user.secret.reset': 'Brugerhemmelighed nulstillet',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Nulstilling af hemmelighed nægtet',
+  'enum.ledgerEventKind.user.updated': 'Bruger opdateret',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'ZK-krypteret tekst indleveret',
+  'enum.ledgerEventKind.zk.manifest.registered': 'ZK-manifest registreret',
+  'enum.ledgerEventKind.zk.readability.exported': 'ZK-læsbarhed eksporteret',
+  'enum.ledgerEventKind.zk.repository.created': 'ZK-lager oprettet',
+  'enum.ledgerEventKind.zk.repository.deleted': 'ZK-lager slettet',
+  'enum.ledgerEventKind.zk.repository.updated': 'ZK-lager opdateret',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Organisationens ZK-politik slettet',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Organisationens ZK-politik fastsat',
+};
+
+/** de-DE — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsDeDE: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Überprüfbare Position in der Registerkette',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Versandnachweis an abwesenden Beteiligten erfasst',
+  'enum.ledgerEventKind.act.advanced': 'Protokoll in den nächsten Status überführt',
+  'enum.ledgerEventKind.act.ai_human_verification': 'KI-gestützter Inhalt von einer Person geprüft',
+  'enum.ledgerEventKind.act.archived': 'Protokoll archiviert',
+  'enum.ledgerEventKind.act.drafted': 'Protokollentwurf erstellt',
+  'enum.ledgerEventKind.act.sealed': 'Protokoll versiegelt',
+  'enum.ledgerEventKind.act.updated': 'Protokoll aktualisiert',
+  'enum.ledgerEventKind.api_key.created': 'API-Schlüssel erstellt',
+  'enum.ledgerEventKind.api_key.revoked': 'API-Schlüssel widerrufen',
+  'enum.ledgerEventKind.api_key.rotated': 'API-Schlüssel rotiert',
+  'enum.ledgerEventKind.backup.created': 'Sicherung erstellt',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Archivische Kassation des Buchs erfasst',
+  'enum.ledgerEventKind.book.closed': 'Buch geschlossen',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Rechtliche Sperre des Buchs aufgehoben',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Rechtliche Sperre des Buchs gesetzt',
+  'enum.ledgerEventKind.book.opened': 'Buch eröffnet',
+  'enum.ledgerEventKind.cae.updated': 'CAE-Katalog aktualisiert',
+  'enum.ledgerEventKind.company_group.archived': 'Entitätsgruppe archiviert',
+  'enum.ledgerEventKind.company_group.created': 'Entitätsgruppe erstellt',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Entität zur Gruppe hinzugefügt',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Entität aus der Gruppe entfernt',
+  'enum.ledgerEventKind.company_group.updated': 'Entitätsgruppe aktualisiert',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Liste zugelassener Konnektor-Hosts aktualisiert',
+  'enum.ledgerEventKind.connector_job.cancel_requested':
+    'Abbruch des Konnektor-Auftrags angefordert',
+  'enum.ledgerEventKind.connector_job.queued': 'Konnektor-Auftrag eingereiht',
+  'enum.ledgerEventKind.connector_job.replayed': 'Konnektor-Auftrag erneut ausgeführt',
+  'enum.ledgerEventKind.connector_job.retry_requested':
+    'Wiederholung des Konnektor-Auftrags angefordert',
+  'enum.ledgerEventKind.connector_target.archived': 'Konnektorziel archiviert',
+  'enum.ledgerEventKind.connector_target.created': 'Konnektorziel erstellt',
+  'enum.ledgerEventKind.connector_target.updated': 'Konnektorziel aktualisiert',
+  'enum.ledgerEventKind.convening.dispatched': 'Einladung zur Versammlung versandt',
+  'enum.ledgerEventKind.data.wiped': 'Instanzdaten gelöscht',
+  'enum.ledgerEventKind.delegation.granted': 'Vollmacht erteilt',
+  'enum.ledgerEventKind.delegation.revoked': 'Vollmacht widerrufen',
+  'enum.ledgerEventKind.document.generated': 'Dokument erzeugt',
+  'enum.ledgerEventKind.document.imported': 'Dokument importiert',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Prüfung des importierten Dokuments aktualisiert',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    'Archiv-Zeitstempel angefügt',
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Validierungsdaten der Signatur angehängt',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Langzeitvalidierung der Signatur ausgeführt',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Langzeitvalidierung der Signatur erneuert',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected': 'Sperrnachweis erhoben',
+  'enum.ledgerEventKind.document.signature.validated_for_seal':
+    'Signatur für die Versiegelung validiert',
+  'enum.ledgerEventKind.document.signed': 'Dokument signiert',
+  'enum.ledgerEventKind.entity.created': 'Entität erstellt',
+  'enum.ledgerEventKind.entity.statute_updated': 'Satzung der Entität aktualisiert',
+  'enum.ledgerEventKind.follow_up.completed': 'Wiedervorlage abgeschlossen',
+  'enum.ledgerEventKind.follow_up.created': 'Wiedervorlage erstellt',
+  'enum.ledgerEventKind.follow_up.updated': 'Wiedervorlage aktualisiert',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Versandnachweis des erzeugten Dokuments erfasst',
+  'enum.ledgerEventKind.group_template_library.archived':
+    'Vorlagenbibliothek der Gruppe archiviert',
+  'enum.ledgerEventKind.group_template_library.created': 'Vorlagenbibliothek der Gruppe erstellt',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revision der Vorlagenbibliothek erstellt',
+  'enum.ledgerEventKind.group_template_library.updated':
+    'Vorlagenbibliothek der Gruppe aktualisiert',
+  'enum.ledgerEventKind.law.fetched': 'Rechtsquelle abgerufen',
+  'enum.ledgerEventKind.law.removed': 'Rechtsquelle entfernt',
+  'enum.ledgerEventKind.ledger.exported': 'Register exportiert',
+  'enum.ledgerEventKind.ledger.imported': 'Register importiert',
+  'enum.ledgerEventKind.ledger.reanchored': 'Register neu verankert',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Register neu initialisiert',
+  'enum.ledgerEventKind.ledger.restored': 'Register wiederhergestellt',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'OCR-Konvertierungsdossier erstellt',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted':
+    'Protokollentwurf aus OCR erstellt',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'OCR-Entwurf erstellt',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'OCR-Entwurf geprüft',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'OCR-Status aktualisiert',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Papierbuch bewahrt',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Weitergeleitete Logs angenommen',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Weitergeleitete Logs verweigert',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Weitergeleitete Logs zurückgewiesen',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Weitergeleitete Logs unterdrückt',
+  'enum.ledgerEventKind.platform.service.control': 'Plattformdienst gesteuert',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Reaktionsplan für Datenschutzverletzungen erstellt',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Reaktionsplan für Datenschutzverletzungen aktualisiert',
+  'enum.ledgerEventKind.privacy.dpia.created': 'Datenschutz-Folgenabschätzung erstellt',
+  'enum.ledgerEventKind.privacy.dpia.updated': 'Datenschutz-Folgenabschätzung aktualisiert',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Betroffenenanfrage abgeschlossen',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Betroffenenanfrage erstellt',
+  'enum.ledgerEventKind.privacy.processor.created': 'Auftragsverarbeiter erfasst',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Auftragsverarbeiter aktualisiert',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Entscheidung über Aufbewahrungskandidaten erfasst',
+  'enum.ledgerEventKind.privacy.retention.execution.requested':
+    'Ausführung der Aufbewahrung angefordert',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Prüfung der Aufbewahrungsausführung abgeschlossen',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Aufbewahrungsrichtlinie erstellt',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Aufbewahrungsrichtlinie aktualisiert',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Kontrolle für internationale Übermittlung erstellt',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Kontrolle für internationale Übermittlung aktualisiert',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Anbieter-Zugangsdaten neu geordnet',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Anbieter-Zugangsdaten erstellt',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Anbieter-Zugangsdaten gelöscht',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Anbieter-Zugangsdaten aktualisiert',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Automatische Aktualisierung des Handelsregisters versucht',
+  'enum.ledgerEventKind.registry.imported': 'Handelsregisterauszug importiert',
+  'enum.ledgerEventKind.role.assigned': 'Rolle zugewiesen',
+  'enum.ledgerEventKind.role.created': 'Rolle erstellt',
+  'enum.ledgerEventKind.role.deleted': 'Rolle gelöscht',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Abweichung der Basisrollen abgeglichen',
+  'enum.ledgerEventKind.role.unassigned': 'Rolle entzogen',
+  'enum.ledgerEventKind.role.updated': 'Rolle aktualisiert',
+  'enum.ledgerEventKind.settings.updated': 'Einstellungen aktualisiert',
+  'enum.ledgerEventKind.signature.external_envelope.created':
+    'Umschlag für externe Signatur erstellt',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Umschlag für externe Signatur aktualisiert',
+  'enum.ledgerEventKind.signature.external_invite.accepted':
+    'Einladung zur externen Signatur angenommen',
+  'enum.ledgerEventKind.signature.external_invite.created':
+    'Einladung zur externen Signatur erstellt',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Einladung zur externen Signatur abgelehnt',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Einladung zur externen Signatur widerrufen',
+  'enum.ledgerEventKind.subject.erased': 'Daten der betroffenen Person gelöscht',
+  'enum.ledgerEventKind.subject.processing_restricted':
+    'Verarbeitung der betroffenen Person eingeschränkt',
+  'enum.ledgerEventKind.subject.rectification_noted':
+    'Berichtigung der betroffenen Person vermerkt',
+  'enum.ledgerEventKind.template.created': 'Vorlage erstellt',
+  'enum.ledgerEventKind.template.deleted': 'Vorlage gelöscht',
+  'enum.ledgerEventKind.template.updated': 'Vorlage aktualisiert',
+  'enum.ledgerEventKind.tenant.created': 'Organisation erstellt',
+  'enum.ledgerEventKind.user.created': 'Benutzer erstellt',
+  'enum.ledgerEventKind.user.recovery.issued': 'Kontowiederherstellung ausgestellt',
+  'enum.ledgerEventKind.user.secret.reset': 'Benutzergeheimnis zurückgesetzt',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Zurücksetzen des Geheimnisses verweigert',
+  'enum.ledgerEventKind.user.updated': 'Benutzer aktualisiert',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'ZK-Chiffrat hinterlegt',
+  'enum.ledgerEventKind.zk.manifest.registered': 'ZK-Manifest registriert',
+  'enum.ledgerEventKind.zk.readability.exported': 'ZK-Lesbarkeit exportiert',
+  'enum.ledgerEventKind.zk.repository.created': 'ZK-Repository erstellt',
+  'enum.ledgerEventKind.zk.repository.deleted': 'ZK-Repository gelöscht',
+  'enum.ledgerEventKind.zk.repository.updated': 'ZK-Repository aktualisiert',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'ZK-Richtlinie der Organisation gelöscht',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'ZK-Richtlinie der Organisation festgelegt',
+};
+
+/** es-ES — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsEsES: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Posición verificable en la cadena del registro',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Evidencia de envío a interesado ausente registrada',
+  'enum.ledgerEventKind.act.advanced': 'Acta avanzada de estado',
+  'enum.ledgerEventKind.act.ai_human_verification':
+    'Contenido asistido por IA verificado por una persona',
+  'enum.ledgerEventKind.act.archived': 'Acta archivada',
+  'enum.ledgerEventKind.act.drafted': 'Acta redactada en borrador',
+  'enum.ledgerEventKind.act.sealed': 'Acta sellada',
+  'enum.ledgerEventKind.act.updated': 'Acta actualizada',
+  'enum.ledgerEventKind.api_key.created': 'Clave de API creada',
+  'enum.ledgerEventKind.api_key.revoked': 'Clave de API revocada',
+  'enum.ledgerEventKind.api_key.rotated': 'Clave de API rotada',
+  'enum.ledgerEventKind.backup.created': 'Copia de seguridad creada',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Eliminación archivística del libro registrada',
+  'enum.ledgerEventKind.book.closed': 'Libro cerrado',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Retención legal del libro levantada',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Retención legal del libro aplicada',
+  'enum.ledgerEventKind.book.opened': 'Libro abierto',
+  'enum.ledgerEventKind.cae.updated': 'Catálogo CAE actualizado',
+  'enum.ledgerEventKind.company_group.archived': 'Grupo de entidades archivado',
+  'enum.ledgerEventKind.company_group.created': 'Grupo de entidades creado',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Entidad añadida al grupo',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Entidad eliminada del grupo',
+  'enum.ledgerEventKind.company_group.updated': 'Grupo de entidades actualizado',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Lista de hosts permitidos de los conectores actualizada',
+  'enum.ledgerEventKind.connector_job.cancel_requested':
+    'Cancelación de trabajo de conector solicitada',
+  'enum.ledgerEventKind.connector_job.queued': 'Trabajo de conector en cola',
+  'enum.ledgerEventKind.connector_job.replayed': 'Trabajo de conector reejecutado',
+  'enum.ledgerEventKind.connector_job.retry_requested':
+    'Reintento de trabajo de conector solicitado',
+  'enum.ledgerEventKind.connector_target.archived': 'Destino de conector archivado',
+  'enum.ledgerEventKind.connector_target.created': 'Destino de conector creado',
+  'enum.ledgerEventKind.connector_target.updated': 'Destino de conector actualizado',
+  'enum.ledgerEventKind.convening.dispatched': 'Convocatoria enviada',
+  'enum.ledgerEventKind.data.wiped': 'Datos de la instancia borrados',
+  'enum.ledgerEventKind.delegation.granted': 'Delegación concedida',
+  'enum.ledgerEventKind.delegation.revoked': 'Delegación revocada',
+  'enum.ledgerEventKind.document.generated': 'Documento generado',
+  'enum.ledgerEventKind.document.imported': 'Documento importado',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Revisión de documento importado actualizada',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    'Sello de tiempo de archivo añadido',
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Datos de validación de la firma adjuntados',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Validación a largo plazo de la firma ejecutada',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Validación a largo plazo de la firma renovada',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Evidencia de revocación recopilada',
+  'enum.ledgerEventKind.document.signature.validated_for_seal': 'Firma validada para el sellado',
+  'enum.ledgerEventKind.document.signed': 'Documento firmado',
+  'enum.ledgerEventKind.entity.created': 'Entidad creada',
+  'enum.ledgerEventKind.entity.statute_updated': 'Estatutos de la entidad actualizados',
+  'enum.ledgerEventKind.follow_up.completed': 'Seguimiento completado',
+  'enum.ledgerEventKind.follow_up.created': 'Seguimiento creado',
+  'enum.ledgerEventKind.follow_up.updated': 'Seguimiento actualizado',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Evidencia de envío de documento generado registrada',
+  'enum.ledgerEventKind.group_template_library.archived':
+    'Biblioteca de modelos del grupo archivada',
+  'enum.ledgerEventKind.group_template_library.created': 'Biblioteca de modelos del grupo creada',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revisión de la biblioteca de modelos creada',
+  'enum.ledgerEventKind.group_template_library.updated':
+    'Biblioteca de modelos del grupo actualizada',
+  'enum.ledgerEventKind.law.fetched': 'Fuente legal obtenida',
+  'enum.ledgerEventKind.law.removed': 'Fuente legal eliminada',
+  'enum.ledgerEventKind.ledger.exported': 'Registro exportado',
+  'enum.ledgerEventKind.ledger.imported': 'Registro importado',
+  'enum.ledgerEventKind.ledger.reanchored': 'Registro reanclado',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Registro reinicializado',
+  'enum.ledgerEventKind.ledger.restored': 'Registro restaurado',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'Expediente de conversión de OCR creado',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted': 'Acta redactada a partir de OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'Borrador de OCR creado',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'Borrador de OCR revisado',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'Estado del OCR actualizado',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Libro en papel preservado',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Registros reenviados aceptados',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Registros reenviados denegados',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Registros reenviados rechazados',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Registros reenviados suprimidos',
+  'enum.ledgerEventKind.platform.service.control': 'Servicio de la plataforma controlado',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Plan de respuesta a brechas de datos creado',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Plan de respuesta a brechas de datos actualizado',
+  'enum.ledgerEventKind.privacy.dpia.created':
+    'Evaluación de impacto en protección de datos creada',
+  'enum.ledgerEventKind.privacy.dpia.updated':
+    'Evaluación de impacto en protección de datos actualizada',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Solicitud del interesado completada',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Solicitud del interesado creada',
+  'enum.ledgerEventKind.privacy.processor.created': 'Encargado del tratamiento registrado',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Encargado del tratamiento actualizado',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Decisión sobre candidato a retención registrada',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Ejecución de retención solicitada',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Revisión de ejecución de retención cerrada',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Política de retención creada',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Política de retención actualizada',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Control de transferencia internacional creado',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Control de transferencia internacional actualizado',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Credenciales de proveedor reordenadas',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Credencial de proveedor creada',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Credencial de proveedor eliminada',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Credencial de proveedor actualizada',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Actualización automática del registro mercantil intentada',
+  'enum.ledgerEventKind.registry.imported': 'Certificación del registro mercantil importada',
+  'enum.ledgerEventKind.role.assigned': 'Rol asignado',
+  'enum.ledgerEventKind.role.created': 'Rol creado',
+  'enum.ledgerEventKind.role.deleted': 'Rol eliminado',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Desviación de los roles base reconciliada',
+  'enum.ledgerEventKind.role.unassigned': 'Rol retirado',
+  'enum.ledgerEventKind.role.updated': 'Rol actualizado',
+  'enum.ledgerEventKind.settings.updated': 'Ajustes actualizados',
+  'enum.ledgerEventKind.signature.external_envelope.created': 'Sobre de firma externa creado',
+  'enum.ledgerEventKind.signature.external_envelope.updated': 'Sobre de firma externa actualizado',
+  'enum.ledgerEventKind.signature.external_invite.accepted': 'Invitación de firma externa aceptada',
+  'enum.ledgerEventKind.signature.external_invite.created': 'Invitación de firma externa creada',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Invitación de firma externa rechazada',
+  'enum.ledgerEventKind.signature.external_invite.revoked': 'Invitación de firma externa revocada',
+  'enum.ledgerEventKind.subject.erased': 'Datos del interesado suprimidos',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Tratamiento del interesado restringido',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Rectificación del interesado anotada',
+  'enum.ledgerEventKind.template.created': 'Modelo creado',
+  'enum.ledgerEventKind.template.deleted': 'Modelo eliminado',
+  'enum.ledgerEventKind.template.updated': 'Modelo actualizado',
+  'enum.ledgerEventKind.tenant.created': 'Organización creada',
+  'enum.ledgerEventKind.user.created': 'Usuario creado',
+  'enum.ledgerEventKind.user.recovery.issued': 'Recuperación de cuenta emitida',
+  'enum.ledgerEventKind.user.secret.reset': 'Secreto de usuario restablecido',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Restablecimiento de secreto denegado',
+  'enum.ledgerEventKind.user.updated': 'Usuario actualizado',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'Criptograma ZK confirmado',
+  'enum.ledgerEventKind.zk.manifest.registered': 'Manifiesto ZK registrado',
+  'enum.ledgerEventKind.zk.readability.exported': 'Legibilidad ZK exportada',
+  'enum.ledgerEventKind.zk.repository.created': 'Repositorio ZK creado',
+  'enum.ledgerEventKind.zk.repository.deleted': 'Repositorio ZK eliminado',
+  'enum.ledgerEventKind.zk.repository.updated': 'Repositorio ZK actualizado',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Política ZK de la organización eliminada',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Política ZK de la organización definida',
+};
+
+/** fi-FI — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsFiFI: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Todennettavissa oleva sijainti rekisteriketjussa',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Lähetystodiste poissa olevalle osapuolelle kirjattu',
+  'enum.ledgerEventKind.act.advanced': 'Pöytäkirja siirretty seuraavaan tilaan',
+  'enum.ledgerEventKind.act.ai_human_verification': 'Tekoälyavusteinen sisältö henkilön varmistama',
+  'enum.ledgerEventKind.act.archived': 'Pöytäkirja arkistoitu',
+  'enum.ledgerEventKind.act.drafted': 'Pöytäkirjaluonnos laadittu',
+  'enum.ledgerEventKind.act.sealed': 'Pöytäkirja sinetöity',
+  'enum.ledgerEventKind.act.updated': 'Pöytäkirja päivitetty',
+  'enum.ledgerEventKind.api_key.created': 'API-avain luotu',
+  'enum.ledgerEventKind.api_key.revoked': 'API-avain peruutettu',
+  'enum.ledgerEventKind.api_key.rotated': 'API-avain vaihdettu',
+  'enum.ledgerEventKind.backup.created': 'Varmuuskopio luotu',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Kirjan arkistollinen hävitys kirjattu',
+  'enum.ledgerEventKind.book.closed': 'Kirja suljettu',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Kirjan oikeudellinen säilytysmääräys poistettu',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Kirjan oikeudellinen säilytysmääräys asetettu',
+  'enum.ledgerEventKind.book.opened': 'Kirja avattu',
+  'enum.ledgerEventKind.cae.updated': 'CAE-luettelo päivitetty',
+  'enum.ledgerEventKind.company_group.archived': 'Yhteisöryhmä arkistoitu',
+  'enum.ledgerEventKind.company_group.created': 'Yhteisöryhmä luotu',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Yhteisö lisätty ryhmään',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Yhteisö poistettu ryhmästä',
+  'enum.ledgerEventKind.company_group.updated': 'Yhteisöryhmä päivitetty',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Liittimien sallittujen palvelinten luettelo päivitetty',
+  'enum.ledgerEventKind.connector_job.cancel_requested': 'Liitintyön peruutusta pyydetty',
+  'enum.ledgerEventKind.connector_job.queued': 'Liitintyö asetettu jonoon',
+  'enum.ledgerEventKind.connector_job.replayed': 'Liitintyö suoritettu uudelleen',
+  'enum.ledgerEventKind.connector_job.retry_requested': 'Liitintyön uudelleenyritystä pyydetty',
+  'enum.ledgerEventKind.connector_target.archived': 'Liitinkohde arkistoitu',
+  'enum.ledgerEventKind.connector_target.created': 'Liitinkohde luotu',
+  'enum.ledgerEventKind.connector_target.updated': 'Liitinkohde päivitetty',
+  'enum.ledgerEventKind.convening.dispatched': 'Kokouskutsu lähetetty',
+  'enum.ledgerEventKind.data.wiped': 'Instanssin tiedot pyyhitty',
+  'enum.ledgerEventKind.delegation.granted': 'Valtuutus myönnetty',
+  'enum.ledgerEventKind.delegation.revoked': 'Valtuutus peruutettu',
+  'enum.ledgerEventKind.document.generated': 'Asiakirja luotu',
+  'enum.ledgerEventKind.document.imported': 'Asiakirja tuotu',
+  'enum.ledgerEventKind.document.imported.review_updated': 'Tuodun asiakirjan tarkastus päivitetty',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended': 'Arkistoaikaleima lisätty',
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Allekirjoituksen validointitiedot liitetty',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Allekirjoituksen pitkäaikaisvalidointi suoritettu',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Allekirjoituksen pitkäaikaisvalidointi uusittu',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected': 'Sulkutodiste kerätty',
+  'enum.ledgerEventKind.document.signature.validated_for_seal':
+    'Allekirjoitus validoitu sinetöintiä varten',
+  'enum.ledgerEventKind.document.signed': 'Asiakirja allekirjoitettu',
+  'enum.ledgerEventKind.entity.created': 'Yhteisö luotu',
+  'enum.ledgerEventKind.entity.statute_updated': 'Yhteisön säännöt päivitetty',
+  'enum.ledgerEventKind.follow_up.completed': 'Jatkotoimi valmis',
+  'enum.ledgerEventKind.follow_up.created': 'Jatkotoimi luotu',
+  'enum.ledgerEventKind.follow_up.updated': 'Jatkotoimi päivitetty',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Luodun asiakirjan lähetystodiste kirjattu',
+  'enum.ledgerEventKind.group_template_library.archived': 'Ryhmän mallikirjasto arkistoitu',
+  'enum.ledgerEventKind.group_template_library.created': 'Ryhmän mallikirjasto luotu',
+  'enum.ledgerEventKind.group_template_library.revision_created': 'Mallikirjaston versio luotu',
+  'enum.ledgerEventKind.group_template_library.updated': 'Ryhmän mallikirjasto päivitetty',
+  'enum.ledgerEventKind.law.fetched': 'Oikeuslähde haettu',
+  'enum.ledgerEventKind.law.removed': 'Oikeuslähde poistettu',
+  'enum.ledgerEventKind.ledger.exported': 'Rekisteri viety',
+  'enum.ledgerEventKind.ledger.imported': 'Rekisteri tuotu',
+  'enum.ledgerEventKind.ledger.reanchored': 'Rekisteri ankkuroitu uudelleen',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Rekisteri alustettu uudelleen',
+  'enum.ledgerEventKind.ledger.restored': 'Rekisteri palautettu',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'OCR-muunnoksen asiakirjakansio luotu',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted':
+    'Pöytäkirjaluonnos laadittu OCR:stä',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'OCR-luonnos luotu',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'OCR-luonnos tarkastettu',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'OCR-tila päivitetty',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Paperikirja säilytetty',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Välitetyt lokit hyväksytty',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Välitetyt lokit evätty',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Välitetyt lokit hylätty',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Välitetyt lokit vaimennettu',
+  'enum.ledgerEventKind.platform.service.control': 'Alustan palvelua ohjattu',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Tietoturvaloukkausten toimintasuunnitelma luotu',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Tietoturvaloukkausten toimintasuunnitelma päivitetty',
+  'enum.ledgerEventKind.privacy.dpia.created': 'Tietosuojaa koskeva vaikutustenarviointi luotu',
+  'enum.ledgerEventKind.privacy.dpia.updated':
+    'Tietosuojaa koskeva vaikutustenarviointi päivitetty',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Rekisteröidyn pyyntö käsitelty',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Rekisteröidyn pyyntö luotu',
+  'enum.ledgerEventKind.privacy.processor.created': 'Henkilötietojen käsittelijä kirjattu',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Henkilötietojen käsittelijä päivitetty',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Päätös säilytysehdokkaasta kirjattu',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Säilytyksen toteutusta pyydetty',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Säilytyksen toteutuksen tarkastus suljettu',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Säilytyskäytäntö luotu',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Säilytyskäytäntö päivitetty',
+  'enum.ledgerEventKind.privacy.transfer.control.created': 'Kansainvälisen siirron valvonta luotu',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Kansainvälisen siirron valvonta päivitetty',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Palveluntarjoajan tunnistetiedot järjestetty uudelleen',
+  'enum.ledgerEventKind.provider.credentials.entry.created':
+    'Palveluntarjoajan tunnistetieto luotu',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted':
+    'Palveluntarjoajan tunnistetieto poistettu',
+  'enum.ledgerEventKind.provider.credentials.entry.updated':
+    'Palveluntarjoajan tunnistetieto päivitetty',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Kaupparekisterin automaattista päivitystä yritetty',
+  'enum.ledgerEventKind.registry.imported': 'Rekisteriote tuotu',
+  'enum.ledgerEventKind.role.assigned': 'Rooli myönnetty',
+  'enum.ledgerEventKind.role.created': 'Rooli luotu',
+  'enum.ledgerEventKind.role.deleted': 'Rooli poistettu',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Perusroolien poikkeama sovitettu',
+  'enum.ledgerEventKind.role.unassigned': 'Rooli peruutettu',
+  'enum.ledgerEventKind.role.updated': 'Rooli päivitetty',
+  'enum.ledgerEventKind.settings.updated': 'Asetukset päivitetty',
+  'enum.ledgerEventKind.signature.external_envelope.created':
+    'Ulkoisen allekirjoituksen kuori luotu',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Ulkoisen allekirjoituksen kuori päivitetty',
+  'enum.ledgerEventKind.signature.external_invite.accepted':
+    'Ulkoisen allekirjoituksen kutsu hyväksytty',
+  'enum.ledgerEventKind.signature.external_invite.created': 'Ulkoisen allekirjoituksen kutsu luotu',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Ulkoisen allekirjoituksen kutsu hylätty',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Ulkoisen allekirjoituksen kutsu peruutettu',
+  'enum.ledgerEventKind.subject.erased': 'Rekisteröidyn tiedot poistettu',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Rekisteröidyn käsittelyä rajoitettu',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Rekisteröidyn oikaisu merkitty',
+  'enum.ledgerEventKind.template.created': 'Malli luotu',
+  'enum.ledgerEventKind.template.deleted': 'Malli poistettu',
+  'enum.ledgerEventKind.template.updated': 'Malli päivitetty',
+  'enum.ledgerEventKind.tenant.created': 'Organisaatio luotu',
+  'enum.ledgerEventKind.user.created': 'Käyttäjä luotu',
+  'enum.ledgerEventKind.user.recovery.issued': 'Tilin palautus myönnetty',
+  'enum.ledgerEventKind.user.secret.reset': 'Käyttäjän salaisuus nollattu',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Salaisuuden nollaus evätty',
+  'enum.ledgerEventKind.user.updated': 'Käyttäjä päivitetty',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'ZK-salateksti talletettu',
+  'enum.ledgerEventKind.zk.manifest.registered': 'ZK-manifesti rekisteröity',
+  'enum.ledgerEventKind.zk.readability.exported': 'ZK-luettavuus viety',
+  'enum.ledgerEventKind.zk.repository.created': 'ZK-säilö luotu',
+  'enum.ledgerEventKind.zk.repository.deleted': 'ZK-säilö poistettu',
+  'enum.ledgerEventKind.zk.repository.updated': 'ZK-säilö päivitetty',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Organisaation ZK-käytäntö poistettu',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Organisaation ZK-käytäntö asetettu',
+};
+
+/** fr-FR — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsFrFR: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Position vérifiable dans la chaîne du registre',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    "Preuve d'envoi à un intéressé absent enregistrée",
+  'enum.ledgerEventKind.act.advanced': "Procès-verbal passé à l'étape suivante",
+  'enum.ledgerEventKind.act.ai_human_verification':
+    'Contenu assisté par IA vérifié par une personne',
+  'enum.ledgerEventKind.act.archived': 'Procès-verbal archivé',
+  'enum.ledgerEventKind.act.drafted': 'Procès-verbal rédigé en brouillon',
+  'enum.ledgerEventKind.act.sealed': 'Procès-verbal scellé',
+  'enum.ledgerEventKind.act.updated': 'Procès-verbal mis à jour',
+  'enum.ledgerEventKind.api_key.created': "Clé d'API créée",
+  'enum.ledgerEventKind.api_key.revoked': "Clé d'API révoquée",
+  'enum.ledgerEventKind.api_key.rotated': "Clé d'API renouvelée",
+  'enum.ledgerEventKind.backup.created': 'Sauvegarde créée',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Élimination archivistique du livre enregistrée',
+  'enum.ledgerEventKind.book.closed': 'Livre clôturé',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Conservation légale du livre levée',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Conservation légale du livre appliquée',
+  'enum.ledgerEventKind.book.opened': 'Livre ouvert',
+  'enum.ledgerEventKind.cae.updated': 'Catalogue CAE mis à jour',
+  'enum.ledgerEventKind.company_group.archived': "Groupe d'entités archivé",
+  'enum.ledgerEventKind.company_group.created': "Groupe d'entités créé",
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Entité ajoutée au groupe',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Entité retirée du groupe',
+  'enum.ledgerEventKind.company_group.updated': "Groupe d'entités mis à jour",
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Liste des hôtes autorisés des connecteurs mise à jour',
+  'enum.ledgerEventKind.connector_job.cancel_requested':
+    'Annulation de tâche de connecteur demandée',
+  'enum.ledgerEventKind.connector_job.queued': "Tâche de connecteur mise en file d'attente",
+  'enum.ledgerEventKind.connector_job.replayed': 'Tâche de connecteur relancée',
+  'enum.ledgerEventKind.connector_job.retry_requested':
+    'Nouvelle tentative de tâche de connecteur demandée',
+  'enum.ledgerEventKind.connector_target.archived': 'Destination de connecteur archivée',
+  'enum.ledgerEventKind.connector_target.created': 'Destination de connecteur créée',
+  'enum.ledgerEventKind.connector_target.updated': 'Destination de connecteur mise à jour',
+  'enum.ledgerEventKind.convening.dispatched': 'Convocation expédiée',
+  'enum.ledgerEventKind.data.wiped': "Données de l'instance effacées",
+  'enum.ledgerEventKind.delegation.granted': 'Délégation accordée',
+  'enum.ledgerEventKind.delegation.revoked': 'Délégation révoquée',
+  'enum.ledgerEventKind.document.generated': 'Document généré',
+  'enum.ledgerEventKind.document.imported': 'Document importé',
+  'enum.ledgerEventKind.document.imported.review_updated': 'Revue du document importé mise à jour',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    "Horodatage d'archivage ajouté",
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Données de validation de la signature jointes',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Validation à long terme de la signature exécutée',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Validation à long terme de la signature renouvelée',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Preuve de révocation collectée',
+  'enum.ledgerEventKind.document.signature.validated_for_seal':
+    'Signature validée pour le scellement',
+  'enum.ledgerEventKind.document.signed': 'Document signé',
+  'enum.ledgerEventKind.entity.created': 'Entité créée',
+  'enum.ledgerEventKind.entity.statute_updated': "Statuts de l'entité mis à jour",
+  'enum.ledgerEventKind.follow_up.completed': 'Suivi terminé',
+  'enum.ledgerEventKind.follow_up.created': 'Suivi créé',
+  'enum.ledgerEventKind.follow_up.updated': 'Suivi mis à jour',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    "Preuve d'envoi du document généré enregistrée",
+  'enum.ledgerEventKind.group_template_library.archived':
+    'Bibliothèque de modèles du groupe archivée',
+  'enum.ledgerEventKind.group_template_library.created': 'Bibliothèque de modèles du groupe créée',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Révision de la bibliothèque de modèles créée',
+  'enum.ledgerEventKind.group_template_library.updated':
+    'Bibliothèque de modèles du groupe mise à jour',
+  'enum.ledgerEventKind.law.fetched': 'Source juridique récupérée',
+  'enum.ledgerEventKind.law.removed': 'Source juridique supprimée',
+  'enum.ledgerEventKind.ledger.exported': 'Registre exporté',
+  'enum.ledgerEventKind.ledger.imported': 'Registre importé',
+  'enum.ledgerEventKind.ledger.reanchored': 'Registre ré-ancré',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Registre réinitialisé',
+  'enum.ledgerEventKind.ledger.restored': 'Registre restauré',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'Dossier de conversion OCR créé',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted':
+    "Procès-verbal rédigé à partir de l'OCR",
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'Brouillon OCR créé',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'Brouillon OCR relu',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': "Statut de l'OCR mis à jour",
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Livre papier préservé',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Journaux transférés acceptés',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Journaux transférés refusés',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Journaux transférés rejetés',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Journaux transférés supprimés',
+  'enum.ledgerEventKind.platform.service.control': 'Service de la plateforme piloté',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Plan de réponse aux violations de données créé',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Plan de réponse aux violations de données mis à jour',
+  'enum.ledgerEventKind.privacy.dpia.created':
+    "Analyse d'impact relative à la protection des données créée",
+  'enum.ledgerEventKind.privacy.dpia.updated':
+    "Analyse d'impact relative à la protection des données mise à jour",
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Demande de personne concernée clôturée',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Demande de personne concernée créée',
+  'enum.ledgerEventKind.privacy.processor.created': 'Sous-traitant enregistré',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Sous-traitant mis à jour',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Décision sur un candidat à la conservation enregistrée',
+  'enum.ledgerEventKind.privacy.retention.execution.requested':
+    'Exécution de conservation demandée',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    "Revue d'exécution de conservation clôturée",
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Politique de conservation créée',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Politique de conservation mise à jour',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Contrôle de transfert international créé',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Contrôle de transfert international mis à jour',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Identifiants de fournisseur réordonnés',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Identifiant de fournisseur créé',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Identifiant de fournisseur supprimé',
+  'enum.ledgerEventKind.provider.credentials.entry.updated':
+    'Identifiant de fournisseur mis à jour',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Mise à jour automatique du registre du commerce tentée',
+  'enum.ledgerEventKind.registry.imported': 'Extrait du registre du commerce importé',
+  'enum.ledgerEventKind.role.assigned': 'Rôle attribué',
+  'enum.ledgerEventKind.role.created': 'Rôle créé',
+  'enum.ledgerEventKind.role.deleted': 'Rôle supprimé',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Écart des rôles de base réconcilié',
+  'enum.ledgerEventKind.role.unassigned': 'Rôle retiré',
+  'enum.ledgerEventKind.role.updated': 'Rôle mis à jour',
+  'enum.ledgerEventKind.settings.updated': 'Paramètres mis à jour',
+  'enum.ledgerEventKind.signature.external_envelope.created':
+    'Enveloppe de signature externe créée',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Enveloppe de signature externe mise à jour',
+  'enum.ledgerEventKind.signature.external_invite.accepted':
+    'Invitation de signature externe acceptée',
+  'enum.ledgerEventKind.signature.external_invite.created': 'Invitation de signature externe créée',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Invitation de signature externe refusée',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Invitation de signature externe révoquée',
+  'enum.ledgerEventKind.subject.erased': 'Données de la personne concernée effacées',
+  'enum.ledgerEventKind.subject.processing_restricted':
+    'Traitement de la personne concernée limité',
+  'enum.ledgerEventKind.subject.rectification_noted':
+    'Rectification de la personne concernée consignée',
+  'enum.ledgerEventKind.template.created': 'Modèle créé',
+  'enum.ledgerEventKind.template.deleted': 'Modèle supprimé',
+  'enum.ledgerEventKind.template.updated': 'Modèle mis à jour',
+  'enum.ledgerEventKind.tenant.created': 'Organisation créée',
+  'enum.ledgerEventKind.user.created': 'Utilisateur créé',
+  'enum.ledgerEventKind.user.recovery.issued': 'Récupération de compte émise',
+  'enum.ledgerEventKind.user.secret.reset': "Secret de l'utilisateur réinitialisé",
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Réinitialisation du secret refusée',
+  'enum.ledgerEventKind.user.updated': 'Utilisateur mis à jour',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'Chiffré ZK déposé',
+  'enum.ledgerEventKind.zk.manifest.registered': 'Manifeste ZK enregistré',
+  'enum.ledgerEventKind.zk.readability.exported': 'Lisibilité ZK exportée',
+  'enum.ledgerEventKind.zk.repository.created': 'Dépôt ZK créé',
+  'enum.ledgerEventKind.zk.repository.deleted': 'Dépôt ZK supprimé',
+  'enum.ledgerEventKind.zk.repository.updated': 'Dépôt ZK mis à jour',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': "Politique ZK de l'organisation supprimée",
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': "Politique ZK de l'organisation définie",
+};
+
+/** it-IT — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsItIT: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Posizione verificabile nella catena del registro',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Prova di invio a interessato assente registrata',
+  'enum.ledgerEventKind.act.advanced': 'Verbale avanzato allo stato successivo',
+  'enum.ledgerEventKind.act.ai_human_verification':
+    'Contenuto assistito da IA verificato da una persona',
+  'enum.ledgerEventKind.act.archived': 'Verbale archiviato',
+  'enum.ledgerEventKind.act.drafted': 'Verbale redatto in bozza',
+  'enum.ledgerEventKind.act.sealed': 'Verbale sigillato',
+  'enum.ledgerEventKind.act.updated': 'Verbale aggiornato',
+  'enum.ledgerEventKind.api_key.created': 'Chiave API creata',
+  'enum.ledgerEventKind.api_key.revoked': 'Chiave API revocata',
+  'enum.ledgerEventKind.api_key.rotated': 'Chiave API ruotata',
+  'enum.ledgerEventKind.backup.created': 'Copia di sicurezza creata',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Scarto archivistico del libro registrato',
+  'enum.ledgerEventKind.book.closed': 'Libro chiuso',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Blocco legale del libro revocato',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Blocco legale del libro applicato',
+  'enum.ledgerEventKind.book.opened': 'Libro aperto',
+  'enum.ledgerEventKind.cae.updated': 'Catalogo CAE aggiornato',
+  'enum.ledgerEventKind.company_group.archived': 'Gruppo di enti archiviato',
+  'enum.ledgerEventKind.company_group.created': 'Gruppo di enti creato',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Ente aggiunto al gruppo',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Ente rimosso dal gruppo',
+  'enum.ledgerEventKind.company_group.updated': 'Gruppo di enti aggiornato',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Elenco host consentiti dei connettori aggiornato',
+  'enum.ledgerEventKind.connector_job.cancel_requested':
+    'Annullamento del processo del connettore richiesto',
+  'enum.ledgerEventKind.connector_job.queued': 'Processo del connettore in coda',
+  'enum.ledgerEventKind.connector_job.replayed': 'Processo del connettore rieseguito',
+  'enum.ledgerEventKind.connector_job.retry_requested':
+    'Nuovo tentativo del processo del connettore richiesto',
+  'enum.ledgerEventKind.connector_target.archived': 'Destinazione del connettore archiviata',
+  'enum.ledgerEventKind.connector_target.created': 'Destinazione del connettore creata',
+  'enum.ledgerEventKind.connector_target.updated': 'Destinazione del connettore aggiornata',
+  'enum.ledgerEventKind.convening.dispatched': 'Avviso di convocazione inviato',
+  'enum.ledgerEventKind.data.wiped': "Dati dell'istanza cancellati",
+  'enum.ledgerEventKind.delegation.granted': 'Delega concessa',
+  'enum.ledgerEventKind.delegation.revoked': 'Delega revocata',
+  'enum.ledgerEventKind.document.generated': 'Documento generato',
+  'enum.ledgerEventKind.document.imported': 'Documento importato',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Revisione del documento importato aggiornata',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    'Marca temporale di archivio aggiunta',
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Dati di validazione della firma allegati',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Validazione a lungo termine della firma eseguita',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Validazione a lungo termine della firma rinnovata',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Prova di revoca raccolta',
+  'enum.ledgerEventKind.document.signature.validated_for_seal': 'Firma validata per la sigillatura',
+  'enum.ledgerEventKind.document.signed': 'Documento firmato',
+  'enum.ledgerEventKind.entity.created': 'Ente creato',
+  'enum.ledgerEventKind.entity.statute_updated': "Statuto dell'ente aggiornato",
+  'enum.ledgerEventKind.follow_up.completed': 'Follow-up completato',
+  'enum.ledgerEventKind.follow_up.created': 'Follow-up creato',
+  'enum.ledgerEventKind.follow_up.updated': 'Follow-up aggiornato',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Prova di invio del documento generato registrata',
+  'enum.ledgerEventKind.group_template_library.archived':
+    'Libreria di modelli del gruppo archiviata',
+  'enum.ledgerEventKind.group_template_library.created': 'Libreria di modelli del gruppo creata',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revisione della libreria di modelli creata',
+  'enum.ledgerEventKind.group_template_library.updated':
+    'Libreria di modelli del gruppo aggiornata',
+  'enum.ledgerEventKind.law.fetched': 'Fonte normativa recuperata',
+  'enum.ledgerEventKind.law.removed': 'Fonte normativa rimossa',
+  'enum.ledgerEventKind.ledger.exported': 'Registro esportato',
+  'enum.ledgerEventKind.ledger.imported': 'Registro importato',
+  'enum.ledgerEventKind.ledger.reanchored': 'Registro riancorato',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Registro reinizializzato',
+  'enum.ledgerEventKind.ledger.restored': 'Registro ripristinato',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'Dossier di conversione OCR creato',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted': 'Verbale redatto da OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'Bozza OCR creata',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'Bozza OCR revisionata',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': "Stato dell'OCR aggiornato",
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Libro cartaceo conservato',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Log inoltrati accettati',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Log inoltrati negati',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Log inoltrati respinti',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Log inoltrati soppressi',
+  'enum.ledgerEventKind.platform.service.control': 'Servizio della piattaforma controllato',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Piano di risposta alle violazioni di dati creato',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Piano di risposta alle violazioni di dati aggiornato',
+  'enum.ledgerEventKind.privacy.dpia.created':
+    "Valutazione d'impatto sulla protezione dei dati creata",
+  'enum.ledgerEventKind.privacy.dpia.updated':
+    "Valutazione d'impatto sulla protezione dei dati aggiornata",
+  'enum.ledgerEventKind.privacy.dsr.request.completed': "Richiesta dell'interessato completata",
+  'enum.ledgerEventKind.privacy.dsr.request.created': "Richiesta dell'interessato creata",
+  'enum.ledgerEventKind.privacy.processor.created': 'Responsabile del trattamento registrato',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Responsabile del trattamento aggiornato',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Decisione su candidato alla conservazione registrata',
+  'enum.ledgerEventKind.privacy.retention.execution.requested':
+    'Esecuzione della conservazione richiesta',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    "Revisione dell'esecuzione della conservazione chiusa",
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Criterio di conservazione creato',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Criterio di conservazione aggiornato',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Controllo di trasferimento internazionale creato',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Controllo di trasferimento internazionale aggiornato',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Credenziali del fornitore riordinate',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Credenziale del fornitore creata',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Credenziale del fornitore eliminata',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Credenziale del fornitore aggiornata',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Aggiornamento automatico del registro delle imprese tentato',
+  'enum.ledgerEventKind.registry.imported': 'Visura del registro delle imprese importata',
+  'enum.ledgerEventKind.role.assigned': 'Ruolo assegnato',
+  'enum.ledgerEventKind.role.created': 'Ruolo creato',
+  'enum.ledgerEventKind.role.deleted': 'Ruolo eliminato',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Scostamento dei ruoli di base riconciliato',
+  'enum.ledgerEventKind.role.unassigned': 'Ruolo revocato',
+  'enum.ledgerEventKind.role.updated': 'Ruolo aggiornato',
+  'enum.ledgerEventKind.settings.updated': 'Impostazioni aggiornate',
+  'enum.ledgerEventKind.signature.external_envelope.created': 'Busta di firma esterna creata',
+  'enum.ledgerEventKind.signature.external_envelope.updated': 'Busta di firma esterna aggiornata',
+  'enum.ledgerEventKind.signature.external_invite.accepted': 'Invito alla firma esterna accettato',
+  'enum.ledgerEventKind.signature.external_invite.created': 'Invito alla firma esterna creato',
+  'enum.ledgerEventKind.signature.external_invite.declined': 'Invito alla firma esterna rifiutato',
+  'enum.ledgerEventKind.signature.external_invite.revoked': 'Invito alla firma esterna revocato',
+  'enum.ledgerEventKind.subject.erased': "Dati dell'interessato cancellati",
+  'enum.ledgerEventKind.subject.processing_restricted': "Trattamento dell'interessato limitato",
+  'enum.ledgerEventKind.subject.rectification_noted': "Rettifica dell'interessato annotata",
+  'enum.ledgerEventKind.template.created': 'Modello creato',
+  'enum.ledgerEventKind.template.deleted': 'Modello eliminato',
+  'enum.ledgerEventKind.template.updated': 'Modello aggiornato',
+  'enum.ledgerEventKind.tenant.created': 'Organizzazione creata',
+  'enum.ledgerEventKind.user.created': 'Utente creato',
+  'enum.ledgerEventKind.user.recovery.issued': "Recupero dell'account emesso",
+  'enum.ledgerEventKind.user.secret.reset': "Segreto dell'utente reimpostato",
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Reimpostazione del segreto negata',
+  'enum.ledgerEventKind.user.updated': 'Utente aggiornato',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'Testo cifrato ZK depositato',
+  'enum.ledgerEventKind.zk.manifest.registered': 'Manifest ZK registrato',
+  'enum.ledgerEventKind.zk.readability.exported': 'Leggibilità ZK esportata',
+  'enum.ledgerEventKind.zk.repository.created': 'Repository ZK creato',
+  'enum.ledgerEventKind.zk.repository.deleted': 'Repository ZK eliminato',
+  'enum.ledgerEventKind.zk.repository.updated': 'Repository ZK aggiornato',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': "Criterio ZK dell'organizzazione eliminato",
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': "Criterio ZK dell'organizzazione impostato",
+};
+
+/** nl-NL — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsNlNL: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Verifieerbare positie in de registerketen',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Verzendbewijs aan afwezige belanghebbende vastgelegd',
+  'enum.ledgerEventKind.act.advanced': 'Notulen naar de volgende status gebracht',
+  'enum.ledgerEventKind.act.ai_human_verification':
+    'AI-ondersteunde inhoud door een persoon geverifieerd',
+  'enum.ledgerEventKind.act.archived': 'Notulen gearchiveerd',
+  'enum.ledgerEventKind.act.drafted': 'Concept-notulen opgesteld',
+  'enum.ledgerEventKind.act.sealed': 'Notulen verzegeld',
+  'enum.ledgerEventKind.act.updated': 'Notulen bijgewerkt',
+  'enum.ledgerEventKind.api_key.created': 'API-sleutel aangemaakt',
+  'enum.ledgerEventKind.api_key.revoked': 'API-sleutel ingetrokken',
+  'enum.ledgerEventKind.api_key.rotated': 'API-sleutel geroteerd',
+  'enum.ledgerEventKind.backup.created': 'Back-up gemaakt',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Archiefvernietiging van het boek vastgelegd',
+  'enum.ledgerEventKind.book.closed': 'Boek gesloten',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Juridische blokkering van het boek opgeheven',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Juridische blokkering van het boek ingesteld',
+  'enum.ledgerEventKind.book.opened': 'Boek geopend',
+  'enum.ledgerEventKind.cae.updated': 'CAE-catalogus bijgewerkt',
+  'enum.ledgerEventKind.company_group.archived': 'Entiteitsgroep gearchiveerd',
+  'enum.ledgerEventKind.company_group.created': 'Entiteitsgroep aangemaakt',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Entiteit aan groep toegevoegd',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Entiteit uit groep verwijderd',
+  'enum.ledgerEventKind.company_group.updated': 'Entiteitsgroep bijgewerkt',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Lijst met toegestane connectorhosts bijgewerkt',
+  'enum.ledgerEventKind.connector_job.cancel_requested': 'Annulering van connectortaak aangevraagd',
+  'enum.ledgerEventKind.connector_job.queued': 'Connectortaak in wachtrij geplaatst',
+  'enum.ledgerEventKind.connector_job.replayed': 'Connectortaak opnieuw uitgevoerd',
+  'enum.ledgerEventKind.connector_job.retry_requested':
+    'Nieuwe poging voor connectortaak aangevraagd',
+  'enum.ledgerEventKind.connector_target.archived': 'Connectorbestemming gearchiveerd',
+  'enum.ledgerEventKind.connector_target.created': 'Connectorbestemming aangemaakt',
+  'enum.ledgerEventKind.connector_target.updated': 'Connectorbestemming bijgewerkt',
+  'enum.ledgerEventKind.convening.dispatched': 'Oproeping verzonden',
+  'enum.ledgerEventKind.data.wiped': 'Instantiegegevens gewist',
+  'enum.ledgerEventKind.delegation.granted': 'Volmacht verleend',
+  'enum.ledgerEventKind.delegation.revoked': 'Volmacht ingetrokken',
+  'enum.ledgerEventKind.document.generated': 'Document gegenereerd',
+  'enum.ledgerEventKind.document.imported': 'Document geïmporteerd',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Beoordeling van geïmporteerd document bijgewerkt',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    'Archiveringstijdstempel toegevoegd',
+  'enum.ledgerEventKind.document.signature.dss_attached':
+    'Validatiegegevens van de handtekening bijgevoegd',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Langetermijnvalidatie van de handtekening uitgevoerd',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Langetermijnvalidatie van de handtekening vernieuwd',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Intrekkingsbewijs verzameld',
+  'enum.ledgerEventKind.document.signature.validated_for_seal':
+    'Handtekening gevalideerd voor verzegeling',
+  'enum.ledgerEventKind.document.signed': 'Document ondertekend',
+  'enum.ledgerEventKind.entity.created': 'Entiteit aangemaakt',
+  'enum.ledgerEventKind.entity.statute_updated': 'Statuten van de entiteit bijgewerkt',
+  'enum.ledgerEventKind.follow_up.completed': 'Opvolging afgerond',
+  'enum.ledgerEventKind.follow_up.created': 'Opvolging aangemaakt',
+  'enum.ledgerEventKind.follow_up.updated': 'Opvolging bijgewerkt',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Verzendbewijs van gegenereerd document vastgelegd',
+  'enum.ledgerEventKind.group_template_library.archived':
+    'Sjabloonbibliotheek van de groep gearchiveerd',
+  'enum.ledgerEventKind.group_template_library.created':
+    'Sjabloonbibliotheek van de groep aangemaakt',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revisie van de sjabloonbibliotheek aangemaakt',
+  'enum.ledgerEventKind.group_template_library.updated':
+    'Sjabloonbibliotheek van de groep bijgewerkt',
+  'enum.ledgerEventKind.law.fetched': 'Rechtsbron opgehaald',
+  'enum.ledgerEventKind.law.removed': 'Rechtsbron verwijderd',
+  'enum.ledgerEventKind.ledger.exported': 'Register geëxporteerd',
+  'enum.ledgerEventKind.ledger.imported': 'Register geïmporteerd',
+  'enum.ledgerEventKind.ledger.reanchored': 'Register opnieuw verankerd',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Register opnieuw geïnitialiseerd',
+  'enum.ledgerEventKind.ledger.restored': 'Register hersteld',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'OCR-conversiedossier aangemaakt',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted': 'Notulen opgesteld vanuit OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'OCR-concept aangemaakt',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'OCR-concept beoordeeld',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'OCR-status bijgewerkt',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Papieren boek bewaard',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Doorgestuurde logs geaccepteerd',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Doorgestuurde logs geweigerd',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Doorgestuurde logs afgewezen',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Doorgestuurde logs onderdrukt',
+  'enum.ledgerEventKind.platform.service.control': 'Platformdienst aangestuurd',
+  'enum.ledgerEventKind.privacy.breach.playbook.created': 'Responsplan voor datalekken aangemaakt',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated': 'Responsplan voor datalekken bijgewerkt',
+  'enum.ledgerEventKind.privacy.dpia.created': 'Gegevensbeschermingseffectbeoordeling aangemaakt',
+  'enum.ledgerEventKind.privacy.dpia.updated': 'Gegevensbeschermingseffectbeoordeling bijgewerkt',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Verzoek van betrokkene afgerond',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Verzoek van betrokkene aangemaakt',
+  'enum.ledgerEventKind.privacy.processor.created': 'Verwerker geregistreerd',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Verwerker bijgewerkt',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Besluit over bewaarkandidaat vastgelegd',
+  'enum.ledgerEventKind.privacy.retention.execution.requested':
+    'Uitvoering van bewaarbeleid aangevraagd',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Beoordeling van bewaaruitvoering afgesloten',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Bewaarbeleid aangemaakt',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Bewaarbeleid bijgewerkt',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Controle op internationale doorgifte aangemaakt',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Controle op internationale doorgifte bijgewerkt',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Aanbiederreferenties opnieuw geordend',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Aanbiederreferentie aangemaakt',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Aanbiederreferentie verwijderd',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Aanbiederreferentie bijgewerkt',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Automatische bijwerking van het handelsregister geprobeerd',
+  'enum.ledgerEventKind.registry.imported': 'Uittreksel uit het handelsregister geïmporteerd',
+  'enum.ledgerEventKind.role.assigned': 'Rol toegewezen',
+  'enum.ledgerEventKind.role.created': 'Rol aangemaakt',
+  'enum.ledgerEventKind.role.deleted': 'Rol verwijderd',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Afwijking van de basisrollen verzoend',
+  'enum.ledgerEventKind.role.unassigned': 'Rol ingetrokken',
+  'enum.ledgerEventKind.role.updated': 'Rol bijgewerkt',
+  'enum.ledgerEventKind.settings.updated': 'Instellingen bijgewerkt',
+  'enum.ledgerEventKind.signature.external_envelope.created':
+    'Envelop voor externe ondertekening aangemaakt',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Envelop voor externe ondertekening bijgewerkt',
+  'enum.ledgerEventKind.signature.external_invite.accepted':
+    'Uitnodiging voor externe ondertekening geaccepteerd',
+  'enum.ledgerEventKind.signature.external_invite.created':
+    'Uitnodiging voor externe ondertekening aangemaakt',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Uitnodiging voor externe ondertekening geweigerd',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Uitnodiging voor externe ondertekening ingetrokken',
+  'enum.ledgerEventKind.subject.erased': 'Gegevens van de betrokkene gewist',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Verwerking van de betrokkene beperkt',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Rectificatie van de betrokkene aangetekend',
+  'enum.ledgerEventKind.template.created': 'Sjabloon aangemaakt',
+  'enum.ledgerEventKind.template.deleted': 'Sjabloon verwijderd',
+  'enum.ledgerEventKind.template.updated': 'Sjabloon bijgewerkt',
+  'enum.ledgerEventKind.tenant.created': 'Organisatie aangemaakt',
+  'enum.ledgerEventKind.user.created': 'Gebruiker aangemaakt',
+  'enum.ledgerEventKind.user.recovery.issued': 'Accountherstel uitgegeven',
+  'enum.ledgerEventKind.user.secret.reset': 'Gebruikersgeheim opnieuw ingesteld',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Opnieuw instellen van geheim geweigerd',
+  'enum.ledgerEventKind.user.updated': 'Gebruiker bijgewerkt',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'ZK-cijfertekst vastgelegd',
+  'enum.ledgerEventKind.zk.manifest.registered': 'ZK-manifest geregistreerd',
+  'enum.ledgerEventKind.zk.readability.exported': 'ZK-leesbaarheid geëxporteerd',
+  'enum.ledgerEventKind.zk.repository.created': 'ZK-repository aangemaakt',
+  'enum.ledgerEventKind.zk.repository.deleted': 'ZK-repository verwijderd',
+  'enum.ledgerEventKind.zk.repository.updated': 'ZK-repository bijgewerkt',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'ZK-beleid van de organisatie verwijderd',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'ZK-beleid van de organisatie ingesteld',
+};
+
+/** pl-PL — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsPlPL: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Weryfikowalna pozycja w łańcuchu rejestru',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Dowód wysyłki do nieobecnego zainteresowanego zapisany',
+  'enum.ledgerEventKind.act.advanced': 'Protokół przeniesiony do następnego stanu',
+  'enum.ledgerEventKind.act.ai_human_verification':
+    'Treść wspomagana przez SI zweryfikowana przez człowieka',
+  'enum.ledgerEventKind.act.archived': 'Protokół zarchiwizowany',
+  'enum.ledgerEventKind.act.drafted': 'Projekt protokołu utworzony',
+  'enum.ledgerEventKind.act.sealed': 'Protokół zapieczętowany',
+  'enum.ledgerEventKind.act.updated': 'Protokół zaktualizowany',
+  'enum.ledgerEventKind.api_key.created': 'Klucz API utworzony',
+  'enum.ledgerEventKind.api_key.revoked': 'Klucz API unieważniony',
+  'enum.ledgerEventKind.api_key.rotated': 'Klucz API rotowany',
+  'enum.ledgerEventKind.backup.created': 'Kopia zapasowa utworzona',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Brakowanie archiwalne księgi zapisane',
+  'enum.ledgerEventKind.book.closed': 'Księga zamknięta',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Blokada prawna księgi zniesiona',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Blokada prawna księgi nałożona',
+  'enum.ledgerEventKind.book.opened': 'Księga otwarta',
+  'enum.ledgerEventKind.cae.updated': 'Katalog CAE zaktualizowany',
+  'enum.ledgerEventKind.company_group.archived': 'Grupa podmiotów zarchiwizowana',
+  'enum.ledgerEventKind.company_group.created': 'Grupa podmiotów utworzona',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Podmiot dodany do grupy',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Podmiot usunięty z grupy',
+  'enum.ledgerEventKind.company_group.updated': 'Grupa podmiotów zaktualizowana',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Lista dozwolonych hostów łączników zaktualizowana',
+  'enum.ledgerEventKind.connector_job.cancel_requested': 'Zażądano anulowania zadania łącznika',
+  'enum.ledgerEventKind.connector_job.queued': 'Zadanie łącznika w kolejce',
+  'enum.ledgerEventKind.connector_job.replayed': 'Zadanie łącznika uruchomione ponownie',
+  'enum.ledgerEventKind.connector_job.retry_requested': 'Zażądano ponowienia zadania łącznika',
+  'enum.ledgerEventKind.connector_target.archived': 'Cel łącznika zarchiwizowany',
+  'enum.ledgerEventKind.connector_target.created': 'Cel łącznika utworzony',
+  'enum.ledgerEventKind.connector_target.updated': 'Cel łącznika zaktualizowany',
+  'enum.ledgerEventKind.convening.dispatched': 'Zawiadomienie o zwołaniu wysłane',
+  'enum.ledgerEventKind.data.wiped': 'Dane instancji wymazane',
+  'enum.ledgerEventKind.delegation.granted': 'Pełnomocnictwo udzielone',
+  'enum.ledgerEventKind.delegation.revoked': 'Pełnomocnictwo odwołane',
+  'enum.ledgerEventKind.document.generated': 'Dokument wygenerowany',
+  'enum.ledgerEventKind.document.imported': 'Dokument zaimportowany',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Przegląd zaimportowanego dokumentu zaktualizowany',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended':
+    'Archiwalny znacznik czasu dołączony',
+  'enum.ledgerEventKind.document.signature.dss_attached': 'Dane walidacyjne podpisu dołączone',
+  'enum.ledgerEventKind.document.signature.ltv_executed':
+    'Walidacja długoterminowa podpisu wykonana',
+  'enum.ledgerEventKind.document.signature.ltv_renewed':
+    'Walidacja długoterminowa podpisu odnowiona',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected':
+    'Dowód unieważnienia zebrany',
+  'enum.ledgerEventKind.document.signature.validated_for_seal':
+    'Podpis zwalidowany do zapieczętowania',
+  'enum.ledgerEventKind.document.signed': 'Dokument podpisany',
+  'enum.ledgerEventKind.entity.created': 'Podmiot utworzony',
+  'enum.ledgerEventKind.entity.statute_updated': 'Statut podmiotu zaktualizowany',
+  'enum.ledgerEventKind.follow_up.completed': 'Działanie następcze zakończone',
+  'enum.ledgerEventKind.follow_up.created': 'Działanie następcze utworzone',
+  'enum.ledgerEventKind.follow_up.updated': 'Działanie następcze zaktualizowane',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Dowód wysyłki wygenerowanego dokumentu zapisany',
+  'enum.ledgerEventKind.group_template_library.archived':
+    'Biblioteka szablonów grupy zarchiwizowana',
+  'enum.ledgerEventKind.group_template_library.created': 'Biblioteka szablonów grupy utworzona',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Wersja biblioteki szablonów utworzona',
+  'enum.ledgerEventKind.group_template_library.updated':
+    'Biblioteka szablonów grupy zaktualizowana',
+  'enum.ledgerEventKind.law.fetched': 'Źródło prawa pobrane',
+  'enum.ledgerEventKind.law.removed': 'Źródło prawa usunięte',
+  'enum.ledgerEventKind.ledger.exported': 'Rejestr wyeksportowany',
+  'enum.ledgerEventKind.ledger.imported': 'Rejestr zaimportowany',
+  'enum.ledgerEventKind.ledger.reanchored': 'Rejestr ponownie zakotwiczony',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Rejestr ponownie zainicjowany',
+  'enum.ledgerEventKind.ledger.restored': 'Rejestr przywrócony',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'Teczka konwersji OCR utworzona',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted':
+    'Projekt protokołu sporządzony z OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'Projekt OCR utworzony',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'Projekt OCR sprawdzony',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'Status OCR zaktualizowany',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Księga papierowa zachowana',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Przekazane dzienniki przyjęte',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Przekazane dzienniki odmówione',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Przekazane dzienniki odrzucone',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Przekazane dzienniki wyciszone',
+  'enum.ledgerEventKind.platform.service.control': 'Usługa platformy sterowana',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Plan reagowania na naruszenia danych utworzony',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Plan reagowania na naruszenia danych zaktualizowany',
+  'enum.ledgerEventKind.privacy.dpia.created': 'Ocena skutków dla ochrony danych utworzona',
+  'enum.ledgerEventKind.privacy.dpia.updated': 'Ocena skutków dla ochrony danych zaktualizowana',
+  'enum.ledgerEventKind.privacy.dsr.request.completed':
+    'Żądanie osoby, której dane dotyczą, zakończone',
+  'enum.ledgerEventKind.privacy.dsr.request.created':
+    'Żądanie osoby, której dane dotyczą, utworzone',
+  'enum.ledgerEventKind.privacy.processor.created': 'Podmiot przetwarzający zarejestrowany',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Podmiot przetwarzający zaktualizowany',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Decyzja o kandydacie do retencji zapisana',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Zażądano wykonania retencji',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Przegląd wykonania retencji zamknięty',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Polityka retencji utworzona',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Polityka retencji zaktualizowana',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Kontrola transferu międzynarodowego utworzona',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Kontrola transferu międzynarodowego zaktualizowana',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered':
+    'Poświadczenia dostawcy uporządkowane',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Poświadczenie dostawcy utworzone',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Poświadczenie dostawcy usunięte',
+  'enum.ledgerEventKind.provider.credentials.entry.updated':
+    'Poświadczenie dostawcy zaktualizowane',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Podjęto próbę automatycznej aktualizacji rejestru handlowego',
+  'enum.ledgerEventKind.registry.imported': 'Odpis z rejestru handlowego zaimportowany',
+  'enum.ledgerEventKind.role.assigned': 'Rola przypisana',
+  'enum.ledgerEventKind.role.created': 'Rola utworzona',
+  'enum.ledgerEventKind.role.deleted': 'Rola usunięta',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Rozbieżność ról bazowych uzgodniona',
+  'enum.ledgerEventKind.role.unassigned': 'Rola odebrana',
+  'enum.ledgerEventKind.role.updated': 'Rola zaktualizowana',
+  'enum.ledgerEventKind.settings.updated': 'Ustawienia zaktualizowane',
+  'enum.ledgerEventKind.signature.external_envelope.created':
+    'Koperta podpisu zewnętrznego utworzona',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Koperta podpisu zewnętrznego zaktualizowana',
+  'enum.ledgerEventKind.signature.external_invite.accepted':
+    'Zaproszenie do podpisu zewnętrznego przyjęte',
+  'enum.ledgerEventKind.signature.external_invite.created':
+    'Zaproszenie do podpisu zewnętrznego utworzone',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Zaproszenie do podpisu zewnętrznego odrzucone',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Zaproszenie do podpisu zewnętrznego unieważnione',
+  'enum.ledgerEventKind.subject.erased': 'Dane osoby, której dane dotyczą, usunięte',
+  'enum.ledgerEventKind.subject.processing_restricted':
+    'Przetwarzanie osoby, której dane dotyczą, ograniczone',
+  'enum.ledgerEventKind.subject.rectification_noted':
+    'Sprostowanie osoby, której dane dotyczą, odnotowane',
+  'enum.ledgerEventKind.template.created': 'Szablon utworzony',
+  'enum.ledgerEventKind.template.deleted': 'Szablon usunięty',
+  'enum.ledgerEventKind.template.updated': 'Szablon zaktualizowany',
+  'enum.ledgerEventKind.tenant.created': 'Organizacja utworzona',
+  'enum.ledgerEventKind.user.created': 'Użytkownik utworzony',
+  'enum.ledgerEventKind.user.recovery.issued': 'Odzyskiwanie konta wydane',
+  'enum.ledgerEventKind.user.secret.reset': 'Sekret użytkownika zresetowany',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Reset sekretu odrzucony',
+  'enum.ledgerEventKind.user.updated': 'Użytkownik zaktualizowany',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'Szyfrogram ZK złożony',
+  'enum.ledgerEventKind.zk.manifest.registered': 'Manifest ZK zarejestrowany',
+  'enum.ledgerEventKind.zk.readability.exported': 'Czytelność ZK wyeksportowana',
+  'enum.ledgerEventKind.zk.repository.created': 'Repozytorium ZK utworzone',
+  'enum.ledgerEventKind.zk.repository.deleted': 'Repozytorium ZK usunięte',
+  'enum.ledgerEventKind.zk.repository.updated': 'Repozytorium ZK zaktualizowane',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Polityka ZK organizacji usunięta',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Polityka ZK organizacji ustawiona',
+};
+
+/** sv-FI — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsSvFI: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Verifierbar position i registerkedjan',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Bevis på utskick till frånvarande part registrerat',
+  'enum.ledgerEventKind.act.advanced': 'Protokoll flyttat till nästa status',
+  'enum.ledgerEventKind.act.ai_human_verification': 'AI-stött innehåll verifierat av en person',
+  'enum.ledgerEventKind.act.archived': 'Protokoll arkiverat',
+  'enum.ledgerEventKind.act.drafted': 'Protokollutkast skapat',
+  'enum.ledgerEventKind.act.sealed': 'Protokoll förseglat',
+  'enum.ledgerEventKind.act.updated': 'Protokoll uppdaterat',
+  'enum.ledgerEventKind.api_key.created': 'API-nyckel skapad',
+  'enum.ledgerEventKind.api_key.revoked': 'API-nyckel återkallad',
+  'enum.ledgerEventKind.api_key.rotated': 'API-nyckel roterad',
+  'enum.ledgerEventKind.backup.created': 'Säkerhetskopia skapad',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Arkivgallring av boken registrerad',
+  'enum.ledgerEventKind.book.closed': 'Bok avslutad',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Rättslig spärr på boken hävd',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Rättslig spärr på boken satt',
+  'enum.ledgerEventKind.book.opened': 'Bok öppnad',
+  'enum.ledgerEventKind.cae.updated': 'CAE-katalog uppdaterad',
+  'enum.ledgerEventKind.company_group.archived': 'Enhetsgrupp arkiverad',
+  'enum.ledgerEventKind.company_group.created': 'Enhetsgrupp skapad',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Enhet tillagd i gruppen',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Enhet borttagen från gruppen',
+  'enum.ledgerEventKind.company_group.updated': 'Enhetsgrupp uppdaterad',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Lista över tillåtna anslutningsvärdar uppdaterad',
+  'enum.ledgerEventKind.connector_job.cancel_requested': 'Avbrytande av anslutningsjobb begärt',
+  'enum.ledgerEventKind.connector_job.queued': 'Anslutningsjobb köat',
+  'enum.ledgerEventKind.connector_job.replayed': 'Anslutningsjobb körts om',
+  'enum.ledgerEventKind.connector_job.retry_requested': 'Nytt försök för anslutningsjobb begärt',
+  'enum.ledgerEventKind.connector_target.archived': 'Anslutningsmål arkiverat',
+  'enum.ledgerEventKind.connector_target.created': 'Anslutningsmål skapat',
+  'enum.ledgerEventKind.connector_target.updated': 'Anslutningsmål uppdaterat',
+  'enum.ledgerEventKind.convening.dispatched': 'Kallelse utskickad',
+  'enum.ledgerEventKind.data.wiped': 'Instansdata raderade',
+  'enum.ledgerEventKind.delegation.granted': 'Fullmakt beviljad',
+  'enum.ledgerEventKind.delegation.revoked': 'Fullmakt återkallad',
+  'enum.ledgerEventKind.document.generated': 'Dokument genererat',
+  'enum.ledgerEventKind.document.imported': 'Dokument importerat',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Granskning av importerat dokument uppdaterad',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended': 'Arkivtidsstämpel tillagd',
+  'enum.ledgerEventKind.document.signature.dss_attached': 'Valideringsdata för signaturen bifogade',
+  'enum.ledgerEventKind.document.signature.ltv_executed': 'Långtidsvalidering av signaturen utförd',
+  'enum.ledgerEventKind.document.signature.ltv_renewed': 'Långtidsvalidering av signaturen förnyad',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected': 'Spärrbevis insamlat',
+  'enum.ledgerEventKind.document.signature.validated_for_seal': 'Signatur validerad för försegling',
+  'enum.ledgerEventKind.document.signed': 'Dokument undertecknat',
+  'enum.ledgerEventKind.entity.created': 'Enhet skapad',
+  'enum.ledgerEventKind.entity.statute_updated': 'Enhetens stadgar uppdaterade',
+  'enum.ledgerEventKind.follow_up.completed': 'Uppföljning slutförd',
+  'enum.ledgerEventKind.follow_up.created': 'Uppföljning skapad',
+  'enum.ledgerEventKind.follow_up.updated': 'Uppföljning uppdaterad',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Bevis på utskick av genererat dokument registrerat',
+  'enum.ledgerEventKind.group_template_library.archived': 'Gruppens mallbibliotek arkiverat',
+  'enum.ledgerEventKind.group_template_library.created': 'Gruppens mallbibliotek skapat',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revision av mallbiblioteket skapad',
+  'enum.ledgerEventKind.group_template_library.updated': 'Gruppens mallbibliotek uppdaterat',
+  'enum.ledgerEventKind.law.fetched': 'Rättskälla hämtad',
+  'enum.ledgerEventKind.law.removed': 'Rättskälla borttagen',
+  'enum.ledgerEventKind.ledger.exported': 'Register exporterat',
+  'enum.ledgerEventKind.ledger.imported': 'Register importerat',
+  'enum.ledgerEventKind.ledger.reanchored': 'Register omförankrat',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Register ominitierat',
+  'enum.ledgerEventKind.ledger.restored': 'Register återställt',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'OCR-konverteringsdossier skapat',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted': 'Protokollutkast skapat från OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'OCR-utkast skapat',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'OCR-utkast granskat',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'OCR-status uppdaterad',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Pappersbok bevarad',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Vidarebefordrade loggar godtagna',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Vidarebefordrade loggar nekade',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Vidarebefordrade loggar avvisade',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Vidarebefordrade loggar undertryckta',
+  'enum.ledgerEventKind.platform.service.control': 'Plattformstjänst styrd',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Åtgärdsplan för personuppgiftsincidenter skapad',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Åtgärdsplan för personuppgiftsincidenter uppdaterad',
+  'enum.ledgerEventKind.privacy.dpia.created': 'Konsekvensbedömning avseende dataskydd skapad',
+  'enum.ledgerEventKind.privacy.dpia.updated': 'Konsekvensbedömning avseende dataskydd uppdaterad',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Begäran från registrerad slutförd',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Begäran från registrerad skapad',
+  'enum.ledgerEventKind.privacy.processor.created': 'Personuppgiftsbiträde registrerat',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Personuppgiftsbiträde uppdaterat',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Beslut om gallringskandidat registrerat',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Verkställighet av gallring begärd',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Granskning av gallringsverkställighet avslutad',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Gallringspolicy skapad',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Gallringspolicy uppdaterad',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Kontroll av internationell överföring skapad',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Kontroll av internationell överföring uppdaterad',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered': 'Leverantörsuppgifter omordnade',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Leverantörsuppgift skapad',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Leverantörsuppgift borttagen',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Leverantörsuppgift uppdaterad',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Automatisk uppdatering av handelsregistret försökt',
+  'enum.ledgerEventKind.registry.imported': 'Registerutdrag importerat',
+  'enum.ledgerEventKind.role.assigned': 'Roll tilldelad',
+  'enum.ledgerEventKind.role.created': 'Roll skapad',
+  'enum.ledgerEventKind.role.deleted': 'Roll borttagen',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Avvikelse i basroller avstämd',
+  'enum.ledgerEventKind.role.unassigned': 'Roll fråntagen',
+  'enum.ledgerEventKind.role.updated': 'Roll uppdaterad',
+  'enum.ledgerEventKind.settings.updated': 'Inställningar uppdaterade',
+  'enum.ledgerEventKind.signature.external_envelope.created': 'Kuvert för extern signering skapat',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Kuvert för extern signering uppdaterat',
+  'enum.ledgerEventKind.signature.external_invite.accepted':
+    'Inbjudan till extern signering accepterad',
+  'enum.ledgerEventKind.signature.external_invite.created': 'Inbjudan till extern signering skapad',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Inbjudan till extern signering avböjd',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Inbjudan till extern signering återkallad',
+  'enum.ledgerEventKind.subject.erased': 'Den registrerades uppgifter raderade',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Behandling av den registrerade begränsad',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Rättelse för den registrerade noterad',
+  'enum.ledgerEventKind.template.created': 'Mall skapad',
+  'enum.ledgerEventKind.template.deleted': 'Mall borttagen',
+  'enum.ledgerEventKind.template.updated': 'Mall uppdaterad',
+  'enum.ledgerEventKind.tenant.created': 'Organisation skapad',
+  'enum.ledgerEventKind.user.created': 'Användare skapad',
+  'enum.ledgerEventKind.user.recovery.issued': 'Kontoåterställning utfärdad',
+  'enum.ledgerEventKind.user.secret.reset': 'Användarhemlighet återställd',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Återställning av hemlighet nekad',
+  'enum.ledgerEventKind.user.updated': 'Användare uppdaterad',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'ZK-kryptotext inlämnad',
+  'enum.ledgerEventKind.zk.manifest.registered': 'ZK-manifest registrerat',
+  'enum.ledgerEventKind.zk.readability.exported': 'ZK-läsbarhet exporterad',
+  'enum.ledgerEventKind.zk.repository.created': 'ZK-förvar skapat',
+  'enum.ledgerEventKind.zk.repository.deleted': 'ZK-förvar borttaget',
+  'enum.ledgerEventKind.zk.repository.updated': 'ZK-förvar uppdaterat',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Organisationens ZK-policy borttagen',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Organisationens ZK-policy fastställd',
+};
+
+/** sv-SE — machine-authored, pending native review (see TRANSLATIONS.md). */
+export const ledgerEventLabelsSvSE: LedgerEventLabels = {
+  'dashboard.activity.sequence.title': 'Verifierbar position i registerkedjan',
+  'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
+    'Bevis på utskick till frånvarande part registrerat',
+  'enum.ledgerEventKind.act.advanced': 'Protokoll flyttat till nästa status',
+  'enum.ledgerEventKind.act.ai_human_verification': 'AI-stött innehåll verifierat av en person',
+  'enum.ledgerEventKind.act.archived': 'Protokoll arkiverat',
+  'enum.ledgerEventKind.act.drafted': 'Protokollutkast skapat',
+  'enum.ledgerEventKind.act.sealed': 'Protokoll förseglat',
+  'enum.ledgerEventKind.act.updated': 'Protokoll uppdaterat',
+  'enum.ledgerEventKind.api_key.created': 'API-nyckel skapad',
+  'enum.ledgerEventKind.api_key.revoked': 'API-nyckel återkallad',
+  'enum.ledgerEventKind.api_key.rotated': 'API-nyckel roterad',
+  'enum.ledgerEventKind.backup.created': 'Säkerhetskopia skapad',
+  'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
+    'Arkivgallring av boken registrerad',
+  'enum.ledgerEventKind.book.closed': 'Bok avslutad',
+  'enum.ledgerEventKind.book.legal_hold.cleared': 'Rättslig spärr på boken hävd',
+  'enum.ledgerEventKind.book.legal_hold.set': 'Rättslig spärr på boken satt',
+  'enum.ledgerEventKind.book.opened': 'Bok öppnad',
+  'enum.ledgerEventKind.cae.updated': 'CAE-katalog uppdaterad',
+  'enum.ledgerEventKind.company_group.archived': 'Enhetsgrupp arkiverad',
+  'enum.ledgerEventKind.company_group.created': 'Enhetsgrupp skapad',
+  'enum.ledgerEventKind.company_group.entity_assigned': 'Enhet tillagd i gruppen',
+  'enum.ledgerEventKind.company_group.entity_removed': 'Enhet borttagen från gruppen',
+  'enum.ledgerEventKind.company_group.updated': 'Enhetsgrupp uppdaterad',
+  'enum.ledgerEventKind.connector.allowlist.updated':
+    'Lista över tillåtna anslutningsvärdar uppdaterad',
+  'enum.ledgerEventKind.connector_job.cancel_requested': 'Avbrytande av anslutningsjobb begärt',
+  'enum.ledgerEventKind.connector_job.queued': 'Anslutningsjobb köat',
+  'enum.ledgerEventKind.connector_job.replayed': 'Anslutningsjobb körts om',
+  'enum.ledgerEventKind.connector_job.retry_requested': 'Nytt försök för anslutningsjobb begärt',
+  'enum.ledgerEventKind.connector_target.archived': 'Anslutningsmål arkiverat',
+  'enum.ledgerEventKind.connector_target.created': 'Anslutningsmål skapat',
+  'enum.ledgerEventKind.connector_target.updated': 'Anslutningsmål uppdaterat',
+  'enum.ledgerEventKind.convening.dispatched': 'Kallelse utskickad',
+  'enum.ledgerEventKind.data.wiped': 'Instansdata raderade',
+  'enum.ledgerEventKind.delegation.granted': 'Fullmakt beviljad',
+  'enum.ledgerEventKind.delegation.revoked': 'Fullmakt återkallad',
+  'enum.ledgerEventKind.document.generated': 'Dokument genererat',
+  'enum.ledgerEventKind.document.imported': 'Dokument importerat',
+  'enum.ledgerEventKind.document.imported.review_updated':
+    'Granskning av importerat dokument uppdaterad',
+  'enum.ledgerEventKind.document.signature.archive_timestamp_appended': 'Arkivtidsstämpel tillagd',
+  'enum.ledgerEventKind.document.signature.dss_attached': 'Valideringsdata för signaturen bifogade',
+  'enum.ledgerEventKind.document.signature.ltv_executed': 'Långtidsvalidering av signaturen utförd',
+  'enum.ledgerEventKind.document.signature.ltv_renewed': 'Långtidsvalidering av signaturen förnyad',
+  'enum.ledgerEventKind.document.signature.revocation_evidence_collected': 'Spärrbevis insamlat',
+  'enum.ledgerEventKind.document.signature.validated_for_seal': 'Signatur validerad för försegling',
+  'enum.ledgerEventKind.document.signed': 'Dokument undertecknat',
+  'enum.ledgerEventKind.entity.created': 'Enhet skapad',
+  'enum.ledgerEventKind.entity.statute_updated': 'Enhetens stadgar uppdaterade',
+  'enum.ledgerEventKind.follow_up.completed': 'Uppföljning slutförd',
+  'enum.ledgerEventKind.follow_up.created': 'Uppföljning skapad',
+  'enum.ledgerEventKind.follow_up.updated': 'Uppföljning uppdaterad',
+  'enum.ledgerEventKind.generated_document.dispatch_evidence_recorded':
+    'Bevis på utskick av genererat dokument registrerat',
+  'enum.ledgerEventKind.group_template_library.archived': 'Gruppens mallbibliotek arkiverat',
+  'enum.ledgerEventKind.group_template_library.created': 'Gruppens mallbibliotek skapat',
+  'enum.ledgerEventKind.group_template_library.revision_created':
+    'Revision av mallbiblioteket skapad',
+  'enum.ledgerEventKind.group_template_library.updated': 'Gruppens mallbibliotek uppdaterat',
+  'enum.ledgerEventKind.law.fetched': 'Rättskälla hämtad',
+  'enum.ledgerEventKind.law.removed': 'Rättskälla borttagen',
+  'enum.ledgerEventKind.ledger.exported': 'Register exporterat',
+  'enum.ledgerEventKind.ledger.imported': 'Register importerat',
+  'enum.ledgerEventKind.ledger.reanchored': 'Register omförankrat',
+  'enum.ledgerEventKind.ledger.reinitialized': 'Register ominitierat',
+  'enum.ledgerEventKind.ledger.restored': 'Register återställt',
+  'enum.ledgerEventKind.paper_book_import.ocr_conversion_dossier_created':
+    'OCR-konverteringsdossier skapat',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_act_drafted': 'Protokollutkast skapat från OCR',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_created': 'OCR-utkast skapat',
+  'enum.ledgerEventKind.paper_book_import.ocr_draft_reviewed': 'OCR-utkast granskat',
+  'enum.ledgerEventKind.paper_book_import.ocr_status_updated': 'OCR-status uppdaterad',
+  'enum.ledgerEventKind.paper_book_import.preserved': 'Pappersbok bevarad',
+  'enum.ledgerEventKind.platform.log.forwarded.accepted': 'Vidarebefordrade loggar godtagna',
+  'enum.ledgerEventKind.platform.log.forwarded.denied': 'Vidarebefordrade loggar nekade',
+  'enum.ledgerEventKind.platform.log.forwarded.rejected': 'Vidarebefordrade loggar avvisade',
+  'enum.ledgerEventKind.platform.log.forwarded.suppressed': 'Vidarebefordrade loggar undertryckta',
+  'enum.ledgerEventKind.platform.service.control': 'Plattformstjänst styrd',
+  'enum.ledgerEventKind.privacy.breach.playbook.created':
+    'Åtgärdsplan för personuppgiftsincidenter skapad',
+  'enum.ledgerEventKind.privacy.breach.playbook.updated':
+    'Åtgärdsplan för personuppgiftsincidenter uppdaterad',
+  'enum.ledgerEventKind.privacy.dpia.created': 'Konsekvensbedömning avseende dataskydd skapad',
+  'enum.ledgerEventKind.privacy.dpia.updated': 'Konsekvensbedömning avseende dataskydd uppdaterad',
+  'enum.ledgerEventKind.privacy.dsr.request.completed': 'Begäran från registrerad slutförd',
+  'enum.ledgerEventKind.privacy.dsr.request.created': 'Begäran från registrerad skapad',
+  'enum.ledgerEventKind.privacy.processor.created': 'Personuppgiftsbiträde registrerat',
+  'enum.ledgerEventKind.privacy.processor.updated': 'Personuppgiftsbiträde uppdaterat',
+  'enum.ledgerEventKind.privacy.retention.candidate.resolution.recorded':
+    'Beslut om gallringskandidat registrerat',
+  'enum.ledgerEventKind.privacy.retention.execution.requested': 'Verkställighet av gallring begärd',
+  'enum.ledgerEventKind.privacy.retention.execution.review.closed':
+    'Granskning av gallringsverkställighet avslutad',
+  'enum.ledgerEventKind.privacy.retention.policy.created': 'Gallringspolicy skapad',
+  'enum.ledgerEventKind.privacy.retention.policy.updated': 'Gallringspolicy uppdaterad',
+  'enum.ledgerEventKind.privacy.transfer.control.created':
+    'Kontroll av internationell överföring skapad',
+  'enum.ledgerEventKind.privacy.transfer.control.updated':
+    'Kontroll av internationell överföring uppdaterad',
+  'enum.ledgerEventKind.provider.credentials.entries.reordered': 'Leverantörsuppgifter omordnade',
+  'enum.ledgerEventKind.provider.credentials.entry.created': 'Leverantörsuppgift skapad',
+  'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Leverantörsuppgift borttagen',
+  'enum.ledgerEventKind.provider.credentials.entry.updated': 'Leverantörsuppgift uppdaterad',
+  'enum.ledgerEventKind.registry.auto_update.attempted':
+    'Automatisk uppdatering av handelsregistret försökt',
+  'enum.ledgerEventKind.registry.imported': 'Registerbevis importerat',
+  'enum.ledgerEventKind.role.assigned': 'Roll tilldelad',
+  'enum.ledgerEventKind.role.created': 'Roll skapad',
+  'enum.ledgerEventKind.role.deleted': 'Roll borttagen',
+  'enum.ledgerEventKind.role.seeded_drift_reconciled': 'Avvikelse i basroller avstämd',
+  'enum.ledgerEventKind.role.unassigned': 'Roll fråntagen',
+  'enum.ledgerEventKind.role.updated': 'Roll uppdaterad',
+  'enum.ledgerEventKind.settings.updated': 'Inställningar uppdaterade',
+  'enum.ledgerEventKind.signature.external_envelope.created': 'Kuvert för extern signering skapat',
+  'enum.ledgerEventKind.signature.external_envelope.updated':
+    'Kuvert för extern signering uppdaterat',
+  'enum.ledgerEventKind.signature.external_invite.accepted':
+    'Inbjudan till extern signering accepterad',
+  'enum.ledgerEventKind.signature.external_invite.created': 'Inbjudan till extern signering skapad',
+  'enum.ledgerEventKind.signature.external_invite.declined':
+    'Inbjudan till extern signering avböjd',
+  'enum.ledgerEventKind.signature.external_invite.revoked':
+    'Inbjudan till extern signering återkallad',
+  'enum.ledgerEventKind.subject.erased': 'Den registrerades uppgifter raderade',
+  'enum.ledgerEventKind.subject.processing_restricted': 'Behandling av den registrerade begränsad',
+  'enum.ledgerEventKind.subject.rectification_noted': 'Rättelse för den registrerade noterad',
+  'enum.ledgerEventKind.template.created': 'Mall skapad',
+  'enum.ledgerEventKind.template.deleted': 'Mall borttagen',
+  'enum.ledgerEventKind.template.updated': 'Mall uppdaterad',
+  'enum.ledgerEventKind.tenant.created': 'Organisation skapad',
+  'enum.ledgerEventKind.user.created': 'Användare skapad',
+  'enum.ledgerEventKind.user.recovery.issued': 'Kontoåterställning utfärdad',
+  'enum.ledgerEventKind.user.secret.reset': 'Användarhemlighet återställd',
+  'enum.ledgerEventKind.user.secret.reset.denied': 'Återställning av hemlighet nekad',
+  'enum.ledgerEventKind.user.updated': 'Användare uppdaterad',
+  'enum.ledgerEventKind.zk.ciphertext.committed': 'ZK-kryptotext inlämnad',
+  'enum.ledgerEventKind.zk.manifest.registered': 'ZK-manifest registrerat',
+  'enum.ledgerEventKind.zk.readability.exported': 'ZK-läsbarhet exporterad',
+  'enum.ledgerEventKind.zk.repository.created': 'ZK-förvar skapat',
+  'enum.ledgerEventKind.zk.repository.deleted': 'ZK-förvar borttaget',
+  'enum.ledgerEventKind.zk.repository.updated': 'ZK-förvar uppdaterat',
+  'enum.ledgerEventKind.zk.tenant_policy.deleted': 'Organisationens ZK-policy borttagen',
+  'enum.ledgerEventKind.zk.tenant_policy.upserted': 'Organisationens ZK-policy fastställd',
+};
+
+/**
+ * The kinds that carry a label, derived from the catalog slice so the set and the copy can
+ * never drift apart. Anything outside it renders its raw identifier.
+ */
+export const LABELLED_LEDGER_EVENT_KINDS: ReadonlySet<string> = new Set(
+  Object.keys(ledgerEventLabelsPtPT)
+    .filter((key) => key.startsWith('enum.ledgerEventKind.'))
+    .map((key) => key.slice('enum.ledgerEventKind.'.length)),
+);

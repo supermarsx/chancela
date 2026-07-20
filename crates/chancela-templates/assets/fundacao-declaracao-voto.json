@@ -1,0 +1,32 @@
+{
+  "id": "fundacao-declaracao-voto/v1",
+  "family": "Foundation",
+  "stage": "Deliberacao",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "fundacao-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Declaração de voto" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% for s in statements %}O(a) membro {{ s.member }}, quanto {% if agenda_number %}ao ponto {{ agenda_number }} ({{ text }}){% else %}à deliberação \"{{ text }}\"{% endif %}, declara: {{ s.text }} {% endfor %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "id": "cooperativa-convocatoria-ag/v1",
+  "family": "Cooperative",
+  "stage": "Convocatoria",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Convocatória — Assembleia Geral" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Sede", "value": "{{ entity.seat }}" },
+        { "key": "Data da reunião", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Hora", "value": "{{ meeting_time }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Modo de reunião", "value": "{{ channel | channel_label }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.convener %}{{ convening.convener }}{% else %}A mesa da assembleia geral{% endif %}{% if convening.convener_capacity %}, na qualidade de {{ convening.convener_capacity | role_label }},{% endif %} convoca os cooperadores de {{ entity.name }}, NIPC {{ entity.nipc }}, para a assembleia geral a realizar nos termos acima indicados, ao abrigo do Código Cooperativo (Lei n.º 119/2015)."
+    },
+    { "kind": "Heading", "level": 2, "template": "Ordem de trabalhos" },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nos termos do Código Cooperativo, a assembleia geral é convocada com a antecedência mínima de {{ threshold(\"cooperativa.convocatoria.antecedencia_dias\") }}.{% if convening.antecedence_days %} A presente convocatória foi expedida com {{ convening.antecedence_days }} dias de antecedência em relação à data da reunião.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.dispatch_date %}Expedida em {{ convening.dispatch_date | long_date }}{% if convening.channel %} por {% if convening.channel == 'RegisteredLetter' %}carta registada{% elif convening.channel == 'RegisteredLetterAR' %}carta registada com aviso de receção{% elif convening.channel == 'Email' %}correio eletrónico{% elif convening.channel == 'HandDelivery' %}entrega em mão{% elif convening.channel == 'Publication' %}publicação{% elif convening.channel == 'Portal' %}portal da cooperativa{% endif %}{% endif %}.{% endif %}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Comprovativo de expedição"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "convening.recipients",
+      "rows": [
+        { "key": "Destinatário", "value": "{{ name }}" },
+        { "key": "Contacto", "value": "{{ contact }}" },
+        { "key": "Meio de expedição", "value": "{% if channel == 'RegisteredLetterAR' %}Carta registada com aviso de receção{% elif channel == 'RegisteredLetter' %}Carta registada{% elif channel == 'Email' %}Correio eletrónico{% elif channel == 'HandDelivery' %}Entrega em mão{% elif channel == 'Publication' %}Publicação{% elif channel == 'Portal' %}Portal{% endif %}" },
+        { "key": "Referência de expedição", "value": "{{ reference }}" },
+        { "key": "Data de expedição", "value": "{{ dispatched_at | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.second_call and convening.second_call.date %}Caso não se verifique o quórum necessário em primeira convocatória, a assembleia reúne em segunda convocatória no dia {{ convening.second_call.date | long_date }}{% if convening.second_call.time %}, pelas {{ convening.second_call.time }} horas{% endif %}{% if convening.second_call.reduced_quorum %}, podendo deliberar com qualquer número de cooperadores presentes ou representados{% endif %}.{% endif %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

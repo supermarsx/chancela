@@ -1,0 +1,1244 @@
+name: CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforce_security_scans:
+        description: Fail report-only dependency/image vulnerability scans when they return findings or errors.
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Metadata: cheap release metadata guard that fails before heavier builds.
+  # ---------------------------------------------------------------------------
+  metadata:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # check:spec-coverage resolves the recorded implementation-snapshot
+          # commit with `git rev-parse <sha>^{commit}`; a shallow clone does not
+          # contain it. This is the only job that needs full history.
+          fetch-depth: 0
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Check release versions
+        run: npm run check:versions
+
+      - name: Check spec coverage tracker
+        run: npm run check:spec-coverage
+
+      # ci.coverage.thresholds.non_web_unit: browser/desktop/Docker/live-provider
+      # coverage thresholds remain explicit waiver debt outside the apps/web
+      # Vitest/V8 unit-test lane.
+      - name: Check CI assurance waivers
+        run: npm run check:ci-assurance-waivers
+
+      - name: Check live-provider assurance gates
+        run: npm run check:live-provider-assurance
+
+      - name: Check encrypted build defaults
+        run: npm run check:encrypted-build-defaults
+
+      - name: Check immutable supply-chain pins
+        run: npm run check:supply-chain-pins
+
+      - name: Check release trust validator fixtures
+        run: node scripts/check-release-trust.mjs self-test
+
+      - name: Check SBOM package linkage fixtures
+        run: node scripts/release-supply-chain.mjs self-test
+
+      - name: Check package provenance fixtures
+        run: node scripts/check-package-artifacts.mjs --fixture --skip-dist
+
+  # ---------------------------------------------------------------------------
+  # Supply chain: deterministic lockfile SBOM plus advisory reports. SBOM
+  # generation/check is enforced; vulnerability reports are report-only by
+  # default and become blocking only for manual runs with enforce_security_scans.
+  # Cargo audit is heavier, so PRs run it only when labeled run-security-scans.
+  # ---------------------------------------------------------------------------
+  supply-chain:
+    name: Supply chain reports
+    runs-on: ubuntu-latest
+    env:
+      SECURITY_SCAN_ENFORCED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enforce_security_scans == 'true' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Generate dependency SBOM
+        run: |
+          mkdir -p dist/supply-chain
+          node scripts/release-supply-chain.mjs sbom --output dist/supply-chain/chancela-dependency-sbom.cdx.json
+          node scripts/release-supply-chain.mjs check --input dist/supply-chain/chancela-dependency-sbom.cdx.json
+
+      - name: npm production vulnerability audit (report)
+        id: npm-audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --audit-level=high --json > dist/supply-chain/npm-audit-prod.json
+          status=$?
+          set -e
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ]; then
+            echo "npm production audit did not report high/critical findings." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "npm production audit returned status $status; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ] && [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
+      - name: Cargo advisory audit (report)
+        id: cargo-audit
+        if: >-
+          github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'pull_request' &&
+           contains(github.event.pull_request.labels.*.name, 'run-security-scans'))
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+
+          if ! cargo audit --version >/dev/null 2>&1; then
+            set +e
+            cargo install cargo-audit --version 0.22.2 --locked
+            install_status=$?
+            set -e
+            if [ "$install_status" -ne 0 ]; then
+              status="$install_status"
+              cat > dist/supply-chain/cargo-audit.json <<JSON
+          {
+            "status": "skipped",
+            "reason": "cargo-audit could not be installed in this CI run",
+            "installExitCode": $install_status
+          }
+          JSON
+              echo "cargo-audit install failed with status $install_status; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+              echo "status=$status" >> "$GITHUB_OUTPUT"
+              if [ "$SECURITY_SCAN_ENFORCED" = "true" ]; then
+                exit "$status"
+              fi
+              exit 0
+            fi
+          fi
+
+          set +e
+          cargo audit --json > dist/supply-chain/cargo-audit-raw.json
+          status=$?
+          set -e
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          node scripts/check-cargo-audit-policy.mjs \
+            --input dist/supply-chain/cargo-audit-raw.json
+          echo "cargo audit raw status $status; the only accepted finding is RUSTSEC-2023-0071 on rsa 0.9.10, reviewed by 2026-08-31. The unfiltered report is uploaded." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload supply chain reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chancela-supply-chain-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/supply-chain/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Rust: format, lint (deny warnings) and test on all three desktop platforms.
+  # ---------------------------------------------------------------------------
+  rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # chancela-smartcard links libpcsclite via the pcsc crate; Linux needs the
+      # dev headers + daemon (Windows uses WinSCard, macOS the PCSC framework).
+      - name: Install PC/SC system deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  # ---------------------------------------------------------------------------
+  # PDF accessibility: run an independent, current veraPDF machine-validation
+  # gate for both claims over TWO corpora, which prove different things:
+  #
+  #   1. the deterministic hand-built writer fixture — a WRITER-level guarantee
+  #      that the PDF engine can emit conformant output; and
+  #   2. real atas + termos de abertura for all five entity families, rendered
+  #      through the shipped `chancela_templates::render` -> `pdfa::write` seam
+  #      — a TEMPLATE-level guarantee, which (1) cannot give: a template whose
+  #      authored structure renders non-conformantly would leave (1) green.
+  #
+  # Human PDF/UA checkpoints remain a release/accessibility review boundary.
+  # ---------------------------------------------------------------------------
+  pdfua-external:
+    name: PDF/A-2u + PDF/UA-1 (veraPDF)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Install Java 21
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Generate self-checked PDF fixture
+        run: |
+          mkdir -p dist/pdf-validation
+          cargo run -p chancela-doc --example write_pdfua_fixture --locked -- \
+            dist/pdf-validation/chancela-pdfua-fixture.pdf
+
+      # Ten real documents: one ata + one termo de abertura per family
+      # (csc, condominio, assoc, fundacao, cooperativa), each rendered from the
+      # embedded catalog template the API's spine auto-generation would pick.
+      # Same debug profile and same dev-dependency set as the fixture above, so
+      # this reuses that build and costs only the added crate compiles.
+      - name: Generate real catalog documents (ata + termo, 5 families)
+        run: |
+          cargo run -p chancela-doc --example write_catalog_pdfs --locked -- \
+            dist/pdf-validation/catalog
+
+      - name: Install immutable veraPDF 1.30.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/verapdf-installer.zip" \
+            https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.2-installer.zip
+          echo "6cc6341cb1af644044054b81f00a6590a7918abb18f762243de115258bcad838  $RUNNER_TEMP/verapdf-installer.zip" \
+            | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/verapdf-installer"
+          unzip -q "$RUNNER_TEMP/verapdf-installer.zip" \
+            -d "$RUNNER_TEMP/verapdf-installer"
+          (
+            cd "$RUNNER_TEMP/verapdf-installer/verapdf-greenfield-1.30.2"
+            sh ./verapdf-install "$GITHUB_WORKSPACE/scripts/verapdf-auto-install.xml"
+          )
+
+      - name: Validate PDF/A-2u and PDF/UA-1 claims (writer fixture)
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/verapdf/verapdf --flavour 2u --format json \
+            dist/pdf-validation/chancela-pdfua-fixture.pdf \
+            > dist/pdf-validation/verapdf-pdfa2u.json
+          /tmp/verapdf/verapdf --flavour ua1 --format json \
+            dist/pdf-validation/chancela-pdfua-fixture.pdf \
+            > dist/pdf-validation/verapdf-pdfua1.json
+          /tmp/verapdf/verapdf --flavour 2u --format text \
+            dist/pdf-validation/chancela-pdfua-fixture.pdf
+          /tmp/verapdf/verapdf --flavour ua1 --format text \
+            dist/pdf-validation/chancela-pdfua-fixture.pdf
+
+      # One veraPDF invocation per (document, flavour) rather than one batch
+      # call over all ten: attribution is then ours, not something a reader has
+      # to reconstruct from a merged report. Every document is validated even
+      # after the first failure, so one run tells you the full blast radius of
+      # a template defect (one family, or all of them). Costs ~20 JVM starts.
+      - name: Validate PDF/A-2u and PDF/UA-1 claims (real catalog documents)
+        shell: bash
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          docs=(dist/pdf-validation/catalog/*.pdf)
+          if [ "${#docs[@]}" -eq 0 ]; then
+            echo "::error::the catalog generator produced no PDFs — the template-level gate validated nothing"
+            exit 1
+          fi
+          reports=dist/pdf-validation/catalog-reports
+          mkdir -p "$reports"
+
+          failures=()
+          for pdf in "${docs[@]}"; do
+            doc="$(basename "$pdf" .pdf)"
+            for flavour in 2u ua1; do
+              log="$reports/$doc.$flavour.txt"
+              echo "----- veraPDF --flavour $flavour  $doc -----"
+              if /tmp/verapdf/verapdf --flavour "$flavour" --format text "$pdf" \
+                   > "$log" 2>&1; then
+                cat "$log"
+                echo "PASS  flavour=$flavour  document=$doc"
+              else
+                cat "$log"
+                # The veraPDF text report names each failed rule (specification
+                # clause + test number + description), so this annotation plus
+                # the block above answers both "which document" and "which rule".
+                echo "::error file=crates/chancela-templates/assets::veraPDF REJECTED $doc under flavour $flavour — failed rules are listed in the block above and in $log"
+                failures+=("$doc ($flavour)")
+              fi
+            done
+          done
+
+          echo
+          echo "validated ${#docs[@]} real documents x 2 flavours; ${#failures[@]} rejection(s)"
+          if [ "${#failures[@]}" -ne 0 ]; then
+            printf 'REJECTED: %s\n' "${failures[@]}"
+            exit 1
+          fi
+
+      - name: Upload external validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chancela-pdf-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/pdf-validation/
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # SQLCipher: compile and run the opt-in encrypted-store tests on Windows with
+  # a native Win32 Perl pinned ahead of vendored OpenSSL's build. Without this,
+  # openssl-src may discover an incompatible Unix/Cygwin perl.exe first.
+  # ---------------------------------------------------------------------------
+  sqlcipher:
+    name: SQLCipher feature (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install native Perl for vendored OpenSSL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install strawberryperl --version=5.40.4.1 --no-progress --yes
+
+          $perlBin = 'C:\Strawberry\perl\bin'
+          $cBin = 'C:\Strawberry\c\bin'
+          if (-not (Test-Path (Join-Path $perlBin 'perl.exe'))) {
+            throw "Pinned Strawberry Perl was not installed at $perlBin"
+          }
+
+          "$perlBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "$cBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "PERL=$perlBin\perl.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $env:Path = "$perlBin;$cBin;$env:Path"
+          perl -MConfig -e 'print qq(perl=$^X\narch=$Config{archname}\nversion=$]\n)'
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Run SQLCipher feature tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $perl = (Get-Command perl -ErrorAction Stop).Source
+          if ($perl -notlike 'C:\Strawberry\perl\bin\perl.exe') {
+            throw "Expected Strawberry Perl first on PATH, got $perl"
+          }
+          cargo test -p chancela-store --locked --features sqlcipher sqlcipher
+
+  # ---------------------------------------------------------------------------
+  # Postgres store: run an existing ignored chancela-store live-backend test
+  # against a disposable GitHub Actions PostgreSQL service. This is deliberately
+  # limited to the store integration test binary; API seed/cluster/feed/sidecar
+  # live tests stay opt-in and ignored.
+  # ---------------------------------------------------------------------------
+  postgres:
+    name: Postgres store backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_USER: chancela
+          POSTGRES_PASSWORD: chancela
+          POSTGRES_DB: chancela_store_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chancela -d chancela_store_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://chancela:chancela@localhost:5432/chancela_store_ci
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Enable verified TLS on the Postgres service
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+
+          cert_dir="${RUNNER_TEMP}/chancela-postgres-tls"
+          mkdir -p "$cert_dir"
+
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
+            -keyout "$cert_dir/ca.key" \
+            -out "$cert_dir/ca.crt" \
+            -subj "/CN=Chancela CI Postgres Root" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "keyUsage=critical,keyCertSign,cRLSign"
+          openssl req -newkey rsa:2048 -sha256 -nodes \
+            -keyout "$cert_dir/server.key" \
+            -out "$cert_dir/server.csr" \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+            -addext "basicConstraints=critical,CA:FALSE" \
+            -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+            -addext "extendedKeyUsage=serverAuth"
+          openssl x509 -req -sha256 -days 1 \
+            -in "$cert_dir/server.csr" \
+            -CA "$cert_dir/ca.crt" \
+            -CAkey "$cert_dir/ca.key" \
+            -CAcreateserial \
+            -out "$cert_dir/server.crt" \
+            -copy_extensions copy
+
+          pgdata="$(docker exec "$POSTGRES_CONTAINER_ID" sh -c 'printf %s "$PGDATA"')"
+          docker cp "$cert_dir/server.crt" "$POSTGRES_CONTAINER_ID:$pgdata/server.crt"
+          docker cp "$cert_dir/server.key" "$POSTGRES_CONTAINER_ID:$pgdata/server.key"
+          docker cp "$cert_dir/ca.crt" "$POSTGRES_CONTAINER_ID:/tmp/chancela-ci-ca.crt"
+          docker exec -u root "$POSTGRES_CONTAINER_ID" \
+            chown postgres:postgres "$pgdata/server.crt" "$pgdata/server.key"
+          docker exec -u root "$POSTGRES_CONTAINER_ID" chmod 600 "$pgdata/server.key"
+
+          docker exec -u postgres "$POSTGRES_CONTAINER_ID" \
+            psql -U chancela -d chancela_store_ci -v ON_ERROR_STOP=1 \
+              -c "ALTER SYSTEM SET ssl = 'on'"
+          docker exec -u postgres "$POSTGRES_CONTAINER_ID" \
+            psql -U chancela -d chancela_store_ci -v ON_ERROR_STOP=1 \
+              -c "ALTER SYSTEM SET ssl_cert_file = '$pgdata/server.crt'"
+          docker exec -u postgres "$POSTGRES_CONTAINER_ID" \
+            psql -U chancela -d chancela_store_ci -v ON_ERROR_STOP=1 \
+              -c "ALTER SYSTEM SET ssl_key_file = '$pgdata/server.key'"
+          docker restart "$POSTGRES_CONTAINER_ID"
+
+          for attempt in $(seq 1 30); do
+            if docker exec "$POSTGRES_CONTAINER_ID" \
+              pg_isready -U chancela -d chancela_store_ci >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              docker logs "$POSTGRES_CONTAINER_ID"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          tls_active="$(docker exec -e PGPASSWORD=chancela "$POSTGRES_CONTAINER_ID" \
+            psql "host=localhost port=5432 user=chancela dbname=chancela_store_ci sslmode=verify-full sslrootcert=/tmp/chancela-ci-ca.crt" \
+              -tAc 'SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()')"
+          test "$tls_active" = "t"
+          echo "CHANCELA_PG_TLS_ROOT_CERT=$cert_dir/ca.crt" >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Run live Postgres store backend runtime test
+        run: |
+          cargo test -p chancela-store --features postgres --locked --test postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored --test-threads=1
+          cargo test -p chancela-store --features postgres --locked --test postgres_backend sslmode_verify_full_opens_and_roundtrips_on_postgres -- --ignored --test-threads=1
+
+  # ---------------------------------------------------------------------------
+  # Web: format, lint, test and build the @chancela/web workspace on supported
+  # Node LTS, using the committed root npm lockfile.
+  # ---------------------------------------------------------------------------
+  web:
+    name: Web (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Node ${{ matrix.node }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Format check
+        run: npm run format:check --workspace apps/web
+
+      - name: Lint
+        run: npm run lint --workspace apps/web
+
+      - name: Test with coverage thresholds
+        run: npm run test:coverage --workspace apps/web
+
+      - name: Build
+        run: npm run build --workspace apps/web
+
+  # ---------------------------------------------------------------------------
+  # Recent landed checkpoint: focused regression lane for areas that landed in
+  # parallel and are easy to miss in broad jobs: API paper import,
+  # archive-package evidence including /DocTimeStamp, local PKCS#12 signing,
+  # bounded retention, data key preflight, TSL hardening, MCP resources/prompts,
+  # web contract/dashboard/signing/template/i18n pins, static browser E2E markers,
+  # validator corpus manifest integrity, and desktop Cargo.lock resolution.
+  # ---------------------------------------------------------------------------
+  recent-landed:
+    name: Recent landed checkpoint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run recent landed checkpoint
+        run: npm run test:checkpoint:recent-landed
+
+  # ---------------------------------------------------------------------------
+  # Docker: prove the server and dedicated worker images build and boot with
+  # durable persistence.
+  # Kept off pull requests (the release build is slow) so PR feedback stays
+  # fast; it gates pushes to main and can be run manually. No push.
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker build + smoke (server + worker)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
+    env:
+      SECURITY_SCAN_ENFORCED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enforce_security_scans == 'true' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Prepare Docker metadata
+        id: docker-meta
+        shell: bash
+        run: |
+          echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Docker Compose profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f docker/docker-compose.yml --profile single-node config --quiet
+          docker compose -f docker/docker-compose.yml --profile validation-worker config --quiet
+          docker compose -f docker/docker-compose.yml --profile worker config --quiet
+          docker compose -f docker-compose.hardened.yml --profile worker config --quiet
+
+      - name: Build server image (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.server
+          push: false
+          load: true
+          tags: chancela-server:ci
+          labels: |
+            org.opencontainers.image.title=Chancela server
+            org.opencontainers.image.description=Chancela self-hosted server CI image
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.docker-meta.outputs.created }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build worker image (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.worker
+          push: false
+          load: true
+          tags: chancela-worker:ci
+          labels: |
+            org.opencontainers.image.title=Chancela worker
+            org.opencontainers.image.description=Chancela durable sync and backup worker CI image
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.docker-meta.outputs.created }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+      - name: Smoke server container
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          data_dir="$(mktemp -d)"
+          chmod 777 "$data_dir"
+          container=""
+
+          cleanup() {
+            local status=$?
+            if [ "$status" -ne 0 ] && [ -n "$container" ]; then
+              docker logs "$container" || true
+            fi
+            if [ -n "$container" ]; then
+              docker rm -f "$container" >/dev/null 2>&1 || true
+            fi
+            # The container runs as a non-root uid and can leave files the runner user cannot
+            # unlink, so tidy-up is best-effort. Re-raise the real status explicitly: a trap
+            # otherwise hands the step whatever the last cleanup command returned, which
+            # turned a PASSING smoke into a red job.
+            rm -rf "$data_dir" 2>/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          container="$(docker run -d \
+            --name "chancela-server-ci-${{ github.run_id }}-${{ github.run_attempt }}" \
+            -p 127.0.0.1::8080 \
+            -e CHANCELA_DATA_DIR=/data \
+            -v "$data_dir:/data" \
+            chancela-server:ci)"
+
+          mapped="$(docker port "$container" 8080/tcp)"
+          health_url="http://${mapped}/health"
+          body=""
+
+          for _ in {1..60}; do
+            if body="$(curl -fsS "$health_url")"; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ -z "$body" ]; then
+            echo "server did not become healthy at $health_url" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$body"
+          HEALTH_BODY="$body" python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          health = json.loads(os.environ["HEALTH_BODY"])
+          checks = {
+              "status": health.get("status") == "ok",
+              "persistent": health.get("persistent") is True,
+              "ledger_verified": health.get("ledger_verified") is True,
+              "store_schema_version": isinstance(health.get("store_schema_version"), int),
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          if failed:
+              raise SystemExit(f"health smoke failed {failed}: {health!r}")
+          PY
+
+      - name: Smoke dedicated worker container
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Layout must match docker/worker-config.example.json (source_root and
+          # target roots) and the image's baked /var/lib/chancela/worker paths.
+          data_dir="$(mktemp -d)"
+          mkdir -p \
+            "$data_dir/worker/sources" \
+            "$data_dir/worker/targets/sync" \
+            "$data_dir/worker/targets/backup" \
+            "$data_dir/worker/queue"
+          chmod -R 777 "$data_dir"
+          container=""
+          cleanup() {
+            local status=$?
+            if [ "$status" -ne 0 ] && [ -n "$container" ]; then
+              docker logs "$container" || true
+            fi
+            if [ -n "$container" ]; then
+              docker rm -f "$container" >/dev/null 2>&1 || true
+            fi
+            # The container runs as a non-root uid and can leave files the runner user cannot
+            # unlink, so tidy-up is best-effort. Re-raise the real status explicitly: a trap
+            # otherwise hands the step whatever the last cleanup command returned, which
+            # turned a PASSING smoke into a red job.
+            rm -rf "$data_dir" 2>/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          docker run --rm \
+            -v "$PWD/docker/worker-config.example.json:/etc/chancela-worker/config.json:ro" \
+            chancela-worker:ci \
+            validate-config --config /etc/chancela-worker/config.json
+
+          container="$(docker run -d \
+            --name "chancela-worker-ci-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp \
+            -v "$data_dir:/var/lib/chancela" \
+            -v "$PWD/docker/worker-config.example.json:/etc/chancela-worker/config.json:ro" \
+            chancela-worker:ci)"
+
+          for _ in {1..30}; do
+            if docker exec "$container" /usr/local/bin/chancela-worker \
+              healthcheck --data-dir /var/lib/chancela/worker/queue --max-age-seconds 120; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "worker heartbeat did not become healthy" >&2
+          exit 1
+
+      - name: Smoke single-node Compose runtime hardening
+        shell: bash
+        run: bash scripts/docker-smoke.sh --compose-profile chancela-server:ci
+
+      - name: Collect Docker image metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/docker-security
+          docker image inspect chancela-server:ci > dist/docker-security/chancela-server-image-inspect.json
+          docker image inspect chancela-worker:ci > dist/docker-security/chancela-worker-image-inspect.json
+
+      - name: Generate Docker image SBOM (report)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/docker-security
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/dist/docker-security:/out" \
+            anchore/syft:v1.46.0@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb \
+            chancela-server:ci \
+            -o cyclonedx-json=/out/chancela-server-image-sbom.cdx.json
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/dist/docker-security:/out" \
+            anchore/syft:v1.46.0@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb \
+            chancela-worker:ci \
+            -o cyclonedx-json=/out/chancela-worker-image-sbom.cdx.json
+
+      - name: Scan Docker image vulnerabilities (report)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/docker-security
+          exit_code=0
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ]; then
+            exit_code=1
+          fi
+          set +e
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/dist/docker-security:/out" \
+            aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+            image \
+            --exit-code "$exit_code" \
+            --format json \
+            --output /out/chancela-server-trivy-high-critical.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            chancela-server:ci
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Docker image vulnerability scan completed; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Docker image vulnerability scan returned status $status; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ] && [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          set +e
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/dist/docker-security:/out" \
+            aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+            image \
+            --exit-code "$exit_code" \
+            --format json \
+            --output /out/chancela-worker-trivy-high-critical.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            chancela-worker:ci
+          worker_status=$?
+          set -e
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ] && [ "$worker_status" -ne 0 ]; then
+            exit "$worker_status"
+          fi
+
+      - name: Record Docker signing status
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/docker-security
+          cat > dist/docker-security/chancela-server-signing-status.json <<'JSON'
+          {
+            "image": "chancela-server:ci",
+            "imagePushed": false,
+            "signingPerformed": false,
+            "notarizationPerformed": false,
+            "attestationPerformed": false,
+            "releaseTrust": {
+              "mode": "local-ci",
+              "imagePublication": {
+                "status": "not_pushed",
+                "reason": "This CI job loads the Docker image locally and does not push it to a registry."
+              },
+              "signing": {
+                "status": "unsigned",
+                "reason": "No container signing identity or signing step is configured in this workflow."
+              },
+              "notarization": {
+                "status": "not_applicable",
+                "reason": "This local CI container image is not a notarized desktop artifact."
+              },
+              "attestation": {
+                "status": "not_attested",
+                "reason": "No container image attestation step is configured in this workflow."
+              }
+            },
+            "note": "This CI job builds and smokes a local Docker image only. It does not push, sign, attest, or notarize the image. Configure registry publishing and a signing identity before making a signed-image claim."
+          }
+          JSON
+          echo "Docker image signing/notarization: not performed for the local CI image." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check Docker trust declaration
+        run: node scripts/check-release-trust.mjs docker --input dist/docker-security/chancela-server-signing-status.json --expect-mode local-ci
+
+      - name: Upload Docker security artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chancela-docker-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/docker-security/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # E2E: composed-system journeys that drive the REAL cargo-built
+  # chancela-server binary over HTTP (crates/chancela-server/tests/**, gated
+  # behind the `e2e` cargo feature). This is the layer every layer-isolated unit
+  # test missed — the stale-server / SPA-static-fallback bug. The harness writes
+  # its own synthetic web dist and spawns in-process axum registry/CAE fixtures,
+  # so it needs no Node, no npm, and no apps/web build. It runs on Linux and
+  # Windows for every push and PR.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E (composed server, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # chancela-server's dependency tree does not link libpcsclite today, but
+      # install it defensively (matching the rust job) so a future transitive
+      # pcsc dep can't break the link step here.
+      - name: Install PC/SC system deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Run composed-system E2E journeys
+        run: cargo test -p chancela-server --features e2e --locked
+
+  # ---------------------------------------------------------------------------
+  # Browser E2E core (Playwright, headless chromium): a normal PR/push gate for
+  # the stable browser specs that prove the real built server + web bundle work
+  # in Chromium. Edge and long-tail browser coverage remains in the labeled full
+  # suite below.
+  # ---------------------------------------------------------------------------
+  browser-core:
+    name: Browser E2E (Chromium core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # The browser run builds the release chancela-server; keep the pcsc dep in
+      # place for the same defensive reason as the e2e job.
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # Downloads the chromium browser + its OS deps into the Playwright cache.
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      # Build the locked server + web dist, then run the stable core browser specs.
+      - name: Run core browser E2E
+        working-directory: apps/web
+        run: |
+          cargo build --release -p chancela-server --locked
+          npm run build
+          node e2e/run-playwright-with-cleanup-proof.mjs --project=chromium \
+            e2e/smoke.spec.ts \
+            e2e/session.spec.ts \
+            e2e/first-launch-onboarding.spec.ts \
+            e2e/journey.spec.ts
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-core-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Browser E2E full (Playwright, headless chromium): heavier edge/regression
+  # coverage. It is blocking when selected, but it stays on the main branch and
+  # PRs labeled `run-browser-tests` so the normal PR path is predictable.
+  # ---------------------------------------------------------------------------
+  browser-full:
+    name: Browser E2E (Chromium full)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-browser-tests'))
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run full browser E2E
+        working-directory: apps/web
+        run: |
+          cargo build --release -p chancela-server --locked
+          npm run build
+          node e2e/run-playwright-with-cleanup-proof.mjs --project=chromium
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-full-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Live seam compile gates: compile the opt-in network/hardware test surfaces
+  # without running them. These commands intentionally use --no-run so CI proves
+  # live seams still build while avoiding real providers, networks, and readers.
+  # ---------------------------------------------------------------------------
+  live-seams:
+    name: Live seam compile (no-run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: Compile live network and hardware test seams
+        run: |
+          cargo test -p chancela-cae --features network-tests --locked --no-run
+          cargo test -p chancela-cmd --features network-tests --locked --no-run
+          cargo test -p chancela-csc --features network-tests --locked --no-run
+          cargo test -p chancela-law --features network-tests --locked --no-run
+          cargo test -p chancela-registry --features network-tests --locked --no-run
+          cargo test -p chancela-tsa --features network-tests --locked --no-run
+          cargo test -p chancela-tsl --features network-tests --locked --no-run
+          cargo test -p chancela-smartcard --features hardware-tests --locked --no-run
+
+  # ---------------------------------------------------------------------------
+  # Desktop compile check (Tauri, Windows): a FAST per-PR/push gate that compiles
+  # the out-of-workspace desktop crate against the CURRENT chancela-api public
+  # surface. The root Cargo workspace excludes apps/desktop/src-tauri, so root CI
+  # never builds it — a breaking change to chancela-api's public API could
+  # otherwise land silently and only surface in the heavier Windows smoke below.
+  # This is compile-only: `cargo check` with the default `embedded-server`
+  # feature (which pulls in chancela-api) — no `sqlcipher`, so no vendored
+  # OpenSSL/Perl; no bundle; no smoke. It runs on every push and PR like the
+  # other quick checks; the heavier Desktop Smoke job stays on main/label.
+  # ---------------------------------------------------------------------------
+  desktop-check:
+    name: Desktop compile check (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache desktop cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          workspaces: |
+            apps/desktop/src-tauri -> target
+
+      # `tauri-build` refuses to run when `frontendDist` (apps/web/dist) is absent, and this
+      # gate deliberately never builds or loads the frontend — it only compiles the desktop
+      # crate against chancela-api's public surface. A placeholder keeps the gate honest about
+      # what it checks without dragging a full Node install + Vite build into a fast lane.
+      # (Desktop Smoke, which actually runs the app, builds the real bundle.)
+      - name: Provide a placeholder frontend bundle for tauri-build
+        shell: bash
+        run: |
+          mkdir -p apps/web/dist
+          printf '<!doctype html><title>compile-check placeholder</title>' > apps/web/dist/index.html
+
+      - name: Compile-check desktop crate against chancela-api
+        run: cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  # ---------------------------------------------------------------------------
+  # Desktop Smoke (Tauri, Windows): builds the loose no-bundle desktop app and
+  # drives its embedded server through the PowerShell smoke script. It is heavier
+  # and Windows-specific, so it stays on the release-heavy path: push to main,
+  # or PRs labeled `run-desktop-tests`.
+  # ---------------------------------------------------------------------------
+  desktop:
+    name: Desktop Smoke (Windows)
+    runs-on: windows-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-desktop-tests'))
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install native Perl for SQLCipher vendored OpenSSL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install strawberryperl --version=5.40.4.1 --no-progress --yes
+
+          $perlBin = 'C:\Strawberry\perl\bin'
+          $cBin = 'C:\Strawberry\c\bin'
+          if (-not (Test-Path (Join-Path $perlBin 'perl.exe'))) {
+            throw "Pinned Strawberry Perl was not installed at $perlBin"
+          }
+
+          "$perlBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "$cBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "PERL=$perlBin\perl.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $env:Path = "$perlBin;$cBin;$env:Path"
+          perl -MConfig -e 'print qq(perl=$^X\narch=$Config{archname}\nversion=$]\n)'
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Cache desktop cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          workspaces: |
+            apps/desktop/src-tauri -> target
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/desktop/package-lock.json
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Install root dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: npm ci --no-audit --no-fund
+
+      # `tauri-build` (run by every cargo invocation on the desktop crate) requires the built
+      # frontend at apps/web/dist. `build:no-bundle` produces it via beforeBuildCommand, but the
+      # Rust test step runs first — so build the real bundle up front.
+      - name: Build web assets for tauri-build
+        run: npm run build --workspace apps/web
+
+      - name: Test desktop Rust
+        working-directory: apps/desktop
+        run: npm run test:rust
+
+      - name: Build desktop no-bundle
+        working-directory: apps/desktop
+        run: npm run build:no-bundle
+
+      - name: Run desktop smoke
+        shell: pwsh
+        working-directory: apps/desktop
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $smokeRoot = Join-Path $env:RUNNER_TEMP 'chancela-desktop-smoke'
+          $dataDir = Join-Path $smokeRoot 'data'
+          $logDir = Join-Path $smokeRoot 'logs'
+          New-Item -ItemType Directory -Path $dataDir, $logDir -Force | Out-Null
+
+          Start-Transcript -Path (Join-Path $logDir 'desktop-smoke.log') -Force
+          try {
+            npm run test:smoke -- -DataDir $dataDir
+            if ($LASTEXITCODE -ne 0) {
+              throw "Desktop smoke failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Stop-Transcript
+          }
+
+      - name: Upload desktop smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-smoke-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/chancela-desktop-smoke/
+            apps/desktop/src-tauri/target/release/*.exe
+            apps/desktop/src-tauri/target/release/*.pdb
+          if-no-files-found: ignore
+          retention-days: 7

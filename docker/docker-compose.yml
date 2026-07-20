@@ -1,0 +1,461 @@
+# Hardened bounded deployment profiles for chancela-server (ARC-40/41/42).
+#
+# Single node:
+#   docker compose -f docker/docker-compose.yml --profile single-node up --build
+#
+# Server plus bounded validation-worker sidecar:
+#   docker compose -f docker/docker-compose.yml --profile validation-worker up --build
+#
+# Dedicated durable sync/backup worker (safe local targets by default):
+#   docker compose -f docker/docker-compose.yml --profile worker up --build
+#
+# Postgres durability backend plus Redis cache service:
+#   docker compose -f docker/docker-compose.yml --profile postgres up --build
+#
+# Security posture:
+#   - read_only root filesystem, writable scratch via tmpfs only.
+#   - all Linux capabilities dropped.
+#   - no-new-privileges: process cannot gain privileges via setuid binaries.
+#   - config injected via environment or docker secrets at runtime (never baked into the image).
+name: chancela
+
+services:
+  server:
+    profiles:
+      - single-node
+      - validation-worker
+      - worker
+    build:
+      # Context is the repo root so the Dockerfile can see the whole workspace.
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    image: ${CHANCELA_SERVER_IMAGE:-chancela-server:latest}
+    # This image is never published to a registry: chancela is self-hosted and
+    # every image is built from this repo. `build` makes `up` compile a missing
+    # image instead of attempting a registry pull that can only fail.
+    pull_policy: build
+    # --- container hardening (ARC-41) ---
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      # Writable scratch space; the root filesystem stays read-only.
+      - /tmp
+    environment:
+      # Bind on all interfaces inside the container (host maps the port below).
+      CHANCELA_ADDR: 0.0.0.0:8080
+      # Keep the server in durable mode; /health must report persistent: true.
+      CHANCELA_DATA_DIR: /var/lib/chancela
+      # Signature-provider credentials (CMD/CSC/SCAP API keys and secrets) need a
+      # root key to encrypt at rest. Linux containers have no OS credential-sealing
+      # provider (that is Windows DPAPI only), so saving one is refused until you
+      # supply a key — the server warns about this at startup. Left unset here so a
+      # deployment that never configures a provider needs no secret file. To enable,
+      # create the secret (see docker/secrets/README.md) and uncomment both lines:
+      #   CHANCELA_CREDENTIAL_KEY_FILE: /run/secrets/credential_key
+      # plus a matching `secrets:` list on this service. Encrypting the whole SQLite
+      # database with CHANCELA_DB_KEY_FILE also satisfies it, and protects more.
+    ports:
+      - target: 8080
+        published: "${CHANCELA_HOST_PORT:-8080}"
+        host_ip: 127.0.0.1
+    volumes:
+      # Durable SQLite store plus JSON sidecars. The image creates this path as
+      # the non-root runtime user so an empty named volume is writable.
+      - chancela-data:/var/lib/chancela
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    # Bounded resources so a single-node deployment cannot exhaust the host.
+    # `deploy.resources.limits` is honoured by `docker compose up` (v2).
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+    restart: unless-stopped
+
+  validation-worker:
+    profiles:
+      - validation-worker
+    image: ${CHANCELA_SERVER_IMAGE:-chancela-server:latest}
+    # No `build:` of its own: this sidecar reuses the exact image the `server`
+    # service builds in the same profile, and Compose completes every build
+    # before it creates any container. `never` keeps that image local rather
+    # than reaching for a registry that does not host it.
+    pull_policy: never
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      # This sidecar intentionally reuses the current server image because no
+      # dedicated worker image or worker entrypoint exists yet.
+      CHANCELA_ADDR: 0.0.0.0:8081
+      CHANCELA_DATA_DIR: /var/lib/chancela
+      CHANCELA_DEPLOYMENT_ROLE: validation-worker-sidecar
+    expose:
+      - "8081"
+    volumes:
+      # Separate durable state avoids concurrent writes to the server store.
+      - chancela-validation-worker-data:/var/lib/chancela
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------------
+  # Dedicated ARC-20 sync/backup worker. Sync and backup resolve to separate
+  # target IDs in the mounted config; the committed example uses two distinct
+  # local directories and contains no credential values.
+  # -----------------------------------------------------------------------
+  worker:
+    profiles:
+      - worker
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    image: ${CHANCELA_WORKER_IMAGE:-chancela-worker:latest}
+    # Built from source, never pulled — see the note on `server`.
+    pull_policy: build
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      CHANCELA_CONNECTOR_SECRETS_DIR: /run/chancela-connector-secrets
+      # Required for every non-local target. Exact hosts only; private DNS
+      # destinations also require their resolved IP/CIDR in this list.
+      CHANCELA_CONNECTOR_ALLOWED_HOSTS: ${CHANCELA_CONNECTOR_ALLOWED_HOSTS:-}
+    volumes:
+      # Same durable volume as the API: the API owns sources/staging and the
+      # worker owns queue transitions/receipts beneath /worker.
+      - chancela-data:/var/lib/chancela
+      - ${CHANCELA_WORKER_CONFIG:-./worker-config.example.json}:/etc/chancela-worker/config.json:ro
+      - ${CHANCELA_CONNECTOR_SECRETS_HOST_DIR:-./connector-secrets}:/run/chancela-connector-secrets:ro
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/chancela-worker", "healthcheck", "--data-dir", "/var/lib/chancela/worker/queue", "--max-age-seconds", "120"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------------
+  # `postgres` profile: PostgreSQL durability backend plus a Redis cache service.
+  #
+  #   docker compose -f docker/docker-compose.yml --profile postgres up --build
+  #
+  # HONEST SCOPE (see docker/DEPLOYMENT-PROFILES.md and wp14.md §0/§4): this is
+  # still a SINGLE-WRITER, single-node deployment. Postgres enables PG-native
+  # backup/inspection tooling, NOT horizontal scale or HA. The app
+  # holds authoritative state in memory and allocates the ledger `seq` in
+  # process, so exactly ONE `chancela` instance may write. Never scale it.
+  # -----------------------------------------------------------------------
+  # Populates the `chancela-secrets` volume with postgres_password,
+  # database_url and credential_key before anything that reads them starts.
+  #
+  # Same shape as postgres-tls-init below, and possible for the same reason:
+  # the material lives in a NAMED VOLUME, which compose creates by itself. The
+  # earlier host-bind design could not be initialised by a container, because
+  # compose creates every container -- validating every bind mount -- before it
+  # starts the first one, so a bind to a not-yet-generated file fails (or gets
+  # mangled into a directory) before any init service could run.
+  #
+  # Strictly create-if-absent: an existing value in the volume is never
+  # rewritten, and docker/secrets/<name> is adopted when present, so an
+  # installation created by preflight-secrets.sh keeps its passwords. See
+  # docker/secrets-init.sh for the full ordering and the refusal cases.
+  secrets-init:
+    profiles:
+      - postgres
+    image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
+    # Root so it can hand each secret to its consumer's uid; the file modes it
+    # sets (0400, owner-only) are the point of running as root here.
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["/bin/sh", "/usr/local/bin/secrets-init.sh"]
+    environment:
+      # Role/database names only -- NEVER the password. These must match what
+      # the `postgres` service creates, or database_url would point at a
+      # database that is never created. Compose resolves them from the same
+      # .env the postgres service does, so the two cannot disagree.
+      CHANCELA_PG_DB: ${CHANCELA_PG_DB:-chancela}
+      CHANCELA_PG_USER: ${CHANCELA_PG_USER:-chancela}
+    volumes:
+      - ./secrets-init.sh:/usr/local/bin/secrets-init.sh:ro
+      # Optional: operator-managed secrets. The DIRECTORY is committed (it holds
+      # the README and the *.example templates), so this bind always resolves
+      # even on a fresh clone -- unlike a bind to the files themselves.
+      - ./secrets:/host-secrets:ro
+      - chancela-secrets:/secrets
+      # Read-only probes, used only to answer "does state exist that one of
+      # these secrets is the only key to?" before generating anything.
+      - chancela-pgdata:/probe/pgdata:ro
+      - chancela-app-data:/probe/app-data:ro
+    tmpfs:
+      - /tmp
+    restart: "no"
+
+  postgres-tls-init:
+    profiles:
+      - postgres
+    image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["/bin/sh", "/usr/local/bin/postgres-tls-init.sh"]
+    volumes:
+      - ./postgres-tls-init.sh:/usr/local/bin/postgres-tls-init.sh:ro
+      - chancela-pg-tls:/tls
+    tmpfs:
+      - /tmp
+    restart: "no"
+
+  postgres:
+    profiles:
+      - postgres
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    # The official image drops privileges to the internal `postgres` user for
+    # the server process; keep no-new-privileges on top of that.
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: ${CHANCELA_PG_DB:-chancela}
+      POSTGRES_USER: ${CHANCELA_PG_USER:-chancela}
+      # Password delivered as a file (never inline, never in `environment:` --
+      # that would put it in `docker inspect` and in /proc). Written into the
+      # chancela-secrets volume by `secrets-init`, owned by uid 70 mode 0400.
+      # MUST match the password embedded in `database_url`, which is why
+      # secrets-init derives one from the other in a single run.
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - chancela-secrets:/run/secrets:ro
+      # Named volume for the data directory. Put this on ENCRYPTED storage
+      # (LUKS / encrypted block storage) - see DEPLOYMENT-PROFILES.md:
+      # Postgres has no transparent whole-DB encryption, so at-rest protection
+      # is volume-level, NOT SQLCipher file-level ciphertext.
+      # PostgreSQL 18 moved PGDATA below this parent directory so future
+      # pg_upgrade --link migrations can operate across versioned children.
+      - chancela-pgdata:/var/lib/postgresql
+      - chancela-pg-tls:/var/lib/postgresql/tls:ro
+    # Not published to the host: the DB is reachable only on the compose
+    # network. TLS is still mandatory and hostname/CA verified by the app.
+    expose:
+      - "5432"
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD="$$(cat /run/secrets/postgres_password)"
+          psql "host=localhost port=5432 user=$${POSTGRES_USER} dbname=$${POSTGRES_DB} sslmode=verify-full sslrootcert=/var/lib/postgresql/tls/ca.crt"
+          -tAc 'SELECT 1' | grep -qx 1
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+    restart: unless-stopped
+    depends_on:
+      postgres-tls-init:
+        condition: service_completed_successfully
+      secrets-init:
+        condition: service_completed_successfully
+
+  redis:
+    profiles:
+      - postgres
+    image: redis:8.8.0-alpine3.23@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
+    # Cache-aside service. Authoritative state stays in the app/Postgres path;
+    # cache operations fail open and do not affect correctness.
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "256mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - chancela-redisdata:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 320m
+    restart: unless-stopped
+
+  chancela:
+    profiles:
+      - postgres
+    build:
+      # Context is the repo root so the Dockerfile can see the whole workspace.
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        # Compile the Postgres backend + optional Redis cache into the binary.
+        CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+    image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
+    # Built from source, never pulled — see the note on `server`.
+    pull_policy: build
+    # --- container hardening (ARC-41), identical posture to `server` ---
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      CHANCELA_ADDR: 0.0.0.0:8080
+      # Writable data volume is STILL required on Postgres: the credential
+      # sidecar (provider-credentials.enc.json) plus CAE/law/TSL caches and the
+      # JSON sidecars live here (wp14.md §1.5).
+      CHANCELA_DATA_DIR: /var/lib/chancela
+      # Select the Postgres durability backend.
+      CHANCELA_DB_BACKEND: postgres
+      # libpq connection string (incl. the password) as a docker secret. It
+      # references the `postgres` service by name on the compose network.
+      DATABASE_URL_FILE: /run/secrets/database_url
+      CHANCELA_PG_TLS_ROOT_CERT: /run/chancela-postgres-tls/ca.crt
+      # Optional shared Redis cache-aside; inert if unreachable (fail-open).
+      REDIS_URL: redis://redis:6379
+      # REQUIRED on Postgres: the provider-credential store root key. Without
+      # SQLCipher there is no DerivedFromDbKey source, so the operator MUST
+      # supply this (wp14.md §3). Delivered as a docker secret.
+      CHANCELA_CREDENTIAL_KEY_FILE: /run/secrets/credential_key
+    ports:
+      - target: 8080
+        published: "${CHANCELA_HOST_PORT:-8080}"
+        host_ip: 127.0.0.1
+    volumes:
+      - chancela-app-data:/var/lib/chancela
+      - chancela-pg-tls:/run/chancela-postgres-tls:ro
+      # database_url + credential_key, owned by uid 65532 mode 0400.
+      - chancela-secrets:/run/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      secrets-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    deploy:
+      # SINGLE WRITER — never raise this. Two instances against one Postgres
+      # are outside this profile's contract: the app keeps authoritative state
+      # in memory and allocates ledger `seq` in process. This profile is
+      # single-node by design (wp14.md §0/§4).
+      replicas: 1
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+    restart: unless-stopped
+
+volumes:
+  chancela-data:
+  chancela-validation-worker-data:
+  chancela-pgdata:
+  chancela-pg-tls:
+  chancela-redisdata:
+  chancela-app-data:
+  # postgres_password, database_url and credential_key, mounted at /run/secrets
+  # in the services that need them. Populated by `secrets-init` on every `up`
+  # (create-if-absent), so a fresh clone needs NO host-side step:
+  #
+  #   docker compose -f docker/docker-compose.yml --profile postgres up -d
+  #
+  # This replaces the former top-level `secrets:` block, whose `file:` entries
+  # pointed at gitignored host paths: compose only WARNS about a missing secret
+  # file and hands the path to the daemon anyway, which fails the container with
+  # `bind source path does not exist` or silently creates a DIRECTORY there.
+  # A named volume has neither failure mode and can be filled by an init
+  # service, which a bind cannot.
+  #
+  # Operators who prefer to manage the values themselves still can: drop the
+  # files into docker/secrets/ (by hand or via `sh docker/preflight-secrets.sh
+  # --generate`) and secrets-init adopts them instead of generating. Once a
+  # value is in this volume it is authoritative and is never rewritten --
+  # POSTGRES_PASSWORD_FILE is read only while Postgres initialises
+  # chancela-pgdata, so rotating it against an existing volume locks the app out
+  # of its own database; credential_key decrypts stored provider credentials.
+  chancela-secrets:

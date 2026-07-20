@@ -1,0 +1,6 @@
+{
+  "algorithm": "inclusive",
+  "mode": "document",
+  "rule": "whitespace in document content is preserved",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §3.2 rule (whitespace in content is significant and preserved); expected output computed by hand from the spec rule, not from a third-party tool. See v20 for the verbatim §3.2 REC worked example."
+}

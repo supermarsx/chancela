@@ -1,0 +1,6 @@
+{
+  "algorithm": "inclusive",
+  "mode": "document",
+  "rule": "text-node character escaping of <, & and > (predefined-entity inputs re-serialized to canonical &lt; &amp; &gt;)",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §3.4 rule (character modifications: <, & and > escaped in text content); expected output computed by hand from the spec rule, not from a third-party tool. See v18 for the verbatim §3.4 REC worked example."
+}

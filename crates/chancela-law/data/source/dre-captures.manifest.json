@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "source_authority": "Diario da Republica Eletronico",
+  "approval_marker_required": "LEGAL_APPROVED_FOR_VERIFIED",
+  "captures": [
+    {
+      "diploma_id": "csc",
+      "official_page_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+      "eli": "https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101",
+      "captured_artifact_path": null,
+      "capture_timestamp": null,
+      "sha256": null,
+      "article_ids": [
+        "255",
+        "399",
+        "56",
+        "58",
+        "63",
+        "246",
+        "248",
+        "250",
+        "265",
+        "270-A",
+        "270-E",
+        "376",
+        "377",
+        "386",
+        "388"
+      ],
+      "reviewer_status": "Pending",
+      "legal_approval_status": "Pending",
+      "approval_marker": null
+    },
+    {
+      "diploma_id": "cc",
+      "official_page_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+      "eli": "https://data.dre.pt/eli/dec-lei/47344/1966/p/cons/20260101",
+      "captured_artifact_path": null,
+      "capture_timestamp": null,
+      "sha256": null,
+      "article_ids": [
+        "157",
+        "173",
+        "175",
+        "184",
+        "1414",
+        "1424",
+        "1430",
+        "1432",
+        "1433",
+        "1436",
+        "1438",
+        "1438-A"
+      ],
+      "reviewer_status": "Pending",
+      "legal_approval_status": "Pending",
+      "approval_marker": null
+    },
+    {
+      "diploma_id": "dl-268-94",
+      "official_page_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+      "eli": "https://data.dre.pt/eli/dec-lei/268/1994/p/cons/20260101",
+      "captured_artifact_path": null,
+      "capture_timestamp": null,
+      "sha256": null,
+      "article_ids": ["1", "2", "3", "4", "5", "6"],
+      "reviewer_status": "Pending",
+      "legal_approval_status": "Pending",
+      "approval_marker": null
+    },
+    {
+      "diploma_id": "dl-76-a-2006",
+      "official_page_url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/76-a-2006-620286",
+      "eli": "https://data.dre.pt/eli/dec-lei/76-a/2006/p/cons/20260101",
+      "captured_artifact_path": null,
+      "capture_timestamp": null,
+      "sha256": null,
+      "article_ids": ["1", "2"],
+      "reviewer_status": "Pending",
+      "legal_approval_status": "Pending",
+      "approval_marker": null
+    },
+    {
+      "diploma_id": "cod-cooperativo",
+      "official_page_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2015-70139602",
+      "eli": "https://data.dre.pt/eli/lei/119/2015/p/cons/20260101",
+      "captured_artifact_path": null,
+      "capture_timestamp": null,
+      "sha256": null,
+      "article_ids": ["33", "34", "41"],
+      "reviewer_status": "Pending",
+      "legal_approval_status": "Pending",
+      "approval_marker": null
+    },
+    {
+      "diploma_id": "lei-24-2012",
+      "official_page_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2012-61239015",
+      "eli": "https://data.dre.pt/eli/lei/24/2012/p/cons/20260101",
+      "captured_artifact_path": null,
+      "capture_timestamp": null,
+      "sha256": null,
+      "article_ids": ["1", "5"],
+      "reviewer_status": "Pending",
+      "legal_approval_status": "Pending",
+      "approval_marker": null
+    }
+  ]
+}

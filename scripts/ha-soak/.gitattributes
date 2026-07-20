@@ -1,0 +1,6 @@
+# These files are executed INSIDE Linux/Alpine containers during the HA soak, so they must stay LF
+# even on a Windows checkout. Alpine `/bin/sh` fails on a CRLF script ("set -eu\r" → "illegal option
+# -"), which is the exact failure docker-compose.soak.yml re-materializes postgres-tls-init.sh to
+# avoid. Forcing eol=lf here makes that override unnecessary-but-safe and keeps soak.sh runnable.
+*.sh text eol=lf
+*.py text eol=lf

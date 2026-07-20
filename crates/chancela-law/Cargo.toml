@@ -1,0 +1,24 @@
+[package]
+name = "chancela-law"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Full-text Portuguese law corpus for the Legislação shelf: the complete text of every cited diploma, article by article, with per-article DRE provenance and a hard authenticity gate (no Verified article without a cited source). Mirrors chancela-cae (vendored source + generator + include_str! + folded search)."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+# Only pulled in by the opt-in `network` feature (the offline embedded corpus needs no HTTP).
+reqwest = { workspace = true, optional = true }
+
+[features]
+# The live DRE fetch source (`HttpDreSource`). Off by default: the corpus is offline-embedded, and
+# E1b vendors authentic text per diploma. Opt in for a network refresh — mirrors chancela-cae.
+network = ["dep:reqwest"]
+# Enables `#[ignore]`d tests that fetch over the network from CHANCELA_LAW_URL. Never runs in CI.
+network-tests = ["network"]

@@ -1,0 +1,30 @@
+{
+  "id": "cooperativa-ponto-ordem-trabalhos/v1",
+  "family": "Cooperative",
+  "stage": "Convocatoria",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Ponto da ordem de trabalhos" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Cooperativa", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Reunião", "value": "{{ title }}" },
+        { "key": "Número do ponto", "value": "{{ number }}" },
+        { "key": "Texto do ponto", "value": "{{ text }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Ponto {{ number }} — {{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Este registo autónomo identifica o ponto para preparação da ordem de trabalhos da reunião indicada."
+    }
+  ]
+}

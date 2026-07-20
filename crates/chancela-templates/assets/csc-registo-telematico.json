@@ -1,0 +1,73 @@
+{
+  "id": "csc-registo-telematico/v1",
+  "family": "CommercialCompany",
+  "stage": "Reuniao",
+  "channels": [
+    "Telematic"
+  ],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Registo da reunião telemática"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Data",
+          "value": "{{ meeting_date | long_date }}"
+        },
+        {
+          "key": "Hora",
+          "value": "{{ meeting_time }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nos termos do artigo 377.º do Código das Sociedades Comerciais, regista-se a prova da realização da reunião por meios telemáticos, assegurando-se a autenticidade das declarações, a segurança das comunicações e a gravação do conteúdo e dos participantes."
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Autenticidade dos participantes",
+          "value": "{{ telematic_evidence.authenticity }}"
+        },
+        {
+          "key": "Segurança das comunicações",
+          "value": "{{ telematic_evidence.security }}"
+        },
+        {
+          "key": "Gravação do conteúdo e dos participantes",
+          "value": "{{ telematic_evidence.recording }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if telematic_evidence is string %}Elementos de prova: {{ telematic_evidence }}{% endif %}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

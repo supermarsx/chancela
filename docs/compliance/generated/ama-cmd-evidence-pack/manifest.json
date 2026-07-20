@@ -1,0 +1,189 @@
+{
+  "schema": "ama-cmd-evidence-pack-manifest-v1",
+  "case_name": "Chancela AMA/CMD authority review evidence pack",
+  "generated_at": "not-recorded-deterministic-run",
+  "claim_boundary": {
+    "status": "draft_evidence_pack_only",
+    "production_approval": "not_claimed",
+    "legal_compliance": "not_claimed",
+    "requires_external_evidence": true
+  },
+  "official_sources": [
+    {
+      "id": "ama-cmd-private-protocol-template",
+      "url": "https://github.com/amagovpt/doc-CMD-assinatura/raw/main/protocolos_minutas/AMA_Protocolo_CMD_Autentica%C3%A7%C3%A3o_Assinatura_Privados_.docx",
+      "source_type": "protocol_template_docx"
+    },
+    {
+      "id": "ama-autenticacao-docs",
+      "url": "https://github.com/amagovpt/doc-AUTENTICACAO",
+      "source_type": "github_repository"
+    },
+    {
+      "id": "ama-cmd-signature-docs",
+      "url": "https://github.com/amagovpt/doc-CMD-assinatura",
+      "source_type": "github_repository"
+    }
+  ],
+  "evidence_slots": [
+    {
+      "path": "evidence/signed-protocol-application",
+      "status": "placeholder_until_evidence_attached"
+    },
+    {
+      "path": "evidence/production-applicationid-certificate",
+      "status": "placeholder_until_evidence_attached"
+    },
+    {
+      "path": "evidence/test-evidence",
+      "status": "placeholder_until_evidence_attached"
+    },
+    {
+      "path": "evidence/app-video",
+      "status": "placeholder_until_evidence_attached"
+    }
+  ],
+  "implementation_evidence_map": [
+    {
+      "source_id": "ama-cmd-private-protocol-template",
+      "evidence_topic": "Protocol/application and authority correspondence",
+      "authority_expectation": "Attach the completed protocol/application, submission receipt, authority correspondence, and redaction decision before making production-enablement claims.",
+      "implementation_files": [
+        {
+          "path": "docs/compliance/ama-cmd/templates/signed-protocol-application-index.md",
+          "status": "present"
+        },
+        {
+          "path": "docs/compliance/ama-cmd/templates/production-applicationid-certificate-evidence.md",
+          "status": "present"
+        },
+        {
+          "path": "docs/compliance/ama-cmd/templates/no-approval-claim.md",
+          "status": "present"
+        }
+      ],
+      "verification_commands": [
+        "node docs/compliance/ama-cmd/generate-evidence-pack.mjs --force"
+      ],
+      "external_evidence_blocker": "Signed protocol/application, AMA acceptance or activation record, and approved redactions are still required.",
+      "claim_boundary": "repository_evidence_only_not_authority_approval"
+    },
+    {
+      "source_id": "ama-cmd-signature-docs",
+      "evidence_topic": "SCMD SIG-02 operation flow",
+      "authority_expectation": "Show how GetCertificate, CCMovelSign, ProcessId, ValidateOtp, and the returned raw signature are handled without treating the OTP as the signature artifact.",
+      "implementation_files": [
+        {
+          "path": "crates/chancela-cmd/src/lib.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-cmd/src/flow.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-cmd/src/soap.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-cmd/tests/mock_flow.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-cmd/TESTING.md",
+          "status": "present"
+        }
+      ],
+      "verification_commands": [
+        "cargo test -p chancela-cmd --locked"
+      ],
+      "external_evidence_blocker": "Live preprod/prod evidence requires an AMA-issued ApplicationId, a registered test signer, and the human OTP ceremony.",
+      "claim_boundary": "repository_evidence_only_not_authority_approval"
+    },
+    {
+      "source_id": "ama-cmd-signature-docs",
+      "evidence_topic": "Production ApplicationId and field-encryption gate",
+      "authority_expectation": "Separate pre-production from production values, require the AMA production field-encryption certificate for prod, and keep secrets out of evidence.",
+      "implementation_files": [
+        {
+          "path": "crates/chancela-cmd/src/config.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-cmd/src/field_encryption.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-cmd/tests/mock_flow.rs",
+          "status": "present"
+        },
+        {
+          "path": "docs/compliance/ama-cmd/templates/production-applicationid-certificate-evidence.md",
+          "status": "present"
+        }
+      ],
+      "verification_commands": [
+        "cargo test -p chancela-cmd --locked"
+      ],
+      "external_evidence_blocker": "Production remains blocked until AMA assigns production credentials and the production certificate/public-key evidence is attached.",
+      "claim_boundary": "repository_evidence_only_not_authority_approval"
+    },
+    {
+      "source_id": "ama-autenticacao-docs",
+      "evidence_topic": "Product claim boundary and provider responsibilities",
+      "authority_expectation": "Show that Chancela is an orchestration, validation, and evidence-capture layer, not a QTSP, certification authority, or AMA approval substitute.",
+      "implementation_files": [
+        {
+          "path": "docs/CMD-LEGAL-INTEGRATION.md",
+          "status": "present"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "status": "present"
+        },
+        {
+          "path": "docs/compliance/ama-cmd/templates/authority-review-summary.md",
+          "status": "present"
+        },
+        {
+          "path": "docs/compliance/ama-cmd/templates/CHECKLIST.md",
+          "status": "present"
+        }
+      ],
+      "verification_commands": [
+        "node docs/compliance/ama-cmd/generate-evidence-pack.mjs --force"
+      ],
+      "external_evidence_blocker": "Legal/security reviewer sign-off and authority feedback must be attached before stronger wording is used.",
+      "claim_boundary": "repository_evidence_only_not_authority_approval"
+    },
+    {
+      "source_id": "ama-cmd-signature-docs",
+      "evidence_topic": "Two-phase app path and non-secret pending session",
+      "authority_expectation": "Demonstrate an initiate/confirm flow that persists only non-secret session state and validates the resulting signed PDF in offline tests.",
+      "implementation_files": [
+        {
+          "path": "crates/chancela-signing/src/cmd_session.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-signing/src/remote.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-signing/tests/cmd_two_phase.rs",
+          "status": "present"
+        },
+        {
+          "path": "crates/chancela-api/tests/remote_signing.rs",
+          "status": "present"
+        }
+      ],
+      "verification_commands": [
+        "cargo test -p chancela-signing --test cmd_two_phase --locked",
+        "cargo test -p chancela-api --test remote_signing cmd_over_generic_path_produces_a_validating_signed_pdf --locked"
+      ],
+      "external_evidence_blocker": "Offline tests do not replace AMA preprod/prod test runs, authority acceptance, or production activation evidence.",
+      "claim_boundary": "repository_evidence_only_not_authority_approval"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "id": "csc-declaracao-voto/v1",
+  "family": "CommercialCompany",
+  "stage": "Deliberacao",
+  "channels": [],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Declaração de voto"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "Ata de referência",
+          "value": "{{ ata_number }}"
+        },
+        {
+          "key": "Ponto da ordem de trabalhos",
+          "value": "{{ statement.agenda_number }}"
+        },
+        {
+          "key": "Membro declarante",
+          "value": "{{ statement.member }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{{ statement.text }}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

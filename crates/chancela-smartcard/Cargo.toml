@@ -1,0 +1,26 @@
+[package]
+name = "chancela-smartcard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Cartao de Cidadao signing via PC/SC + PKCS#11 (Autenticacao.gov middleware); produces a RawSignature (spec 04)."
+
+[dependencies]
+chancela-cades = { workspace = true }
+pcsc = { workspace = true }
+cryptoki = { workspace = true }
+x509-cert = { workspace = true }
+der = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+# Enables `#[ignore]`d tests that touch a real card reader + middleware. Never runs in CI.
+hardware-tests = []

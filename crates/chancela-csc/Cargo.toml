@@ -1,0 +1,35 @@
+[package]
+name = "chancela-csc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Generic Cloud Signature Consortium (CSC) v2 REST adapter: one typed client for every CSC-compliant QTSP; implements chancela_signing::RemoteSigningSource (spec 04, SIG-01/02)."
+
+[dependencies]
+chancela-signing = { workspace = true }
+chancela-cades = { workspace = true }
+chancela-pades = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+x509-cert = { workspace = true }
+der = { workspace = true }
+thiserror = { workspace = true }
+zeroize = "1"
+
+[dev-dependencies]
+chancela-tsl = { workspace = true }
+rsa = { workspace = true }
+spki = { workspace = true }
+rand_core = { workspace = true }
+sha2 = { workspace = true }
+
+[features]
+# Enables `#[ignore]`d tests that hit a real QTSP CSC sandbox endpoint. Never runs in CI.
+network-tests = []

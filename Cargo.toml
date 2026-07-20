@@ -1,0 +1,204 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+exclude = ["apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "26.1.0"
+edition = "2024"
+rust-version = "1.97"
+# Custom non-commercial licence: `LicenseRef-Chancela-NonCommercial` is not a
+# registered SPDX identifier, so `license` (which expects a valid SPDX
+# expression) would be invalid. Point at the file instead. Paths inherited via
+# `license-file.workspace = true` resolve from the workspace root.
+license-file = "license.md"
+authors = ["Chancela contributors"]
+repository = "https://github.com/chancela/chancela"
+
+[workspace.dependencies]
+# Internal crates (path deps so intra-workspace edges resolve without a registry).
+chancela-core = { path = "crates/chancela-core" }
+chancela-ledger = { path = "crates/chancela-ledger" }
+chancela-signing = { path = "crates/chancela-signing" }
+chancela-archive = { path = "crates/chancela-archive" }
+chancela-api = { path = "crates/chancela-api" }
+# Signature-middleware crates (t4). See .orchestration/plans/t4.md §2.1 for the dependency DAG.
+chancela-cades = { path = "crates/chancela-cades" }
+chancela-smartcard = { path = "crates/chancela-smartcard" }
+chancela-cmd = { path = "crates/chancela-cmd" }
+# Generic Cloud Signature Consortium (CSC) v2 REST adapter (t59 Slice 2): ONE typed REST client
+# implementing the CSC v2 remote-signing protocol so a single adapter serves every CSC-compliant
+# QTSP (Multicert/DigitalSign/…). Implements the frozen `chancela_signing::RemoteSigningSource`
+# trait as `CscRemoteSource`. Depends on chancela-signing/-cades/-pades; must NOT be depended on by
+# them (no cycle). Mocks-only in tests; live per-provider is an ops step. See .orchestration/plans/t59.md.
+chancela-csc = { path = "crates/chancela-csc" }
+chancela-tsl = { path = "crates/chancela-tsl" }
+chancela-tsa = { path = "crates/chancela-tsa" }
+chancela-pades = { path = "crates/chancela-pades" }
+# Certidão permanente registry integration (t11).
+chancela-registry = { path = "crates/chancela-registry" }
+# Extensive CAE library + auto-update (t14). Leaf crate; no new third-party deps (everything it
+# needs — serde/serde_json/sha2/time/reqwest/thiserror — is already declared below).
+chancela-cae = { path = "crates/chancela-cae" }
+# Full-text law corpus (t55): the complete text of every cited diploma, article by article, with
+# per-article DRE provenance + a hard authenticity gate. Mirrors chancela-cae (vendored source +
+# generator + include_str! + folded search). Leaf crate; needs only serde/serde_json/sha2/thiserror
+# (all declared below) + reqwest behind the opt-in `network` feature. See .orchestration/plans/t55.md.
+chancela-law = { path = "crates/chancela-law" }
+# Durable system of record (t30): embedded SQLite store + hot-backup. Sits between the domain
+# crates and chancela-api in the DAG (core, ledger, registry → chancela-store → chancela-api);
+# must NOT depend on chancela-api (no cycle). See .orchestration/plans/t30.md §2.
+chancela-store = { path = "crates/chancela-store" }
+# Template catalog engine + document/PDF-A generation (t48, Wave C). `chancela-templates` renders
+# records → DocumentModel via minijinja; `chancela-doc` writes DocumentModel → PDF/A-2u over lopdf.
+# The shared DocumentModel/LifecycleStage seam lives in chancela-core so both are truly parallel.
+# DAG (no cycles): core → templates → api; templates → doc → api. See .orchestration/plans/t48.md §2.
+chancela-templates = { path = "crates/chancela-templates" }
+chancela-doc = { path = "crates/chancela-doc" }
+# Scoped RBAC security core (t64): permission catalog + Global/Entity/Book scopes + roles-as-data +
+# scoped delegation + the escalation invariants. Pure leaf (serde/uuid/time only); must NOT depend on
+# chancela-api. See .orchestration/plans/t64.md §3.
+chancela-authz = { path = "crates/chancela-authz" }
+# API-key model + key→RBAC-principal seam (t65): sha256-hashed shown-once keys, per-key rate limiting,
+# and the attenuation invariant (a key's authority ⊆ its creator's). Pure leaf; depends on
+# chancela-authz + sha2/rand_core/serde/time/uuid — must NOT depend on chancela-api/store. See
+# .orchestration/plans/t65.md §3.1/§3.2.
+chancela-apikey = { path = "crates/chancela-apikey" }
+# Opt-in zero-knowledge repository wire/storage contracts (ARC-30..33 / SCP-D3). The API stores
+# only validated manifests and opaque ciphertext; trusted clients own encryption and key custody.
+chancela-zk = { path = "crates/chancela-zk" }
+# Durable ARC-20/21 connector execution. The API queues immutable, tenant-bound work for the
+# dedicated worker; connectors remain credential-reference-only leaf clients.
+chancela-connectors = { path = "crates/chancela-connectors" }
+chancela-worker = { path = "crates/chancela-worker" }
+# MCP server (t65-E2): exposes platform ops as permission-gated MCP tools over stdio, authenticating
+# to the integration API (/api/v1) with an API key (one RBAC path — authz is server-side). Binary +
+# library crate; OFF by default. Deps: serde/serde_json/reqwest/thiserror (all workspace-inherited) —
+# no MCP SDK pinned (hand-rolled JSON-RPC 2.0 over stdio). Must NOT depend on chancela-api (it is an
+# HTTP client of it). Consumed by t65-E5 (server/desktop launcher). See .orchestration/plans/t65.md §2.4.
+chancela-mcp = { path = "crates/chancela-mcp" }
+# Host-level ops CLI (t72): the `chancela` binary — Docker-style nested subcommands operating on the
+# local data dir OFFLINE via chancela-store/ledger/core (NOT an api client). Consumes the committed
+# store recovery + ledger + core public APIs (and chancela-api's `User` type for user provisioning).
+# Leaf binary crate; nothing depends on it. See .orchestration/logs/t72.md.
+chancela-cli = { path = "crates/chancela-cli" }
+# SDK-parity signing crates (t67). chancela-xades: XMLDSig + XAdES (B/T/LT/LTA) with in-crate
+# exclusive XML canonicalization over the RawSignature seam; leaf, must NOT depend on
+# chancela-signing (mirrors chancela-csc no-cycle rule). chancela-scap: AMA SCAP professional-
+# attribute client (mock transport default). See .orchestration/plans/t67.md §1.1/§1.2.
+chancela-xades = { path = "crates/chancela-xades" }
+chancela-scap = { path = "crates/chancela-scap" }
+
+# Third-party (conservative, declared once so every crate inherits identical versions).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytes = "1"
+futures-core = "0.3"
+sha2 = "0.10"
+sha1 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.7", features = ["cors", "fs"] }
+# minijinja (t48 D1): runtime text-interpolation for the template catalog. Templates are shippable,
+# per-locale *content* (not compile-time askama structs); minijinja renders directly from any
+# serde::Serialize record. Apache-2.0, serde-only (no new transitive-dep risk to the der-0.7 pins).
+# Pinned per plan §1-D1. See .orchestration/plans/t48.md §1.
+minijinja = "2.21.0"
+# clap (t72): the argument parser for the `chancela` host-level ops CLI (`chancela-cli`). Derive
+# feature only — the whole Docker-style command tree (nested subcommands, consistent flags, --help)
+# is declared with `#[derive(Parser/Subcommand/Args)]`. No other crate uses it. MIT/Apache-2.0.
+clap = { version = "4", features = ["derive"] }
+
+# --- Signature middleware (t4) ---------------------------------------------------------
+# RustCrypto ASN.1 stack is mid-migration; these der-0.7-family pins are LOAD-BEARING.
+# Do NOT bump der/spki/sha2/ecdsa/p256 to their "latest" — the newer generation breaks the
+# only stable cms/x509-cert 0.2. See .orchestration/plans/t4.md §1.1.
+der = { version = "0.7", features = ["oid", "pem"] }         # keep at 0.7 (0.8 breaks cms/x509-cert 0.2)
+spki = "0.7"                                                  # keep at 0.7 (matches cms/x509-cert 0.2)
+cms = { version = "0.2", features = ["builder"] }            # RFC 5652 SignedData; builder = assemble CAdES
+x509-cert = { version = "0.2", features = ["builder", "pem"] } # cert parse/build + self-signed test certs
+x509-ocsp = "0.2.1"                                          # RFC 6960 ASN.1 types for OCSP request/response validation
+x509-tsp = "0.1"                                             # RFC 3161 ASN.1 types only (we drive HTTP/verify)
+rsa = "0.9"                                                  # RSA-PKCS1-SHA256 (CC v1, CMD)
+# rand_core 0.6 is the RNG generation of the whole der-0.7/RustCrypto-0.9 family (rsa 0.9,
+# p256 0.13, ecdsa 0.16 all pull rand_core 0.6.4 via signature 2.2). Its `getrandom` feature
+# exposes `rand_core::OsRng`, which implements the `CryptoRngCore` bound that
+# `FieldEncryptor::AmaRsa` (chancela-cmd) requires — a CSPRNG for PROD CMD field encryption,
+# no hand-rolled randomness. Supplied by chancela-signing (t4-e8). Unifies with the already
+# resolved rand_core 0.6.4; do NOT bump to 0.9/0.10 (that generation is not rsa 0.9's bound).
+rand_core = { version = "0.6", features = ["getrandom"] }   # OsRng CSPRNG for CMD field encryption
+p256 = "0.13"                                                # P-256 (CC v2); default features include ecdsa
+p384 = { version = "0.13", features = ["ecdsa", "pkcs8"] }  # P-384 (XAdES/XMLDSig ecdsa-sha384); RustCrypto 0.13/ecdsa 0.16
+p521 = { version = "0.13", features = ["ecdsa", "pkcs8"] }  # P-521 (XAdES/XMLDSig ecdsa-sha512); RustCrypto 0.13/ecdsa 0.16
+ecdsa = { version = "0.16", features = ["der"] }            # DER-encode ECDSA r,s for CMS
+pcsc = "2.9"                                                 # PC/SC reader detection (Win/macOS/Linux)
+cryptoki = "0.12"                                            # PKCS#11 (Autenticacao.gov middleware); prebuilt bindings
+quick-xml = { version = "0.41", features = ["serialize"] }  # TSL parse + SOAP/XML emit
+roxmltree = "0.21"                                          # read-only XML parse alternative
+# lopdf: DEVIATION from t4.md §1.1 — 0.43.0's default `time` datetime backend fails to compile
+# against time 0.3.45 (uses `FormatItem::StringLiteral`, removed from `time`). Drop that backend;
+# keep chrono+jiff+rayon (the rest of the default set) so datetime + parallelism still work.
+lopdf = { version = "0.44", default-features = false, features = ["chrono", "jiff", "rayon"] } # object-level PDF (PAdES sig dict built by us)
+base64 = "0.22"                                             # CMD wire fields, PEM
+# png (t67 §1.4): minimal PNG decoder for visible-seal raster embedding (e3 decodes PNG → a raw
+# FlateDecode PDF XObject; JPEG is stored as DCTDecode bytes with no decode). Pulls only
+# miniz_oxide/fdeflate/flate2/crc32fast/bitflags — NO ASN.1 crates, so it is safe vs the load-bearing
+# der-0.7 / cms-0.2 / x509-cert-0.2 pins (verified: those versions are unchanged in Cargo.lock).
+png = "0.18"
+# scraper (html5ever): malformed-HTML-tolerant DOM/text for the certidão permanente parser (t11).
+# Independent of the load-bearing der-0.7 pins; used only to get a clean DOM, extraction is
+# label-driven off the legally-stable Portuguese field names. Exact patch pinned below.
+scraper = "0.27"
+# reqwest: its 0.13 `rustls` feature uses the platform verifier (OS trust store) without pulling in
+# the native OpenSSL backend. `blocking` supports chancela-tsa's synchronous TsaTransport (no tokio
+# dependency, §2.1). The older `rustls-native-certs` feature was removed in reqwest 0.13.4.
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls",
+    "json",
+    "blocking",
+] }
+
+# --- Durable system of record (t30) ----------------------------------------------------
+# rusqlite `bundled` compiles SQLite 3.5x from vendored C via `cc` and static-links it — a
+# self-contained single-file store, no system libsqlite. License MIT (SQLite itself is public
+# domain). The C-toolchain cost is already paid by pcsc/cryptoki; the build-time cost of
+# compiling SQLite from source is real but one-off. Encryption (SQLCipher, A3) is a later
+# `bundled-sqlcipher` feature swap issuing `PRAGMA key` — no schema/caller change. Independent
+# of the der-0.7/RustCrypto pins above (libsqlite3-sys pulls no ASN.1 crates). See t30.md §D1.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# zip: pure-Rust archive writer for the hot-backup bundle (VACUUM INTO db + JSON sidecars +
+# manifest → one .zip). MIT. Default features are fine (deflate); no native dep. See t30.md §D6.
+zip = "8.6"
+
+# --- Audit attestation & optional passwords (t29) --------------------------------------
+# argon2 (argon2id): password hashing/verification (a single PHC string) AND the separate KEK
+# derivation (hash_password_into) that wraps each user's P-256 attestation key. Pulls
+# password-hash 0.5 + blake2 — NEITHER touches the der/spki/cms/x509-cert 0.7 family, and its
+# rand_core resolves to the same 0.6.x generation as p256 0.13 / rsa 0.9 above. argon2id (not
+# i/d) is the standard side-channel-and-GPU-balanced default; default params. See t29.md §3.
+argon2 = "0.5"
+# chacha20poly1305 (XChaCha20-Poly1305): the AEAD that encrypts the 32-byte P-256 secret scalar
+# at rest in users.json. Chosen over AES-GCM — pure-Rust, no AES-NI-detection surface, and its
+# 24-byte random nonce removes any nonce-counter to manage across restarts. Pulls aead 0.5 +
+# chacha20 + poly1305; independent of the der-0.7 pins (no ASN.1 crates). See t29.md §3.
+chacha20poly1305 = "0.11"
+
+# --- Optional cache layer (wp14 Phase 4) -----------------------------------------------
+# moka: an in-process concurrent cache — powers the `Ledger::verify()` verdict memo (the real
+# single-node speed-up) and the in-process cache-aside impl. Pure Rust; `sync` feature only (no
+# tokio/`future` backend needed — our Cache trait is synchronous). Pulls crossbeam-epoch (already
+# in the lock). See .orchestration/plans/wp14.md §5.
+moka = { version = "0.12", default-features = false, features = ["sync"] }
+# redis: the OPTIONAL Redis cache-aside backend (chancela-api's off-by-default `redis` feature).
+# `default-features = false` keeps only the synchronous connection (no async/tokio, no TLS) — a
+# tiny surface used via the version-stable `redis::cmd(..).query(..)` API. Absent feature ⇒ not
+# compiled at all.
+redis = { version = "1.4", default-features = false }
+
+[profile.release]
+lto = "thin"
+strip = true

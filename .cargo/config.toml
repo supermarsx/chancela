@@ -1,0 +1,6 @@
+# Cargo aliases for running the whole Chancela app with one command.
+#
+# `cargo run` at the repo root already selects `chancela-server` (the only bin in the
+# workspace) and serves the API + ledger + web UI. `cargo app` is the same, optimized:
+[alias]
+app = "run --release -p chancela-server"

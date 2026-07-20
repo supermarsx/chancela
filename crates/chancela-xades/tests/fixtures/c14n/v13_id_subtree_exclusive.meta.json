@@ -1,0 +1,7 @@
+{
+  "algorithm": "exclusive",
+  "mode": "id",
+  "id": "target",
+  "rule": "canonicalizing an element subtree by Id under Exclusive C14N renders only the namespaces visibly utilized within the subtree (xmlns:a), pruning the unused inherited xmlns:b",
+  "provenance": "derived from W3C Exclusive XML Canonicalization 1.0 REC (xml-exc-c14n-20020718) §2 rule applied to an apex subtree (the XMLDSig SignedInfo/SignedProperties case); expected output computed by hand from the spec rule, not from a third-party tool."
+}

@@ -1,0 +1,33 @@
+{
+  "id": "condominio-termo-encerramento/v1",
+  "family": "Condominium",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de encerramento do livro de atas" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "N.º de atas contidas", "value": "{{ ata_count }}" },
+        { "key": "Motivo", "value": "{{ reason }}" },
+        { "key": "Data de encerramento", "value": "{{ closing_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Encerra-se o presente livro de atas da assembleia de condóminos do condomínio {{ entity.name }}, que contém {{ ata_count }} atas lavradas e numeradas sequencialmente, ficando integralmente selado nesta escrituração digital."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

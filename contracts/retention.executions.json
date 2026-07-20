@@ -1,0 +1,445 @@
+[
+  {
+    "id": "retention-exec-blocked",
+    "requested_at": "2026-07-09T13:30:00Z",
+    "actor": "amelia.marques",
+    "execution_intent": "execute_supported",
+    "execution_status": "blocked",
+    "operator_review_decision": "blocked",
+    "decision_state": "review_closed",
+    "review_closure_decision": "blocked_evidence_acknowledged",
+    "review_closure_evidence": [
+      {
+        "label": "closure checklist",
+        "value": "blocked evidence acknowledged for separate governance review"
+      }
+    ],
+    "review_closed_by": "privacy-manager",
+    "review_closed_at": "2026-07-09T14:10:00Z",
+    "review_closure_note": "Blocked evidence acknowledged for separate governance review.",
+    "destructive_disposal_completed": false,
+    "full_erasure_completed": false,
+    "legal_hold_mutated": false,
+    "retention_policy_mutated": false,
+    "requested_policy": {
+      "id": "8b7c6d50-0000-4000-8000-000000000073",
+      "found": true,
+      "name": "Signed PDF archive",
+      "scope": "document",
+      "category": "signed_pdf",
+      "schedule_id": "documents-signed-10y",
+      "retention_period": "P10Y",
+      "disposal_action": "delete",
+      "status": "active",
+      "active": true,
+      "stale": false,
+      "matches_candidate": true,
+      "destructive_action": true
+    },
+    "candidate": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-123"
+    },
+    "matched_records_summary": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-123",
+      "record_count": 1,
+      "policy_match_count": 1,
+      "destructive_policy_count": 1,
+      "policy_ids": ["8b7c6d50-0000-4000-8000-000000000073"]
+    },
+    "legal_hold_blockers": [],
+    "operator_notes": "Operator reviewed the retention candidate.",
+    "audit_evidence": [
+      {
+        "label": "case",
+        "value": "archive package hash reviewed"
+      }
+    ],
+    "outcome": "blocked_destructive_action",
+    "block_reason": "delete/anonymize execution is not enabled in this guarded slice",
+    "evidence_state": "blocked",
+    "evidence_next_step": "Record separate governance approval before any external destructive process; this API will not execute it.",
+    "workflow": {
+      "status": "blocked",
+      "blockers": [
+        {
+          "code": "destructive_action_disabled",
+          "message": "delete/anonymize execution is not enabled in this guarded slice",
+          "policy_id": "8b7c6d50-0000-4000-8000-000000000073"
+        }
+      ],
+      "required_approvals": [
+        {
+          "code": "retention_manual_review",
+          "required_from": "privacy_or_settings_manager",
+          "reason": "approve the retained evidence before any separate operational action"
+        },
+        {
+          "code": "destructive_disposal_governance",
+          "required_from": "external_governance_process",
+          "reason": "destructive disposal is outside this API and requires separate approval"
+        }
+      ],
+      "next_step": "Record separate governance approval before any external destructive process; this API will not execute it."
+    },
+    "execution_result": {
+      "bounded_executor": true,
+      "targets_considered": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-123",
+          "action": "bounded_delete_evidence",
+          "reason_code": "target_considered",
+          "detail": "candidate scope=document category=signed_pdf evaluated against policy 8b7c6d50-0000-4000-8000-000000000073; bounded evidence only"
+        }
+      ],
+      "targets_acted": [],
+      "targets_skipped": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-123",
+          "action": "bounded_delete_evidence",
+          "reason_code": "destructive_action_disabled",
+          "detail": "delete/anonymize execution is not enabled in this guarded slice"
+        }
+      ],
+      "reason_codes": [
+        "destructive_action_disabled",
+        "destructive_disposal_approval_required"
+      ],
+      "next_step": "Record separate governance approval before any external destructive process; this API will not execute it.",
+      "destructive_disposal_completed": false,
+      "full_erasure_completed": false,
+      "blocker_metadata": [
+        {
+          "code": "destructive_action_disabled",
+          "detail": "delete/anonymize execution is not enabled in this guarded slice",
+          "policy_id": "8b7c6d50-0000-4000-8000-000000000073"
+        },
+        {
+          "code": "destructive_disposal_approval_required",
+          "detail": "matching approval metadata is required before any external destructive process",
+          "policy_id": "8b7c6d50-0000-4000-8000-000000000073"
+        }
+      ]
+    },
+    "would_execute": false
+  },
+  {
+    "id": "retention-exec-executed",
+    "requested_at": "2026-07-09T13:50:00Z",
+    "actor": "amelia.marques",
+    "execution_intent": "execute_supported",
+    "execution_status": "executed",
+    "operator_review_decision": "execution_recorded",
+    "decision_state": "review_closed",
+    "review_closure_decision": "bounded_evidence_acknowledged",
+    "review_closure_evidence": [
+      {
+        "label": "closure checklist",
+        "value": "bounded archive evidence acknowledged"
+      }
+    ],
+    "review_closed_by": "privacy-manager",
+    "review_closed_at": "2026-07-09T14:15:00Z",
+    "review_closure_note": "Bounded archive evidence acknowledged.",
+    "destructive_disposal_completed": false,
+    "full_erasure_completed": false,
+    "legal_hold_mutated": false,
+    "retention_policy_mutated": false,
+    "requested_policy": {
+      "id": "8b7c6d50-0000-4000-8000-000000000073",
+      "found": true,
+      "name": "Signed PDF archive",
+      "scope": "document",
+      "category": "signed_pdf",
+      "schedule_id": "documents-signed-10y",
+      "retention_period": "P10Y",
+      "disposal_action": "archive",
+      "status": "active",
+      "active": true,
+      "stale": false,
+      "matches_candidate": true,
+      "destructive_action": false
+    },
+    "candidate": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-456"
+    },
+    "matched_records_summary": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-456",
+      "record_count": 1,
+      "policy_match_count": 1,
+      "destructive_policy_count": 0,
+      "policy_ids": ["8b7c6d50-0000-4000-8000-000000000073"]
+    },
+    "legal_hold_blockers": [],
+    "audit_evidence": [],
+    "approval": {
+      "approval_reference": "privacy-board-42",
+      "policy_id": "8b7c6d50-0000-4000-8000-000000000073",
+      "disposal_action": "archive",
+      "approved_by": "privacy-board",
+      "approved_at": "2026-07-09T13:45:00Z"
+    },
+    "outcome": "bounded_archive_recorded",
+    "block_reason": "bounded archive evidence recorded for the retention target",
+    "evidence_state": "bounded_archive_recorded",
+    "evidence_next_step": "Bounded archive evidence recorded; no destructive operation was performed.",
+    "workflow": {
+      "status": "awaiting_manual_review",
+      "blockers": [],
+      "required_approvals": [
+        {
+          "code": "retention_manual_review",
+          "required_from": "privacy_or_settings_manager",
+          "reason": "approve the retained evidence before any separate operational action"
+        }
+      ],
+      "next_step": "Bounded archive evidence was recorded for this target; no source document deletion or GDPR erasure was performed."
+    },
+    "execution_result": {
+      "bounded_executor": true,
+      "executed_at": "2026-07-09T13:50:00Z",
+      "executed_by": "amelia.marques",
+      "targets_considered": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-456",
+          "action": "bounded_archive_evidence",
+          "reason_code": "target_considered",
+          "detail": "candidate scope=document category=signed_pdf evaluated against policy 8b7c6d50-0000-4000-8000-000000000073; bounded evidence only"
+        }
+      ],
+      "targets_acted": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-456",
+          "action": "bounded_archive_evidence",
+          "reason_code": "bounded_archive_recorded",
+          "detail": "bounded archive evidence recorded"
+        }
+      ],
+      "targets_skipped": [],
+      "reason_codes": ["bounded_archive_recorded"],
+      "next_step": "Bounded archive evidence was recorded for this target; no source document deletion or GDPR erasure was performed.",
+      "destructive_disposal_completed": false,
+      "full_erasure_completed": false,
+      "blocker_metadata": []
+    },
+    "would_execute": true
+  },
+  {
+    "id": "retention-exec-no-action",
+    "requested_at": "2026-07-09T13:55:00Z",
+    "actor": "amelia.marques",
+    "execution_intent": "execute_supported",
+    "execution_status": "executed",
+    "operator_review_decision": "execution_recorded",
+    "decision_state": "open",
+    "review_closure_evidence": [],
+    "destructive_disposal_completed": false,
+    "full_erasure_completed": false,
+    "legal_hold_mutated": false,
+    "retention_policy_mutated": false,
+    "requested_policy": {
+      "id": "8b7c6d50-0000-4000-8000-000000000074",
+      "found": true,
+      "name": "Signed PDF no-action marker",
+      "scope": "document",
+      "category": "signed_pdf",
+      "schedule_id": "documents-signed-no-action",
+      "retention_period": "P10Y",
+      "disposal_action": "no_action",
+      "status": "active",
+      "active": true,
+      "stale": false,
+      "matches_candidate": true,
+      "destructive_action": false
+    },
+    "candidate": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-789"
+    },
+    "matched_records_summary": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-789",
+      "record_count": 1,
+      "policy_match_count": 1,
+      "destructive_policy_count": 0,
+      "policy_ids": ["8b7c6d50-0000-4000-8000-000000000074"]
+    },
+    "legal_hold_blockers": [],
+    "audit_evidence": [
+      {
+        "label": "no-action review",
+        "value": "operator confirmed no bounded operational action is needed"
+      }
+    ],
+    "approval": {
+      "approval_reference": "privacy-board-43",
+      "policy_id": "8b7c6d50-0000-4000-8000-000000000074",
+      "disposal_action": "no_action",
+      "approved_by": "privacy-board",
+      "approved_at": "2026-07-09T13:52:00Z"
+    },
+    "outcome": "bounded_no_action_recorded",
+    "block_reason": "bounded no-action evidence recorded for the retention target",
+    "evidence_state": "bounded_no_action_recorded",
+    "evidence_next_step": "Bounded no-action evidence recorded; no destructive operation was performed.",
+    "workflow": {
+      "status": "awaiting_manual_review",
+      "blockers": [],
+      "required_approvals": [
+        {
+          "code": "retention_manual_review",
+          "required_from": "privacy_or_settings_manager",
+          "reason": "approve the retained evidence before any separate operational action"
+        }
+      ],
+      "next_step": "Bounded no-action evidence was recorded for this target; no source document deletion or GDPR erasure was performed."
+    },
+    "execution_result": {
+      "bounded_executor": true,
+      "executed_at": "2026-07-09T13:55:00Z",
+      "executed_by": "amelia.marques",
+      "targets_considered": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-789",
+          "action": "bounded_no_action_evidence",
+          "reason_code": "target_considered",
+          "detail": "candidate scope=document category=signed_pdf evaluated against policy 8b7c6d50-0000-4000-8000-000000000074; bounded evidence only"
+        }
+      ],
+      "targets_acted": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-789",
+          "action": "bounded_no_action_evidence",
+          "reason_code": "bounded_no_action_recorded",
+          "detail": "bounded no-action evidence recorded"
+        }
+      ],
+      "targets_skipped": [],
+      "reason_codes": ["bounded_no_action_recorded"],
+      "next_step": "Bounded no-action evidence was recorded for this target; no source document deletion or GDPR erasure was performed.",
+      "destructive_disposal_completed": false,
+      "full_erasure_completed": false,
+      "blocker_metadata": []
+    },
+    "would_execute": true
+  },
+  {
+    "id": "retention-exec-awaiting-review",
+    "requested_at": "2026-07-09T13:40:00Z",
+    "actor": "amelia.marques",
+    "execution_intent": "review_only",
+    "execution_status": "awaiting_review",
+    "operator_review_decision": "review_required",
+    "decision_state": "review_closed",
+    "review_closure_decision": "review_evidence_acknowledged",
+    "review_closure_evidence": [
+      {
+        "label": "closure checklist",
+        "value": "manual review evidence acknowledged"
+      }
+    ],
+    "review_closed_by": "privacy-manager",
+    "review_closed_at": "2026-07-09T14:05:00Z",
+    "review_closure_note": "Manual review evidence acknowledged.",
+    "destructive_disposal_completed": false,
+    "full_erasure_completed": false,
+    "legal_hold_mutated": false,
+    "retention_policy_mutated": false,
+    "requested_policy": {
+      "id": "8b7c6d50-0000-4000-8000-000000000073",
+      "found": true,
+      "name": "Signed PDF archive",
+      "scope": "document",
+      "category": "signed_pdf",
+      "schedule_id": "documents-signed-10y",
+      "retention_period": "P10Y",
+      "disposal_action": "archive",
+      "status": "active",
+      "active": true,
+      "stale": false,
+      "matches_candidate": true,
+      "destructive_action": false
+    },
+    "candidate": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-review"
+    },
+    "matched_records_summary": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-review",
+      "record_count": 1,
+      "policy_match_count": 1,
+      "destructive_policy_count": 0,
+      "policy_ids": ["8b7c6d50-0000-4000-8000-000000000073"]
+    },
+    "legal_hold_blockers": [],
+    "operator_notes": "Manual retention evidence queued for review.",
+    "audit_evidence": [
+      {
+        "label": "review",
+        "value": "policy match and candidate evidence captured"
+      }
+    ],
+    "outcome": "manual_review_required",
+    "block_reason": "manual review required before any separate operational action",
+    "evidence_state": "review_queued",
+    "evidence_next_step": "Review the retained evidence and record separate governance approval before any external operational action.",
+    "workflow": {
+      "status": "awaiting_manual_review",
+      "blockers": [],
+      "required_approvals": [
+        {
+          "code": "retention_manual_review",
+          "required_from": "privacy_or_settings_manager",
+          "reason": "approve the retained evidence before any separate operational action"
+        }
+      ],
+      "next_step": "Review the retained evidence and record separate governance approval before any external operational action."
+    },
+    "execution_result": {
+      "bounded_executor": true,
+      "targets_considered": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-review",
+          "action": "bounded_review_evidence",
+          "reason_code": "target_considered",
+          "detail": "candidate scope=document category=signed_pdf evaluated against policy 8b7c6d50-0000-4000-8000-000000000073; bounded review evidence only"
+        }
+      ],
+      "targets_acted": [],
+      "targets_skipped": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-review",
+          "action": "bounded_review_evidence",
+          "reason_code": "retention_manual_review",
+          "detail": "manual review required before any separate operational action"
+        }
+      ],
+      "reason_codes": ["retention_manual_review"],
+      "next_step": "Review the retained evidence and record separate governance approval before any external operational action.",
+      "destructive_disposal_completed": false,
+      "full_erasure_completed": false,
+      "blocker_metadata": []
+    },
+    "would_execute": false
+  }
+]

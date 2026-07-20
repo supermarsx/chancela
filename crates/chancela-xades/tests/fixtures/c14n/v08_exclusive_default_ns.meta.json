@@ -1,0 +1,6 @@
+{
+  "algorithm": "exclusive",
+  "mode": "document",
+  "rule": "a default namespace (xmlns=) that is visibly utilized by an unprefixed element is retained under Exclusive C14N",
+  "provenance": "derived from W3C Exclusive XML Canonicalization 1.0 REC (xml-exc-c14n-20020718) §2 visibly-utilized-namespace rule applied to the default namespace; expected output computed by hand from the spec rule, not from a third-party tool."
+}

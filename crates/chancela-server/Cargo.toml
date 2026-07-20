@@ -1,0 +1,72 @@
+[package]
+name = "chancela-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Chancela HTTP server binary: serves the chancela-api router with graceful shutdown."
+
+[[bin]]
+name = "chancela-server"
+path = "src/main.rs"
+
+[features]
+# Gate the composed-system end-to-end journeys (crates/chancela-server/tests/**). The harness and
+# journeys always COMPILE (so they can never bit-rot), but each journey is
+# `#[cfg_attr(not(feature = "e2e"), ignore)]`, so a plain `cargo test --workspace` reports them
+# `ignored` (0 processes spawned, ~0s) while `cargo test -p chancela-server --features e2e` runs
+# them against the real cargo-built binary. Mirrors the house `network-tests`/`hardware-tests`
+# double-gate; the npm script `test:e2e` selects exactly this feature.
+e2e = ["chancela-api/e2e"]
+# Optional SQLCipher support for encrypted at-rest SQLite stores. The default remains plaintext
+# bundled SQLite; configuring CHANCELA_DB_KEY/CHANCELA_DB_KEY_FILE without this feature fails closed.
+sqlcipher = ["chancela-api/sqlcipher", "chancela-store/sqlcipher"]
+# wp14 Phase 2: build the self-hosted server binary with the PostgreSQL backend available. The
+# Docker/self-hosted image enables this; the default build stays SQLite-only. At runtime the backend
+# is still selected by CHANCELA_DB_BACKEND (sqlite unless postgres is explicitly requested).
+postgres = ["chancela-api/postgres", "chancela-store/postgres"]
+# wp14 Phase 4: build the server binary with the OPTIONAL Redis cache-aside available. OFF by
+# default; when on, the cache is still inert unless REDIS_URL is set at runtime (else NullCache).
+redis = ["chancela-api/redis"]
+
+[dependencies]
+chancela-api = { workspace = true }
+chancela-cae = { workspace = true }
+# Read-only use: the startup banner reports the durable store's file name (`DB_FILE`) and
+# `schema::SCHEMA_VERSION` (t30 §3.4). chancela-api already depends on this crate, so this is a
+# direct handle to two constants, not a new build.
+chancela-store = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+# wp25 observability: initialise the process-wide `tracing` subscriber at startup. JSON formatter by
+# default (prod/aggregator-friendly), `pretty` when `CHANCELA_LOG_FORMAT=pretty`; level via
+# `CHANCELA_LOG`/`RUST_LOG` (default `info`). `env-filter` = level directives, `json` = JSON layer.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+
+[dev-dependencies]
+# The e2e harness drives the real server over HTTP (async reqwest client) and asserts live wire
+# bytes against the canonical `contracts/*.json` fixtures. Both are already declared once in the
+# workspace; dev-deps always compile, so the harness compiles under `cargo test --workspace`.
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+chancela-archive = { workspace = true }
+# t30-e4 acceptance journeys only. `zip` + `sha2` unpack a `POST /v1/backup` archive in-test and
+# recompute its per-file digests (backup/restore journey); `rusqlite` flips a byte in a stored
+# event row to prove a tampered chain boots but reports `ledger_verified: false` (tamper journey).
+# All three are already transitive deps via chancela-store, so adding these direct dev-dep lines
+# costs no extra build — they only expose the APIs the journeys drive. `Cargo.toml` is not the
+# chancela-server/src lock (t30-e3); these are dev-deps only.
+zip = { workspace = true }
+sha2 = { workspace = true }
+rusqlite = { workspace = true }
+# t48-e7 acceptance: the document-pipeline journey fetches the server's sealed PDF/A-2u bytes and
+# structurally verifies conformance over the wire (classic xref, no /Encrypt, no /AcroForm,
+# uncompressed XMP with pdfaid part=2/conformance=U, N=3 OutputIntent, embedded fonts + ToUnicode) —
+# a faithful re-implementation of chancela_doc's crate-private `selfcheck`. `lopdf` is already the
+# in-tree PDF object model (workspace dep via chancela-doc/chancela-pades); this direct dev-dep line
+# only exposes its parse API to the test, no extra build, no dep cycle. Dev-deps only (not the
+# chancela-server/src lock).
+lopdf = { workspace = true }

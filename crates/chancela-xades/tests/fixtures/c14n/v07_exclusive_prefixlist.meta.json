@@ -1,0 +1,9 @@
+{
+  "algorithm": "exclusive",
+  "mode": "document",
+  "inclusive_prefixes": [
+    "b"
+  ],
+  "rule": "the InclusiveNamespaces PrefixList forces a listed prefix (b) to be rendered at the top of the output subtree even when not yet visibly utilized there",
+  "provenance": "derived from W3C Exclusive XML Canonicalization 1.0 REC (xml-exc-c14n-20020718) §3 InclusiveNamespaces PrefixList rule; expected output computed by hand from the spec rule, not from a third-party tool."
+}

@@ -1,0 +1,277 @@
+/**
+ * A single entity, full width. Its "Registo comercial" provenance now spans the whole
+ * column (t13 item 3), with the certidão import moved behind a neat button that opens
+ * `/entidades/:id/importar`. Opening a book against this entity is likewise a neat
+ * button that carries the entity through to the open-book page.
+ */
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useBooks, useEntity, useUpdateEntity } from '../../api/hooks';
+import { entityFamilyLabels, entityKindLabels } from '../../api/labels';
+import type { Entity } from '../../api/types';
+import { useT, type TFunction } from '../../i18n';
+import {
+  Card,
+  ErrorNote,
+  Field,
+  FieldHelp,
+  Icon,
+  Input,
+  PageHeader,
+  Skeleton,
+  SkeletonDeflist,
+  SkeletonTable,
+  useToast,
+} from '../../ui';
+import { GateButton, GateButtonLink, scopeEntity } from '../session/permissions';
+import { BooksTable } from '../books/BooksTable';
+import { RegistryProvenance } from '../registry/RegistryProvenance';
+import { EntityChronologyPanel } from './EntityChronologyPanel';
+import { EntityStatuteEditor } from './EntityStatuteEditor';
+import { NipcBadge } from './NipcBadge';
+import { PrintButton } from './PrintButton';
+import { EntityPrintDocument } from './EntityPrintDocument';
+import { entityFieldHelp } from './fieldHelp';
+
+function displayFiscalYearEnd(value: string | null | undefined, t: TFunction) {
+  return value ? value : t('entities.fiscalYearEnd.default');
+}
+
+function HelpTerm({ label, help }: { label: string; help: string }) {
+  return (
+    <span className="field__labelrow">
+      <span>{label}</span>
+      <FieldHelp text={help} />
+    </span>
+  );
+}
+
+function normalizeFiscalYearEndInput(input: string): string | null {
+  const value = input.trim();
+  if (value === '') return null;
+  const match = /^(\d{2})-(\d{2})$/.exec(value);
+  if (!match) throw new Error('invalid fiscal-year end');
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
+    throw new Error('invalid fiscal-year end');
+  }
+  return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function FiscalYearEndEditor({ entity }: { entity: Entity }) {
+  const t = useT();
+  const toast = useToast();
+  const update = useUpdateEntity(entity.id);
+  const [draft, setDraft] = useState(entity.fiscal_year_end ?? '');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft(entity.fiscal_year_end ?? '');
+    setError(null);
+  }, [entity.id, entity.fiscal_year_end]);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    let fiscalYearEnd: string | null;
+    try {
+      fiscalYearEnd = normalizeFiscalYearEndInput(draft);
+      setError(null);
+    } catch {
+      setError(t('entities.fiscalYearEnd.invalid'));
+      return;
+    }
+    update.mutate(
+      { fiscal_year_end: fiscalYearEnd },
+      {
+        onSuccess: (saved) => {
+          setDraft(saved.fiscal_year_end ?? '');
+          toast.success(t('entities.fiscalYearEnd.updated'));
+        },
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
+
+  return (
+    <Card title={t('entities.fiscalYearEnd.cardTitle')}>
+      {update.error ? <ErrorNote error={update.error} /> : null}
+      <dl className="deflist">
+        <div>
+          <dt>
+            <HelpTerm
+              label={t('entities.fiscalYearEnd.fieldLabel')}
+              help={entityFieldHelp.fiscalYearEnd}
+            />
+          </dt>
+          <dd>
+            <code className="mono">{displayFiscalYearEnd(entity.fiscal_year_end, t)}</code>
+          </dd>
+        </div>
+      </dl>
+      <form className="form" onSubmit={submit}>
+        <Field
+          label={t('entities.fiscalYearEnd.inputLabel')}
+          htmlFor="entity-fiscal-year-end"
+          hint={t('entities.fiscalYearEnd.hint')}
+          help={entityFieldHelp.fiscalYearEnd}
+          error={error}
+        >
+          <Input
+            id="entity-fiscal-year-end"
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              if (error) setError(null);
+            }}
+            placeholder={t('entities.fiscalYearEnd.placeholder')}
+            maxLength={5}
+          />
+        </Field>
+        <div className="form__actions">
+          <GateButton
+            perm="entity.update"
+            scope={scopeEntity(entity.id)}
+            type="submit"
+            variant="primary"
+            icon={<Icon.Save />}
+            disabled={update.isPending}
+          >
+            {update.isPending
+              ? t('entities.fiscalYearEnd.saving')
+              : t('entities.fiscalYearEnd.save')}
+          </GateButton>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
+export function EntityDetailPage() {
+  const t = useT();
+  const { id = '' } = useParams();
+  const entity = useEntity(id);
+  const books = useBooks(id);
+
+  if (entity.isLoading) {
+    return (
+      <div className="stack">
+        <PageHeader
+          crumbs={<Link to="/entidades">{t('entities.crumb')}</Link>}
+          title={<Skeleton width="16rem" height="1.6rem" />}
+        />
+        <Card title={t('entities.identificationCard')}>
+          <SkeletonDeflist />
+        </Card>
+      </div>
+    );
+  }
+  if (entity.error) return <ErrorNote error={entity.error} />;
+  if (!entity.data) return null;
+
+  const ent = entity.data;
+
+  return (
+    <div className="stack">
+      <PageHeader
+        crumbs={
+          <>
+            <Link to="/entidades">{t('entities.crumb')}</Link> · {ent.name}
+          </>
+        }
+        title={ent.name}
+        actions={<PrintButton />}
+      />
+
+      <Card title={t('entities.identificationCard')}>
+        <dl className="deflist">
+          <div>
+            <dt>
+              <HelpTerm label={t('entities.field.nipc')} help={entityFieldHelp.nipc} />
+            </dt>
+            <dd>
+              <span className="nipc-cell">
+                <code className="mono">{ent.nipc}</code>
+                {!ent.nipc_validated ? <NipcBadge /> : null}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>
+              <HelpTerm label={t('entities.field.seat')} help={entityFieldHelp.seat} />
+            </dt>
+            <dd>{ent.seat}</dd>
+          </div>
+          <div>
+            <dt>
+              <HelpTerm label={t('entities.field.legalForm')} help={entityFieldHelp.legalForm} />
+            </dt>
+            <dd>{entityKindLabels[ent.kind]}</dd>
+          </div>
+          <div>
+            <dt>{t('entities.field.family')}</dt>
+            <dd>{entityFamilyLabels[ent.family]}</dd>
+          </div>
+          <div>
+            <dt>
+              <HelpTerm
+                label={t('entities.fiscalYearEnd.fieldLabel')}
+                help={entityFieldHelp.fiscalYearEnd}
+              />
+            </dt>
+            <dd>
+              <code className="mono">{displayFiscalYearEnd(ent.fiscal_year_end, t)}</code>
+            </dd>
+          </div>
+        </dl>
+      </Card>
+
+      <FiscalYearEndEditor entity={ent} />
+      <EntityStatuteEditor entity={ent} />
+
+      <section className="stack">
+        <div className="section-head">
+          <h3 className="section-subtitle">{t('entities.registrySection')}</h3>
+          <GateButtonLink
+            perm="entity.registry.import"
+            scope={scopeEntity(ent.id)}
+            to={`/entidades/${ent.id}/importar`}
+            icon={<Icon.Tray />}
+          >
+            {t('entities.importButton')}
+          </GateButtonLink>
+        </div>
+        <RegistryProvenance entityId={ent.id} />
+      </section>
+
+      <EntityChronologyPanel entityId={ent.id} />
+
+      <Card
+        title={t('entities.booksCard')}
+        actions={
+          <GateButtonLink
+            perm="book.open"
+            scope={scopeEntity(ent.id)}
+            to={`/livros/novo?entidade=${ent.id}`}
+            variant="primary"
+            icon={<Icon.BookPlus />}
+          >
+            {t('entities.openBookButton')}
+          </GateButtonLink>
+        }
+      >
+        {books.isLoading ? (
+          <SkeletonTable cols={5} />
+        ) : books.error ? (
+          <ErrorNote error={books.error} />
+        ) : (
+          <BooksTable books={books.data ?? []} />
+        )}
+      </Card>
+
+      {/* Print-only filing abstract (portaled to <body>, hidden on screen). */}
+      <EntityPrintDocument entityId={ent.id} />
+    </div>
+  );
+}

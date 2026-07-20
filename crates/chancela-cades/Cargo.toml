@@ -1,0 +1,25 @@
+[package]
+name = "chancela-cades"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "CMS SignedData / CAdES-B build and validation primitives; owns the RawSignature contract (spec 04, SIG-01..31)."
+
+[dependencies]
+cms = { workspace = true }
+x509-cert = { workspace = true }
+der = { workspace = true }
+spki = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+ecdsa = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

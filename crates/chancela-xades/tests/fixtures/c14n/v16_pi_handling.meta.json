@@ -1,0 +1,6 @@
+{
+  "algorithm": "inclusive",
+  "mode": "document",
+  "rule": "processing instructions within document content are preserved (target, and single-space-separated data when present)",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §2.3 / §3.1 rule for processing instructions inside the document element; expected output computed by hand from the spec rule, not from a third-party tool. NOTE: PIs whose target/data whitespace requires normalization, and PI/comment placement outside the document element, are a documented scope limit — see crates/chancela-xades/TESTING.md."
+}

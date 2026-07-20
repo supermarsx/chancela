@@ -1,0 +1,82 @@
+{
+  "id": "cooperativa-certidao-ata/v1",
+  "family": "Cooperative",
+  "stage": "Certidao",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Certidão de ata" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "Digest do ato selado", "value": "{{ payload_digest }}" },
+        { "key": "Evento de selagem", "value": "{{ seal_event_seq }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Certifica-se que a presente constitui cópia fiel e integral da ata n.º {{ ata_number }} da assembleia geral de {{ entity.name }}, selada na escrituração digital da entidade, cujo resumo criptográfico (digest) do ato selado acima se identifica, para verificação da sua integridade."
+    },
+    { "kind": "Rule" },
+    { "kind": "Heading", "level": 2, "template": "{{ title }}" },
+    {
+      "kind": "Paragraph",
+      "template": "No dia {{ meeting_date | long_date }}, pelas {{ meeting_time }} horas, em {{ place }}, reuniu a assembleia geral de {{ entity.name }}, NIPC {{ entity.nipc }}, ao abrigo do Código Cooperativo (Lei n.º 119/2015)."
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Presidente da mesa", "value": "{{ mesa.presidente }}" },
+        { "key": "Secretário(s)", "value": "{{ mesa.secretarios | join(', ') }}" }
+      ]
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Cooperadores presentes", "value": "{{ members_present }}" },
+        { "key": "Cooperadores representados", "value": "{{ members_represented }}" }
+      ]
+    },
+    { "kind": "Heading", "level": 2, "template": "Ordem de trabalhos" },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    { "kind": "Heading", "level": 2, "template": "Deliberações" },
+    {
+      "kind": "Paragraph",
+      "template": "As deliberações foram tomadas segundo o princípio de um cooperador, um voto, nos termos do artigo 41.º do Código Cooperativo."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "VoteTable",
+      "items": "deliberation_items",
+      "label": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}",
+      "vote_field": "vote",
+      "unanimous_total": "{{ members_present + members_represented }}"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% for s in statements %}Declaração de voto de {{ s.member }}: {{ s.text }} {% endfor %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

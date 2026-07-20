@@ -1,0 +1,66 @@
+{
+  "id": "fundacao-convocatoria-orgao/v1",
+  "family": "Foundation",
+  "stage": "Convocatoria",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "fundacao-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Convocatória" },
+    { "kind": "Heading", "level": 2, "template": "{{ title }}" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Sede", "value": "{{ entity.seat }}" },
+        { "key": "Data da reunião", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Hora", "value": "{{ meeting_time }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Modo de reunião", "value": "{{ channel | channel_label }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.convener %}{{ convening.convener }}, na qualidade de {{ convening.convener_capacity | role_label }}, convoca {% else %}Convocam-se {% endif %}os membros do órgão de administração da fundação {{ entity.name }}, NIPC {{ entity.nipc }}, para reunir no dia {{ meeting_date | long_date }}, pelas {{ meeting_time }} horas, em {{ place }}, a fim de deliberar sobre a ordem de trabalhos infra, nos termos da Lei-Quadro das Fundações e dos artigos 185.º e seguintes do Código Civil."
+    },
+    { "kind": "Heading", "level": 2, "template": "Ordem de trabalhos" },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente convocatória observa o regime de convocatória aplicável ao órgão de administração da fundação: {{ threshold(\"fundacao.orgao.regime_convocatoria\") }}.{% if convening.antecedence_days %} Foi expedida com {{ convening.antecedence_days }} dias de antecedência em relação à data da reunião.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.second_call.date %}Não se verificando quórum em primeira convocação, o órgão reunirá em segunda convocação no dia {{ convening.second_call.date | long_date }}{% if convening.second_call.time %}, pelas {{ convening.second_call.time }} horas{% endif %}{% if convening.second_call.reduced_quorum %}, deliberando validamente com qualquer número de membros presentes{% endif %}.{% endif %}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Comprovativo de expedição"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "convening.recipients",
+      "rows": [
+        { "key": "Destinatário", "value": "{{ name }}" },
+        { "key": "Contacto", "value": "{{ contact }}" },
+        { "key": "Meio de expedição", "value": "{% if channel == 'RegisteredLetterAR' %}Carta registada com aviso de receção{% elif channel == 'RegisteredLetter' %}Carta registada{% elif channel == 'Email' %}Correio eletrónico{% elif channel == 'HandDelivery' %}Entrega em mão{% elif channel == 'Publication' %}Publicação{% elif channel == 'Portal' %}Portal{% endif %}" },
+        { "key": "Referência de expedição", "value": "{{ reference }}" },
+        { "key": "Data de expedição", "value": "{{ dispatched_at | long_date }}" }
+      ]
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

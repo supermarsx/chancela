@@ -1,0 +1,35 @@
+[package]
+name = "chancela-xades"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "XMLDSig + XAdES (B/T/LT/LTA) over the RawSignature seam, incl. in-crate exclusive XML canonicalization (spec 04, SIG)."
+
+[dependencies]
+# Leaf crate: consumes the RawSignature/alg contract + TSA, but must NOT depend on
+# chancela-signing (mirrors the chancela-csc no-cycle rule; see .orchestration/plans/t67.md §1.1).
+chancela-cades = { workspace = true }
+chancela-tsa = { workspace = true }
+roxmltree = { workspace = true }
+quick-xml = { workspace = true }
+sha2 = { workspace = true }
+der = { workspace = true }
+base64 = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+# Signature-value verification over the canonicalized SignedInfo (validate.rs), mirroring the
+# chancela-cades verify patterns. All already pinned in the workspace der-0.7/RustCrypto-0.9 family.
+x509-cert = { workspace = true }
+spki = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+# Broader ECDSA for XML-signing: P-384/SHA-384 + P-521/SHA-512 SignatureMethod agility and
+# fixed-width r||s encoding/verify (xmldsig.rs / validate.rs). Same der-0.7/RustCrypto-0.13 family.
+p384 = { workspace = true }
+p521 = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

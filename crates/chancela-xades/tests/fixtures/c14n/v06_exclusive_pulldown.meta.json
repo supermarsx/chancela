@@ -1,0 +1,6 @@
+{
+  "algorithm": "exclusive",
+  "mode": "document",
+  "rule": "Exclusive C14N renders a namespace declaration at the first element that visibly utilizes it (prefix pull-down to the point of use)",
+  "provenance": "derived from W3C Exclusive XML Canonicalization 1.0 REC (xml-exc-c14n-20020718) §2 output/utilization rule; expected output computed by hand from the spec rule, not from a third-party tool."
+}

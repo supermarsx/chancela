@@ -1,0 +1,23 @@
+{
+  "jobs": [
+    {
+      "id": "b8c05f1c98e5bf3cb7e385bb537b6016b7f7e301ac94df0d0f962adcc5b8c111",
+      "tenant_id": "74656e61-6e74-0000-0000-000000000001",
+      "target_id": "4c200000-0000-4000-8000-000000000001",
+      "repository_id": "4c210000-0000-4000-8000-000000000001",
+      "purpose": "sync",
+      "destination": "acts/2026/act-42.pdf",
+      "content_type": "application/pdf",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 24018,
+      "created_unix_millis": 1784203200000,
+      "state": "queued",
+      "attempt": 0,
+      "not_before_unix_millis": null,
+      "error_class": null,
+      "detail": "audited job published durably",
+      "receipt": null
+    }
+  ],
+  "next_before_created_unix_millis": null
+}

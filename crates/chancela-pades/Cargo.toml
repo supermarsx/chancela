@@ -1,0 +1,30 @@
+[package]
+name = "chancela-pades"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PAdES-B PDF signing (incremental update) + structural validation (spec 04, SIG-21)."
+
+[dependencies]
+chancela-cades = { workspace = true }
+chancela-tsa = { workspace = true }
+lopdf = { workspace = true }
+sha2 = { workspace = true }
+der = { workspace = true }
+x509-cert = { workspace = true }
+x509-tsp = { workspace = true }
+cms = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+png = { workspace = true }
+# Used by the offline LTV verifier to cryptographically verify each rebuilt CA link's signature
+# (RSA-PKCS1-SHA256 / ECDSA-P256-SHA256). Same workspace pins as the load-bearing der-0.7 family.
+rsa = { workspace = true }
+p256 = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+time = { workspace = true }

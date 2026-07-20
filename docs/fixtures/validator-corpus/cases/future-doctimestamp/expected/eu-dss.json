@@ -1,0 +1,60 @@
+{
+  "schema": "chancela-external-validator-sidecar/v1",
+  "case_id": "future-doctimestamp",
+  "validator": {
+    "family": "eu-dss",
+    "name": "EU DSS validation",
+    "version": null,
+    "run_status": "pending_operator_run",
+    "run_at": null,
+    "operator": null,
+    "command": null,
+    "environment": null,
+    "report_path": null
+  },
+  "document": {
+    "path": "../input/future-doctimestamp.pdf",
+    "sha256": null,
+    "bytes": null
+  },
+  "evidence_scope": {
+    "kind": "external_validator_report",
+    "technical_only": true,
+    "legal_validity_assessment": "not_assessed",
+    "claim": "technical_validator_evidence_only"
+  },
+  "expected": {
+    "overall_indication": "TOTAL_PASSED",
+    "sub_indication": null,
+    "pades_profile": "DocTimeStamp-technical",
+    "signature_count": 1,
+    "signature_timestamp_present": true,
+    "dss_present": true,
+    "doc_time_stamp_present": true,
+    "tamper_detected": false
+  },
+  "report": {
+    "path": null,
+    "sha256": null,
+    "bytes": null,
+    "captured_at": null,
+    "content_type": null,
+    "source_filename": null,
+    "preserved_at": null,
+    "preserved_by": null,
+    "preservation_action": "not_recorded"
+  },
+  "observed": null,
+  "status_transition": {
+    "from": null,
+    "to": "pending_operator_run",
+    "at": null,
+    "by": null,
+    "reason": "awaiting_operator_run",
+    "command": null
+  },
+  "notes": [
+    "Generated from the current technical /DocTimeStamp primitive; keep pending until an operator records validator output.",
+    "Technical document timestamp evidence only; this is not a production B-LTA or legal LTV claim."
+  ]
+}

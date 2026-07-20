@@ -1,0 +1,76 @@
+{
+  "dossier_id": "44444444-4444-4444-8444-444444444444",
+  "import_id": "11111111-1111-4111-8111-111111111111",
+  "draft_id": "33333333-3333-4333-8333-333333333333",
+  "conversion_execution_artifacts": [
+    {
+      "artifact_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "import_id": "11111111-1111-4111-8111-111111111111",
+      "draft_id": "33333333-3333-4333-8333-333333333333",
+      "dossier_id": "44444444-4444-4444-8444-444444444444",
+      "source_text_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "source_page_spans": [
+        {
+          "start_page": 1,
+          "end_page": 2
+        }
+      ],
+      "source_review_status": "accepted",
+      "source_reviewed_at": "2026-07-10T10:00:00Z",
+      "source_reviewed_by": "paper.reviewer",
+      "target_act_id": "99999999-9999-4999-8999-999999999999",
+      "target_act_state": "Draft",
+      "mutable_draft_act_created": true,
+      "created_at": "2026-07-10T10:15:00Z",
+      "created_by": "paper.owner",
+      "artifact_notice": "This reviewed OCR conversion execution artifact binds accepted OCR/dossier evidence to a mutable Draft act only. It is not a canonical or legal conversion and makes no PDF/A, PDF/UA, signature, archive-package, archive-certification, or legal-validity claim.",
+      "reviewed_conversion_execution_artifact": true,
+      "non_canonical": true,
+      "canonical_conversion_claimed": false,
+      "canonical_minutes_claimed": false,
+      "canonical_act_created": false,
+      "canonical_document_created": false,
+      "signed_document_created": false,
+      "archive_package_created": false,
+      "archive_certification_claimed": false,
+      "pdfa_created": false,
+      "pdfua_created": false,
+      "signature_created": false,
+      "seal_created": false,
+      "legal_validity_claimed": false,
+      "source_extracted_text_in_artifact": false,
+      "source_extracted_text_in_ledger_event": false,
+      "legal_notice": "Historical paper-book package preserved as non-canonical evidence only. It does not replace canonical digital minutes and no PDF/A, legal-validity, signature-validity, or qualified-signature claim is made."
+    }
+  ],
+  "source_text_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "source_page_spans": [
+    {
+      "start_page": 1,
+      "end_page": 2
+    }
+  ],
+  "source_review_status": "accepted",
+  "source_reviewed_at": "2026-07-10T10:00:00Z",
+  "source_reviewed_by": "paper.reviewer",
+  "created_at": "2026-07-10T10:20:00Z",
+  "created_by": "paper.owner",
+  "dossier_notice": "This paper-book OCR conversion dossier is metadata-only, non-canonical, and non-legal-validity-conferring. It records accepted OCR draft review metadata only and does not create acts, documents, signed documents, archive packages, signatures, seals, PDF/A, or PDF/UA outputs.",
+  "metadata_only": true,
+  "non_canonical": true,
+  "act_created": false,
+  "canonical_act_created": false,
+  "canonical_minutes_claimed": false,
+  "canonical_document_created": false,
+  "signed_document_created": false,
+  "archive_package_created": false,
+  "archive_certification_claimed": false,
+  "pdfa_created": false,
+  "pdfua_created": false,
+  "signature_created": false,
+  "seal_created": false,
+  "legal_validity_claimed": false,
+  "source_extracted_text_in_response": false,
+  "source_extracted_text_in_ledger_event": false,
+  "legal_notice": "Historical paper-book package preserved as non-canonical evidence only. It does not replace canonical digital minutes and no PDF/A, legal-validity, signature-validity, or qualified-signature claim is made."
+}

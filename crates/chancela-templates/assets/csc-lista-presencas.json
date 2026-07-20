@@ -1,0 +1,72 @@
+{
+  "id": "csc-lista-presencas/v1",
+  "family": "CommercialCompany",
+  "stage": "Reuniao",
+  "channels": [
+    "Physical",
+    "Hybrid",
+    "Telematic"
+  ],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Lista de presenças"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Data",
+          "value": "{{ meeting_date | long_date }}"
+        },
+        {
+          "key": "Local",
+          "value": "{{ place }}"
+        },
+        {
+          "key": "Sócios presentes",
+          "value": "{{ members_present }}"
+        },
+        {
+          "key": "Sócios representados",
+          "value": "{{ members_represented }}"
+        },
+        {
+          "key": "Referência",
+          "value": "{{ attendance_reference }}"
+        }
+      ]
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Presenças"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "attendees",
+      "template": "{{ name }}{% if quality_note %} — {{ quality_note }}{% elif quality | quality_label %} — {{ quality | quality_label }}{% endif %}{% if weight and weight.Capital %} — capital {{ weight.Capital }}{% endif %} — {% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% else %}ausente{% endif %}{% if represented_by %} (representado por {{ represented_by }}){% endif %}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

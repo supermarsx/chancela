@@ -1,0 +1,117 @@
+{
+  "report_kind": "paper_book_import_validation",
+  "dry_run": true,
+  "legal_notice": "Historical paper-book scans are classified as non-canonical evidence only. This report does not preserve the package, replace canonical digital minutes, or claim PDF/A, legal, or qualified-signature validity.",
+  "identity": {
+    "entity_ref": "entity-legacy-001",
+    "entity_name": "Encosto Estrategico, S.A.",
+    "entity_nipc": "503004642",
+    "book_ref": "ag-book-1968-1971"
+  },
+  "date_span": {
+    "from": "1968-01-01",
+    "to": "1971-12-31"
+  },
+  "package": {
+    "page_count": 240,
+    "source_page_range": {
+      "from": 1,
+      "to": 48
+    },
+    "source_filename": "ag-1968-1971.pdf",
+    "digest": "abababababababababababababababababababababababababababababababab",
+    "notes_present": true,
+    "notes_truncated": false
+  },
+  "linking_evidence": {
+    "source_page_range": {
+      "from": 1,
+      "to": 48
+    },
+    "original_ata_number_range": {
+      "from": 101,
+      "to": 119
+    },
+    "non_canonical": true,
+    "planning_evidence_only": true,
+    "canonical_act_created": false,
+    "canonical_document_created": false,
+    "signature_created": false,
+    "legal_acceptance_claimed": false
+  },
+  "continuation": {
+    "recommendation": "continue_after_operator_review_of_original_numbering",
+    "recommended_action": "prepare_next_digital_ata_using_recommended_next_ata_number",
+    "recommended_next_ata_number": 120,
+    "action_metadata": [
+      "source_page_range",
+      "original_ata_number_range",
+      "recommended_next_ata_number"
+    ],
+    "requires_operator_review": true,
+    "canonical_act_created": false,
+    "canonical_document_created": false,
+    "signature_created": false,
+    "legal_acceptance_claimed": false
+  },
+  "canonical_conversion_preflight": {
+    "status": "not_attempted",
+    "preflight_requested": false,
+    "scope": "ocr_to_canonical_conversion_preflight",
+    "evidence_source": "not_supplied",
+    "evidence": {
+      "ocr_text_present": false,
+      "ocr_text_digest": null,
+      "operator_review_recorded": false,
+      "candidate_digest_present": true,
+      "package_fixity_recorded": false,
+      "source_page_range_valid": true,
+      "source_page_range": {
+        "from": 1,
+        "to": 48
+      },
+      "page_range_reviewed": false,
+      "legal_acceptance_recorded": false
+    },
+    "blockers": [],
+    "allowed_next_action": null,
+    "raw_ocr_text_in_report": false,
+    "canonical_act_created": false,
+    "canonical_document_created": false,
+    "signature_created": false,
+    "signing_requested": false,
+    "signature_validity_claimed": false,
+    "qualified_signature_claimed": false,
+    "legal_validity_claimed": false
+  },
+  "candidate_classification": {
+    "classification": "historical_paper_book_non_canonical_evidence",
+    "non_canonical": true,
+    "historical_evidence": true,
+    "preservation_status": "not_preserved_by_validation",
+    "canonical_minutes_claimed": false,
+    "legal_validity_claimed": false,
+    "signature_validity_claimed": false,
+    "qualified_signature_claimed": false
+  },
+  "can_accept_as_import_candidate": true,
+  "required_operator_actions": [
+    "review_report",
+    "confirm_source_page_range",
+    "record_original_ata_number_range_before_digital_continuation",
+    "preserve_package_in_a_later_operator_action",
+    "plan_digital_continuation_without_auto_creating_canonical_records"
+  ],
+  "findings": [
+    {
+      "severity": "info",
+      "code": "report_only",
+      "message": "validation is read-only; no package, book, act, document, or ledger event was created"
+    },
+    {
+      "severity": "info",
+      "code": "linking_evidence_only",
+      "message": "page and original ata-number ranges are planning metadata only and do not create canonical records"
+    }
+  ]
+}

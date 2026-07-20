@@ -1,0 +1,48 @@
+[
+  {
+    "id": "ba7eaf75-6b76-4306-8040-ad35b5aa7746",
+    "name": "EU to UK support access",
+    "purpose": "Support ticket investigation",
+    "legal_basis": "Contract support obligation",
+    "data_categories": ["account metadata", "support messages"],
+    "recipient": "UK Support Ltd",
+    "destination_country": "United Kingdom",
+    "transfer_mechanism": "UK adequacy regulation",
+    "safeguards": ["least-privilege access", "ticket-scoped audit"],
+    "risk_level": "medium",
+    "status": "active",
+    "review_notes": "Review evidence only; transfer approval and execution remain external.",
+    "evidence_receipts": [
+      {
+        "id": "9adcebb4-8642-43d2-ac40-e906e0324d49",
+        "recorded_at": "2026-07-09T11:30:00Z",
+        "recorded_by": "amelia.marques",
+        "reviewed_at": "2026-07-09T11:00:00Z",
+        "notes": "Quarterly transfer-control review completed by operator.",
+        "transfer_approved": false,
+        "data_transfer_executed": false
+      }
+    ],
+    "advisory_review": {
+      "status": "current",
+      "last_reviewed_at": "2026-07-09T11:00:00Z",
+      "next_review_due_at": "2027-07-09",
+      "days_until_due": 361,
+      "review_interval_days": 365,
+      "receipt_count": 1,
+      "review_receipt_count": 1,
+      "drill_receipt_count": 0,
+      "local_advisory_only": true,
+      "authority_notification_claimed": false,
+      "subject_notification_claimed": false,
+      "transfer_approval_claimed": false,
+      "transfer_execution_claimed": false,
+      "external_delivery_configured": false,
+      "legal_completion_claimed": false
+    },
+    "created_at": "2026-07-09T11:00:00Z",
+    "created_by": "amelia.marques",
+    "updated_at": "2026-07-09T11:30:00Z",
+    "updated_by": "amelia.marques"
+  }
+]

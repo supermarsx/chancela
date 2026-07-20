@@ -1,0 +1,59 @@
+{
+  "schema": "chancela-external-validator-sidecar/v1",
+  "case_id": "tampered-covered-byte",
+  "validator": {
+    "family": "eu-dss",
+    "name": "EU DSS validation",
+    "version": null,
+    "run_status": "pending_operator_run",
+    "run_at": null,
+    "operator": null,
+    "command": null,
+    "environment": null,
+    "report_path": null
+  },
+  "document": {
+    "path": "../input/tampered-covered-byte.pdf",
+    "sha256": null,
+    "bytes": null
+  },
+  "evidence_scope": {
+    "kind": "external_validator_report",
+    "technical_only": true,
+    "legal_validity_assessment": "not_assessed",
+    "claim": "technical_validator_evidence_only"
+  },
+  "expected": {
+    "overall_indication": "TOTAL_FAILED",
+    "sub_indication": "HASH_FAILURE",
+    "pades_profile": "malformed/tampered",
+    "signature_count": 1,
+    "signature_timestamp_present": false,
+    "dss_present": false,
+    "doc_time_stamp_present": false,
+    "tamper_detected": true
+  },
+  "report": {
+    "path": null,
+    "sha256": null,
+    "bytes": null,
+    "captured_at": null,
+    "content_type": null,
+    "source_filename": null,
+    "preserved_at": null,
+    "preserved_by": null,
+    "preservation_action": "not_recorded"
+  },
+  "observed": null,
+  "status_transition": {
+    "from": null,
+    "to": "pending_operator_run",
+    "at": null,
+    "by": null,
+    "reason": "awaiting_operator_run",
+    "command": null
+  },
+  "notes": [
+    "Pending operator run; fixture should tamper with bytes covered by the signature ByteRange."
+  ]
+}

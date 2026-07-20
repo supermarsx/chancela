@@ -1,0 +1,42 @@
+{
+  "id": "assoc-procuracao-representacao/v1",
+  "family": "Association",
+  "stage": "Convocatoria",
+  "channels": ["Physical", "Hybrid", "Telematic"],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "assoc-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Instrumento de representação de associado" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Associação", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Reunião", "value": "{{ title }}" },
+        { "key": "Data da assembleia", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Associado representado", "value": "{{ represented.name }}" },
+        { "key": "Representante", "value": "{{ representative.name }}" },
+        { "key": "Documento do representante", "value": "{{ representative.document }}" },
+        { "key": "Âmbito", "value": "{{ representation.scope }}" },
+        { "key": "Limites ou instruções", "value": "{{ representation.instructions }}" },
+        { "key": "Referência de prova", "value": "{{ representation.evidence_reference }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "O associado representado declara conferir ao representante acima identificado poderes para o representar na assembleia indicada, de acordo com os estatutos da associação e com os limites expressamente registados neste instrumento."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A representação deve ser associada à lista de presenças e à ata, mantendo-se a verificação da qualidade de associado e da admissibilidade estatutária da representação como controlo próprio da entidade."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "service": {
+    "id": "mcp_stdio",
+    "kind": "mcp",
+    "label": "Chancela MCP stdio server",
+    "configured": false,
+    "enabled": true,
+    "desired_state": "running",
+    "actual_runtime_status": "unknown",
+    "controllable_actions": [
+      {
+        "action": "start",
+        "supported": false,
+        "outcome": "supervisor_required",
+        "limitation": "The stdio MCP server is launched externally; the API can only record desired state."
+      },
+      {
+        "action": "stop",
+        "supported": false,
+        "outcome": "supervisor_required",
+        "limitation": "The stdio MCP server is launched externally; the API can only record desired state."
+      },
+      {
+        "action": "restart",
+        "supported": false,
+        "outcome": "supervisor_required",
+        "limitation": "The stdio MCP server is launched externally; the API can only record desired state."
+      }
+    ],
+    "logging_level": "info",
+    "last_action": {
+      "action": "start",
+      "requested_at": "2026-07-09T12:00:00Z",
+      "requested_by": "amelia.marques",
+      "outcome": "supervisor_required",
+      "message": "MCP start desired state was recorded; relaunch the external MCP client or supervisor."
+    },
+    "limitations": [
+      "The stdio MCP server is launched by an external client or supervisor; the API cannot observe or spawn that process.",
+      "No MCP API key or other secret is exposed through this status surface.",
+      "Tenant AI/MCP gate settings.ai.enabled is false; a launcher must mirror it before MCP can serve."
+    ]
+  },
+  "action": "start",
+  "result": {
+    "kind": "supervisor_required",
+    "supported": false,
+    "applied_to_settings": true,
+    "desired_state": "running",
+    "actual_runtime_status": "unknown",
+    "message": "MCP start desired state was recorded; relaunch the external MCP client or supervisor.",
+    "limitations": [
+      "The stdio MCP server is launched by an external client or supervisor; the API cannot observe or spawn that process.",
+      "No MCP API key or other secret is exposed through this status surface.",
+      "Tenant AI/MCP gate settings.ai.enabled is false; a launcher must mirror it before MCP can serve."
+    ]
+  }
+}

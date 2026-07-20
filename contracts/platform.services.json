@@ -1,0 +1,75 @@
+{
+  "services": [
+    {
+      "id": "api",
+      "kind": "api",
+      "label": "Chancela API server",
+      "configured": true,
+      "enabled": true,
+      "desired_state": "running",
+      "actual_runtime_status": "running",
+      "controllable_actions": [
+        {
+          "action": "start",
+          "supported": false,
+          "outcome": "unsupported",
+          "limitation": "The current API process cannot start another copy of itself."
+        },
+        {
+          "action": "stop",
+          "supported": false,
+          "outcome": "unsupported",
+          "limitation": "The current API process cannot stop itself through this request."
+        },
+        {
+          "action": "restart",
+          "supported": false,
+          "outcome": "restart_required",
+          "limitation": "Restart requires an external supervisor or process relaunch."
+        }
+      ],
+      "logging_level": "info",
+      "last_action": null,
+      "limitations": [
+        "The API can observe this process as running only because it is serving this request.",
+        "Start, stop, and restart require an external supervisor or process relaunch."
+      ]
+    },
+    {
+      "id": "mcp_stdio",
+      "kind": "mcp",
+      "label": "Chancela MCP stdio server",
+      "configured": false,
+      "enabled": false,
+      "desired_state": "stopped",
+      "actual_runtime_status": "unknown",
+      "controllable_actions": [
+        {
+          "action": "start",
+          "supported": false,
+          "outcome": "supervisor_required",
+          "limitation": "The stdio MCP server is launched externally; the API can only record desired state."
+        },
+        {
+          "action": "stop",
+          "supported": false,
+          "outcome": "supervisor_required",
+          "limitation": "The stdio MCP server is launched externally; the API can only record desired state."
+        },
+        {
+          "action": "restart",
+          "supported": false,
+          "outcome": "supervisor_required",
+          "limitation": "The stdio MCP server is launched externally; the API can only record desired state."
+        }
+      ],
+      "logging_level": "info",
+      "last_action": null,
+      "limitations": [
+        "The stdio MCP server is launched by an external client or supervisor; the API cannot observe or spawn that process.",
+        "No MCP API key or other secret is exposed through this status surface.",
+        "Tenant AI/MCP gate settings.ai.enabled is false; a launcher must mirror it before MCP can serve."
+      ]
+    }
+  ]
+}

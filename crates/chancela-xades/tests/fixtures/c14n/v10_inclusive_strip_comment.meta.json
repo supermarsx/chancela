@@ -1,0 +1,6 @@
+{
+  "algorithm": "inclusive",
+  "mode": "document",
+  "rule": "comments are removed in the without-comments canonicalization form",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §2.3 rule (comments omitted unless the with-comments variant is selected); expected output computed by hand from the spec rule, not from a third-party tool. See v17 for the complementary with-comments case."
+}

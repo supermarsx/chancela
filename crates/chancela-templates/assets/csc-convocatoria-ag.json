@@ -1,0 +1,115 @@
+{
+  "id": "csc-convocatoria-ag/v1",
+  "family": "CommercialCompany",
+  "stage": "Convocatoria",
+  "channels": [],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Convocatória — Assembleia Geral"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Sede",
+          "value": "{{ entity.seat }}"
+        },
+        {
+          "key": "Data da reunião",
+          "value": "{{ meeting_date | long_date }}"
+        },
+        {
+          "key": "Hora",
+          "value": "{{ meeting_time }}"
+        },
+        {
+          "key": "Local",
+          "value": "{{ place }}"
+        },
+        {
+          "key": "Modo de reunião",
+          "value": "{{ channel | channel_label }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{{ convening.convener }}, na qualidade de {{ convening.convener_capacity | role_label }}, no uso da competência que lhe é conferida pelo artigo 375.º do Código das Sociedades Comerciais, convoca a assembleia geral de {{ entity.name }}, NIPC {{ entity.nipc }}, com sede em {{ entity.seat }}, para reunir na data, hora e local acima indicados."
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Ordem de trabalhos"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente convocatória observa a antecedência mínima legalmente exigida: nas sociedades anónimas, {{ threshold(\"csc.sa.convocatoria.antecedencia_dias\") }} (artigo 377.º/4 do Código das Sociedades Comerciais); nas sociedades por quotas, {{ threshold(\"csc.quotas.convocatoria.antecedencia_dias\") }}, por carta registada (artigo 248.º/3 do Código das Sociedades Comerciais).{% if convening.antecedence_days %} A presente convocatória foi expedida com {{ convening.antecedence_days }} dias de antecedência relativamente à data da reunião.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if channel != 'WrittenResolution' %}Os sócios podem fazer-se representar na assembleia, nos termos do artigo 380.º do Código das Sociedades Comerciais, mediante carta de representação dirigida ao presidente da mesa.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.second_call.date %}Não se verificando o quórum constitutivo em primeira convocação, a assembleia reunirá em segunda convocação no dia {{ convening.second_call.date | long_date }}{% if convening.second_call.time %}, pelas {{ convening.second_call.time }} horas{% endif %}{% if convening.second_call.reduced_quorum %}, podendo então deliberar seja qual for o número de sócios presentes ou representados e o capital por eles representado{% endif %}.{% endif %}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Comprovativo de expedição"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "convening.recipients",
+      "rows": [
+        {
+          "key": "Destinatário",
+          "value": "{{ name }}"
+        },
+        {
+          "key": "Contacto",
+          "value": "{{ contact }}"
+        },
+        {
+          "key": "Meio de expedição",
+          "value": "{% if channel == 'RegisteredLetterAR' %}Carta registada com aviso de receção{% elif channel == 'RegisteredLetter' %}Carta registada{% elif channel == 'Email' %}Correio eletrónico{% elif channel == 'HandDelivery' %}Entrega em mão{% elif channel == 'Publication' %}Publicação{% elif channel == 'Portal' %}Portal{% endif %}"
+        },
+        {
+          "key": "Referência de expedição",
+          "value": "{{ reference }}"
+        },
+        {
+          "key": "Data de expedição",
+          "value": "{{ dispatched_at | long_date }}"
+        }
+      ]
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

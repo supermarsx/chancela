@@ -1,0 +1,144 @@
+site_name: Chancela
+site_description: >-
+  Self-hostable livro de atas (minute book) and corporate-acts platform with an
+  append-only hash-chained ledger, Portuguese qualified e-signature integration,
+  and verifiable export/import fixity.
+site_url: https://supermarsx.github.io/chancela/
+repo_url: https://github.com/supermarsx/chancela
+repo_name: supermarsx/chancela
+edit_uri: edit/main/docs/
+copyright: Chancela is licensed under the Chancela Source License (MIT-derived, non-commercial use only). Documentation describes what the software does; it is not legal advice.
+
+theme:
+  name: material
+  language: en
+  logo: assets/hero.png
+  favicon: assets/hero.png
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
+    # navigation.sections renders every top-level nav group as an always-open
+    # section, so at the single nesting level used below it already keeps the
+    # whole tree visible. navigation.expand would be redundant on top of it and
+    # only lengthens an already tall sidebar, so it is deliberately not listed.
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    # toc.integrate folds each page's own headings into the left sidebar, so the
+    # sidebar shows topics *and* their subtopics in one tree instead of hiding
+    # the sub-headings in a separate right-hand column. Trade-off: this removes
+    # the right-hand TOC column entirely — accepted, the single tree is the
+    # point. It is also why navigation.indexes is absent: Material documents the
+    # two as incompatible, and the nav uses explicit `Overview:` child entries
+    # rather than the section-index form, so nothing is lost by dropping it.
+    - toc.integrate
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: brown
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: brown
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+extra_css:
+  - assets/extra.css
+
+# Strict link validation. Every in-site link must resolve to a real page and a
+# real anchor, or the build fails. Links that intentionally point outside the
+# built site (repo-root files like Dockerfile.hardened, docker/secrets/README.md)
+# are now written as absolute `https://github.com/supermarsx/chancela/blob/main/…`
+# URLs — mkdocs treats those as external and does not link-check them, so strict
+# mode passes while still catching any future broken *local* link or anchor.
+validation:
+  nav:
+    omitted_files: info
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+# Keep internal engineering artefacts OUT of the published site. mkdocs renders
+# every *.md under docs_dir by default, which would otherwise publish CI/planning
+# docs and the ~50 compliance/ evidence files as unlisted-but-URL-reachable
+# pages. exclude_docs (mkdocs >= 1.6) drops them from the build entirely; they
+# stay in the repo. Do NOT add ARCHITECTURE.md or AI-PROVENANCE.md here — both
+# are promoted into the nav below.
+exclude_docs: |
+  B-LT-DSS-IMPLEMENTATION-PLAN.md
+  CI-CHECKPOINTS.md
+  CI-E2E-HARDENING-PLAN.md
+  CI-RELEASE-HARDENING.md
+  ci-assurance-waivers.json
+  compliance/
+  fixtures/
+
+# Every published page belongs to exactly one topic group — the loose top-level
+# entries that used to sit next to the groups are folded in below, so the
+# sidebar reads as six sections rather than a mixed list. Each page's own `##`
+# headings appear underneath it as subtopics (see toc.integrate above).
+nav:
+  - Home: index.md
+  - Getting started:
+      - Requirements & prerequisites: requirements.md
+      - Configuration reference: configuration.md
+  - Deployment & operations:
+      - Overview & profiles: deployment.md
+      - Sync, backup & connector worker: connectors-worker.md
+      - High availability & failover: HA-FAILOVER.md
+      - PostgreSQL backup & restore: postgres-backup-restore.md
+  - Capabilities:
+      - Overview: capabilities.md
+      - Office / working-copy exports: OFFICE-DOCUMENT-EXPORT.md
+      - AI & MCP provenance: AI-PROVENANCE.md
+      - Portuguese e-signature integration: CMD-LEGAL-INTEGRATION.md
+  - Security & supply chain:
+      - Hardened Docker deployment: security/hardened-docker.md
+      - Authorization changes & upgrade notes: security/authorization-changes.md
+      - Release signing & provenance: release-signing.md
+      - Dependency management: dependency-management.md
+  - Reference:
+      - Architecture overview: ARCHITECTURE.md
+      - Mobile companion (foundation): mobile.md
+      - Comparison with other tools: comparison.md
+      - Extras & utilities: extras.md
+      - Specification (repo): https://github.com/supermarsx/chancela/blob/main/spec.md

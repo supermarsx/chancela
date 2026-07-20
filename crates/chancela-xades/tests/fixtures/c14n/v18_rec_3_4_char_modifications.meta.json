@@ -1,0 +1,6 @@
+{
+  "algorithm": "inclusive",
+  "mode": "document",
+  "rule": "character modifications and character references (REC §3.4): a CR character reference is preserved as &#xD;, an LF character reference becomes a literal newline, CDATA is folded to text and re-escaped, and attribute-value character references / whitespace controls are normalized and escaped",
+  "provenance": "W3C Canonical XML 1.0 REC (xml-c14n-20010315) §3.4 worked example, transcribed verbatim for the DTD-attribute-type-independent elements (text, value, compute, norm); the example's normNames and normId lines are omitted because their canonical form depends on DTD-declared NMTOKENS/ID attribute types and this canonicalizer performs no DTD attribute-type normalization"
+}

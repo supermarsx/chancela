@@ -1,0 +1,26 @@
+# wp28-soak — compose override for the HA multi-node soak driver.
+#
+# Purpose: run the 3-node cluster soak on a Windows checkout. The only change vs the shipped
+# compose is to bind-mount an LF-normalized copy of `postgres-tls-init.sh`.
+#
+# WHY: `docker/postgres-tls-init.sh` is committed with LF (correct), but a Windows checkout with
+# `.gitattributes` `* text=auto` materializes it as CRLF. Alpine `/bin/sh` then fails on `set -eu\r`
+# ("illegal option -"), so `postgres-tls-init` exits 2 and Postgres never starts. This is a local
+# checkout artifact, NOT a product bug — the committed blob and any Linux/CI checkout are LF. Rather
+# than mutate tracked product source, this override mounts the byte-for-byte committed script
+# (re-materialized as LF under scripts/ha-soak/) over the CRLF working copy.
+#
+# Usage (from repo root):
+#   docker compose \
+#     -f docker/docker-compose.yml \
+#     -f docker/docker-compose.cluster.yml \
+#     -f scripts/ha-soak/docker-compose.soak.yml \
+#     --profile postgres --profile cluster up -d --scale chancela-cluster=3 \
+#     postgres redis chancela-cluster
+#
+# Relative default resolves against the project directory (the dir of the FIRST -f file = docker/),
+# hence `../scripts/ha-soak/...`. Override SOAK_TLS_INIT with an absolute path to be explicit.
+services:
+  postgres-tls-init:
+    volumes:
+      - ${SOAK_TLS_INIT:-../scripts/ha-soak/postgres-tls-init.sh}:/usr/local/bin/postgres-tls-init.sh:ro

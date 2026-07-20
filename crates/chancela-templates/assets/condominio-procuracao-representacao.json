@@ -1,0 +1,42 @@
+{
+  "id": "condominio-procuracao-representacao/v1",
+  "family": "Condominium",
+  "stage": "Convocatoria",
+  "channels": ["Physical", "Hybrid", "Telematic"],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Instrumento de representação de condómino" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "Reunião", "value": "{{ title }}" },
+        { "key": "Data da assembleia", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Condómino representado", "value": "{{ represented.name }}" },
+        { "key": "Fração / permilagem", "value": "{{ represented.unit }}" },
+        { "key": "Representante", "value": "{{ representative.name }}" },
+        { "key": "Documento do representante", "value": "{{ representative.document }}" },
+        { "key": "Âmbito", "value": "{{ representation.scope }}" },
+        { "key": "Limites ou instruções", "value": "{{ representation.instructions }}" },
+        { "key": "Referência de prova", "value": "{{ representation.evidence_reference }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "O condómino representado declara conferir ao representante acima identificado poderes para o representar na assembleia indicada, incluindo a participação, discussão e votação dos pontos constantes do aviso convocatório, nos termos da lei, do regulamento do condomínio e dos poderes efetivamente conferidos."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Este instrumento deve ser conservado com a lista de presenças e com a ata, sem dispensar a verificação substantiva da qualidade de condómino, da fração representada e dos poderes do representante."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

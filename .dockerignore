@@ -1,0 +1,43 @@
+# Build artifacts
+target
+**/target
+# Per-executor cargo target dirs (.gitignore /target-*). These are not matched by
+# the `target` rules above and are enormous: a build context measured here was
+# 911 GB, which makes `docker build` transfer the context for days before the
+# first instruction runs. Same rationale as the .claude entry below.
+target-*
+dist
+apps/web/dist
+lib*.rlib
+*.tar.gz
+# Coverage snapshots written next to the web workspace while measuring.
+apps/web/coverage-*
+
+# Dependencies (reinstalled inside the image)
+node_modules
+**/node_modules
+
+# VCS / tooling / orchestration metadata
+.git
+.gitignore
+.gitattributes
+.github
+.orchestration
+# Agent worktrees under .claude are full repo checkouts; without this they are
+# copied into every build context (observed >1.5GB) and slow every image build.
+.claude
+
+# Runtime secrets must never enter the Docker build context.
+docker/secrets
+# Local environment files (.gitignore .env / .env.*) can hold credentials. Both
+# build stages run `COPY . .`, so an operator's .env would otherwise be baked
+# into a build layer. .env.example is excluded too: no stage reads it.
+.env
+.env.*
+
+# Desktop shell is not part of the server or web image
+apps/desktop
+
+# Misc
+*.log
+.DS_Store

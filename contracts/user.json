@@ -1,0 +1,10 @@
+{
+  "id": "6d5e4f00-0000-4000-8000-000000000005",
+  "username": "amelia.marques",
+  "display_name": "Amélia Marques",
+  "created_at": "2026-07-07T10:15:30Z",
+  "active": true,
+  "has_secret": true,
+  "has_attestation_key": false,
+  "has_recovery_phrase": false
+}

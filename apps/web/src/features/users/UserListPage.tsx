@@ -1,0 +1,150 @@
+/**
+ * Utilizadores — the roster (plan t14 §2.8, t44 §5), now hosted only inside
+ * Configurações → Utilizadores. It lists the accounts that attribute every ledger mutation:
+ * username, display name, active state, and at-a-glance access indicators (whether a sign-in
+ * password and an audit-attestation key are provisioned). Creating and editing users are
+ * selected through the Settings query string, so Configurações → Utilizadores is the only
+ * user-management surface.
+ *
+ * Row actions are icon-only {@link IconButton}s with gilt tooltips (t50 item 6): **Editar**
+ * (→ the edit screen), **Ativar/Desativar** (the in-place `PATCH` — users are never deleted,
+ * so attribution history stays intact), and **Acesso e auditoria** (a link into the edit
+ * screen's access section). Activate/deactivate keeps its distinct success toast (t44
+ * retrofit-b).
+ */
+import { useNavigate } from 'react-router-dom';
+import { useUpdateUser, useUsers } from '../../api/hooks';
+import { useT } from '../../i18n';
+import { Badge, Card, EmptyState, ErrorNote, Icon, SkeletonRegion, SkeletonTable, Table, useToast } from '../../ui';
+import { GateButtonLink, GateIconButton } from '../session/permissions';
+import type { UserView } from '../../api/types';
+
+export const usersSettingsPath = (user?: string, hash = '') => {
+  const query = user ? `?sec=utilizadores&user=${encodeURIComponent(user)}` : '?sec=utilizadores';
+  return `/configuracoes${query}${hash}`;
+};
+
+function UserRow({ user }: { user: UserView }) {
+  const t = useT();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const update = useUpdateUser(user.id);
+
+  // Activate/deactivate; distinct toast per action (the target state is `!user.active`).
+  function toggleActive() {
+    const nextActive = !user.active;
+    update.mutate(
+      { active: nextActive },
+      {
+        onSuccess: () =>
+          toast.success(nextActive ? t('toast.user.activated') : t('toast.user.deactivated')),
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
+
+  return (
+    <tr>
+      <td>
+        <code className="mono">{user.username}</code>
+      </td>
+      <td>{user.display_name}</td>
+      <td>
+        {user.active ? (
+          <Badge tone="ok">{t('users.status.active')}</Badge>
+        ) : (
+          <Badge tone="neutral">{t('users.status.inactive')}</Badge>
+        )}
+      </td>
+      <td>
+        <span className="users-actions">
+          {user.has_secret ? (
+            <Badge tone="ok">{t('users.secret.label')}</Badge>
+          ) : (
+            <Badge tone="neutral">{t('users.secret.none')}</Badge>
+          )}
+          {user.has_attestation_key ? <Badge tone="accent">{t('users.key.label')}</Badge> : null}
+          {user.has_recovery_phrase ? (
+            <Badge tone="accent">{t('users.recovery.label')}</Badge>
+          ) : null}
+        </span>
+      </td>
+      <td className="users-actions">
+        <GateIconButton
+          perm="user.manage"
+          icon={<Icon.Pencil />}
+          label={t('users.action.edit')}
+          onClick={() => navigate(usersSettingsPath(user.id))}
+        />
+        <GateIconButton
+          perm="user.manage"
+          icon={<Icon.Power />}
+          label={user.active ? t('users.action.deactivate') : t('users.action.reactivate')}
+          disabled={update.isPending}
+          onClick={toggleActive}
+        />
+        <GateIconButton
+          perm="user.manage"
+          icon={<Icon.Wrench />}
+          label={t('users.access.title')}
+          onClick={() => navigate(usersSettingsPath(user.id, '#acesso'))}
+        />
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * The roster body — a self-contained Card with its own "novo utilizador" action and the
+ * table/empty/error states. Rendered inline as the Configurações → Utilizadores sub-tab,
+ * where the SubNav supplies the page header. Carries no PageHeader of its own so the
+ * Settings page is the single user-management surface.
+ */
+export function UsersList() {
+  const t = useT();
+  const users = useUsers();
+
+  return (
+    <Card
+      title={t('users.list.cardTitle')}
+      actions={
+        <GateButtonLink
+          perm="user.manage"
+          to={usersSettingsPath('novo')}
+          variant="primary"
+          icon={<Icon.Plus />}
+        >
+          {t('users.list.newButton')}
+        </GateButtonLink>
+      }
+    >
+      {users.isLoading ? (
+        <SkeletonRegion>
+          <SkeletonTable cols={5} />
+        </SkeletonRegion>
+      ) : users.error ? (
+        <ErrorNote error={users.error} />
+      ) : (users.data ?? []).length === 0 ? (
+        <EmptyState title={t('users.list.emptyTitle')}>
+          <p>{t('users.list.emptyBody')}</p>
+        </EmptyState>
+      ) : (
+        <Table
+          head={
+            <tr>
+              <th>{t('users.table.username')}</th>
+              <th>{t('users.table.name')}</th>
+              <th>{t('users.table.state')}</th>
+              <th>{t('users.table.access')}</th>
+              <th>{t('users.table.action')}</th>
+            </tr>
+          }
+        >
+          {(users.data ?? []).map((u) => (
+            <UserRow key={u.id} user={u} />
+          ))}
+        </Table>
+      )}
+    </Card>
+  );
+}

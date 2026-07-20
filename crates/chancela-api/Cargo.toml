@@ -1,0 +1,111 @@
+[package]
+name = "chancela-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Axum HTTP layer for Chancela: in-memory entity CRUD and ledger verification over the domain core (ARC-02, thin API)."
+
+[features]
+default = []
+e2e = []
+sqlcipher = ["chancela-store/sqlcipher"]
+# wp14 Phase 2: enable the off-by-default PostgreSQL durability backend (self-hosted server only).
+# Propagates to chancela-store's `postgres` feature so `CHANCELA_DB_BACKEND=postgres` + `DATABASE_URL`
+# can select it at runtime. Default features are unchanged, so the desktop/browser embedded builds
+# and the plain `cargo build` stay SQLite-only with an unchanged dependency graph. wp16 P1 additionally
+# pulls in the synchronous `postgres` crate directly so the follower change-feed can run its own
+# dedicated `LISTEN chancela_ledger` connection (never the store's writer / read pool).
+postgres = ["chancela-store/postgres", "dep:postgres"]
+# wp14 Phase 4: enable the OPTIONAL Redis cache-aside backend. OFF by default; when on, the cache is
+# still inert unless `REDIS_URL`/`REDIS_URL_FILE` is set at runtime (else NullCache). The in-process
+# `Ledger::verify()` memo (the real single-node win) needs NO feature — it is always compiled.
+redis = ["dep:redis"]
+
+[dependencies]
+chancela-apikey = { workspace = true }
+chancela-archive = { workspace = true }
+chancela-authz = { workspace = true }
+chancela-zk = { workspace = true }
+chancela-connectors = { workspace = true }
+chancela-worker = { workspace = true }
+chancela-core = { workspace = true }
+chancela-ledger = { workspace = true }
+chancela-registry = { workspace = true }
+chancela-cae = { workspace = true }
+chancela-law = { workspace = true }
+chancela-store = { workspace = true }
+chancela-templates = { workspace = true }
+chancela-doc = { workspace = true }
+chancela-signing = { workspace = true }
+chancela-xades = { workspace = true }
+chancela-scap = { workspace = true }
+chancela-pades = { workspace = true }
+chancela-cmd = { workspace = true }
+chancela-csc = { workspace = true }
+chancela-smartcard = { workspace = true }
+chancela-tsa = { workspace = true }
+chancela-tsl = { workspace = true }
+argon2 = { workspace = true }
+# wp14 Phase 4: in-process cache for the ledger-verify memo + the in-process cache-aside impl.
+moka = { workspace = true }
+# wp14 Phase 4: OPTIONAL Redis cache-aside backend, gated by the off-by-default `redis` feature.
+redis = { workspace = true, optional = true }
+# wp16 P1: synchronous PostgreSQL driver for the follower change-feed's dedicated LISTEN/NOTIFY
+# connection. Same version as chancela-store's backend so the lock stays unified; only pulled in with
+# the off-by-default `postgres` feature, so the default SQLite build's dependency graph is unchanged.
+postgres = { version = "0.19", optional = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+chacha20poly1305 = { workspace = true }
+ecdsa = { workspace = true }
+futures-core = { workspace = true }
+p256 = { workspace = true }
+rand_core = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
+uuid = { workspace = true }
+x509-cert = { workspace = true }
+zip = { workspace = true }
+zeroize = "1"
+# wp25 observability: structured logging + Prometheus metrics.
+# `tracing` — request/latency spans and structured events (subscriber is initialised in the
+# server binary). Already in the tree transitively; declared here so the API can emit spans/events.
+tracing = "0.1"
+# `metrics` facade + Prometheus exporter for the `/metrics` endpoint. `default-features = false`
+# drops the exporter's own HTTP listener / push-gateway (and their hyper/tokio pull-ins) — we render
+# the text ourselves from an axum handler, so we only need the recorder + `PrometheusHandle::render`.
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
+# t23 outbound SMTP (`src/smtp.rs`). DEPENDENCY NOTE: these four crates are ALREADY in `Cargo.lock`,
+# pulled in by reqwest's `rustls` feature, so declaring them here adds **zero** new crates to the
+# tree — it only makes the existing ones directly nameable. Deliberately NOT `lettre`: it would add
+# its own transport/MIME/IDNA tree, and its error type folds SMTP replies into coarse variants,
+# which is exactly the detail the "send test email" action exists to show (`535 5.7.8 …`).
+# `ring` is named explicitly because this workspace links both ring and aws-lc-rs, so relying on
+# rustls's process-wide default provider would be a coin flip.
+# `rustls` itself is reached through `tokio_rustls::rustls` rather than declared directly, so there
+# is exactly one place the version is pinned.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-native-certs = "0.8"
+
+[dev-dependencies]
+tower = { workspace = true }
+zip = { workspace = true }
+chancela-cades = { workspace = true }
+der = { workspace = true }
+spki = { workspace = true }
+rsa = { workspace = true }
+p12 = "0.6.3"
+# Test-only: assemble a genuine multi-identity PFX (merge two single-identity PFXes' bags) to exercise
+# the H1 wrong-identity fail-safe. Keep the fixture encoder on current yasna; p12 still uses 0.5
+# internally, so fixture code exchanges complete DER blobs rather than p12's version-specific writer.
+yasna = "0.6"

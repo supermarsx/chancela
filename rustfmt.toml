@@ -1,0 +1,3 @@
+# Conservative, stable-safe formatting. Only stable options here so `cargo fmt --check`
+# passes on the stable toolchain used by CI.
+edition = "2024"

@@ -1,0 +1,44 @@
+{
+  "id": "assoc-lista-presencas/v1",
+  "family": "Association",
+  "stage": "Reuniao",
+  "channels": ["Physical", "Hybrid", "Telematic"],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "assoc-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Lista de presenças" },
+    { "kind": "Heading", "level": 2, "template": "{{ title }}" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Associados presentes", "value": "{{ members_present }}" },
+        { "key": "Associados representados", "value": "{{ members_represented }}" },
+        { "key": "Referência", "value": "{{ attendance_reference }}" }
+      ]
+    },
+    { "kind": "Heading", "level": 2, "template": "Associados" },
+    {
+      "kind": "KeyValue",
+      "items": "attendees",
+      "rows": [
+        { "key": "{{ name }}", "value": "{% if quality_note %}{{ quality_note }}{% elif quality | quality_label %}{{ quality | quality_label }}{% endif %}{% if quality_note or quality | quality_label %} — {% endif %}{% if presence == 'InPerson' %}presente{% elif presence == 'Represented' %}representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}ausente{% endif %}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if not attendees %}A composição individual das presenças consta da referência à lista de presenças acima indicada; o presente documento regista o número de associados presentes e representados.{% endif %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

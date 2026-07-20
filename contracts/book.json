@@ -1,0 +1,23 @@
+{
+  "id": "3a2b1c00-0000-4000-8000-000000000002",
+  "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+  "kind": "AssembleiaGeral",
+  "state": "Open",
+  "purpose": "livro de atas da assembleia geral",
+  "numbering_scheme": "Sequential",
+  "opening_date": "2026-01-15",
+  "closing_date": null,
+  "closing_reason": null,
+  "last_ata_number": 0,
+  "predecessor": null,
+  "required_signatories_abertura": ["Administrador"],
+  "required_signatories_encerramento": null,
+  "required_signatory_records_abertura": [
+    {
+      "name": "Administrador",
+      "capacity": null,
+      "email": null
+    }
+  ],
+  "required_signatory_records_encerramento": null
+}

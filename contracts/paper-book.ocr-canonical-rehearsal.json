@@ -1,0 +1,118 @@
+{
+  "report_kind": "paper_book_ocr_canonical_rehearsal",
+  "dry_run": true,
+  "rehearsal_scope": "local_ocr_canonical_conversion_rehearsal",
+  "legal_notice": "This OCR/canonical rehearsal report is computed locally from preserved paper-book import metadata, OCR draft review metadata, and metadata-only dossier evidence. It does not perform OCR, mutate records, create canonical or sealed documents, call validators, certify PDF/A or PDF/UA, sign anything, or claim legal validity.",
+  "import_id": "11111111-1111-4111-8111-111111111111",
+  "source_import": {
+    "import_present": true,
+    "preserved_package_present": true,
+    "book_ref": "ag-book-1968-1971",
+    "ocr_status": "completed",
+    "page_count": 240,
+    "source_page_range": {
+      "from": 1,
+      "to": 48
+    },
+    "original_ata_number_range": {
+      "from": 101,
+      "to": 119
+    },
+    "package_digest_present": true,
+    "package_size_bytes": 4096,
+    "source_filename_present": true,
+    "bytes_in_report": false,
+    "non_canonical": true
+  },
+  "ocr_evidence": {
+    "draft_count": 2,
+    "accepted_draft_count": 1,
+    "unreviewed_draft_count": 1,
+    "rejected_draft_count": 0,
+    "superseded_draft_count": 0,
+    "selected_accepted_draft_id": "33333333-3333-4333-8333-333333333333",
+    "selected_accepted_draft_text_digest_present": true,
+    "selected_accepted_draft_extracted_text_present": true,
+    "selected_accepted_draft_page_span_count": 1,
+    "selected_accepted_draft_page_span_pages": 2,
+    "operator_review_recorded": true,
+    "raw_ocr_text_in_report": false,
+    "confidence_buckets": {
+      "known_count": 1,
+      "unknown_count": 1,
+      "high_count": 0,
+      "medium_count": 1,
+      "low_count": 0
+    }
+  },
+  "dossier_evidence": {
+    "dossier_count": 1,
+    "metadata_only_dossier_present": true,
+    "selected_dossier_id": "44444444-4444-4444-8444-444444444444",
+    "selected_dossier_source_digest_present": true,
+    "selected_dossier_page_span_count": 1,
+    "selected_dossier_page_span_pages": 2,
+    "bound_execution_artifact_count": 1,
+    "selected_bound_execution_artifact_count": 1,
+    "mutable_draft_act_artifact_present": true,
+    "source_extracted_text_in_response": false,
+    "source_extracted_text_in_ledger_event": false
+  },
+  "readiness": {
+    "status": "local_rehearsal_ready",
+    "scope": "local_rehearsal_only",
+    "evidence_source": "stored_paper_import_ocr_draft_dossier_metadata",
+    "blockers": [],
+    "next_local_action": "retain_report_as_local_readiness_evidence"
+  },
+  "no_claims": {
+    "records_mutated": false,
+    "external_ocr_called": false,
+    "external_validator_called": false,
+    "external_legal_service_called": false,
+    "canonical_conversion_claimed": false,
+    "ocr_accuracy_claimed": false,
+    "legal_review_claimed": false,
+    "legal_validity_claimed": false,
+    "canonical_minutes_claimed": false,
+    "canonical_act_created": false,
+    "canonical_document_created": false,
+    "sealed_document_created": false,
+    "signed_document_created": false,
+    "archive_package_created": false,
+    "archive_certification_claimed": false,
+    "pdfa_created": false,
+    "pdfa_certification_claimed": false,
+    "pdfua_created": false,
+    "pdfua_certification_claimed": false,
+    "signature_created": false,
+    "signing_requested": false,
+    "signature_validity_claimed": false,
+    "qualified_signature_claimed": false,
+    "dglab_certification_claimed": false,
+    "raw_ocr_text_in_report": false
+  },
+  "required_operator_actions": [
+    "review_preserved_import_metadata",
+    "review_accepted_ocr_draft_metadata",
+    "review_metadata_only_conversion_dossier",
+    "keep_any_future_canonical_conversion_in_a_separate_workflow"
+  ],
+  "findings": [
+    {
+      "severity": "info",
+      "code": "report_only",
+      "message": "rehearsal is read-only; no import, draft, dossier, act, document, signature, archive, or ledger record was created"
+    },
+    {
+      "severity": "info",
+      "code": "local_evidence_only",
+      "message": "readiness is computed only from stored local metadata and does not claim OCR accuracy or legal acceptance"
+    },
+    {
+      "severity": "info",
+      "code": "no_external_services",
+      "message": "report generation did not call OCR providers, validators, signing services, archive certification, DGLAB, or legal services"
+    }
+  ]
+}

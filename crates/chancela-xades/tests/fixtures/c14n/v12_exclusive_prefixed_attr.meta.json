@@ -1,0 +1,6 @@
+{
+  "algorithm": "exclusive",
+  "mode": "document",
+  "rule": "a prefixed attribute (x:attr) makes its prefix visibly utilized, forcing xmlns:x to render; the default namespace is retained because the element name is unprefixed, and declarations are ordered default-first then by prefix",
+  "provenance": "derived from W3C Exclusive XML Canonicalization 1.0 REC (xml-exc-c14n-20020718) §2 utilization rule together with W3C Canonical XML 1.0 REC (xml-c14n-20010315) §2.4 namespace ordering; expected output computed by hand from the spec rules, not from a third-party tool."
+}

@@ -1,0 +1,17 @@
+[package]
+name = "chancela-authz"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Scoped RBAC foundation for Chancela (t64): fine-grained permission catalog, Global/Entity/Book scopes with narrowing-only coverage, roles-as-data with seeded defaults, scoped revocable delegation, and the escalation invariants (subset, scope-narrowing, no-re-delegation, protected-Owner). Pure/deterministic: no clock, no network, no store."
+
+[dependencies]
+serde = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

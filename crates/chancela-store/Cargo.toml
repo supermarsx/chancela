@@ -1,0 +1,78 @@
+[package]
+name = "chancela-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Durable system of record for Chancela: embedded SQLite store (WAL) for the domain aggregates + hash-chained ledger, plus a VACUUM INTO hot-backup bundle (spec ARC-10/11/14, ARC-20 backup-half, SCP-D1)."
+
+[features]
+default = []
+# Optional whole-database encryption foundation. Keeps the default plain bundled SQLite build unless
+# explicitly requested by store tests / future packaging. Vendored OpenSSL avoids host OpenSSL
+# discovery/linker requirements for SQLCipher, especially on Windows.
+sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
+# Optional PostgreSQL backend for the self-hosted server edition (wp14 Phase 1). OFF by default:
+# the desktop/browser embedded builds and the default `cargo test` stay Postgres-free and offline,
+# and their dependency graph / binary are unchanged. When enabled, `CHANCELA_DB_BACKEND=postgres`
+# (wired in Phase 2) selects a `postgres`-crate + r2d2 pool backend behind the same `Store`/`Tx`
+# facade (§2.3 Option A: a synchronous driver so the frozen `persist(|tx| ...)` closure API is
+# preserved verbatim). SQLite remains the default and is untouched.
+postgres = [
+    "dep:postgres",
+    "dep:r2d2",
+    "dep:r2d2_postgres",
+    "dep:rustls",
+    "dep:tokio-rustls",
+    "dep:rustls-native-certs",
+]
+
+[dependencies]
+# Domain types persisted/loaded by the store. It depends on core (Entity/Book/Act ids),
+# ledger (Event/Ledger), and registry (RegistryExtract, held in LoadedState per the frozen §3.1
+# API). It must NOT depend on chancela-api (that would cycle: api → store → api).
+chancela-core = { workspace = true }
+chancela-ledger = { workspace = true }
+chancela-registry = { workspace = true }
+serde = { workspace = true }
+# Stable per-install `instance_id` (bundle provenance) + per-import ids (t54-E2). The workspace
+# already pins uuid with the `v4` feature (used by chancela-core) — features are unified.
+uuid = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+argon2 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+rand_core = { workspace = true }
+# Embedded SQLite (bundled = vendored C, static-linked). See root Cargo.toml / t30.md §D1.
+rusqlite = { workspace = true }
+# Hot-backup archive writer. See root Cargo.toml / t30.md §D6.
+zip = { workspace = true }
+
+# --- Optional PostgreSQL backend (wp14 Phase 1, feature = "postgres", OFF by default) ---
+# Synchronous driver (§2.3 Option A) so the frozen synchronous `persist(|tx| ...)` closure API is
+# preserved with zero churn at the ~35 `chancela-api` call sites. `r2d2` supplies the read-path
+# connection pool; the single-writer ledger path (§4) runs through one advisory-locked writer
+# connection that mirrors today's mutex-guarded SQLite connection. These are pulled in ONLY when the
+# `postgres` feature is enabled, so the default SQLite build is unaffected.
+postgres = { version = "0.19", optional = true }
+r2d2 = { version = "0.8", optional = true }
+r2d2_postgres = { version = "0.18", optional = true }
+# TLS for the synchronous Postgres connection (wp25). A rustls `MakeTlsConnect` is implemented over
+# `tokio-rustls` in `pg_tls.rs`, so the sync `postgres`+r2d2 stack gains sslmode=require/verify-full
+# WITHOUT dragging in OpenSSL (`postgres-native-tls`/`postgres-openssl`). rustls + its trust-root /
+# PEM parsing is provided by rustls' own `pki_types`, so no unmaintained helper dependency is
+# required. `tokio` is needed for the `AsyncRead`/`AsyncWrite` trait bounds the tokio-postgres
+# TLS traits require (postgres feature) AND, unconditionally, for `spawn_blocking` in
+# `Store::persist_blocking_async` (wp27-e9): the async write-path wrapper offloads the synchronous
+# `Store::persist` onto tokio's blocking pool so a chancela-api worker thread is never blocked while
+# the ledger write lock is held. Only the `rt` feature is needed and it is compile-only for the
+# non-server editions (the method is invoked solely from chancela-api's tokio runtime); the sync
+# store driver itself is unchanged.
+rustls = { version = "0.23", optional = true }
+tokio = { version = "1", default-features = false, features = ["rt"] }
+tokio-rustls = { version = "0.26", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }

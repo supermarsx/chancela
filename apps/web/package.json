@@ -1,0 +1,53 @@
+{
+  "name": "@chancela/web",
+  "version": "26.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chancela web app — Livro de Atas Digital with the offline editorial theme package.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,json,html}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,json,html}\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:browser": "cargo build --release -p chancela-server --locked && npm run build && node e2e/run-playwright-with-cleanup-proof.mjs --project=chromium",
+    "test:browser:matrix": "cargo build --release -p chancela-server --locked && npm run build && node e2e/run-playwright-with-cleanup-proof.mjs"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans": "^5.2.10",
+    "@fontsource/noto-sans-mono": "^5.2.10",
+    "@fontsource/noto-serif": "^5.2.9",
+    "@fontsource/playfair-display": "^5.2.8",
+    "@tanstack/react-query": "^5.101.2",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "pdfjs-dist": "^6.1.200",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.5",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.64.0",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}

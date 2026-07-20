@@ -1,0 +1,55 @@
+{
+  "id": "csc-declaracao-deliberacao/v1",
+  "family": "CommercialCompany",
+  "stage": "Certidao",
+  "channels": [],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Declaração de deliberação"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Ata n.º",
+          "value": "{{ ata_number }}"
+        },
+        {
+          "key": "Digest do ato selado",
+          "value": "{{ payload_digest }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Declara-se, para os devidos efeitos perante terceiros, que na ata n.º {{ ata_number }} de {{ entity.name }}, NIPC {{ entity.nipc }}, foram tomadas as deliberações seguintes."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

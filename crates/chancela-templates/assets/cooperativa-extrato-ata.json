@@ -1,0 +1,52 @@
+{
+  "id": "cooperativa-extrato-ata/v1",
+  "family": "Cooperative",
+  "stage": "Extrato",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Extrato de ata" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "Digest do ato selado", "value": "{{ payload_digest }}" },
+        { "key": "Evento de selagem", "value": "{{ seal_event_seq }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Certifica-se que as deliberações a seguir reproduzidas constituem extrato fiel da ata n.º {{ ata_number }} da assembleia geral de {{ entity.name }}, selada na escrituração digital da entidade, limitando-se o presente extrato às deliberações abaixo transcritas."
+    },
+    { "kind": "Rule" },
+    { "kind": "Heading", "level": 2, "template": "Deliberações extraídas" },
+    {
+      "kind": "Paragraph",
+      "template": "As deliberações foram tomadas segundo o princípio de um cooperador, um voto, nos termos do artigo 41.º do Código Cooperativo; os votos indicados correspondem ao número de cooperadores."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "VoteTable",
+      "items": "deliberation_items",
+      "label": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}",
+      "vote_field": "vote",
+      "unanimous_total": "{{ members_present + members_represented }}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

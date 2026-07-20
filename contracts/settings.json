@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "organization": {
+    "name": "Encosto Estratégico, S.A.",
+    "default_actor": "amelia.marques"
+  },
+  "documents": {
+    "locale": "pt-PT",
+    "numbering_scheme_default": "Sequential"
+  },
+  "catalog": {
+    "cae_update_url": null,
+    "cae_sources": [
+      {
+        "url": "https://espelho.example.pt/cae.json",
+        "format": "Auto",
+        "digest": null
+      }
+    ],
+    "cae_official_source": false,
+    "preferred_official_source": "Ine"
+  },
+  "signing": {
+    "preferred_family": "ChaveMovelDigital",
+    "tsa_url": "http://ts.cartaodecidadao.pt/tsa/server",
+    "tsl_url": "https://www.gns.gov.pt/media/TSLPT.xml",
+    "tsl_sources": [
+      {
+        "id": "pt-gns",
+        "name": "Portugal GNS Trusted List",
+        "enabled": true,
+        "url": "https://www.gns.gov.pt/media/TSLPT.xml",
+        "path": null,
+        "country": "PT",
+        "scheme": "eidas",
+        "digest": null,
+        "timeout_seconds": 30,
+        "max_bytes": 26214400,
+        "refresh": {
+          "enabled": false,
+          "cadence": {
+            "kind": "daily",
+            "hour_utc": 3
+          }
+        }
+      },
+      {
+        "id": "eu-lotl",
+        "name": "EU List of Trusted Lists",
+        "enabled": false,
+        "url": "https://ec.europa.eu/tools/lotl/eu-lotl.xml",
+        "path": null,
+        "country": "EU",
+        "scheme": "lotl",
+        "digest": null,
+        "timeout_seconds": 30,
+        "max_bytes": 26214400,
+        "refresh": {
+          "enabled": false,
+          "cadence": {
+            "kind": "daily",
+            "hour_utc": 2
+          }
+        }
+      }
+    ],
+    "tsa_providers": [
+      {
+        "id": "pt-cc",
+        "name": "Portugal Cartao de Cidadao TSA",
+        "enabled": true,
+        "url": "http://ts.cartaodecidadao.pt/tsa/server",
+        "path": null,
+        "default": true,
+        "policy": null,
+        "digest": "sha256",
+        "timeout_seconds": 30,
+        "max_bytes": 1048576
+      }
+    ],
+    "require_qualified_for_seal": false,
+    "cmd": {
+      "env": "preprod",
+      "application_id": null,
+      "ama_cert_configured": false
+    },
+    "providers": [
+      {
+        "id": "cmd",
+        "mode": "CMD",
+        "label": "Chave Móvel Digital (CMD/SCMD)",
+        "configured": false,
+        "production_blocked": true,
+        "local_only": false,
+        "note": "Missing AMA ApplicationId/certificate; defaults to pre-production."
+      },
+      {
+        "id": "cc",
+        "mode": "CC",
+        "label": "Cartão de Cidadão",
+        "configured": false,
+        "production_blocked": false,
+        "local_only": true,
+        "note": "Requires a co-located desktop process and card reader; no PIN is stored."
+      },
+      {
+        "id": "csc_qtsp",
+        "mode": "CSC_QTSP",
+        "label": "CSC/QTSP remote provider",
+        "configured": false,
+        "production_blocked": true,
+        "local_only": false,
+        "note": "No CSC/QTSP provider is configured in protected storage or environment."
+      },
+      {
+        "id": "soft_pkcs12",
+        "mode": "LOCAL_PKCS12",
+        "label": "Local soft certificate (PKCS#12/PFX)",
+        "configured": false,
+        "production_blocked": true,
+        "local_only": true,
+        "note": "Local-only test/operator material; private key and passphrase are never captured in settings."
+      }
+    ]
+  },
+  "workflow": {
+    "reminders": {
+      "enabled": true,
+      "dashboard_limit": 5,
+      "due_soon_days": 45,
+      "attendance_lookahead_days": 45,
+      "sources": {
+        "profile_calendar": true,
+        "act_follow_ups": true,
+        "attendance_hygiene": true,
+        "privacy_control_reviews": true
+      }
+    }
+  },
+  "data_management": {
+    "retained_export_cleanup": {
+      "minimum_age_days": 30,
+      "keep_latest": 5
+    },
+    "backup_recovery": {
+      "max_drill_age_days": 90,
+      "target_rpo_minutes": 1440,
+      "target_rto_minutes": 240
+    }
+  },
+  "appearance": {
+    "theme": "system",
+    "leather_texture": true,
+    "texture_intensity": 60,
+    "button_texture": true
+  },
+  "ui": {
+    "registered_entity_columns": [
+      "Name",
+      "Nipc",
+      "Type",
+      "LastActivity",
+      "Actions"
+    ]
+  },
+  "onboarding": {
+    "completed": false,
+    "completed_at": null
+  },
+  "email": {
+    "enabled": true,
+    "host": "smtp.encosto-estrategico.pt",
+    "port": 587,
+    "encryption": "starttls",
+    "username": "sistema@encosto-estrategico.pt",
+    "from_address": "sistema@encosto-estrategico.pt",
+    "from_name": "Encosto Estratégico, S.A.",
+    "helo_name": null,
+    "allow_insecure": false
+  },
+  "ai": {
+    "enabled": false
+  },
+  "platform": {
+    "logging": {
+      "global": "info",
+      "app": "info",
+      "api": "info",
+      "mcp": "info",
+      "service_overrides": {}
+    },
+    "api_server": {
+      "enabled": true,
+      "desired_state": "running",
+      "last_action": null
+    },
+    "mcp_stdio_server": {
+      "enabled": false,
+      "desired_state": "stopped",
+      "last_action": null
+    },
+    "audit": []
+  }
+}

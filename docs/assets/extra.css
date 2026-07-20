@@ -1,0 +1,133 @@
+/* Chancela docs — squareish, ledger-like styling overrides for Material.
+   Kept minimal and self-contained (no external assets). */
+
+:root {
+  /* Square off the rounded Material corners for a document/ledger feel. */
+  --md-radius: 2px;
+}
+
+/* Flatten the common rounded surfaces. */
+.md-typeset .admonition,
+.md-typeset details,
+.md-typeset pre > code,
+.md-typeset .highlight > pre,
+.md-typeset table:not([class]),
+.md-typeset .md-button,
+.md-header,
+.md-tabs,
+.md-search__form,
+.md-search__output,
+.md-nav__link,
+.md-typeset .tabbed-set > label,
+.md-typeset .tabbed-content {
+  border-radius: 2px !important;
+}
+
+/* Squareish, bordered "cards" via the grid of links on the landing page. */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border-radius: 2px !important;
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Tighten table borders so they read like a ledger. */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+.md-typeset table:not([class]) th {
+  font-weight: 700;
+}
+
+/* Slightly denser code blocks. */
+.md-typeset pre > code {
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* ---------------------------------------------------------------------------
+   Sidebar navigation.
+
+   `toc.integrate` folds each page's own headings into the left tree, so the
+   sidebar carries three levels at once (section > page > heading). These rules
+   exist to keep those levels distinguishable without extra chrome. Desktop
+   only: below the drawer breakpoint Material reuses the same markup for the
+   slide-out menu, where the tighter indents would be too cramped to tap.
+   --------------------------------------------------------------------------- */
+
+@media screen and (min-width: 76.25em) {
+  /* Denser lines — the tree is long, and a ledger reads better tight. */
+  .md-sidebar--primary .md-nav__link {
+    line-height: 1.35;
+    margin-top: 0.35em;
+  }
+
+  /* Top-level section labels double as headers, so give them a rule line
+     instead of relying on whitespace alone to break the tree into blocks. */
+  .md-sidebar--primary .md-nav__item--section > .md-nav__link:not(.md-nav__link--index),
+  .md-sidebar--primary .md-nav__item--section > label.md-nav__link {
+    color: var(--md-default-fg-color);
+    font-weight: 700;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    padding-bottom: 0.35em;
+    margin-bottom: 0.3em;
+  }
+
+  /* Breathing room above each section, except the first. */
+  .md-sidebar--primary .md-nav__item--section {
+    margin-top: 1.4em;
+  }
+  .md-sidebar--primary .md-nav--primary > .md-nav__list > .md-nav__item--section:first-child {
+    margin-top: 0;
+  }
+
+  /* Nested lists hang off a hairline rather than deep padding, so three levels
+     still fit the sidebar width. */
+  .md-sidebar--primary .md-nav__item .md-nav__list {
+    margin-left: 0.4rem;
+    padding-left: 0.4rem;
+    border-left: 1px solid var(--md-default-fg-color--lightest);
+  }
+  .md-sidebar--primary .md-nav--primary > .md-nav__list {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  /* Active page: a solid accent bar is the one strong mark in the tree. */
+  .md-sidebar--primary .md-nav__link--active,
+  .md-sidebar--primary .md-nav__link--active:focus,
+  .md-sidebar--primary .md-nav__link--active:hover {
+    color: var(--md-typeset-a-color);
+    font-weight: 700;
+    box-shadow: inset 2px 0 0 var(--md-accent-fg-color);
+    padding-left: 0.4rem;
+  }
+
+  /* The integrated table of contents (a page's own headings). Kept visually
+     subordinate to real pages: lighter, smaller, and marked by the accent at
+     low opacity so it reads as "inside" the active page. */
+  .md-sidebar--primary .md-nav--secondary {
+    margin-left: 0.4rem;
+    padding-left: 0.4rem;
+    border-left: 2px solid var(--md-primary-fg-color);
+  }
+  .md-sidebar--primary .md-nav--secondary .md-nav__link {
+    color: var(--md-default-fg-color--light);
+    font-size: 0.66rem;
+  }
+  .md-sidebar--primary .md-nav--secondary .md-nav__link:hover,
+  .md-sidebar--primary .md-nav--secondary .md-nav__link--active {
+    color: var(--md-typeset-a-color);
+  }
+  /* `--passed` is how Material marks headings already scrolled past. */
+  .md-sidebar--primary .md-nav--secondary .md-nav__link--passed {
+    color: var(--md-default-fg-color--lighter);
+  }
+  /* Deeper headings (h3) inside the integrated TOC keep the hairline, not the
+     accent — only one level of the TOC should compete with the page link. */
+  .md-sidebar--primary .md-nav--secondary .md-nav__list {
+    border-left-color: var(--md-default-fg-color--lightest);
+  }
+}

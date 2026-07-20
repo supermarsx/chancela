@@ -1,0 +1,29 @@
+{
+  "name": "@chancela/desktop",
+  "version": "26.1.0",
+  "private": true,
+  "packageManager": "npm@12.0.1",
+  "engines": {
+    "node": ">=24.15.0",
+    "npm": ">=12.0.1"
+  },
+  "description": "Chancela desktop app shell (Tauri v2). Intentionally NOT part of the repo-root npm workspaces or Cargo workspace — install and run it from this directory.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "npm run dev:plaintext",
+    "dev:plaintext": "node -e \"const c=require('child_process');const env={...process.env,CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB:'1'};const r=c.spawnSync('tauri',['dev'],{stdio:'inherit',shell:process.platform==='win32',env});process.exit(r.status??1)\"",
+    "dev:sqlcipher": "tauri dev --features sqlcipher",
+    "build": "tauri build --features sqlcipher",
+    "build:no-bundle": "tauri build --no-bundle --features sqlcipher",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev -- --no-default-features",
+    "android:build": "tauri android build --target aarch64 --apk --aab -- --no-default-features",
+    "android:build:ci": "tauri android build --debug --target aarch64 --apk --ci -- --no-default-features",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
+    "test:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1",
+    "test:smoke:ci": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1 -KillOwnedProcesses"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}

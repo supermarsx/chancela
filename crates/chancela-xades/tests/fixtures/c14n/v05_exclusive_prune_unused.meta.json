@@ -1,0 +1,6 @@
+{
+  "algorithm": "exclusive",
+  "mode": "document",
+  "rule": "Exclusive C14N prunes a namespace declaration (xmlns:unused) that is not visibly utilized by the element or its attributes",
+  "provenance": "derived from W3C Exclusive XML Canonicalization 1.0 REC (xml-exc-c14n-20020718) §2 visibly-utilized-namespace rule; expected output computed by hand from the spec rule, not from a third-party tool."
+}

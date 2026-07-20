@@ -1,0 +1,33 @@
+{
+  "draft_id": "33333333-3333-4333-8333-333333333333",
+  "import_id": "11111111-1111-4111-8111-111111111111",
+  "extracted_text": "Livro de atas digitalizado. Texto OCR auxiliar para revisão operacional.",
+  "text_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "page_spans": [
+    {
+      "start_page": 1,
+      "end_page": 2
+    }
+  ],
+  "confidence": 0.87,
+  "engine": {
+    "name": "operator-supplied-ocr",
+    "version": "1.0"
+  },
+  "created_at": "2026-07-10T09:30:00Z",
+  "created_by": "paper.owner",
+  "review_status": "accepted",
+  "reviewed_at": "2026-07-10T10:00:00Z",
+  "reviewed_by": "paper.reviewer",
+  "review_note": "Checked against the preserved scan as auxiliary metadata.",
+  "superseded_by": null,
+  "draft_notice": "OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.",
+  "non_canonical": true,
+  "authoritative_text_claimed": false,
+  "canonical_minutes_claimed": false,
+  "canonical_act_created": false,
+  "canonical_document_created": false,
+  "signature_created": false,
+  "legal_validity_claimed": false,
+  "legal_notice": "Historical paper-book package preserved as non-canonical evidence only. It does not replace canonical digital minutes and no PDF/A, legal-validity, signature-validity, or qualified-signature claim is made."
+}

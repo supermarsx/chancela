@@ -1,0 +1,38 @@
+{
+  "id": "condominio-termo-abertura/v1",
+  "family": "Condominium",
+  "stage": "TermoAbertura",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de abertura do livro de atas" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Prédio / sede", "value": "{{ entity.seat }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "Data de abertura", "value": "{{ opening_date | long_date }}" },
+        { "key": "Regime de numeração", "value": "{{ numbering_label }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Este livro destina-se a {{ purpose }} e conterá as atas da assembleia de condóminos, lavradas e numeradas sequencialmente, nos termos do artigo 1432.º do Código Civil e do Decreto-Lei n.º 268/94."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "As atas serão numeradas de forma sequencial e integram a cadeia de registo desta escrituração digital, permitindo verificar a sua autenticidade e detetar qualquer adulteração.{% if numbering_scheme == 'LooseLeaf' %} Em regime de folhas soltas, todas as folhas são numeradas e encadeadas entre si.{% endif %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

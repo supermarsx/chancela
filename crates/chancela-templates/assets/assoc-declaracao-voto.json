@@ -1,0 +1,32 @@
+{
+  "id": "assoc-declaracao-voto/v1",
+  "family": "Association",
+  "stage": "Deliberacao",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "assoc-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Declaração de voto" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "Ata / reunião", "value": "{{ title }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% for s in statements %}Sobre {% if agenda_number %}o ponto {{ agenda_number }}{% else %}a deliberação \"{{ text }}\"{% endif %}, {{ s.member }} declara: {{ s.text }} {% endfor %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

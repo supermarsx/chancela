@@ -1,0 +1,13 @@
+{
+  "code": "68110",
+  "designation": "Compra e venda de bens imobiliários.",
+  "level": "Subclasse",
+  "revision": "Rev4",
+  "hierarchy": [
+    { "code": "L", "designation": "Atividades imobiliárias", "level": "Seccao", "revision": "Rev4" },
+    { "code": "68", "designation": "Atividades imobiliárias", "level": "Divisao", "revision": "Rev4" },
+    { "code": "681", "designation": "Compra e venda de bens imobiliários", "level": "Grupo", "revision": "Rev4" },
+    { "code": "6811", "designation": "Compra e venda de bens imobiliários", "level": "Classe", "revision": "Rev4" },
+    { "code": "68110", "designation": "Compra e venda de bens imobiliários.", "level": "Subclasse", "revision": "Rev4" }
+  ]
+}

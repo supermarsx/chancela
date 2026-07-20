@@ -1,0 +1,34 @@
+[package]
+name = "chancela-doc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PDF/A-2u writer for Chancela: lays a DocumentModel out into deterministic, PAdES-ready PDF bytes over lopdf (t48 / DOC-01)."
+
+[dependencies]
+chancela-core = { workspace = true }
+lopdf = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# The Wave-D-unblock proof (t48-e3): sign a chancela-doc PDF with the real PAdES incremental
+# signer and validate the resulting signature. chancela-pades does NOT depend on chancela-doc, so
+# these dev-deps introduce no cycle. Key material is generated ephemerally in-test (no private keys
+# checked in), mirroring `chancela-pades/src/tests.rs` — der-0.7-family pins are load-bearing.
+chancela-pades = { workspace = true }
+chancela-cades = { workspace = true }
+# The `write_catalog_pdfs` example (t10-e2): render REAL catalog templates through the shipped
+# render seam so the external veraPDF gate validates template output, not only writer output.
+# chancela-templates depends on chancela-core/minijinja/serde only — never on chancela-doc — so
+# this dev-dep introduces no cycle and adds no runtime dependency to the library.
+chancela-templates = { workspace = true }
+serde_json = { workspace = true }
+der = { workspace = true }
+x509-cert = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+time = { workspace = true }

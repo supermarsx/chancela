@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <CCMovelSignResponse xmlns="http://tempuri.org/">
+      <CCMovelSignResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <a:Code>401</a:Code>
+        <a:Message>Invalid signature PIN.</a:Message>
+        <a:ProcessId i:nil="true"/>
+      </CCMovelSignResult>
+    </CCMovelSignResponse>
+  </s:Body>
+</s:Envelope>

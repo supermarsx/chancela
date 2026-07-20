@@ -1,0 +1,40 @@
+{
+  "id": "assoc-termo-retificacao/v1",
+  "family": "Association",
+  "stage": "Ata",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "assoc-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de retificação" },
+    { "kind": "Heading", "level": 2, "template": "{% if title %}{{ title }}{% else %}Retificação de ata{% endif %}" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Órgão / livro", "value": "{{ book.kind }}" },
+        { "key": "Ato retificado", "value": "{{ retifies }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Pelo presente termo, a associação {{ entity.name }}, NIPC {{ entity.nipc }}, procede à retificação do ato anteriormente selado e identificado sob {{ retifies }}, nos termos a seguir indicados, mantendo-se inalterado o registo do ato original na cadeia desta escrituração digital."
+    },
+    { "kind": "Heading", "level": 2, "template": "Retificações" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

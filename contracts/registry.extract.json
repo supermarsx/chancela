@@ -1,0 +1,138 @@
+{
+  "matricula": "99999/20200101",
+  "nipc": "503004642",
+  "firma": "Encosto Estratégico, Lda",
+  "forma_juridica": "Sociedade por quotas",
+  "legal_form": "SociedadePorQuotas",
+  "sede": "Avenida da Liberdade, Lisboa",
+  "cae": [
+    {
+      "code": "68110",
+      "role": "Principal",
+      "designation": "Compra e venda de bens imobiliários.",
+      "level": "Subclasse",
+      "revision": "Rev4"
+    },
+    {
+      "code": "99999",
+      "role": "Secundario",
+      "designation": null,
+      "level": null,
+      "revision": null
+    }
+  ],
+  "objeto": null,
+  "capital": "5.000,00 EUR",
+  "data_constituicao": "2020-01-01",
+  "orgaos": [
+    {
+      "name": "Ana Gerente",
+      "role": "Gerente",
+      "appointment_date": null,
+      "cessation_date": null,
+      "source_event": null
+    }
+  ],
+  "inscricoes": [
+    {
+      "number": "1",
+      "kind_hint": "CONSTITUIÇÃO DE SOCIEDADE",
+      "apresentacao": "1/20200101",
+      "date": null,
+      "text": "CONSTITUIÇÃO DE SOCIEDADE",
+      "detail": {
+        "apresentacao": {
+          "number": "1",
+          "date": "2020-01-01",
+          "time": "00:55:25 UTC",
+          "act_kinds": ["CONSTITUIÇÃO DE SOCIEDADE"]
+        },
+        "payload": {
+          "type": "Constitution",
+          "firma": "Encosto Estratégico, Lda",
+          "nipc": "503004642",
+          "natureza_juridica": "Sociedade por quotas",
+          "sede": {
+            "lines": ["Rua do Comércio, n.º 45"],
+            "distrito": "Porto",
+            "concelho": "Porto",
+            "freguesia": "Cedofeita",
+            "postal_code": "4000-111",
+            "locality": "PORTO"
+          },
+          "objecto": "Prestação de serviços.",
+          "capital": { "amount_text": "100,00", "currency": "Euros" },
+          "capital_realization_note": "A entregar nos cofres da sociedade.",
+          "fiscal_year_end": "31 Dezembro",
+          "socios": [
+            {
+              "amount": { "amount_text": "99,00", "currency": "Euros" },
+              "titular": {
+                "name": "Rui Tavares Nogueira",
+                "nif": "999999990",
+                "estado_civil": "casado",
+                "nacionalidade": "Portuguesa",
+                "residencia": {
+                  "lines": ["Rua das Flores, n.º 2"],
+                  "distrito": null,
+                  "concelho": null,
+                  "freguesia": null,
+                  "postal_code": null,
+                  "locality": null
+                }
+              }
+            }
+          ],
+          "forma_de_obrigar": "assinatura de um gerente.",
+          "orgaos": [
+            {
+              "name": "GERÊNCIA",
+              "members": [
+                {
+                  "name": "Amélia Marques",
+                  "nif": "999999982",
+                  "cargo": "Gerente",
+                  "nacionalidade": "Portuguesa",
+                  "residencia": {
+                    "lines": ["Avenida Central, n.º 8"],
+                    "distrito": null,
+                    "concelho": null,
+                    "freguesia": null,
+                    "postal_code": null,
+                    "locality": null
+                  }
+                }
+              ]
+            }
+          ],
+          "deliberation_date": "2026-05-11"
+        },
+        "signatures": [
+          {
+            "conservatoria": "Conservatória do Registo Comercial do Porto",
+            "oficial": "Amélia Marques"
+          }
+        ]
+      }
+    }
+  ],
+  "anotacoes": [
+    {
+      "number": "1",
+      "date": "2026-05-01",
+      "publication_url": "http://publicacoes.mj.pt",
+      "text": "An. 1 - 20260501 - Publicado em http://publicacoes.mj.pt."
+    }
+  ],
+  "provenance": {
+    "access_code_masked": "****-****-9012",
+    "retrieved_at": "2026-07-07T10:15:30Z",
+    "source_url": "http://127.0.0.1/certidao",
+    "raw_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "conservatoria": "Conservatória do Registo Comercial do Porto",
+    "oficial": "Amélia Marques",
+    "subscribed_on": "2026-07-05",
+    "valid_until": "2027-07-05",
+    "expired": false
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "id": "cooperativa-procuracao-representacao/v1",
+  "family": "Cooperative",
+  "stage": "Convocatoria",
+  "channels": ["Physical", "Hybrid", "Telematic"],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Instrumento de representação de cooperador" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Cooperativa", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Reunião", "value": "{{ title }}" },
+        { "key": "Data da assembleia", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Cooperador representado", "value": "{{ represented.name }}" },
+        { "key": "Representante", "value": "{{ representative.name }}" },
+        { "key": "Documento do representante", "value": "{{ representative.document }}" },
+        { "key": "Âmbito", "value": "{{ representation.scope }}" },
+        { "key": "Limites ou instruções", "value": "{{ representation.instructions }}" },
+        { "key": "Referência de prova", "value": "{{ representation.evidence_reference }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "O cooperador representado declara conferir ao representante acima identificado poderes para o representar na assembleia indicada, preservando-se o princípio cooperativo de participação e votação nos termos estatutários e legais aplicáveis."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A representação deve ser conservada com a lista de presenças e com a ata, ficando a validade substantiva dos poderes sujeita à conferência pela cooperativa."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

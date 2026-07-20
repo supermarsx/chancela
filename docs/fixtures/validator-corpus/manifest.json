@@ -1,0 +1,165 @@
+{
+  "schema": "chancela-external-validator-corpus/v1",
+  "updated_at": "2026-07-09",
+  "purpose": "Operator-run fixture corpus for external EU DSS and Adobe-style validation of generated PAdES PDFs.",
+  "status_policy": {
+    "pending_operator_run": "PDF may exist, but external validator output has not been run and recorded by an operator.",
+    "recorded": "Technical external-validator report evidence was preserved by an operator; legal validity remains not assessed."
+  },
+  "validator_families": [
+    "eu-dss",
+    "adobe"
+  ],
+  "cases": [
+    {
+      "id": "bb-basic",
+      "title": "PAdES B-B signed PDF",
+      "profile": "B-B",
+      "category": "baseline",
+      "pdf": {
+        "path": "cases/bb-basic/input/bb-basic.pdf",
+        "generation_status": "generated",
+        "generated_by": "CHANCELA_WRITE_VALIDATOR_CORPUS=docs/fixtures/validator-corpus cargo test -p chancela-pades --test validator_corpus_fixtures",
+        "sha256": "6b1f4aad8482c6dabfc38a5a2263c6e32b5314877fb66ee612f87a9afbacb895",
+        "bytes": 33783
+      },
+      "expected_validation": {
+        "semantic_outcome": "valid_signature_without_timestamp",
+        "signature_count": 1,
+        "requires_signature_timestamp": false,
+        "requires_dss": false,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": false
+      },
+      "sidecars": {
+        "eu-dss": "cases/bb-basic/expected/eu-dss.json",
+        "adobe": "cases/bb-basic/expected/adobe.json"
+      }
+    },
+    {
+      "id": "bt-timestamped",
+      "title": "PAdES B-T signed PDF with signature timestamp",
+      "profile": "B-T",
+      "category": "timestamped",
+      "pdf": {
+        "path": "cases/bt-timestamped/input/bt-timestamped.pdf",
+        "generation_status": "generated",
+        "generated_by": "CHANCELA_WRITE_VALIDATOR_CORPUS=docs/fixtures/validator-corpus cargo test -p chancela-pades --test validator_corpus_fixtures",
+        "sha256": "fbab60f6d97583875fc839c32e6bf0de143e7f3a73d54524df18c2493cc81e02",
+        "bytes": 33783
+      },
+      "expected_validation": {
+        "semantic_outcome": "valid_signature_with_signature_timestamp",
+        "signature_count": 1,
+        "requires_signature_timestamp": true,
+        "requires_dss": false,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": false
+      },
+      "sidecars": {
+        "eu-dss": "cases/bt-timestamped/expected/eu-dss.json",
+        "adobe": "cases/bt-timestamped/expected/adobe.json"
+      }
+    },
+    {
+      "id": "bt-dss-local",
+      "title": "PAdES B-T signed PDF with local DSS/VRI evidence",
+      "profile": "B-T+DSS",
+      "category": "long-term-local-evidence",
+      "pdf": {
+        "path": "cases/bt-dss-local/input/bt-dss-local.pdf",
+        "generation_status": "generated",
+        "generated_by": "CHANCELA_WRITE_VALIDATOR_CORPUS=docs/fixtures/validator-corpus cargo test -p chancela-pades --test validator_corpus_fixtures",
+        "sha256": "edd58b739ce853008b9b211d202394ed668f3a5a28a3728f6a2bada1f5760e96",
+        "bytes": 34763
+      },
+      "expected_validation": {
+        "semantic_outcome": "valid_signature_with_local_dss_evidence",
+        "signature_count": 1,
+        "requires_signature_timestamp": true,
+        "requires_dss": true,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": false
+      },
+      "sidecars": {
+        "eu-dss": "cases/bt-dss-local/expected/eu-dss.json",
+        "adobe": "cases/bt-dss-local/expected/adobe.json"
+      }
+    },
+    {
+      "id": "tampered-covered-byte",
+      "title": "Covered-byte tamper after signing",
+      "profile": "malformed/tampered",
+      "category": "negative",
+      "pdf": {
+        "path": "cases/tampered-covered-byte/input/tampered-covered-byte.pdf",
+        "generation_status": "generated",
+        "generated_by": "CHANCELA_WRITE_VALIDATOR_CORPUS=docs/fixtures/validator-corpus cargo test -p chancela-pades --test validator_corpus_fixtures",
+        "sha256": "692de4af383fcc2e50190deeb5afda5074579c01963d93788c2ebbd577c8d5f9",
+        "bytes": 33783
+      },
+      "expected_validation": {
+        "semantic_outcome": "invalid_signature_digest_mismatch",
+        "signature_count": 1,
+        "requires_signature_timestamp": false,
+        "requires_dss": false,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": true
+      },
+      "sidecars": {
+        "eu-dss": "cases/tampered-covered-byte/expected/eu-dss.json",
+        "adobe": "cases/tampered-covered-byte/expected/adobe.json"
+      }
+    },
+    {
+      "id": "tampered-dss-only",
+      "title": "DSS-only tamper outside the signed revision",
+      "profile": "malformed/tampered",
+      "category": "negative",
+      "pdf": {
+        "path": "cases/tampered-dss-only/input/tampered-dss-only.pdf",
+        "generation_status": "generated",
+        "generated_by": "CHANCELA_WRITE_VALIDATOR_CORPUS=docs/fixtures/validator-corpus cargo test -p chancela-pades --test validator_corpus_fixtures",
+        "sha256": "eaffb945f491765a9017b5500357fce8c6fb2fe61e26c37936830e67af5c91b9",
+        "bytes": 34763
+      },
+      "expected_validation": {
+        "semantic_outcome": "signature_revision_valid_dss_evidence_suspect",
+        "signature_count": 1,
+        "requires_signature_timestamp": true,
+        "requires_dss": true,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": true
+      },
+      "sidecars": {
+        "eu-dss": "cases/tampered-dss-only/expected/eu-dss.json",
+        "adobe": "cases/tampered-dss-only/expected/adobe.json"
+      }
+    },
+    {
+      "id": "future-doctimestamp",
+      "title": "Technical /DocTimeStamp PDF",
+      "profile": "DocTimeStamp-technical",
+      "category": "archive-timestamp-technical",
+      "pdf": {
+        "path": "cases/future-doctimestamp/input/future-doctimestamp.pdf",
+        "generation_status": "generated",
+        "generated_by": "CHANCELA_WRITE_VALIDATOR_CORPUS=docs/fixtures/validator-corpus cargo test -p chancela-pades --test validator_corpus_fixtures",
+        "sha256": "c73ab56757f657664d7615822d93fb0e630f06e1b9aa72e53cd1bc6b12eef1ef",
+        "bytes": 36452
+      },
+      "expected_validation": {
+        "semantic_outcome": "valid_signature_with_local_dss_and_doc_time_stamp",
+        "signature_count": 1,
+        "requires_signature_timestamp": true,
+        "requires_dss": true,
+        "requires_doc_time_stamp": true,
+        "tamper_expected": false
+      },
+      "sidecars": {
+        "eu-dss": "cases/future-doctimestamp/expected/eu-dss.json",
+        "adobe": "cases/future-doctimestamp/expected/adobe.json"
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "id": "condominio-termo-transporte/v1",
+  "family": "Condominium",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de transporte do livro de atas" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "Livro anterior", "value": "{{ book.predecessor.book_reference }}" },
+        { "key": "Data", "value": "{{ closing_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Transporta-se a presente escrituração da assembleia de condóminos do condomínio {{ entity.name }} para continuação no livro sucessor, assegurando-se a continuidade sequencial da numeração e da cadeia de registo."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

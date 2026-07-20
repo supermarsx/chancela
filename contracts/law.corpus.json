@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-08T00:00:00Z",
+  "source_note": "Esqueleto do corpus de legislação (t55-E1a): lista completa de diplomas em escopo com os artigos citados pré-alocados a `Pending`. O texto verbatim é obtido do Diário da República Eletrónico por diploma (t55-E1b). Ver crates/chancela-law/data/source/PROVENANCE.md.",
+  "digest": "76bd5d6be20e4bb38174523f2a3a614ac03204d879265e6c0229ecbc6b42b22c",
+  "origin": "Embedded",
+  "counts": {
+    "diplomas": 9,
+    "articles": 193,
+    "verified": 152,
+    "automated_review": 1,
+    "pending": 40
+  },
+  "diplomas": [
+    {
+      "id": "csc",
+      "kind": "Codigo",
+      "number": "262/86",
+      "title": "Código das Sociedades Comerciais",
+      "ref": "Decreto-Lei n.º 262/86, de 2 de setembro",
+      "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+      "eli": "https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101",
+      "article_count": 15,
+      "verified_count": 0,
+      "automated_review_count": 0,
+      "pending_count": 15
+    },
+    {
+      "id": "cc",
+      "kind": "Codigo",
+      "number": "47344/66",
+      "title": "Código Civil",
+      "ref": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+      "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+      "eli": "https://data.dre.pt/eli/dec-lei/47344/1966/p/cons/20260101",
+      "article_count": 12,
+      "verified_count": 0,
+      "automated_review_count": 0,
+      "pending_count": 12
+    },
+    {
+      "id": "dl-268-94",
+      "kind": "DecretoLei",
+      "number": "268/94",
+      "title": "Normas regulamentares do regime da propriedade horizontal (condomínios)",
+      "ref": "Decreto-Lei n.º 268/94, de 25 de outubro",
+      "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+      "eli": "https://data.dre.pt/eli/dec-lei/268/1994/p/cons/20260101",
+      "article_count": 6,
+      "verified_count": 0,
+      "automated_review_count": 0,
+      "pending_count": 6
+    },
+    {
+      "id": "dl-76-a-2006",
+      "kind": "DecretoLei",
+      "number": "76-A/2006",
+      "title": "Simplificação e eliminação de atos registais e notariais (societários)",
+      "ref": "Decreto-Lei n.º 76-A/2006, de 29 de março",
+      "official_url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/76-a-2006-620286",
+      "eli": "https://data.dre.pt/eli/dec-lei/76-a/2006/p/cons/20260101",
+      "article_count": 2,
+      "verified_count": 0,
+      "automated_review_count": 0,
+      "pending_count": 2
+    },
+    {
+      "id": "cod-cooperativo",
+      "kind": "Lei",
+      "number": "119/2015",
+      "title": "Código Cooperativo",
+      "ref": "Lei n.º 119/2015, de 31 de agosto",
+      "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2015-70139602",
+      "eli": "https://data.dre.pt/eli/lei/119/2015/p/cons/20260101",
+      "article_count": 3,
+      "verified_count": 0,
+      "automated_review_count": 0,
+      "pending_count": 3
+    },
+    {
+      "id": "lei-24-2012",
+      "kind": "Lei",
+      "number": "24/2012",
+      "title": "Lei-Quadro das Fundações",
+      "ref": "Lei n.º 24/2012, de 9 de julho",
+      "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2012-61239015",
+      "eli": "https://data.dre.pt/eli/lei/24/2012/p/cons/20260101",
+      "article_count": 2,
+      "verified_count": 0,
+      "automated_review_count": 0,
+      "pending_count": 2
+    },
+    {
+      "id": "eidas-910-2014",
+      "kind": "RegulamentoUe",
+      "number": "910/2014",
+      "title": "Regulamento eIDAS — identificação eletrónica e serviços de confiança",
+      "ref": "Regulamento (UE) n.º 910/2014, de 23 de julho",
+      "official_url": "https://eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32014R0910",
+      "eli": "https://eur-lex.europa.eu/eli/reg/2014/910/oj",
+      "article_count": 52,
+      "verified_count": 51,
+      "automated_review_count": 1,
+      "pending_count": 0
+    },
+    {
+      "id": "gdpr-2016-679",
+      "kind": "RegulamentoUe",
+      "number": "2016/679",
+      "title": "Regulamento Geral sobre a Proteção de Dados (RGPD)",
+      "ref": "Regulamento (UE) 2016/679, de 27 de abril",
+      "official_url": "https://eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32016R0679",
+      "eli": "https://eur-lex.europa.eu/eli/reg/2016/679/oj",
+      "article_count": 99,
+      "verified_count": 99,
+      "automated_review_count": 0,
+      "pending_count": 0
+    },
+    {
+      "id": "eidas2-2024-1183",
+      "kind": "RegulamentoUe",
+      "number": "2024/1183",
+      "title": "Quadro Europeu de Identidade Digital (eIDAS 2.0)",
+      "ref": "Regulamento (UE) 2024/1183, que altera o Regulamento (UE) n.º 910/2014",
+      "official_url": "https://eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32024R1183",
+      "eli": "https://eur-lex.europa.eu/eli/reg/2024/1183/oj",
+      "article_count": 2,
+      "verified_count": 2,
+      "automated_review_count": 0,
+      "pending_count": 0
+    }
+  ]
+}

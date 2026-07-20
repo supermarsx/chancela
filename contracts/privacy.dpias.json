@@ -1,0 +1,53 @@
+[
+  {
+    "id": "8b7c6d50-0000-4000-8000-000000000072",
+    "title": "Marketing profiling assessment",
+    "purpose": "Segment contacts for corporate communication campaigns",
+    "legal_basis": "Legitimate interest assessment",
+    "data_categories": ["contact", "behavioural"],
+    "subprocessors": ["Analytics Processor SA"],
+    "risk_level": "high",
+    "status": "under_review",
+    "evidence_receipts": [
+      {
+        "id": "5d9e3c7b-0000-4000-8000-000000000073",
+        "evidence_type": "review",
+        "recorded_at": "2026-07-09T11:30:00Z",
+        "recorded_by": "amelia.marques",
+        "occurred_at": "2026-07-09T11:00:00Z",
+        "notes": "Local DPIA review receipt only.",
+        "authority_filing_completed": false,
+        "legal_review_accepted": false,
+        "legal_certification_completed": false,
+        "external_delivery_completed": false,
+        "dpia_completed": false,
+        "compliance_certification_completed": false
+      }
+    ],
+    "advisory_review": {
+      "status": "under_review",
+      "last_reviewed_at": "2026-07-09T11:00:00Z",
+      "review_interval_days": 365,
+      "receipt_count": 1,
+      "review_receipt_count": 1,
+      "drill_receipt_count": 0,
+      "local_advisory_only": true,
+      "authority_notification_claimed": false,
+      "subject_notification_claimed": false,
+      "transfer_approval_claimed": false,
+      "transfer_execution_claimed": false,
+      "external_delivery_configured": false,
+      "legal_completion_claimed": false,
+      "authority_filing_claimed": false,
+      "legal_acceptance_claimed": false,
+      "legal_certification_claimed": false,
+      "external_delivery_claimed": false,
+      "completion_claimed": false,
+      "compliance_certification_claimed": false
+    },
+    "created_at": "2026-07-09T10:15:00Z",
+    "created_by": "amelia.marques",
+    "updated_at": "2026-07-09T11:45:00Z",
+    "updated_by": "amelia.marques"
+  }
+]

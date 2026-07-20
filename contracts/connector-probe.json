@@ -1,0 +1,18 @@
+{
+  "target_id": "4c200000-0000-4000-8000-000000000001",
+  "checked_at": "2026-07-16T12:01:00Z",
+  "status": {
+    "target_id": "4c200000-0000-4000-8000-000000000001",
+    "kind": "web_dav",
+    "state": "ready",
+    "capabilities": [
+      "upload",
+      "create_folder",
+      "atomic_replace",
+      "source_checksum"
+    ],
+    "detail": "WebDAV endpoint is reachable"
+  },
+  "error_class": null,
+  "error": null
+}

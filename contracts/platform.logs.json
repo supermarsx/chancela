@@ -1,0 +1,41 @@
+{
+  "logs": [
+    {
+      "id": "platform-log-1",
+      "seq": 1,
+      "timestamp": "2026-07-09T12:00:00Z",
+      "service_id": "api",
+      "level": "info",
+      "target": "platform.services",
+      "message": "Platform service status read",
+      "context": {
+        "service_count": 2
+      }
+    },
+    {
+      "id": "platform-log-2",
+      "seq": 2,
+      "timestamp": "2026-07-09T12:01:00Z",
+      "service_id": "api",
+      "level": "info",
+      "target": "platform.service.control",
+      "message": "Platform service control desired state recorded"
+    }
+  ],
+  "tail": 5,
+  "order": "chronological",
+  "retention": {
+    "retention_limit": 512,
+    "retained_count": 2,
+    "oldest_seq": 1,
+    "newest_seq": 2,
+    "dropped_before_seq": null,
+    "durable": false,
+    "basis": "memory",
+    "source": "process_memory"
+  },
+  "limitations": [
+    "This is an in-memory API-owned structured log ring; entries reset when the API process restarts.",
+    "It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards structured events into the API."
+  ]
+}

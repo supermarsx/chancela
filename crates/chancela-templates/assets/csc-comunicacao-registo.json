@@ -1,0 +1,64 @@
+{
+  "id": "csc-comunicacao-registo/v1",
+  "family": "CommercialCompany",
+  "stage": "Certidao",
+  "channels": [],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Comunicação para registo comercial"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Ata n.º",
+          "value": "{{ ata_number }}"
+        },
+        {
+          "key": "Digest do ato selado",
+          "value": "{{ payload_digest }}"
+        },
+        {
+          "key": "Evento de selagem",
+          "value": "{{ seal_event_seq }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Prepara-se, para efeitos de comunicação e depósito junto do registo comercial, o extrato das deliberações sujeitas a registo constantes da ata n.º {{ ata_number }} de {{ entity.name }}, selada com o digest {{ payload_digest }}."
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Deliberações sujeitas a registo"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

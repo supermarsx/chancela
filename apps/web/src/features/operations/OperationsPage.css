@@ -1,0 +1,157 @@
+.operations-page .page-header__actions .field {
+  min-width: min(22rem, 100%);
+}
+
+.operations-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space);
+  align-items: start;
+}
+
+.operations-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: var(--space);
+}
+
+.operations-inline-form .field {
+  flex: 1 1 20rem;
+}
+
+.operations-fieldset {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: var(--space);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.operations-fieldset > legend {
+  padding-inline: 0.5rem;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.operations-checkbox {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  line-height: 1.45;
+}
+
+.operations-checkbox input {
+  flex: 0 0 auto;
+  margin-top: 0.22em;
+}
+
+.operations-checkbox--ack {
+  padding: 0.75rem;
+  border-left: 3px solid var(--gold);
+  background: var(--surface);
+}
+
+.operations-multiselect {
+  min-height: 9rem;
+  padding: 0.5rem;
+  background-image: none;
+}
+
+.operations-code-control {
+  min-height: 14rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.operations-code-wrap {
+  max-width: 32rem;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.operations-metrics,
+.operations-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.operations-metrics > div,
+.operations-detail-grid > div {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.operations-metrics dt,
+.operations-detail-grid dt {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.operations-metrics dd,
+.operations-detail-grid dd {
+  margin: 0.25rem 0 0;
+}
+
+.operations-metrics dd {
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+}
+
+.operations-compact-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operations-compact-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-block: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.operations-selector-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: var(--space);
+}
+
+.operations-success {
+  margin: 0.75rem 0 0;
+  color: var(--green-accent);
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .operations-page .page-header__actions,
+  .operations-page .page-header__actions .field {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .operations-inline-form {
+    align-items: stretch;
+  }
+
+  .operations-inline-form .btn {
+    width: 100%;
+  }
+}

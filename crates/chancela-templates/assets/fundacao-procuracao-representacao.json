@@ -1,0 +1,42 @@
+{
+  "id": "fundacao-procuracao-representacao/v1",
+  "family": "Foundation",
+  "stage": "Convocatoria",
+  "channels": ["Physical", "Hybrid", "Telematic"],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "fundacao-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Instrumento de representação em órgão da fundação" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Fundação", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Órgão / reunião", "value": "{{ title }}" },
+        { "key": "Data da reunião", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Membro representado", "value": "{{ represented.name }}" },
+        { "key": "Representante", "value": "{{ representative.name }}" },
+        { "key": "Documento do representante", "value": "{{ representative.document }}" },
+        { "key": "Âmbito", "value": "{{ representation.scope }}" },
+        { "key": "Limites ou instruções", "value": "{{ representation.instructions }}" },
+        { "key": "Referência de prova", "value": "{{ representation.evidence_reference }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "O membro representado declara conferir ao representante acima identificado poderes para o representar na reunião indicada, dentro dos limites admitidos pelos estatutos, pelo regulamento interno e pelas regras aplicáveis ao órgão da fundação."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Este instrumento é elemento de prova operacional e deve ser ligado à lista de presenças e à ata; não substitui a verificação da elegibilidade do representante ou da validade substantiva dos poderes."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

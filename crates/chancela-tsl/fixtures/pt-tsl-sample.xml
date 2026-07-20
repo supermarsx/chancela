@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Representative sample of the Portuguese Trusted List (ETSI TS 119 612), authored for
+  offline tests of `chancela-tsl`. It mirrors the real structure published by the Gabinete
+  Nacional de Seguranca (GNS) but the certificates are ephemeral self-signed fixtures, NOT
+  real QTSP CAs. See crates/chancela-tsl/TESTING.md.
+
+  Coverage:
+    - TSP "MULTICERT ..."  -> CA/QC, GRANTED, ForeSignatures  => qualified for e-sig.
+      (also carries a ServiceHistory withdrawn instance the parser MUST ignore.)
+    - TSP "DigitalSign ..." -> CA/QC, WITHDRAWN                => present but not qualified.
+    - TSP "EGIA ..."        -> CA/QC, GRANTED, ForeSeals only  => present but not for e-sig.
+    - TSP "Cartorio Notarial Timestamping" -> TSA/QTST, GRANTED => not a CA/QC (ignored for e-sig).
+      Also carries an accent-heavy alias, a supply point, and a revoked TSA/TST edge record
+      with a malformed status date and no service name.
+-->
+<TrustServiceStatusList
+    xmlns="http://uri.etsi.org/02231/v2#"
+    xmlns:ecc="http://uri.etsi.org/02231/v2/additionaltypes#"
+    xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+    TSLTag="http://uri.etsi.org/19612/TSLTag"
+    Id="TrustServiceStatusList-PT">
+  <SchemeInformation>
+    <TSLVersionIdentifier>5</TSLVersionIdentifier>
+    <TSLSequenceNumber>52</TSLSequenceNumber>
+    <TSLType>http://uri.etsi.org/TrstSvc/TrustedList/TSLType/EUgeneric</TSLType>
+    <SchemeOperatorName>
+      <Name xml:lang="pt">Gabinete Nacional de Segurança</Name>
+      <Name xml:lang="en">National Security Authority</Name>
+    </SchemeOperatorName>
+    <SchemeName>
+      <Name xml:lang="en">PT:Supervision/Accreditation Status List of certification services from Certification Service Providers</Name>
+    </SchemeName>
+    <StatusDeterminationApproach>http://uri.etsi.org/TrstSvc/TrustedList/StatusDetn/EUappropriate</StatusDeterminationApproach>
+    <SchemeTerritory>PT</SchemeTerritory>
+    <ListIssueDateTime>2026-01-15T00:00:00Z</ListIssueDateTime>
+    <NextUpdate>
+      <dateTime>2026-07-15T00:00:00Z</dateTime>
+    </NextUpdate>
+  </SchemeInformation>
+  <TrustServiceProviderList>
+
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="pt">MULTICERT - Servicos de Certificacao Electronica SA</Name>
+          <Name xml:lang="en">MULTICERT - Electronic Certification Services SA</Name>
+        </TSPName>
+        <TSPTradeName>
+          <Name xml:lang="en">MULTICERT</Name>
+        </TSPTradeName>
+        <TSPInformationURI>
+          <URI xml:lang="en">https://www.multicert.com/</URI>
+        </TSPInformationURI>
+      </TSPInformation>
+      <TSPServices>
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="pt">MULTICERT CA para Assinatura Qualificada</Name>
+              <Name xml:lang="en">MULTICERT CA para Assinatura Qualificada</Name>
+              <Name xml:lang="en">MULTICERT CA para Assinatura Qualificada</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509Certificate>MIID6TCCAtGgAwIBAgIUDBJr0SUtasQiPjBvVctFtj6pYsswDQYJKoZIhvcNAQELBQAwfDELMAkGA1UEBhMCUFQxOjA4BgNVBAoMMU1VTFRJQ0VSVC1TZXJ2aWNvcyBkZSBDZXJ0aWZpY2FjYW8gRWxlY3Ryb25pY2EgU0ExMTAvBgNVBAMMKE1VTFRJQ0VSVCBDQSBwYXJhIEFzc2luYXR1cmEgUXVhbGlmaWNhZGEwHhcNMjYwNzA2MTg0MDM0WhcNMzYwNzAzMTg0MDM0WjB8MQswCQYDVQQGEwJQVDE6MDgGA1UECgwxTVVMVElDRVJULVNlcnZpY29zIGRlIENlcnRpZmljYWNhbyBFbGVjdHJvbmljYSBTQTExMC8GA1UEAwwoTVVMVElDRVJUIENBIHBhcmEgQXNzaW5hdHVyYSBRdWFsaWZpY2FkYTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMPA8OvAn2PsnKaDGKS3lv+RhiNVfE8eoYi+bBRTJboJtVcGVygPj4oznVrpTXxfo6FYVx28QYzbiYrfcLeTSVpRfstk/m8SBcHgW5qwSOV3IOGqY51y1PWstcTOxPRkpuDKhE6a+DGPipFyd2e9GTMJ9VZbF9gPUc51MFOLeo8NtGwa055ODdxnwD6mh6RUMOUY52rDFfZa4MSsBnndPyzfCqV036JwmX+h5e6bIhCKm2qSzDtf+sOxCjmx6ep4que+8MAnW7O7LudaTCu/mxzQdTlVRAdSB1AHU10yxsiCCSE8QRjREyEmHSn+R1RJQfD8nx/lLeFcr7IAcw1otSkCAwEAAaNjMGEwHwYDVR0jBBgwFoAUhLeKRJncX6dpF1xri6Mrm02FKKYwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0OBBYEFIS3ikSZ3F+naRdca4ujK5tNhSimMA0GCSqGSIb3DQEBCwUAA4IBAQCiNsOcVobnMFX2EqwyMJtfW76fYG/9e8SC+NAO+QrTXK1YAsBYpJoHAnxxHrr1YIEGetQ5sAr9KnVMG6p/n1GyXirURcVd1WiWMH/Cm5+PnIB09LZPJnGFLyOH9lef1yKu8hXI87J4jvlr6bc/OEkxPzbjBpTesZWxR8LNQXt1RfNZWM6q+PqEobiL9ru4py2zzt9ZgwB2/eNZsZPhQvYzod7mMwD2wpqBwBS/3QJjo2DOWcT32sQIGCYD3gKTkGqobM8BOraj1DKuzVubgn8h3Fgrrmh8nPtRKiED2RbiDaGG25jPoJ7NfY/y5ahHVFVYwUQSZSvuqy5amg1fQFe4</X509Certificate>
+              </DigitalId>
+              <DigitalId>
+                <X509SubjectName>CN=MULTICERT CA para Assinatura Qualificada,O=MULTICERT-Servicos de Certificacao Electronica SA,C=PT</X509SubjectName>
+              </DigitalId>
+              <DigitalId>
+                <X509SKI>hLeKRJncX6dpF1xri6Mrm02FKKY=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <StatusStartingTime>2020-01-01T00:00:00Z</StatusStartingTime>
+            <ServiceInformationExtensions>
+              <Extension Critical="false">
+                <AdditionalServiceInformation>
+                  <URI xml:lang="en">http://uri.etsi.org/TrstSvc/TrustedList/SvcInfoExt/ForeSignatures</URI>
+                </AdditionalServiceInformation>
+              </Extension>
+            </ServiceInformationExtensions>
+          </ServiceInformation>
+          <ServiceHistory>
+            <ServiceHistoryInstance>
+              <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>
+              <ServiceName>
+                <Name xml:lang="en">MULTICERT CA para Assinatura Qualificada (legacy)</Name>
+              </ServiceName>
+              <ServiceDigitalIdentity>
+                <DigitalId>
+                  <X509SKI>AAAAAAAAAAAAAAAAAAAAAAAAAAA=</X509SKI>
+                </DigitalId>
+              </ServiceDigitalIdentity>
+              <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/withdrawn</ServiceStatus>
+              <StatusStartingTime>2016-07-01T00:00:00Z</StatusStartingTime>
+            </ServiceHistoryInstance>
+          </ServiceHistory>
+        </TSPService>
+      </TSPServices>
+    </TrustServiceProvider>
+
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="en">DigitalSign Certificadora Digital SA</Name>
+        </TSPName>
+      </TSPInformation>
+      <TSPServices>
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="en">DigitalSign Qualified CA</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509Certificate>MIIDxTCCAq2gAwIBAgIUVTy/EHhZ9JV1AKkQKQ5T69JnN18wDQYJKoZIhvcNAQELBQAwajELMAkGA1UEBhMCUFQxLTArBgNVBAoMJERpZ2l0YWxTaWduIENlcnRpZmljYWRvcmEgRGlnaXRhbCBTQTEsMCoGA1UEAwwjRGlnaXRhbFNpZ24gUXVhbGlmaWVkIENBIChyZXZvZ2FkYSkwHhcNMjYwNzA2MTg0MDM1WhcNMzYwNzAzMTg0MDM1WjBqMQswCQYDVQQGEwJQVDEtMCsGA1UECgwkRGlnaXRhbFNpZ24gQ2VydGlmaWNhZG9yYSBEaWdpdGFsIFNBMSwwKgYDVQQDDCNEaWdpdGFsU2lnbiBRdWFsaWZpZWQgQ0EgKHJldm9nYWRhKTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMeZywbigRMa07KatIrBtrH4w4QUGGGnHf5Ukd/26V+rpUSOGz1IaMDVyfOCWgkUmyhONzs2/1Y+rwWWWTUSzCA2VJ3G+9z41SBqNUO2U3b5waMoj+MUKfCQvfWvZ6tAIVRrC2UXEmiHY2ovu5+gJCp2SF62hoEZz6r5RevSeacm74+4GncSllluep6shSk1g9Ylqh/7BeKYxrOtjTOZ7pgN1Wyi8eIAwpPj1i0kVNiazHXHPUGoS+0R8BANi1ePTag1+RCNg1HZk/n2YLoo6CN/XfjY6do/KXaiFc8AUYYiJHlOHAN24fDzg57uRn6Bl16xpu47W5NwLORwkwyOFxECAwEAAaNjMGEwHwYDVR0jBBgwFoAUN/8fGCfDFS1XBO/TPxSESxAi3FgwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0OBBYEFDf/HxgnwxUtVwTv0z8UhEsQItxYMA0GCSqGSIb3DQEBCwUAA4IBAQB7c6ZIE5ANJ3VtjqG6ujYwe6fezul+obwmuYdmKEzfSoA88CjkQneecJaTglWyTBqp/YQoJShRTYbU1Hvjm+a8gNT7zpY40hnvQtQO4fo2S8fn8Yx+OUd6AwLrwdvoRsQyXBY2kZU5WBp6qxgiBPy9l6eENcvdufktBooxHTvoRJGkY3Dv6zrok9KVgHGKL75qlmP1DAU72yUArx2yk43qMauLOmwRopTVoJyLubuGzrBPmlWiLp3Bq/kU5cEio99jKKKIyJVKC5LT6xtt76OyvL/v4EC8CzM7H98nZeyIFGCI0+Wu3lEl8K6+4C5IftMrvfgRXt8yI/M1JdSQpO5S</X509Certificate>
+              </DigitalId>
+              <DigitalId>
+                <X509SKI>N/8fGCfDFS1XBO/TPxSESxAi3Fg=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/withdrawn</ServiceStatus>
+            <StatusStartingTime>not-a-date</StatusStartingTime>
+            <ServiceInformationExtensions>
+              <Extension Critical="false">
+                <AdditionalServiceInformation>
+                  <URI xml:lang="en">http://uri.etsi.org/TrstSvc/TrustedList/SvcInfoExt/ForeSignatures</URI>
+                </AdditionalServiceInformation>
+              </Extension>
+            </ServiceInformationExtensions>
+          </ServiceInformation>
+        </TSPService>
+      </TSPServices>
+    </TrustServiceProvider>
+
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="en">EGIA</Name>
+        </TSPName>
+      </TSPInformation>
+      <TSPServices>
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="en">EGIA CA para Selo Qualificado</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509Certificate>MIIDeTCCAmGgAwIBAgIUYxAczCEMWjTzVbj5UJTp/ulyu5swDQYJKoZIhvcNAQELBQAwRDELMAkGA1UEBhMCUFQxDTALBgNVBAoMBEVHSUExJjAkBgNVBAMMHUVHSUEgQ0EgcGFyYSBTZWxvIFF1YWxpZmljYWRvMB4XDTI2MDcwNjE4NDAzNloXDTM2MDcwMzE4NDAzNlowRDELMAkGA1UEBhMCUFQxDTALBgNVBAoMBEVHSUExJjAkBgNVBAMMHUVHSUEgQ0EgcGFyYSBTZWxvIFF1YWxpZmljYWRvMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApibMaZkHOr66WrODhG6tAbH/x02nIR3BKbEHvez8U+NJp6J/p7yKdFW9+AIQ8lTGvD/+f3FtTTd6nXDOqVkC29MAwHivx28SnjD2SY4E9f4emjnax74i03dpZr7WmXTESZbvRV2vJkv+1wfckMN6b6OL1mpzkaO5SLI/nXdQbaCry3BRlPVP4AGj5zeAvpwsLXB1o5vGX38GjqTtNk62P8XNV9txKT/vnmwGmvBiWvgvzL55LjucC6Y1N8hqyLZ64kCA5sGFjTbMlBjU79q25QXqW/Z3zsP0yZrcmV8xksSz6njkRUJpM5WqewDakvQjPnJ4fRPN/MLOS7qW4HDM/wIDAQABo2MwYTAfBgNVHSMEGDAWgBTpV43w+IXBI07fi6xTruI3FQqX5jAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAdBgNVHQ4EFgQU6VeN8PiFwSNO34usU67iNxUKl+YwDQYJKoZIhvcNAQELBQADggEBACkyjDEMK3eVZZ1lpCKokv6EtdX0RSnQsFMAJTVaArHZvS/6tx2gDfjHeh1f980b+IJ5z6OKjxyqiIkPJ+OpfNuEIBPvM7y9WfS5ZuyoCdIn9O4p8SuDY0YHlRTUfUHlFGpTjKWSiCTTVNIAt2SYBmFEJGlCnf0z3lsmU4oGCkkzRWd7CRtdsSdWnnFgpH9xS/l047hBLbI2Lwa1vZRhklgsZ85UT6x6VoVW6pNQRH+DjEOvd2fCXv0Auk52/QMEVG9BV5MRRdzwCrm08kmvewhLXTYK8FvZY1nGnp8q1MXaTmv/WPEKwe3ULBgBsRFfQzWuvs6oFybVyWAb7iaICQA=</X509Certificate>
+              </DigitalId>
+              <DigitalId>
+                <X509SKI>6VeN8PiFwSNO34usU67iNxUKl+Y=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <StatusStartingTime>2021-03-01T00:00:00Z</StatusStartingTime>
+            <ServiceInformationExtensions>
+              <Extension Critical="false">
+                <AdditionalServiceInformation>
+                  <URI xml:lang="en">http://uri.etsi.org/TrstSvc/TrustedList/SvcInfoExt/ForeSeals</URI>
+                </AdditionalServiceInformation>
+              </Extension>
+            </ServiceInformationExtensions>
+          </ServiceInformation>
+        </TSPService>
+      </TSPServices>
+    </TrustServiceProvider>
+
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="pt">Cartório Âncora Carimbo do Tempo</Name>
+          <Name xml:lang="en">Cartorio Notarial Timestamping</Name>
+        </TSPName>
+        <TSPTradeName>
+          <Name xml:lang="pt">Âncora TSA São Tomé</Name>
+        </TSPTradeName>
+      </TSPInformation>
+      <TSPServices>
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/TSA/QTST</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="en">Qualified Timestamping Authority</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509SKI>QUFBQUFBQUFBQUFBQUFBQUFBQT0=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceSupplyPoints>
+              <ServiceSupplyPoint>http://tsa.cartorio.example.test/tsa/server</ServiceSupplyPoint>
+            </ServiceSupplyPoints>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <StatusStartingTime>2019-01-01T00:00:00Z</StatusStartingTime>
+          </ServiceInformation>
+        </TSPService>
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/TSA/TST</ServiceTypeIdentifier>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509SubjectName>CN=Ancora Revoked TSA,O=Cartorio,C=PT</X509SubjectName>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceSupplyPoints>
+              <ServiceSupplyPoint>http://tsa.cartorio.example.test/revogado</ServiceSupplyPoint>
+            </ServiceSupplyPoints>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/supervisionRevoked</ServiceStatus>
+            <StatusStartingTime>not-a-date</StatusStartingTime>
+          </ServiceInformation>
+        </TSPService>
+      </TSPServices>
+    </TrustServiceProvider>
+
+  </TrustServiceProviderList>
+  <!-- Deliberately invalid XML-DSig placeholder; catalog/tests must report it as advisory. -->
+  <ds:Signature Id="TSL-Signature">
+    <ds:SignedInfo>
+      <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+      <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+    </ds:SignedInfo>
+    <ds:SignatureValue>ZmFrZS1zaWduYXR1cmUtdmFsdWUtbm90LXZhbGlkYXRlZA==</ds:SignatureValue>
+  </ds:Signature>
+</TrustServiceStatusList>
