@@ -231,7 +231,8 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
     // --- Leg 2: the same ata WITH a mesa seals -------------------------------------------------
     let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
     let mut with_mesa = contents();
-    with_mesa["mesa"] = json!({ "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] });
+    with_mesa["mesa"] =
+        json!({ "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] });
     let (status, _) = h
         .patch_json_auth(&format!("/v1/acts/{act_id}"), with_mesa, &token)
         .await;

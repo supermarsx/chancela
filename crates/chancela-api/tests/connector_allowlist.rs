@@ -16,7 +16,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use chancela_api::{AppState, User, UserId, router};
 use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, Scope};
-use chancela_connectors::{ALLOWED_HOSTS_ENV, RuntimeAllowlist};
+use chancela_connectors::{ALLOWED_HOSTS_ENV, NetworkPolicy, RuntimeAllowlist};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -204,6 +204,35 @@ async fn connector_allowlist_is_admin_configurable_bounded_audited_and_republish
         "and whether a ceiling was in force: {summary}"
     );
 
+    // --- With no ceiling, the saved list is the boundary connectors actually enforce -----
+    //
+    // Publishing a document is only half the claim. What makes the setting a containment boundary is
+    // that the policy resolved from it *refuses* a host nobody allowed — asserted through the same
+    // `NetworkPolicy` a connector or the worker validates against, with IP literals so the check is
+    // deterministic and never touches a resolver.
+    let policy = NetworkPolicy::resolve(None, Some(&published))
+        .expect("with no ceiling the runtime list is authoritative");
+    policy
+        .validate_host("10.42.0.7", 443, "backup")
+        .await
+        .expect("an address inside the saved CIDR is permitted");
+    let refused = policy
+        .validate_host("198.51.100.9", 443, "backup")
+        .await
+        .expect_err("a host nobody allowlisted must be blocked");
+    assert!(
+        refused.to_string().contains(ALLOWED_HOSTS_ENV),
+        "the block must name the boundary that caused it: {refused}"
+    );
+    // Neighbouring-but-outside is the case an off-by-one prefix would let through.
+    assert!(
+        policy
+            .validate_host("10.43.0.7", 443, "backup")
+            .await
+            .is_err(),
+        "10.43.0.7 is outside 10.42.0.0/16 and must be blocked"
+    );
+
     // --- Dangerous entries are refused ---------------------------------------------------
     for dangerous in [
         "169.254.169.254", // cloud instance metadata
@@ -261,6 +290,22 @@ async fn connector_allowlist_is_admin_configurable_bounded_audited_and_republish
     );
     // A broader CIDR than the ceiling grants is a widening too.
     let (status, _) = put_allowed_hosts(&state, &token, &["10.0.0.0/16"]).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // A hostname in the ceiling does NOT cover an IP literal, even one the name might resolve to
+    // today. Treating it as covering would let an administrator convert "this name, whatever it
+    // resolves to" into "this address, unconditionally" — a widening the ceiling never granted, and
+    // the ceiling here allows no IP entry at all beyond 10.42.0.0/16.
+    for literal in ["203.0.113.10", "203.0.113.0/24"] {
+        let (status, body) = put_allowed_hosts(&state, &token, &[literal]).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "the ceiling's hostname must not be read as covering {literal}: {body}"
+        );
+    }
+    // …and the converse: the ceiling's own CIDR does not cover an unrelated hostname.
+    let (status, _) = put_allowed_hosts(&state, &token, &["ten-forty-two.example.com"]).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 
     // --- Clearing the list restores the ceiling as the sole boundary ---------------------

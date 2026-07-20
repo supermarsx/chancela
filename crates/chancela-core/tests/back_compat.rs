@@ -123,6 +123,88 @@ fn old_shape_act_json_deserializes_with_defaults() {
     assert!(act.is_mutable());
 }
 
+/// An act written *after* structured attendees existed but *before* the qualidade work: the
+/// attendance rows carry a `quality` and no `quality_note`, and there is no `convening_waiver` or
+/// `superseded_signing_snapshots` key anywhere.
+const PRE_QUALIDADE_ACT_JSON: &str = r#"{
+    "id": "00000000-0000-0000-0000-000000000006",
+    "book_id": "00000000-0000-0000-0000-000000000002",
+    "title": "Ata com lista de presenças",
+    "channel": "Physical",
+    "meeting_date": null,
+    "place": "Sede social",
+    "attendance_reference": "Lista de presenças",
+    "deliberations": "Aprovadas as contas.",
+    "telematic_evidence": null,
+    "attachments": [],
+    "signatories": [],
+    "state": "Draft",
+    "ata_number": null,
+    "payload_digest": null,
+    "seal_event_seq": null,
+    "retifies": null,
+    "attendees": [
+        { "name": "Amélia Marques", "quality": "Member", "presence": "InPerson" },
+        { "name": "Rui Ferreira", "quality": "Chair", "presence": "Absent" }
+    ]
+}"#;
+
+#[test]
+fn a_pre_qualidade_attendance_row_deserializes_with_no_free_text_note() {
+    // The escape hatch is a *new* field on an existing row, so every stored roll must still load
+    // with it simply absent — not as an empty string, which would be a recorded (blank) note and
+    // would render differently from a row that never had one.
+    let act: Act =
+        serde_json::from_str(PRE_QUALIDADE_ACT_JSON).expect("pre-qualidade act deserializes");
+    assert_eq!(act.attendees.len(), 2);
+    assert!(
+        act.attendees.iter().all(|a| a.quality_note.is_none()),
+        "an absent note is None, never Some(\"\")"
+    );
+    assert_eq!(
+        act.attendees[0].quality,
+        chancela_core::SignatoryCapacity::Member
+    );
+    // The two fields this act also predates take their empty defaults.
+    assert!(act.convening_waiver.is_none());
+    assert!(act.superseded_signing_snapshots.is_empty());
+}
+
+#[test]
+fn a_pre_qualidade_act_round_trips_without_gaining_keys() {
+    // Re-serializing a stored roll must not stamp the new keys onto it. `quality_note`,
+    // `convening_waiver` and `superseded_signing_snapshots` are all skip-serialized when empty,
+    // which is what keeps a re-saved act byte-comparable to the one that was read — and, for the
+    // latter two, what keeps the seal preimage of an act that never used them unchanged.
+    let act: Act = serde_json::from_str(PRE_QUALIDADE_ACT_JSON).unwrap();
+    let json = serde_json::to_string(&act).unwrap();
+    for absent in [
+        "quality_note",
+        "convening_waiver",
+        "superseded_signing_snapshots",
+    ] {
+        assert!(!json.contains(absent), "{absent} must not appear: {json}");
+    }
+    let back: Act = serde_json::from_str(&json).unwrap();
+    assert_eq!(act, back);
+}
+
+#[test]
+fn a_free_text_qualidade_round_trips_intact() {
+    // The companion: when a note *is* recorded it survives storage verbatim, including the
+    // accented characters Portuguese legal vocabulary is full of.
+    let mut act: Act = serde_json::from_str(PRE_QUALIDADE_ACT_JSON).unwrap();
+    act.attendees[0].quality = chancela_core::SignatoryCapacity::Other;
+    act.attendees[0].quality_note = Some("usufrutuário da quota".to_owned());
+
+    let back: Act = serde_json::from_str(&serde_json::to_string(&act).unwrap()).unwrap();
+    assert_eq!(back, act);
+    assert_eq!(
+        back.attendees[0].quality_note.as_deref(),
+        Some("usufrutuário da quota")
+    );
+}
+
 #[test]
 fn old_shape_entity_json_deserializes_with_statute_none() {
     let entity: Entity =

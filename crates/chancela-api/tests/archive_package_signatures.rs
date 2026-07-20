@@ -413,6 +413,104 @@ fn index_entry(index: &Value, document_id: &str) -> Value {
         .clone()
 }
 
+/// The index exists so the question is answerable without opening every per-document report — which
+/// only holds if the two never disagree. The existing tests assert each side against the literals
+/// the test itself set up; this one asserts them **against each other**, for every document in the
+/// package, so a summary that silently drifts from the chain it summarises is caught even for a
+/// document no test enumerates by hand.
+#[tokio::test]
+async fn the_evidence_index_summary_agrees_with_every_per_document_sidecar() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+    let act_id = parse_act_id(&sealed.act_id);
+
+    persist(
+        &state,
+        &signature(
+            act_id,
+            &sealed.document_id,
+            "first signature",
+            "Amelia Marques",
+            1,
+            Some(declared_capacity_evidence_json("gerente")),
+            datetime!(2026-04-01 12:00:00 UTC),
+            datetime!(2026-04-01 12:01:00 UTC),
+        ),
+    );
+    persist(
+        &state,
+        &signature(
+            act_id,
+            &sealed.document_id,
+            "second signature",
+            "Joao Nunes",
+            2,
+            Some(declared_capacity_evidence_json("secretario")),
+            datetime!(2026-04-02 09:00:00 UTC),
+            datetime!(2026-04-02 09:01:00 UTC),
+        ),
+    );
+
+    let members = export_members(&state, &token, &sealed.book_id).await;
+    let index = member_json(&members, "evidence/index.json");
+    let documents = index["documents"].as_array().expect("documents array");
+    assert!(
+        documents.len() > 1,
+        "the package must carry the termo(s) as well as the signed ata: {index:#}"
+    );
+
+    let mut signed_documents_seen = 0;
+    for entry in documents {
+        let document_id = entry["document_id"].as_str().expect("document id");
+        let evidence = member_json(&members, &format!("evidence/{document_id}.json"));
+        let chain = evidence["signature"]["signatures"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{document_id} has a signatures array: {evidence:#}"));
+
+        assert_eq!(
+            entry["signature_count"],
+            Value::from(chain.len()),
+            "index signature_count disagrees with the chain for {document_id}"
+        );
+        let summary = entry["signatures"]
+            .as_array()
+            .unwrap_or_else(|| panic!("index entry for {document_id} has a signatures array"));
+        assert_eq!(summary.len(), chain.len());
+        if !chain.is_empty() {
+            signed_documents_seen += 1;
+        }
+
+        for (position, (summarised, full)) in summary.iter().zip(chain).enumerate() {
+            let context = format!("{document_id} signature #{position}");
+            // Ordering is part of the agreement: the summary is `seq` ascending, exactly as the
+            // chain is, so a consumer reading the index gets the signing order without re-sorting.
+            assert_eq!(summarised["seq"], full["seq"], "{context}: seq");
+            assert_eq!(
+                summarised["is_current_artifact"], full["is_current_artifact"],
+                "{context}: is_current_artifact"
+            );
+            // Identity in the summary is the *asserted* identity, and capacity the *recorded* one —
+            // the index must not flatten the two bases together into one apparent claim.
+            for field in ["signer_common_name", "signer_cert_subject", "signing_time"] {
+                assert_eq!(
+                    summarised[field], full["asserted_by_signature"][field],
+                    "{context}: {field} must come from the asserted block"
+                );
+            }
+            assert_eq!(
+                summarised["capacity"], full["recorded_by_chancela"]["capacity"],
+                "{context}: capacity must come from the recorded block"
+            );
+        }
+    }
+    assert_eq!(
+        signed_documents_seen, 1,
+        "exactly the signed ata carries a chain; the loop above must have actually compared one"
+    );
+}
+
 /// The gap this whole task exists to close: two gerentes signed the ata, and the exported package
 /// must say so — both of them, in signing order, by name and by capacity.
 #[tokio::test]

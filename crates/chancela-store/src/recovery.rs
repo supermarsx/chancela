@@ -2734,6 +2734,55 @@ fn reconstruct_verdict(
 }
 
 #[cfg(test)]
+mod wipe_coverage_tests {
+    //! The wipe list is a hand-maintained enumeration, and so is the logical-backup list. This
+    //! pins the relationship between them, which neither list's own guard can see.
+    use super::*;
+
+    /// **Nothing may be destroyed by a wipe that a logical backup would not have carried.**
+    ///
+    /// A domain wipe is only acceptable because it is preceded by an export-first archive, so a
+    /// table that `clear_domain` deletes but `LOGICAL_BACKUP_TABLES` omits is unrecoverable
+    /// destruction dressed up as a reversible one. The two lists drifted independently before —
+    /// `pairing_devices` was missing from the backup list and `signed_documents` from the wipe
+    /// list — and each list's own guard would have stayed green through either.
+    #[test]
+    fn every_table_a_wipe_destroys_is_also_logically_backed_up() {
+        let wiped = domain_table_names();
+        assert!(
+            wiped.len() >= 10,
+            "the wipe list looks truncated: {wiped:?}"
+        );
+        let missing: Vec<&String> = wiped
+            .iter()
+            .filter(|table| !crate::schema::LOGICAL_BACKUP_TABLES.contains(&table.as_str()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "a wipe deletes {missing:?}, which no logical backup carries — the export-first \
+             archive that makes the wipe acceptable would not contain them. Add each to \
+             schema::LOGICAL_BACKUP_TABLES, or stop wiping it."
+        );
+    }
+
+    /// The receipt must not name a table the wipe does not touch, either: `domain_table_names` is
+    /// what the operator is told was cleared and what the ledgered `WipeRecord` records, so an
+    /// entry naming a table the schema never creates is a false statement in the audit record.
+    #[test]
+    fn the_wipe_receipt_names_only_tables_the_schema_creates() {
+        let created = crate::schema::schema_table_names();
+        let unknown: Vec<String> = domain_table_names()
+            .into_iter()
+            .filter(|table| !created.contains(&table.as_str()))
+            .collect();
+        assert!(
+            unknown.is_empty(),
+            "the wipe receipt names {unknown:?}, which schema::ALL does not create"
+        );
+    }
+}
+
+#[cfg(test)]
 mod decompression_bound_tests {
     //! Zip-bomb defense (finding H3): the per-member / total decompression ceilings and the
     //! member-count cap that [`read_zip_member_bounded`] and [`read_bundle`] enforce. The

@@ -1266,6 +1266,74 @@ mod tests {
         );
     }
 
+    /// The seal preimage of an act carrying **none** of the optional append-only fields, written
+    /// out as a literal.
+    ///
+    /// The other back-compat tests in this module rebuild the older `ActPayload` shape from the
+    /// current types. That proves field *order* but re-derives every field *value* from the code
+    /// under test, so a change in how a field serializes — a date encoding, a renamed enum
+    /// variant, an `Option` that starts emitting `null` where it emitted nothing — moves both
+    /// sides together and is invisible. Only a literal catches that.
+    ///
+    /// The literal is the shape every act sealed before `convening` / `attendees` / `page_count` /
+    /// `superseded_signing_snapshots` / `convening_waiver` existed was digested from, and those
+    /// acts' digests are frozen in their books' hash chains.
+    ///
+    /// **A failure here is a chain-compatibility break, not a stale fixture.** Re-derive it only
+    /// after deciding the preimage change is intended and that every already-sealed act's digest
+    /// may cease to be reproducible.
+    const CLEAN_ACT_PREIMAGE: &str = r#"{"act_id":"33333333-3333-3333-3333-333333333333","book_id":"22222222-2222-2222-2222-222222222222","title":"Ata da AG anual","channel":"Physical","meeting_date":[2026,89],"place":"Sede social","attendance_reference":"Lista de presenças","deliberations":"Aprovadas as contas do exercício.","telematic_evidence":null,"attachments":[],"signatories":[],"retifies":null,"meeting_time":[10,0,0,0],"mesa":{"presidente":"Ana Presidente","secretarios":["Rui Secretário"]},"agenda":[{"number":1,"text":"Aprovação das contas"}],"referenced_documents":[],"deliberation_items":[],"members_present":null,"members_represented":null}"#;
+
+    /// The act used to pin [`CLEAN_ACT_PREIMAGE`]: `ready_act` with the two random identifiers
+    /// nailed down, and nothing else.
+    fn preimage_fixture_act() -> Act {
+        let mut book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        book.id = crate::book::BookId(uuid::Uuid::from_bytes([0x22; 16]));
+        let mut act = ready_act(&book);
+        act.id = crate::act::ActId(uuid::Uuid::from_bytes([0x33; 16]));
+        act
+    }
+
+    #[test]
+    fn the_preimage_of_an_act_carrying_no_optional_field_is_byte_for_byte_frozen() {
+        let act = preimage_fixture_act();
+        // The premise: this act carries none of the append-only fields.
+        assert!(act.convening.is_none());
+        assert!(act.attendees.is_empty());
+        assert!(act.page_count.is_none());
+        assert!(act.superseded_signing_snapshots.is_empty());
+        assert!(act.convening_waiver.is_none());
+
+        let actual = serde_json::to_string(&ActPayload::of(&act)).unwrap();
+        assert_eq!(
+            actual, CLEAN_ACT_PREIMAGE,
+            "the seal preimage moved — every already-frozen act digest is now irreproducible"
+        );
+    }
+
+    #[test]
+    fn every_optional_field_that_is_absent_emits_no_key_at_all() {
+        // The companion property, asserted by name rather than by total bytes, so a failure says
+        // *which* field started emitting. `null` is not the same as absent: a field that emits
+        // `"page_count":null` would change every frozen digest just as surely as one that emits a
+        // value.
+        let act = preimage_fixture_act();
+        let json = serde_json::to_string(&ActPayload::of(&act)).unwrap();
+        for absent in [
+            "convening",
+            "attendees",
+            "page_count",
+            "superseded_signing_snapshots",
+            "convening_waiver",
+            "written_resolution_evidence",
+        ] {
+            assert!(
+                !json.contains(absent),
+                "an absent `{absent}` must emit no bytes, but the preimage contains it: {json}"
+            );
+        }
+    }
+
     #[test]
     fn a_frozen_page_count_binds_into_the_seal_digest() {
         // The companion proof: F15 is not silently dropped. A frozen page count changes the

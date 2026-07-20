@@ -1251,6 +1251,58 @@ fn a_domain_wipe_removes_signed_artifacts_and_their_signature_history() {
     assert!(loaded.chain_status.is_ok());
 }
 
+/// After a wipe the schema is still there and still usable — a wipe deletes rows, it does not drop
+/// tables — and the next signature on the same subject starts a **fresh** chain at seq 1.
+///
+/// The alternative would be worse than it sounds: `seq` is assigned as `MAX(seq) + 1`, so if the
+/// wipe had left the history rows in place while removing the artifact, a post-wipe signature would
+/// land at seq 3 and the chain would claim two signatures nobody can produce. Pinning "1" is what
+/// says the destruction was complete rather than partial.
+#[test]
+fn a_wiped_subject_starts_a_fresh_signature_chain_at_one() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, act) = seed(&store);
+    for bytes in [b"%PDF-1.7 first".as_slice(), b"%PDF-1.7 second".as_slice()] {
+        let signed = sample_signed_document(act.id, "doc-1", bytes);
+        store
+            .persist(|tx| tx.upsert_signed_document(&signed))
+            .expect("sign");
+    }
+    assert_eq!(
+        store.signature_history_for_subject(act.id).unwrap().len(),
+        2
+    );
+
+    store
+        .reset(
+            &mut ledger,
+            dir.path(),
+            ResetScope::BackendDomain,
+            true,
+            &[],
+            "amelia.marques",
+            at(),
+        )
+        .expect("domain wipe");
+
+    // The tables survive the wipe and still accept writes.
+    let after = sample_signed_document(act.id, "doc-2", b"%PDF-1.7 signed after the wipe");
+    store
+        .persist(|tx| tx.upsert_signed_document(&after))
+        .expect("the schema is intact, so a new signature still records");
+
+    let history = store
+        .signature_history_for_subject(act.id)
+        .expect("history");
+    assert_eq!(history.len(), 1, "no wiped signature came back");
+    assert_eq!(
+        history[0].seq, 1,
+        "the chain restarts at 1 — nothing claims a predecessor that was destroyed"
+    );
+    assert_eq!(history[0].document, after);
+}
+
 /// A factory reset is strictly more destructive than a domain wipe, so it must not leave behind what
 /// the domain wipe now removes.
 #[test]

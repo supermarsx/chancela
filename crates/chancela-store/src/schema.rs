@@ -965,6 +965,26 @@ pub const LOGICAL_BACKUP_TABLES: &[&str] = &[
     "group_template_library_revisions",
 ];
 
+/// The table names the DDL declares, parsed out of `CREATE TABLE IF NOT EXISTS <name>`. Index
+/// statements are not tables and are skipped.
+///
+/// Test-only, and `pub(crate)` because the wipe-list guard in [`crate::recovery`] needs the same
+/// parse: the wipe list, the backup list and the DDL are three hand-maintained enumerations of one
+/// thing, and each pairwise guard has to derive "what tables exist" identically or the guards
+/// disagree with each other rather than with the schema.
+#[cfg(test)]
+pub(crate) fn schema_table_names() -> Vec<&'static str> {
+    const PREFIX: &str = "CREATE TABLE IF NOT EXISTS ";
+    ALL.iter()
+        .filter_map(|ddl| ddl.strip_prefix(PREFIX))
+        .map(|rest| {
+            rest.split(|c: char| c.is_whitespace() || c == '(')
+                .next()
+                .expect("a CREATE TABLE statement names its table")
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -976,20 +996,6 @@ mod tests {
     /// [`LOGICAL_BACKUP_TABLES`] is exactly how that enumeration drifted twice. Adding an entry here
     /// is the only sanctioned way to exclude a table, and it forces the reason to be written down.
     const INTENTIONALLY_NOT_BACKED_UP: &[(&str, &str)] = &[];
-
-    /// The table names the DDL declares, parsed out of `CREATE TABLE IF NOT EXISTS <name>`. Index
-    /// statements are not tables and are skipped.
-    fn schema_table_names() -> Vec<&'static str> {
-        const PREFIX: &str = "CREATE TABLE IF NOT EXISTS ";
-        ALL.iter()
-            .filter_map(|ddl| ddl.strip_prefix(PREFIX))
-            .map(|rest| {
-                rest.split(|c: char| c.is_whitespace() || c == '(')
-                    .next()
-                    .expect("a CREATE TABLE statement names its table")
-            })
-            .collect()
-    }
 
     /// The guard for [`LOGICAL_BACKUP_TABLES`]: the hand-maintained enumeration must cover the schema
     /// exactly. A table in [`ALL`] and not there is exported by no Postgres backup and restored by no

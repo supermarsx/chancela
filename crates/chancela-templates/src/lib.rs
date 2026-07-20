@@ -2255,11 +2255,8 @@ mod tests {
         let reg = load_registry().expect("the full catalog loads");
 
         // Silent by default: the overwhelmingly common convened ata gains no new prose.
-        let doc = render(
-            reg.get("csc-ata-ag/v1").expect("csc ata"),
-            &coverage_ctx(),
-        )
-        .expect("renders");
+        let doc =
+            render(reg.get("csc-ata-ag/v1").expect("csc ata"), &coverage_ctx()).expect("renders");
         assert!(
             !doc_text(&doc).contains("sem convocatória prévia"),
             "a convened ata must not recite a waiver: {}",

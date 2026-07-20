@@ -1095,6 +1095,105 @@ mod tests {
         );
     }
 
+    /// The ceiling must be checked at **every** position inside the função, not at a convenient one.
+    /// `permission_set` is a `BTreeSet`, so its iteration order is the declaration order of
+    /// [`Permission`] — which makes the position of the offending verb something a test can pin
+    /// rather than hope for. Both ends are covered: an implementation that inspected only the first
+    /// element, and one that inspected only the last, each fail exactly one half of this.
+    #[test]
+    fn the_funcao_ceiling_refuses_wherever_the_offending_verb_sits_in_the_role() {
+        let cat = RoleCatalog::seeded_defaults();
+        let gestor = effective_permissions(
+            uid(1),
+            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            &cat,
+            &[],
+            epoch(),
+        );
+        let cat_and = |extra: Role| {
+            let mut c = RoleCatalog::seeded_defaults();
+            c.insert(extra);
+            c
+        };
+
+        // --- offender LAST -------------------------------------------------------------------
+        // entity.read is declared before data.wipe, so the Gestor-held verb really is first.
+        let trailing = funcao(
+            1,
+            "Auxiliar de Arquivo",
+            &[
+                Permission::EntityRead,
+                Permission::ActRead,
+                Permission::DataWipe,
+            ],
+        );
+        assert_eq!(
+            trailing.permission_set.iter().next(),
+            Some(&Permission::EntityRead),
+            "precondition: the function's FIRST permission is within the ceiling"
+        );
+        assert_eq!(
+            trailing.permission_set.iter().next_back(),
+            Some(&Permission::DataWipe),
+            "precondition: the function's LAST permission is above the ceiling"
+        );
+        assert!(has_permission(
+            &gestor,
+            Permission::EntityRead,
+            Scope::Global,
+            &books()
+        ));
+        let cat1 = cat_and(trailing.clone());
+        assert_eq!(
+            can_delegate_roles(&gestor, [trailing.id], &cat1, Scope::Global, &books()),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::DataWipe)),
+            "a check that stopped at the first permission would have let this through"
+        );
+
+        // --- offender FIRST ------------------------------------------------------------------
+        // tenant.admin is declared before act.read, so the verb the Gestor lacks leads the set.
+        let leading = funcao(
+            2,
+            "Auxiliar de Direção",
+            &[Permission::TenantAdmin, Permission::ActRead],
+        );
+        assert_eq!(
+            leading.permission_set.iter().next(),
+            Some(&Permission::TenantAdmin),
+            "precondition: the function's FIRST permission is above the ceiling"
+        );
+        assert_eq!(
+            leading.permission_set.iter().next_back(),
+            Some(&Permission::ActRead),
+            "precondition: the function's LAST permission is within the ceiling"
+        );
+        let cat2 = cat_and(leading.clone());
+        assert_eq!(
+            can_delegate_roles(&gestor, [leading.id], &cat2, Scope::Global, &books()),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::TenantAdmin)),
+            "a check that only inspected the last permission would have let this through"
+        );
+
+        // --- the same, for the meta rule -----------------------------------------------------
+        // role.manage is declared after every operational verb, so a meta verb can hide at the end.
+        let meta_last = funcao(
+            3,
+            "Auxiliar de Acessos",
+            &[Permission::EntityRead, Permission::RoleManage],
+        );
+        assert_eq!(
+            meta_last.permission_set.iter().next_back(),
+            Some(&Permission::RoleManage),
+            "precondition: the meta verb is the LAST permission"
+        );
+        let cat3 = cat_and(meta_last.clone());
+        assert_eq!(
+            can_delegate_roles(&owner_eff(), [meta_last.id], &cat3, Scope::Global, &books()),
+            Err(DelegationRefusal::Meta(Permission::RoleManage)),
+            "a meta verb at the end of a função is still refused, and by name"
+        );
+    }
+
     #[test]
     fn the_funcao_ceiling_is_scope_aware_and_ignores_received_authority() {
         let cat_of = |r: Role| {

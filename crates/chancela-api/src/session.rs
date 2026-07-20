@@ -713,7 +713,7 @@ pub async fn create_session(
             .password_hash
             .clone()
             .unwrap_or_else(|| dummy_verifier().to_owned()),
-        (None, _) => dummy_verifier().to_owned(),
+        (None, _) => return Err(ApiError::Unauthorized("credenciais inválidas".to_owned())),
     };
     // wp16 P3a — GLOBAL sign-in throttle (cluster-wide when Redis is configured; a no-op single-node,
     // so the per-user backoff below stays the sole authority and behaviour is byte-identical). This

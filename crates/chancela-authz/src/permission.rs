@@ -407,6 +407,35 @@ mod tests {
         }
     }
 
+    /// **Closes the hole in the guard above.** That test proves every variant it *lists* is in
+    /// `ALL`, and its exhaustive `match` forces an author who adds a variant to touch this file —
+    /// but adding one arm to the or-pattern is enough to make it compile and pass again. `ALL` is a
+    /// hand-written `[Permission; N]`, so the new verb can still be missing from it, and the Owner
+    /// — the first user of a fresh instance — silently stops being maximal.
+    ///
+    /// Counting the declarations in the source closes that: every variant carries exactly one
+    /// `#[serde(rename = "…")]`, so declaring a verb without adding it to `ALL` fails here. Same
+    /// technique the route-map annotation test uses (`chancela-api/src/authz.rs`).
+    #[test]
+    fn all_holds_every_declared_variant_not_just_the_listed_ones() {
+        let src = include_str!("permission.rs");
+        // Only the catalog itself is above `#[cfg(test)]`; the tests below must not be counted.
+        let declarations = src
+            .split("#[cfg(test)]")
+            .next()
+            .expect("source has a pre-test section")
+            .matches("#[serde(rename = \"")
+            .count();
+        assert_eq!(
+            declarations,
+            Permission::ALL.len(),
+            "{declarations} permission variants are declared but Permission::ALL holds {}: a verb \
+             was added to the enum without being added to ALL, so the Owner role — and therefore \
+             the first user of a fresh instance — no longer holds every permission",
+            Permission::ALL.len()
+        );
+    }
+
     #[test]
     fn meta_flag_matches_meta_array() {
         for p in Permission::ALL {

@@ -456,6 +456,91 @@ mod tests {
         );
     }
 
+    /// The migration promise, checked at the byte level rather than by naming absent keys: adding
+    /// `roles` and `suspended` must have changed **nothing** on the wire for an unsuspended record.
+    /// The reference shape is a struct carrying exactly the pre-t44 fields, so this compares two
+    /// serialisations rather than a hand-copied literal (which would drift with the timestamp format).
+    #[test]
+    fn an_unsuspended_record_serialises_byte_identically_to_the_pre_t44_shape() {
+        /// The `Delegation` wire shape as it stood before t44 — field order, names and attributes.
+        #[derive(Serialize)]
+        struct PreT44 {
+            from: UserId,
+            to: UserId,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            permission: Option<Permission>,
+            #[serde(default, skip_serializing_if = "Vec::is_empty")]
+            extra_permissions: Vec<Permission>,
+            scope: Scope,
+            starts_at: OffsetDateTime,
+            #[serde(default)]
+            expires_at: Option<OffsetDateTime>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            legal_basis: Option<String>,
+            #[serde(default)]
+            revoked: bool,
+        }
+
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let current = Delegation::with_permissions(
+            uid(1),
+            uid(2),
+            [Permission::ActRead, Permission::ActAdvance],
+            Scope::Global,
+        )
+        .unwrap()
+        .starting_at(now)
+        .expiring_at(now + Duration::hours(1))
+        .with_legal_basis(Some("acta n.º 12".to_owned()));
+        let reference = PreT44 {
+            from: current.from,
+            to: current.to,
+            permission: current.permission,
+            extra_permissions: current.extra_permissions.clone(),
+            scope: current.scope,
+            starts_at: current.starts_at,
+            expires_at: current.expires_at,
+            legal_basis: current.legal_basis.clone(),
+            revoked: current.revoked,
+        };
+
+        assert_eq!(
+            serde_json::to_string(&current).unwrap(),
+            serde_json::to_string(&reference).unwrap(),
+            "an unsuspended, role-less delegation must serialise exactly as it did before t44"
+        );
+
+        // …and the two new fields do appear the moment they carry something, so the byte-identity
+        // above is the `skip_serializing_if` working, not the fields having been dropped.
+        let suspended = Delegation {
+            suspended: true,
+            ..current
+        };
+        assert_ne!(
+            serde_json::to_string(&suspended).unwrap(),
+            serde_json::to_string(&reference).unwrap()
+        );
+    }
+
+    #[test]
+    fn one_deleted_funcao_does_not_take_the_surviving_ones_with_it() {
+        let kept = Role {
+            id: rid(1),
+            name: "Secretário".to_owned(),
+            permission_set: [Permission::ActRead].into_iter().collect(),
+            protected: false,
+        };
+        let mut catalog = RoleCatalog::new();
+        catalog.insert(kept);
+        // The delegation names two funções; only the first is still in the catalog.
+        let d = Delegation::with_roles(uid(1), uid(2), [rid(1), rid(2)], Scope::Global).unwrap();
+
+        // Fail-closed is per função, not per delegation: the missing one contributes nothing and
+        // the surviving one is unaffected. (A missing função must not silently widen or void the rest.)
+        assert_eq!(d.granted_permissions(&catalog), vec![Permission::ActRead]);
+        assert_eq!(d.roles(), [rid(1), rid(2)]);
+    }
+
     #[test]
     fn a_legacy_permission_shaped_record_still_resolves_with_no_catalog_help() {
         // Exactly the pre-t44 wire shape: no `roles` key, no `suspended` key.

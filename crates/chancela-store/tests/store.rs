@@ -3190,6 +3190,102 @@ fn a_pre_v23_signed_document_stays_readable_as_a_single_signature() {
     assert_eq!(store.signed_document_for_act(act_id).unwrap(), Some(next));
 }
 
+/// Idempotency must hold for *any* replayed signature, not only the most recent one.
+///
+/// `rewriting_the_same_signature_keeps_its_position` replays two signatures in order, which cannot
+/// distinguish "kept its position" from "appended at the end anyway". Replaying the **first**
+/// signature after later ones have landed can: if the append were keyed on anything but the
+/// signature's own digest, signer 1 would reappear at seq 4 and the chain would claim signer 1
+/// countersigned signer 3's output. In sequential PAdES that is not a cosmetic ordering error —
+/// signature n+1 signs signature n's bytes, so a chain replayed in the wrong order verifies
+/// inconsistently.
+#[test]
+fn replaying_an_earlier_signature_after_later_ones_leaves_the_chain_ordered() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let signers = ["Amélia Marques", "Rui Ferreira", "Beatriz Nunes"];
+    let signatures: Vec<_> = signers
+        .iter()
+        .enumerate()
+        .map(|(idx, signer)| sample_nth_signature(act_id, signer, u8::try_from(idx).unwrap() + 1))
+        .collect();
+    for sig in &signatures {
+        store.persist(|tx| tx.upsert_signed_document(sig)).unwrap();
+    }
+
+    // Replay out of order: the first, then the second, then the first again.
+    for replayed in [&signatures[0], &signatures[1], &signatures[0]] {
+        store
+            .persist(|tx| tx.upsert_signed_document(replayed))
+            .unwrap();
+    }
+
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(history.len(), 3, "no replay inflated the chain");
+    assert_eq!(
+        history.iter().map(|s| s.seq).collect::<Vec<_>>(),
+        vec![1, 2, 3],
+        "seq stays gapless"
+    );
+    assert_eq!(
+        history
+            .iter()
+            .map(|s| s.document.signer_cert_subject.clone().unwrap())
+            .collect::<Vec<_>>(),
+        signers
+            .iter()
+            .map(|s| format!("CN={s}"))
+            .collect::<Vec<_>>(),
+        "and each signer keeps the position they actually signed in"
+    );
+}
+
+/// Every history row carries **its own** signed bytes.
+///
+/// The alternative encoding — leaving the newest signature's bytes only in `signed_documents` and
+/// letting history rows point at it — silently re-points a superseded signature at the wrong
+/// artifact the moment the next signature lands. A superseded signature's bytes are the only
+/// evidence of what that signer actually assented to, so the duplication is deliberate and the
+/// absence of aliasing is the property under test.
+#[test]
+fn a_superseded_signature_keeps_its_own_bytes_after_a_later_one_lands() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let first = sample_nth_signature(act_id, "Amélia Marques", 1);
+    let second = sample_nth_signature(act_id, "Rui Ferreira", 2);
+    assert_ne!(
+        first.signed_pdf_bytes, second.signed_pdf_bytes,
+        "the fixture must present genuinely different artifacts"
+    );
+
+    store
+        .persist(|tx| tx.upsert_signed_document(&first))
+        .unwrap();
+    store
+        .persist(|tx| tx.upsert_signed_document(&second))
+        .unwrap();
+
+    let history = store.signature_history_for_subject(act_id).unwrap();
+    assert_eq!(
+        history[0].document.signed_pdf_bytes, first.signed_pdf_bytes,
+        "the superseded signature's bytes are still its own, not the current artifact's"
+    );
+    assert_eq!(
+        history[0].document.signed_pdf_digest, first.signed_pdf_digest,
+        "and its digest still describes those bytes"
+    );
+    assert_ne!(
+        history[0].document.signed_pdf_bytes,
+        store
+            .signed_document_for_act(act_id)
+            .unwrap()
+            .unwrap()
+            .signed_pdf_bytes,
+    );
+}
+
 /// An unsigned subject has neither a history nor a current artifact.
 #[test]
 fn signature_history_for_an_unsigned_subject_is_empty() {

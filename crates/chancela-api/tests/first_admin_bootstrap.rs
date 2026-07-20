@@ -210,6 +210,53 @@ async fn a_corrupt_user_directory_does_not_reopen_the_unauthenticated_bootstrap(
     );
 }
 
+/// The harm the guard exists to prevent is not only the escalation: a successful bootstrap would
+/// `persist_users` from the (empty) in-memory map and **overwrite** the real operator directory. So
+/// the refused attempt must leave the document on disk byte-for-byte untouched — a corrupt file is
+/// recoverable, an overwritten one is not.
+#[tokio::test]
+async fn a_refused_bootstrap_does_not_overwrite_the_user_document() {
+    let dir = TempDir::new("nooverwrite");
+    let path = dir.0.join("users.json");
+    let original = b"{ not a users document";
+    std::fs::write(&path, original).expect("write a corrupt users document");
+
+    let state = AppState::with_data_dir(&dir.0);
+    let (status, body) = send(state.clone(), create_first_user("atacante")).await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "bootstrap refused: {body}"
+    );
+
+    assert_eq!(
+        std::fs::read(&path).expect("the users document survives"),
+        original,
+        "the refused bootstrap rewrote the operator directory"
+    );
+}
+
+/// The other shape of "already initialised": a users document that parses perfectly and happens to
+/// contain zero users. It is indistinguishable from the corrupt case in memory, and it must fail
+/// closed for the same reason — an existing document means the instance was set up, and the live
+/// directory can only reach zero users through a wipe, never through ordinary deletion.
+#[tokio::test]
+async fn an_empty_but_valid_user_document_does_not_reopen_the_bootstrap() {
+    let dir = TempDir::new("emptydoc");
+    std::fs::write(dir.0.join("users.json"), b"[]").expect("write an empty users document");
+
+    let state = AppState::with_data_dir(&dir.0);
+    assert!(state.users.read().await.is_empty());
+
+    let (status, body) = send(state.clone(), create_first_user("atacante")).await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "an empty-but-present users document is still an initialised instance: {body}"
+    );
+    assert!(state.users.read().await.is_empty());
+}
+
 /// The complement of the guard: a data dir with no users document at all IS a fresh install and must
 /// still bootstrap — a factory reset removes the sidecars, so a reset instance is never bricked.
 #[tokio::test]

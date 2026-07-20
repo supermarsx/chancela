@@ -993,7 +993,494 @@ fn encode_header_word(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use tokio::net::TcpListener;
+
     use super::*;
+
+    // --- A scriptable loopback relay -----------------------------------------------------------
+    //
+    // `smtp_settings.rs` already drives the *handler* against a fixed fake relay. These tests are
+    // about the wire protocol itself, so the relay here is scriptable and — the part that carries
+    // the security assertions — **records what the client actually sent**. "The call returned an
+    // error" is a much weaker claim than "the password never reached the socket"; only a transcript
+    // can make the second one.
+
+    /// A one-connection fake relay. `reply` is called with each command line the client sends and
+    /// returns the raw bytes to write back (returning `None` closes the connection); it may hold its
+    /// own state, which is how the multi-step `AUTH LOGIN` exchange is scripted.
+    struct FakeRelay {
+        port: u16,
+        transcript: Arc<Mutex<Vec<String>>>,
+        connections: Arc<AtomicUsize>,
+    }
+
+    impl FakeRelay {
+        async fn spawn<F>(mut reply: F) -> Self
+        where
+            F: FnMut(&str) -> Option<String> + Send + 'static,
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            let port = listener.local_addr().expect("addr").port();
+            let transcript = Arc::new(Mutex::new(Vec::new()));
+            let connections = Arc::new(AtomicUsize::new(0));
+            let recorded = Arc::clone(&transcript);
+            let counted = Arc::clone(&connections);
+            tokio::spawn(async move {
+                let Ok((socket, _)) = listener.accept().await else {
+                    return;
+                };
+                counted.fetch_add(1, Ordering::SeqCst);
+                let mut stream = BufReader::new(socket);
+                if stream
+                    .get_mut()
+                    .write_all(b"220 relay.example.pt ESMTP ready\r\n")
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                // `DATA` hands the connection to the message body, which is many lines answered by a
+                // single reply. That is protocol structure rather than script, so the loop owns it —
+                // a relay that answered every body line would desynchronise the exchange.
+                let mut in_data = false;
+                loop {
+                    let mut line = String::new();
+                    match stream.read_line(&mut line).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(_) => {}
+                    }
+                    let line = line.trim_end_matches(['\r', '\n']).to_owned();
+                    recorded.lock().expect("transcript").push(line.clone());
+                    if in_data {
+                        if line != "." {
+                            continue;
+                        }
+                        in_data = false;
+                    } else if line.to_ascii_uppercase().starts_with("DATA") {
+                        in_data = true;
+                    }
+                    let Some(reply) = reply(&line) else {
+                        return;
+                    };
+                    if stream.get_mut().write_all(reply.as_bytes()).await.is_err() {
+                        return;
+                    }
+                }
+            });
+            Self {
+                port,
+                transcript,
+                connections,
+            }
+        }
+
+        fn transcript(&self) -> Vec<String> {
+            self.transcript.lock().expect("transcript").clone()
+        }
+
+        /// Every line the client sent, joined — for `contains` assertions over the whole exchange.
+        fn wire(&self) -> String {
+            self.transcript().join("\n")
+        }
+
+        fn connections(&self) -> usize {
+            self.connections.load(Ordering::SeqCst)
+        }
+    }
+
+    /// The stock EHLO answer: STARTTLS offered, `AUTH PLAIN LOGIN` offered.
+    const EHLO_FULL: &str =
+        "250-relay.example.pt\r\n250-PIPELINING\r\n250-STARTTLS\r\n250 AUTH PLAIN LOGIN\r\n";
+
+    fn client(port: u16, encryption: SmtpEncryption, credentials: bool) -> SmtpClient {
+        SmtpClient {
+            host: "127.0.0.1".to_owned(),
+            port,
+            encryption,
+            username: credentials.then(|| "sistema".to_owned()),
+            password: credentials.then(|| Zeroizing::new("Palavra-Passe-Do-Relay-9!".to_owned())),
+            helo_name: "encosto-estrategico.pt".to_owned(),
+        }
+    }
+
+    fn message() -> SmtpMessage {
+        SmtpMessage {
+            from_address: "sistema@encosto-estrategico.pt".to_owned(),
+            from_name: Some("Encosto Estratégico Lda".to_owned()),
+            to_address: "amelia.marques@encosto-estrategico.pt".to_owned(),
+            subject: "Teste de configuração".to_owned(),
+            body: "Olá — configuração validada.".to_owned(),
+            date: "Mon, 20 Jul 2026 09:00:00 +0100".to_owned(),
+            message_id: "abc@encosto-estrategico.pt".to_owned(),
+        }
+    }
+
+    /// Nothing that would let an eavesdropper impersonate the account, or learn who is being
+    /// written to, may appear on a connection that never became encrypted.
+    fn assert_nothing_sensitive_on_the_wire(relay: &FakeRelay) {
+        let wire = relay.wire().to_ascii_uppercase();
+        for forbidden in ["AUTH", "MAIL FROM", "RCPT TO", "DATA"] {
+            assert!(
+                !wire.contains(forbidden),
+                "{forbidden} was sent over an unencrypted connection: {}",
+                relay.wire()
+            );
+        }
+    }
+
+    // --- STARTTLS ------------------------------------------------------------------------------
+
+    /// The advertised upgrade is actually taken: the client sends `STARTTLS` and moves on to the
+    /// handshake. The relay speaks no TLS, so the handshake fails — and *that* is the observable
+    /// difference from the downgrade case below, which never reaches the handshake at all.
+    #[tokio::test]
+    async fn starttls_is_negotiated_before_anything_else_is_sent() {
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                EHLO_FULL.to_owned()
+            } else if upper.starts_with("STARTTLS") {
+                "220 Ready to start TLS\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+
+        let failure = client(relay.port, SmtpEncryption::StartTls, true)
+            .send(&message())
+            .await
+            .expect_err("the relay cannot complete a real handshake");
+
+        assert_eq!(
+            failure.stage,
+            SmtpStage::Tls,
+            "the client got past STARTTLS into the handshake: {failure:?}"
+        );
+        // Which handshake error surfaces depends on the host's trust store, so the assertion is on
+        // the stage — what matters is that it is not `TlsUnsupported`, the downgrade-refusal kind.
+        assert_ne!(failure.kind, SmtpFailureKind::TlsUnsupported);
+        assert!(
+            relay
+                .transcript()
+                .iter()
+                .any(|line| line.eq_ignore_ascii_case("STARTTLS")),
+            "STARTTLS was never sent: {:?}",
+            relay.transcript()
+        );
+        // Credentials and envelope come strictly after the upgrade.
+        assert_nothing_sensitive_on_the_wire(&relay);
+    }
+
+    /// A relay that does not offer STARTTLS while STARTTLS was configured is a hard failure, and —
+    /// the part that matters — the client hangs up without having sent the password or the
+    /// recipient in the clear.
+    #[tokio::test]
+    async fn a_relay_that_drops_starttls_is_refused_without_leaking_the_session() {
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                // Note: no STARTTLS. A downgrade attack looks exactly like this.
+                "250-relay.example.pt\r\n250 AUTH PLAIN LOGIN\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+
+        let failure = client(relay.port, SmtpEncryption::StartTls, true)
+            .send(&message())
+            .await
+            .expect_err("a silent downgrade must never happen");
+
+        assert_eq!(failure.stage, SmtpStage::StartTls);
+        assert_eq!(failure.kind, SmtpFailureKind::TlsUnsupported);
+        assert!(!failure.tls, "the session was never encrypted: {failure:?}");
+        assert_nothing_sensitive_on_the_wire(&relay);
+    }
+
+    /// CVE-2011-0411: a MITM pipelines plaintext behind the `220` so it lands in the client's buffer
+    /// and is later read as though it had arrived inside the encrypted session. The client must
+    /// refuse the upgrade rather than attribute those bytes to the server.
+    #[tokio::test]
+    async fn plaintext_pipelined_behind_the_starttls_reply_aborts_the_upgrade() {
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                EHLO_FULL.to_owned()
+            } else if upper.starts_with("STARTTLS") {
+                // One write, so both lines arrive in the same segment and the second is buffered.
+                "220 Ready to start TLS\r\n250 Injected-by-a-mitm\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+
+        let failure = client(relay.port, SmtpEncryption::StartTls, true)
+            .send(&message())
+            .await
+            .expect_err("injected plaintext must abort the upgrade");
+
+        assert_eq!(failure.stage, SmtpStage::StartTls);
+        assert_eq!(failure.kind, SmtpFailureKind::Protocol);
+        assert!(
+            failure.detail.contains("pipelined"),
+            "the refusal must say what it saw: {}",
+            failure.detail
+        );
+        assert_nothing_sensitive_on_the_wire(&relay);
+    }
+
+    // --- AUTH ----------------------------------------------------------------------------------
+
+    /// `AUTH PLAIN` carries the RFC 4616 `authzid NUL authcid NUL passwd` triple, base64-encoded —
+    /// asserted by decoding what the relay received, not by trusting that the call succeeded.
+    #[tokio::test]
+    async fn auth_plain_sends_the_rfc4616_triple() {
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                "250-relay.example.pt\r\n250 AUTH PLAIN\r\n".to_owned()
+            } else if upper.starts_with("AUTH") {
+                "235 2.7.0 Authentication successful\r\n".to_owned()
+            } else if upper.starts_with("DATA") {
+                "354 End data with <CR><LF>.<CR><LF>\r\n".to_owned()
+            } else if upper.starts_with("QUIT") {
+                "221 Bye\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+
+        let delivery = client(relay.port, SmtpEncryption::None, true)
+            .send(&message())
+            .await
+            .expect("the relay accepts the message");
+        assert!(delivery.authenticated);
+
+        let auth = relay
+            .transcript()
+            .into_iter()
+            .find(|line| line.to_ascii_uppercase().starts_with("AUTH "))
+            .expect("an AUTH command was sent");
+        let encoded = auth.split_whitespace().nth(2).expect("the base64 argument");
+        let decoded = BASE64.decode(encoded).expect("base64");
+        assert_eq!(
+            decoded, b"\0sistema\0Palavra-Passe-Do-Relay-9!",
+            "AUTH PLAIN must carry authzid NUL authcid NUL passwd"
+        );
+    }
+
+    /// A relay offering only `LOGIN` gets the challenge/response exchange, each step base64 and in
+    /// order — username first, then password, neither ever in the clear as text.
+    #[tokio::test]
+    async fn auth_login_answers_each_challenge_in_order() {
+        let mut step = 0u8;
+        let relay = FakeRelay::spawn(move |line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                // LOGIN only, so the PLAIN branch cannot be what runs.
+                "250-relay.example.pt\r\n250 AUTH LOGIN\r\n".to_owned()
+            } else if upper.starts_with("AUTH LOGIN") {
+                step = 1;
+                format!("334 {}\r\n", BASE64.encode("Username:"))
+            } else if step == 1 {
+                step = 2;
+                format!("334 {}\r\n", BASE64.encode("Password:"))
+            } else if step == 2 {
+                step = 3;
+                "235 2.7.0 Authentication successful\r\n".to_owned()
+            } else if upper.starts_with("DATA") {
+                "354 End data\r\n".to_owned()
+            } else if upper.starts_with("QUIT") {
+                "221 Bye\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+
+        let delivery = client(relay.port, SmtpEncryption::None, true)
+            .send(&message())
+            .await
+            .expect("the relay accepts the message");
+        assert!(delivery.authenticated);
+
+        let transcript = relay.transcript();
+        let start = transcript
+            .iter()
+            .position(|line| line.eq_ignore_ascii_case("AUTH LOGIN"))
+            .expect("AUTH LOGIN was sent");
+        let decode = |line: &String| {
+            String::from_utf8(BASE64.decode(line.as_bytes()).expect("base64")).expect("utf-8")
+        };
+        assert_eq!(decode(&transcript[start + 1]), "sistema");
+        assert_eq!(decode(&transcript[start + 2]), "Palavra-Passe-Do-Relay-9!");
+        assert!(
+            !relay.wire().contains("AUTH PLAIN"),
+            "a LOGIN-only relay must not be offered PLAIN: {}",
+            relay.wire()
+        );
+    }
+
+    /// The interop rule: never negotiate a mechanism this client did not implement. A relay offering
+    /// only XOAUTH2 and CRAM-MD5 gets a named refusal, and no credential material is put on the wire
+    /// in a shape the client is guessing at.
+    #[tokio::test]
+    async fn an_unsupported_auth_mechanism_is_refused_by_name_rather_than_attempted() {
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                "250-relay.example.pt\r\n250 AUTH XOAUTH2 CRAM-MD5 NTLM\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+
+        let failure = client(relay.port, SmtpEncryption::None, true)
+            .send(&message())
+            .await
+            .expect_err("an unimplemented mechanism must not be guessed at");
+
+        assert_eq!(failure.stage, SmtpStage::Auth);
+        assert_eq!(failure.kind, SmtpFailureKind::Configuration);
+        // The operator has to be told which mechanisms this client can actually speak, or the
+        // message is just "it did not work".
+        assert!(
+            failure.detail.contains("PLAIN") && failure.detail.contains("LOGIN"),
+            "the refusal must name the supported mechanisms: {}",
+            failure.detail
+        );
+        assert!(
+            !relay.wire().to_ascii_uppercase().contains("AUTH"),
+            "no AUTH command may be sent at all: {}",
+            relay.wire()
+        );
+    }
+
+    // --- Envelope and headers ------------------------------------------------------------------
+
+    /// SMTPUTF8 is not implemented, so an internationalized envelope address is refused **before a
+    /// socket is opened** — asserted against a live listener that records connections, so this is
+    /// "nothing was attempted", not merely "an error came back".
+    #[tokio::test]
+    async fn a_non_ascii_envelope_address_is_refused_without_opening_a_connection() {
+        let relay = FakeRelay::spawn(|_| Some("250 Ok\r\n".to_owned())).await;
+
+        let failure = client(relay.port, SmtpEncryption::None, true)
+            .send(&SmtpMessage {
+                to_address: "amélia@encosto-estrategico.pt".to_owned(),
+                ..message()
+            })
+            .await
+            .expect_err("an EAI envelope address must be refused");
+
+        assert_eq!(failure.stage, SmtpStage::Connect);
+        assert_eq!(failure.kind, SmtpFailureKind::Configuration);
+        assert!(failure.detail.contains("SMTPUTF8"), "{}", failure.detail);
+        assert_eq!(
+            relay.connections(),
+            0,
+            "the refusal must come before any socket is opened"
+        );
+        assert!(relay.transcript().is_empty());
+    }
+
+    /// The other half of the SMTPUTF8 rule: accented **display names and subjects** are header
+    /// content, not envelope addresses, and must still be delivered — RFC 2047 encoded, with the
+    /// ASCII envelope untouched.
+    #[tokio::test]
+    async fn accented_display_names_and_subjects_are_delivered_rfc2047_encoded() {
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                "250-relay.example.pt\r\n250 AUTH PLAIN\r\n".to_owned()
+            } else if upper.starts_with("AUTH") {
+                "235 2.7.0 Ok\r\n".to_owned()
+            } else if upper.starts_with("DATA") {
+                "354 End data\r\n".to_owned()
+            } else if upper == "." {
+                "250 2.0.0 Ok: queued as 8F2A1\r\n".to_owned()
+            } else if upper.starts_with("QUIT") {
+                "221 Bye\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+
+        let delivery = client(relay.port, SmtpEncryption::None, true)
+            .send(&message())
+            .await
+            .expect("an accented display name is not an EAI address");
+        assert_eq!(delivery.accepted_detail, "Ok: queued as 8F2A1");
+
+        let wire = relay.wire();
+        // The envelope stayed pure ASCII …
+        assert!(
+            wire.contains("MAIL FROM:<sistema@encosto-estrategico.pt>"),
+            "{wire}"
+        );
+        assert!(
+            wire.contains("RCPT TO:<amelia.marques@encosto-estrategico.pt>"),
+            "{wire}"
+        );
+        // … and the accented header content travelled encoded, never as raw UTF-8 bytes.
+        assert!(
+            wire.contains("Subject: =?UTF-8?B?") && wire.contains("From: =?UTF-8?B?"),
+            "accented headers must be RFC 2047 encoded on the wire: {wire}"
+        );
+        assert!(
+            !wire.contains("Estratégico") && !wire.contains("configuração"),
+            "no raw non-ASCII may reach the wire: {wire}"
+        );
+    }
+
+    /// The whole reason this client is hand-rolled: the operator gets the relay's own answer. A
+    /// generic "sending failed" would hide which of a dozen relay policies refused them.
+    #[tokio::test]
+    async fn a_rejection_surfaces_the_relays_own_code_and_text() {
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                "250-relay.example.pt\r\n250 AUTH PLAIN\r\n".to_owned()
+            } else if upper.starts_with("AUTH") {
+                "235 2.7.0 Ok\r\n".to_owned()
+            } else if upper.starts_with("RCPT TO") {
+                "550 5.7.1 Relay access denied for this recipient\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+
+        let failure = client(relay.port, SmtpEncryption::None, true)
+            .send(&message())
+            .await
+            .expect_err("the relay refused the recipient");
+
+        // The stage is the fix: RCPT TO means relay policy, not a bad password.
+        assert_eq!(failure.stage, SmtpStage::RcptTo);
+        assert_eq!(failure.kind, SmtpFailureKind::Rejected);
+        assert_eq!(failure.code, Some(550));
+        assert_eq!(failure.enhanced_code.as_deref(), Some("5.7.1"));
+        // The enhanced code is lifted into its own field rather than duplicated into the text, but
+        // the operator-facing words are the relay's own, not a paraphrase.
+        assert_eq!(
+            failure.detail, "Relay access denied for this recipient",
+            "the server's text is reported verbatim, not paraphrased"
+        );
+        assert_eq!(
+            failure.summary(),
+            "550 5.7.1: Relay access denied for this recipient"
+        );
+    }
 
     #[test]
     fn enhanced_code_is_recognised_only_in_its_real_shape() {

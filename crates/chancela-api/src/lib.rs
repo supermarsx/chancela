@@ -17125,6 +17125,126 @@ mod tests {
         );
     }
 
+    /// The four ways sign-in can fail without a valid credential must be one indistinguishable
+    /// failure, compared as whole bodies rather than "they all 401". An **inactive** account is the
+    /// case most easily overlooked: it is a real, resolvable user, so an implementation that refuses
+    /// it on its own terms hands back a "this username exists" bit for free.
+    #[tokio::test]
+    async fn create_session_refuses_unknown_inactive_wrong_password_and_empty_identically() {
+        let (state, amelia_id) = state_with_amelia().await;
+        let token = open_session(&state, &amelia_id).await;
+        let (status, bruno) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/users",
+                    json!({ "username": "bruno", "password": DEFAULT_TEST_PASSWORD }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let bruno_id = bruno["id"].as_str().expect("id").to_owned();
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                patch_json(&format!("/v1/users/{bruno_id}"), json!({ "active": false })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Each attempt uses a *different* identifier, so no two share a backoff bucket and a 429
+        // cannot masquerade as agreement.
+        let attempts = [
+            (
+                "unknown username",
+                json!({ "username": "nao.existe", "password": DEFAULT_TEST_PASSWORD }),
+            ),
+            (
+                // Bruno exists and the password is his own; only `active: false` refuses it.
+                "inactive user with the right password",
+                json!({ "username": "bruno", "password": DEFAULT_TEST_PASSWORD }),
+            ),
+            (
+                "wrong password against a real active account",
+                json!({ "username": "amelia.marques", "password": "Palavra-Passe-Errada-9!" }),
+            ),
+            (
+                "no identifier at all",
+                json!({ "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        ];
+
+        let mut observed = Vec::new();
+        for (label, body) in attempts {
+            let (status, body) = send_raw(state.clone(), post_json("/v1/session", body)).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{label}: {body}");
+            observed.push((label, status, body));
+        }
+
+        let (_, reference_status, reference_body) = observed[0].clone();
+        assert_eq!(reference_body, json!({ "error": "credenciais inválidas" }));
+        for (label, status, body) in &observed[1..] {
+            assert_eq!(*status, reference_status, "{label} differs in status");
+            assert_eq!(
+                *body, reference_body,
+                "{label} is distinguishable from an unknown username: {body}"
+            );
+        }
+    }
+
+    /// The response body no longer distinguishes the four failures, but an unknown identifier that
+    /// **returned early** would distinguish them by the clock: a wrong password costs a full argon2
+    /// verification, so a microsecond refusal is a "no such user" oracle an attacker reads with a
+    /// stopwatch instead of with their eyes.
+    ///
+    /// The assertion is a ratio against a real verification measured in the same process, with a
+    /// deliberately loose floor: an early return is four or five orders of magnitude faster, so
+    /// anything above a small fraction of the real cost can only mean the argon2 work actually ran.
+    #[tokio::test]
+    async fn create_session_spends_real_argon2_work_on_an_unknown_identifier() {
+        let (state, _) = state_with_amelia().await;
+
+        let attempt = |state: AppState, body: Value| async move {
+            let started = std::time::Instant::now();
+            let (status, _) = send_raw(state, post_json("/v1/session", body)).await;
+            (status, started.elapsed())
+        };
+
+        // Warm the process: the dummy verifier is built once in a `OnceLock`, and the first argon2
+        // call also pays any lazy allocation, so neither measurement below may be the first.
+        let (status, _) = attempt(
+            state.clone(),
+            json!({ "username": "aquecimento.zzz", "password": "Palavra-Passe-Errada-9!" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        let (status, real) = attempt(
+            state.clone(),
+            json!({ "username": "amelia.marques", "password": "Palavra-Passe-Errada-9!" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        let (status, unknown) = attempt(
+            state.clone(),
+            json!({ "username": "tambem.nao.existe", "password": "Palavra-Passe-Errada-9!" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        assert!(
+            unknown * 4 >= real,
+            "an unknown identifier returned in {unknown:?} against {real:?} for a real \
+             verification — the unknown path is skipping the argon2 work and timing it recovers \
+             the enumeration oracle the uniform body removes"
+        );
+    }
+
     /// A legacy account with no verifier is the one place a state-specific refusal survives, and
     /// only when the caller addressed it by **id** (unguessable, so it confirms nothing they did not
     /// already know). By `username` it must fall back to the uniform 401 — otherwise the 409 would
@@ -17534,6 +17654,182 @@ mod tests {
         )
         .await;
         assert_eq!(view["legal_hold"], true, "refused release changed nothing");
+    }
+
+    /// t22-A, over the whole affected **population** rather than one sampled role. Before the split
+    /// every `book.export` holder could set and release a legal hold; the seeded catalog has eight
+    /// such non-Owner roles. Each is exercised against the real route, so a route-side regression is
+    /// caught here even if the seed sets stay correct.
+    #[tokio::test]
+    async fn no_seeded_book_export_role_can_still_set_or_release_a_legal_hold() {
+        use chancela_authz::{Permission, RoleAssignment, Scope, default_roles};
+        let state = persistent_state();
+        let owner_token = seed_session(&state, &make_user(&state, "owner.operator").await).await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &owner_token).await;
+
+        let export_holders: Vec<_> = default_roles()
+            .into_iter()
+            .filter(|r| {
+                r.id != chancela_authz::OWNER_ROLE_ID
+                    && r.permission_set.contains(&Permission::BookExport)
+            })
+            .collect();
+        assert_eq!(
+            export_holders.len(),
+            8,
+            "the population this split narrowed changed size"
+        );
+
+        let mut refused = 0;
+        for role in &export_holders {
+            let holds_verb = role.permission_set.contains(&Permission::LegalHoldManage);
+            let user = seed_user(
+                &state,
+                &format!("op.{}", role.id.0.simple()),
+                vec![RoleAssignment::new(role.id, Scope::Global)],
+            )
+            .await;
+            let token = seed_session(&state, &user.0.to_string()).await;
+
+            let (set_status, body) = send(
+                state.clone(),
+                with_session(
+                    put_json(
+                        &format!("/v1/books/{book_id}/legal-hold"),
+                        json!({ "reason": "litígio pendente" }),
+                    ),
+                    &token,
+                ),
+            )
+            .await;
+            let (release_status, _) = send(
+                state.clone(),
+                with_session(delete(&format!("/v1/books/{book_id}/legal-hold")), &token),
+            )
+            .await;
+
+            if holds_verb {
+                // Platform Administrator is a seeded holder of the new verb — it must NOT be caught
+                // by the narrowing, or the split would have taken authority from its intended owner.
+                assert_eq!(
+                    set_status,
+                    StatusCode::OK,
+                    "{} is a seeded legal_hold.manage holder and must still set a hold: {body}",
+                    role.name
+                );
+                assert_eq!(release_status, StatusCode::OK, "{} releases", role.name);
+            } else {
+                assert_eq!(
+                    set_status,
+                    StatusCode::FORBIDDEN,
+                    "{} still SETS a legal hold on book.export alone",
+                    role.name
+                );
+                assert_eq!(
+                    release_status,
+                    StatusCode::FORBIDDEN,
+                    "{} still RELEASES a legal hold on book.export alone",
+                    role.name
+                );
+                refused += 1;
+            }
+        }
+        assert_eq!(
+            refused, 7,
+            "seven of the eight lost the authority; one is a seeded holder"
+        );
+    }
+
+    /// t22-3, the two step-up sites the restore/start-over test does not reach. Both run
+    /// `require_permission` *before* `require_step_up`, so an authorized operator with no `reauth`
+    /// proves the gate is the step-up and not the permission: the same request with the correct
+    /// password gets a different (later) answer.
+    #[tokio::test]
+    async fn key_rotation_and_privacy_erasure_refuse_a_request_without_reauth() {
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "Passo-Acima4!").await;
+
+        // --- key rotation --------------------------------------------------------------------
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json("/v1/data/key-rotation", json!({ "new_key": "chave-nova" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "key rotation on the session token alone"
+        );
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/key-rotation",
+                    json!({ "new_key": "chave-nova", "reauth": { "password": "Passo-Acima4!" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_ne!(
+            status,
+            StatusCode::FORBIDDEN,
+            "the correct password passes the step-up gate: {body}"
+        );
+
+        // --- privacy erasure execution ---------------------------------------------------------
+        let subject = Uuid::new_v4();
+        let request = Uuid::new_v4();
+        let path = format!("/v1/privacy/users/{subject}/dsr-requests/{request}/erasure/execute");
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(&path, json!({ "preflight_digest": "abc" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "erasure execution on the session token alone"
+        );
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &path,
+                    json!({
+                        "preflight_digest": "abc",
+                        "reauth": { "password": "Passo-Acima4!" },
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "past the step-up gate, the unknown DSR request is what refuses: {body}"
+        );
+
+        // A wrong password is refused exactly like none at all — the refusal never distinguishes.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &path,
+                    json!({ "preflight_digest": "abc", "reauth": { "password": "ERRADA" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "wrong password is refused");
     }
 
     /// t22-A, disposal half. The dry-run stays a review step on `book.export`; recording an
@@ -18660,6 +18956,164 @@ mod tests {
                 .iter()
                 .any(|p| p["permission"] == "act.advance")
         );
+    }
+
+    /// t44 — the suspend/resume/revoke lifecycle, stated as authority rather than as flags.
+    ///
+    /// Resume must restore **exactly** the prior authority (not merely "something came back"), and
+    /// revocation must be terminal: a revoked delegation can be neither suspended nor resumed, and a
+    /// refused transition must leave no trace in the ledger. Every transition that *does* happen is
+    /// ledgered, revocation included.
+    #[tokio::test]
+    async fn t44_resume_restores_exactly_the_prior_authority_and_revocation_is_terminal() {
+        use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, Scope};
+        let state = fresh_state().await;
+
+        let owner = seed_user(
+            &state,
+            "owner.a",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &owner.to_string()).await;
+        let grantee = seed_user(&state, "amelia.marques", vec![]).await;
+        let g_tok = seed_session(&state, &grantee.to_string()).await;
+
+        /// The grantee's delegated authority as a comparable set of `verb@scope` strings.
+        async fn delegated_authority(state: &AppState, token: &str) -> Vec<String> {
+            let (_, perms) = send_raw(
+                state.clone(),
+                with_session(get("/v1/session/permissions"), token),
+            )
+            .await;
+            let mut out: Vec<String> = perms["permissions"]
+                .as_array()
+                .expect("permissions")
+                .iter()
+                .filter(|p| p["source"] == "delegation")
+                .map(|p| format!("{}@{}", p["permission"], p["scope"]["kind"]))
+                .collect();
+            out.sort();
+            out
+        }
+        /// The `delegation.*` audit trail for one delegation, in append order.
+        async fn ledger_kinds(state: &AppState, scope: &str) -> Vec<String> {
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .filter(|e| e.scope == scope)
+                .map(|e| e.kind.clone())
+                .collect()
+        }
+
+        let (status, view) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({
+                        "to": grantee.to_string(),
+                        "roles": [chancela_authz::SIGNATARIO_ROLE_ID.0.to_string()],
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-70"
+                    }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{view}");
+        let del_id = view["id"].as_str().expect("id").to_owned();
+        let scope = format!("delegation:{del_id}");
+
+        let granted = delegated_authority(&state, &g_tok).await;
+        assert!(
+            !granted.is_empty(),
+            "the delegation conveys something to begin with"
+        );
+
+        // Suspend: nothing at all resolves through a delegation any more.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/delegations/{del_id}/suspend"), json!({})),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(delegated_authority(&state, &g_tok).await.is_empty());
+
+        // Resume: EXACTLY the prior set — not a subset, not a superset.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/delegations/{del_id}/resume"), json!({})),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            delegated_authority(&state, &g_tok).await,
+            granted,
+            "resume must restore the prior authority exactly"
+        );
+
+        // Revoke, then try to undo it. Revocation is terminal in both directions.
+        let (status, rv) = send_raw(
+            state.clone(),
+            with_session(delete(&format!("/v1/delegations/{del_id}")), &tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(rv["revoked"], json!(true));
+
+        let before = ledger_kinds(&state, &scope).await;
+        assert_eq!(
+            before,
+            vec![
+                "delegation.granted",
+                "delegation.suspended",
+                "delegation.resumed",
+                "delegation.revoked",
+            ],
+            "every transition that happened is ledgered, in order"
+        );
+
+        for verb in ["suspend", "resume"] {
+            let (status, body) = send_raw(
+                state.clone(),
+                with_session(
+                    post_json(&format!("/v1/delegations/{del_id}/{verb}"), json!({})),
+                    &tok,
+                ),
+            )
+            .await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "a revoked delegation cannot be {verb}d: {body}"
+            );
+        }
+        // The refusals are refusals: no state change, and nothing written to the audit trail.
+        assert_eq!(
+            ledger_kinds(&state, &scope).await,
+            before,
+            "a refused transition must not append a ledger event"
+        );
+        assert!(
+            state
+                .delegations
+                .read()
+                .await
+                .values()
+                .all(|d| d.inner.revoked && !d.inner.suspended)
+        );
+        assert!(delegated_authority(&state, &g_tok).await.is_empty());
     }
 
     /// t44 — a delegation assigns one or more **funções**, never hand-picked permissions. The

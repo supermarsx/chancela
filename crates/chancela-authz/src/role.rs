@@ -795,6 +795,62 @@ mod tests {
         }
     }
 
+    /// t22, stated as the population rather than a hand-picked sample. Before the split, *every*
+    /// `book.export` holder could set and release a legal hold. Derive that population from
+    /// `default_roles()` instead of listing it, so a role added later with `book.export` cannot
+    /// quietly re-acquire hold authority without this test naming it.
+    #[test]
+    fn every_seeded_role_that_reached_legal_hold_through_book_export_lost_it() {
+        let by_export: Vec<Role> = default_roles()
+            .into_iter()
+            .filter(|r| r.id != OWNER_ROLE_ID && r.permission_set.contains(&Permission::BookExport))
+            .collect();
+
+        // The population is pinned: eight non-Owner roles used to reach the hold this way.
+        assert_eq!(
+            by_export
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "Gestor",
+                "Company Owner",
+                "Corporate Secretary",
+                "Records Manager",
+                "Platform Administrator",
+                "Tenant Administrator",
+                "Auditor",
+                "API Client",
+            ]
+        );
+
+        // Exactly one of them is a deliberate seeded holder of the new verb; the other seven lost
+        // the authority entirely. `book.export` is never what carries it.
+        let still_holding: Vec<&str> = by_export
+            .iter()
+            .filter(|r| r.permission_set.contains(&Permission::LegalHoldManage))
+            .map(|r| r.name.as_str())
+            .collect();
+        assert_eq!(
+            still_holding,
+            vec!["Platform Administrator"],
+            "a book.export holder regained legal_hold.manage"
+        );
+
+        // And the verb is not reachable from any other broadly-held operational verb either: no
+        // role holds legal_hold.manage without being one of the three intended holders.
+        let all = default_roles();
+        let holders: Vec<&str> = all
+            .iter()
+            .filter(|r| r.permission_set.contains(&Permission::LegalHoldManage))
+            .map(|r| r.name.as_str())
+            .collect();
+        assert_eq!(
+            holders,
+            vec!["Proprietário", "Legal Counsel", "Platform Administrator"]
+        );
+    }
+
     #[test]
     fn api_client_role_is_api_key_compatible() {
         let role = Role::api_client();
