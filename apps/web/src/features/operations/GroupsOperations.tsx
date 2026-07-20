@@ -37,6 +37,7 @@ import {
   TextArea,
 } from '../../ui';
 import { GateButton, scopeEntity, scopeTemplateLibrary, scopeTenant } from '../session/permissions';
+import { templateName } from '../templates/templateNames';
 
 interface GroupsOperationsProps {
   tenantId: string;
@@ -45,6 +46,15 @@ interface GroupsOperationsProps {
 
 function selectedValues(element: HTMLSelectElement): string[] {
   return Array.from(element.selectedOptions, (option) => option.value);
+}
+
+/**
+ * `Ata de cessão de quotas (csc-ata-cessao-quotas/v1)` — the document type an operator picks,
+ * with the id it is actually stored under. An unnamed template shows the id alone.
+ */
+function templateOptionLabel(templateId: string): string {
+  const name = templateName(templateId);
+  return name ? `${name} (${templateId})` : templateId;
 }
 
 function TemplatePicker({
@@ -75,7 +85,8 @@ function TemplatePicker({
       >
         {templates.map((template) => (
           <option key={template.id} value={template.id}>
-            {template.id}
+            {/* Name first; the id stays so two families' identically-named documents differ. */}
+            {templateOptionLabel(template.id)}
           </option>
         ))}
       </select>
@@ -426,7 +437,7 @@ function LibraryDetail({
             {history.data.map((revision) => (
               <tr key={revision.revision}>
                 <td>{revision.revision}</td>
-                <td>{revision.template_ids.join(', ')}</td>
+                <td>{revision.template_ids.map(templateOptionLabel).join(', ')}</td>
                 <td>{revision.created_by}</td>
                 <td>{new Date(revision.created_at).toLocaleString(locale)}</td>
               </tr>

@@ -196,9 +196,19 @@
   flex-wrap: wrap;
 }
 
+.template-item__name {
+  font-size: 0.9rem;
+}
+
 .template-item__id {
   font-family: var(--font-mono);
   font-size: 0.85rem;
+}
+
+/* Demoted, not dropped: the version is what the seal freezes. */
+.template-item__name + .template-item__id {
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 
 .template-item__locale {

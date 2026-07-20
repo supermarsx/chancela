@@ -96,49 +96,55 @@ export function WindowControls() {
         </button>
       </Tooltip>
 
-      <button
-        type="button"
-        className="titlebar__btn"
-        onClick={minimize}
-        aria-label={t('window.minimize')}
-        title={t('window.minimize')}
-      >
-        <svg viewBox="0 0 12 12" aria-hidden="true">
-          <line x1="2.5" y1="6" x2="9.5" y2="6" />
-        </svg>
-      </button>
-
-      <button
-        type="button"
-        className="titlebar__btn"
-        onClick={toggleMaximize}
-        aria-label={maximized ? t('window.restore') : t('window.maximize')}
-        title={maximized ? t('window.restore') : t('window.maximize')}
-      >
-        {maximized ? (
+      <Tooltip label={t('window.minimize')} placement="bottom">
+        <button
+          type="button"
+          className="titlebar__btn"
+          onClick={minimize}
+          aria-label={t('window.minimize')}
+        >
           <svg viewBox="0 0 12 12" aria-hidden="true">
-            <rect x="2.5" y="3.5" width="6" height="6" rx="0.5" />
-            <path d="M4.5 3.5 V2.5 H9.5 V7.5 H8.5" fill="none" />
+            <line x1="2.5" y1="6" x2="9.5" y2="6" />
           </svg>
-        ) : (
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <rect x="2.5" y="2.5" width="7" height="7" rx="0.5" />
-          </svg>
-        )}
-      </button>
+        </button>
+      </Tooltip>
 
-      <button
-        type="button"
-        className="titlebar__btn titlebar__btn--close"
-        onClick={close}
-        aria-label={t('window.close')}
-        title={t('window.close')}
+      <Tooltip
+        label={maximized ? t('window.restore') : t('window.maximize')}
+        placement="bottom"
       >
-        <svg viewBox="0 0 12 12" aria-hidden="true">
-          <line x1="3" y1="3" x2="9" y2="9" />
-          <line x1="9" y1="3" x2="3" y2="9" />
-        </svg>
-      </button>
+        <button
+          type="button"
+          className="titlebar__btn"
+          onClick={toggleMaximize}
+          aria-label={maximized ? t('window.restore') : t('window.maximize')}
+        >
+          {maximized ? (
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <rect x="2.5" y="3.5" width="6" height="6" rx="0.5" />
+              <path d="M4.5 3.5 V2.5 H9.5 V7.5 H8.5" fill="none" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="7" height="7" rx="0.5" />
+            </svg>
+          )}
+        </button>
+      </Tooltip>
+
+      <Tooltip label={t('window.close')} placement="bottom">
+        <button
+          type="button"
+          className="titlebar__btn titlebar__btn--close"
+          onClick={close}
+          aria-label={t('window.close')}
+        >
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <line x1="3" y1="3" x2="9" y2="9" />
+            <line x1="9" y1="3" x2="3" y2="9" />
+          </svg>
+        </button>
+      </Tooltip>
     </div>
   );
 }

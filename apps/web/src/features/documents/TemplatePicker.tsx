@@ -12,6 +12,7 @@ import type { EntityFamily, LifecycleStage } from '../../api/types';
 import { useTemplates } from '../../api/hooks';
 import { useT } from '../../i18n';
 import { ErrorNote, Skeleton } from '../../ui';
+import { hasTemplateName, templateDisplayName } from '../templates/templateNames';
 import './documents.css';
 
 export function TemplatePicker({
@@ -40,6 +41,10 @@ export function TemplatePicker({
       <ul className="template-list">
         {list.map((tpl) => (
           <li key={tpl.id} className="template-item">
+            {/* Name first; the id keeps its `/vN`, which is the version the seal will freeze. */}
+            {hasTemplateName(tpl.id) ? (
+              <span className="template-item__name">{templateDisplayName(tpl.id)}</span>
+            ) : null}
             <code className="template-item__id">{tpl.id}</code>
             <span className="template-item__locale">
               {t('documents.template.localeLabel', { locale: tpl.locale })}

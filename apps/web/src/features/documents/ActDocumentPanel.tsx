@@ -77,6 +77,7 @@ import {
   Truncate,
   useToast,
 } from '../../ui';
+import { hasTemplateName, templateDisplayName, templateName } from '../templates/templateNames';
 import { DocumentPreview } from './DocumentPreview';
 import { TemplatePicker } from './TemplatePicker';
 import './documents.css';
@@ -969,6 +970,23 @@ function MetadataValue({ value, missing }: { value: unknown; missing: string }) 
   return <Truncate text={text} mono />;
 }
 
+/**
+ * A template reference: the document type's name on the primary line, the id (with its `/vN`)
+ * kept underneath because that version is what a sealed document pins. Falls back to today's
+ * id-only rendering for a template the catalog does not name.
+ */
+function TemplateMetadataValue({ templateId, missing }: { templateId: unknown; missing: string }) {
+  const text = documentMetadataText(templateId);
+  if (!text) return <span className="muted">{missing}</span>;
+  if (!hasTemplateName(text)) return <Truncate text={text} mono />;
+  return (
+    <span className="stack--tight">
+      <Truncate text={templateDisplayName(text)} />
+      <Truncate className="muted" text={text} mono />
+    </span>
+  );
+}
+
 function pdfAccessibilityStatusLabel(status: string | null, t: TFunction): string {
   switch (status) {
     case 'pdf_accessibility_report_attached':
@@ -1122,7 +1140,10 @@ function ActDocumentMetadata({
         <div>
           <dt>{t('documents.metadata.template')}</dt>
           <dd>
-            <MetadataValue value={document.template_id} missing={t('documents.metadata.missing')} />
+            <TemplateMetadataValue
+              templateId={document.template_id}
+              missing={t('documents.metadata.missing')}
+            />
           </dd>
         </div>
         <div>
@@ -1968,10 +1989,19 @@ export function ActDocumentPanel({
     ...(convocatoriaTemplates.data ?? []),
     ...(sealed ? [...(certidaoTemplates.data ?? []), ...(extratoTemplates.data ?? [])] : []),
   ];
-  const postActTemplateOptions = postActTemplates.map((template) => ({
-    value: template.id,
-    label: `${lifecycleStageLabel(template.stage, t)} - ${template.id}`,
-  }));
+  // Name first so the picker reads as documents rather than slugs; the id stays in the option
+  // because two families ship the same document type under different templates.
+  const postActTemplateOptions = postActTemplates.map((template) => {
+    const name = templateName(template.id);
+    return {
+      value: template.id,
+      // The name already carries the stage ("Certidão de ata", "Convocatória — …"), so repeating
+      // the stage label would only pad the option; an unnamed template still needs it.
+      label: name
+        ? `${name} · ${template.id}`
+        : `${lifecycleStageLabel(template.stage, t)} - ${template.id}`,
+    };
+  });
   const selectedGeneratedDocument =
     generatedDocumentList.find((document) => document.id === selectedGeneratedDocumentId) ?? null;
   const selectedGeneratedDocumentSupportsDispatch =
@@ -2306,7 +2336,7 @@ export function ActDocumentPanel({
     generateActDocument.mutate(selectedPostActTemplateId, {
       onSuccess: (document) => {
         setSelectedGeneratedDocumentId(document.id);
-        toast.success(`Documento gerado: ${document.template_id}`);
+        toast.success(`Documento gerado: ${templateDisplayName(document.template_id)}`);
       },
       onError: (error) => toast.error(error),
     });
@@ -2534,7 +2564,8 @@ export function ActDocumentPanel({
                             <Badge tone={generatedDispatchStatusTone(status)}>
                               {generatedDispatchStatusLabel(status, t)}
                             </Badge>
-                            <Truncate text={document.template_id} mono />
+                            {/* The raw id stays one row down in the deflist below. */}
+                            <Truncate text={templateDisplayName(document.template_id)} />
                           </p>
                           <dl className="deflist deflist--tight">
                             <div>

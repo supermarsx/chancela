@@ -148,7 +148,7 @@ function stubFetch(options: StubOptions = {}): Recorded[] {
     if (custom) return custom;
     if (call.method === 'GET') {
       if (url.endsWith('/repository-policy')) {
-        return options.tenantPolicy ?? jsonResponse(TENANT_POLICY);
+        return options.tenantPolicy ?? jsonResponse({ policy: TENANT_POLICY });
       }
       if (url.endsWith(`/tenants/${TENANT}/repositories`)) {
         return jsonResponse(options.repositories ?? []);
@@ -208,14 +208,23 @@ afterEach(() => {
 });
 
 describe('TenantPolicy', () => {
-  it('treats an absent tenant policy as a blank opt-in form, not an error', async () => {
-    stubFetch({ tenantPolicy: jsonResponse({ error: 'Sem política' }, 404) });
+  it('treats an unconfigured tenant policy as a blank opt-in form, not an error', async () => {
+    stubFetch({ tenantPolicy: jsonResponse({ policy: null }) });
     renderRepositories();
 
     expect(await tenantPolicyForm()).toBeTruthy();
-    expect(screen.queryByText('Sem política')).toBeNull();
     // With no stored policy there is nothing to remove.
     expect(screen.queryByRole('button', { name: 'Remover política própria' })).toBeNull();
+  });
+
+  it('reports a 404 — an unknown tenant, not an unconfigured one — as the failure it is', async () => {
+    stubFetch({ tenantPolicy: jsonResponse({ error: 'Organização desconhecida' }, 404) });
+    renderRepositories();
+
+    expect(await screen.findByText('Organização desconhecida')).toBeTruthy();
+    expect(
+      screen.queryByLabelText('Modo de cifragem', { selector: '#operations-tenant-policy-mode' }),
+    ).toBeNull();
   });
 
   it('reports a real policy failure and withholds the editor', async () => {

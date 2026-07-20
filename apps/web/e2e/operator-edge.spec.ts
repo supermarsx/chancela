@@ -172,11 +172,13 @@ test('dashboard entrance sorts recent activity, caps at ten, and keeps six metri
   await routeHealth(page);
   await routeDashboard(page, dashboardFixture(dashboardEdgeEvents()));
 
-  await page.goto('/');
+  // Atividades atuais is the landing panel, so the metrics and the ledger feed each need
+  // their own `?painel=` section.
+  await page.goto('/?painel=stats');
 
   await expect(page.getByRole('heading', { name: 'Vista geral' })).toBeVisible();
 
-  const metricCards = page.locator('.dashboard-metrics > .card');
+  const metricCards = page.locator('.dashboard-metrics--summary > .card');
   await expect(metricCards).toHaveCount(6);
   const boxes = await metricCards.evaluateAll((cards) =>
     cards.map((card) => {
@@ -189,6 +191,7 @@ test('dashboard entrance sorts recent activity, caps at ten, and keeps six metri
     [...boxes.map((box) => box.left)].sort((a, b) => a - b),
   );
 
+  await page.goto('/?painel=events');
   const rows = panelByTitle(page, 'Últimos eventos do registo').locator('tbody tr');
   await expect(rows).toHaveCount(10);
   const rowTexts = await rows.evaluateAll((trs) => trs.map((tr) => tr.textContent ?? ''));

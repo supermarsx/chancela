@@ -241,20 +241,22 @@ function TenantPolicyEditor({
 
 function TenantPolicy({ tenantId }: { tenantId: string }) {
   const t = useT();
-  const policy = useTenantRepositoryPolicy(tenantId);
-  const absent = policy.error instanceof ApiError && policy.error.status === 404;
+  const query = useTenantRepositoryPolicy(tenantId);
+  // A tenant that has not opted in reads as `policy: null`, not as an error, so the editor
+  // simply renders blank; anything in `error` is a genuine failure worth showing.
+  const policy = query.data?.policy ?? undefined;
   return (
     <Card title={t('operations.repositories.policy.title')}>
       <InlineWarning tone="warn" title={t('operations.repositories.policy.optIn.title')}>
         {t('operations.repositories.policy.optIn.body')}
       </InlineWarning>
-      {policy.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
-      {policy.error && !absent ? <ErrorNote error={policy.error} /> : null}
-      {!policy.isLoading && (!policy.error || absent) ? (
+      {query.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+      {query.error ? <ErrorNote error={query.error} /> : null}
+      {!query.isLoading && !query.error ? (
         <TenantPolicyEditor
-          key={`${tenantId}:${policy.data?.updated_at ?? 'new'}`}
+          key={`${tenantId}:${policy?.updated_at ?? 'new'}`}
           tenantId={tenantId}
-          policy={policy.data}
+          policy={policy}
         />
       ) : null}
     </Card>

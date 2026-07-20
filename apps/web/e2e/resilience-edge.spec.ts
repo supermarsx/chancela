@@ -262,7 +262,8 @@ test('dashboard recent feed sorts newest first and caps at ten rows', async ({ p
   await routeSettings(page);
   await routeDashboard(page, dashboardFixture(dashboardEdgeEvents()));
 
-  await page.goto('/');
+  // The ledger feed is no longer the landing panel's neighbour: address it by section.
+  await page.goto('/?painel=events');
 
   await expect(page.getByRole('heading', { name: 'Vista geral' })).toBeVisible();
   const rows = panelByTitle(page, 'Últimos eventos do registo').locator('tbody tr');

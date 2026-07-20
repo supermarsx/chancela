@@ -20,8 +20,8 @@ the canonical **`YY.N.0`** form:
 | `apps/web/package.json`, root `package.json`, `apps/desktop/package.json` (+ their `package-lock.json`) | `26.1.0` |
 | `apps/desktop/src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` | `26.1.0` |
 
-User-facing surfaces (the Settings → "Sobre" screen, crash diagnostics, any version
-label) show the shorter **`YY.N`** form — the trailing `.0` is stripped for display by
+User-facing surfaces (the shell footer, the Settings → "Sobre" screen, crash diagnostics,
+any version label) show the shorter **`YY.N`** form — the trailing `.0` is stripped for display by
 `displayVersion()` in `apps/web/src/api/versionCheck.ts`. The underlying values used for
 version-skew checks stay in the full `YY.N.0` form.
 

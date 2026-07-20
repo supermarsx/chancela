@@ -7,16 +7,9 @@ const RESET_ACTOR = 'e2e:playwright-reset';
 const SESSION_RETRY_DELAYS_MS = [0, 250, 750, 1_500, 3_000];
 const ROSTER_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000];
 
-type RosterUser = {
-  id: string;
-  username: string;
-  display_name: string;
-  has_secret: boolean;
-};
-
+/** t33-e2: one boolean. It used to also list every user — unauthenticated enumeration. */
 type SessionRoster = {
   onboarding_required: boolean;
-  users: RosterUser[];
 };
 
 type SessionResult = {
@@ -46,12 +39,11 @@ function isResetDisabled(): boolean {
 
 async function resetBackendForTest(request: APIRequestContext, testInfo: TestInfo): Promise<void> {
   const roster = await fetchRoster(request, `before ${testInfo.title}`);
-  if (roster.onboarding_required || roster.users.length === 0) {
+  if (roster.onboarding_required) {
     return;
   }
 
-  const resetUser = selectResetUser(roster);
-  const session = await createResetSession(request, resetUser, testInfo);
+  const session = await createResetSession(request, testInfo);
 
   const response = await request.post('/v1/data/reset', {
     headers: { 'X-Chancela-Session': session.token },
@@ -74,22 +66,15 @@ async function resetBackendForTest(request: APIRequestContext, testInfo: TestInf
   await waitForFreshInstall(request, testInfo);
 }
 
-function selectResetUser(roster: SessionRoster): RosterUser {
-  const operator = roster.users.find((user) => user.username === OPERATOR.username);
-  if (!operator) {
-    throw new Error(`Cannot reset E2E backend: ${OPERATOR.username} is absent from the roster.`);
-  }
-  if (!operator.has_secret) {
-    throw new Error(
-      `Cannot reset E2E backend: ${OPERATOR.username} has no configured password verifier.`,
-    );
-  }
-  return operator;
-}
-
+/**
+ * Open the reset session. t33-e2: `GET /v1/session/roster` no longer lists users (it was
+ * unauthenticated user enumeration), so there is nothing to look the operator up in — and
+ * nothing to: `POST /v1/session` resolves the username itself. A missing operator, an
+ * inactive one and a wrong password are now the same opaque 401, which the error below
+ * reports honestly rather than pretending to know which it was.
+ */
 async function createResetSession(
   request: APIRequestContext,
-  user: RosterUser,
   testInfo: TestInfo,
 ): Promise<SessionResult> {
   let lastDetails = 'session was not attempted';
@@ -101,7 +86,7 @@ async function createResetSession(
 
     const response = await request.post('/v1/session', {
       data: {
-        user_id: user.id,
+        username: OPERATOR.username,
         password: OPERATOR_PASSWORD,
       },
     });
@@ -117,7 +102,7 @@ async function createResetSession(
   }
 
   throw new Error(
-    `E2E backend reset could not create a reset session for ${user.username} before "${testInfo.title}": ${lastDetails}`,
+    `E2E backend reset could not create a reset session for ${OPERATOR.username} before "${testInfo.title}": ${lastDetails}`,
   );
 }
 
@@ -125,7 +110,7 @@ async function waitForFreshInstall(request: APIRequestContext, testInfo: TestInf
   for (const delayMs of ROSTER_RETRY_DELAYS_MS) {
     await delay(delayMs);
     const roster = await fetchRoster(request, `after reset for ${testInfo.title}`);
-    if (roster.onboarding_required && roster.users.length === 0) {
+    if (roster.onboarding_required) {
       return;
     }
   }

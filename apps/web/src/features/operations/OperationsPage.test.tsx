@@ -120,7 +120,7 @@ describe('OperationsPage', () => {
         if (url.includes('/connector-jobs')) {
           return json({ jobs: [], next_before_created_unix_millis: null });
         }
-        if (url.endsWith('/repository-policy')) return json(tenantPolicy);
+        if (url.endsWith('/repository-policy')) return json({ policy: tenantPolicy });
         if (url.endsWith('/repositories')) return json([]);
         if (url.endsWith('/groups')) return json([]);
         throw new Error(`Unexpected request: ${url}`);

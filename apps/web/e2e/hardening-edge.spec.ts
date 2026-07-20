@@ -16,7 +16,6 @@ import { routeShellPolling } from './shell-routes';
 import type {
   ApiKeyCreated,
   SessionResult,
-  SessionRoster,
   TsaCatalogView,
   TsaRecordView,
   TsaSummaryView,
@@ -165,16 +164,10 @@ async function createApiKeyWithSession(
   request: APIRequestContext,
   origin: string,
 ): Promise<ApiKeyCreated> {
-  const rosterResponse = await request.get(`${origin}/v1/session/roster`);
-  expect(rosterResponse.ok(), await rosterResponse.text()).toBeTruthy();
-  const roster = (await rosterResponse.json()) as SessionRoster;
-  const operator = roster.users.find((user) => user.username === OPERATOR.username);
-  if (!operator) {
-    throw new Error(`Operator ${OPERATOR.username} not found in session roster.`);
-  }
-
+  // t33-e2: sign in by the typed identifier. The unauthenticated roster no longer publishes
+  // the operator's id (or that they exist at all) — the server resolves the username.
   const sessionResponse = await request.post(`${origin}/v1/session`, {
-    data: { user_id: operator.id, password: OPERATOR_PASSWORD },
+    data: { username: OPERATOR.username, password: OPERATOR_PASSWORD },
   });
   expect(sessionResponse.ok(), await sessionResponse.text()).toBeTruthy();
   const session = (await sessionResponse.json()) as SessionResult;

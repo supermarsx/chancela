@@ -31,7 +31,16 @@ import { CAE_CHILD_SEARCH_LIMIT, useCae, useCaeChildren, useCaeSearch } from '..
 import { caeLevelLabels, caeRevisionLabels } from '../../api/labels';
 import { ApiError } from '../../api/client';
 import { useT } from '../../i18n';
-import { Badge, Card, EmptyState, ErrorNote, Input, Loading } from '../../ui';
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorNote,
+  Input,
+  Loading,
+  Tooltip,
+  TooltipText,
+} from '../../ui';
 import { CAE_REVISIONS, type CaeLevel, type CaeRevision } from '../../api/types';
 
 /** The level one step deeper, or `null` at the terminal (subclasse). */
@@ -96,14 +105,14 @@ function Subniveis({
       <ul className="cae-tree">
         {direct.map((n) => (
           <li key={`${n.code}-${n.revision}`}>
-            <button
-              type="button"
-              className="cae-tree__node"
-              onClick={() => onSelect(n.code)}
-              title={n.designation}
-            >
+            <button type="button" className="cae-tree__node" onClick={() => onSelect(n.code)}>
               <code className="mono cae-tree__code">{n.code}</code>
-              <span className="cae-tree__designation">{n.designation}</span>
+              {/* The reveal belongs on the designation itself, not the row: the node already
+                  displays the designation, so it is only ever de-truncating it. Tooltipping
+                  the whole button would restate visible text in the accessibility tree. */}
+              <TooltipText className="cae-tree__designation" label={n.designation}>
+                {n.designation}
+              </TooltipText>
             </button>
           </li>
         ))}
@@ -160,18 +169,20 @@ function CaeDetail({
                 </span>
               ) : null}
               {node.code === e.code ? (
-                <span className="cae-breadcrumb__current mono" title={node.designation}>
+                // The crumb shows only the code; the designation lives solely in the bubble.
+                <TooltipText className="cae-breadcrumb__current mono" label={node.designation}>
                   {node.code}
-                </span>
+                </TooltipText>
               ) : (
-                <button
-                  type="button"
-                  className="cae-breadcrumb__link mono"
-                  onClick={() => onSelect(node.code)}
-                  title={node.designation}
-                >
-                  {node.code}
-                </button>
+                <Tooltip label={node.designation}>
+                  <button
+                    type="button"
+                    className="cae-breadcrumb__link mono"
+                    onClick={() => onSelect(node.code)}
+                  >
+                    {node.code}
+                  </button>
+                </Tooltip>
               )}
             </span>
           ))}

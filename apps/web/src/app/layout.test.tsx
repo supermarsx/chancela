@@ -5,6 +5,7 @@ import { Layout } from './layout';
 import { EntitiesPage } from '../features/entities/EntitiesPage';
 import { renderWithProviders, fetchTable } from '../test/utils';
 import { DEFAULT_SETTINGS, type Dashboard } from '../api/types';
+import { UI_VERSION, displayVersion } from '../api/versionCheck';
 
 const shellDashboard: Dashboard = {
   entities: 0,
@@ -117,6 +118,29 @@ describe('Layout', () => {
     ]) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy();
     }
+  });
+
+  it('brands the footer with the product, the instrument and the real build version', async () => {
+    // The version is derived from the build global via displayVersion(), never hard-coded, so
+    // the assertion computes the expected label the same way the footer does.
+    stubSignedInShellFetch();
+    renderWithProviders(
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<div>painel</div>} />
+        </Route>
+      </Routes>,
+      ['/'],
+    );
+
+    await screen.findByText('painel');
+    const footer = screen.getByRole('contentinfo');
+
+    expect(footer.textContent).toBe(
+      `Chancela · Livro de atas digital · v${displayVersion(UI_VERSION)}`,
+    );
+    // No conformity claim: the footer describes the product, it does not assert legal outcomes.
+    expect(footer.textContent).not.toMatch(/conforme|CSC|RGPD|GDPR|eIDAS|prot[oó]tipo/i);
   });
 
   it('keeps the skip-link target mounted when routed content crashes', async () => {

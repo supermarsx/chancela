@@ -12,7 +12,6 @@ import type {
   DataStatusResponse,
   DataUsageConcern,
   SessionResult,
-  SessionRoster,
   Settings,
   UserView,
 } from '../src/api/types';
@@ -141,14 +140,13 @@ async function createSessionForUsername(
   username: string,
   password: string,
 ): Promise<SessionResult> {
-  const rosterResponse = await request.get(`${origin}/v1/session/roster`);
-  await expectOk(rosterResponse, 'session roster');
-  const roster = (await rosterResponse.json()) as SessionRoster;
-  const user = roster.users.find((item) => item.username === username);
-  if (!user) {
-    throw new Error(`User ${username} not present in session roster.`);
-  }
-  return createSessionForUserId(request, origin, user.id, password);
+  // t33-e2: no roster lookup — `POST /v1/session` resolves the username server-side, and the
+  // unauthenticated roster no longer lists users at all.
+  const response = await request.post(`${origin}/v1/session`, {
+    data: { username, password },
+  });
+  await expectOk(response, `session for user ${username}`);
+  return (await response.json()) as SessionResult;
 }
 
 async function createSessionForUserId(

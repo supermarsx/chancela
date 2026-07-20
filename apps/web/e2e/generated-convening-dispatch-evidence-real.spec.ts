@@ -17,7 +17,6 @@ import type {
   GeneratedDocumentDispatchEvidenceResponse,
   GeneratedDocumentView,
   SessionResult,
-  SessionRoster,
 } from '../src/api/types';
 
 const TEMPLATE_ID = 'csc-convocatoria-ag/v1';
@@ -184,16 +183,11 @@ async function createSessionForUsername(
   request: APIRequestContext,
   username: string,
 ): Promise<SessionResult> {
-  const roster = await apiJson<SessionRoster>(request, 'GET', '/v1/session/roster', {
-    context: 'session roster',
-  });
-  const user = roster.users.find((item) => item.username === username);
-  if (!user) {
-    throw new Error(`User ${username} not present in session roster.`);
-  }
+  // t33-e2: the username goes straight to the server, which resolves it. The unauthenticated
+  // roster no longer lists users, and nothing here needs it to.
   return apiJson<SessionResult>(request, 'POST', '/v1/session', {
     data: {
-      user_id: user.id,
+      username,
       password: OPERATOR_PASSWORD,
     },
     context: `session for ${username}`,

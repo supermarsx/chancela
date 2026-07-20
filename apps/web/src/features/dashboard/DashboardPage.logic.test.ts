@@ -10,6 +10,8 @@ import type { TFunction } from '../../i18n';
 import {
   buildDashboardWorkQueue,
   compactDashboardScope,
+  dashboardScopeLabel,
+  dashboardScopeNames,
   compareByRecency,
   compareDashboardQueueItems,
   dashboardActivityKind,
@@ -106,15 +108,11 @@ function alert(overrides: Partial<DashboardAlert> = {}): DashboardAlert {
 
 describe('Dashboard pure routing, ordering, and queue logic', () => {
   it('normalizes tabs, timestamps, ids, and scoped values defensively', () => {
-    expect(['activity', 'current', 'dates', 'queue', 'events'].map(dashboardTabFromParam)).toEqual([
-      'activity',
-      'current',
-      'dates',
-      'queue',
-      'events',
-    ]);
-    expect(dashboardTabFromParam('unknown')).toBe('stats');
-    expect(dashboardTabFromParam(null)).toBe('stats');
+    expect(
+      ['stats', 'activity', 'current', 'dates', 'queue', 'events'].map(dashboardTabFromParam),
+    ).toEqual(['stats', 'activity', 'current', 'dates', 'queue', 'events']);
+    expect(dashboardTabFromParam('unknown')).toBe('current');
+    expect(dashboardTabFromParam(null)).toBe('current');
     expect(formatDashboardDateTime('not-a-date', 'pt-PT')).toBe('not-a-date');
     expect(formatDashboardDateTime('2026-07-16T10:00:00Z', 'pt-PT')).not.toBe(
       '2026-07-16T10:00:00Z',
@@ -126,6 +124,33 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
     expect(compactDashboardScope('application')).toBe('application');
     expect(compactDashboardScope('a-very-long-unscoped-identifier')).toBe('a-very-l...');
     expect(compactDashboardScope('book:1234567890')).toBe('book:12345678');
+  });
+
+  it('names event scopes from the dashboard payload and keeps the compact id otherwise', () => {
+    const data = {
+      current_work: {
+        open_books: [
+          { book_id: 'book-1234567890', entity_name: 'Encosto Estratégico Lda' },
+          { book_id: 'book-unnamed', entity_name: '  ' },
+        ] as unknown as DashboardOpenBook[],
+        act_counts_by_state: {},
+      },
+      reminders: [reminder({ entity_id: 'entity-42', entity_name: 'Amélia Marques Unipessoal' })],
+    } as unknown as Parameters<typeof dashboardScopeNames>[0];
+
+    const names = dashboardScopeNames(data);
+    expect(names.get('book-1234567890')).toBe('Encosto Estratégico Lda');
+    expect(names.has('book-unnamed')).toBe(false);
+
+    // A named scope reads as the entity; everything else keeps the truncated identifier.
+    expect(dashboardScopeLabel('book:book-1234567890', names)).toBe('Encosto Estratégico Lda');
+    expect(dashboardScopeLabel('entity-42', names)).toBe('Amélia Marques Unipessoal');
+    expect(dashboardScopeLabel('book:book-unnamed', names)).toBe('book:book-unn');
+    expect(dashboardScopeLabel('application', names)).toBe('application');
+    // No extra request is implied: an id the payload never named still renders.
+    expect(dashboardScopeLabel('act:6c6f17eb-0000-0000-0000-000000000000', names)).toBe(
+      'act:6c6f17eb',
+    );
   });
 
   it('orders valid and invalid event timestamps and infers every activity route', () => {

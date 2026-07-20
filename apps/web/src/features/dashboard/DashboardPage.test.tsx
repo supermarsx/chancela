@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { DashboardPage } from './DashboardPage';
-import { fetchTable, renderWithProviders } from '../../test/utils';
+import { fetchTable, getByRevealedText, renderWithProviders } from '../../test/utils';
 import type {
   Dashboard,
   DashboardOpenBook,
@@ -236,21 +236,59 @@ describe('DashboardPage', () => {
     const tabs = await screen.findByRole('group', { name: 'Secções do painel' });
     const buttons = within(tabs).getAllByRole('button');
     expect(buttons.map((button) => button.textContent)).toEqual([
+      'Atividades atuais',
       'Estatísticas',
       'Atividade recente',
-      'Atividades atuais',
       'Datas',
       'Fila de trabalho',
       'Últimos eventos',
     ]);
+    // The landing panel is also the leftmost tab, and it is the one selected with no `?painel=`.
     expect(
-      within(tabs).getByRole('button', { name: 'Estatísticas' }).getAttribute('aria-pressed'),
+      within(tabs).getByRole('button', { name: 'Atividades atuais' }).getAttribute('aria-pressed'),
     ).toBe('true');
+  });
+
+  it('lands on Atividades atuais with no param and keeps every other section deep-linkable', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
+    renderDashboard();
+
+    expect(await screen.findByRole('heading', { name: 'Itens em uso' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Rascunhos e atas ativas' })).toBeTruthy();
+    expect(screen.queryByText('Entidades')).toBeNull();
+
+    // The section that used to be the default now needs its own param, and the deep links
+    // that already existed (`?painel=queue` and friends) still open what they always did.
+    cleanup();
+    renderWithProviders(<DashboardPage />, ['/?painel=stats']);
+    expect(await screen.findByText('Entidades')).toBeTruthy();
+
+    cleanup();
+    renderWithProviders(<DashboardPage />, ['/?painel=queue']);
+    expect(await screen.findByRole('heading', { name: 'Fila de trabalho' })).toBeTruthy();
+  });
+
+  it('shows the current-work skeleton shape while the landing panel loads', async () => {
+    // The first paint must reserve the two current-work cards, not the metric grid the
+    // stats tab used to claim while it was the default.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch,
+    );
+    renderDashboard();
+
+    const region = await screen.findByRole('status');
+    expect(within(region).getByRole('heading', { name: 'Itens em uso' })).toBeTruthy();
+    expect(within(region).getByRole('heading', { name: 'Rascunhos e atas ativas' })).toBeTruthy();
+    expect(region.querySelector('.dashboard-section-grid')).toBeTruthy();
+    expect(region.querySelector('.deflist')).toBeTruthy();
+    expect(region.querySelector('.cards')).toBeNull();
   });
 
   it('marks the six main stats cards as a compact desktop metrics row', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
     renderDashboard();
+    await openDashboardTab('Estatísticas');
 
     const metrics = (await screen.findByText('Entidades')).closest('ul');
     if (!metrics) throw new Error('Stats metrics list was not rendered');
@@ -281,6 +319,7 @@ describe('DashboardPage', () => {
       ]),
     );
     renderDashboard();
+    await openDashboardTab('Estatísticas');
 
     const section = (
       await screen.findByRole('heading', {
@@ -404,22 +443,27 @@ describe('DashboardPage', () => {
     });
     const items = within(activity).getAllByRole('listitem');
     expect(items).toHaveLength(10);
-    expect(items.map((item) => within(item).getByText(/^Evento /).textContent)).toEqual([
-      'Evento book.exported',
-      'Evento entity.statute_updated',
-      'Evento act.sealed',
-      'Evento book.legal_hold_set',
-      'Evento entity.registry_imported',
-      'Evento act.advanced',
-      'Evento book.closed',
-      'Evento entity.updated',
-      'Evento act.drafted',
-      'Evento book.opened',
+    // Known kinds read as copy; the fixture's invented kinds (book.exported,
+    // book.legal_hold_set, entity.registry_imported, entity.updated) stand in for a newer
+    // server and must fall back to the raw identifier rather than blanking the row.
+    expect(items.map((item) => item.querySelector('.dashboard-list__title')?.textContent)).toEqual([
+      'book.exported',
+      'Estatutos da entidade atualizados',
+      'Ata selada',
+      'book.legal_hold_set',
+      'entity.registry_imported',
+      'Ata avançada de estado',
+      'Livro encerrado',
+      'entity.updated',
+      'Ata rascunhada',
+      'Livro aberto',
     ]);
+    // The raw dotted id is revealed through the tooltip description now, not a native title.
+    expect(getByRevealedText('Evento act.sealed')).toBe(within(items[2]).getByRole('link'));
     expect(within(items[0]).getByRole('link').getAttribute('href')).toBe('/livros/book-12');
     expect(within(items[2]).getByRole('link').getAttribute('href')).toBe('/atas/act-10');
-    expect(screen.queryByText('Evento entity.created')).toBeNull();
-    expect(screen.queryByText('Evento settings.updated')).toBeNull();
+    expect(screen.queryByText('Entidade criada')).toBeNull();
+    expect(screen.queryByText('Definições atualizadas')).toBeNull();
   });
 
   it('renders open books, active act states, and dated reminders from current dashboard data', async () => {
@@ -1807,15 +1851,16 @@ describe('DashboardPage', () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: partial }]));
     renderDashboard();
 
-    // Estatísticas: the activity number cards read zero rather than throwing.
-    const activity = (await screen.findByText('Rascunhos e atas ativas')).closest('section');
-    expect(within(activity!).getAllByText('0').length).toBeGreaterThan(0);
-
-    await openDashboardTab('Atividades atuais');
+    // Atividades atuais is the landing panel, so it is the one that renders first.
     expect(
       await screen.findByText('Sem livros abertos expostos pelos dados do painel.'),
     ).toBeTruthy();
     expect(screen.getByText('Sem atas ativas expostas pelos dados do painel.')).toBeTruthy();
+
+    // Estatísticas: the activity number cards read zero rather than throwing.
+    await openDashboardTab('Estatísticas');
+    const activity = (await screen.findByText('Rascunhos e atas ativas')).closest('section');
+    expect(within(activity!).getAllByText('0').length).toBeGreaterThan(0);
 
     await openDashboardTab('Últimos eventos');
     expect(await screen.findByText('Sem eventos')).toBeTruthy();

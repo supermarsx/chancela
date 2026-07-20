@@ -6,7 +6,7 @@
  */
 import { Link, useSearchParams } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
-import { actStateLabels, bookKindLabels } from '../../api/labels';
+import { actStateLabels, bookKindLabels, ledgerEventKindLabel } from '../../api/labels';
 import type {
   Dashboard,
   DashboardAlert,
@@ -28,8 +28,12 @@ import {
   PageHeader,
   SkeletonCards,
   SkeletonTable,
+  SkeletonDeflist,
+  SkeletonList,
+  SkeletonRegion,
   SubNav,
   Tooltip,
+  TooltipText,
 } from '../../ui';
 import { LedgerTable } from '../ledger/LedgerTable';
 import { actConveningGuidanceRoute } from '../acts/anchors';
@@ -73,7 +77,7 @@ const DASHBOARD_TAB_PARAM = 'painel';
 
 type QueueTone = 'neutral' | 'accent' | 'warn' | 'error';
 type ActivityKind = 'act' | 'book' | 'entity';
-type DashboardTab = 'stats' | 'activity' | 'current' | 'dates' | 'queue' | 'events';
+type DashboardTab = 'current' | 'stats' | 'activity' | 'dates' | 'queue' | 'events';
 
 export interface WorkQueueItem {
   id: string;
@@ -130,17 +134,22 @@ function Metric({ label, value, note }: { label: string; value: number | string;
   );
 }
 
+/**
+ * `current` is the landing panel, so — following the `?sec=` convention the other sub-tab
+ * surfaces use — it is the section that carries no param. Every other section, `stats`
+ * included, keeps an explicit value, which is why `?painel=stats` has to be recognised here.
+ */
 export function dashboardTabFromParam(value: string | null): DashboardTab {
   if (
+    value === 'stats' ||
     value === 'activity' ||
-    value === 'current' ||
     value === 'dates' ||
     value === 'queue' ||
     value === 'events'
   ) {
     return value;
   }
-  return 'stats';
+  return 'current';
 }
 
 export function formatDashboardDateTime(value: string, locale: string): string {
@@ -235,6 +244,35 @@ export function compactDashboardScope(scope: string): string {
   const [kind, id] = scope.split(':', 2);
   if (!id) return scope.length > 24 ? `${scope.slice(0, 8)}...` : scope;
   return `${kind}:${shortDashboardId(id)}`;
+}
+
+/**
+ * Human names for the ids that appear in `recent_events[].scope`, harvested from the SAME
+ * `/v1/dashboard` payload the activity list is rendered from. `scope` only ever carries an
+ * id, so the alternative to this index is one lookup per row; the payload already names the
+ * open books' entities and every reminder's entity, which covers the scopes an operator
+ * actually recognises. Anything unnamed keeps the compact id.
+ */
+export function dashboardScopeNames(data: Dashboard): Map<string, string> {
+  const names = new Map<string, string>();
+
+  for (const book of data.current_work.open_books) {
+    const name = book.entity_name?.trim();
+    if (name) names.set(book.book_id.trim(), name);
+  }
+  for (const reminder of data.reminders) {
+    const name = reminder.entity_name.trim();
+    const id = reminder.entity_id.trim();
+    if (name && id) names.set(id, name);
+  }
+
+  return names;
+}
+
+/** The scope's human name when the payload knows it, else the compact `kind:id` form. */
+export function dashboardScopeLabel(scope: string, names: Map<string, string>): string {
+  const [, id] = scope.split(':', 2);
+  return names.get((id ?? scope).trim()) ?? compactDashboardScope(scope);
 }
 
 export function dashboardReminderTone(reminder: DashboardReminder): 'neutral' | 'accent' | 'warn' {
@@ -792,10 +830,11 @@ function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
   );
 }
 
-function RecentActivity({ events }: { events: LedgerEventView[] }) {
+function RecentActivity({ data }: { data: Dashboard }) {
   const t = useT();
   const locale = useLocale();
-  const items = recentActivityItems(events);
+  const items = recentActivityItems(data.recent_events);
+  const scopeNames = dashboardScopeNames(data);
 
   return (
     <Card title={t('dashboard.activity.title')}>
@@ -807,7 +846,9 @@ function RecentActivity({ events }: { events: LedgerEventView[] }) {
           aria-label={t('dashboard.activity.aria')}
         >
           {items.map(({ event, kind, href }) => {
-            const title = t('dashboard.activity.eventTitle', { kind: event.kind });
+            const title = ledgerEventKindLabel(event.kind);
+            // The raw dotted id is what the Arquivo filter takes, so keep it one hover away.
+            const rawKind = t('dashboard.activity.eventTitle', { kind: event.kind });
             return (
               <li className="dashboard-list__item" key={event.id}>
                 <div className="dashboard-list__head">
@@ -815,20 +856,31 @@ function RecentActivity({ events }: { events: LedgerEventView[] }) {
                     {dashboardActivityLabel(kind, t)}
                   </Badge>
                   {href ? (
-                    <Link className="dashboard-list__title" to={href}>
-                      {title}
-                    </Link>
+                    <Tooltip label={rawKind}>
+                      <Link className="dashboard-list__title" to={href}>
+                        {title}
+                      </Link>
+                    </Tooltip>
                   ) : (
-                    <span className="dashboard-list__title">{title}</span>
+                    <TooltipText className="dashboard-list__title" label={rawKind}>
+                      {title}
+                    </TooltipText>
                   )}
                 </div>
                 <div className="dashboard-list__meta">
                   <span>{formatDashboardDateTime(event.timestamp, locale)}</span>
                   <span>{t('dashboard.activity.actor', { actor: event.actor })}</span>
-                  <span title={event.scope}>
-                    {t('dashboard.activity.scope', { scope: compactDashboardScope(event.scope) })}
-                  </span>
-                  <span>{t('dashboard.activity.sequence', { seq: event.seq })}</span>
+                  {/* The name is what an operator recognises; the full scope id stays in the
+                      bubble. `TooltipText` drops the bubble when the two are the same string,
+                      which is exactly the unnamed-scope case. */}
+                  <TooltipText label={event.scope}>
+                    {t('dashboard.activity.scope', {
+                      scope: dashboardScopeLabel(event.scope, scopeNames),
+                    })}
+                  </TooltipText>
+                  <TooltipText label={t('dashboard.activity.sequence.title')}>
+                    {t('dashboard.activity.sequence', { seq: event.seq })}
+                  </TooltipText>
                 </div>
               </li>
             );
@@ -1058,9 +1110,9 @@ function DashboardHeader({
         active={active}
         onSelect={onSelect}
         items={[
+          { id: 'current', label: t('dashboard.tabs.current'), icon: <Icon.Layers /> },
           { id: 'stats', label: t('dashboard.tabs.stats'), icon: <Icon.Sliders /> },
           { id: 'activity', label: t('dashboard.tabs.activity'), icon: <Icon.Bell /> },
-          { id: 'current', label: t('dashboard.tabs.current'), icon: <Icon.Layers /> },
           { id: 'dates', label: t('dashboard.tabs.dates'), icon: <Icon.Calendar /> },
           { id: 'queue', label: t('dashboard.tabs.queue'), icon: <Icon.Tray /> },
           { id: 'events', label: t('dashboard.tabs.events'), icon: <Icon.Archive /> },
@@ -1152,7 +1204,7 @@ export function DashboardPage() {
     setParams(
       (prev) => {
         const nextParams = new URLSearchParams(prev);
-        if (next === 'stats') nextParams.delete(DASHBOARD_TAB_PARAM);
+        if (next === 'current') nextParams.delete(DASHBOARD_TAB_PARAM);
         else nextParams.set(DASHBOARD_TAB_PARAM, next);
         return nextParams;
       },
@@ -1164,15 +1216,47 @@ export function DashboardPage() {
     return (
       <div className="stack">
         <DashboardHeader active={tab} onSelect={selectTab} />
-        <div className="route-transition dashboard-tab" key={`loading-${tab}`}>
+        {/* Each tab gets the skeleton shaped like the panel it is about to become, and
+            keeps that panel's real Card heading, so the content lands where the
+            placeholder was instead of a metric grid collapsing into a list. */}
+        <SkeletonRegion className="route-transition dashboard-tab" key={`loading-${tab}`}>
+          {tab === 'current' ? (
+            <div className="dashboard-section-grid">
+              <Card title={t('dashboard.openItems.title')}>
+                <SkeletonList items={3} />
+              </Card>
+              <Card title={t('dashboard.actStatus.title')}>
+                <SkeletonDeflist rows={4} />
+              </Card>
+            </div>
+          ) : null}
+
+          {tab === 'stats' ? <SkeletonCards /> : null}
+
+          {tab === 'activity' ? (
+            <Card title={t('dashboard.activity.title')}>
+              <SkeletonList />
+            </Card>
+          ) : null}
+
+          {tab === 'dates' ? (
+            <Card title={t('dashboard.dates.title')}>
+              <SkeletonList items={3} />
+            </Card>
+          ) : null}
+
+          {tab === 'queue' ? (
+            <Card title={t('dashboard.workQueue.title')}>
+              <SkeletonList items={3} />
+            </Card>
+          ) : null}
+
           {tab === 'events' ? (
             <Card title={t('dashboard.recentEvents.title')}>
               <SkeletonTable cols={5} />
             </Card>
-          ) : (
-            <SkeletonCards />
-          )}
-        </div>
+          ) : null}
+        </SkeletonRegion>
       </div>
     );
   }
@@ -1197,16 +1281,16 @@ export function DashboardPage() {
       <DashboardHeader active={tab} onSelect={selectTab} />
 
       <div className="route-transition" key={tab}>
-        {tab === 'stats' ? <DashboardStats data={data} /> : null}
-
-        {tab === 'activity' ? <RecentActivity events={data.recent_events} /> : null}
-
         {tab === 'current' ? (
           <div className="dashboard-section-grid">
             <OpenBooksSummary openBooks={data.current_work.open_books} />
             <ActStatusSummary counts={data.current_work.act_counts_by_state} />
           </div>
         ) : null}
+
+        {tab === 'stats' ? <DashboardStats data={data} /> : null}
+
+        {tab === 'activity' ? <RecentActivity data={data} /> : null}
 
         {tab === 'dates' ? <ReminderDatesSummary reminders={data.reminders} /> : null}
 

@@ -9,7 +9,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { useQueryClient } from '@tanstack/react-query';
 import { ActDocumentPanel } from './ActDocumentPanel';
 import { keys } from '../../api/hooks';
-import { renderWithProviders } from '../../test/utils';
+import { renderWithProviders, revealedValue } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import type {
   ActView,
@@ -1068,7 +1068,12 @@ describe('ActDocumentPanel — frozen Signing document', () => {
       name: 'Metadados e proveniência do documento',
     });
     expect(within(metadata).getByText(longTemplateId)).toBeTruthy();
-    expect(within(metadata).getByTitle(longTemplateId)).toBeTruthy();
+    // The requirement that outlived the mechanism: the full template id is still reachable.
+    // t31 moved the reveal off the native `title` (unthemeable, not keyboard-reachable) onto
+    // the shared Tooltip, so assert availability, and that the old mechanism has not returned.
+    const templateNode = within(metadata).getByText(longTemplateId);
+    expect(revealedValue(templateNode)).toBe(longTemplateId);
+    expect(templateNode.getAttribute('title')).toBeNull();
     expect(within(metadata).queryByRole('link', { name: longTemplateId })).toBeNull();
     expect(
       screen.getByText(
@@ -1400,9 +1405,15 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
     renderWithProviders(<ActDocumentPanel act={sealed} family="Condominium" />);
 
     const list = await screen.findByRole('list', { name: 'Comunicações geradas' });
-    expect(within(list).getAllByText('condominio-comunicacao-ausentes/v1')).toHaveLength(2);
+    // Name on the row's primary line; the raw id stays once, in the metadata deflist below.
+    expect(
+      within(list).getByText('Comunicação de deliberações a condóminos ausentes'),
+    ).toBeTruthy();
+    expect(within(list).getAllByText('condominio-comunicacao-ausentes/v1')).toHaveLength(1);
     expect(within(list).getByText('operator_evidence_partial')).toBeTruthy();
-    expect(within(list).getByTitle('/v1/documents/generated/generated-absent-1')).toBeTruthy();
+    const sourceNode = within(list).getByText('/v1/documents/generated/generated-absent-1');
+    expect(revealedValue(sourceNode)).toBe('/v1/documents/generated/generated-absent-1');
+    expect(sourceNode.getAttribute('title')).toBeNull();
 
     const status = await screen.findByRole('group', {
       name: 'Estado da evidência de comunicação gerada',
@@ -1502,7 +1513,9 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
 
     expect(await screen.findByText('Minutas geradas')).toBeTruthy();
     expect(
-      await screen.findByRole('option', { name: /Convocatória - condominio-aviso/ }),
+      await screen.findByRole('option', {
+        name: /Convocatória — Assembleia de condóminos · condominio-aviso/,
+      }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Gerar documento' }));
 
@@ -1602,9 +1615,12 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
 
     expect(await screen.findByText('Minutas geradas')).toBeTruthy();
     expect(
-      await screen.findByRole('option', { name: /Convocatória - condominio-aviso/ }),
+      await screen.findByRole('option', {
+        name: /Convocatória — Assembleia de condóminos · condominio-aviso/,
+      }),
     ).toBeTruthy();
     expect(
+      // Not a real catalog id, so it falls back to the stage-plus-id label.
       await screen.findByRole('option', { name: /Certidão - condominio-certidao/ }),
     ).toBeTruthy();
     expect(screen.getByRole('option', { name: /Extrato - condominio-extrato/ })).toBeTruthy();
@@ -2105,7 +2121,9 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     const list = await screen.findByRole('list', { name: 'Documentos importados' });
     expect(within(list).getByText('Documento importado sem nome')).toBeTruthy();
     expect(within(list).getByText(longFilename)).toBeTruthy();
-    expect(within(list).getByTitle(longFilename)).toBeTruthy();
+    const filenameNode = within(list).getByText(longFilename);
+    expect(revealedValue(filenameNode)).toBe(longFilename);
+    expect(filenameNode.getAttribute('title')).toBeNull();
 
     const firstItem = within(list).getAllByRole('listitem')[0];
     fireEvent.click(within(firstItem).getByRole('button', { name: 'Ver metadados' }));
@@ -2117,7 +2135,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
       name: 'Resumo de profundidade da revisão importada',
     });
     expect(within(metadata).getByText('Nome não fornecido pelo importador')).toBeTruthy();
-    expect(within(metadata).getByTitle(longId)).toBeTruthy();
+    expect(revealedValue(within(metadata).getByText(longId))).toBe(longId);
     expect(within(metadata).getByText('Não declarado')).toBeTruthy();
     expect(within(metadata).getByText('application/octet-stream')).toBeTruthy();
     expect(within(metadata).getByText('Não canónico')).toBeTruthy();

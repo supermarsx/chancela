@@ -28,6 +28,7 @@ import { DegradedBanner } from './DegradedBanner';
 import { isSafeMode } from './safeMode';
 import { useT } from '../i18n';
 import type { MessageKey } from '../i18n';
+import { displayVersion, UI_VERSION } from '../api/versionCheck';
 
 const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
   { to: '/', label: 'nav.dashboard', end: true },
@@ -133,7 +134,9 @@ export function Layout() {
               </PageErrorBoundary>
             </main>
 
-            <footer className="footer">{t('common.footer')}</footer>
+            <footer className="footer">
+              {t('common.footer', { version: displayVersion(UI_VERSION) })}
+            </footer>
           </div>
         </div>
       </AuthGate>

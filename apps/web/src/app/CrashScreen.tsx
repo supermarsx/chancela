@@ -9,7 +9,7 @@
  * the expanded stack, so nothing is hidden.
  */
 import { useState } from 'react';
-import { Button } from '../ui';
+import { Button, Tooltip } from '../ui';
 import { Copy, Check, Refresh } from '../ui/icons';
 import { isTauri } from '../desktop/tauri';
 import { relaunchApp } from '../desktop/relaunch';
@@ -126,15 +126,16 @@ export function CrashScreen({ error, componentStack }: CrashScreenProps) {
           <summary className="crash__summary">{t('crash.detailsSummary')}</summary>
           <div className="crash__stack-head">
             <span className="crash__stack-label">{t('crash.stackLabel')}</span>
-            <button
-              type="button"
-              className="digest__copy"
-              onClick={() => void copyStack()}
-              title={copiedStack ? t('common.copied') : t('crash.copyStack')}
-              aria-label={copiedStack ? t('common.copied') : t('crash.copyStack')}
-            >
-              {copiedStack ? <Check /> : <Copy />}
-            </button>
+            <Tooltip label={copiedStack ? t('common.copied') : t('crash.copyStack')}>
+              <button
+                type="button"
+                className="digest__copy"
+                onClick={() => void copyStack()}
+                aria-label={copiedStack ? t('common.copied') : t('crash.copyStack')}
+              >
+                {copiedStack ? <Check /> : <Copy />}
+              </button>
+            </Tooltip>
           </div>
           <pre className="crash__stack mono">{stack}</pre>
           {componentStack ? (
