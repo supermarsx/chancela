@@ -6760,7 +6760,13 @@ async fn erasure_execute_rejects_unapproved_request() {
     let (status, body) = send(
         state.clone(),
         with_session(
-            post_json(&execute_uri, json!({ "preflight_digest": "deadbeef" })),
+            post_json(
+                &execute_uri,
+                json!({
+                    "preflight_digest": "deadbeef",
+                    "reauth": { "password": TEST_PASSWORD },
+                }),
+            ),
             &owner_token,
         ),
     )
@@ -6826,7 +6832,10 @@ async fn erasure_execute_rejects_last_owner_removal() {
         with_session(
             post_json(
                 &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/execute"),
-                json!({ "preflight_digest": digest }),
+                json!({
+                    "preflight_digest": digest,
+                    "reauth": { "password": TEST_PASSWORD },
+                }),
             ),
             &subject_token,
         ),
@@ -6935,7 +6944,10 @@ async fn merge_gate_erasure_preserves_ledger_integrity_and_destroys_dek() {
         with_session(
             post_json(
                 &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/execute"),
-                json!({ "preflight_digest": digest }),
+                json!({
+                    "preflight_digest": digest,
+                    "reauth": { "password": TEST_PASSWORD },
+                }),
             ),
             &owner_token,
         ),
