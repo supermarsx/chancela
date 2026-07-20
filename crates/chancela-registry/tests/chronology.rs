@@ -290,3 +290,83 @@ fn chronology_is_deterministic() {
     assert_eq!(a.organs_mermaid(&extract), b.organs_mermaid(&extract));
     assert_eq!(a.graph(&extract), b.graph(&extract));
 }
+
+// ---- The live consultation page's real layout -------------------------------------------------
+//
+// These are the four screens the user saw wrong: a single `Other` event described by a postal
+// line, an empty sócios graph ("Sem código Mermaid"), no órgão social, and a relations graph with
+// no edges. All four were downstream of one parse failure — the act kind of the only inscrição.
+
+#[test]
+fn live_layout_chronology_is_a_typed_sourced_constitution() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+    let chrono = Chronology::build(&extract);
+
+    assert_eq!(chrono.events.len(), 1);
+    let e = &chrono.events[0];
+    assert_eq!(e.kind, ChronologyKind::Constitution);
+    assert_eq!(e.date.as_deref(), Some("2026-05-12"));
+    assert_eq!(e.source_inscription, "1");
+    assert!(
+        e.description.contains("ENCOSTO ESTRATÉGICO"),
+        "description was {:?}",
+        e.description
+    );
+    // The description must never be the seat's postal/locality line.
+    assert!(!e.description.contains("1250"));
+    assert_eq!(
+        e.actors,
+        vec![
+            "RUI TAVARES NOGUEIRA".to_owned(),
+            "AMÉLIA MARQUES".to_owned()
+        ]
+    );
+}
+
+#[test]
+fn live_layout_shareholders_graph_has_both_socios() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+    let chrono = Chronology::build(&extract);
+
+    let m = chrono.shareholders_mermaid(&extract);
+    assert!(m.starts_with("graph"), "mermaid was {m:?}");
+    assert!(m.contains("RUI TAVARES NOGUEIRA"));
+    assert!(m.contains("AMÉLIA MARQUES"));
+
+    let graph = chrono.graph(&extract).shareholders;
+    assert!(
+        graph.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        graph.warnings
+    );
+    // Entity node + two sócios, each linked by a quota edge.
+    assert_eq!(graph.nodes.len(), 3);
+    assert_eq!(graph.edges.len(), 2);
+    assert!(graph.edges.iter().all(|e| e.label.contains("Euros")));
+    assert!(
+        graph
+            .edges
+            .iter()
+            .all(|e| e.source_inscription.as_deref() == Some("1"))
+    );
+}
+
+#[test]
+fn live_layout_organs_graph_has_the_gerente() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+    let chrono = Chronology::build(&extract);
+
+    let m = chrono.organs_mermaid(&extract);
+    assert!(m.contains("AMÉLIA MARQUES"), "mermaid was {m:?}");
+
+    let graph = chrono.graph(&extract).organs;
+    assert!(
+        graph
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("AMÉLIA MARQUES")),
+        "organ nodes were {:?}",
+        graph.nodes
+    );
+    assert!(!graph.edges.is_empty());
+}

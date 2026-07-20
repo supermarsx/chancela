@@ -10,10 +10,12 @@ use crate::error::RegistryError;
 
 /// Base URL from `CHANCELA_REGISTRY_URL`, else this pinned default consultation endpoint.
 ///
-/// NOTE: the live endpoint/params must be re-verified against a real code (plan t11 risk #2) — the
-/// legacy `consultaCertidao.aspx?id=` page may be deprecated in favour of the new Plataforma de
-/// Serviços do Registo SPA (which also needs an e-mail + session token). When that is confirmed,
-/// the change is localised here + in `parse_certidao`; the API/UI contract is unaffected.
+/// VERIFIED against a real access code: `consultaCertidao.aspx?id=<code>` is **live**, returns the
+/// certidão as HTML on 200, and answers an unknown code with 200 + "Não existe qualquer certidão
+/// com esse número" (so a bad code is *not* an HTTP error — see [`crate::parse_certidao`], which
+/// classifies that page as [`RegistryError::Unrecognized`]). No `email` parameter and no session
+/// token were needed. The layout it returns is captured, anonymised, as
+/// `fixtures/live_spq_certidao.html`.
 pub const DEFAULT_REGISTRY_URL: &str =
     "https://www2.gov.pt/RegistoOnline/Services/CertidaoPermanente/consultaCertidao.aspx";
 

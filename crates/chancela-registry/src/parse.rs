@@ -73,7 +73,13 @@ pub fn parse_certidao(
         ));
     }
 
-    let (inscricoes, orgaos, anotacoes) = parse_inscricoes(inscricoes_lines);
+    let (inscricoes, mut orgaos, anotacoes) = parse_inscricoes(inscricoes_lines);
+    // The Matrícula header block also lists the órgãos sociais in force. It is used only when the
+    // inscrição feed yielded no officers at all, so dated, event-sourced appointments always win;
+    // these carry no `appointment_date`/`source_event` because the header block prints neither.
+    if orgaos.is_empty() {
+        orgaos = matricula_officers(matricula_lines);
+    }
     let (conservatoria, oficial, subscribed_on, valid_until) =
         parse_certidao_meta(inscricoes_lines);
 
@@ -316,6 +322,23 @@ fn parse_inscricoes(
     (inscricoes, orgaos, anotacoes)
 }
 
+/// Flatten the Matrícula header block's `Órgãos Sociais…` list into [`RegistryOfficer`]s. Dates and
+/// source entries are left `None` — the header block states who holds the organ, not when they were
+/// appointed, and inventing a date from a nearby inscrição would be a guess.
+fn matricula_officers(matricula_lines: &[String]) -> Vec<RegistryOfficer> {
+    crate::inscription::organs_from_matricula(matricula_lines)
+        .iter()
+        .flat_map(|organ| &organ.members)
+        .map(|m| RegistryOfficer {
+            name: m.name.clone(),
+            role: m.cargo.clone(),
+            appointment_date: None,
+            cessation_date: None,
+            source_event: None,
+        })
+        .collect()
+}
+
 /// Group the inscrições region into one entry per header, split on `Insc.`/`An.` header lines and
 /// stopping at `Fim da Certidão` (the trailing legalese is not an entry).
 fn group_entries(lines: &[String]) -> Vec<Entry> {
@@ -355,7 +378,18 @@ fn entry_header_kind(line: &str) -> Option<EntryKind> {
 
 fn build_event(group: &[String]) -> RegistryEvent {
     let header = &group[0];
-    let (number, apresentacao) = parse_header(header);
+    let (number, mut apresentacao) = parse_header(header);
+    // The live certidão prints `Insc.N` and the `AP. …` line in two separate table cells, so the
+    // apresentação is often the first body line rather than part of the header. Without this the
+    // entry loses its apresentação and its registration date entirely.
+    if apresentacao.is_none() {
+        apresentacao = group
+            .iter()
+            .skip(1)
+            .find(|l| !l.trim().is_empty())
+            .filter(|l| fold(l).starts_with("ap."))
+            .map(|l| l.trim().to_owned());
+    }
     let date = apresentacao
         .as_deref()
         .and_then(iso_from_apresentacao)

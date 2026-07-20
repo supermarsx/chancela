@@ -24,7 +24,7 @@ use crate::parse::{
 pub fn parse_detail(group: &[String]) -> InscriptionDetail {
     let body: &[String] = group.get(1..).unwrap_or(&[]);
     let apresentacao = parse_apresentacao(group.first().map_or("", String::as_str), body);
-    let blob = classification_blob(&apresentacao, body);
+    let blob = classification_blob(&apresentacao);
     let payload = parse_payload(&blob, body);
     let signatures = collect_signatures(body);
     InscriptionDetail {
@@ -36,12 +36,35 @@ pub fn parse_detail(group: &[String]) -> InscriptionDetail {
 
 // ---- Apresentação ----------------------------------------------------------------------------
 
-/// Parse the apresentação header (`AP. N/YYYYMMDD HH:MM:SS UTC - ACT, ACT`), tolerating the act
-/// kind(s) on the AP line or — falling back — on the first plain body line.
+/// Parse the apresentação (`AP. N/YYYYMMDD HH:MM:SS UTC - ACT, ACT`).
+///
+/// Two real layouts exist and both must work. The hand-printed one puts the apresentação **on the
+/// `Insc. N` header line**; the live certidão puts `Insc.N` and the `AP. …` line in **two separate
+/// table cells**, so after the DOM→lines flattening the AP stub is the first *body* line. Missing
+/// the second layout loses the number, the date, and — because the act kinds ride on the same
+/// line — the act classification for the whole inscrição.
+///
+/// The act kind(s) may also sit alone on the line *after* the AP stub, so that is the fallback —
+/// but only the line immediately following, and only if it still looks like an act designation
+/// ([`looks_like_act_kind`]). Scanning further would let an address or postal line be captured as
+/// the act, which is worse than admitting the act kind was not stated.
 fn parse_apresentacao(header: &str, body: &[String]) -> Option<Apresentacao> {
     let mut a = Apresentacao::default();
-    if let Some(p) = find_ascii_ci(header, "ap.").or_else(|| find_ascii_ci(header, "ap ")) {
-        let after = header[p + 3..].trim_start();
+    // Where the AP stub lives, and where the act-kind fallback may start looking.
+    let (ap_line, fallback_from) = match find_ap(header) {
+        Some(p) => (Some((header, p)), 0),
+        None => match body.iter().position(|l| !l.trim().is_empty()) {
+            // A body line only counts as the apresentação when it *starts* with `AP.`, so an `AP.`
+            // mentioned inside prose can never be mistaken for the entry's own apresentação.
+            Some(idx) => match find_ap(&body[idx]).filter(|p| *p == 0) {
+                Some(p) => (Some((body[idx].as_str(), p)), idx + 1),
+                None => (None, idx),
+            },
+            None => (None, 0),
+        },
+    };
+    if let Some((line, p)) = ap_line {
+        let after = line[p + 3..].trim_start();
         let (stub, tail) = match after.find(" - ") {
             Some(d) => (&after[..d], Some(after[d + 3..].trim())),
             None => (after, None),
@@ -51,19 +74,41 @@ fn parse_apresentacao(header: &str, body: &[String]) -> Option<Apresentacao> {
             a.act_kinds = split_acts(t);
         }
     }
-    if a.act_kinds.is_empty() {
-        // Fallback: the act kind on the first plain (colon-less, non-AP) body line.
-        if let Some(first) = body.iter().find(|l| {
-            !l.trim().is_empty() && split_label(l).is_none() && !fold(l).starts_with("ap.")
-        }) {
-            a.act_kinds = split_acts(first);
-        }
+    if a.act_kinds.is_empty()
+        && let Some(next) = body
+            .get(fallback_from..)
+            .and_then(|rest| rest.iter().find(|l| !l.trim().is_empty()))
+        && looks_like_act_kind(next)
+    {
+        a.act_kinds = split_acts(next);
     }
     if a.number.is_none() && a.date.is_none() && a.time.is_none() && a.act_kinds.is_empty() {
         None
     } else {
         Some(a)
     }
+}
+
+/// Byte offset of an `AP.` / `AP ` apresentação marker in a line, if any.
+fn find_ap(line: &str) -> Option<usize> {
+    find_ascii_ci(line, "ap.").or_else(|| find_ascii_ci(line, "ap "))
+}
+
+/// Whether a body line may be read as the inscrição's act designation.
+///
+/// An act kind is printed as a bare, colon-less designation (`CONSTITUIÇÃO DE SOCIEDADE`). Every
+/// other colon-less line a certidão body can open with is a *location*: the
+/// `Distrito/Concelho/Freguesia` line, a `CCCC-CCC LOCALIDADE` postal line, or the trailer. Those
+/// are excluded explicitly — a postal line read as an act description is exactly the kind of
+/// confident wrong answer this parser must never produce.
+fn looks_like_act_kind(line: &str) -> bool {
+    let t = line.trim();
+    !t.is_empty()
+        && split_label(t).is_none()
+        && find_ap(t) != Some(0)
+        && parse_postal_line(t).is_none()
+        && parse_admin_line(t).is_none()
+        && !is_trailer(t)
 }
 
 /// Parse the `N/YYYYMMDD HH:MM:SS UTC` stub into number/date/time.
@@ -95,17 +140,17 @@ fn split_acts(s: &str) -> Vec<String> {
 
 // ---- Classification --------------------------------------------------------------------------
 
-/// The folded text used to classify the act: the parsed act kinds, else the first plain body line.
-fn classification_blob(ap: &Option<Apresentacao>, body: &[String]) -> String {
-    if let Some(a) = ap
-        && !a.act_kinds.is_empty()
-    {
-        return fold(&a.act_kinds.join(", "));
+/// The folded text used to classify the act: the parsed act kinds, and nothing else.
+///
+/// [`parse_apresentacao`] already applies the guarded fallback for act kinds printed on their own
+/// line, so there is exactly one place that decides what the act was. An empty blob classifies to
+/// no payload — "the certidão did not state an act kind we recognise" — rather than to whatever
+/// text happened to sit near the top of the body.
+fn classification_blob(ap: &Option<Apresentacao>) -> String {
+    match ap {
+        Some(a) if !a.act_kinds.is_empty() => fold(&a.act_kinds.join(", ")),
+        _ => String::new(),
     }
-    body.iter()
-        .find(|l| !l.trim().is_empty() && split_label(l).is_none() && !fold(l).starts_with("ap."))
-        .map(|l| fold(l))
-        .unwrap_or_default()
 }
 
 /// Classify + parse the body into a payload. Precedence: Constitution > Cessation > Designation >
@@ -169,6 +214,19 @@ fn parse_constitution(body: &[String]) -> ConstitutionPayload {
             i += 1;
             continue;
         }
+        // The live certidão prints the capital *realization* note (`CAPITAL: A entregar nos cofres
+        // …`) after the organs, i.e. outside the Top section, so capital is matched under any
+        // section rather than only the first one.
+        if label.starts_with("capital") {
+            match parse_money(&value) {
+                Some(m) => p.capital = p.capital.take().or(Some(m)),
+                None => {
+                    p.capital_realization_note = p.capital_realization_note.take().or(ne(value))
+                }
+            }
+            i += 1;
+            continue;
+        }
         // Section markers.
         if label.contains("socios") && label.contains("quota") {
             section = Section::Socios;
@@ -217,10 +275,7 @@ fn top_line(
             }
             return j;
         }
-        l if l.starts_with("capital") => match parse_money(&value) {
-            Some(m) => p.capital = Some(m),
-            None => p.capital_realization_note = ne(value),
-        },
+        // `capital…` is intercepted by `parse_constitution` before the section dispatch.
         l if l.starts_with("data de encerramento") => p.fiscal_year_end = ne(value),
         _ => {}
     }
@@ -273,6 +328,22 @@ fn parse_designation(body: &[String]) -> DesignationPayload {
     }
 }
 
+/// Read the organs printed in the **Matrícula** header block — the certidão's own statement of the
+/// órgãos sociais *in force*, as opposed to the dated appointments in the inscrição feed.
+///
+/// `lines` is the whole matrícula region; everything before the `Órgãos Sociais…:` label is
+/// ignored, and the members carry no dates because the header block prints none. Used only as a
+/// fallback (see `parse::matricula_officers`), so an entity whose event feed parses keeps its
+/// dated, event-sourced officers.
+pub(crate) fn organs_from_matricula(lines: &[String]) -> Vec<Organ> {
+    let Some(start) = lines.iter().position(|l| {
+        split_label(l).is_some_and(|(label, _)| label.contains("orgao") && label.contains("socia"))
+    }) else {
+        return Vec::new();
+    };
+    parse_organs(&lines[start + 1..]).0
+}
+
 /// Collect the organ/member structure from a body, plus the deliberation date if printed.
 fn parse_organs(body: &[String]) -> (Vec<Organ>, Option<String>) {
     let mut organs: Vec<Organ> = Vec::new();
@@ -309,7 +380,8 @@ fn organ_line(
     line: &str,
 ) -> usize {
     match label {
-        "nome/firma" => {
+        // Inscrição bodies print `Nome/Firma:`; the Matrícula header block prints plain `Nome:`.
+        "nome/firma" | "nome" => {
             ensure_organ(organs);
             if let Some(o) = organs.last_mut() {
                 o.members.push(OrganMember {
@@ -709,6 +781,66 @@ mod tests {
         assert_eq!(ap.date.as_deref(), Some("2021-03-10"));
         assert_eq!(ap.time, None);
         assert_eq!(ap.act_kinds, vec!["CESSAÇÃO DE FUNÇÕES".to_owned()]);
+    }
+
+    #[test]
+    fn apresentacao_on_its_own_line_when_the_page_splits_the_entry_across_cells() {
+        // The live consultation page prints `Insc.N` and the AP line in two separate `<td>`s.
+        let group = lines(&[
+            "Insc.1",
+            "AP. 1/20260512 00:55:25 UTC - CONSTITUIÇÃO DE SOCIEDADE, DESIGNAÇÃO DE MEMBRO(S)",
+            "FIRMA: Encosto Estratégico - Lda",
+        ]);
+        let ap = parse_apresentacao(&group[0], &group[1..]).unwrap();
+        assert_eq!(ap.number.as_deref(), Some("1"));
+        assert_eq!(ap.date.as_deref(), Some("2026-05-12"));
+        assert_eq!(ap.time.as_deref(), Some("00:55:25 UTC"));
+        assert_eq!(ap.act_kinds.len(), 2);
+    }
+
+    #[test]
+    fn a_postal_or_admin_line_is_never_read_as_the_act_kind() {
+        // The regression that typed every inscrição `Other` and described it with the seat's
+        // postal line: with no act kind stated, the parser must say so rather than grab a
+        // location line and present it as what happened.
+        let group = lines(&[
+            "Insc.1",
+            "SEDE: Rua das Amoreiras, n.º 14",
+            "Distrito: Lisboa Concelho: Cascais Freguesia: Aldeia Nova",
+            "1250 - 096 ALDEIA NOVA XPT",
+        ]);
+        assert!(parse_apresentacao(&group[0], &group[1..]).is_none());
+
+        assert!(!looks_like_act_kind("1250 - 096 ALDEIA NOVA XPT"));
+        assert!(!looks_like_act_kind(
+            "Distrito: Lisboa Concelho: Cascais Freguesia: Aldeia Nova"
+        ));
+        assert!(!looks_like_act_kind(
+            "Conservatória do Registo Comercial de Lisboa"
+        ));
+        assert!(!looks_like_act_kind("AP. 1/20260512"));
+        assert!(looks_like_act_kind("CESSAÇÃO DE FUNÇÕES"));
+    }
+
+    #[test]
+    fn matricula_organs_read_the_plain_nome_label() {
+        // The Matrícula header block prints `Nome:`, not the inscrição body's `Nome/Firma:`.
+        let organs = organs_from_matricula(&lines(&[
+            "Firma: Encosto Estratégico - Lda",
+            "Órgãos Sociais/Liquidatário/Administrador ou Gestor Judicial:",
+            "GERÊNCIA:",
+            "Nome: Amélia Marques",
+            "NIF/NIPC: 999999982",
+            "Cargo: Gerente",
+        ]));
+        assert_eq!(organs.len(), 1);
+        assert_eq!(organs[0].name, "GERÊNCIA");
+        assert_eq!(organs[0].members.len(), 1);
+        assert_eq!(organs[0].members[0].name, "Amélia Marques");
+        assert_eq!(organs[0].members[0].cargo.as_deref(), Some("Gerente"));
+
+        // No `Órgãos Sociais` label → nothing, rather than a scan of the whole block.
+        assert!(organs_from_matricula(&lines(&["Firma: Encosto Estratégico - Lda"])).is_empty());
     }
 
     #[test]

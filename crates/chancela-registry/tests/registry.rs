@@ -495,3 +495,168 @@ fn constituicao_payload_serializes_with_a_type_tag() {
         2
     );
 }
+
+// ---- The live consultation page's real layout -------------------------------------------------
+//
+// `live_spq_certidao.html` is an anonymised capture of a genuine `consultaCertidao.aspx` response.
+// Every assertion below failed before the layout fixes: the live page splits an entry across two
+// `<td>`s (`Insc.N` | `AP. …`), which the five hand-written fixtures never do, so the apresentação
+// went unparsed, the act kind fell back to whatever colon-less line came first — the **postal
+// line** — and the act therefore classified to no payload at all.
+
+#[test]
+fn live_layout_parses_the_matricula_block() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+
+    assert_eq!(extract.nipc.as_deref(), Some("500002020"));
+    assert_eq!(extract.firma.as_deref(), Some("ENCOSTO ESTRATÉGICO - LDA"));
+    assert_eq!(extract.legal_form, Some(LegalForm::SociedadePorQuotas));
+    assert_eq!(
+        extract.sede.as_deref(),
+        Some("Rua das Amoreiras, n.º 14, Cima")
+    );
+    assert_eq!(extract.capital.as_deref(), Some("100,00 Euros"));
+    assert_eq!(
+        extract.cae,
+        vec![
+            cae("41000", CaeRole::Principal),
+            cae("68200", CaeRole::Secundario),
+            cae("62201", CaeRole::Secundario),
+            cae("47125", CaeRole::Secundario),
+        ]
+    );
+    // The live page prints neither a matrícula number nor a "Data de constituição" in the header
+    // block. Both must stay absent rather than be inferred from the constitution inscrição.
+    assert_eq!(extract.matricula, None);
+    assert_eq!(extract.data_constituicao, None);
+    // No page chrome (menus, buttons, viewstate) leaks into the extracted fields.
+    let json = serde_json::to_string(&extract).unwrap();
+    assert!(!json.contains("Portal da Empresa"));
+    assert!(!json.contains("__VIEWSTATE"));
+}
+
+#[test]
+fn live_layout_reads_the_apresentacao_split_across_two_cells() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+    assert_eq!(extract.inscricoes.len(), 1);
+    let insc = &extract.inscricoes[0];
+
+    assert_eq!(insc.number.as_deref(), Some("1"));
+    // The registration date comes off the apresentação, not off the deliberation line (2026-05-11).
+    assert_eq!(insc.date.as_deref(), Some("2026-05-12"));
+
+    let ap = insc
+        .detail
+        .as_ref()
+        .expect("detail")
+        .apresentacao
+        .as_ref()
+        .expect("apresentação");
+    assert_eq!(ap.number.as_deref(), Some("1"));
+    assert_eq!(ap.date.as_deref(), Some("2026-05-12"));
+    assert_eq!(ap.time.as_deref(), Some("00:55:25 UTC"));
+    assert_eq!(
+        ap.act_kinds,
+        vec![
+            "CONSTITUIÇÃO DE SOCIEDADE".to_owned(),
+            "DESIGNAÇÃO DE MEMBRO(S) DE ÓRGÃO(S) SOCIAL(AIS)".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn live_layout_extracts_socios_e_quotas() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+    let c = constitution(&extract.inscricoes[0]);
+
+    assert_eq!(c.socios.len(), 2);
+    assert_eq!(c.socios[0].titular.name, "RUI TAVARES NOGUEIRA");
+    assert_eq!(c.socios[0].titular.nif.as_deref(), Some("999999990"));
+    assert_eq!(c.socios[0].amount.amount_text, "99,00");
+    assert_eq!(c.socios[0].amount.currency.as_deref(), Some("Euros"));
+    assert_eq!(c.socios[1].titular.name, "AMÉLIA MARQUES");
+    assert_eq!(c.socios[1].amount.amount_text, "1,00");
+    // The sócio's residence is an address, not a stray line: the `CCCC - CCC LOCALIDADE` line the
+    // live page prints under it is folded into the structured postal fields.
+    let residencia = c.socios[0].titular.residencia.as_ref().expect("residência");
+    assert_eq!(residencia.postal_code.as_deref(), Some("4000-111"));
+    assert_eq!(residencia.locality.as_deref(), Some("PORTO"));
+
+    assert_eq!(c.capital.as_ref().expect("capital").amount_text, "100,00");
+    // The realization note is printed *after* the organs on the live page, outside the top section.
+    assert!(
+        c.capital_realization_note
+            .as_deref()
+            .expect("realization note")
+            .starts_with("A entregar nos cofres")
+    );
+}
+
+#[test]
+fn live_layout_finds_the_gerente() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+
+    let c = constitution(&extract.inscricoes[0]);
+    assert_eq!(c.orgaos.len(), 1);
+    assert_eq!(c.orgaos[0].name, "GERÊNCIA");
+    assert_eq!(c.orgaos[0].members.len(), 1);
+    assert_eq!(c.orgaos[0].members[0].name, "AMÉLIA MARQUES");
+    assert_eq!(c.orgaos[0].members[0].cargo.as_deref(), Some("Gerente"));
+    assert_eq!(
+        c.forma_de_obrigar.as_deref(),
+        Some("Com a intervenção de 1 gerente")
+    );
+
+    // …and it rolls up into the flat officer list the API renders.
+    assert_eq!(extract.orgaos.len(), 1);
+    assert_eq!(extract.orgaos[0].name, "AMÉLIA MARQUES");
+    assert_eq!(extract.orgaos[0].role.as_deref(), Some("Gerente"));
+    assert_eq!(extract.orgaos[0].source_event.as_deref(), Some("1"));
+}
+
+#[test]
+fn live_layout_never_reads_the_postal_line_as_an_act() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+    let json = serde_json::to_string(&extract).unwrap();
+
+    // The seat's postal/locality line must appear only inside addresses and the raw entry text —
+    // never as an act kind, a kind_hint, or anything else describing what happened.
+    assert_eq!(
+        extract.inscricoes[0].kind_hint.as_deref(),
+        Some("CONSTITUIÇÃO DE SOCIEDADE")
+    );
+    assert!(json.contains("\"postal_code\":\"1250-096\""));
+    let ap = extract.inscricoes[0]
+        .detail
+        .as_ref()
+        .unwrap()
+        .apresentacao
+        .as_ref()
+        .unwrap();
+    assert!(
+        ap.act_kinds.iter().all(|k| !k.contains("1250")),
+        "postal line leaked into act_kinds: {:?}",
+        ap.act_kinds
+    );
+}
+
+#[test]
+fn live_layout_reads_the_trailer_and_the_publication_annotation() {
+    let extract = lookup(MockRegistryTransport::from_fixture_live_spq());
+
+    let p = &extract.provenance;
+    assert_eq!(
+        p.conservatoria.as_deref(),
+        Some("Conservatória do Registo Comercial de Lisboa")
+    );
+    assert_eq!(p.oficial.as_deref(), Some("Beatriz Nunes Salgado"));
+    assert_eq!(p.subscribed_on.as_deref(), Some("2026-06-17"));
+    assert_eq!(p.valid_until.as_deref(), Some("2026-09-17"));
+
+    assert_eq!(extract.anotacoes.len(), 1);
+    assert_eq!(extract.anotacoes[0].number.as_deref(), Some("1"));
+    assert_eq!(
+        extract.anotacoes[0].publication_url.as_deref(),
+        Some("http://publicacoes.mj.pt")
+    );
+}

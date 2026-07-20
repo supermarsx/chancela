@@ -17,6 +17,13 @@ pub const FIXTURE_FUNDACAO: &str = include_str!("../fixtures/fundacao_certidao.h
 pub const FIXTURE_CONSTITUICAO: &str = include_str!("../fixtures/constituicao_certidao.html");
 /// An error/expired consultation page (no Matrícula block → `Unrecognized`).
 pub const FIXTURE_EXPIRED: &str = include_str!("../fixtures/expired_error.html");
+/// **The live consultation page's real layout**, captured from a genuine `consultaCertidao.aspx`
+/// response and then anonymised (fictional "Encosto Estratégico - LDA" and "Amélia Marques";
+/// fabricated NIPC/NIF, addresses, postal codes and access code). Markup is otherwise untouched, so
+/// it keeps the quirks the hand-written fixtures lack: the full ASP.NET page chrome, `</br>` used as
+/// a line break, `<td>Insc.N</td><td>AP. …</td>` splitting the entry across two cells, `Nome:` in
+/// the Matrícula organ block, and stray unopened `</font>` tags.
+pub const FIXTURE_LIVE_SPQ: &str = include_str!("../fixtures/live_spq_certidao.html");
 
 /// Offline transport returning a canned certidão document; records (masked) the codes it was asked
 /// for. Mirrors `MockScmdTransport` / `FileTslSource`. Used by the crate tests and injected into
@@ -57,6 +64,11 @@ impl MockRegistryTransport {
     /// Fullest-constitution specimen (fixture) — deep inscription parsing + identity backfill.
     pub fn from_fixture_constituicao() -> Self {
         Self::empty().with_html(FIXTURE_CONSTITUICAO)
+    }
+
+    /// Anonymised capture of the **live** consultation page's layout (fixture).
+    pub fn from_fixture_live_spq() -> Self {
+        Self::empty().with_html(FIXTURE_LIVE_SPQ)
     }
 
     /// The masked codes this mock has been asked to consult, in order (never the full digits).
