@@ -105,17 +105,17 @@ export const deDE: Catalog = {
   'rbac.toast.assigned': 'Rolle zugewiesen',
   'rbac.toast.unassigned': 'Rolle entfernt',
   'rbac.delegacoes.lede':
-    'Gewähren Sie einem anderen Benutzer eine von Ihnen gehaltene Berechtigung in einem Bereich, mit optionalem Ablauf.',
+    'Übertragen Sie eine Rolle, die Sie innehaben, an eine andere Person – in einem Geltungsbereich, optional befristet.',
   'rbac.deleg.cardTitle': 'Delegationen',
   'rbac.deleg.grant': 'Neue Delegation',
   'rbac.deleg.empty': 'Keine Delegationen',
   'rbac.deleg.emptyBody': 'Sie haben noch keine Delegationen gewährt oder erhalten.',
   'rbac.deleg.to.label': 'Gewähren an',
-  'rbac.deleg.permission.label': 'Berechtigung',
+  'rbac.deleg.permission.label': 'Zu delegierende Rollen',
   'rbac.deleg.permission.none':
-    'Sie haben keine delegierbaren Berechtigungen. Sie können nur Berechtigungen delegieren, die Sie über eine Rolle besitzen.',
+    'Sie besitzen keine Rolle, die Sie vollständig delegieren können. Delegierbar ist nur eine Rolle, deren sämtliche Berechtigungen Sie über eine eigene Rolle besitzen.',
   'rbac.deleg.onlyHeldNote':
-    'Sie können nur Berechtigungen delegieren, die Sie über eine Rolle besitzen (Meta-Berechtigungen sind nicht delegierbar).',
+    'Sie können eine Rolle nur delegieren, wenn Sie über eine eigene Rolle alle Berechtigungen besitzen, die sie verleiht; eine Rolle mit Meta-Berechtigungen ist nie delegierbar.',
   'rbac.deleg.legalBasis.label': 'Lokale Grundlage/Nachweis',
   'rbac.deleg.legalBasis.hint':
     'Erfassen Sie die vom Operator gelieferte lokale Referenz oder Notiz; dies zertifiziert keine rechtliche Ausreichendheit.',
@@ -129,7 +129,7 @@ export const deDE: Catalog = {
   'rbac.deleg.startsAt.missing': 'Beginn nicht erfasst',
   'rbac.deleg.legalBasis.missing': 'Fehlt (Altdaten)',
   'rbac.deleg.user.self': '(ich)',
-  'rbac.deleg.table.permission': 'Berechtigung',
+  'rbac.deleg.table.permission': 'Rolle',
   'rbac.deleg.table.from': 'Von',
   'rbac.deleg.table.to': 'An',
   'rbac.deleg.table.scope': 'Bereich',
@@ -142,6 +142,15 @@ export const deDE: Catalog = {
   'rbac.deleg.status.pending': 'Noch nicht begonnen',
   'rbac.deleg.status.expired': 'Abgelaufen',
   'rbac.deleg.status.revoked': 'Widerrufen',
+  'rbac.deleg.funcao.carries': 'Verleiht',
+  'rbac.deleg.funcao.unknown': 'Rolle aus dem Katalog entfernt',
+  'rbac.deleg.status.suspended': 'Ausgesetzt',
+  'rbac.deleg.suspend': 'Aussetzen',
+  'rbac.deleg.resume': 'Fortsetzen',
+  'rbac.deleg.filter.all': 'Alle',
+  'rbac.deleg.filter.none': 'Keine Delegation entspricht den Filtern.',
+  'rbac.toast.suspended': 'Delegation ausgesetzt',
+  'rbac.toast.resumed': 'Delegation fortgesetzt',
   'rbac.toast.delegated': 'Delegation gewährt',
   'rbac.toast.revoked': 'Delegation widerrufen',
   // --- Navigation / shell --------------------------------------------------------
@@ -5425,7 +5434,8 @@ export const deDE: Catalog = {
     'Nur die Aufbewahrungskandidaten, die dieses Buch nennen. Aufbewahrungsrichtlinien werden unter Einstellungen → Datenschutz verwaltet.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Signaturrichtlinie',
-  'settings.signing.fallbackHint': 'Offizieller portugiesischer Standardwert. Dient als Rückfallebene, wenn keiner der Einträge in der Tabelle unten aktiv ist.',
+  'settings.signing.fallbackHint':
+    'Offizieller portugiesischer Standardwert. Dient als Rückfallebene, wenn keiner der Einträge in der Tabelle unten aktiv ist.',
   'settings.signing.tslSources.caption': 'Konfigurierte Vertrauenslistenquellen',
   'settings.signing.tsaProviders.caption': 'Konfigurierte Zeitstempelanbieter',
   'settings.signing.providers.caption': 'Signaturanbietermodi und ihr Status',
@@ -5436,13 +5446,20 @@ export const deDE: Catalog = {
   'settings.signing.table.provider': 'Anbieter',
   'settings.signing.table.mode': 'Modus',
   'settings.signing.table.notes': 'Hinweise',
-  'settings.providerCredentials.protection.unavailable.title': 'Zugangsdaten können nicht gespeichert werden',
-  'settings.providerCredentials.protection.unavailable.body': 'Dieser Server kann Anbietergeheimnisse weder verschlüsseln noch speichern. Bis das behoben ist, wird nichts gespeichert — die Zugangsdaten werden nicht mit schwächerem Schutz aufbewahrt, sie werden schlicht nicht aufbewahrt.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'Der Server läuft nur im Arbeitsspeicher, ohne Datenverzeichnis. Setzen Sie CHANCELA_DATA_DIR und starten Sie neu.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Es ist keine Schlüsselquelle verfügbar. Aktivieren Sie SQLCipher oder die Versiegelung durch das Betriebssystem, oder geben Sie CHANCELA_CREDENTIAL_KEY_FILE an.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'Der vom Betreiber bereitgestellte Schlüssel ist ungültig oder wurde doppelt angegeben. Behalten Sie nur CHANCELA_CREDENTIAL_KEY oder CHANCELA_CREDENTIAL_KEY_FILE mit gültigem Schlüsselmaterial.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'Der Umschlag des Stammschlüssels konnte nicht gelesen werden. Prüfen Sie die Rechte des Datenverzeichnisses und ob die Datei zu diesem Rechner gehört.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'Der Zugangsdatenspeicher ist nicht verfügbar. Sehen Sie in den Serverprotokollen nach.',
+  'settings.providerCredentials.protection.unavailable.title':
+    'Zugangsdaten können nicht gespeichert werden',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Dieser Server kann Anbietergeheimnisse weder verschlüsseln noch speichern. Bis das behoben ist, wird nichts gespeichert — die Zugangsdaten werden nicht mit schwächerem Schutz aufbewahrt, sie werden schlicht nicht aufbewahrt.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'Der Server läuft nur im Arbeitsspeicher, ohne Datenverzeichnis. Setzen Sie CHANCELA_DATA_DIR und starten Sie neu.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Es ist keine Schlüsselquelle verfügbar. Aktivieren Sie SQLCipher oder die Versiegelung durch das Betriebssystem, oder geben Sie CHANCELA_CREDENTIAL_KEY_FILE an.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'Der vom Betreiber bereitgestellte Schlüssel ist ungültig oder wurde doppelt angegeben. Behalten Sie nur CHANCELA_CREDENTIAL_KEY oder CHANCELA_CREDENTIAL_KEY_FILE mit gültigem Schlüsselmaterial.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'Der Umschlag des Stammschlüssels konnte nicht gelesen werden. Prüfen Sie die Rechte des Datenverzeichnisses und ob die Datei zu diesem Rechner gehört.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'Der Zugangsdatenspeicher ist nicht verfügbar. Sehen Sie in den Serverprotokollen nach.',
   'settings.providerCredentials.entry.notConfigured': 'nicht konfiguriert',
   'settings.providerCredentials.table.caption': 'Zugangsdateneinträge für {provider}',
   'settings.providerCredentials.table.entry': 'Eintrag',

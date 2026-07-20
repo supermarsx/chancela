@@ -934,7 +934,7 @@ impl Worker {
             .iter()
             .any(|target| !matches!(target, TargetConfig::Local(_)))
         {
-            let policy = NetworkPolicy::from_env().map_err(WorkerError::Connector)?;
+            let policy = NetworkPolicy::effective().map_err(WorkerError::Connector)?;
             config
                 .targets
                 .validate_network_policy(&policy)
@@ -989,7 +989,9 @@ impl Worker {
         let attempt = self.queue.attempt_count(&job.id).await?.saturating_add(1);
         let (target_id, connector) = if let Some(target) = &job.target {
             if !matches!(target, TargetConfig::Local(_)) {
-                let policy = NetworkPolicy::from_env().map_err(WorkerError::Connector)?;
+                // Re-resolved per job, so an allowlist narrowed in Settings takes effect on the
+                // next job rather than at the next worker restart.
+                let policy = NetworkPolicy::effective().map_err(WorkerError::Connector)?;
                 target
                     .validate_network_policy(&policy)
                     .await

@@ -103,17 +103,17 @@ export const fiFI: Catalog = {
   'rbac.toast.assigned': 'Rooli määritetty',
   'rbac.toast.unassigned': 'Rooli poistettu',
   'rbac.delegacoes.lede':
-    'Myönnä omistamasi käyttöoikeus toiselle käyttäjälle laajuudessa, valinnaisella voimassaololla.',
+    'Luovuta hoitamasi rooli toiselle käyttäjälle tietyssä laajuudessa, halutessasi määräajaksi.',
   'rbac.deleg.cardTitle': 'Delegoinnit',
   'rbac.deleg.grant': 'Uusi delegointi',
   'rbac.deleg.empty': 'Ei delegointeja',
   'rbac.deleg.emptyBody': 'Et ole vielä myöntänyt tai vastaanottanut delegointeja.',
   'rbac.deleg.to.label': 'Myönnä käyttäjälle',
-  'rbac.deleg.permission.label': 'Käyttöoikeus',
+  'rbac.deleg.permission.label': 'Delegoitavat roolit',
   'rbac.deleg.permission.none':
-    'Sinulla ei ole delegoitavia käyttöoikeuksia. Voit delegoida vain roolin kautta omistamiasi käyttöoikeuksia.',
+    'Sinulla ei ole roolia, jonka voisit delegoida kokonaan. Voit delegoida vain roolin, jonka kaikki oikeudet sinulla on oman roolin kautta.',
   'rbac.deleg.onlyHeldNote':
-    'Voit delegoida vain roolin kautta omistamiasi käyttöoikeuksia (meta-käyttöoikeuksia ei voi delegoida).',
+    'Voit delegoida roolin vain, jos sinulla on oman roolisi kautta kaikki sen antamat oikeudet; meta-oikeuksia sisältävää roolia ei voi koskaan delegoida.',
   'rbac.deleg.legalBasis.label': 'Paikallinen peruste/todiste',
   'rbac.deleg.legalBasis.hint':
     'Kirjaa operaattorin antama paikallinen viite tai huomautus; tämä ei sertifioi oikeudellista riittävyyttä.',
@@ -127,7 +127,7 @@ export const fiFI: Catalog = {
   'rbac.deleg.startsAt.missing': 'Aloitusta ei kirjattu',
   'rbac.deleg.legalBasis.missing': 'Puuttuu (vanha tietue)',
   'rbac.deleg.user.self': '(minä)',
-  'rbac.deleg.table.permission': 'Käyttöoikeus',
+  'rbac.deleg.table.permission': 'Rooli',
   'rbac.deleg.table.from': 'Myöntäjä',
   'rbac.deleg.table.to': 'Vastaanottaja',
   'rbac.deleg.table.scope': 'Laajuus',
@@ -140,6 +140,15 @@ export const fiFI: Catalog = {
   'rbac.deleg.status.pending': 'Ei vielä alkanut',
   'rbac.deleg.status.expired': 'Vanhentunut',
   'rbac.deleg.status.revoked': 'Peruutettu',
+  'rbac.deleg.funcao.carries': 'Antaa',
+  'rbac.deleg.funcao.unknown': 'Rooli poistettu luettelosta',
+  'rbac.deleg.status.suspended': 'Keskeytetty',
+  'rbac.deleg.suspend': 'Keskeytä',
+  'rbac.deleg.resume': 'Jatka',
+  'rbac.deleg.filter.all': 'Kaikki',
+  'rbac.deleg.filter.none': 'Mikään delegointi ei vastaa suodattimia.',
+  'rbac.toast.suspended': 'Delegointi keskeytetty',
+  'rbac.toast.resumed': 'Delegointi jatkuu',
   'rbac.toast.delegated': 'Delegointi myönnetty',
   'rbac.toast.revoked': 'Delegointi peruutettu',
   // --- Navigation / shell --------------------------------------------------------
@@ -5364,7 +5373,8 @@ export const fiFI: Catalog = {
     'Vain tämän kirjan nimeävät säilytysehdokkaat. Säilytyskäytäntöjä hallitaan kohdassa Asetukset → Tietosuoja.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Allekirjoituskäytäntö',
-  'settings.signing.fallbackHint': 'Portugalin virallinen oletusarvo. Toimii varalla, kun mikään alla olevan taulukon merkinnöistä ei ole käytössä.',
+  'settings.signing.fallbackHint':
+    'Portugalin virallinen oletusarvo. Toimii varalla, kun mikään alla olevan taulukon merkinnöistä ei ole käytössä.',
   'settings.signing.tslSources.caption': 'Määritetyt luottamuslistan lähteet',
   'settings.signing.tsaProviders.caption': 'Määritetyt aikaleimapalvelut',
   'settings.signing.providers.caption': 'Allekirjoituspalvelujen toimintatavat ja niiden tila',
@@ -5376,12 +5386,18 @@ export const fiFI: Catalog = {
   'settings.signing.table.mode': 'Toimintatapa',
   'settings.signing.table.notes': 'Huomautukset',
   'settings.providerCredentials.protection.unavailable.title': 'Tunnuksia ei voi tallentaa',
-  'settings.providerCredentials.protection.unavailable.body': 'Tämä palvelin ei pysty salaamaan eikä tallentamaan palveluntarjoajien salaisuuksia. Mitään ei tallenneta ennen kuin asia on korjattu — tunnuksia ei säilytetä heikommalla suojauksella, niitä ei säilytetä lainkaan.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'Palvelin toimii vain muistissa ilman datahakemistoa. Aseta CHANCELA_DATA_DIR ja käynnistä uudelleen.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Avainlähdettä ei ole käytettävissä. Ota käyttöön SQLCipher tai käyttöjärjestelmän sinetöinti, tai anna CHANCELA_CREDENTIAL_KEY_FILE.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'Ylläpitäjän antama avain on virheellinen tai se on annettu kahdesti. Säilytä vain CHANCELA_CREDENTIAL_KEY tai CHANCELA_CREDENTIAL_KEY_FILE kelvollisella avainaineksella.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'Pääavaimen kuorta ei voitu lukea. Tarkista datahakemiston oikeudet ja se, kuuluuko tiedosto tähän koneeseen.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'Tunnusvarasto ei ole käytettävissä. Katso palvelimen lokit.',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Tämä palvelin ei pysty salaamaan eikä tallentamaan palveluntarjoajien salaisuuksia. Mitään ei tallenneta ennen kuin asia on korjattu — tunnuksia ei säilytetä heikommalla suojauksella, niitä ei säilytetä lainkaan.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'Palvelin toimii vain muistissa ilman datahakemistoa. Aseta CHANCELA_DATA_DIR ja käynnistä uudelleen.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Avainlähdettä ei ole käytettävissä. Ota käyttöön SQLCipher tai käyttöjärjestelmän sinetöinti, tai anna CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'Ylläpitäjän antama avain on virheellinen tai se on annettu kahdesti. Säilytä vain CHANCELA_CREDENTIAL_KEY tai CHANCELA_CREDENTIAL_KEY_FILE kelvollisella avainaineksella.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'Pääavaimen kuorta ei voitu lukea. Tarkista datahakemiston oikeudet ja se, kuuluuko tiedosto tähän koneeseen.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'Tunnusvarasto ei ole käytettävissä. Katso palvelimen lokit.',
   'settings.providerCredentials.entry.notConfigured': 'ei määritetty',
   'settings.providerCredentials.table.caption': 'Palvelun {provider} tunnusmerkinnät',
   'settings.providerCredentials.table.entry': 'Merkintä',

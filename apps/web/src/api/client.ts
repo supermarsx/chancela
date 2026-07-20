@@ -1341,12 +1341,15 @@ export const api = {
   unassignRole: (userId: string, body: RoleAssignmentInput) =>
     del<RoleAssignmentView[]>(`/v1/users/${userId}/roles`, body),
   // Scoped delegations. `GET` returns the delegations touching the caller (own) or all (for a
-  // `delegation.revoke` holder); grant/revoke are gated + invariant-enforced server-side. A grant
-  // may carry SEVERAL permissions sharing one scope, lifetime and legal basis; revoke withdraws
-  // all of them at once (the delegation, not the permission, is the unit of revocation).
+  // `delegation.revoke` holder); grant/revoke/suspend/resume are gated + invariant-enforced
+  // server-side. A grant hands over one or more FUNÇÕES sharing one scope, lifetime and legal
+  // basis; revoke withdraws all of them at once (the delegation, not the função, is the unit of
+  // revocation). Suspend/resume is the reversible pause — same authority as revoke.
   listDelegations: () => get<DelegationView[]>('/v1/delegations'),
   grantDelegation: (body: GrantDelegationBody) => post<DelegationView>('/v1/delegations', body),
   revokeDelegation: (id: string) => del<void>(`/v1/delegations/${id}`),
+  suspendDelegation: (id: string) => post<DelegationView>(`/v1/delegations/${id}/suspend`, {}),
+  resumeDelegation: (id: string) => post<DelegationView>(`/v1/delegations/${id}/resume`, {}),
 
   // API keys — interactive-session-only management. Create/rotate return the plaintext secret once;
   // list/revoke return metadata only.

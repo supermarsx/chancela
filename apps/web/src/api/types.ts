@@ -3726,20 +3726,35 @@ export interface RoleAssignmentInput {
 }
 
 /**
- * A delegation rendered for the web (`GET`/`POST /v1/delegations`, t64-E4). `from`/`to` are
- * user ids; `permission` is a dotted verb id; `scope` the tagged union. `revoked` is the
- * derived active/inactive flag; `starts_at` is the RFC-3339 start timestamp; `legal_basis` is
- * operator-supplied local evidence/rationale and may be absent on legacy records;
- * `expires_at`/`revoked_at`/`revoked_by` are present only when set. An expired, not-yet-started, or
- * revoked delegation contributes nothing (the server re-checks).
+ * One delegated **função**, with the authority it currently carries. `permissions` is resolved
+ * live by the server from the role catalog, so it always shows what the delegation conveys *now* —
+ * a função edited after the grant moves the delegate's authority with it. `known` is false for a
+ * função that has since left the catalog (it then conveys nothing).
+ */
+export interface DelegatedRoleView {
+  id: string;
+  name: string;
+  permissions: string[];
+  known: boolean;
+}
+
+/**
+ * A delegation rendered for the web (`GET`/`POST /v1/delegations`, t64-E4; role-shaped t44).
+ * `from`/`to` are user ids; `roles` the delegated funções; `scope` the tagged union. `revoked` is
+ * terminal and `suspended` is a reversible pause — both make the delegation convey nothing, and the
+ * server enforces that where authority resolves, not by omitting the row. `starts_at` is the
+ * RFC-3339 start timestamp; `legal_basis` is operator-supplied local evidence/rationale and may be
+ * absent on legacy records; `expires_at`/`revoked_at`/`revoked_by` are present only when set.
  */
 export interface DelegationView {
   id: string;
   from: string;
   to: string;
-  /** The primary delegated verb — the first element of `permissions`, kept for back-compat. */
-  permission: string;
-  /** Every delegated verb, in grant order. Always non-empty. Prefer this over `permission`. */
+  /** The delegated funções. Empty **only** on a legacy permission-shaped record. */
+  roles: DelegatedRoleView[];
+  /** Legacy: the primary verb of a pre-t44 permission-shaped record. Absent on role-shaped ones. */
+  permission?: string;
+  /** Every verb this delegation currently conveys — the flat view of `roles`. */
   permissions: string[];
   scope: PermissionScope;
   granted_at: string;
@@ -3747,28 +3762,29 @@ export interface DelegationView {
   expires_at?: string;
   legal_basis?: string;
   revoked: boolean;
+  /** Reversibly paused: conveys nothing until resumed. */
+  suspended: boolean;
   revoked_at?: string;
   revoked_by?: string;
 }
 
 /**
- * Body of `POST /v1/delegations` (t64-E4; multi-permission t26). `to` is the grantee user id;
- * `permissions` the dotted verb ids the grantor holds VIA A ROLE at `scope` (meta verbs are
- * non-delegable); `starts_at` and `expires_at` are optional RFC-3339 timestamps (omit `starts_at`
- * ⇒ grant time; omit `expires_at` ⇒ until-revoked); `legal_basis` is required operator-supplied
- * local evidence/rationale. The whole set shares one scope, one lifetime and one legal basis.
+ * Body of `POST /v1/delegations` (t64-E4; role-shaped t44). A delegation assigns a **função**, not
+ * hand-picked permissions: `to` is the grantee user id and `roles` the ids of the funções to hand
+ * over. `starts_at` and `expires_at` are optional RFC-3339 timestamps (omit `starts_at` ⇒ grant
+ * time; omit `expires_at` ⇒ until-revoked); `legal_basis` is required operator-supplied local
+ * evidence/rationale. The funções share one scope, one lifetime and one legal basis, and are
+ * revoked as one unit.
  *
- * The server validates **every** verb independently and refuses the delegation **entirely** (403,
- * naming the offending verb) if any one is meta or not held via a role — never a partial grant. It
- * 422s malformed timestamps, an empty permission set, or a missing/blank/overlong `legal_basis`.
- *
- * The legacy singular `permission` is still accepted; when both are sent their union is delegated.
+ * The server validates **every permission inside every função** independently and refuses the
+ * delegation **entirely** (403, naming the offending verb) if any one is meta or not held by the
+ * grantor via a role — never a partial grant. It 422s malformed timestamps, an empty `roles` array,
+ * a missing/blank/overlong `legal_basis`, and any permission-shaped body.
  */
 export interface GrantDelegationBody {
   to: string;
-  /** @deprecated Send `permissions` instead; retained so existing callers keep working. */
-  permission?: string;
-  permissions?: string[];
+  /** The funções to delegate (role ids). At least one. */
+  roles: string[];
   scope: PermissionScope;
   starts_at?: string;
   expires_at?: string;

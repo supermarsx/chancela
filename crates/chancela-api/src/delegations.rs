@@ -2,15 +2,20 @@
 //!
 //! Mirrors the `users.json` / `roles.json` discipline: an atomic write-through, a malformed-tolerant
 //! load, and `#[serde(default)]` throughout. A [`StoredDelegation`] wraps the frozen
-//! [`chancela_authz::Delegation`] security model (`from`/`to`/`permission`/`scope`/`starts_at`/
-//! `expires_at`/`legal_basis`/`revoked`) and adds the durable **audit** fields the crate
+//! [`chancela_authz::Delegation`] security model (`from`/`to`/`roles`/`scope`/`starts_at`/
+//! `expires_at`/`legal_basis`/`revoked`/`suspended`) and adds the durable **audit** fields the crate
 //! deliberately left to the API layer —
 //! a stable [`DelegationId`], the `granted_at` timestamp, and the `revoked_at`/`revoked_by`
 //! attribution recorded when a delegation is revoked (E4 wires the revoke endpoint).
 //!
+//! **A delegation hands over a FUNÇÃO (t44).** The record stores role ids, so what it conveys is
+//! resolved live from the catalog at every authorization decision; the pre-t44
+//! `permission`/`extra_permissions` fields are retained so stored permission-shaped records keep
+//! resolving unchanged, but no new one is ever written.
+//!
 //! Revoked delegations are retained (never deleted) so the ledger + this store together form a
-//! complete, reversible audit trail; the inner `revoked` flag makes them contribute **nothing** to
-//! [`chancela_authz::effective_permissions`].
+//! complete, reversible audit trail; the inner `revoked` flag — and the reversible `suspended` one —
+//! make them contribute **nothing** to [`chancela_authz::effective_permissions`].
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -23,7 +28,9 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
-use chancela_authz::{Delegation, DelegationRefusal, Permission, Scope, UserId as AuthzUserId};
+use chancela_authz::{
+    Delegation, DelegationRefusal, Permission, RoleCatalog, RoleId, Scope, UserId as AuthzUserId,
+};
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
@@ -147,30 +154,35 @@ fn tmp_path(path: &Path) -> PathBuf {
 }
 
 // =================================================================================================
-// Scoped-delegation endpoints (t64-E4): grant / list / revoke. A grant enforces the delegation
-// invariant server-side (non-meta AND held VIA A ROLE at the scope → no privilege escalation, no
-// re-delegation); revocation is immediate (revoked delegations resolve to no authority). FROZEN DTOs.
+// Scoped-delegation endpoints (t64-E4; role-shaped t44): grant / list / suspend / resume / revoke.
+// A grant enforces the delegation invariant server-side for EVERY permission inside every delegated
+// função (non-meta AND held VIA A ROLE at the scope → no privilege escalation, no re-delegation);
+// suspension and revocation take effect immediately, where authority resolves. FROZEN DTOs.
 // =================================================================================================
 
-/// Body of `POST /v1/delegations` — delegate one **or several** permissions to a grantee, optionally
-/// scoped and optionally expiring. Each permission deserialises from its dotted id; a meta verb /
-/// unknown verb / out-of-authority verb is refused by [`grant_delegation`] (`403`) or at
-/// deserialisation (`422`). New grants must carry a non-empty operator-supplied local
-/// evidence/rationale string in `legal_basis`; legacy stored records that predate this field still
-/// load with `None`.
+/// Body of `POST /v1/delegations` — hand **one or several funções** to a grantee, optionally scoped
+/// and optionally expiring.
 ///
-/// **Back-compatible.** The legacy singular `permission` and the plural `permissions` are both
-/// accepted and their union (order-preserving, de-duplicated) is the delegated set; at least one
-/// verb must arrive or the request is a `422`. A pre-existing single-`permission` client is
-/// therefore unaffected.
+/// A delegation assigns a **função**, not a hand-picked bag of verbs: `roles` carries role ids. Each
+/// is resolved against the live catalog and validated *per permission it contains* by
+/// [`grant_delegation`] (`403`, naming the offending verb); an unknown role id is also a `403`. New
+/// grants must carry a non-empty operator-supplied local evidence/rationale string in `legal_basis`.
+///
+/// **Permission-shaped grants are gone.** The pre-t44 `permission`/`permissions` fields are still
+/// *accepted by the parser* only so a stale client receives a controlled, explanatory `422` instead
+/// of a bare deserialisation error. Stored permission-shaped records keep resolving; no new one can
+/// be created.
 #[derive(Deserialize)]
 pub struct GrantDelegation {
     pub to: Uuid,
-    /// The legacy single permission. Optional now that `permissions` exists.
+    /// The delegated **funções** (role ids). Every função is validated permission-by-permission;
+    /// one bad verb inside one função refuses the whole request (see [`grant_delegation`]).
+    #[serde(default)]
+    pub roles: Vec<Uuid>,
+    /// Retired: the legacy single permission. Present only to produce an explanatory `422`.
     #[serde(default)]
     pub permission: Option<Permission>,
-    /// The delegated set. Every element is validated **individually**; one bad verb refuses the
-    /// whole request (see [`grant_delegation`]).
+    /// Retired: the legacy permission array. Present only to produce an explanatory `422`.
     #[serde(default)]
     pub permissions: Vec<Permission>,
     pub scope: ScopeInput,
@@ -186,17 +198,35 @@ pub struct GrantDelegation {
     pub legal_basis: Option<String>,
 }
 
+/// One delegated **função**, rendered with the authority it carries so an operator handing over a
+/// role can see exactly what they are handing over. `permissions` is resolved **live** from the
+/// catalog at render time, so it always shows what the delegation conveys *now*; a função that has
+/// left the catalog renders with `known: false` and an empty set (it conveys nothing).
+#[derive(Serialize)]
+pub struct DelegatedRoleView {
+    pub id: String,
+    /// The função's human name — what the picker and the row show.
+    pub name: String,
+    /// The verbs the função currently grants, in the role's deterministic order.
+    pub permissions: Vec<String>,
+    /// Whether the função still exists in the catalog.
+    pub known: bool,
+}
+
 /// A delegation rendered for the web (FROZEN for E7/t62). No secret material — only attribution,
-/// the delegated verb, its scope, and lifecycle timestamps.
+/// the delegated funções (with their current contents), the scope, and lifecycle timestamps.
 #[derive(Serialize)]
 pub struct DelegationView {
     pub id: String,
     pub from: String,
     pub to: String,
-    /// The primary delegated verb. Retained verbatim so pre-existing consumers of the frozen DTO
-    /// keep working; `permissions` is the authoritative full set.
-    pub permission: String,
-    /// Every delegated verb, in grant order (always non-empty; `permission` is its first element).
+    /// The delegated funções, in grant order. Empty **only** for a legacy permission-shaped record.
+    pub roles: Vec<DelegatedRoleView>,
+    /// Legacy: the primary verb of a pre-t44 permission-shaped record. Absent on role-shaped ones.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permission: Option<String>,
+    /// Every verb this delegation currently conveys — the legacy verbs unioned with the live
+    /// contents of the delegated funções. The flat view of `roles`, for display and for the ledger.
     pub permissions: Vec<String>,
     pub scope: ScopeView,
     pub granted_at: String,
@@ -206,34 +236,63 @@ pub struct DelegationView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub legal_basis: Option<String>,
     pub revoked: bool,
+    /// Reversibly paused. A suspended delegation conveys nothing (enforced where authority
+    /// resolves, not by filtering this list).
+    pub suspended: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revoked_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revoked_by: Option<String>,
 }
 
-impl From<&StoredDelegation> for DelegationView {
-    fn from(d: &StoredDelegation) -> Self {
-        DelegationView {
-            id: d.id.0.to_string(),
-            from: d.inner.from.0.to_string(),
-            to: d.inner.to.0.to_string(),
-            permission: d.inner.permission.as_str().to_owned(),
-            permissions: d
-                .inner
-                .permissions()
-                .into_iter()
-                .map(|p| p.as_str().to_owned())
-                .collect(),
-            scope: ScopeView::from(d.inner.scope),
-            granted_at: d.granted_at.clone(),
-            starts_at: d.inner.starts_at.format(&Rfc3339).unwrap_or_default(),
-            expires_at: d.inner.expires_at.and_then(|t| t.format(&Rfc3339).ok()),
-            legal_basis: d.inner.legal_basis.clone(),
-            revoked: d.inner.revoked,
-            revoked_at: d.revoked_at.clone(),
-            revoked_by: d.revoked_by.map(|u| u.0.to_string()),
-        }
+/// Render a stored delegation against the **live** role catalog. The catalog is required because a
+/// role-shaped delegation's authority is not stored in the record — it is whatever its funções grant
+/// right now (see [`chancela_authz::effective_permissions`]).
+pub(crate) fn delegation_view(d: &StoredDelegation, catalog: &RoleCatalog) -> DelegationView {
+    let roles = d
+        .inner
+        .roles()
+        .iter()
+        .map(|&role_id| match catalog.get(role_id) {
+            Some(role) => DelegatedRoleView {
+                id: role_id.0.to_string(),
+                name: role.name.clone(),
+                permissions: role
+                    .permission_set
+                    .iter()
+                    .map(|p| p.as_str().to_owned())
+                    .collect(),
+                known: true,
+            },
+            None => DelegatedRoleView {
+                id: role_id.0.to_string(),
+                name: role_id.0.to_string(),
+                permissions: Vec::new(),
+                known: false,
+            },
+        })
+        .collect();
+    DelegationView {
+        id: d.id.0.to_string(),
+        from: d.inner.from.0.to_string(),
+        to: d.inner.to.0.to_string(),
+        roles,
+        permission: d.inner.permission.map(|p| p.as_str().to_owned()),
+        permissions: d
+            .inner
+            .granted_permissions(catalog)
+            .into_iter()
+            .map(|p| p.as_str().to_owned())
+            .collect(),
+        scope: ScopeView::from(d.inner.scope),
+        granted_at: d.granted_at.clone(),
+        starts_at: d.inner.starts_at.format(&Rfc3339).unwrap_or_default(),
+        expires_at: d.inner.expires_at.and_then(|t| t.format(&Rfc3339).ok()),
+        legal_basis: d.inner.legal_basis.clone(),
+        revoked: d.inner.revoked,
+        suspended: d.inner.suspended,
+        revoked_at: d.revoked_at.clone(),
+        revoked_by: d.revoked_by.map(|u| u.0.to_string()),
     }
 }
 
@@ -274,26 +333,33 @@ pub async fn list_delegations(
     let principal = AuthzUserId(authz.principal()?.0);
     let can_see_all = authz.permits(Permission::DelegationRevoke, Scope::Global);
 
+    let catalog = state.roles.read().await;
     let table = state.delegations.read().await;
     let mut list: Vec<DelegationView> = table
         .values()
         .filter(|d| can_see_all || d.inner.from == principal || d.inner.to == principal)
-        .map(DelegationView::from)
+        .map(|d| delegation_view(d, &catalog))
         .collect();
     list.sort_by(|a, b| a.granted_at.cmp(&b.granted_at).then(a.id.cmp(&b.id)));
     Ok(Json(list))
 }
 
-/// `POST /v1/delegations` — grant a scoped, revocable, optionally-expiring delegation over one or
-/// more permissions. Gated `delegation.grant` at the delegation's scope, **and** the DELEGATION
-/// INVARIANT applied to **every** permission in the set independently: each must be non-meta AND
-/// held by the actor **via a role** covering that scope. The via-role rule makes re-delegation
-/// structurally impossible (a received permission is never a role grant).
+/// `POST /v1/delegations` — hand one or more **funções** to a grantee: scoped, revocable,
+/// suspendable, optionally expiring. Gated `delegation.grant` at the delegation's scope, **and** the
+/// DELEGATION INVARIANT applied to **every permission inside every função** independently: each must
+/// be non-meta AND held by the actor **via a role** covering that scope. The via-role rule makes
+/// re-delegation structurally impossible (a received permission is never a role grant).
 ///
-/// **All-or-nothing.** The whole set is validated before anything is written, so a batch containing
-/// one non-delegable or above-ceiling verb is refused *entirely* (`403`, naming that verb) and no
-/// partial delegation is ever persisted. Naming the offender is safe: the caller supplied the verb
-/// list and can already introspect their own authority via `GET /v1/session/permissions`.
+/// The ceiling is deliberately *not* decided from a função's name, id or protected flag — it is the
+/// same element-wise subset machinery the role-authoring and role-assignment invariants use
+/// ([`chancela_authz::can_delegate_roles`]), so a small-sounding função full of authority the
+/// grantor lacks is refused exactly like a large one.
+///
+/// **All-or-nothing.** Everything is validated before anything is written, so a request containing
+/// one non-delegable or above-ceiling verb — in any of its funções — is refused *entirely* (`403`,
+/// naming that verb) and no store insert, ledger event or cache invalidation happens. Naming the
+/// offender is safe: the caller chose the funções and can already introspect their own authority via
+/// `GET /v1/session/permissions` and the catalog via `GET /v1/roles`.
 pub async fn grant_delegation(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -301,13 +367,23 @@ pub async fn grant_delegation(
     Json(req): Json<GrantDelegation>,
 ) -> Result<(StatusCode, Json<DelegationView>), ApiError> {
     let scope: Scope = req.scope.into();
-    let requested = requested_permissions(req.permission, &req.permissions)?;
+    if req.permission.is_some() || !req.permissions.is_empty() {
+        return Err(ApiError::Unprocessable(PERMISSION_SHAPED_GRANT.to_owned()));
+    }
+    let requested = requested_roles(&req.roles)?;
     let authz = authorizer(&state, &actor).await?;
     // Meta gate at the delegation's scope.
     authz.require(Permission::DelegationGrant, scope)?;
-    // DELEGATION INVARIANT, ELEMENT-WISE: every verb must be non-meta + held via a role at scope
-    // (blocks escalation AND re-delegation). One offender refuses the entire delegation.
-    authz.can_delegate_all(&requested, scope).map_err(refusal)?;
+    // DELEGATION INVARIANT, PER PERMISSION INSIDE EACH FUNÇÃO: every verb the função carries must be
+    // non-meta + held via a role at scope (blocks escalation AND re-delegation). One offending verb
+    // in one função refuses the entire delegation. Validated against the same catalog snapshot the
+    // grant is written from.
+    {
+        let catalog = state.roles.read().await;
+        authz
+            .can_delegate_roles(&requested, &catalog, scope)
+            .map_err(refusal)?;
+    }
 
     let grantor = authz.principal()?;
     let grantee = UserId(req.to);
@@ -321,14 +397,14 @@ pub async fn grant_delegation(
         parse_optional_rfc3339(req.starts_at.as_deref(), "starts_at")?.unwrap_or(granted_at_time);
     let expires_at = parse_optional_rfc3339(req.expires_at.as_deref(), "expires_at")?;
 
-    // `requested` is non-empty (checked above), so `with_permissions` always yields a delegation.
-    let mut inner = Delegation::with_permissions(
+    // `requested` is non-empty (checked above), so `with_roles` always yields a delegation.
+    let mut inner = Delegation::with_roles(
         AuthzUserId(grantor.0),
         AuthzUserId(grantee.0),
         requested,
         scope,
     )
-    .ok_or_else(|| ApiError::Unprocessable(EMPTY_PERMISSION_SET.to_owned()))?
+    .ok_or_else(|| ApiError::Unprocessable(EMPTY_ROLE_SET.to_owned()))?
     .starting_at(starts_at)
     .with_legal_basis(Some(legal_basis));
     if let Some(exp) = expires_at {
@@ -344,12 +420,12 @@ pub async fn grant_delegation(
         .insert(stored.id, stored.clone());
     persist_delegations(&state).await?;
 
-    let view = DelegationView::from(&stored);
+    let view = delegation_view(&stored, &*state.roles.read().await);
     record_delegation_event(
         &state,
         &view,
         "delegation.granted",
-        "permission delegated",
+        "função delegated",
         &actor,
         &attestor,
     )
@@ -364,9 +440,10 @@ pub async fn grant_delegation(
 /// (a revoked delegation contributes no authority). Idempotent for an already-revoked delegation.
 ///
 /// **Whole-set revocation.** A delegation is the unit of revocation: revoking it withdraws *every*
-/// permission it carries, atomically. There is deliberately no per-permission revoke — the set was
-/// granted together under one legal basis, scope and expiry, so it is withdrawn together. To reduce
-/// a grantee's delegated authority, revoke the delegation and grant a narrower one.
+/// função it carries, atomically. There is deliberately no per-função revoke — they were granted
+/// together under one legal basis, scope and expiry, so they are withdrawn together. To reduce a
+/// grantee's delegated authority, revoke the delegation and grant a narrower função. For a
+/// *reversible* pause, use [`suspend_delegation`] instead — revocation is terminal.
 pub async fn revoke_delegation(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -385,7 +462,7 @@ pub async fn revoke_delegation(
     }
     // Idempotent: already revoked → return the current view unchanged.
     if existing.inner.revoked {
-        return Ok(Json(DelegationView::from(&existing)));
+        return Ok(Json(delegation_view(&existing, &*state.roles.read().await)));
     }
 
     let revoked_at = OffsetDateTime::now_utc()
@@ -401,7 +478,7 @@ pub async fn revoke_delegation(
     };
     persist_delegations(&state).await?;
 
-    let view = DelegationView::from(&updated);
+    let view = delegation_view(&updated, &*state.roles.read().await);
     record_delegation_event(
         &state,
         &view,
@@ -416,40 +493,120 @@ pub async fn revoke_delegation(
     Ok(Json(view))
 }
 
-pub(crate) const EMPTY_PERMISSION_SET: &str =
-    "uma delegação tem de indicar pelo menos uma permissão";
+/// `POST /v1/delegations/{id}/suspend` — **reversibly** pause a delegation. Same authority as
+/// revoke (the grantor always, otherwise `delegation.revoke` at the delegation's scope), because a
+/// suspension withdraws exactly the same authority — it just does so recoverably.
+///
+/// A suspended delegation conveys **nothing**: [`chancela_authz::Delegation::is_active`] is false,
+/// so it is stopped where delegations resolve into effective authority, not by hiding a row.
+/// Idempotent. Revoked delegations cannot be suspended (revocation is terminal).
+pub async fn suspend_delegation(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<Json<DelegationView>, ApiError> {
+    set_suspended(state, id, actor, attestor, true).await
+}
 
-/// Resolve the delegated set from the legacy singular field and the plural one: their union, in
-/// first-seen order, de-duplicated. Empty ⇒ `422` (a delegation that grants nothing is meaningless).
-fn requested_permissions(
-    single: Option<Permission>,
-    many: &[Permission],
-) -> Result<Vec<Permission>, ApiError> {
-    let mut out: Vec<Permission> = Vec::with_capacity(many.len() + 1);
-    for p in single.into_iter().chain(many.iter().copied()) {
-        if !out.contains(&p) {
-            out.push(p);
+/// `POST /v1/delegations/{id}/resume` — lift a suspension. Same authority as [`suspend_delegation`].
+/// The delegation resumes conveying whatever its funções grant **now**; the lifetime kept running
+/// while suspended, so a delegation that expired meanwhile stays spent. Idempotent.
+pub async fn resume_delegation(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<Json<DelegationView>, ApiError> {
+    set_suspended(state, id, actor, attestor, false).await
+}
+
+/// The shared suspend/resume transition: authorize, no-op if already in the target state, flip,
+/// persist, ledger, and signal the grantee's authority change.
+async fn set_suspended(
+    state: AppState,
+    id: Uuid,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    suspended: bool,
+) -> Result<Json<DelegationView>, ApiError> {
+    let del_id = DelegationId(id);
+    let authz = authorizer(&state, &actor).await?;
+    let principal = AuthzUserId(authz.principal()?.0);
+
+    let existing = state.delegations.read().await.get(&del_id).cloned();
+    let existing = existing.ok_or(ApiError::NotFound)?;
+    if existing.inner.from != principal {
+        authz.require(Permission::DelegationRevoke, existing.inner.scope)?;
+    }
+    if existing.inner.revoked {
+        return Err(ApiError::Unprocessable(
+            "uma delegação revogada não pode ser suspensa nem retomada".to_owned(),
+        ));
+    }
+    // Idempotent: already in the target state → nothing to transition, nothing to ledger.
+    if existing.inner.suspended == suspended {
+        return Ok(Json(delegation_view(&existing, &*state.roles.read().await)));
+    }
+
+    let updated = {
+        let mut table = state.delegations.write().await;
+        let d = table.get_mut(&del_id).ok_or(ApiError::NotFound)?;
+        d.inner.suspended = suspended;
+        d.clone()
+    };
+    persist_delegations(&state).await?;
+
+    let view = delegation_view(&updated, &*state.roles.read().await);
+    let (kind, why) = if suspended {
+        ("delegation.suspended", "delegation suspended")
+    } else {
+        ("delegation.resumed", "delegation resumed")
+    };
+    record_delegation_event(&state, &view, kind, why, &actor, &attestor).await?;
+    state.publish_role_changed(updated.inner.to.0);
+    Ok(Json(view))
+}
+
+pub(crate) const EMPTY_ROLE_SET: &str = "uma delegação tem de indicar pelo menos uma função";
+
+pub(crate) const PERMISSION_SHAPED_GRANT: &str = "uma delegação atribui uma função, não permissões avulsas: indique «roles» com os \
+     identificadores das funções a delegar";
+
+/// Resolve the delegated funções: first-seen order, de-duplicated. Empty ⇒ `422` (a delegation that
+/// hands over no função is meaningless).
+fn requested_roles(roles: &[Uuid]) -> Result<Vec<RoleId>, ApiError> {
+    let mut out: Vec<RoleId> = Vec::with_capacity(roles.len());
+    for &r in roles {
+        let role_id = RoleId(r);
+        if !out.contains(&role_id) {
+            out.push(role_id);
         }
     }
     if out.is_empty() {
-        return Err(ApiError::Unprocessable(EMPTY_PERMISSION_SET.to_owned()));
+        return Err(ApiError::Unprocessable(EMPTY_ROLE_SET.to_owned()));
     }
     Ok(out)
 }
 
-/// Turn an element-wise delegation refusal into a `403` that names the offending verb and the
+/// Turn a delegation refusal into a `403` that names the offending verb *inside the função* and the
 /// reason, and states that the whole delegation was refused (nothing was granted).
 fn refusal(refusal: DelegationRefusal) -> ApiError {
-    let permission = refusal.permission().as_str();
-    let reason = match refusal {
-        DelegationRefusal::Meta(_) => "é uma meta-permissão e não é delegável",
-        DelegationRefusal::NotHeldViaRole(_) => {
-            "não é detida através de uma função neste âmbito, logo não pode ser delegada"
+    let detail = match refusal {
+        DelegationRefusal::Meta(p) => format!(
+            "a função contém «{}», que é uma meta-permissão e não é delegável",
+            p.as_str()
+        ),
+        DelegationRefusal::NotHeldViaRole(p) => format!(
+            "a função contém «{}», que não detém através de uma função neste âmbito, logo não a \
+             pode delegar",
+            p.as_str()
+        ),
+        DelegationRefusal::UnknownRole(id) => {
+            format!("a função «{id}» não existe no catálogo")
         }
     };
-    ApiError::Forbidden(format!(
-        "delegação recusada na íntegra: a permissão «{permission}» {reason}"
-    ))
+    ApiError::Forbidden(format!("delegação recusada na íntegra: {detail}"))
 }
 
 fn parse_optional_rfc3339(
@@ -492,6 +649,22 @@ mod tests {
 
     fn uid(n: u128) -> AuthzUserId {
         AuthzUserId(Uuid::from_u128(n))
+    }
+
+    fn rid(n: u128) -> RoleId {
+        RoleId(Uuid::from_u128(0xF00 + n))
+    }
+
+    /// A catalog holding one bespoke função.
+    fn catalog_with(id: RoleId, name: &str, perms: &[Permission]) -> RoleCatalog {
+        let mut c = RoleCatalog::new();
+        c.insert(chancela_authz::Role {
+            id,
+            name: name.to_owned(),
+            permission_set: perms.iter().copied().collect(),
+            protected: false,
+        });
+        c
     }
 
     #[test]
@@ -541,7 +714,7 @@ mod tests {
         assert_eq!(back[0].inner.starts_at, OffsetDateTime::UNIX_EPOCH);
         assert_eq!(back[0].inner.legal_basis, None);
 
-        let view = DelegationView::from(&back[0]);
+        let view = delegation_view(&back[0], &RoleCatalog::new());
         assert_eq!(view.starts_at, "1970-01-01T00:00:00Z");
         assert_eq!(view.legal_basis, None);
     }
@@ -611,33 +784,17 @@ mod tests {
     }
 
     #[test]
-    fn requested_permissions_unions_the_legacy_field_with_the_array() {
-        // Legacy single-permission request.
+    fn requested_roles_dedups_and_refuses_an_empty_set() {
         assert_eq!(
-            requested_permissions(Some(Permission::ActRead), &[]).unwrap(),
-            vec![Permission::ActRead]
+            requested_roles(&[rid(1).0, rid(2).0, rid(1).0]).unwrap(),
+            vec![rid(1), rid(2)]
         );
-        // Array-only request.
-        assert_eq!(
-            requested_permissions(None, &[Permission::ActRead, Permission::ActAdvance]).unwrap(),
-            vec![Permission::ActRead, Permission::ActAdvance]
-        );
-        // Both, overlapping: union, first-seen order, de-duplicated.
-        assert_eq!(
-            requested_permissions(
-                Some(Permission::ActAdvance),
-                &[Permission::ActRead, Permission::ActAdvance]
-            )
-            .unwrap(),
-            vec![Permission::ActAdvance, Permission::ActRead]
-        );
-        // Neither: a delegation of nothing is refused.
-        let err = requested_permissions(None, &[]).expect_err("empty set");
-        assert!(matches!(err, ApiError::Unprocessable(m) if m == EMPTY_PERMISSION_SET));
+        let err = requested_roles(&[]).expect_err("empty set");
+        assert!(matches!(err, ApiError::Unprocessable(m) if m == EMPTY_ROLE_SET));
     }
 
     #[test]
-    fn a_refusal_names_the_offending_permission_and_says_nothing_was_granted() {
+    fn a_refusal_names_the_offending_permission_inside_the_funcao() {
         let err = refusal(DelegationRefusal::Meta(Permission::DelegationGrant));
         let ApiError::Forbidden(message) = err else {
             panic!("expected 403")
@@ -652,28 +809,46 @@ mod tests {
         };
         assert!(message.contains("data.wipe"));
         assert!(message.contains("função"));
+
+        let err = refusal(DelegationRefusal::UnknownRole(rid(7)));
+        let ApiError::Forbidden(message) = err else {
+            panic!("expected 403")
+        };
+        assert!(message.contains(&rid(7).0.to_string()));
+        assert!(message.contains("catálogo"));
     }
 
     #[test]
-    fn the_view_lists_every_delegated_permission() {
+    fn the_view_names_each_funcao_and_shows_the_authority_it_carries() {
         let granted_at = OffsetDateTime::UNIX_EPOCH.format(&Rfc3339).unwrap();
-        let inner = Delegation::with_permissions(
-            uid(1),
-            uid(2),
-            [Permission::ActAdvance, Permission::DataBackup],
-            Scope::Global,
-        )
-        .unwrap();
+        let catalog = catalog_with(
+            rid(1),
+            "Secretário",
+            &[Permission::ActAdvance, Permission::ActRead],
+        );
+        let inner = Delegation::with_roles(uid(1), uid(2), [rid(1)], Scope::Global).unwrap();
         let d = StoredDelegation::new(DelegationId(Uuid::from_u128(3)), granted_at, inner);
-        let view = DelegationView::from(&d);
-        // The legacy singular field keeps naming the primary verb…
-        assert_eq!(view.permission, "act.advance");
-        // …and the array carries the whole set (this is what the ledger entry records).
-        assert_eq!(view.permissions, vec!["act.advance", "data.backup"]);
+
+        let view = delegation_view(&d, &catalog);
+        // The função is named for a human, and the authority it hands over is inspectable.
+        assert_eq!(view.roles.len(), 1);
+        assert_eq!(view.roles[0].name, "Secretário");
+        assert!(view.roles[0].known);
+        assert_eq!(view.roles[0].permissions, vec!["act.read", "act.advance"]);
+        // The flat set is what the delegation actually conveys, and no legacy verb is invented.
+        assert_eq!(view.permissions, vec!["act.read", "act.advance"]);
+        assert_eq!(view.permission, None);
+        assert!(!view.suspended);
+
+        // A função that has left the catalog is shown as unknown and conveys nothing.
+        let view = delegation_view(&d, &RoleCatalog::new());
+        assert!(!view.roles[0].known);
+        assert!(view.roles[0].permissions.is_empty());
+        assert!(view.permissions.is_empty());
     }
 
     #[test]
-    fn a_legacy_single_permission_record_views_as_a_one_element_set() {
+    fn a_legacy_permission_shaped_record_still_views_and_resolves() {
         let raw = serde_json::json!([{
             "id": "00000000-0000-0000-0000-000000000009",
             "granted_at": "2026-01-01T00:00:00Z",
@@ -684,9 +859,41 @@ mod tests {
             "revoked": false
         }]);
         let back: Vec<StoredDelegation> = serde_json::from_value(raw).expect("legacy delegation");
-        let view = DelegationView::from(&back[0]);
-        assert_eq!(view.permission, "act.advance");
+        // It needs no função: it resolves against an empty catalog exactly as it always did.
+        let view = delegation_view(&back[0], &RoleCatalog::new());
+        assert!(view.roles.is_empty());
+        assert_eq!(view.permission.as_deref(), Some("act.advance"));
         assert_eq!(view.permissions, vec!["act.advance"]);
+        assert!(back[0].authz().is_active(OffsetDateTime::UNIX_EPOCH));
+    }
+
+    #[test]
+    fn a_role_shaped_record_round_trips_on_disk_and_carries_the_suspension() {
+        let dir = std::env::temp_dir().join(format!("chancela-deleg-roles-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(DELEGATIONS_FILE);
+
+        let granted_at = OffsetDateTime::UNIX_EPOCH.format(&Rfc3339).unwrap();
+        let mut inner =
+            Delegation::with_roles(uid(1), uid(2), [rid(1), rid(2)], Scope::Global).unwrap();
+        inner.suspended = true;
+        let stored = StoredDelegation::new(DelegationId(Uuid::from_u128(1)), granted_at, inner);
+        let mut table: HashMap<DelegationId, StoredDelegation> = HashMap::new();
+        table.insert(stored.id, stored.clone());
+
+        write_delegations_atomic(&path, &table).expect("write");
+        let loaded = load_delegations(&path).expect("load");
+        assert_eq!(loaded[&stored.id], stored);
+        assert_eq!(loaded[&stored.id].authz().roles(), [rid(1), rid(2)]);
+        // Suspension survives the round trip and still yields no authority.
+        assert!(loaded[&stored.id].authz().suspended);
+        assert!(
+            !loaded[&stored.id]
+                .authz()
+                .is_active(OffsetDateTime::UNIX_EPOCH)
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

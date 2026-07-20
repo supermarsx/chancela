@@ -68,7 +68,8 @@ semantics are Linux-native and only fully apply on a Linux host/VM.
   rate-limits, and benefits from a leader-aware load balancer.
 - Network connector targets require explicit outbound DNS/HTTPS (or their
   reviewed native protocol ports) and an exact
-  `CHANCELA_CONNECTOR_ALLOWED_HOSTS` policy. Private, loopback, link-local, and
+  `CHANCELA_CONNECTOR_ALLOWED_HOSTS` policy — or its in-app equivalent, which
+  that variable caps when set. Private, loopback, link-local, and
   metadata-service destinations fail closed unless both the hostname and
   resolved IP/CIDR are explicitly allowlisted. Pair this application control
   with host/container egress filtering in production.

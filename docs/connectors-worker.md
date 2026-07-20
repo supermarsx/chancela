@@ -263,17 +263,58 @@ are separately parsed and subject to the same rule, preventing a provider
 response from redirecting source bytes to an unsafe URL. HTTP redirects are
 limited to three and must remain same-origin.
 
-Every network connector also requires
-`CHANCELA_CONNECTOR_ALLOWED_HOSTS`, a comma-separated exact hostname/IP/CIDR
-allowlist. Wildcards are rejected. The configured host must have an exact host
-entry. DNS is resolved before connector use and every non-public result
-(loopback, private, link-local, metadata-service ranges, and similar) must also
-match an explicit IP or CIDR entry. For example, a reviewed private Nextcloud
-deployment may use:
+Every network connector is validated against an outbound host allowlist: a
+comma-separated exact hostname/IP/CIDR list. Wildcards are rejected. The
+configured host must have an exact host entry. DNS is resolved before connector
+use and every non-public result (loopback, private, link-local,
+metadata-service ranges, and similar) must also match an explicit IP or CIDR
+entry. For example, a reviewed private Nextcloud deployment may use:
 
 ```text
 CHANCELA_CONNECTOR_ALLOWED_HOSTS=cloud.example,10.42.8.15/32
 ```
+
+### Two sources, one boundary
+
+The allowlist has a deployment source and a runtime source:
+
+| Source | Where | Who may change it |
+|---|---|---|
+| `CHANCELA_CONNECTOR_ALLOWED_HOSTS` | Deployment environment | Whoever controls the container/unit file; requires a redeploy |
+| Connector egress allowlist | **Settings → Operações**, stored in the settings document and published to `<CHANCELA_DATA_DIR>/connector-allowed-hosts.json` | A holder of `settings.manage` at **Global** scope (Owner, Platform Administrator) |
+
+**The rule is intersection, never union.** When the environment variable is set
+it is a **ceiling**: every runtime entry must be covered by it, so an
+administrator can only ever *narrow* what the deployment permits. Saving an
+entry outside the ceiling is rejected with a `422` naming the variable. When the
+environment variable is unset, the runtime allowlist is the sole boundary; with
+neither configured, network connectors fail closed exactly as before. The UI
+states which of these three cases is in force, and shows the ceiling itself.
+
+Because the runtime allowlist is the path an attacker holding an admin session
+would use, entries saved through it are validated more strictly than the
+environment variable. Rejected outright, regardless of what the deployment would
+permit: wildcards in any form; anything carrying a scheme, port, path, query, or
+user information; `localhost` and the loopback ranges; the link-local range
+`169.254.0.0/16` and `fe80::/10` (`169.254.169.254` is the cloud
+instance-metadata endpoint, the highest-value SSRF destination in a hosted
+deployment); multicast and the unspecified address; and CIDRs broader than `/16`
+(IPv4) or `/32` (IPv6). At most 64 entries. Private RFC 1918 ranges remain
+allowed — LAN SMB/FTPS backup targets are a supported deployment.
+
+Every change appends a `connector.allowlist.updated` event to the append-only
+ledger alongside the usual `settings.updated`, recording the actor, the previous
+and new lists, what was added and removed, and whether a deployment ceiling was
+in force. Changes take effect on the **next connector operation** in both the
+API and the worker process — no restart of either is required.
+
+**The security trade-off, stated plainly.** Before this, the egress boundary
+could only be moved by someone with deployment access. Now an attacker who
+obtains a Global `settings.manage` session can also narrow it, and — where no
+environment ceiling is pinned — widen it to a host they control, subject to the
+validation above. A hardened deployment should therefore continue to set
+`CHANCELA_CONNECTOR_ALLOWED_HOSTS`, which reduces a compromised admin session to
+choosing a subset of hosts the deployment already trusts.
 
 Microsoft Graph and Google Drive upload-session URLs are independently checked
 against the same policy before bytes are sent, so their session hosts must also

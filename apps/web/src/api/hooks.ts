@@ -2499,11 +2499,11 @@ export function useDelegations() {
 }
 
 /**
- * Grant a scoped delegation over one or more permissions (`POST /v1/delegations`, t64-E4; the
- * array form is t26). Only permissions the grantor holds VIA A ROLE at the scope are delegable
- * (meta verbs are non-delegable); the server checks **every** element and 403s the whole
- * delegation — naming the offender — if any one fails, so a grant is never partially applied.
- * Refetches the delegation list + ledger.
+ * Delegate one or more **funções** (`POST /v1/delegations`, t64-E4; role-shaped t44). Only a
+ * função whose every permission the grantor holds VIA A ROLE at the scope is delegable (a função
+ * carrying a meta verb never is); the server checks **every permission inside every função** and
+ * 403s the whole delegation — naming the offending verb — if any one fails, so a grant is never
+ * partially applied. Refetches the delegation list + ledger.
  */
 export function useGrantDelegation() {
   const qc = useQueryClient();
@@ -2517,11 +2517,28 @@ export function useGrantDelegation() {
 }
 
 /** Revoke a delegation (`DELETE /v1/delegations/{id}`, t64-E4). Allowed to the grantor or a
- *  `delegation.revoke` holder; revocation is immediate. Refetches the list + ledger. */
+ *  `delegation.revoke` holder; revocation is immediate and terminal — it withdraws every função
+ *  the delegation carried, at once. Refetches the list + ledger. */
 export function useRevokeDelegation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.revokeDelegation(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.delegations });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Suspend (`POST /v1/delegations/{id}/suspend`) or resume (`.../resume`) a delegation (t44) —
+ *  the reversible counterpart of revoke, same authority. A suspended delegation conveys nothing:
+ *  the server stops it where authority resolves, so this is a real state change, not a filter.
+ *  Refetches the list + ledger. */
+export function useSetDelegationSuspended() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, suspended }: { id: string; suspended: boolean }) =>
+      suspended ? api.suspendDelegation(id) : api.resumeDelegation(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.delegations });
       void qc.invalidateQueries({ queryKey: ['ledger'] });

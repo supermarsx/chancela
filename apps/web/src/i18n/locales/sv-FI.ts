@@ -107,17 +107,17 @@ export const svFI: Catalog = {
   'rbac.toast.assigned': 'Roll tilldelad',
   'rbac.toast.unassigned': 'Roll borttagen',
   'rbac.delegacoes.lede':
-    'Bevilja en behörighet du har till en annan användare, i en omfattning, med valfritt utgångsdatum.',
+    'Överlåt en roll du innehar till en annan användare, inom ett omfång, valfritt tidsbegränsat.',
   'rbac.deleg.cardTitle': 'Delegeringar',
   'rbac.deleg.grant': 'Ny delegering',
   'rbac.deleg.empty': 'Inga delegeringar',
   'rbac.deleg.emptyBody': 'Du har ännu inte beviljat eller tagit emot några delegeringar.',
   'rbac.deleg.to.label': 'Bevilja till',
-  'rbac.deleg.permission.label': 'Behörighet',
+  'rbac.deleg.permission.label': 'Roller att delegera',
   'rbac.deleg.permission.none':
-    'Du har inga delegerbara behörigheter. Du kan bara delegera behörigheter du har via en roll.',
+    'Du har ingen roll som du kan delegera i sin helhet. Du kan endast delegera en roll vars samtliga behörigheter du innehar via en egen roll.',
   'rbac.deleg.onlyHeldNote':
-    'Du kan bara delegera behörigheter du har via en roll (meta-behörigheter kan inte delegeras).',
+    'Du kan bara delegera en roll om du via en egen roll innehar alla behörigheter den ger; en roll med metabehörigheter går aldrig att delegera.',
   'rbac.deleg.legalBasis.label': 'Lokal grund/evidens',
   'rbac.deleg.legalBasis.hint':
     'Registrera den lokala referens eller notering som operatören anger; detta intygar inte juridisk tillräcklighet.',
@@ -131,7 +131,7 @@ export const svFI: Catalog = {
   'rbac.deleg.startsAt.missing': 'Start ej registrerad',
   'rbac.deleg.legalBasis.missing': 'Saknas (äldre)',
   'rbac.deleg.user.self': '(jag)',
-  'rbac.deleg.table.permission': 'Behörighet',
+  'rbac.deleg.table.permission': 'Roll',
   'rbac.deleg.table.from': 'Från',
   'rbac.deleg.table.to': 'Till',
   'rbac.deleg.table.scope': 'Omfattning',
@@ -144,6 +144,15 @@ export const svFI: Catalog = {
   'rbac.deleg.status.pending': 'Inte påbörjad',
   'rbac.deleg.status.expired': 'Utgången',
   'rbac.deleg.status.revoked': 'Återkallad',
+  'rbac.deleg.funcao.carries': 'Ger',
+  'rbac.deleg.funcao.unknown': 'Rollen har tagits bort ur katalogen',
+  'rbac.deleg.status.suspended': 'Pausad',
+  'rbac.deleg.suspend': 'Pausa',
+  'rbac.deleg.resume': 'Återuppta',
+  'rbac.deleg.filter.all': 'Alla',
+  'rbac.deleg.filter.none': 'Ingen delegering matchar filtren.',
+  'rbac.toast.suspended': 'Delegering pausad',
+  'rbac.toast.resumed': 'Delegering återupptagen',
   'rbac.toast.delegated': 'Delegering beviljad',
   'rbac.toast.revoked': 'Delegering återkallad',
   // --- Navigation / shell --------------------------------------------------------
@@ -5359,7 +5368,8 @@ export const svFI: Catalog = {
     'Endast de bevarandekandidater som nämner den här boken. Bevarandepolicyer hanteras under Inställningar → Integritet.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Signaturpolicy',
-  'settings.signing.fallbackHint': 'Portugisiskt officiellt standardvärde. Används som reserv när ingen av posterna i tabellen nedan är aktiv.',
+  'settings.signing.fallbackHint':
+    'Portugisiskt officiellt standardvärde. Används som reserv när ingen av posterna i tabellen nedan är aktiv.',
   'settings.signing.tslSources.caption': 'Konfigurerade tillitslistekällor',
   'settings.signing.tsaProviders.caption': 'Konfigurerade tidsstämplingsleverantörer',
   'settings.signing.providers.caption': 'Signaturleverantörernas lägen och deras status',
@@ -5371,12 +5381,18 @@ export const svFI: Catalog = {
   'settings.signing.table.mode': 'Läge',
   'settings.signing.table.notes': 'Anmärkningar',
   'settings.providerCredentials.protection.unavailable.title': 'Uppgifterna kan inte sparas',
-  'settings.providerCredentials.protection.unavailable.body': 'Den här servern kan varken kryptera eller spara leverantörshemligheter. Ingenting sparas förrän detta är åtgärdat — uppgifterna förvaras inte med svagare skydd, de förvaras inte alls.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'Servern körs enbart i minnet, utan datakatalog. Ange CHANCELA_DATA_DIR och starta om.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Ingen nyckelkälla är tillgänglig. Aktivera SQLCipher eller operativsystemets försegling, eller ange CHANCELA_CREDENTIAL_KEY_FILE.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'Nyckeln som operatören angett är ogiltig eller har angetts två gånger. Behåll endast CHANCELA_CREDENTIAL_KEY eller CHANCELA_CREDENTIAL_KEY_FILE, med giltigt nyckelmaterial.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'Rotnyckelns kuvert kunde inte läsas. Kontrollera behörigheterna för datakatalogen och om filen hör till den här maskinen.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'Uppgiftsvalvet är otillgängligt. Se serverloggarna.',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Den här servern kan varken kryptera eller spara leverantörshemligheter. Ingenting sparas förrän detta är åtgärdat — uppgifterna förvaras inte med svagare skydd, de förvaras inte alls.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'Servern körs enbart i minnet, utan datakatalog. Ange CHANCELA_DATA_DIR och starta om.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Ingen nyckelkälla är tillgänglig. Aktivera SQLCipher eller operativsystemets försegling, eller ange CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'Nyckeln som operatören angett är ogiltig eller har angetts två gånger. Behåll endast CHANCELA_CREDENTIAL_KEY eller CHANCELA_CREDENTIAL_KEY_FILE, med giltigt nyckelmaterial.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'Rotnyckelns kuvert kunde inte läsas. Kontrollera behörigheterna för datakatalogen och om filen hör till den här maskinen.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'Uppgiftsvalvet är otillgängligt. Se serverloggarna.',
   'settings.providerCredentials.entry.notConfigured': 'inte konfigurerad',
   'settings.providerCredentials.table.caption': 'Uppgiftsposter för {provider}',
   'settings.providerCredentials.table.entry': 'Post',

@@ -44,6 +44,10 @@ under the same permissions and audit trail.
 - :material-shield-lock: **[Security & Hardening](security/hardened-docker.md)**
   The hardened, distroless, non-root container images and operations security.
 
+- :material-key-alert: **[Authorization changes](security/authorization-changes.md)**
+  Which roles lose access in a release, and how an operator restores it deliberately.
+  Read before upgrading an existing install.
+
 - :material-toolbox: **[Extras](extras.md)**
   Backups, timestamping, reverse proxy/TLS, monitoring, SBOM/scanning, and the
   law-corpus review workflow.

@@ -331,6 +331,31 @@ impl Authorizer {
     ) -> Result<(), chancela_authz::DelegationRefusal> {
         chancela_authz::can_delegate_all(&self.eff, perms.iter().copied(), scope, self.rel())
     }
+
+    /// **Delegation invariant over funções (t44).** May the principal delegate *every* função in
+    /// `roles` at `scope`? Each função is resolved against `catalog` (unknown ⇒ refusal, never a
+    /// silent skip) and checked **permission by permission** — the same element-wise subset
+    /// machinery as [`Self::can_define_role`]/[`Self::can_assign_role`], tightened with the two
+    /// delegation rules (non-meta, held *via a role*). Nothing is inferred from a função's name or
+    /// id. The first offender is returned so the caller can refuse the whole delegation and name it.
+    ///
+    /// # Errors
+    /// The first unknown função, or the first permission inside one that is meta or not held via a
+    /// role at `scope`.
+    pub fn can_delegate_roles(
+        &self,
+        roles: &[chancela_authz::RoleId],
+        catalog: &chancela_authz::RoleCatalog,
+        scope: Scope,
+    ) -> Result<(), chancela_authz::DelegationRefusal> {
+        chancela_authz::can_delegate_roles(
+            &self.eff,
+            roles.iter().copied(),
+            catalog,
+            scope,
+            self.rel(),
+        )
+    }
 }
 
 /// Resolve the session actor into an [`Authorizer`] (its effective authority + the live
@@ -887,8 +912,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ), // GET proposal/POST apply role.manage@Global + seeded-only subset-preserving reconciliation
     ("/v1/permissions", RouteClass::Session), // GET the verb catalog (any valid session)
     ("/v1/users/{id}/roles", RouteClass::Gated), // POST/DELETE role.assign@scope + subset + last-Owner
-    ("/v1/delegations", RouteClass::Gated), // GET own/all · POST delegation.grant@scope + invariant
+    ("/v1/delegations", RouteClass::Gated), // GET own/all · POST delegation.grant@scope + per-verb-in-função invariant
     ("/v1/delegations/{id}", RouteClass::Gated), // DELETE grantor OR delegation.revoke@scope
+    ("/v1/delegations/{id}/suspend", RouteClass::Gated), // POST grantor OR delegation.revoke@scope
+    ("/v1/delegations/{id}/resume", RouteClass::Gated), // POST grantor OR delegation.revoke@scope
 ];
 
 /// Classify a router path against [`ROUTE_CLASSIFICATION`].

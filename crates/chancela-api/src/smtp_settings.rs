@@ -180,7 +180,12 @@ pub async fn delete_email_password(
 ) -> Result<Json<EmailStatusView>, ApiError> {
     require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
 
-    write_smtp_fields(&state, SmtpCredentialFields::default(), &[FIELD_SMTP_PASSWORD]).await?;
+    write_smtp_fields(
+        &state,
+        SmtpCredentialFields::default(),
+        &[FIELD_SMTP_PASSWORD],
+    )
+    .await?;
     audit(&state, &actor, &attestor, "email.password.cleared").await?;
 
     let status = status_view(&state.settings.read().await.email.clone(), false);
@@ -340,7 +345,10 @@ fn status_view(settings: &EmailSettings, password_configured: bool) -> EmailStat
     }
 
     EmailStatusView {
-        deliverable: settings.enabled && host_set && from_set && (!username_set || password_configured),
+        deliverable: settings.enabled
+            && host_set
+            && from_set
+            && (!username_set || password_configured),
         encrypted: settings.encryption.is_encrypted(),
         password_configured,
         warnings,
@@ -384,9 +392,12 @@ async fn read_password_configured(state: &AppState) -> Result<bool, ApiError> {
     .map_err(|e| std::panic::resume_unwind(e.into_panic()))
     .and_then(|r| r)
     .map_err(|e| map_store_err_for(STORE_SUBJECT, e))?;
-    Ok(entries
-        .iter()
-        .any(|entry| entry.fields.iter().any(|(name, _)| name == FIELD_SMTP_PASSWORD)))
+    Ok(entries.iter().any(|entry| {
+        entry
+            .fields
+            .iter()
+            .any(|(name, _)| name == FIELD_SMTP_PASSWORD)
+    }))
 }
 
 /// Decrypt the stored password, or `None` when there is none.
@@ -688,12 +699,7 @@ mod tests {
                 } else {
                     "250 Ok\r\n".to_owned()
                 };
-                if stream
-                    .get_mut()
-                    .write_all(reply.as_bytes())
-                    .await
-                    .is_err()
-                {
+                if stream.get_mut().write_all(reply.as_bytes()).await.is_err() {
                     return;
                 }
             }
@@ -762,8 +768,12 @@ mod tests {
         );
 
         // Nor in the status view.
-        let (status, view) =
-            send_with(state.clone(), get("/v1/settings/email/status"), Some(&token)).await;
+        let (status, view) = send_with(
+            state.clone(),
+            get("/v1/settings/email/status"),
+            Some(&token),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(view["password_configured"], json!(true));
         assert_eq!(view["deliverable"], json!(true));
@@ -932,7 +942,8 @@ mod tests {
         assert_eq!(failure["code"], json!(535), "{body}");
         assert_eq!(failure["enhanced_code"], json!("5.7.8"), "{body}");
         assert_eq!(
-            failure["detail"], json!("Error: authentication failed"),
+            failure["detail"],
+            json!("Error: authentication failed"),
             "{body}"
         );
         assert!(
@@ -1202,13 +1213,20 @@ mod tests {
 
         let (status, body) = send_with(
             state,
-            body_req("PUT", "/v1/settings/email/password", json!({ "password": "" })),
+            body_req(
+                "PUT",
+                "/v1/settings/email/password",
+                json!({ "password": "" }),
+            ),
             Some(&token),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(
-            body["error"].as_str().unwrap_or_default().contains("DELETE"),
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("DELETE"),
             "the refusal should point at the right verb: {body}"
         );
     }
@@ -1384,7 +1402,12 @@ mod tests {
         keys.sort_unstable();
         assert_eq!(
             keys,
-            ["deliverable", "encrypted", "password_configured", "warnings"]
+            [
+                "deliverable",
+                "encrypted",
+                "password_configured",
+                "warnings"
+            ]
         );
     }
 

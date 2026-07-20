@@ -102,17 +102,17 @@ export const daDK: Catalog = {
   'rbac.toast.assigned': 'Rolle tildelt',
   'rbac.toast.unassigned': 'Rolle fjernet',
   'rbac.delegacoes.lede':
-    'Tildel en tilladelse, du har, til en anden bruger i et omfang, med valgfri udløb.',
+    'Overdrag en rolle, du varetager, til en anden bruger inden for et omfang, eventuelt tidsbegrænset.',
   'rbac.deleg.cardTitle': 'Delegeringer',
   'rbac.deleg.grant': 'Ny delegering',
   'rbac.deleg.empty': 'Ingen delegeringer',
   'rbac.deleg.emptyBody': 'Du har endnu ikke tildelt eller modtaget delegeringer.',
   'rbac.deleg.to.label': 'Tildel til',
-  'rbac.deleg.permission.label': 'Tilladelse',
+  'rbac.deleg.permission.label': 'Roller, der skal delegeres',
   'rbac.deleg.permission.none':
-    'Du har ingen delegerbare tilladelser. Du kan kun delegere tilladelser, du har via en rolle.',
+    'Du har ingen rolle, du kan delegere fuldt ud. Du kan kun delegere en rolle, hvis rettigheder du alle har via en egen rolle.',
   'rbac.deleg.onlyHeldNote':
-    'Du kan kun delegere tilladelser, du har via en rolle (meta-tilladelser kan ikke delegeres).',
+    'Du kan kun delegere en rolle, hvis du via en egen rolle har alle de rettigheder, den giver; en rolle med meta-rettigheder kan aldrig delegeres.',
   'rbac.deleg.legalBasis.label': 'Lokal grundlag/evidens',
   'rbac.deleg.legalBasis.hint':
     'Registrer den lokale reference eller note, som operatøren angiver; dette certificerer ikke juridisk tilstrækkelighed.',
@@ -126,7 +126,7 @@ export const daDK: Catalog = {
   'rbac.deleg.startsAt.missing': 'Start ikke registreret',
   'rbac.deleg.legalBasis.missing': 'Mangler (ældre)',
   'rbac.deleg.user.self': '(mig)',
-  'rbac.deleg.table.permission': 'Tilladelse',
+  'rbac.deleg.table.permission': 'Rolle',
   'rbac.deleg.table.from': 'Fra',
   'rbac.deleg.table.to': 'Til',
   'rbac.deleg.table.scope': 'Omfang',
@@ -139,6 +139,15 @@ export const daDK: Catalog = {
   'rbac.deleg.status.pending': 'Ikke startet',
   'rbac.deleg.status.expired': 'Udløbet',
   'rbac.deleg.status.revoked': 'Tilbagekaldt',
+  'rbac.deleg.funcao.carries': 'Giver',
+  'rbac.deleg.funcao.unknown': 'Rolle fjernet fra kataloget',
+  'rbac.deleg.status.suspended': 'Suspenderet',
+  'rbac.deleg.suspend': 'Suspender',
+  'rbac.deleg.resume': 'Genoptag',
+  'rbac.deleg.filter.all': 'Alle',
+  'rbac.deleg.filter.none': 'Ingen delegering matcher filtrene.',
+  'rbac.toast.suspended': 'Delegering suspenderet',
+  'rbac.toast.resumed': 'Delegering genoptaget',
   'rbac.toast.delegated': 'Delegering tildelt',
   'rbac.toast.revoked': 'Delegering tilbagekaldt',
   // --- Navigation / shell --------------------------------------------------------
@@ -5348,7 +5357,8 @@ export const daDK: Catalog = {
     'Kun de opbevaringskandidater, der nævner denne bog. Opbevaringspolitikker administreres under Indstillinger → Privatliv.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Signaturpolitik',
-  'settings.signing.fallbackHint': 'Officiel portugisisk standardværdi. Bruges som reserve, når ingen af posterne i tabellen nedenfor er aktive.',
+  'settings.signing.fallbackHint':
+    'Officiel portugisisk standardværdi. Bruges som reserve, når ingen af posterne i tabellen nedenfor er aktive.',
   'settings.signing.tslSources.caption': 'Konfigurerede tillidslistekilder',
   'settings.signing.tsaProviders.caption': 'Konfigurerede tidsstempeludbydere',
   'settings.signing.providers.caption': 'Signaturudbydertilstande og deres status',
@@ -5359,13 +5369,20 @@ export const daDK: Catalog = {
   'settings.signing.table.provider': 'Udbyder',
   'settings.signing.table.mode': 'Tilstand',
   'settings.signing.table.notes': 'Bemærkninger',
-  'settings.providerCredentials.protection.unavailable.title': 'Legitimationsoplysninger kan ikke gemmes',
-  'settings.providerCredentials.protection.unavailable.body': 'Denne server kan hverken kryptere eller gemme udbyderhemmeligheder. Intet bliver gemt, før dette er løst — legitimationsoplysningerne opbevares ikke med svagere beskyttelse, de opbevares slet ikke.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'Serveren kører kun i hukommelsen uden datamappe. Angiv CHANCELA_DATA_DIR, og genstart.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Der er ingen nøglekilde tilgængelig. Aktivér SQLCipher eller forsegling via operativsystemet, eller angiv CHANCELA_CREDENTIAL_KEY_FILE.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'Den nøgle, operatøren har angivet, er ugyldig eller er angivet to gange. Behold kun CHANCELA_CREDENTIAL_KEY eller CHANCELA_CREDENTIAL_KEY_FILE med gyldigt nøglemateriale.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'Konvolutten med rodnøglen kunne ikke læses. Kontrollér rettighederne til datamappen, og om filen hører til denne maskine.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'Legitimationsboksen er utilgængelig. Se serverlogfilerne.',
+  'settings.providerCredentials.protection.unavailable.title':
+    'Legitimationsoplysninger kan ikke gemmes',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Denne server kan hverken kryptere eller gemme udbyderhemmeligheder. Intet bliver gemt, før dette er løst — legitimationsoplysningerne opbevares ikke med svagere beskyttelse, de opbevares slet ikke.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'Serveren kører kun i hukommelsen uden datamappe. Angiv CHANCELA_DATA_DIR, og genstart.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Der er ingen nøglekilde tilgængelig. Aktivér SQLCipher eller forsegling via operativsystemet, eller angiv CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'Den nøgle, operatøren har angivet, er ugyldig eller er angivet to gange. Behold kun CHANCELA_CREDENTIAL_KEY eller CHANCELA_CREDENTIAL_KEY_FILE med gyldigt nøglemateriale.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'Konvolutten med rodnøglen kunne ikke læses. Kontrollér rettighederne til datamappen, og om filen hører til denne maskine.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'Legitimationsboksen er utilgængelig. Se serverlogfilerne.',
   'settings.providerCredentials.entry.notConfigured': 'ikke konfigureret',
   'settings.providerCredentials.table.caption': 'Legitimationsposter for {provider}',
   'settings.providerCredentials.table.entry': 'Post',

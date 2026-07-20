@@ -11,9 +11,11 @@
 //!   scope). Holding `role.manage`/`role.assign` does **not** exempt this check.
 //! - **Scope-narrowing** — [`scope_covers`] is narrowing-only, so a scoped grant can never satisfy a
 //!   `Global` check and authority never widens.
-//! - **Delegation invariant** — [`can_delegate`]: you may only delegate a **non-meta** permission you
-//!   hold **via a role** at that scope. Because a *received* (delegated) permission is never a role
-//!   grant, **re-delegation is structurally impossible**.
+//! - **Delegation invariant** — [`can_delegate_roles`]: a delegation hands over a **função**, and you
+//!   may only delegate one whose **every** permission is non-meta and held by you **via a role** at
+//!   that scope. The ceiling is evaluated per permission *inside* the role, never from its name or
+//!   id. Because a *received* (delegated) permission is never a role grant, **re-delegation is
+//!   structurally impossible**.
 //! - **Protected-Owner** — the Owner role is undeletable and its permission-set locked
 //!   ([`Role::can_be_deleted`] / [`Role::can_edit_permission_set`]); [`last_owner_guard`] keeps ≥1
 //!   Owner assignment.
@@ -107,10 +109,20 @@ impl ScopedPermissionSet {
 ///
 /// - Each [`RoleAssignment`] contributes its role's whole permission-set at the assignment's scope
 ///   (a missing role in the catalog contributes nothing — fail-closed).
-/// - Each **active** (started, non-revoked, non-expired) [`Delegation`] whose `to == principal`
-///   contributes **every** permission in its set ([`Delegation::permissions`]) at its scope, into
-///   the *delegated* bucket. A revoked or expired delegation contributes none of them — the set
-///   shares one lifetime, so it starts and ends together.
+/// - Each **active** (started, non-revoked, **non-suspended**, non-expired) [`Delegation`] whose
+///   `to == principal` contributes **every** permission its delegated funções currently grant
+///   ([`Delegation::granted_permissions`], resolved against `roles` *now*) at its scope, into the
+///   *delegated* bucket. A revoked, suspended or expired delegation contributes none of them — the
+///   funções share one lifetime, so they start and end together.
+///
+/// **Live resolution, deliberately.** A delegation stores role **ids**, so editing a função changes
+/// what every active delegation of it conveys, immediately and without re-granting. That is what
+/// "delegar uma função" means — the delegate stands in the grantor's place in that role, whatever
+/// the role is today, and it keeps a delegation from silently preserving authority an operator
+/// believed they had removed from the role. It is also the sharper edge: **widening a função widens
+/// every live delegation of it**. Two things blunt it — role authoring is itself ceiling-checked
+/// ([`can_define_role`]), and the grantor is revalidated continuously per permission at the API
+/// layer, so a delegate can never end up above their grantor.
 ///
 /// `delegations` may be the full delegation table; only those addressed to `principal` are consulted.
 #[must_use]
@@ -133,7 +145,7 @@ pub fn effective_permissions(
 
     for d in delegations {
         if d.to == principal && d.is_active(now) {
-            for perm in d.permissions() {
+            for perm in d.granted_permissions(roles) {
                 set.delegated_grants.insert((perm, d.scope));
             }
         }
@@ -211,23 +223,28 @@ pub fn can_delegate(
     !perm.is_meta() && actor.has_via_role(perm, scope, books)
 }
 
-/// Why a permission may not be delegated. Returned by [`can_delegate_all`] so the caller can name
-/// the offender instead of refusing the whole batch anonymously.
+/// Why a função may not be delegated. Returned by [`can_delegate_role`] / [`can_delegate_all`] so
+/// the caller can name the offending *permission inside the função* instead of refusing anonymously.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelegationRefusal {
-    /// The permission is a meta-permission, which is never delegable.
+    /// The permission is a meta-permission, which is never delegable — so no função containing it
+    /// is delegable either.
     Meta(Permission),
-    /// The actor does not hold the permission **via a role** covering the scope — delegating it
-    /// would either escalate privilege or re-delegate a received grant.
+    /// The actor does not hold the permission **via a role** covering the scope — delegating a
+    /// função that carries it would either escalate privilege or re-delegate a received grant.
     NotHeldViaRole(Permission),
+    /// The função is not in the catalog. Fail-closed: an unresolvable função is never delegable
+    /// (delegating it would hand over authority nobody can enumerate or ceiling-check).
+    UnknownRole(RoleId),
 }
 
 impl DelegationRefusal {
-    /// The permission that caused the refusal.
+    /// The permission that caused the refusal, if the cause was a permission.
     #[must_use]
-    pub fn permission(&self) -> Permission {
+    pub fn permission(&self) -> Option<Permission> {
         match *self {
-            DelegationRefusal::Meta(p) | DelegationRefusal::NotHeldViaRole(p) => p,
+            DelegationRefusal::Meta(p) | DelegationRefusal::NotHeldViaRole(p) => Some(p),
+            DelegationRefusal::UnknownRole(_) => None,
         }
     }
 }
@@ -256,6 +273,56 @@ pub fn can_delegate_all(
         if !actor.has_via_role(perm, scope, books) {
             return Err(DelegationRefusal::NotHeldViaRole(perm));
         }
+    }
+    Ok(())
+}
+
+/// **Delegation invariant, role-shaped.** May a principal with `actor` authority delegate the
+/// **função** `role` at `scope`?
+///
+/// The ceiling is evaluated *inside* the função: every permission in `role.permission_set` is put
+/// through [`can_delegate_all`] — the same element-wise machinery [`can_define_role`] and
+/// [`can_assign_role`] use for the subset invariant, but with the two delegation-specific
+/// tightenings (non-meta, and held **via a role** rather than by any means). Nothing is decided from
+/// the função's name, id, or protected flag: a "small-sounding" role full of authority the grantor
+/// lacks is refused, and the Owner role is refused like any other because it contains meta verbs.
+///
+/// An **empty** função is vacuously delegable — it conveys nothing, so it cannot escalate.
+///
+/// # Errors
+/// The first permission in the função that is meta or not held via a role at `scope`.
+pub fn can_delegate_role(
+    actor: &ScopedPermissionSet,
+    role: &Role,
+    scope: Scope,
+    books: &impl BookScope,
+) -> Result<(), DelegationRefusal> {
+    can_delegate_all(actor, role.permission_set.iter().copied(), scope, books)
+}
+
+/// **Delegation invariant over a set of funções.** May a principal with `actor` authority delegate
+/// *every* função in `roles` at `scope`?
+///
+/// Each função is resolved against `catalog` — an unknown id is [`DelegationRefusal::UnknownRole`],
+/// never a silent skip — and then checked permission-by-permission via [`can_delegate_role`]. There
+/// is no aggregate shortcut, so a batch can never smuggle a role past the ceiling on the strength of
+/// its siblings. Returns the **first** offender in iteration order, so the caller can refuse the
+/// whole delegation and say exactly which permission of which função was the problem.
+///
+/// # Errors
+/// The first unknown função, or the first permission that is meta or not held via a role at `scope`.
+pub fn can_delegate_roles(
+    actor: &ScopedPermissionSet,
+    roles: impl IntoIterator<Item = RoleId>,
+    catalog: &RoleCatalog,
+    scope: Scope,
+    books: &impl BookScope,
+) -> Result<(), DelegationRefusal> {
+    for role_id in roles {
+        let role = catalog
+            .get(role_id)
+            .ok_or(DelegationRefusal::UnknownRole(role_id))?;
+        can_delegate_role(actor, role, scope, books)?;
     }
     Ok(())
 }
@@ -802,6 +869,301 @@ mod tests {
             ),
             Err(DelegationRefusal::NotHeldViaRole(Permission::DataWipe))
         );
+    }
+
+    // ---- role-shaped delegation (t44) ------------------------------------------------------
+
+    /// A bespoke função and a catalog containing it.
+    fn funcao(id: u128, name: &str, perms: &[Permission]) -> Role {
+        Role {
+            id: RoleId(Uuid::from_u128(0xF00 + id)),
+            name: name.to_owned(),
+            permission_set: perms.iter().copied().collect(),
+            protected: false,
+        }
+    }
+
+    #[test]
+    fn delegating_a_funcao_conveys_exactly_that_roles_permissions_at_the_scope() {
+        let secretario = funcao(
+            1,
+            "Secretário",
+            &[
+                Permission::ActRead,
+                Permission::ActDraft,
+                Permission::ActEdit,
+            ],
+        );
+        let mut cat = RoleCatalog::seeded_defaults();
+        cat.insert(secretario.clone());
+
+        let d =
+            Delegation::with_roles(uid(9), uid(1), [secretario.id], Scope::Entity(ent(1))).unwrap();
+        let eff = effective_permissions(uid(1), &[], &cat, &[d], epoch());
+
+        // Exactly the função's verbs, at exactly the delegation's scope — nothing more.
+        for p in [
+            Permission::ActRead,
+            Permission::ActDraft,
+            Permission::ActEdit,
+        ] {
+            assert!(has_permission(&eff, p, Scope::Entity(ent(1)), &books()));
+            assert!(has_permission(&eff, p, Scope::Book(bk(1)), &books()));
+            assert!(!has_permission(&eff, p, Scope::Global, &books()));
+            assert!(!has_permission(&eff, p, Scope::Entity(ent(2)), &books()));
+        }
+        assert!(!has_permission(
+            &eff,
+            Permission::ActAdvance,
+            Scope::Entity(ent(1)),
+            &books()
+        ));
+        assert_eq!(eff.delegated_grants().count(), 3);
+        // Everything arrived in the *delegated* bucket, so none of it can be re-delegated.
+        assert_eq!(eff.role_grants().count(), 0);
+    }
+
+    #[test]
+    fn a_delegated_funcao_tracks_later_edits_to_that_funcao() {
+        let secretario = funcao(1, "Secretário", &[Permission::ActRead]);
+        let mut cat = RoleCatalog::new();
+        cat.insert(secretario.clone());
+        let d = Delegation::with_roles(uid(9), uid(1), [secretario.id], Scope::Global).unwrap();
+
+        let eff = effective_permissions(uid(1), &[], &cat, std::slice::from_ref(&d), epoch());
+        assert!(has_permission(
+            &eff,
+            Permission::ActRead,
+            Scope::Global,
+            &NoBooks
+        ));
+        assert!(!has_permission(
+            &eff,
+            Permission::ActDraft,
+            Scope::Global,
+            &NoBooks
+        ));
+
+        // Narrowing the função narrows every live delegation of it — no re-grant, no stale snapshot.
+        cat.insert(funcao(1, "Secretário", &[Permission::ActDraft]));
+        let eff = effective_permissions(uid(1), &[], &cat, std::slice::from_ref(&d), epoch());
+        assert!(!has_permission(
+            &eff,
+            Permission::ActRead,
+            Scope::Global,
+            &NoBooks
+        ));
+        assert!(has_permission(
+            &eff,
+            Permission::ActDraft,
+            Scope::Global,
+            &NoBooks
+        ));
+
+        // A função deleted from the catalog conveys nothing at all (fail-closed).
+        let eff = effective_permissions(uid(1), &[], &RoleCatalog::new(), &[d], epoch());
+        assert!(eff.is_empty());
+    }
+
+    #[test]
+    fn a_suspended_delegation_conveys_nothing_where_authority_resolves() {
+        let secretario = funcao(1, "Secretário", &[Permission::ActRead]);
+        let mut cat = RoleCatalog::new();
+        cat.insert(secretario.clone());
+        let mut d = Delegation::with_roles(uid(9), uid(1), [secretario.id], Scope::Global).unwrap();
+        d.suspended = true;
+
+        // Not filtered out of any list — it is resolved and yields nothing.
+        let eff = effective_permissions(uid(1), &[], &cat, std::slice::from_ref(&d), epoch());
+        assert!(eff.is_empty());
+        assert!(!has_permission(
+            &eff,
+            Permission::ActRead,
+            Scope::Global,
+            &NoBooks
+        ));
+
+        d.suspended = false;
+        let eff = effective_permissions(uid(1), &[], &cat, &[d], epoch());
+        assert!(has_permission(
+            &eff,
+            Permission::ActRead,
+            Scope::Global,
+            &NoBooks
+        ));
+    }
+
+    #[test]
+    fn a_legacy_permission_shaped_delegation_still_resolves_alongside_role_shaped_ones() {
+        let secretario = funcao(1, "Secretário", &[Permission::ActDraft]);
+        let mut cat = RoleCatalog::new();
+        cat.insert(secretario.clone());
+        let legacy = Delegation::new(uid(9), uid(1), Permission::DataBackup, Scope::Global);
+        let role_shaped =
+            Delegation::with_roles(uid(9), uid(1), [secretario.id], Scope::Global).unwrap();
+
+        let eff = effective_permissions(uid(1), &[], &cat, &[legacy, role_shaped], epoch());
+        assert!(has_permission(
+            &eff,
+            Permission::DataBackup,
+            Scope::Global,
+            &NoBooks
+        ));
+        assert!(has_permission(
+            &eff,
+            Permission::ActDraft,
+            Scope::Global,
+            &NoBooks
+        ));
+    }
+
+    #[test]
+    fn the_ceiling_is_evaluated_per_permission_inside_the_funcao() {
+        let cat_and = |extra: Role| {
+            let mut cat = RoleCatalog::seeded_defaults();
+            cat.insert(extra);
+            cat
+        };
+        // A Gestor@Global grantor.
+        let cat = RoleCatalog::seeded_defaults();
+        let gestor = effective_permissions(
+            uid(1),
+            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            &cat,
+            &[],
+            epoch(),
+        );
+
+        // A função entirely within the Gestor's authority: delegable.
+        let inside = funcao(1, "Auxiliar", &[Permission::ActRead, Permission::ActDraft]);
+        let cat1 = cat_and(inside.clone());
+        assert_eq!(
+            can_delegate_roles(&gestor, [inside.id], &cat1, Scope::Global, &books()),
+            Ok(())
+        );
+
+        // A harmless-sounding função with ONE verb the grantor lacks: refused, naming that verb.
+        // The name and id say nothing; only the contents decide.
+        let sneaky = funcao(
+            2,
+            "Auxiliar Júnior",
+            &[Permission::ActRead, Permission::DataWipe],
+        );
+        let cat2 = cat_and(sneaky.clone());
+        assert_eq!(
+            can_delegate_roles(&gestor, [sneaky.id], &cat2, Scope::Global, &books()),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::DataWipe))
+        );
+
+        // A função containing a meta permission is refused by name, even for an Owner who holds it.
+        let meta = Permission::META[0];
+        let with_meta = funcao(3, "Gestor de Acessos", &[Permission::ActRead, meta]);
+        let cat3 = cat_and(with_meta.clone());
+        assert!(has_permission(&owner_eff(), meta, Scope::Global, &books()));
+        assert_eq!(
+            can_delegate_roles(&owner_eff(), [with_meta.id], &cat3, Scope::Global, &books()),
+            Err(DelegationRefusal::Meta(meta))
+        );
+        // …so the protected Owner função is never delegable, by anyone.
+        assert!(matches!(
+            can_delegate_roles(&owner_eff(), [OWNER_ROLE_ID], &cat, Scope::Global, &books()),
+            Err(DelegationRefusal::Meta(_))
+        ));
+
+        // An unknown função is refused, not silently skipped.
+        let ghost = RoleId(Uuid::from_u128(0xDEAD));
+        assert_eq!(
+            can_delegate_roles(&gestor, [ghost], &cat, Scope::Global, &books()),
+            Err(DelegationRefusal::UnknownRole(ghost))
+        );
+
+        // Batch: a good função never launders a bad sibling through.
+        let cat4 = {
+            let mut c = cat_and(inside.clone());
+            c.insert(sneaky.clone());
+            c
+        };
+        assert_eq!(
+            can_delegate_roles(
+                &gestor,
+                [inside.id, sneaky.id],
+                &cat4,
+                Scope::Global,
+                &books()
+            ),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::DataWipe))
+        );
+    }
+
+    #[test]
+    fn the_funcao_ceiling_is_scope_aware_and_ignores_received_authority() {
+        let cat_of = |r: Role| {
+            let mut c = RoleCatalog::seeded_defaults();
+            c.insert(r);
+            c
+        };
+        let f = funcao(1, "Operador de Livros", &[Permission::BookOpen]);
+        let cat = cat_of(f.clone());
+
+        // A Gestor of entity 1 may delegate the função within entity 1, but not globally or into
+        // entity 2 — the per-permission check runs at the delegation's scope.
+        let scoped = effective_permissions(
+            uid(1),
+            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1)))],
+            &cat,
+            &[],
+            epoch(),
+        );
+        assert_eq!(
+            can_delegate_roles(&scoped, [f.id], &cat, Scope::Entity(ent(1)), &books()),
+            Ok(())
+        );
+        assert_eq!(
+            can_delegate_roles(&scoped, [f.id], &cat, Scope::Book(bk(1)), &books()),
+            Ok(())
+        );
+        assert_eq!(
+            can_delegate_roles(&scoped, [f.id], &cat, Scope::Entity(ent(2)), &books()),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::BookOpen))
+        );
+        assert_eq!(
+            can_delegate_roles(&scoped, [f.id], &cat, Scope::Global, &books()),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::BookOpen))
+        );
+
+        // Re-delegation stays structurally impossible: holding the função's verbs only BY
+        // delegation never grounds delegating that função onward.
+        let received = effective_permissions(
+            uid(2),
+            &[],
+            &cat,
+            &[Delegation::with_roles(uid(1), uid(2), [f.id], Scope::Global).unwrap()],
+            epoch(),
+        );
+        assert!(has_permission(
+            &received,
+            Permission::BookOpen,
+            Scope::Global,
+            &books()
+        ));
+        assert_eq!(
+            can_delegate_roles(&received, [f.id], &cat, Scope::Global, &books()),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::BookOpen))
+        );
+    }
+
+    #[test]
+    fn an_empty_funcao_is_vacuously_delegable_and_conveys_nothing() {
+        let empty = funcao(9, "Sem autoridade", &[]);
+        let mut cat = RoleCatalog::new();
+        cat.insert(empty.clone());
+        let nobody = ScopedPermissionSet::new();
+        assert_eq!(
+            can_delegate_roles(&nobody, [empty.id], &cat, Scope::Global, &NoBooks),
+            Ok(())
+        );
+        let d = Delegation::with_roles(uid(1), uid(2), [empty.id], Scope::Global).unwrap();
+        assert!(effective_permissions(uid(2), &[], &cat, &[d], epoch()).is_empty());
     }
 
     #[test]

@@ -248,18 +248,25 @@ pub async fn effective_permissions_for(
             )
         })
         .collect();
-    // Continuous revalidation, applied **per delegated permission**. A delegation may carry several
-    // verbs (t26); the grantor's authority can decay verb-by-verb, so each is rechecked against
-    // their *current* role authority independently and the delegation is narrowed to the survivors.
-    // A delegation whose grantor still holds nothing it granted contributes nothing at all — the
-    // primary verb surviving must never keep an extra alive (that would retain revoked authority).
+    // Continuous revalidation, applied **per permission inside every delegated função**. A
+    // delegation carries funções (t44); a função's contents can change and the grantor's authority
+    // can decay verb-by-verb, so the delegation is expanded to what it conveys *right now* and each
+    // verb is rechecked against the grantor's *current* role authority independently. A delegation
+    // whose grantor no longer holds anything it conveys contributes nothing at all — one surviving
+    // verb must never keep the others alive (that would retain authority an operator removed).
+    //
+    // The survivors are rebuilt as a permission-shaped delegation, which is exactly the residual
+    // authority: the função is the unit an operator *granted*, but what resolves is the intersection
+    // of the função's current contents with the grantor's current authority. Legacy
+    // permission-shaped records go through the identical path — their verbs simply come from the
+    // record instead of from a role.
     let delegations: Vec<Delegation> = stored_delegations
         .into_iter()
         .filter_map(|d| {
             let eff = grantor_role_authority.get(&d.from)?;
             let scope = d.scope;
             let mut retained: Vec<Permission> = d
-                .permissions()
+                .granted_permissions(&roles)
                 .into_iter()
                 .filter(|&p| eff.has_via_role(p, scope, &relations))
                 .collect();
@@ -268,8 +275,9 @@ pub async fn effective_permissions_for(
             }
             let extra_permissions = retained.split_off(1);
             Some(Delegation {
-                permission: retained[0],
+                permission: Some(retained[0]),
                 extra_permissions,
+                roles: Vec::new(),
                 ..d
             })
         })
@@ -1242,6 +1250,105 @@ mod tests {
         assert!(permits(&eff, Permission::ActAdvance, Scope::Global));
         // The verb the grantor no longer holds is dropped even though its sibling survived.
         assert!(!permits(&eff, Permission::DataBackup, Scope::Global));
+    }
+
+    /// t44 — the same continuous revalidation, now applied **per permission inside the delegated
+    /// função**. The grantor delegated a função; their own authority has since shrunk below part of
+    /// it. What resolves is the intersection, not the whole função and not nothing.
+    #[tokio::test]
+    async fn t44_a_delegated_funcao_decays_per_permission_with_the_grantor() {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        // The delegated função carries two verbs; the grantor's own role now carries only one.
+        let delegated_funcao = custom_role(
+            0x5EC,
+            "Secretário",
+            &[Permission::ActAdvance, Permission::DataBackup],
+        );
+        let grantor_role = custom_role(0xA11CE, "Act operator", &[Permission::ActAdvance]);
+        let grantor = user(
+            1,
+            "2026-01-01T00:00:00Z",
+            vec![RoleAssignment::new(grantor_role.id, Scope::Global)],
+        );
+        let grantee = user(2, "2026-01-02T00:00:00Z", vec![]);
+        let delegation = StoredDelegation::new(
+            DelegationId(Uuid::from_u128(1)),
+            now.format(&Rfc3339).expect("valid timestamp"),
+            Delegation::with_roles(
+                AuthzUserId(grantor.id.0),
+                AuthzUserId(grantee.id.0),
+                [delegated_funcao.id],
+                Scope::Global,
+            )
+            .expect("non-empty set"),
+        );
+        let state = state_with_rbac(
+            vec![grantor, grantee.clone()],
+            [delegated_funcao.clone(), grantor_role]
+                .into_iter()
+                .collect(),
+            vec![delegation],
+        )
+        .await;
+
+        let eff = effective_permissions_for(&state, grantee.id, now).await;
+        assert!(permits(&eff, Permission::ActAdvance, Scope::Global));
+        // The função's other verb is dropped: the grantor cannot convey what they no longer hold,
+        // and one surviving verb must not keep it alive.
+        assert!(!permits(&eff, Permission::DataBackup, Scope::Global));
+        // It arrived as a delegated grant, so it still cannot be re-delegated.
+        assert!(!eff.has_via_role(
+            Permission::ActAdvance,
+            Scope::Global,
+            &chancela_authz::NoBooks
+        ));
+    }
+
+    /// t44 — a **suspended** delegation conveys nothing at the point authority resolves, and
+    /// resuming it restores exactly what the função grants *now*.
+    #[tokio::test]
+    async fn t44_a_suspended_delegation_conveys_nothing_when_authority_resolves() {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let funcao = custom_role(0x5EC, "Secretário", &[Permission::ActAdvance]);
+        let grantor = user(
+            1,
+            "2026-01-01T00:00:00Z",
+            vec![RoleAssignment::new(funcao.id, Scope::Global)],
+        );
+        let grantee = user(2, "2026-01-02T00:00:00Z", vec![]);
+        let mut inner = Delegation::with_roles(
+            AuthzUserId(grantor.id.0),
+            AuthzUserId(grantee.id.0),
+            [funcao.id],
+            Scope::Global,
+        )
+        .expect("non-empty set");
+        inner.suspended = true;
+        let delegation = StoredDelegation::new(
+            DelegationId(Uuid::from_u128(1)),
+            now.format(&Rfc3339).expect("valid timestamp"),
+            inner,
+        );
+        let state = state_with_rbac(
+            vec![grantor, grantee.clone()],
+            [funcao].into_iter().collect(),
+            vec![delegation],
+        )
+        .await;
+
+        let eff = effective_permissions_for(&state, grantee.id, now).await;
+        assert!(!permits(&eff, Permission::ActAdvance, Scope::Global));
+        assert!(eff.is_empty());
+
+        // Resume: the record was never narrowed or rewritten, so the authority comes straight back.
+        {
+            let mut table = state.delegations.write().await;
+            for d in table.values_mut() {
+                d.inner.suspended = false;
+            }
+        }
+        let eff = effective_permissions_for(&state, grantee.id, now).await;
+        assert!(permits(&eff, Permission::ActAdvance, Scope::Global));
     }
 
     #[tokio::test]

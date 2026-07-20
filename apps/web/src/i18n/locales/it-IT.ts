@@ -104,17 +104,17 @@ export const itIT: Catalog = {
   'rbac.toast.assigned': 'Ruolo assegnato',
   'rbac.toast.unassigned': 'Ruolo rimosso',
   'rbac.delegacoes.lede':
-    'Concedi a un altro utente un’autorizzazione che possiedi, in un ambito, con scadenza facoltativa.',
+    'Affidi a un altro utente un ruolo che esercita, in un ambito, con validità facoltativa.',
   'rbac.deleg.cardTitle': 'Deleghe',
   'rbac.deleg.grant': 'Nuova delega',
   'rbac.deleg.empty': 'Nessuna delega',
   'rbac.deleg.emptyBody': 'Non hai ancora concesso né ricevuto deleghe.',
   'rbac.deleg.to.label': 'Concedi a',
-  'rbac.deleg.permission.label': 'Autorizzazione',
+  'rbac.deleg.permission.label': 'Ruoli da delegare',
   'rbac.deleg.permission.none':
-    'Non hai autorizzazioni delegabili. Puoi delegare solo autorizzazioni che possiedi tramite un ruolo.',
+    'Non possiede alcun ruolo delegabile per intero. Può delegare solo un ruolo di cui possieda tutti i permessi tramite un ruolo proprio.',
   'rbac.deleg.onlyHeldNote':
-    'Puoi delegare solo autorizzazioni che possiedi tramite un ruolo (le meta-autorizzazioni non sono delegabili).',
+    'Può delegare un ruolo solo se possiede, tramite un ruolo proprio, tutti i permessi che esso conferisce; un ruolo con meta-permessi non è mai delegabile.',
   'rbac.deleg.legalBasis.label': 'Base/evidenza locale',
   'rbac.deleg.legalBasis.hint':
     'Registra il riferimento o la nota locale forniti dall’operatore; questo non certifica sufficienza legale.',
@@ -128,7 +128,7 @@ export const itIT: Catalog = {
   'rbac.deleg.startsAt.missing': 'Inizio non registrato',
   'rbac.deleg.legalBasis.missing': 'Mancante (legacy)',
   'rbac.deleg.user.self': '(io)',
-  'rbac.deleg.table.permission': 'Autorizzazione',
+  'rbac.deleg.table.permission': 'Ruolo',
   'rbac.deleg.table.from': 'Da',
   'rbac.deleg.table.to': 'A',
   'rbac.deleg.table.scope': 'Ambito',
@@ -141,6 +141,15 @@ export const itIT: Catalog = {
   'rbac.deleg.status.pending': 'Non ancora iniziata',
   'rbac.deleg.status.expired': 'Scaduta',
   'rbac.deleg.status.revoked': 'Revocata',
+  'rbac.deleg.funcao.carries': 'Conferisce',
+  'rbac.deleg.funcao.unknown': 'Ruolo rimosso dal catalogo',
+  'rbac.deleg.status.suspended': 'Sospesa',
+  'rbac.deleg.suspend': 'Sospendi',
+  'rbac.deleg.resume': 'Riprendi',
+  'rbac.deleg.filter.all': 'Tutte',
+  'rbac.deleg.filter.none': 'Nessuna delega corrisponde ai filtri.',
+  'rbac.toast.suspended': 'Delega sospesa',
+  'rbac.toast.resumed': 'Delega ripresa',
   'rbac.toast.delegated': 'Delega concessa',
   'rbac.toast.revoked': 'Delega revocata',
   // --- Navigation / shell --------------------------------------------------------
@@ -2283,13 +2292,13 @@ export const itIT: Catalog = {
   'acts.convening.waiver.toggle': 'La riunione si è tenuta senza convocazione preventiva',
   'acts.convening.waiver.basis': 'Fondamento',
   'acts.convening.waiver.basis.universal':
-    'Assemblea totalitaria — tutti presenti e tutti d\'accordo (CSC art. 54.º)',
+    "Assemblea totalitaria — tutti presenti e tutti d'accordo (CSC art. 54.º)",
   'acts.convening.waiver.basis.other': 'Altro fondamento (da descrivere)',
   'acts.convening.waiver.agreedToMeet':
-    'Tutti hanno manifestato la volontà che l\'assemblea si costituisse',
+    "Tutti hanno manifestato la volontà che l'assemblea si costituisse",
   'acts.convening.waiver.agreedToAgenda': 'Tutti hanno acconsentito agli argomenti deliberati',
   'acts.convening.waiver.grounds': 'Fondamento registrato',
-  'acts.convening.waiver.evidenceReference': 'Prova dell\'accordo',
+  'acts.convening.waiver.evidenceReference': "Prova dell'accordo",
   'acts.convening.waiver.conflict':
     'Risultano registrate sia una convocazione sia la sua assenza. Solo una delle due può descrivere questa riunione.',
   'acts.convening.dispatchDate': 'Data della convocazione',
@@ -5401,7 +5410,8 @@ export const itIT: Catalog = {
     'Solo i candidati di conservazione che nominano questo libro. Le politiche di conservazione si gestiscono in Impostazioni → Privacy.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Criteri di firma',
-  'settings.signing.fallbackHint': 'Valore predefinito ufficiale portoghese. Funge da ripiego quando nessuna delle voci della tabella sottostante è attiva.',
+  'settings.signing.fallbackHint':
+    'Valore predefinito ufficiale portoghese. Funge da ripiego quando nessuna delle voci della tabella sottostante è attiva.',
   'settings.signing.tslSources.caption': 'Fonti di elenchi di fiducia configurate',
   'settings.signing.tsaProviders.caption': 'Fornitori di marca temporale configurati',
   'settings.signing.providers.caption': 'Modalità dei fornitori di firma e relativo stato',
@@ -5413,12 +5423,18 @@ export const itIT: Catalog = {
   'settings.signing.table.mode': 'Modalità',
   'settings.signing.table.notes': 'Note',
   'settings.providerCredentials.protection.unavailable.title': 'Impossibile salvare le credenziali',
-  'settings.providerCredentials.protection.unavailable.body': 'Questo server non è in grado di cifrare né di salvare i segreti dei fornitori. Non verrà salvato nulla finché la questione non sarà risolta: le credenziali non sono conservate con una protezione più debole, semplicemente non sono conservate.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'Il server è in esecuzione solo in memoria, senza directory dei dati. Impostare CHANCELA_DATA_DIR e riavviare.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Non è disponibile alcuna origine di chiave. Attivare SQLCipher o la sigillatura del sistema operativo, oppure fornire CHANCELA_CREDENTIAL_KEY_FILE.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'La chiave fornita dall’operatore non è valida o è stata indicata due volte. Mantenere solo CHANCELA_CREDENTIAL_KEY oppure CHANCELA_CREDENTIAL_KEY_FILE, con materiale di chiave valido.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'Non è stato possibile leggere la busta della chiave radice. Verificare i permessi della directory dei dati e se il file appartiene a questa macchina.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'L’archivio delle credenziali non è disponibile. Consultare i registri del server.',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Questo server non è in grado di cifrare né di salvare i segreti dei fornitori. Non verrà salvato nulla finché la questione non sarà risolta: le credenziali non sono conservate con una protezione più debole, semplicemente non sono conservate.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'Il server è in esecuzione solo in memoria, senza directory dei dati. Impostare CHANCELA_DATA_DIR e riavviare.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Non è disponibile alcuna origine di chiave. Attivare SQLCipher o la sigillatura del sistema operativo, oppure fornire CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'La chiave fornita dall’operatore non è valida o è stata indicata due volte. Mantenere solo CHANCELA_CREDENTIAL_KEY oppure CHANCELA_CREDENTIAL_KEY_FILE, con materiale di chiave valido.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'Non è stato possibile leggere la busta della chiave radice. Verificare i permessi della directory dei dati e se il file appartiene a questa macchina.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'L’archivio delle credenziali non è disponibile. Consultare i registri del server.',
   'settings.providerCredentials.entry.notConfigured': 'non configurato',
   'settings.providerCredentials.table.caption': 'Voci di credenziale di {provider}',
   'settings.providerCredentials.table.entry': 'Voce',

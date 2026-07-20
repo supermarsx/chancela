@@ -471,7 +471,10 @@ impl Session {
                 SmtpFailure::new(
                     stage,
                     SmtpFailureKind::Timeout,
-                    format!("timed out after {}s waiting for a reply", STEP_TIMEOUT.as_secs()),
+                    format!(
+                        "timed out after {}s waiting for a reply",
+                        STEP_TIMEOUT.as_secs()
+                    ),
                 )
             })?
             .map_err(|e| SmtpFailure::from_io(stage, &e))?;
@@ -548,11 +551,7 @@ impl Session {
 
     /// Write a line and read the reply. `verb` is used only for error text; command *arguments* are
     /// never echoed, so an `AUTH` line can never leak into a message.
-    async fn command(
-        &mut self,
-        stage: SmtpStage,
-        line: &str,
-    ) -> Result<SmtpReply, SmtpFailure> {
+    async fn command(&mut self, stage: SmtpStage, line: &str) -> Result<SmtpReply, SmtpFailure> {
         self.write_line(stage, line).await?;
         self.read_reply(stage).await
     }
@@ -568,7 +567,10 @@ impl Session {
             SmtpFailure::new(
                 stage,
                 SmtpFailureKind::Timeout,
-                format!("timed out after {}s sending a command", STEP_TIMEOUT.as_secs()),
+                format!(
+                    "timed out after {}s sending a command",
+                    STEP_TIMEOUT.as_secs()
+                ),
             )
         })?
         .map_err(|e| SmtpFailure::from_io(stage, &e))
@@ -932,12 +934,13 @@ fn tls_config() -> Result<Arc<ClientConfig>, SmtpFailure> {
              relay's certificate cannot be verified",
         ));
     }
-    let config =
-        ClientConfig::builder_with_provider(Arc::new(tokio_rustls::rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .map_err(|e| SmtpFailure::new(SmtpStage::Tls, SmtpFailureKind::Tls, e.to_string()))?
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+    let config = ClientConfig::builder_with_provider(Arc::new(
+        tokio_rustls::rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|e| SmtpFailure::new(SmtpStage::Tls, SmtpFailureKind::Tls, e.to_string()))?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
     Ok(Arc::new(config))
 }
 
@@ -1015,10 +1018,7 @@ mod tests {
             detail: "Error: authentication failed".to_owned(),
             tls: true,
         };
-        assert_eq!(
-            failure.summary(),
-            "535 5.7.8: Error: authentication failed"
-        );
+        assert_eq!(failure.summary(), "535 5.7.8: Error: authentication failed");
     }
 
     #[test]

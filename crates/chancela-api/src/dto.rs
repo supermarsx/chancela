@@ -1441,9 +1441,7 @@ impl ConveningWaiverInput {
             grounds,
             all_agreed_to_meet: self.all_agreed_to_meet,
             all_agreed_to_agenda: self.all_agreed_to_agenda,
-            evidence_reference: self
-                .evidence_reference
-                .filter(|r| !r.trim().is_empty()),
+            evidence_reference: self.evidence_reference.filter(|r| !r.trim().is_empty()),
         })
     }
 }
@@ -3690,7 +3688,10 @@ mod tests {
         );
         let value = serde_json::to_value(ActView::from(&act)).expect("act view serializes");
         assert!(
-            !value.as_object().expect("object").contains_key("convening_waiver"),
+            !value
+                .as_object()
+                .expect("object")
+                .contains_key("convening_waiver"),
             "convened acts must not gain a key: {value}"
         );
     }

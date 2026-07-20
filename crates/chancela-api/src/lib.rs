@@ -2502,6 +2502,14 @@ pub fn router(state: AppState) -> Router {
             "/v1/delegations/{id}",
             delete(delegations::revoke_delegation),
         )
+        .route(
+            "/v1/delegations/{id}/suspend",
+            post(delegations::suspend_delegation),
+        )
+        .route(
+            "/v1/delegations/{id}/resume",
+            post(delegations::resume_delegation),
+        )
         .route("/v1/session/roster", get(session::session_roster))
         .route("/v1/session/password-policy", get(session::password_policy))
         .route("/v1/session/permissions", get(session::session_permissions))
@@ -18393,7 +18401,7 @@ mod tests {
         let grantee = seed_user(&state, "amelia.marques", vec![]).await;
         let g_tok = seed_session(&state, &grantee.to_string()).await;
 
-        // Grant a non-meta permission the Owner holds via a role → 201.
+        // Delegate a FUNÇÃO whose every permission the Owner holds via a role → 201.
         let (status, view) = send_raw(
             state.clone(),
             with_session(
@@ -18401,7 +18409,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "permission": "act.advance",
+                        "roles": [chancela_authz::SIGNATARIO_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "legal_basis": "operator-recorded board minute R-64"
                     }),
@@ -18411,8 +18419,16 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(view["permission"], json!("act.advance"));
+        // The row names the função and shows the authority it hands over.
+        assert_eq!(view["roles"][0]["name"], json!("Signatário"));
+        assert!(
+            view["roles"][0]["permissions"]
+                .as_array()
+                .expect("perms")
+                .contains(&json!("act.advance"))
+        );
         assert_eq!(view["revoked"], json!(false));
+        assert_eq!(view["suspended"], json!(false));
         let del_id = view["id"].as_str().expect("id").to_owned();
 
         // The grantee now holds act.advance, sourced from the delegation.
@@ -18429,15 +18445,25 @@ mod tests {
                 .any(|p| p["permission"] == "act.advance" && p["source"] == "delegation")
         );
 
-        // A META permission is non-delegable → 403 (even for an Owner).
-        let (status, _) = send_raw(
+        // A função carrying a META permission is non-delegable → 403 (even for an Owner), and the
+        // refusal names the offending verb inside it.
+        let with_meta = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: with_meta,
+            name: "Gestor de Acessos".to_owned(),
+            permission_set: [Permission::ActRead, Permission::RoleManage]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
+        let (status, body) = send_raw(
             state.clone(),
             with_session(
                 post_json(
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "permission": "role.manage",
+                        "roles": [with_meta.0.to_string()],
                         "scope": { "kind": "global" },
                         "legal_basis": "operator-recorded board minute R-64"
                     }),
@@ -18447,9 +18473,15 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("role.manage")
+        );
 
         // Re-delegation is impossible: an actor holding delegation.grant via a role but act.advance
-        // only via a received delegation cannot pass it on.
+        // only via a received delegation cannot pass on a função that carries it.
         let dg = RoleId(Uuid::new_v4());
         state.roles.write().await.insert(Role {
             id: dg,
@@ -18483,7 +18515,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": dora.to_string(),
-                        "permission": "act.advance",
+                        "roles": [chancela_authz::SIGNATARIO_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "legal_basis": "operator-recorded board minute R-65"
                     }),
@@ -18494,7 +18526,8 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
 
-        // An already-expired delegation is granted but contributes nothing (expiry honoured).
+        // An already-expired delegation is granted but contributes nothing (expiry honoured). The
+        // função carries law.read, which nothing else has given the grantee.
         let past = (time::OffsetDateTime::now_utc() - time::Duration::hours(1))
             .format(&Rfc3339)
             .expect("fmt");
@@ -18505,7 +18538,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "permission": "act.read",
+                        "roles": [chancela_authz::LEITOR_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "expires_at": past,
                         "legal_basis": "operator-recorded expiry test evidence"
@@ -18526,8 +18559,86 @@ mod tests {
                 .as_array()
                 .expect("perms")
                 .iter()
-                .any(|p| p["permission"] == "act.read")
+                .any(|p| p["permission"] == "law.read")
         );
+
+        // Suspension is enforced where authority RESOLVES, not by hiding a row: the grantee loses
+        // the função's verbs while suspended and regains them on resume.
+        let (status, sv) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/delegations/{del_id}/suspend"), json!({})),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sv["suspended"], json!(true));
+        assert_eq!(sv["revoked"], json!(false));
+        let (_, perms_susp) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(
+            !perms_susp["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .any(|p| p["source"] == "delegation"),
+            "a suspended delegation conveys nothing: {perms_susp}"
+        );
+        // The row is still listed — suspension is a state, not a disappearance.
+        let (_, listed) = send_raw(state.clone(), with_session(get("/v1/delegations"), &tok)).await;
+        assert!(
+            listed
+                .as_array()
+                .expect("list")
+                .iter()
+                .any(|d| d["id"] == json!(del_id) && d["suspended"] == json!(true))
+        );
+
+        let (status, rv) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/delegations/{del_id}/resume"), json!({})),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(rv["suspended"], json!(false));
+        let (_, perms_resumed) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(
+            perms_resumed["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .any(|p| p["permission"] == "act.advance" && p["source"] == "delegation")
+        );
+
+        // Every transition is ledgered.
+        {
+            let ledger = state.ledger.read().await;
+            let scope = format!("delegation:{del_id}");
+            for kind in [
+                "delegation.granted",
+                "delegation.suspended",
+                "delegation.resumed",
+            ] {
+                assert!(
+                    ledger
+                        .events()
+                        .iter()
+                        .any(|e| e.kind == kind && e.scope == scope),
+                    "missing ledger event {kind}"
+                );
+            }
+        }
 
         // Revoke is immediate: the grantee loses act.advance the moment it is revoked.
         let (status, rv) = send_raw(
@@ -18551,13 +18662,14 @@ mod tests {
         );
     }
 
-    /// t26 — a delegation may carry an **array** of permissions. The set shares one scope, one
-    /// lifetime and one legal basis; every element is validated independently; a batch containing
-    /// one offender is refused **entirely** and names it; a legacy single-permission request is
-    /// unaffected; and the ledger records the whole set.
+    /// t44 — a delegation assigns one or more **funções**, never hand-picked permissions. The
+    /// funções share one scope, one lifetime and one legal basis; the ceiling is evaluated per
+    /// permission *inside* each função; a request containing one offending verb is refused
+    /// **entirely** and names it; a permission-shaped request is refused with an explanation;
+    /// stored permission-shaped records still resolve; and the ledger records what was conveyed.
     #[tokio::test]
-    async fn t26_delegating_an_array_of_permissions_is_all_or_nothing() {
-        use crate::delegations::{DelegationId, DelegationView, StoredDelegation};
+    async fn t44_delegating_a_funcao_is_role_shaped_and_all_or_nothing() {
+        use crate::delegations::{DelegationId, StoredDelegation, delegation_view};
         use chancela_authz::{
             Delegation, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleId, Scope,
             UserId as AuthzUserId,
@@ -18583,7 +18695,20 @@ mod tests {
                 .any(|p| p["permission"] == verb && p["source"] == "delegation")
         };
 
-        // ── An array grants exactly the listed permissions, no more ──────────────────────────
+        // ── A função conveys exactly that role's permissions, at the delegation's scope ──────
+        let secretario = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: secretario,
+            name: "Secretário de Atas".to_owned(),
+            permission_set: [
+                Permission::ActAdvance,
+                Permission::ActRead,
+                Permission::DataBackup,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        });
         let (status, view) = send_raw(
             state.clone(),
             with_session(
@@ -18591,9 +18716,9 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "permissions": ["act.advance", "act.read", "data.backup"],
+                        "roles": [secretario.0.to_string()],
                         "scope": { "kind": "global" },
-                        "legal_basis": "operator-recorded board minute R-26"
+                        "legal_basis": "operator-recorded board minute R-44"
                     }),
                 ),
                 &tok,
@@ -18601,12 +18726,13 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(view["roles"][0]["name"], json!("Secretário de Atas"));
         assert_eq!(
-            view["permissions"],
-            json!(["act.advance", "act.read", "data.backup"])
+            view["roles"][0]["permissions"],
+            json!(["act.read", "act.advance", "data.backup"])
         );
-        // The legacy singular field still names the primary verb, so old consumers keep working.
-        assert_eq!(view["permission"], json!("act.advance"));
+        // No legacy verb is invented on a role-shaped record.
+        assert!(view.get("permission").is_none() || view["permission"].is_null());
         let del_id = view["id"].as_str().expect("id").to_owned();
 
         let (_, perms) = send_raw(
@@ -18617,7 +18743,7 @@ mod tests {
         assert!(held(&perms, "act.advance"));
         assert!(held(&perms, "act.read"));
         assert!(held(&perms, "data.backup"));
-        // Exactly the listed set — nothing the Owner holds leaked in alongside it.
+        // Exactly the função's set — nothing else the Owner holds leaked in alongside it.
         assert_eq!(
             perms["permissions"]
                 .as_array()
@@ -18628,21 +18754,46 @@ mod tests {
             3
         );
 
-        // ── The ledger entry commits the full set ───────────────────────────────────────────
+        // ── Editing the função moves the delegate's authority with it (live, not snapshotted) ─
+        state.roles.write().await.insert(Role {
+            id: secretario,
+            name: "Secretário de Atas".to_owned(),
+            permission_set: [Permission::ActRead].into_iter().collect(),
+            protected: false,
+        });
+        let (_, perms_after_edit) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(held(&perms_after_edit, "act.read"));
+        assert!(!held(&perms_after_edit, "act.advance"));
+        assert!(!held(&perms_after_edit, "data.backup"));
+        // Restore the função for the remainder of the test.
+        state.roles.write().await.insert(Role {
+            id: secretario,
+            name: "Secretário de Atas".to_owned(),
+            permission_set: [
+                Permission::ActAdvance,
+                Permission::ActRead,
+                Permission::DataBackup,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        });
+
+        // ── The ledger entry commits what the delegation conveyed ───────────────────────────
         let stored_view = {
+            let catalog = state.roles.read().await;
             let table = state.delegations.read().await;
             let d = table
                 .get(&DelegationId(Uuid::parse_str(&del_id).unwrap()))
                 .expect("stored");
-            assert_eq!(
-                d.authz().permissions(),
-                vec![
-                    Permission::ActAdvance,
-                    Permission::ActRead,
-                    Permission::DataBackup
-                ]
-            );
-            DelegationView::from(d)
+            // The record stores the FUNÇÃO, not a frozen verb list.
+            assert_eq!(d.authz().roles(), [chancela_authz::RoleId(secretario.0)]);
+            assert!(d.authz().permissions().is_empty());
+            delegation_view(d, &catalog)
         };
         let expected = chancela_ledger::digest(&serde_json::to_vec(&stored_view).unwrap());
         {
@@ -18658,8 +18809,22 @@ mod tests {
             assert_eq!(event.payload_digest, expected);
         }
 
-        // ── One meta verb hidden among delegable siblings refuses the WHOLE batch, by name ───
+        // ── A função hiding ONE meta verb among delegable ones refuses the WHOLE grant, by name ─
+        let mixed = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: mixed,
+            name: "Coordenador".to_owned(),
+            permission_set: [
+                Permission::BookOpen,
+                Permission::RoleManage,
+                Permission::EntityRead,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        });
         let before = state.delegations.read().await.len();
+        let ledger_before = state.ledger.read().await.events().len();
         let (status, body) = send_raw(
             state.clone(),
             with_session(
@@ -18667,9 +18832,9 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "permissions": ["book.open", "role.manage", "entity.read"],
+                        "roles": [mixed.0.to_string()],
                         "scope": { "kind": "global" },
-                        "legal_basis": "operator-recorded board minute R-27"
+                        "legal_basis": "operator-recorded board minute R-45"
                     }),
                 ),
                 &tok,
@@ -18682,8 +18847,9 @@ mod tests {
             message.contains("role.manage"),
             "names the offender: {message}"
         );
-        // Nothing was persisted — a half-applied delegation must not exist.
+        // Nothing was written — no store insert, no ledger event.
         assert_eq!(state.delegations.read().await.len(), before);
+        assert_eq!(state.ledger.read().await.events().len(), ledger_before);
         let (_, perms) = send_raw(
             state.clone(),
             with_session(get("/v1/session/permissions"), &g_tok),
@@ -18692,9 +18858,36 @@ mod tests {
         assert!(!held(&perms, "book.open"));
         assert!(!held(&perms, "entity.read"));
 
-        // ── The subset ceiling is enforced element-wise, not in aggregate ────────────────────
+        // An unknown função is refused, not silently ignored.
+        let ghost = Uuid::new_v4();
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({
+                        "to": grantee.to_string(),
+                        "roles": [ghost.to_string()],
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-46"
+                    }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains(&ghost.to_string())
+        );
+
+        // ── The ceiling is enforced PER PERMISSION INSIDE THE FUNÇÃO, not in aggregate ───────
         // Carlos holds delegation.grant + act.read VIA A ROLE, and data.wipe only by DELEGATION.
-        // Pairing the received verb with a role-held one must not launder it into the batch.
+        // A função pairing the received verb with a role-held one must not launder it through —
+        // and the função's innocuous name buys it nothing.
         let limited = RoleId(Uuid::new_v4());
         state.roles.write().await.insert(Role {
             id: limited,
@@ -18730,6 +18923,15 @@ mod tests {
             .insert(received.id, received);
         let c_tok = seed_session(&state, &carlos.to_string()).await;
         let dora = seed_user(&state, "dora.silva", vec![]).await;
+        let sneaky = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: sneaky,
+            name: "Auxiliar Júnior".to_owned(),
+            permission_set: [Permission::ActRead, Permission::DataWipe]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
         let before = state.delegations.read().await.len();
         let (status, body) = send_raw(
             state.clone(),
@@ -18738,9 +18940,9 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": dora.to_string(),
-                        "permissions": ["act.read", "data.wipe"],
+                        "roles": [sneaky.0.to_string()],
                         "scope": { "kind": "global" },
-                        "legal_basis": "operator-recorded board minute R-28"
+                        "legal_basis": "operator-recorded board minute R-47"
                     }),
                 ),
                 &c_tok,
@@ -18751,28 +18953,73 @@ mod tests {
         assert!(body["error"].as_str().expect("error").contains("data.wipe"));
         assert_eq!(state.delegations.read().await.len(), before);
 
-        // ── A legacy single-permission request still works, unchanged ────────────────────────
-        let (status, legacy) = send_raw(
-            state.clone(),
-            with_session(
-                post_json(
-                    "/v1/delegations",
-                    json!({
-                        "to": dora.to_string(),
-                        "permission": "act.read",
-                        "scope": { "kind": "global" },
-                        "legal_basis": "operator-recorded board minute R-29"
-                    }),
-                ),
-                &tok,
+        // ── A permission-shaped request is refused with an explanation, not silently honoured ─
+        for legacy_body in [
+            json!({
+                "to": dora.to_string(),
+                "permission": "act.read",
+                "scope": { "kind": "global" },
+                "legal_basis": "operator-recorded board minute R-48"
+            }),
+            json!({
+                "to": dora.to_string(),
+                "permissions": ["act.read"],
+                "scope": { "kind": "global" },
+                "legal_basis": "operator-recorded board minute R-48"
+            }),
+        ] {
+            let (status, body) = send_raw(
+                state.clone(),
+                with_session(post_json("/v1/delegations", legacy_body), &tok),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert!(body["error"].as_str().expect("error").contains("função"));
+        }
+
+        // ── A stored permission-shaped record still RESOLVES (only new grants are role-shaped) ─
+        let granted_at = time::OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .expect("fmt");
+        let legacy_record = StoredDelegation::new(
+            DelegationId(Uuid::new_v4()),
+            granted_at,
+            Delegation::new(
+                AuthzUserId(owner.0),
+                AuthzUserId(dora.0),
+                Permission::LawRead,
+                Scope::Global,
             ),
+        );
+        let legacy_id = legacy_record.id;
+        state
+            .delegations
+            .write()
+            .await
+            .insert(legacy_id, legacy_record);
+        let d_tok = seed_session(&state, &dora.to_string()).await;
+        let (_, d_perms) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &d_tok),
         )
         .await;
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(legacy["permission"], json!("act.read"));
-        assert_eq!(legacy["permissions"], json!(["act.read"]));
+        assert!(
+            held(&d_perms, "law.read"),
+            "legacy record must still resolve"
+        );
+        // …and it renders with its legacy verb and no função.
+        let (_, listed) = send_raw(state.clone(), with_session(get("/v1/delegations"), &tok)).await;
+        let legacy_view = listed
+            .as_array()
+            .expect("list")
+            .iter()
+            .find(|d| d["id"] == json!(legacy_id.0.to_string()))
+            .expect("legacy row");
+        assert_eq!(legacy_view["permission"], json!("law.read"));
+        assert_eq!(legacy_view["permissions"], json!(["law.read"]));
+        assert_eq!(legacy_view["roles"], json!([]));
 
-        // ── A delegation naming no permission at all is a 422 ────────────────────────────────
+        // ── A delegation naming no função at all is a 422 ────────────────────────────────────
         let (status, _) = send_raw(
             state.clone(),
             with_session(
@@ -18780,9 +19027,9 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": dora.to_string(),
-                        "permissions": [],
+                        "roles": [],
                         "scope": { "kind": "global" },
-                        "legal_basis": "operator-recorded board minute R-30"
+                        "legal_basis": "operator-recorded board minute R-49"
                     }),
                 ),
                 &tok,
@@ -18791,7 +19038,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 
-        // ── Revoking the delegation withdraws EVERY permission it carried, atomically ────────
+        // ── Revoking the delegation withdraws EVERY função it carried, atomically ────────────
         let (status, rv) = send_raw(
             state.clone(),
             with_session(delete(&format!("/v1/delegations/{del_id}")), &tok),
@@ -18826,7 +19073,7 @@ mod tests {
         let valid_base = || {
             json!({
                 "to": grantee.to_string(),
-                "permission": "act.read",
+                "roles": [chancela_authz::LEITOR_ROLE_ID.0.to_string()],
                 "scope": { "kind": "global" }
             })
         };
@@ -18912,7 +19159,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "permission": "act.read",
+                        "roles": [chancela_authz::LEITOR_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "starts_at": starts_at,
                         "legal_basis": legal_basis

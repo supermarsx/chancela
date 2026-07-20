@@ -103,17 +103,17 @@ export const ptBR: Catalog = {
   'rbac.toast.assigned': 'Função atribuída',
   'rbac.toast.unassigned': 'Função removida',
   'rbac.delegacoes.lede':
-    'Conceda uma permissão que possui a outro usuário, em um âmbito, com validade opcional.',
+    'Entregue a outro usuário uma função que você exerce, em um escopo, com validade opcional.',
   'rbac.deleg.cardTitle': 'Delegações',
   'rbac.deleg.grant': 'Nova delegação',
   'rbac.deleg.empty': 'Sem delegações',
   'rbac.deleg.emptyBody': 'Você ainda não concedeu nem recebeu delegações.',
   'rbac.deleg.to.label': 'Conceder a',
-  'rbac.deleg.permission.label': 'Permissão',
+  'rbac.deleg.permission.label': 'Funções a delegar',
   'rbac.deleg.permission.none':
-    'Você não possui permissões delegáveis. Só pode delegar permissões que possui através de uma função.',
+    'Você não possui nenhuma função que possa delegar por inteiro. Só é possível delegar uma função cujas permissões você possua todas por meio de uma função sua.',
   'rbac.deleg.onlyHeldNote':
-    'Você só pode delegar permissões que possui por meio de uma função (metapermissões não são delegáveis).',
+    'Você só pode delegar uma função se possuir, por meio de uma função sua, todas as permissões que ela confere; uma função com meta-permissões nunca é delegável.',
   'rbac.deleg.legalBasis.label': 'Base/evidência local',
   'rbac.deleg.legalBasis.hint':
     'Registre a referência ou nota local fornecida pelo operador; isto não certifica suficiência legal.',
@@ -127,7 +127,7 @@ export const ptBR: Catalog = {
   'rbac.deleg.startsAt.missing': 'Início não registrado',
   'rbac.deleg.legalBasis.missing': 'Ausente (legado)',
   'rbac.deleg.user.self': '(EU)',
-  'rbac.deleg.table.permission': 'Permissão',
+  'rbac.deleg.table.permission': 'Função',
   'rbac.deleg.table.from': 'De',
   'rbac.deleg.table.to': 'Para',
   'rbac.deleg.table.scope': 'Escopo',
@@ -140,6 +140,15 @@ export const ptBR: Catalog = {
   'rbac.deleg.status.pending': 'Ainda não começou',
   'rbac.deleg.status.expired': 'Expirado',
   'rbac.deleg.status.revoked': 'Revogado',
+  'rbac.deleg.funcao.carries': 'Confere',
+  'rbac.deleg.funcao.unknown': 'Função removida do catálogo',
+  'rbac.deleg.status.suspended': 'Suspensa',
+  'rbac.deleg.suspend': 'Suspender',
+  'rbac.deleg.resume': 'Retomar',
+  'rbac.deleg.filter.all': 'Todas',
+  'rbac.deleg.filter.none': 'Nenhuma delegação corresponde aos filtros.',
+  'rbac.toast.suspended': 'Delegação suspensa',
+  'rbac.toast.resumed': 'Delegação retomada',
   'rbac.toast.delegated': 'Delegação concedida',
   'rbac.toast.revoked': 'Delegação revogada',
   // --- Navigation / shell --------------------------------------------------------
@@ -5362,7 +5371,8 @@ export const ptBR: Catalog = {
     'Apenas os candidatos de retenção que citam este livro. As políticas de retenção são gerenciadas em Configurações → Privacidade.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Política de assinatura',
-  'settings.signing.fallbackHint': 'Padrão oficial português. Serve de recurso quando nenhuma das entradas da grade abaixo está ativa.',
+  'settings.signing.fallbackHint':
+    'Padrão oficial português. Serve de recurso quando nenhuma das entradas da grade abaixo está ativa.',
   'settings.signing.tslSources.caption': 'Fontes de listas de confiança configuradas',
   'settings.signing.tsaProviders.caption': 'Provedores de carimbo do tempo configurados',
   'settings.signing.providers.caption': 'Modos de provedor de assinatura e respectiva situação',
@@ -5374,12 +5384,18 @@ export const ptBR: Catalog = {
   'settings.signing.table.mode': 'Modo',
   'settings.signing.table.notes': 'Observações',
   'settings.providerCredentials.protection.unavailable.title': 'Não é possível salvar credenciais',
-  'settings.providerCredentials.protection.unavailable.body': 'Este servidor não consegue cifrar nem salvar segredos de provedor. Nada será gravado enquanto isto não for resolvido — as credenciais não estão salvas com proteção mais fraca, simplesmente não são salvas.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'O servidor está rodando apenas em memória, sem diretório de dados. Defina CHANCELA_DATA_DIR e reinicie.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Não há nenhuma fonte de chave disponível. Ative o SQLCipher ou o selamento pelo sistema operacional, ou forneça CHANCELA_CREDENTIAL_KEY_FILE.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'A chave fornecida pelo operador está inválida ou foi indicada em duplicidade. Deixe apenas CHANCELA_CREDENTIAL_KEY ou CHANCELA_CREDENTIAL_KEY_FILE, com material de chave válido.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'O envelope da chave-raiz não pôde ser lido. Confirme as permissões do diretório de dados e se o arquivo pertence a esta máquina.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'O cofre de credenciais está indisponível. Consulte os logs do servidor.',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Este servidor não consegue cifrar nem salvar segredos de provedor. Nada será gravado enquanto isto não for resolvido — as credenciais não estão salvas com proteção mais fraca, simplesmente não são salvas.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'O servidor está rodando apenas em memória, sem diretório de dados. Defina CHANCELA_DATA_DIR e reinicie.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Não há nenhuma fonte de chave disponível. Ative o SQLCipher ou o selamento pelo sistema operacional, ou forneça CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'A chave fornecida pelo operador está inválida ou foi indicada em duplicidade. Deixe apenas CHANCELA_CREDENTIAL_KEY ou CHANCELA_CREDENTIAL_KEY_FILE, com material de chave válido.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'O envelope da chave-raiz não pôde ser lido. Confirme as permissões do diretório de dados e se o arquivo pertence a esta máquina.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'O cofre de credenciais está indisponível. Consulte os logs do servidor.',
   'settings.providerCredentials.entry.notConfigured': 'não configurado',
   'settings.providerCredentials.table.caption': 'Entradas de credencial de {provider}',
   'settings.providerCredentials.table.entry': 'Entrada',

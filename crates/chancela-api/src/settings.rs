@@ -42,11 +42,11 @@ use chancela_authz::{Permission, Scope};
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::require_permission;
 use crate::error::ApiError;
-use crate::smtp::SmtpEncryption;
 use crate::secretstore_persist::{
     FIELD_ACCESS_TOKEN, FIELD_AMA_CERT_PEM, FIELD_APPLICATION_ID, FIELD_CLIENT_ID,
     FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD, FIELD_HTTP_BASIC_USERNAME,
 };
+use crate::smtp::SmtpEncryption;
 use crate::{AppState, CredentialMode, DecryptedCredentialRecord};
 
 /// The current schema version of the settings document. Bumped only on a breaking shape
@@ -631,7 +631,12 @@ impl EmailSettings {
     /// The name to announce in `EHLO`: the operator's override, else the sender's domain, else a
     /// literal `localhost` (which some relays reject — hence the override).
     pub fn resolved_helo_name(&self) -> String {
-        if let Some(name) = self.helo_name.as_ref().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        if let Some(name) = self
+            .helo_name
+            .as_ref()
+            .map(|n| n.trim())
+            .filter(|n| !n.is_empty())
+        {
             return name.to_owned();
         }
         self.from_address
@@ -685,7 +690,11 @@ impl EmailSettings {
         // Only demand a complete configuration once the operator switches it on, so a half-filled
         // form can still be saved while it is being set up.
         if self.enabled {
-            let host_set = self.host.as_deref().map(str::trim).is_some_and(|h| !h.is_empty());
+            let host_set = self
+                .host
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|h| !h.is_empty());
             if !host_set {
                 return Err(ApiError::Unprocessable(
                     "email.host is required when email.enabled is true".to_owned(),

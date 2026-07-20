@@ -103,17 +103,17 @@ export const plPL: Catalog = {
   'rbac.toast.assigned': 'Przypisano rolę',
   'rbac.toast.unassigned': 'Usunięto rolę',
   'rbac.delegacoes.lede':
-    'Nadaj posiadane uprawnienie innemu użytkownikowi w danym zakresie, z opcjonalnym terminem ważności.',
+    'Przekaż innemu użytkownikowi pełnioną przez siebie funkcję w danym zakresie, opcjonalnie na czas określony.',
   'rbac.deleg.cardTitle': 'Delegacje',
   'rbac.deleg.grant': 'Nowa delegacja',
   'rbac.deleg.empty': 'Brak delegacji',
   'rbac.deleg.emptyBody': 'Nie nadano ani nie otrzymano jeszcze żadnych delegacji.',
   'rbac.deleg.to.label': 'Nadaj dla',
-  'rbac.deleg.permission.label': 'Uprawnienie',
+  'rbac.deleg.permission.label': 'Funkcje do delegowania',
   'rbac.deleg.permission.none':
-    'Nie masz uprawnień, które można delegować. Możesz delegować tylko uprawnienia posiadane poprzez rolę.',
+    'Nie pełnisz żadnej funkcji, którą mógłbyś delegować w całości. Możesz delegować wyłącznie funkcję, której wszystkie uprawnienia posiadasz poprzez własną funkcję.',
   'rbac.deleg.onlyHeldNote':
-    'Możesz delegować tylko uprawnienia posiadane poprzez rolę (metauprawnień nie można delegować).',
+    'Możesz delegować funkcję tylko wtedy, gdy poprzez własną funkcję posiadasz wszystkie nadawane przez nią uprawnienia; funkcja zawierająca metauprawnienie nigdy nie podlega delegowaniu.',
   'rbac.deleg.legalBasis.label': 'Lokalna podstawa/dowód',
   'rbac.deleg.legalBasis.hint':
     'Zapisz lokalną referencję lub notatkę podaną przez operatora; to nie certyfikuje wystarczalności prawnej.',
@@ -127,7 +127,7 @@ export const plPL: Catalog = {
   'rbac.deleg.startsAt.missing': 'Start nie zarejestrowany',
   'rbac.deleg.legalBasis.missing': 'Brak (starszy rekord)',
   'rbac.deleg.user.self': '(ja)',
-  'rbac.deleg.table.permission': 'Uprawnienie',
+  'rbac.deleg.table.permission': 'Funkcja',
   'rbac.deleg.table.from': 'Od',
   'rbac.deleg.table.to': 'Do',
   'rbac.deleg.table.scope': 'Zakres',
@@ -140,6 +140,15 @@ export const plPL: Catalog = {
   'rbac.deleg.status.pending': 'Jeszcze nierozpoczęta',
   'rbac.deleg.status.expired': 'Wygasła',
   'rbac.deleg.status.revoked': 'Odwołana',
+  'rbac.deleg.funcao.carries': 'Nadaje',
+  'rbac.deleg.funcao.unknown': 'Funkcja usunięta z katalogu',
+  'rbac.deleg.status.suspended': 'Zawieszona',
+  'rbac.deleg.suspend': 'Zawieś',
+  'rbac.deleg.resume': 'Wznów',
+  'rbac.deleg.filter.all': 'Wszystkie',
+  'rbac.deleg.filter.none': 'Żadna delegacja nie pasuje do filtrów.',
+  'rbac.toast.suspended': 'Delegacja zawieszona',
+  'rbac.toast.resumed': 'Delegacja wznowiona',
   'rbac.toast.delegated': 'Nadano delegację',
   'rbac.toast.revoked': 'Odwołano delegację',
   // --- Navigation / shell --------------------------------------------------------
@@ -5376,7 +5385,8 @@ export const plPL: Catalog = {
     'Tylko kandydaci do retencji wskazujący tę księgę. Zasadami retencji zarządza się w Ustawieniach → Prywatność.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Zasady podpisu',
-  'settings.signing.fallbackHint': 'Oficjalna wartość domyślna dla Portugalii. Służy jako rezerwa, gdy żaden z wpisów w tabeli poniżej nie jest aktywny.',
+  'settings.signing.fallbackHint':
+    'Oficjalna wartość domyślna dla Portugalii. Służy jako rezerwa, gdy żaden z wpisów w tabeli poniżej nie jest aktywny.',
   'settings.signing.tslSources.caption': 'Skonfigurowane źródła list zaufania',
   'settings.signing.tsaProviders.caption': 'Skonfigurowani dostawcy znaczników czasu',
   'settings.signing.providers.caption': 'Tryby dostawców podpisu i ich stan',
@@ -5388,12 +5398,18 @@ export const plPL: Catalog = {
   'settings.signing.table.mode': 'Tryb',
   'settings.signing.table.notes': 'Uwagi',
   'settings.providerCredentials.protection.unavailable.title': 'Nie można zapisać poświadczeń',
-  'settings.providerCredentials.protection.unavailable.body': 'Ten serwer nie potrafi zaszyfrować ani zapisać sekretów dostawcy. Nic nie zostanie zapisane, dopóki nie zostanie to naprawione — poświadczenia nie są przechowywane ze słabszą ochroną, po prostu nie są przechowywane.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'Serwer działa wyłącznie w pamięci, bez katalogu danych. Ustaw CHANCELA_DATA_DIR i uruchom ponownie.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Brak dostępnego źródła klucza. Włącz SQLCipher lub pieczętowanie przez system operacyjny albo podaj CHANCELA_CREDENTIAL_KEY_FILE.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'Klucz podany przez operatora jest nieprawidłowy lub został wskazany dwukrotnie. Zostaw tylko CHANCELA_CREDENTIAL_KEY albo CHANCELA_CREDENTIAL_KEY_FILE, z prawidłowym materiałem klucza.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'Nie udało się odczytać koperty klucza głównego. Sprawdź uprawnienia katalogu danych oraz to, czy plik należy do tej maszyny.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'Magazyn poświadczeń jest niedostępny. Sprawdź dzienniki serwera.',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Ten serwer nie potrafi zaszyfrować ani zapisać sekretów dostawcy. Nic nie zostanie zapisane, dopóki nie zostanie to naprawione — poświadczenia nie są przechowywane ze słabszą ochroną, po prostu nie są przechowywane.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'Serwer działa wyłącznie w pamięci, bez katalogu danych. Ustaw CHANCELA_DATA_DIR i uruchom ponownie.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Brak dostępnego źródła klucza. Włącz SQLCipher lub pieczętowanie przez system operacyjny albo podaj CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'Klucz podany przez operatora jest nieprawidłowy lub został wskazany dwukrotnie. Zostaw tylko CHANCELA_CREDENTIAL_KEY albo CHANCELA_CREDENTIAL_KEY_FILE, z prawidłowym materiałem klucza.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'Nie udało się odczytać koperty klucza głównego. Sprawdź uprawnienia katalogu danych oraz to, czy plik należy do tej maszyny.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'Magazyn poświadczeń jest niedostępny. Sprawdź dzienniki serwera.',
   'settings.providerCredentials.entry.notConfigured': 'nieskonfigurowane',
   'settings.providerCredentials.table.caption': 'Wpisy poświadczeń dostawcy {provider}',
   'settings.providerCredentials.table.entry': 'Wpis',

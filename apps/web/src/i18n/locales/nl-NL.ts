@@ -102,17 +102,17 @@ export const nlNL: Catalog = {
   'rbac.toast.assigned': 'Rol toegewezen',
   'rbac.toast.unassigned': 'Rol verwijderd',
   'rbac.delegacoes.lede':
-    'Verleen een recht dat u hebt aan een andere gebruiker, binnen een bereik, met optionele vervaldatum.',
+    'Draag een rol die u vervult over aan een andere gebruiker, binnen een bereik, optioneel met een geldigheidsduur.',
   'rbac.deleg.cardTitle': 'Delegaties',
   'rbac.deleg.grant': 'Nieuwe delegatie',
   'rbac.deleg.empty': 'Geen delegaties',
   'rbac.deleg.emptyBody': 'U hebt nog geen delegaties verleend of ontvangen.',
   'rbac.deleg.to.label': 'Verlenen aan',
-  'rbac.deleg.permission.label': 'Recht',
+  'rbac.deleg.permission.label': 'Te delegeren rollen',
   'rbac.deleg.permission.none':
-    'U hebt geen delegeerbare rechten. U kunt alleen rechten delegeren die u via een rol hebt.',
+    'U heeft geen rol die u volledig kunt delegeren. U kunt alleen een rol delegeren waarvan u alle rechten via een eigen rol bezit.',
   'rbac.deleg.onlyHeldNote':
-    'U kunt alleen rechten delegeren die u via een rol hebt (meta-rechten zijn niet delegeerbaar).',
+    'U kunt een rol alleen delegeren als u via een eigen rol alle rechten bezit die de rol verleent; een rol met meta-rechten is nooit delegeerbaar.',
   'rbac.deleg.legalBasis.label': 'Lokale grondslag/bewijs',
   'rbac.deleg.legalBasis.hint':
     'Leg de door de operator opgegeven lokale referentie of notitie vast; dit certificeert geen juridische toereikendheid.',
@@ -126,7 +126,7 @@ export const nlNL: Catalog = {
   'rbac.deleg.startsAt.missing': 'Start niet vastgelegd',
   'rbac.deleg.legalBasis.missing': 'Ontbreekt (legacy)',
   'rbac.deleg.user.self': '(ik)',
-  'rbac.deleg.table.permission': 'Recht',
+  'rbac.deleg.table.permission': 'Rol',
   'rbac.deleg.table.from': 'Van',
   'rbac.deleg.table.to': 'Aan',
   'rbac.deleg.table.scope': 'Bereik',
@@ -139,6 +139,15 @@ export const nlNL: Catalog = {
   'rbac.deleg.status.pending': 'Nog niet gestart',
   'rbac.deleg.status.expired': 'Verlopen',
   'rbac.deleg.status.revoked': 'Ingetrokken',
+  'rbac.deleg.funcao.carries': 'Verleent',
+  'rbac.deleg.funcao.unknown': 'Rol uit de catalogus verwijderd',
+  'rbac.deleg.status.suspended': 'Opgeschort',
+  'rbac.deleg.suspend': 'Opschorten',
+  'rbac.deleg.resume': 'Hervatten',
+  'rbac.deleg.filter.all': 'Alle',
+  'rbac.deleg.filter.none': 'Geen delegatie voldoet aan de filters.',
+  'rbac.toast.suspended': 'Delegatie opgeschort',
+  'rbac.toast.resumed': 'Delegatie hervat',
   'rbac.toast.delegated': 'Delegatie verleend',
   'rbac.toast.revoked': 'Delegatie ingetrokken',
   // --- Navigation / shell --------------------------------------------------------
@@ -5401,7 +5410,8 @@ export const nlNL: Catalog = {
     'Alleen de bewaarkandidaten die dit boek noemen. Bewaarbeleid beheert u onder Instellingen → Privacy.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Handtekeningbeleid',
-  'settings.signing.fallbackHint': 'Officiële Portugese standaardwaarde. Dient als terugval wanneer geen van de vermeldingen in de tabel hieronder actief is.',
+  'settings.signing.fallbackHint':
+    'Officiële Portugese standaardwaarde. Dient als terugval wanneer geen van de vermeldingen in de tabel hieronder actief is.',
   'settings.signing.tslSources.caption': 'Geconfigureerde vertrouwenslijstbronnen',
   'settings.signing.tsaProviders.caption': 'Geconfigureerde tijdstempelaanbieders',
   'settings.signing.providers.caption': 'Modi van handtekeningaanbieders en hun status',
@@ -5412,13 +5422,20 @@ export const nlNL: Catalog = {
   'settings.signing.table.provider': 'Aanbieder',
   'settings.signing.table.mode': 'Modus',
   'settings.signing.table.notes': 'Opmerkingen',
-  'settings.providerCredentials.protection.unavailable.title': 'Inloggegevens kunnen niet worden opgeslagen',
-  'settings.providerCredentials.protection.unavailable.body': 'Deze server kan aanbiedergeheimen niet versleutelen of opslaan. Er wordt niets bewaard totdat dit is opgelost — de inloggegevens worden niet met zwakkere bescherming bewaard, ze worden eenvoudigweg niet bewaard.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'De server draait alleen in het geheugen, zonder gegevensmap. Stel CHANCELA_DATA_DIR in en start opnieuw op.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Er is geen sleutelbron beschikbaar. Schakel SQLCipher of verzegeling door het besturingssysteem in, of geef CHANCELA_CREDENTIAL_KEY_FILE op.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'De door de beheerder opgegeven sleutel is ongeldig of is twee keer opgegeven. Behoud alleen CHANCELA_CREDENTIAL_KEY of CHANCELA_CREDENTIAL_KEY_FILE, met geldig sleutelmateriaal.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'De envelop van de hoofdsleutel kon niet worden gelezen. Controleer de rechten van de gegevensmap en of het bestand bij deze machine hoort.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'De inloggegevenskluis is niet beschikbaar. Raadpleeg de serverlogboeken.',
+  'settings.providerCredentials.protection.unavailable.title':
+    'Inloggegevens kunnen niet worden opgeslagen',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Deze server kan aanbiedergeheimen niet versleutelen of opslaan. Er wordt niets bewaard totdat dit is opgelost — de inloggegevens worden niet met zwakkere bescherming bewaard, ze worden eenvoudigweg niet bewaard.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'De server draait alleen in het geheugen, zonder gegevensmap. Stel CHANCELA_DATA_DIR in en start opnieuw op.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Er is geen sleutelbron beschikbaar. Schakel SQLCipher of verzegeling door het besturingssysteem in, of geef CHANCELA_CREDENTIAL_KEY_FILE op.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'De door de beheerder opgegeven sleutel is ongeldig of is twee keer opgegeven. Behoud alleen CHANCELA_CREDENTIAL_KEY of CHANCELA_CREDENTIAL_KEY_FILE, met geldig sleutelmateriaal.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'De envelop van de hoofdsleutel kon niet worden gelezen. Controleer de rechten van de gegevensmap en of het bestand bij deze machine hoort.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'De inloggegevenskluis is niet beschikbaar. Raadpleeg de serverlogboeken.',
   'settings.providerCredentials.entry.notConfigured': 'niet geconfigureerd',
   'settings.providerCredentials.table.caption': 'Inloggegevensvermeldingen van {provider}',
   'settings.providerCredentials.table.entry': 'Vermelding',

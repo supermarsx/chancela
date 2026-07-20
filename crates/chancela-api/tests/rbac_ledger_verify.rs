@@ -217,8 +217,9 @@ async fn rbac_mutations_via_api_keep_the_ledger_verify_healthy() {
             "/v1/delegations",
             &owner,
             json!({
+                // A delegation hands over a FUNÇÃO (t44), not hand-picked verbs.
                 "to": member_id,
-                "permission": "act.advance",
+                "roles": [chancela_authz::SIGNATARIO_ROLE_ID.0.to_string()],
                 "scope": { "kind": "global" },
                 "legal_basis": "Ata do conselho R-19 (evidência sintética de teste)",
             }),

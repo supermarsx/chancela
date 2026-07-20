@@ -108,17 +108,17 @@ export const enGB: Catalog = {
   'rbac.toast.assigned': 'Role assigned',
   'rbac.toast.unassigned': 'Role removed',
   'rbac.delegacoes.lede':
-    'Grant a permission you hold to another user, at a scope, with an optional expiry.',
+    'Hand a role you hold to another user, within a scope, optionally time-limited.',
   'rbac.deleg.cardTitle': 'Delegations',
   'rbac.deleg.grant': 'New delegation',
   'rbac.deleg.empty': 'No delegations',
   'rbac.deleg.emptyBody': 'You have not granted or received any delegations yet.',
   'rbac.deleg.to.label': 'Grant to',
-  'rbac.deleg.permission.label': 'Permission',
+  'rbac.deleg.permission.label': 'Roles to delegate',
   'rbac.deleg.permission.none':
-    'You have no delegable permissions. You can only delegate permissions you hold via a role.',
+    'You hold no role you can delegate in full. You may only delegate a role whose every permission you hold through a role of your own.',
   'rbac.deleg.onlyHeldNote':
-    'You can only delegate permissions you hold via a role (meta-permissions are not delegable).',
+    'You may only delegate a role if you hold, through a role of your own, every permission it carries; a role containing a meta-permission is never delegable.',
   'rbac.deleg.legalBasis.label': 'Local basis/evidence',
   'rbac.deleg.legalBasis.hint':
     'Record the operator-supplied local reference or note; this does not certify legal sufficiency.',
@@ -132,7 +132,7 @@ export const enGB: Catalog = {
   'rbac.deleg.startsAt.missing': 'Start not recorded',
   'rbac.deleg.legalBasis.missing': 'Missing (legacy)',
   'rbac.deleg.user.self': '(me)',
-  'rbac.deleg.table.permission': 'Permission',
+  'rbac.deleg.table.permission': 'Role',
   'rbac.deleg.table.from': 'From',
   'rbac.deleg.table.to': 'To',
   'rbac.deleg.table.scope': 'Scope',
@@ -145,6 +145,15 @@ export const enGB: Catalog = {
   'rbac.deleg.status.pending': 'Not started',
   'rbac.deleg.status.expired': 'Expired',
   'rbac.deleg.status.revoked': 'Revoked',
+  'rbac.deleg.funcao.carries': 'Carries',
+  'rbac.deleg.funcao.unknown': 'Role removed from the catalogue',
+  'rbac.deleg.status.suspended': 'Suspended',
+  'rbac.deleg.suspend': 'Suspend',
+  'rbac.deleg.resume': 'Resume',
+  'rbac.deleg.filter.all': 'All',
+  'rbac.deleg.filter.none': 'No delegation matches the filters.',
+  'rbac.toast.suspended': 'Delegation suspended',
+  'rbac.toast.resumed': 'Delegation resumed',
   'rbac.toast.delegated': 'Delegation granted',
   'rbac.toast.revoked': 'Delegation revoked',
   // --- Navigation / shell --------------------------------------------------------
@@ -5300,7 +5309,8 @@ export const enGB: Catalog = {
     'Only the retention candidates naming this book. Retention policies are managed under Settings → Privacy.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Signature policy',
-  'settings.signing.fallbackHint': 'Official Portuguese default. Used as a fallback when none of the entries in the grid below is active.',
+  'settings.signing.fallbackHint':
+    'Official Portuguese default. Used as a fallback when none of the entries in the grid below is active.',
   'settings.signing.tslSources.caption': 'Configured trust-list sources',
   'settings.signing.tsaProviders.caption': 'Configured timestamp providers',
   'settings.signing.providers.caption': 'Signature provider modes and their status',
@@ -5312,12 +5322,18 @@ export const enGB: Catalog = {
   'settings.signing.table.mode': 'Mode',
   'settings.signing.table.notes': 'Notes',
   'settings.providerCredentials.protection.unavailable.title': 'Credentials cannot be stored',
-  'settings.providerCredentials.protection.unavailable.body': 'This server cannot encrypt or store provider secrets. Nothing will be saved until this is resolved — the credentials are not being kept with weaker protection, they are simply not being kept.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'The server is running in memory only, with no data directory. Set CHANCELA_DATA_DIR and restart.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'No key source is available. Enable SQLCipher or operating-system sealing, or supply CHANCELA_CREDENTIAL_KEY_FILE.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'The operator-supplied key is invalid or was given twice. Keep only CHANCELA_CREDENTIAL_KEY or CHANCELA_CREDENTIAL_KEY_FILE, with valid key material.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'The root-key envelope could not be read. Check the data directory permissions and whether the file belongs to this machine.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'The credential store is unavailable. Check the server logs.',
+  'settings.providerCredentials.protection.unavailable.body':
+    'This server cannot encrypt or store provider secrets. Nothing will be saved until this is resolved — the credentials are not being kept with weaker protection, they are simply not being kept.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'The server is running in memory only, with no data directory. Set CHANCELA_DATA_DIR and restart.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'No key source is available. Enable SQLCipher or operating-system sealing, or supply CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'The operator-supplied key is invalid or was given twice. Keep only CHANCELA_CREDENTIAL_KEY or CHANCELA_CREDENTIAL_KEY_FILE, with valid key material.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'The root-key envelope could not be read. Check the data directory permissions and whether the file belongs to this machine.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'The credential store is unavailable. Check the server logs.',
   'settings.providerCredentials.entry.notConfigured': 'not configured',
   'settings.providerCredentials.table.caption': 'Credential entries for {provider}',
   'settings.providerCredentials.table.entry': 'Entry',

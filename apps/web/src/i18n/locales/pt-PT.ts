@@ -110,17 +110,17 @@ export const ptPT = {
   'rbac.toast.assigned': 'Função atribuída',
   'rbac.toast.unassigned': 'Função removida',
   'rbac.delegacoes.lede':
-    'Conceda uma permissão que possui a outro utilizador, num âmbito, com validade opcional.',
+    'Entregue a outro utilizador uma função que exerce, num âmbito, com validade opcional.',
   'rbac.deleg.cardTitle': 'Delegações',
   'rbac.deleg.grant': 'Nova delegação',
   'rbac.deleg.empty': 'Sem delegações',
   'rbac.deleg.emptyBody': 'Ainda não concedeu nem recebeu delegações.',
   'rbac.deleg.to.label': 'Conceder a',
-  'rbac.deleg.permission.label': 'Permissão',
+  'rbac.deleg.permission.label': 'Funções a delegar',
   'rbac.deleg.permission.none':
-    'Não possui permissões delegáveis. Só pode delegar permissões que possui através de uma função.',
+    'Não possui nenhuma função que possa delegar por inteiro. Só pode delegar uma função cujas permissões todas possua através de uma função sua.',
   'rbac.deleg.onlyHeldNote':
-    'Só pode delegar permissões que possui através de uma função (as meta-permissões não são delegáveis).',
+    'Só pode delegar uma função se possuir, através de uma função sua, todas as permissões que ela confere; uma função com meta-permissões nunca é delegável.',
   'rbac.deleg.legalBasis.label': 'Base/evidência local',
   'rbac.deleg.legalBasis.hint':
     'Registe a referência ou nota local fornecida pelo operador; isto não certifica suficiência legal.',
@@ -134,7 +134,7 @@ export const ptPT = {
   'rbac.deleg.startsAt.missing': 'Início não registado',
   'rbac.deleg.legalBasis.missing': 'Em falta (legado)',
   'rbac.deleg.user.self': '(eu)',
-  'rbac.deleg.table.permission': 'Permissão',
+  'rbac.deleg.table.permission': 'Função',
   'rbac.deleg.table.from': 'De',
   'rbac.deleg.table.to': 'Para',
   'rbac.deleg.table.scope': 'Âmbito',
@@ -147,6 +147,15 @@ export const ptPT = {
   'rbac.deleg.status.pending': 'Ainda não iniciada',
   'rbac.deleg.status.expired': 'Expirada',
   'rbac.deleg.status.revoked': 'Revogada',
+  'rbac.deleg.funcao.carries': 'Confere',
+  'rbac.deleg.funcao.unknown': 'Função removida do catálogo',
+  'rbac.deleg.status.suspended': 'Suspensa',
+  'rbac.deleg.suspend': 'Suspender',
+  'rbac.deleg.resume': 'Retomar',
+  'rbac.deleg.filter.all': 'Todas',
+  'rbac.deleg.filter.none': 'Nenhuma delegação corresponde aos filtros.',
+  'rbac.toast.suspended': 'Delegação suspensa',
+  'rbac.toast.resumed': 'Delegação retomada',
   'rbac.toast.delegated': 'Delegação concedida',
   'rbac.toast.revoked': 'Delegação revogada',
   // --- Navigation / shell --------------------------------------------------------
@@ -5376,8 +5385,7 @@ export const ptPT = {
   'settings.signing.table.mode': 'Modo',
   'settings.signing.table.notes': 'Notas',
   // --- Fornecedores de assinatura: grelha e estado honesto do cofre (t36) ---------
-  'settings.providerCredentials.protection.unavailable.title':
-    'Não é possível guardar credenciais',
+  'settings.providerCredentials.protection.unavailable.title': 'Não é possível guardar credenciais',
   'settings.providerCredentials.protection.unavailable.body':
     'Este servidor não consegue cifrar nem guardar segredos de fornecedor. Nada será gravado enquanto isto não for resolvido — as credenciais não estão guardadas com proteção mais fraca, simplesmente não são guardadas.',
   'settings.providerCredentials.protection.reason.notPersistent':

@@ -104,17 +104,17 @@ export const frFR: Catalog = {
   'rbac.toast.assigned': 'Rôle attribué',
   'rbac.toast.unassigned': 'Rôle retiré',
   'rbac.delegacoes.lede':
-    'Accordez une permission que vous détenez à un autre utilisateur, dans une portée, avec une échéance facultative.',
+    'Confiez à un autre utilisateur un rôle que vous exercez, dans un périmètre, avec une validité facultative.',
   'rbac.deleg.cardTitle': 'Délégations',
   'rbac.deleg.grant': 'Nouvelle délégation',
   'rbac.deleg.empty': 'Aucune délégation',
   'rbac.deleg.emptyBody': 'Vous n’avez encore accordé ni reçu aucune délégation.',
   'rbac.deleg.to.label': 'Accorder à',
-  'rbac.deleg.permission.label': 'Permission',
+  'rbac.deleg.permission.label': 'Rôles à déléguer',
   'rbac.deleg.permission.none':
-    'Vous n’avez aucune permission délégable. Vous ne pouvez déléguer que les permissions que vous détenez via un rôle.',
+    "Vous ne détenez aucun rôle que vous puissiez déléguer intégralement. Vous ne pouvez déléguer qu'un rôle dont vous détenez toutes les permissions via un rôle qui vous est propre.",
   'rbac.deleg.onlyHeldNote':
-    'Vous ne pouvez déléguer que les permissions que vous détenez via un rôle (les méta-permissions ne sont pas délégables).',
+    "Vous ne pouvez déléguer un rôle que si vous détenez, via un rôle qui vous est propre, toutes les permissions qu'il confère ; un rôle contenant une méta-permission n'est jamais délégable.",
   'rbac.deleg.legalBasis.label': 'Base/élément local',
   'rbac.deleg.legalBasis.hint':
     'Consignez la référence ou note locale fournie par l’opérateur ; cela ne certifie pas la suffisance juridique.',
@@ -129,7 +129,7 @@ export const frFR: Catalog = {
   'rbac.deleg.startsAt.missing': 'Début non enregistré',
   'rbac.deleg.legalBasis.missing': 'Manquant (hérité)',
   'rbac.deleg.user.self': '(moi)',
-  'rbac.deleg.table.permission': 'Permission',
+  'rbac.deleg.table.permission': 'Rôle',
   'rbac.deleg.table.from': 'De',
   'rbac.deleg.table.to': 'À',
   'rbac.deleg.table.scope': 'Portée',
@@ -142,6 +142,15 @@ export const frFR: Catalog = {
   'rbac.deleg.status.pending': 'Pas encore commencée',
   'rbac.deleg.status.expired': 'Expirée',
   'rbac.deleg.status.revoked': 'Révoquée',
+  'rbac.deleg.funcao.carries': 'Confère',
+  'rbac.deleg.funcao.unknown': 'Rôle retiré du catalogue',
+  'rbac.deleg.status.suspended': 'Suspendue',
+  'rbac.deleg.suspend': 'Suspendre',
+  'rbac.deleg.resume': 'Reprendre',
+  'rbac.deleg.filter.all': 'Toutes',
+  'rbac.deleg.filter.none': 'Aucune délégation ne correspond aux filtres.',
+  'rbac.toast.suspended': 'Délégation suspendue',
+  'rbac.toast.resumed': 'Délégation reprise',
   'rbac.toast.delegated': 'Délégation accordée',
   'rbac.toast.revoked': 'Délégation révoquée',
   // --- Navigation / shell --------------------------------------------------------
@@ -2292,18 +2301,18 @@ export const frFR: Catalog = {
     'Consignez la date, le mode et les preuves conservées de la convocation. Les avertissements soutiennent l’exploitation et ne remplacent pas une revue juridique.',
   'acts.convening.waiver.title': 'Sans convocation',
   'acts.convening.waiver.hint':
-    'Lorsque la réunion s\'est tenue sans convocation préalable, indiquez ici le fondement retenu ; le procès-verbal le reprendra. Chancela enregistre le fondement déclaré et n\'en confirme pas la validité — faites-le confirmer par un conseil juridique.',
-  'acts.convening.waiver.toggle': 'La réunion s\'est tenue sans convocation préalable',
+    "Lorsque la réunion s'est tenue sans convocation préalable, indiquez ici le fondement retenu ; le procès-verbal le reprendra. Chancela enregistre le fondement déclaré et n'en confirme pas la validité — faites-le confirmer par un conseil juridique.",
+  'acts.convening.waiver.toggle': "La réunion s'est tenue sans convocation préalable",
   'acts.convening.waiver.basis': 'Fondement',
   'acts.convening.waiver.basis.universal':
-    'Assemblée universelle — tous présents et tous d\'accord (CSC art. 54.º)',
+    "Assemblée universelle — tous présents et tous d'accord (CSC art. 54.º)",
   'acts.convening.waiver.basis.other': 'Autre fondement (à décrire)',
-  'acts.convening.waiver.agreedToMeet': 'Tous ont exprimé la volonté que l\'assemblée se constitue',
+  'acts.convening.waiver.agreedToMeet': "Tous ont exprimé la volonté que l'assemblée se constitue",
   'acts.convening.waiver.agreedToAgenda': 'Tous ont accepté les points délibérés',
   'acts.convening.waiver.grounds': 'Fondement enregistré',
-  'acts.convening.waiver.evidenceReference': 'Preuve de l\'accord',
+  'acts.convening.waiver.evidenceReference': "Preuve de l'accord",
   'acts.convening.waiver.conflict':
-    'Une convocation et l\'absence de convocation sont toutes deux enregistrées. Une seule peut décrire cette réunion.',
+    "Une convocation et l'absence de convocation sont toutes deux enregistrées. Une seule peut décrire cette réunion.",
   'acts.convening.dispatchDate': 'Date de convocation',
   'acts.convening.channel': 'Mode de convocation',
   'acts.convening.channelNone': 'Aucun mode enregistré',
@@ -5413,7 +5422,8 @@ export const frFR: Catalog = {
     'Uniquement les candidats de conservation nommant ce livre. Les politiques de conservation se gèrent dans Paramètres → Confidentialité.',
   // --- t36: Assinaturas / Fornecedores configuration grids ---
   'settings.signing.policy.cardTitle': 'Politique de signature',
-  'settings.signing.fallbackHint': 'Valeur portugaise officielle par défaut. Sert de recours lorsque aucune des entrées du tableau ci-dessous n’est active.',
+  'settings.signing.fallbackHint':
+    'Valeur portugaise officielle par défaut. Sert de recours lorsque aucune des entrées du tableau ci-dessous n’est active.',
   'settings.signing.tslSources.caption': 'Sources de listes de confiance configurées',
   'settings.signing.tsaProviders.caption': 'Prestataires d’horodatage configurés',
   'settings.signing.providers.caption': 'Modes de prestataire de signature et leur état',
@@ -5424,13 +5434,20 @@ export const frFR: Catalog = {
   'settings.signing.table.provider': 'Prestataire',
   'settings.signing.table.mode': 'Mode',
   'settings.signing.table.notes': 'Remarques',
-  'settings.providerCredentials.protection.unavailable.title': 'Impossible d’enregistrer des identifiants',
-  'settings.providerCredentials.protection.unavailable.body': 'Ce serveur ne peut ni chiffrer ni enregistrer les secrets de prestataire. Rien ne sera enregistré tant que ce point n’est pas résolu : les identifiants ne sont pas conservés avec une protection plus faible, ils ne sont tout simplement pas conservés.',
-  'settings.providerCredentials.protection.reason.notPersistent': 'Le serveur fonctionne uniquement en mémoire, sans répertoire de données. Définissez CHANCELA_DATA_DIR puis redémarrez.',
-  'settings.providerCredentials.protection.reason.noKeySource': 'Aucune source de clé n’est disponible. Activez SQLCipher ou le scellement par le système d’exploitation, ou fournissez CHANCELA_CREDENTIAL_KEY_FILE.',
-  'settings.providerCredentials.protection.reason.operatorKey': 'La clé fournie par l’opérateur est invalide ou a été indiquée deux fois. Ne conservez que CHANCELA_CREDENTIAL_KEY ou CHANCELA_CREDENTIAL_KEY_FILE, avec un matériel de clé valide.',
-  'settings.providerCredentials.protection.reason.rootEnvelope': 'L’enveloppe de la clé racine n’a pas pu être lue. Vérifiez les droits du répertoire de données et si le fichier appartient à cette machine.',
-  'settings.providerCredentials.protection.reason.storeUnavailable': 'Le coffre d’identifiants est indisponible. Consultez les journaux du serveur.',
+  'settings.providerCredentials.protection.unavailable.title':
+    'Impossible d’enregistrer des identifiants',
+  'settings.providerCredentials.protection.unavailable.body':
+    'Ce serveur ne peut ni chiffrer ni enregistrer les secrets de prestataire. Rien ne sera enregistré tant que ce point n’est pas résolu : les identifiants ne sont pas conservés avec une protection plus faible, ils ne sont tout simplement pas conservés.',
+  'settings.providerCredentials.protection.reason.notPersistent':
+    'Le serveur fonctionne uniquement en mémoire, sans répertoire de données. Définissez CHANCELA_DATA_DIR puis redémarrez.',
+  'settings.providerCredentials.protection.reason.noKeySource':
+    'Aucune source de clé n’est disponible. Activez SQLCipher ou le scellement par le système d’exploitation, ou fournissez CHANCELA_CREDENTIAL_KEY_FILE.',
+  'settings.providerCredentials.protection.reason.operatorKey':
+    'La clé fournie par l’opérateur est invalide ou a été indiquée deux fois. Ne conservez que CHANCELA_CREDENTIAL_KEY ou CHANCELA_CREDENTIAL_KEY_FILE, avec un matériel de clé valide.',
+  'settings.providerCredentials.protection.reason.rootEnvelope':
+    'L’enveloppe de la clé racine n’a pas pu être lue. Vérifiez les droits du répertoire de données et si le fichier appartient à cette machine.',
+  'settings.providerCredentials.protection.reason.storeUnavailable':
+    'Le coffre d’identifiants est indisponible. Consultez les journaux du serveur.',
   'settings.providerCredentials.entry.notConfigured': 'non configuré',
   'settings.providerCredentials.table.caption': 'Entrées d’identifiants de {provider}',
   'settings.providerCredentials.table.entry': 'Entrée',
