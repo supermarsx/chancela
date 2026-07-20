@@ -206,7 +206,6 @@ impl NetworkPolicy {
                 ) => candidate_prefix >= prefix && network_contains(*network, *prefix, *candidate),
                 // A hostname entry never covers a literal and vice versa: the ceiling's hostname may
                 // resolve anywhere, so treating it as covering an IP range would widen the boundary.
-                (AllowEntry::Host(_), AllowEntry::Network(a, p)) => *p == if a.is_ipv4() {32} else {128},
                 _ => false,
             })
     }
