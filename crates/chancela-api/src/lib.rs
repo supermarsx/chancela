@@ -18991,7 +18991,13 @@ mod tests {
                 .expect("permissions")
                 .iter()
                 .filter(|p| p["source"] == "delegation")
-                .map(|p| format!("{}@{}", p["permission"], p["scope"]["kind"]))
+                .map(|p| {
+                    format!(
+                        "{}@{}",
+                        p["permission"].as_str().unwrap_or_default(),
+                        p["scope"]["kind"].as_str().unwrap_or_default()
+                    )
+                })
                 .collect();
             out.sort();
             out
@@ -19096,7 +19102,7 @@ mod tests {
             assert_eq!(
                 status,
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "a revoked delegation cannot be {verb}d: {body}"
+                "a revoked delegation refuses /{verb}: {body}"
             );
         }
         // The refusals are refusals: no state change, and nothing written to the audit trail.

@@ -234,10 +234,31 @@ async fn execution_refuses_plaintext_store_without_leaking_key_or_migrating() {
     let token = owner_session(&state).await;
     let new_key = "replacement-key-for-execute-plaintext";
 
+    // t22 put this execution behind step-up re-auth. The gate runs BEFORE the plaintext check, so
+    // an operator who proves nothing never learns anything about the store — pin that ordering
+    // rather than letting it silently swallow the refusal this test is really about.
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(EXECUTE_PATH, json!({ "new_key": new_key })),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "step-up is required before the store is even inspected: {body}"
+    );
+    assert_secret_free(&body, &[new_key]);
+
     let (status, body) = send(
         state,
         with_session(
-            post_json(EXECUTE_PATH, json!({ "new_key": new_key })),
+            post_json(
+                EXECUTE_PATH,
+                json!({ "new_key": new_key, "reauth": { "password": TEST_PASSWORD } }),
+            ),
             &token,
         ),
     )

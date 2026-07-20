@@ -465,9 +465,27 @@ async fn the_evidence_index_summary_agrees_with_every_per_document_sidecar() {
     for entry in documents {
         let document_id = entry["document_id"].as_str().expect("document id");
         let evidence = member_json(&members, &format!("evidence/{document_id}.json"));
-        let chain = evidence["signature"]["signatures"]
-            .as_array()
-            .unwrap_or_else(|| panic!("{document_id} has a signatures array: {evidence:#}"));
+        // Book-level documents (the termos) are not act signature targets, so their evidence report
+        // carries a stated reason instead of a signature block. The index must then claim nothing:
+        // "no signatures" and "not a thing that gets signed" are both honest, but a summary that
+        // invented an entry here would be neither.
+        let Some(chain) = evidence["signature"]["signatures"].as_array() else {
+            assert!(
+                evidence["signature"].is_null(),
+                "{document_id} has a signature block but no chain: {evidence:#}"
+            );
+            assert!(
+                evidence["reason"].as_str().is_some_and(|r| !r.is_empty()),
+                "a document with no signature evidence must say why: {evidence:#}"
+            );
+            assert_eq!(entry["signature_count"], 0, "{document_id}: {entry:#}");
+            assert_eq!(
+                entry["signatures"].as_array().map(Vec::len),
+                Some(0),
+                "{document_id}: {entry:#}"
+            );
+            continue;
+        };
 
         assert_eq!(
             entry["signature_count"],
