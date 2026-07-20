@@ -4235,6 +4235,16 @@ a,
   min-width: 0;
 }
 
+/* Create-an-entity import (`/entidades/importar`): the estado is an autonomous column
+   beside the import card rather than a strip squeezed inside it, so a lookup's state is
+   legible at a glance and never competes with the form for the card's width. */
+.registry-import-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(17rem, 0.42fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
 .registry-import-copy {
   margin-bottom: 1rem;
 }
@@ -4276,6 +4286,39 @@ a,
 
 .registry-import-state .badge {
   align-self: flex-start;
+}
+
+/* The estado column's own heading, sized as a peer of a panel title rather than a field
+   label, since the column now stands beside the card instead of inside it. */
+.registry-import-state__title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Badge + a decorative mark. The words carry the state; the glyph only reinforces them,
+   so the state never depends on hue. */
+.registry-import-state__mark {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.registry-import-state__mark .icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.registry-import-state--active .registry-import-state__mark .icon {
+  color: var(--accent-strong);
+}
+
+.registry-import-state--error .registry-import-state__mark .icon {
+  color: var(--error);
 }
 
 .registry-report--empty {
@@ -4638,6 +4681,7 @@ a,
 
 @media (max-width: 760px) {
   .registry-import-flow,
+  .registry-import-layout,
   .registry-result-grid {
     grid-template-columns: 1fr;
   }
@@ -4652,6 +4696,12 @@ a,
    form reads at a comfortable measure instead of stretching the full width. */
 .form-page {
   max-width: 44rem;
+}
+
+/* …unless the page carries a second, autonomous column beside the form (the registry
+   import's estado): the measure then covers both columns, not the form alone. */
+.form-page--aside {
+  max-width: 62rem;
 }
 
 /* A header row pairing a subtitle with a neat action button (e.g. the entity detail

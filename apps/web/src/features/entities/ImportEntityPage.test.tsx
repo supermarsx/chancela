@@ -189,3 +189,107 @@ describe('ImportEntityPage', () => {
     expect(screen.getByText('Ação necessária')).toBeTruthy();
   });
 });
+
+/**
+ * The estado is a column of its own beside the import card (t60). These lock the three
+ * properties that matters for an operator judging an import: it is autonomous (a sibling
+ * of the card, not a strip inside it), it says its state in words rather than in hue, and
+ * nothing the old inline rendering showed was dropped on the way out.
+ */
+describe('ImportEntityPage — estado column', () => {
+  function estado(): HTMLElement {
+    const el = document.querySelector('.registry-import-state');
+    if (!el) throw new Error('no estado column rendered');
+    return el as HTMLElement;
+  }
+
+  it('renders the estado as an autonomous column beside the import card', () => {
+    installFetch(() => jsonResponse(REPORT, 201));
+    renderPage();
+
+    const layout = document.querySelector('.registry-import-layout');
+    expect(layout).toBeTruthy();
+    // Two peer columns: the import card, then the estado — the estado is *not* nested
+    // inside the card's body.
+    const columns = Array.from(layout!.children);
+    expect(columns).toHaveLength(2);
+    expect(columns[0].classList.contains('panel')).toBe(true);
+    expect(columns[1]).toBe(estado());
+    expect(columns[0].contains(estado())).toBe(false);
+    // The column names itself with a real heading, not a stray field label.
+    expect(estado().querySelector('.registry-import-state__title')?.textContent).toBe('Estado');
+  });
+
+  it('distinguishes each state in words, not by colour alone', async () => {
+    installFetch(() => jsonResponse({ error: 'o registo comercial não respondeu' }, 502));
+    renderPage();
+
+    // Idle: waiting for a código, with the sentence saying what to supply.
+    expect(estado().textContent).toContain('Aguardando código');
+    expect(estado().textContent).toContain('Introduza o código da certidão permanente');
+
+    // Ready: the words change, not merely the tone class.
+    const code = screen.getByLabelText('Código da certidão permanente');
+    fireEvent.change(code, { target: { value: '1234-5678-9012' } });
+    expect(estado().textContent).toContain('Pronto');
+    expect(estado().textContent).toContain('Pronto para consultar a certidão e criar a entidade.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Importar do registo' }));
+
+    // Failure: named in words, with the remedy sentence, and the server's own reason is
+    // still reachable on the page (inline RegistryErrorNote in the import column).
+    await waitFor(() => expect(estado().textContent).toContain('Ação necessária'));
+    expect(estado().textContent).toContain('Corrija o código ou e-mail e tente novamente.');
+    expect(screen.getAllByText('o registo comercial não respondeu').length).toBeGreaterThan(0);
+  });
+
+  it('announces the in-flight consulta from the estado column', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    installFetch(() => gate.then(() => jsonResponse(REPORT, 201)));
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
+      target: { value: '1234-5678-9012' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Importar do registo' }));
+
+    // The consulta has nothing to skeletonise — no list or table is being replaced — so
+    // the busy state is the estado column itself, as a polite live region carrying words.
+    const live = await screen.findByRole('status');
+    expect(live).toBe(estado());
+    expect(live.textContent).toContain('A consultar');
+    expect(live.textContent).toContain('A certidão está a ser consultada');
+
+    release();
+    await waitFor(() => expect(screen.getByText('DETALHE DA ENTIDADE')).toBeTruthy());
+  });
+});
+
+// Matches the convention in PdfValidationResultTable.test.tsx: an indirect dynamic
+// import, since the web tsconfig carries no @types/node.
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8');
+}
+
+describe('estado column styling', () => {
+  it('colours the estado from theme tokens only, never literal colours', async () => {
+    const css = await themeCss();
+    const start = css.indexOf('.registry-import-state__title {');
+    const end = css.indexOf('}', css.indexOf('.registry-import-state--error .registry-import-'));
+    expect(start).toBeGreaterThan(-1);
+    const block = css.slice(start, end + 1);
+    expect(block).toContain('var(--accent-strong)');
+    expect(block).toContain('var(--error)');
+    expect(block).toContain('var(--text-muted)');
+    expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(block).not.toMatch(/\brgba?\(/);
+    expect(block).not.toMatch(/\bhsla?\(/);
+  });
+});
