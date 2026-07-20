@@ -15,6 +15,27 @@ HTTP 1.x default HTTPS client; the legacy `rustls` feature is deliberately
 absent because it activates the older Hyper 0.14 / rustls 0.21 compatibility
 stack.
 
+The Node toolchain floor is Node 24.15.0 and npm 12.0.1, declared in `engines`
+and pinned exactly by `packageManager` in both `package.json` and
+`apps/desktop/package.json`. `scripts/check-supply-chain-pins.mjs` asserts all
+three values, so the floor cannot drift silently.
+
+npm 12.0.1 is **not** bundled with any Node 24 release — `node:24.18.0` ships
+npm 11.16.0 — so every environment that runs `npm` must activate it explicitly
+before its first npm command. The policy gate enforces this for workflow jobs
+(`npm install --global npm@12.0.1`, required to sit after `actions/setup-node`
+and before any npm command). The container builders must do the same: the
+`web-build` stage of `docker/Dockerfile.server` and `Dockerfile.hardened` runs
+the identical activation before `npm ci`. An environment that skips it resolves
+the dependency graph with a different package manager than the one pinned, and
+announces the fact as an `npm EBADENGINE` warning on every build.
+
+Always pin the activation to an exact version, never a range, so the layer stays
+reproducible. When raising the floor, update the manifests, the workflow
+activation steps, the two Dockerfile `web-build` stages, and the constants in
+`scripts/check-supply-chain-pins.mjs` together — a floor raised in one place and
+not the others is what produced the container `EBADENGINE` warnings.
+
 For an update sweep, run:
 
 ```console

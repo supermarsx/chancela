@@ -7,7 +7,21 @@ file-based docker secrets from this directory. The real files are **gitignored**
 (see `.gitignore` here) — only the `*.example` templates are committed. Never
 commit a real secret.
 
-Create the real secrets by copying the templates and filling them in:
+Generate any that are missing, with cryptographically random values:
+
+```sh
+sh docker/preflight-secrets.sh --generate
+```
+
+`sh docker/up.sh -d` does this and then starts the profile.
+
+Generation is strictly **create-if-absent** — an existing secret is never
+rewritten, rotated or overwritten, because all three are write-once (see the
+table below). `postgres_password` and `database_url` are always produced
+together from the same value, so the pair cannot drift. Files are written with
+no trailing newline and mode `0600` (not honoured on a Windows checkout).
+
+Or supply your own by copying the templates and filling them in:
 
 ```sh
 cp docker/secrets/postgres_password.example docker/secrets/postgres_password
@@ -17,9 +31,9 @@ cp docker/secrets/credential_key.example    docker/secrets/credential_key
 
 | Secret file         | Consumed as                        | Notes |
 | ------------------- | ---------------------------------- | ----- |
-| `postgres_password` | `POSTGRES_PASSWORD_FILE` (postgres) | Long random password. |
+| `postgres_password` | `POSTGRES_PASSWORD_FILE` (postgres) | Long random password. Read **only** when Postgres initialises `chancela-pgdata`; after that the password lives in the database and this file must keep matching it. |
 | `database_url`      | `DATABASE_URL_FILE` (chancela app)  | Full libpq URL **including** the same password. References the local `postgres` service by name. |
-| `credential_key`    | `CHANCELA_CREDENTIAL_KEY_FILE` (chancela app) | Provider-credential store root key. **Required** on Postgres (no SQLCipher `DerivedFromDbKey`). Any high-entropy value; generate with `openssl rand -base64 48`. |
+| `credential_key`    | `CHANCELA_CREDENTIAL_KEY_FILE` (chancela app) | Provider-credential store root key. **Required** on Postgres (no SQLCipher `DerivedFromDbKey`). Any high-entropy value; generate with `openssl rand -base64 48`. Changing it makes already-stored credentials undecryptable. |
 
 The password inside `database_url` **must match** `postgres_password`, otherwise
 the app cannot authenticate to Postgres.

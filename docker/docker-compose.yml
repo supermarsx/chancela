@@ -380,18 +380,26 @@ volumes:
   chancela-redisdata:
   chancela-app-data:
 
-# File-based docker secrets. The referenced files are gitignored (real secrets);
-# copy the committed docker/secrets/*.example templates and fill them in:
+# File-based docker secrets. The referenced files are gitignored (real secrets),
+# so a fresh checkout has none of them. Generate the missing ones first:
 #
-# Run `sh docker/preflight-secrets.sh` first. If one of these files is absent
-# Compose downgrades it to a warning and still hands the path to the daemon,
-# which either fails the container with `invalid mount config for type "bind":
-# bind source path does not exist: .../docker/secrets/<name>` or creates a
-# DIRECTORY there -- and a directory is not fixed by re-running the cp below.
-#   cp docker/secrets/postgres_password.example docker/secrets/postgres_password
-#   cp docker/secrets/database_url.example      docker/secrets/database_url
-#   cp docker/secrets/credential_key.example    docker/secrets/credential_key
-# The password inside database_url MUST match postgres_password.
+#   sh docker/preflight-secrets.sh --generate     # then `up` as usual
+#   sh docker/up.sh -d                            # or: generate + up in one
+#
+# It has to run on the host, before Compose: Compose creates every container --
+# validating every bind mount -- before starting the first, so no init container
+# runs early enough. If one of these files is absent Compose downgrades it to a
+# warning and still hands the path to the daemon, which either fails the
+# container with `invalid mount config for type "bind": bind source path does
+# not exist: .../docker/secrets/<name>` or creates a DIRECTORY there -- and a
+# directory is not fixed by copying the template over it.
+#
+# Generation is create-if-absent only. POSTGRES_PASSWORD_FILE is read just once,
+# when Postgres initialises chancela-pgdata, so rotating this file against an
+# existing volume locks the app out of its own database; database_url embeds the
+# same password inline and is derived from it; credential_key decrypts stored
+# provider credentials. The password inside database_url MUST match
+# postgres_password.
 secrets:
   postgres_password:
     file: ./secrets/postgres_password

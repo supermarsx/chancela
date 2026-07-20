@@ -126,17 +126,54 @@ Brings up the app compiled with the Postgres backend, a
 cache-aside. Postgres and Redis are **not**
 published to the host — they are reachable only on the compose network.
 
-1. Create the real secret files from the committed templates and fill them in:
+On a fresh clone, one command generates the missing secrets and starts the
+profile:
+
+```sh
+sh docker/up.sh -d --build
+```
+
+The wrapper is equivalent to the two explicit steps below, and additionally
+pins the `-f docker/docker-compose.yml` form that `--profile postgres`
+requires (see the note at the end of this section).
+
+1. Create the three secret files. `--generate` fills in whichever are
+   **missing**, with cryptographically random values:
+
+    ```sh
+    sh docker/preflight-secrets.sh --generate
+    ```
+
+    It is strictly create-if-absent: an existing secret is never rewritten,
+    rotated or overwritten. That is not a convenience — all three are
+    write-once in practice:
+
+    | Secret | Why it can never be regenerated in place |
+    | --- | --- |
+    | `postgres_password` | `POSTGRES_PASSWORD_FILE` is read **only** when Postgres initialises `chancela-pgdata`. Once that volume exists the password is baked into the database, and a new file would leave the app unable to authenticate — a failure that looks like corruption. |
+    | `database_url` | Embeds that same password inline, so it is derived from `postgres_password` in the same step. Generating one without the other desynchronises the pair. |
+    | `credential_key` | Encrypts stored provider credentials. A new key makes every already-stored credential undecryptable. |
+
+    Consequently, if `postgres_password` is missing while the
+    `chancela-pgdata` volume still exists, `--generate` **refuses** rather than
+    inventing a password the database will reject. Restore the secret from your
+    backup, or discard the database with `down -v` and generate clean.
+
+    To supply your own values instead, copy the templates and edit them — the
+    same password must appear in both `postgres_password` and `database_url`:
 
     ```sh
     cp docker/secrets/postgres_password.example docker/secrets/postgres_password
     cp docker/secrets/database_url.example      docker/secrets/database_url
     cp docker/secrets/credential_key.example    docker/secrets/credential_key
-    # edit each: a strong password in BOTH postgres_password and database_url
-    # (they must match); a high-entropy value in credential_key.
     ```
 
-2. Check them before starting anything:
+    Generated files are written with no trailing newline and mode `0600`. On a
+    Windows/NTFS checkout the mode is not honoured (Git for Windows and Docker
+    Desktop report `0644` regardless) and the directory ACL is the only
+    protection; on the Linux hosts this profile targets, `0600` applies.
+
+2. Check them before starting anything (`--generate` runs this check too):
 
     ```sh
     sh docker/preflight-secrets.sh
@@ -164,8 +201,9 @@ published to the host — they are reachable only on the compose network.
     Some daemons instead create a **directory** at that path. Postgres then
     reads `POSTGRES_PASSWORD_FILE` as a directory, and re-running the `cp` from
     step 1 nests the file *inside* it instead of fixing anything. Delete the
-    directory (`rm -rf docker/secrets/postgres_password`) before copying the
-    template again. `docker/preflight-secrets.sh` detects both states.
+    directory (`rm -rf docker/secrets/postgres_password`) before generating
+    again. `docker/preflight-secrets.sh` detects both states, and
+    `docker/up.sh` runs it for you before Compose ever sees the path.
 
 See [Configuration → Secrets](configuration.md#secrets-postgres-profile) for what
 each secret does. The credential-store root key

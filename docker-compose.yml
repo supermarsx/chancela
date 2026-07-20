@@ -16,9 +16,14 @@
 # There the `chancela` service REPLACES `server`, but docker-compose.override.yml
 # makes `server` unconditional, so a bare `--profile postgres up` starts both and
 # the second one to bind ${CHANCELA_HOST_PORT:-8080} dies with "port is already
-# allocated". Run docker/preflight-secrets.sh first: the profile's three docker
-# secrets are gitignored, and a missing one surfaces as a bind-mount error from
-# the daemon. See docs/deployment.md.
+# allocated". The profile's three docker secrets are gitignored, and a missing
+# one surfaces as a bind-mount error from the daemon, so generate them first --
+# or let docker/up.sh do both:
+#
+#   sh docker/preflight-secrets.sh --generate
+#   sh docker/up.sh -d --build          # generate + the correct -f/--profile form
+#
+# See docs/deployment.md.
 #
 # `include` resolves the included file's relative paths (build context `..`,
 # `./secrets/*`, `./postgres-tls-init.sh`) against docker/, so both invocation
