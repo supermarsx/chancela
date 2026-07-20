@@ -1,16 +1,42 @@
 # Hardened bounded deployment profiles for chancela-server (ARC-40/41/42).
 #
-# Single node:
-#   docker compose -f docker/docker-compose.yml --profile single-node up --build
+# THE APP SERVICE, TWICE. `server-sqlite` and `server-postgres` are the SAME
+# application compiled two ways: `server-sqlite` is the default cargo build
+# (embedded SQLite store), `server-postgres` adds the sqlcipher/postgres/redis
+# features. They publish the same host port and are mutually exclusive, which is
+# why they sit on disjoint profiles — never enable both at once.
 #
-# Server plus bounded validation-worker sidecar:
-#   docker compose -f docker/docker-compose.yml --profile validation-worker up --build
+# PROFILES ARE TWO INDEPENDENT AXES, and they compose:
 #
-# Dedicated durable sync/backup worker (safe local targets by default):
-#   docker compose -f docker/docker-compose.yml --profile worker up --build
+#   BACKEND (pick exactly one — each enables exactly one app service)
+#     single-node   SQLite build, `server-sqlite`
+#     postgres      Postgres/Redis build, `server-postgres` (+ postgres, redis,
+#                   secrets-init, postgres-tls-init)
+#
+#   SIDECARS (additive, enable no app service of their own)
+#     worker        dedicated durable sync/backup worker
+#
+# Every command below also works from the repo root without `-f` (the root
+# docker-compose.yml `include`s this file) and with no `--profile` at all
+# (.env pins COMPOSE_PROFILES=single-node as the default):
+#
+# Single node (SQLite):
+#   docker compose --profile single-node up --build
 #
 # Postgres durability backend plus Redis cache service:
-#   docker compose -f docker/docker-compose.yml --profile postgres up --build
+#   docker compose --profile postgres up --build
+#
+# Either backend plus the durable sync/backup worker (safe local targets by
+# default). The worker mounts the app's data volume, which differs per backend,
+# so the postgres form must name it:
+#   docker compose --profile single-node --profile worker up --build
+#   CHANCELA_APP_DATA_VOLUME=chancela-app-data \
+#     docker compose --profile postgres --profile worker up --build
+#
+# A sidecar profile on its own (`--profile worker`) starts the sidecar with no
+# app. That is deliberate: it is what stops `--profile postgres --profile worker`
+# from dragging the SQLite app in alongside the Postgres one and colliding on
+# ${CHANCELA_HOST_PORT:-8080}.
 #
 # Security posture:
 #   - read_only root filesystem, writable scratch via tmpfs only.
@@ -20,11 +46,9 @@
 name: chancela
 
 services:
-  server:
+  server-sqlite:
     profiles:
       - single-node
-      - validation-worker
-      - worker
     build:
       # Context is the repo root so the Dockerfile can see the whole workspace.
       context: ..
@@ -81,54 +105,24 @@ services:
           memory: 1g
     restart: unless-stopped
 
-  validation-worker:
-    profiles:
-      - validation-worker
-    image: ${CHANCELA_SERVER_IMAGE:-chancela-server:latest}
-    # No `build:` of its own: this sidecar reuses the exact image the `server`
-    # service builds in the same profile, and Compose completes every build
-    # before it creates any container. `never` keeps that image local rather
-    # than reaching for a registry that does not host it.
-    pull_policy: never
-    user: "65532:65532"
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp
-    environment:
-      # This sidecar intentionally reuses the current server image because no
-      # dedicated worker image or worker entrypoint exists yet.
-      CHANCELA_ADDR: 0.0.0.0:8081
-      CHANCELA_DATA_DIR: /var/lib/chancela
-      CHANCELA_DEPLOYMENT_ROLE: validation-worker-sidecar
-    expose:
-      - "8081"
-    volumes:
-      # Separate durable state avoids concurrent writes to the server store.
-      - chancela-validation-worker-data:/var/lib/chancela
-    depends_on:
-      server:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health"]
-      interval: 30s
-      timeout: 3s
-      start_period: 5s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512m
-    restart: unless-stopped
-
   # -----------------------------------------------------------------------
   # Dedicated ARC-20 sync/backup worker. Sync and backup resolve to separate
   # target IDs in the mounted config; the committed example uses two distinct
   # local directories and contains no credential values.
+  #
+  # BACKEND-AGNOSTIC. This is its own image and its own binary
+  # (Dockerfile.worker / chancela-worker), so it works against either backend.
+  # `worker` is therefore an ADDITIVE profile that enables no app service of its
+  # own — combine it with whichever backend profile you are running:
+  #
+  #   docker compose --profile single-node --profile worker up -d --build
+  #   CHANCELA_APP_DATA_VOLUME=chancela-app-data \
+  #     docker compose --profile postgres --profile worker up -d --build
+  #
+  # It used to sit on the `worker` profile TOGETHER with the SQLite app service,
+  # which made `--profile postgres --profile worker` start two app containers on
+  # ${CHANCELA_HOST_PORT:-8080} — the second died with "port is already
+  # allocated", and there was no way to run a worker against Postgres at all.
   # -----------------------------------------------------------------------
   worker:
     profiles:
@@ -137,7 +131,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.worker
     image: ${CHANCELA_WORKER_IMAGE:-chancela-worker:latest}
-    # Built from source, never pulled — see the note on `server`.
+    # Built from source, never pulled — see the note on `server-sqlite`.
     pull_policy: build
     user: "65532:65532"
     read_only: true
@@ -154,13 +148,26 @@ services:
       CHANCELA_CONNECTOR_ALLOWED_HOSTS: ${CHANCELA_CONNECTOR_ALLOWED_HOSTS:-}
     volumes:
       # Same durable volume as the API: the API owns sources/staging and the
-      # worker owns queue transitions/receipts beneath /worker.
-      - chancela-data:/var/lib/chancela
+      # worker owns queue transitions/receipts beneath /worker. WHICH volume that
+      # is depends on the backend — `server-sqlite` keeps its data in
+      # `chancela-data`, `server-postgres` in `chancela-app-data` — so on the
+      # postgres profile this MUST be set to chancela-app-data or the worker
+      # watches an empty volume the app never writes to:
+      #   CHANCELA_APP_DATA_VOLUME=chancela-app-data
+      - ${CHANCELA_APP_DATA_VOLUME:-chancela-data}:/var/lib/chancela
       - ${CHANCELA_WORKER_CONFIG:-./worker-config.example.json}:/etc/chancela-worker/config.json:ro
       - ${CHANCELA_CONNECTOR_SECRETS_HOST_DIR:-./connector-secrets}:/run/chancela-connector-secrets:ro
     depends_on:
-      server:
+      # Wait for whichever app service the chosen backend profile enabled.
+      # `required: false` is what lets one sidecar serve both: a dependency on a
+      # service that the active profiles did not enable is skipped rather than
+      # being an error, so exactly one of these two is ever waited on.
+      server-sqlite:
         condition: service_healthy
+        required: false
+      server-postgres:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "/usr/local/bin/chancela-worker", "healthcheck", "--data-dir", "/var/lib/chancela/worker/queue", "--max-age-seconds", "120"]
       interval: 30s
@@ -177,13 +184,13 @@ services:
   # -----------------------------------------------------------------------
   # `postgres` profile: PostgreSQL durability backend plus a Redis cache service.
   #
-  #   docker compose -f docker/docker-compose.yml --profile postgres up --build
+  #   docker compose --profile postgres up --build
   #
   # HONEST SCOPE (see docker/DEPLOYMENT-PROFILES.md and wp14.md §0/§4): this is
   # still a SINGLE-WRITER, single-node deployment. Postgres enables PG-native
   # backup/inspection tooling, NOT horizontal scale or HA. The app
   # holds authoritative state in memory and allocates the ledger `seq` in
-  # process, so exactly ONE `chancela` instance may write. Never scale it.
+  # process, so exactly ONE `server-postgres` instance may write. Never scale it.
   # -----------------------------------------------------------------------
   # Populates the `chancela-secrets` volume with postgres_password,
   # database_url and credential_key before anything that reads them starts.
@@ -359,7 +366,7 @@ services:
           memory: 320m
     restart: unless-stopped
 
-  chancela:
+  server-postgres:
     profiles:
       - postgres
     build:
@@ -370,9 +377,9 @@ services:
         # Compile the Postgres backend + optional Redis cache into the binary.
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
-    # Built from source, never pulled — see the note on `server`.
+    # Built from source, never pulled — see the note on `server-sqlite`.
     pull_policy: build
-    # --- container hardening (ARC-41), identical posture to `server` ---
+    # --- container hardening (ARC-41), identical posture to `server-sqlite` ---
     user: "65532:65532"
     read_only: true
     cap_drop:
@@ -433,7 +440,6 @@ services:
 
 volumes:
   chancela-data:
-  chancela-validation-worker-data:
   chancela-pgdata:
   chancela-pg-tls:
   chancela-redisdata:
@@ -442,7 +448,7 @@ volumes:
   # in the services that need them. Populated by `secrets-init` on every `up`
   # (create-if-absent), so a fresh clone needs NO host-side step:
   #
-  #   docker compose -f docker/docker-compose.yml --profile postgres up -d
+  #   docker compose --profile postgres up -d
   #
   # This replaces the former top-level `secrets:` block, whose `file:` entries
   # pointed at gitignored host paths: compose only WARNS about a missing secret

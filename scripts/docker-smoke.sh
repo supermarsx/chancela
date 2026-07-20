@@ -7,13 +7,14 @@ Usage: scripts/docker-smoke.sh [--compose-profile | --config-check] [image]
 
 Runs the Docker health/persistence smoke against image.
 With --compose-profile, starts the single-node Compose profile and also
-inspects the Compose-created server container for the expected runtime
+inspects the Compose-created server-sqlite container for the expected runtime
 hardening posture.
 With --config-check, only validates that every Compose profile
-(single-node, validation-worker, postgres) renders a valid config via
-`docker compose config --quiet` — no image is built or started. This is the
-lightweight gate for the postgres profile and does not prove live Postgres
-runtime behavior.
+(single-node, worker, postgres) renders a valid config via
+`docker compose config --quiet`, and that each backend profile combined with
+the additive `worker` profile still selects exactly ONE app service — no image
+is built or started. This is the lightweight gate for the postgres profile and
+does not prove live Postgres runtime behavior.
 EOF
 }
 
@@ -23,11 +24,27 @@ compose_file="$repo_root/docker/docker-compose.yml"
 
 if [ "${1:-}" = "--config-check" ]; then
   status=0
-  for profile in single-node validation-worker postgres; do
+  for profile in single-node worker postgres; do
     if docker compose -f "$compose_file" --profile "$profile" config --quiet; then
       echo "compose config OK: --profile $profile"
     else
       echo "compose config FAILED: --profile $profile" >&2
+      status=1
+    fi
+  done
+
+  # The backend axis (single-node | postgres) and the sidecar axis (worker) must
+  # compose. Two app services in one rendering means two containers publishing
+  # ${CHANCELA_HOST_PORT:-8080}, and the second one dies on `up`.
+  for backend in single-node postgres; do
+    services="$(docker compose -f "$compose_file" \
+      --profile "$backend" --profile worker config --services | sort)"
+    app_count="$(printf '%s\n' "$services" | grep -c '^server-' || true)"
+    if [ "$app_count" -eq 1 ] && printf '%s\n' "$services" | grep -qx worker; then
+      echo "compose config OK: --profile $backend --profile worker (1 app service + worker)"
+    else
+      echo "compose config FAILED: --profile $backend --profile worker" >&2
+      echo "  expected exactly 1 server-* service plus worker, got: $(echo $services)" >&2
       status=1
     fi
   done
@@ -51,7 +68,7 @@ project="chancela-smoke-$(date +%s)-$$"
 assert_compose_hardening() {
   local service="${1:?service required}"
   local cid
-  cid="$(docker compose -f "$compose_file" -p "$project" ps -q "$service")"
+  cid="$(docker compose -f "$compose_file" --profile single-node -p "$project" ps -q "$service")"
   if [ -z "$cid" ]; then
     echo "compose service $service did not produce a container" >&2
     exit 1
@@ -119,13 +136,13 @@ PY
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ] && [ "$compose_profile" = true ]; then
-    docker compose -f "$compose_file" -p "$project" logs server || true
+    docker compose -f "$compose_file" --profile single-node -p "$project" logs server-sqlite || true
   elif [ "$status" -ne 0 ] && [ -n "$container" ]; then
     docker logs "$container" || true
   fi
   if [ "$compose_profile" = true ]; then
     CHANCELA_SERVER_IMAGE="$image" CHANCELA_HOST_PORT=0 \
-      docker compose -f "$compose_file" -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
+      docker compose -f "$compose_file" --profile single-node -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
   fi
   if [ "$compose_profile" != true ] && [ -n "$container" ]; then
     docker rm -f "$container" >/dev/null 2>&1 || true
@@ -138,10 +155,10 @@ chmod 777 "$data_dir"
 
 if [ "$compose_profile" = true ]; then
   CHANCELA_SERVER_IMAGE="$image" CHANCELA_HOST_PORT=0 \
-    docker compose -f "$compose_file" --profile single-node -p "$project" up -d --no-build server
-  container="$(docker compose -f "$compose_file" -p "$project" ps -q server)"
-  assert_compose_hardening server
-  mapped="$(docker compose -f "$compose_file" -p "$project" port server 8080)"
+    docker compose -f "$compose_file" --profile single-node -p "$project" up -d --no-build server-sqlite
+  container="$(docker compose -f "$compose_file" --profile single-node -p "$project" ps -q server-sqlite)"
+  assert_compose_hardening server-sqlite
+  mapped="$(docker compose -f "$compose_file" --profile single-node -p "$project" port server-sqlite 8080)"
 else
   container="$(docker run -d \
     -p 127.0.0.1::8080 \

@@ -88,18 +88,32 @@ run. The image healthcheck fails if no heartbeat is newer than 120 seconds.
 
 ## Run the dedicated image
 
-The committed `worker` profile starts the API and worker together. They mount
-the same `chancela-data` volume, while the example configuration uses separate
-local sync and backup targets and contains no credentials:
+The `worker` profile is additive — it starts the worker only, so combine it with
+the backend profile you are running. The app and worker share the app's data
+volume, while the example configuration uses separate local sync and backup
+targets and contains no credentials:
 
 ```sh
-docker compose -f docker/docker-compose.yml --profile worker up --build
+docker compose --profile single-node --profile worker up --build
 ```
 
-The hardened equivalent is:
+Against the Postgres backend, name the volume that backend uses
+(`chancela-app-data` rather than the SQLite default `chancela-data`) so the
+worker watches the directory the API actually writes to:
 
 ```sh
-docker compose -f docker-compose.hardened.yml --profile worker up --build
+CHANCELA_APP_DATA_VOLUME=chancela-app-data \
+  docker compose --profile postgres --profile worker up --build
+```
+
+The hardened equivalents are:
+
+```sh
+docker compose -f docker-compose.hardened.yml \
+  --profile single-node --profile worker up --build
+CHANCELA_APP_DATA_VOLUME=chancela-app-data \
+  docker compose -f docker-compose.hardened.yml \
+    --profile postgres --profile worker up --build
 ```
 
 Both use:
@@ -160,8 +174,8 @@ Copy a source into the worker's durable volume, then enqueue a path relative to
 `source_root`:
 
 ```sh
-docker compose -f docker/docker-compose.yml cp archive.asice worker:/var/lib/chancela/worker/sources/archive.asice
-docker compose -f docker/docker-compose.yml exec worker \
+docker compose cp archive.asice worker:/var/lib/chancela/worker/sources/archive.asice
+docker compose exec worker \
   /usr/local/bin/chancela-worker enqueue \
   --config /etc/chancela-worker/config.json \
   --data-dir /var/lib/chancela/worker/queue \
@@ -175,11 +189,11 @@ docker compose -f docker/docker-compose.yml exec worker \
 The command returns the deterministic job ID. Use it with `status` or `cancel`:
 
 ```sh
-docker compose -f docker/docker-compose.yml exec worker \
+docker compose exec worker \
   /usr/local/bin/chancela-worker status \
   --data-dir /var/lib/chancela/worker/queue --job-id JOB_SHA256
 
-docker compose -f docker/docker-compose.yml exec worker \
+docker compose exec worker \
   /usr/local/bin/chancela-worker cancel \
   --data-dir /var/lib/chancela/worker/queue --job-id JOB_SHA256
 ```
@@ -187,7 +201,7 @@ docker compose -f docker/docker-compose.yml exec worker \
 Probe configured targets without printing credentials:
 
 ```sh
-docker compose -f docker/docker-compose.yml exec worker \
+docker compose exec worker \
   /usr/local/bin/chancela-worker probe \
   --config /etc/chancela-worker/config.json \
   --data-dir /var/lib/chancela/worker/queue

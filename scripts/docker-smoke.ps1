@@ -42,7 +42,7 @@ function Test-NonRootUser {
 function Test-ComposeHardening {
   param([string]$Service)
 
-  $ContainerIdOutput = docker compose -f $ComposeFile -p $Project ps -q $Service
+  $ContainerIdOutput = docker compose -f $ComposeFile --profile single-node -p $Project ps -q $Service
   if ($LASTEXITCODE -ne 0) {
     throw "docker compose ps failed for service $Service"
   }
@@ -113,21 +113,21 @@ try {
   if ($ComposeProfile) {
     $env:CHANCELA_SERVER_IMAGE = $Image
     $env:CHANCELA_HOST_PORT = "0"
-    docker compose -f $ComposeFile --profile single-node -p $Project up -d --no-build server | Out-Null
+    docker compose -f $ComposeFile --profile single-node -p $Project up -d --no-build server-sqlite | Out-Null
     if ($LASTEXITCODE -ne 0) {
       throw "docker compose up failed for the single-node profile"
     }
-    Test-ComposeHardening -Service "server"
-    $MappedOutput = docker compose -f $ComposeFile -p $Project port server 8080
+    Test-ComposeHardening -Service "server-sqlite"
+    $MappedOutput = docker compose -f $ComposeFile --profile single-node -p $Project port server-sqlite 8080
     if ($LASTEXITCODE -ne 0) {
-      throw "docker compose port failed for server"
+      throw "docker compose port failed for server-sqlite"
     }
     $Mapped = ""
     if ($null -ne $MappedOutput) {
       $Mapped = (@($MappedOutput)[0]).Trim()
     }
     if ([string]::IsNullOrWhiteSpace($Mapped)) {
-      throw "docker compose port did not report a server port"
+      throw "docker compose port did not report a server-sqlite port"
     }
   } else {
     $Container = docker run -d `
@@ -181,7 +181,7 @@ try {
   }
 } finally {
   if ($ComposeProfile) {
-    docker compose -f $ComposeFile -p $Project down -v --remove-orphans | Out-Null
+    docker compose -f $ComposeFile --profile single-node -p $Project down -v --remove-orphans | Out-Null
     if ($null -eq $OldImage) {
       Remove-Item Env:CHANCELA_SERVER_IMAGE -ErrorAction SilentlyContinue
     } else {

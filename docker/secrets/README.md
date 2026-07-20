@@ -8,7 +8,7 @@ service before anything that reads them starts, so a fresh clone needs nothing
 here:
 
 ```sh
-docker compose -f docker/docker-compose.yml --profile postgres up -d
+docker compose --profile postgres up -d
 ```
 
 Files placed here are **adopted** instead: `secrets-init` copies them into the

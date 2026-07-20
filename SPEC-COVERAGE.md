@@ -4722,14 +4722,14 @@ or universal PDF/UA completion.
   unit-test lane are not broadly enforced, live signature/provider seams are compile-only, release
   packages are not signed or notarized, and Docker images are not signed or attested.
 - **Docker deployment profiles:** the Docker compose material now uses the
-  actual `single-node` and `validation-worker` profiles. The Compose smoke path
+  actual `single-node`, `worker`, and `postgres` profiles. The Compose smoke path
   starts the `single-node` server with the selected local image and inspects the
   Compose-created container for read-only rootfs, `cap_drop: ALL`,
   `no-new-privileges`, non-root user, `/tmp` tmpfs, and a persistent
   `/var/lib/chancela` data mount before the `/health` durable-persistence
   assertion. CI runs that `single-node` Compose runtime-hardening smoke after
-  loading `chancela-server:ci`, while `validation-worker` is config-validated
-  only. These are local Compose drift-resistance checks, not HA architecture,
+  loading `chancela-server:ci`, while `worker` and `postgres` are
+  config-validated only. These are local Compose drift-resistance checks, not HA architecture,
   a dedicated worker image, managed operations, registry publication, image
   signing, attestation, notarization, vulnerability remediation, or production
   deployment certification.

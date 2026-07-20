@@ -5,7 +5,7 @@
 # `chancela-secrets` named volume, which the `secrets-init` compose service
 # fills before postgres or the app start, so a fresh clone works with a plain
 #
-#   docker compose -f docker/docker-compose.yml --profile postgres up -d
+#   docker compose --profile postgres up -d
 #
 # This script remains for operators who would rather own the values on the host
 # (to back them up, to reuse an existing database, or to rotate deliberately).
@@ -149,7 +149,7 @@ ERROR: docker/secrets/postgres_password is missing, but the Postgres data
        Either restore the original secret files from your backup, or -- if the
        data is expendable -- discard the database and start clean:
 
-         docker compose -f docker/docker-compose.yml --profile postgres down -v
+         docker compose --profile postgres down -v
          sh docker/preflight-secrets.sh --generate
 EOF
     exit 1
@@ -269,7 +269,7 @@ Either complete the set here, consistently and only once:
 
 or empty docker/secrets/ entirely and let the stack manage them:
 
-  docker compose -f docker/docker-compose.yml --profile postgres up -d
+  docker compose --profile postgres up -d
 
 See docker/secrets/README.md and docs/deployment.md.
 EOF

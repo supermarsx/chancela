@@ -3284,7 +3284,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "actual `single-node` and `validation-worker` profiles",
+    "actual `single-node`, `worker`, and `postgres` profiles",
     "spec coverage Docker actual Compose profiles marker",
   );
   assertFileContains(
@@ -7357,9 +7357,17 @@ function assertCheckpointMap() {
     "renders dashboard subtabs in the requested order",
     "dashboard dates tab order coverage",
   );
-  assertFileContains(
+  // Order-independent on purpose. The tab ORDER is guarded behaviourally by the
+  // `renders dashboard subtabs in the requested order` test asserted just above,
+  // which also pins the default-leftmost invariant; pinning the order a second
+  // time here only made the gate break whenever the strip was legitimately
+  // reordered. What this marker exists to guarantee is that the route-state
+  // union still carries exactly the dashboard's tab set — `dates` included — so
+  // the six members are required in any order, and dropping one, adding a
+  // seventh, or duplicating one all still fail.
+  assertFileMatches(
     "apps/web/src/features/dashboard/DashboardPage.tsx",
-    "type DashboardTab = 'stats' | 'activity' | 'current' | 'dates' | 'queue' | 'events'",
+    /type DashboardTab =(?=[^;\r\n]*'current')(?=[^;\r\n]*'stats')(?=[^;\r\n]*'activity')(?=[^;\r\n]*'dates')(?=[^;\r\n]*'queue')(?=[^;\r\n]*'events') (?:'(?:current|stats|activity|dates|queue|events)'(?: \| )?){6};/u,
     "dashboard dates tab route-state marker",
   );
   assertFileContains(
@@ -8395,28 +8403,32 @@ function assertCheckpointMap() {
     "pdfValidator.report.status",
     "PDF validator compact report status copy marker",
   );
+  // Retargeted, not relaxed: the DSS VRI /TU and DocTimeStamp rendering moved out
+  // of PdfSignatureValidatorPanel into PdfValidationResultTable. The panel still
+  // owns the report action/status markers asserted above; these two now assert
+  // against the component that actually renders the evidence rows.
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
     "dss.vri_tu_keys",
     "PDF validator DSS VRI /TU UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
     "DocTimeStampValidationReport",
     "PDF validator DocTimeStamp validation UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
     "multi_signature_local_renewal_plan",
     "PDF validator multi-signature renewal-plan UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
     "report.trust.live_trusted_list_validation_performed",
     "PDF validator live trust guardrail UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
     "report.qualification.legal_effect_assessed",
     "PDF validator legal-effect guardrail UI marker",
   );
@@ -12489,10 +12501,22 @@ function assertCheckpointMap() {
     "COPY --from=busybox:1.37.0-uclibc@sha256:",
     "hardened Dockerfile busybox digest marker",
   );
-  assertFileContains(
+  // Asserted per service rather than as one concatenated `[single-node, worker]`
+  // literal. The hardened compose was split onto two axes — a backend axis
+  // (`single-node` | `postgres`) and an additive sidecar axis (`worker`) — because
+  // one app service carrying both profiles made `--profile postgres --profile
+  // worker` start two app containers on the same host port. The guarantee worth
+  // keeping is which service sits on which profile, so each is now scoped to its
+  // own service block and survives reordering or reformatting of the file.
+  assertFileMatches(
     "docker-compose.hardened.yml",
-    "profiles: [single-node, worker]",
+    /^ {2}server-sqlite:\r?$(?:(?! {2}\w[\w-]*:).)*?^ {4}profiles: \[single-node\]\r?$/msu,
     "hardened compose single-node profile marker",
+  );
+  assertFileMatches(
+    "docker-compose.hardened.yml",
+    /^ {2}worker:\r?$(?:(?! {2}\w[\w-]*:).)*?^ {4}profiles: \[worker\]\r?$/msu,
+    "hardened compose worker profile marker",
   );
   assertFileContains(
     "docker-compose.hardened.yml",

@@ -21,6 +21,11 @@ apps/web/dist/
 .env
 .env.*
 !.env.example
+# ...except the two committed Compose defaults, which hold no secrets: they only
+# pin COMPOSE_PROFILES=single-node so a bare `docker compose up` selects exactly
+# one app service. Put local-only values in .env.local instead (still ignored).
+!/.env
+!/docker/.env
 
 # Logs and OS cruft
 *.log

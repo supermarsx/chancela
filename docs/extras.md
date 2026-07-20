@@ -14,7 +14,7 @@ container-security side; this page points at the surrounding pieces.
   WAL archiving + base backups for point-in-time recovery:
 
     ```sh
-    docker compose -f docker/docker-compose.yml --profile postgres \
+    docker compose --profile postgres \
       exec postgres pg_dump -U chancela chancela > chancela-$(date -u +%Y%m%dT%H%M%SZ).sql
     ```
 

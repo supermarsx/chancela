@@ -127,7 +127,8 @@ first, as above.)
 ## Hardening checklist and why
 
 Each measure below maps to a concrete threat it reduces. "App" = the two
-services built from our own code (`server`, `chancela`); "Infra" = the official
+services built from our own code (`server-sqlite`, `server-postgres`);
+"Infra" = the official
 `postgres` / `redis` images.
 
 ### Image build
@@ -389,7 +390,7 @@ profile causes hard-to-diagnose runtime failures.
   the root fs is read-only and state lives on named volumes, upgrades replace the
   container without touching persistent data. Snapshot/back up the data volume
   before a major upgrade.
-- **Single writer.** Never scale the writer service (`server` / `chancela`). The
+- **Single writer.** Never scale the writer service (`server-sqlite` / `server-postgres`). The
   app holds authoritative state in memory and allocates the ledger sequence in
   process; two writers against one store violate the design. See the
   [Deployment overview](../deployment.md).

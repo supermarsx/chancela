@@ -1298,14 +1298,18 @@ paths. Release packaging then validates each generated
 including a source SHA cross-check against
 `manifest.sourceProvenance.commitSha` and a tarball basename/SHA-256 check
 against the actual package path. Docker CI validates
-the actual Compose profiles `single-node` and `validation-worker`, runs
+the actual Compose profiles `single-node`, `worker`, and `postgres`, runs
 `bash scripts/docker-smoke.sh --compose-profile chancela-server:ci` after the
 local image load, and validates `chancela-server-signing-status.json` in
 explicit `local-ci` mode. The Compose smoke inspects the `single-node`
 Compose-created server container for read-only rootfs, `cap_drop: ALL`,
 `no-new-privileges`, non-root user, `/tmp` tmpfs, and persistent
-`/var/lib/chancela` data mount before the durable `/health` assertion;
-`validation-worker` remains config-validated only in this checkpoint. The
+`/var/lib/chancela` data mount before the durable `/health` assertion; the
+other profiles remain config-validated only in this checkpoint. (At the time
+of this checkpoint the second rendered profile was `validation-worker`, a
+sidecar that ran a second copy of the server image and was never wired to any
+code; it has since been removed, and the `worker`/`postgres` profiles took its
+place in the render gate.) The
 release-trust metadata checks remain static workflow assurance only; switch
 those checks to `production` only when signing, notarization, registry
 publication, and attestation evidence are actually generated. The Compose

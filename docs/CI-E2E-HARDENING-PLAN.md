@@ -178,7 +178,7 @@ test operating checklist for driving Chancela toward release confidence.
   manual dispatches; the direct smoke starts the container with
   `CHANCELA_DATA_DIR`, polls `/health`, and asserts durable persistence from
   the JSON body. The Docker job also renders the actual Compose profiles
-  `single-node` and `validation-worker`, then runs the `single-node` Compose
+  `single-node`, `worker`, and `postgres`, then runs the `single-node` Compose
   runtime-hardening smoke against the locally loaded image. That smoke inspects
   the Compose-created server container for read-only rootfs, `cap_drop: ALL`,
   `no-new-privileges`, a non-root user, `/tmp` tmpfs, and a persistent

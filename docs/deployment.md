@@ -22,14 +22,19 @@ hardened images described in
 
 ## Choosing a profile
 
-| Profile | Backend | When to use | Compose file |
-|---|---|---|---|
-| `single-node` | SQLite (SQLCipher) | Simplest self-host; file-level encryption at rest | `docker/docker-compose.yml` |
-| `validation-worker` | SQLite | `single-node` plus a bounded isolation/health sidecar | `docker/docker-compose.yml` |
-| `worker` | SQLite (SQLCipher) | `single-node` plus the durable sync/backup connector worker on a shared data volume | `docker/docker-compose.yml` |
-| `postgres` | PostgreSQL 18.4 + Redis 8.8 | Networked DB, PG-native backup tooling | `docker/docker-compose.yml` |
-| Hardened `single-node` / `postgres` | as above | Production posture: distroless, read-only rootfs, digest-pinned | `docker-compose.hardened.yml` |
-| Multi-node overlay | PostgreSQL 18.4 + Redis 8.8 | Leader + read-followers with failover (see [HA](#multi-node-leaderfollower)) | `docker/docker-compose.cluster.yml` |
+Profiles are **two independent axes** that combine. Pick exactly one *backend*
+profile — each starts exactly one app service — and add any *sidecar* profiles
+you want. A sidecar profile starts no app service of its own, so
+`--profile worker` on its own gives you a worker and nothing else; that is
+deliberate, and it is what lets the same sidecar run against either backend.
+
+| Profile | Axis | Backend | When to use | Compose file |
+|---|---|---|---|---|
+| `single-node` | backend | SQLite (SQLCipher) | Simplest self-host; file-level encryption at rest | `docker/docker-compose.yml` |
+| `postgres` | backend | PostgreSQL 18.4 + Redis 8.8 | Networked DB, PG-native backup tooling | `docker/docker-compose.yml` |
+| `worker` | sidecar | either | The durable sync/backup connector worker, on the chosen backend's data volume | `docker/docker-compose.yml` |
+| Hardened `single-node` / `postgres` | backend | as above | Production posture: distroless, read-only rootfs, digest-pinned | `docker-compose.hardened.yml` |
+| Multi-node overlay | backend | PostgreSQL 18.4 + Redis 8.8 | Leader + read-followers with failover (see [HA](#multi-node-leaderfollower)) | `docker/docker-compose.cluster.yml` |
 
 ## Images are built from source
 
@@ -66,13 +71,13 @@ SQLCipher-encrypted SQLite store on a named volume, no external database. Run
 from the repository root:
 
 ```sh
-docker compose -f docker/docker-compose.yml --profile single-node up --build
+docker compose --profile single-node up --build
 ```
 
 The app publishes on `127.0.0.1:8080` (loopback only). Override the host port:
 
 ```sh
-CHANCELA_HOST_PORT=18080 docker compose -f docker/docker-compose.yml --profile single-node up
+CHANCELA_HOST_PORT=18080 docker compose --profile single-node up
 ```
 
 The container runs non-root (UID/GID `65532`), read-only rootfs, all
@@ -90,26 +95,29 @@ scripts/docker-smoke.sh --compose-profile chancela-server:local
 scripts\docker-smoke.ps1 -Image chancela-server:local -ComposeProfile
 ```
 
-### Validation-worker sidecar
-
-Adds a bounded second container (same image, its own volume, internal port
-`8081`) for isolation and health validation. It remains a deployment-profile
-placeholder and is unrelated to the dedicated connector worker:
-
-```sh
-docker compose -f docker/docker-compose.yml --profile validation-worker up --build
-```
-
 ### Durable sync and backup worker
 
-The `worker` profile starts `chancela-server` and the dedicated non-root
-`chancela-worker` image together:
+The `worker` profile adds the dedicated non-root `chancela-worker` image. Pair it
+with a backend profile, which is what starts `chancela-server` alongside it:
 
 ```sh
-docker compose -f docker/docker-compose.yml --profile worker up --build
+docker compose --profile single-node --profile worker up --build
 ```
 
-Both services mount `chancela-data` at `/var/lib/chancela`. The API owns
+`worker` is an **additive** profile: it enables the worker and no app service, so
+you pair it with a backend profile. That is what lets it run against Postgres
+too, which was previously impossible — `--profile postgres --profile worker`
+used to start the SQLite app alongside the Postgres one and the second container
+died with "port is already allocated". The worker mounts the app's data volume,
+and that volume differs per backend (`chancela-data` for SQLite,
+`chancela-app-data` for Postgres), so the Postgres form names it:
+
+```sh
+CHANCELA_APP_DATA_VOLUME=chancela-app-data \
+  docker compose --profile postgres --profile worker up --build
+```
+
+The app and worker share that volume at `/var/lib/chancela`. The API owns
 tenant-scoped connector configuration, materializes only server-selected
 artifacts below `/var/lib/chancela/worker/sources`, and publishes audited jobs
 to `/var/lib/chancela/worker/queue`; the worker consumes that queue and writes
@@ -130,12 +138,16 @@ On a fresh clone this is the whole procedure — there is **no host-side secret
 step**:
 
 ```sh
-docker compose -f docker/docker-compose.yml --profile postgres up -d --build
+docker compose --profile postgres up -d --build
 ```
 
-`sh docker/up.sh -d --build` is the same thing; it exists only to pin the
-`-f docker/docker-compose.yml` form that `--profile postgres` requires (see the
-note at the end of this section).
+No `-f` and no wrapper script: the repo-root `docker-compose.yml` `include`s
+`docker/docker-compose.yml`, so this starts `server-postgres` alone. The
+single-node `server-sqlite` service stays down, because a `--profile` on the
+command line REPLACES the `COMPOSE_PROFILES=single-node` default in `.env`
+rather than adding to it. (The former `docker/up.sh` wrapper existed only to
+pin an explicit `-f` form; it is gone, together with the override files that
+made it necessary.)
 
 ### How the secrets get created
 
@@ -280,7 +292,7 @@ swap. Use **PG-native tooling**: `pg_dump` / `pg_restore` for logical backups, o
 PITR (WAL archiving + base backups) for point-in-time recovery. For example:
 
 ```sh
-docker compose -f docker/docker-compose.yml --profile postgres \
+docker compose --profile postgres \
   exec postgres pg_dump -U chancela chancela > chancela-$(date -u +%Y%m%dT%H%M%SZ).sql
 ```
 

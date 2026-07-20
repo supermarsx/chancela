@@ -5,20 +5,29 @@
 # auto-discovers a compose file in the current directory, and the real
 # definitions live in docker/, so this file simply pulls them in.
 #
-#   docker compose up --build                       # single-node (default)
-#   docker compose --profile worker up --build      # + sync/backup worker
+#   docker compose up --build                        # single-node SQLite (default)
+#   docker compose --profile postgres up -d --build  # Postgres + Redis
+#   docker compose --profile single-node --profile worker up --build
 #
-# The `postgres` profile is the exception and MUST be launched with the
-# explicit `-f` form, which suppresses the override files:
+# Profiles are two axes that compose: a BACKEND (`single-node` or `postgres`,
+# each enabling exactly one app service) and additive SIDECARS (`worker`, which
+# enables no app service of its own, so it runs against either backend).
 #
-#   docker compose -f docker/docker-compose.yml --profile postgres up --build
+# EVERY profile works from here, with no `-f` and no special casing. The default
+# comes from COMPOSE_PROFILES=single-node in the committed `.env` next to this
+# file (docker/.env is its twin for runs from docker/). A `--profile` on the
+# command line REPLACES that value rather than adding to it, so the postgres
+# profile starts `server-postgres` alone — `server-sqlite` stays down and the two
+# never contend for ${CHANCELA_HOST_PORT:-8080}.
 #
-# There the `chancela` service REPLACES `server`, but docker-compose.override.yml
-# makes `server` unconditional, so a bare `--profile postgres up` starts both and
-# the second one to bind ${CHANCELA_HOST_PORT:-8080} dies with "port is already
-# allocated". `sh docker/up.sh -d --build` is a wrapper that pins that form.
+# There used to be a docker-compose.override.yml here (and one in docker/) that
+# made `server` unconditional via `profiles: !reset []`. Because overrides
+# auto-load but are suppressed by `-f`, a bare `--profile postgres up` started
+# BOTH app services and the second died with "port is already allocated", while
+# the same command with `-f docker/docker-compose.yml` worked. Both files are
+# gone; `.env` gives the default without making any service unconditional.
 #
-# The profile's three secrets need no preparation: they live in the
+# The postgres profile's three secrets need no preparation: they live in the
 # chancela-secrets volume and are created on `up` by the secrets-init service
 # (create-if-absent -- it never rotates an existing value). Files left in
 # docker/secrets/ are adopted instead. See docs/deployment.md.

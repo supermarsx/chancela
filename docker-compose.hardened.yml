@@ -14,15 +14,21 @@
 #     cp docker/secrets/credential_key.example    docker/secrets/credential_key
 #     docker compose -f docker-compose.hardened.yml --profile postgres up --build
 #
-#   Dedicated durable sync/backup worker:
-#     docker compose -f docker-compose.hardened.yml --profile worker up --build
+#   Dedicated durable sync/backup worker. `worker` is ADDITIVE and enables no
+#   app service of its own, so combine it with a backend profile. It mounts the
+#   app's data volume, which differs per backend:
+#     docker compose -f docker-compose.hardened.yml \
+#       --profile single-node --profile worker up --build
+#     CHANCELA_APP_DATA_VOLUME=chancela-app-data \
+#       docker compose -f docker-compose.hardened.yml \
+#         --profile postgres --profile worker up --build
 #
 # Full rationale + system requirements: docs/security/hardened-docker.md
 #
 # HONEST SCOPE (unchanged from docker/DEPLOYMENT-PROFILES.md): this is a
 # SINGLE-WRITER, single-node deployment. The `postgres` profile is a durability
 # upgrade (PG-native backup/inspection tooling), NOT horizontal scale or HA.
-# Exactly one `chancela` instance may ever write. Never scale it.
+# Exactly one `server-postgres` instance may ever write. Never scale it.
 name: chancela-hardened
 
 # ---------------------------------------------------------------------------
@@ -72,10 +78,14 @@ x-infra-hardening: &infra-hardening
 services:
   # -----------------------------------------------------------------------
   # single-node: one SQLite-backed server. No external database.
+  #
+  # `server-sqlite` and `server-postgres` are the SAME app compiled two ways
+  # (default features vs sqlcipher/postgres/redis). They publish the same host
+  # port and sit on disjoint profiles — never enable both at once.
   # -----------------------------------------------------------------------
-  server:
+  server-sqlite:
     <<: *app-hardening
-    profiles: [single-node, worker]
+    profiles: [single-node]
     build:
       context: .
       dockerfile: Dockerfile.hardened
@@ -126,7 +136,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.worker
     image: ${CHANCELA_WORKER_IMAGE:-chancela-worker:hardened}
-    # Built from source, never pulled — see the note on `server`.
+    # Built from source, never pulled — see the note on `server-sqlite`.
     pull_policy: build
     user: "65532:65532"
     tmpfs:
@@ -135,13 +145,22 @@ services:
       CHANCELA_CONNECTOR_SECRETS_DIR: /run/chancela-connector-secrets
       CHANCELA_CONNECTOR_ALLOWED_HOSTS: ${CHANCELA_CONNECTOR_ALLOWED_HOSTS:-}
     volumes:
-      - chancela-data:/var/lib/chancela
+      # Backend-dependent: `server-sqlite` keeps its data in `chancela-data`,
+      # `server-postgres` in `chancela-app-data`. Set CHANCELA_APP_DATA_VOLUME
+      # to the latter when running the worker against the postgres profile.
+      - ${CHANCELA_APP_DATA_VOLUME:-chancela-data}:/var/lib/chancela
       - ${CHANCELA_WORKER_CONFIG:-./docker/worker-config.example.json}:/etc/chancela-worker/config.json:ro
       - ${CHANCELA_CONNECTOR_SECRETS_HOST_DIR:-./docker/connector-secrets}:/run/chancela-connector-secrets:ro
     networks: [edge]
     depends_on:
-      server:
+      # `worker` is additive and enables no app service; `required: false` makes
+      # it wait on whichever app the chosen backend profile started.
+      server-sqlite:
         condition: service_healthy
+        required: false
+      server-postgres:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "/usr/local/bin/chancela-worker", "healthcheck", "--data-dir", "/var/lib/chancela/worker/queue", "--max-age-seconds", "120"]
       interval: 30s
@@ -270,7 +289,7 @@ services:
         reservations:
           memory: 64m
 
-  chancela:
+  server-postgres:
     <<: *app-hardening
     profiles: [postgres]
     build:
@@ -279,7 +298,7 @@ services:
       args:
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:hardened-postgres}
-    # Built from source, never pulled — see the note on `server`.
+    # Built from source, never pulled — see the note on `server-sqlite`.
     pull_policy: build
     user: "65532:65532"
     environment:

@@ -154,7 +154,7 @@ ERROR: the '$1' secret is absent from the chancela-secrets volume and from
        it is adopted on the next 'up'), or -- if the data is expendable --
        discard the state and start clean:
 
-         docker compose -f docker/docker-compose.yml --profile postgres down -v
+         docker compose --profile postgres down -v
 EOF
   exit 1
 }

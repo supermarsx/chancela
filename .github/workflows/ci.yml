@@ -616,9 +616,26 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker/docker-compose.yml --profile single-node config --quiet
-          docker compose -f docker/docker-compose.yml --profile validation-worker config --quiet
+          docker compose -f docker/docker-compose.yml --profile postgres config --quiet
           docker compose -f docker/docker-compose.yml --profile worker config --quiet
           docker compose -f docker-compose.hardened.yml --profile worker config --quiet
+
+          # The backend axis and the sidecar axis have to COMPOSE. Render both
+          # combinations and assert each starts exactly one app service — a
+          # regression here means two app containers fighting over the host port
+          # (which is what `--profile postgres --profile worker` used to do).
+          for backend in single-node postgres; do
+            services="$(docker compose -f docker/docker-compose.yml \
+              --profile "$backend" --profile worker config --services | sort)"
+            echo "$backend + worker -> $(echo $services)"
+            app_count="$(printf '%s\n' "$services" | grep -c '^server-')"
+            if [ "$app_count" -ne 1 ]; then
+              echo "expected exactly 1 app service for '$backend + worker', got $app_count" >&2
+              exit 1
+            fi
+            printf '%s\n' "$services" | grep -qx worker || {
+              echo "worker missing from '$backend + worker'" >&2; exit 1; }
+          done
 
       - name: Build server image (no push)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0

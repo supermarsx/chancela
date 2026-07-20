@@ -1,7 +1,8 @@
 # wp16 — multi-node (single-writer leader + read-followers) OVERLAY for the `postgres` profile.
 #
 # This is an ADDITIVE overlay: it adds one scaled app service (`chancela-cluster`) and does not touch
-# the base file's single-node `chancela` service. Use it together with the base compose so the shared
+# the base file's single-node `server-postgres` service (same image and features, one instance).
+# Use it together with the base compose so the shared
 # `postgres`, `redis`, secrets, and network already exist:
 #
 #   docker compose \

@@ -62,7 +62,7 @@ See the [documentation site](https://supermarsx.github.io/chancela/) for the ful
 The simplest way to run Chancela is the self-hosted single-node image:
 
 ```sh
-docker compose -f docker/docker-compose.yml --profile single-node up --build
+docker compose --profile single-node up --build
 ```
 
 Chancela publishes no images to any registry — `--build` compiles
