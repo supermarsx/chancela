@@ -5469,4 +5469,14 @@ export const deDE: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Standardadresse',
   'settings.providerCredentials.table.fields': 'Felder',
   'settings.providerCredentials.table.actions': 'Aktionen',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Ohne Speichern verlassen?',
+  'unsaved.body':
+    'Diese Seite enthält ungespeicherte Änderungen. Wenn Sie sie jetzt verlassen, gehen sie verloren.',
+  'unsaved.stay': 'Weiter bearbeiten',
+  'unsaved.leave': 'Ohne Speichern verlassen',
+  'unsaved.close.title': 'Anwendung schließen?',
+  'unsaved.close.body':
+    'Es gibt ungespeicherte Änderungen. Wenn Sie die Anwendung jetzt schließen, gehen sie verloren.',
+  'unsaved.close.confirm': 'Ohne Speichern schließen',
 };

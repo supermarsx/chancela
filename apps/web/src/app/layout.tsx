@@ -23,6 +23,7 @@ import { NotificationBell } from '../features/notifications/NotificationBell';
 import { CurrentUserPicker } from '../features/session/CurrentUserPicker';
 import { AuthGate } from '../features/session/AuthGate';
 import { PageErrorBoundary, ShellErrorBoundary } from './ErrorBoundary';
+import { UnsavedChangesGuard } from './UnsavedChangesGuard';
 import { SafeModeBanner } from './SafeModeBanner';
 import { DegradedBanner } from './DegradedBanner';
 import { isSafeMode } from './safeMode';
@@ -71,6 +72,12 @@ export function Layout() {
       {safe ? <SafeModeBanner /> : <AppearanceEffects />}
       {safe ? null : <LeatherBackground />}
       <TitleBar />
+
+      {/* Warn before typed work is lost — on tab close, in-app navigation, and the
+          desktop window close. Mounted above the auth gate (and so above every routed
+          surface) but INSIDE the router, which `useBlocker` requires. It renders nothing
+          until a registered surface is actually dirty. */}
+      <UnsavedChangesGuard />
 
       {/* The auth gate blocks the app chrome until a session exists: a fresh install is
           redirected to the onboarding wizard, a signed-out visitor sees the sign-in

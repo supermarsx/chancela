@@ -5419,4 +5419,14 @@ export const plPL: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Adres domyślny',
   'settings.providerCredentials.table.fields': 'Pola',
   'settings.providerCredentials.table.actions': 'Akcje',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Wyjść bez zapisania?',
+  'unsaved.body':
+    'Ta strona zawiera niezapisane zmiany. Jeśli teraz ją opuścisz, zostaną utracone.',
+  'unsaved.stay': 'Kontynuuj edycję',
+  'unsaved.leave': 'Wyjdź bez zapisania',
+  'unsaved.close.title': 'Zamknąć aplikację?',
+  'unsaved.close.body':
+    'Istnieją niezapisane zmiany. Jeśli teraz zamkniesz aplikację, zostaną utracone.',
+  'unsaved.close.confirm': 'Zamknij bez zapisania',
 };

@@ -5457,4 +5457,14 @@ export const frFR: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Adresse par défaut',
   'settings.providerCredentials.table.fields': 'Champs',
   'settings.providerCredentials.table.actions': 'Actions',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Quitter sans enregistrer ?',
+  'unsaved.body':
+    'Cette page contient des modifications non enregistrées. Si vous quittez maintenant, elles seront perdues.',
+  'unsaved.stay': 'Continuer à modifier',
+  'unsaved.leave': 'Quitter sans enregistrer',
+  'unsaved.close.title': 'Fermer l’application ?',
+  'unsaved.close.body':
+    'Des modifications ne sont pas enregistrées. Si vous fermez l’application maintenant, elles seront perdues.',
+  'unsaved.close.confirm': 'Fermer sans enregistrer',
 };

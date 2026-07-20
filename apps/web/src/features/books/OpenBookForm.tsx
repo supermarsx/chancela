@@ -19,6 +19,7 @@ import {
   optionsFrom,
   signatoryCapacityLabels,
 } from '../../api/labels';
+import { allowNextNavigation, useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useT } from '../../i18n';
 import {
   BOOK_KINDS,
@@ -177,6 +178,17 @@ export function OpenBookForm({ entityId, entities }: Props) {
 
   const chosen = entityId ?? selectedEntity;
 
+  // Unsaved-work guard (t52). The termo de abertura is typed once and kept nowhere until
+  // the POST succeeds, and the signatory rows are the expensive part. The pickers
+  // (entity, kind, scheme) are pre-seeded defaults, not typed work, so they never count
+  // as dirty — otherwise merely opening the page would arm the prompt.
+  useUnsavedChanges(
+    purpose.trim() !== '' ||
+      openingDate !== '' ||
+      predecessor.trim() !== '' ||
+      parseTermoSignatories(signatories).length > 0,
+  );
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     open.mutate(
@@ -193,6 +205,10 @@ export function OpenBookForm({ entityId, entities }: Props) {
         // R6: success toast survives the navigate-away; R7: inline ErrorNote stays.
         onSuccess: (book) => {
           toast.success(t('toast.book.opened'));
+          // The form state is still populated at this point, so the guard would see a
+          // dirty surface and prompt on the app's OWN post-save navigation. The work is
+          // saved; exempt exactly this navigation.
+          allowNextNavigation();
           navigate(`/livros/${book.id}`);
         },
         onError: (e) => toast.error(e),

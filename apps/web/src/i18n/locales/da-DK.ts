@@ -5392,4 +5392,12 @@ export const daDK: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Standardadresse',
   'settings.providerCredentials.table.fields': 'Felter',
   'settings.providerCredentials.table.actions': 'Handlinger',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Forlad uden at gemme?',
+  'unsaved.body': 'Denne side har ikke-gemte ændringer. Hvis du forlader den nu, går de tabt.',
+  'unsaved.stay': 'Fortsæt redigering',
+  'unsaved.leave': 'Forlad uden at gemme',
+  'unsaved.close.title': 'Luk programmet?',
+  'unsaved.close.body': 'Der er ikke-gemte ændringer. Hvis du lukker programmet nu, går de tabt.',
+  'unsaved.close.confirm': 'Luk uden at gemme',
 };

@@ -5435,4 +5435,12 @@ export const esES: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Dirección predeterminada',
   'settings.providerCredentials.table.fields': 'Campos',
   'settings.providerCredentials.table.actions': 'Acciones',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': '¿Salir sin guardar?',
+  'unsaved.body': 'Esta página tiene cambios sin guardar. Si sale ahora, los perderá.',
+  'unsaved.stay': 'Seguir editando',
+  'unsaved.leave': 'Salir sin guardar',
+  'unsaved.close.title': '¿Cerrar la aplicación?',
+  'unsaved.close.body': 'Hay cambios sin guardar. Si cierra la aplicación ahora, los perderá.',
+  'unsaved.close.confirm': 'Cerrar sin guardar',
 };

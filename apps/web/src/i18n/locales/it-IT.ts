@@ -5444,4 +5444,13 @@ export const itIT: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Indirizzo predefinito',
   'settings.providerCredentials.table.fields': 'Campi',
   'settings.providerCredentials.table.actions': 'Azioni',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Uscire senza salvare?',
+  'unsaved.body': 'Questa pagina contiene modifiche non salvate. Se esci ora, andranno perse.',
+  'unsaved.stay': 'Continua a modificare',
+  'unsaved.leave': 'Esci senza salvare',
+  'unsaved.close.title': 'Chiudere l’applicazione?',
+  'unsaved.close.body':
+    'Ci sono modifiche non salvate. Se chiudi l’applicazione ora, andranno perse.',
+  'unsaved.close.confirm': 'Chiudi senza salvare',
 };

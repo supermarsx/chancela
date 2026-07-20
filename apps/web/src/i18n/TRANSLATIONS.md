@@ -126,6 +126,12 @@ pt-PT is legally authoritative (UX-21). This is a deliberate boundary, not a gap
   (the same _legal-instrument name_ rule as the template names above). Only `{version}` varies,
   and it is the real build version, not authored copy. The 13 identical values are recorded in
   `reviewedIdenticalValues.ts`.
+- **The browser's own "leave site?" prompt** (t52) — the `beforeunload` dialog raised by
+  `UnsavedChangesGuard` is drawn by the browser and its wording **cannot be set by a page**
+  (every current engine ignores `returnValue`). The app controls only whether it appears, so
+  there is no key for it and none should be added. The two dialogs we DO control — the in-app
+  navigation confirm and the desktop window-close confirm — are fully localized under
+  `unsaved.*`.
 - **The crash diagnostics bundle** (`buildDiagnostics`) and the version-skew console warning
   are technical diagnostics kept as authored, not UI chrome.
 

@@ -67,6 +67,7 @@ import {
   numberingSchemeLabels,
   signatoryCapacityLabels,
 } from '../../api/labels';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { t as translateNow, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
@@ -1265,6 +1266,11 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
     setStartPage('1');
     setEndPage(String(Math.max(row.page_count, 1)));
   }, [row.import_id, row.page_count]);
+
+  // Unsaved-work guard (t52). The transcription itself is the only expensive field here —
+  // page range, engine name and confidence are seeded defaults or a few characters, so
+  // arming the prompt on them would make the warning meaningless.
+  useUnsavedChanges(extractedText.trim() !== '');
 
   function submit(event: React.FormEvent) {
     event.preventDefault();

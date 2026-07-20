@@ -5407,4 +5407,13 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Oletusosoite',
   'settings.providerCredentials.table.fields': 'Kentät',
   'settings.providerCredentials.table.actions': 'Toiminnot',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Poistutaanko tallentamatta?',
+  'unsaved.body': 'Tällä sivulla on tallentamattomia muutoksia. Jos poistut nyt, ne menetetään.',
+  'unsaved.stay': 'Jatka muokkaamista',
+  'unsaved.leave': 'Poistu tallentamatta',
+  'unsaved.close.title': 'Suljetaanko sovellus?',
+  'unsaved.close.body':
+    'Tallentamattomia muutoksia on olemassa. Jos suljet sovelluksen nyt, ne menetetään.',
+  'unsaved.close.confirm': 'Sulje tallentamatta',
 };

@@ -16,6 +16,7 @@ import {
 } from './aiProvenanceReviewPacket';
 import { formatWorkflowProvenanceReviewCopyPayload } from './workflowProvenanceReviewPacket';
 import { ataFieldHelp } from './fieldHelp';
+import { hasUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
 import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
@@ -1684,5 +1685,41 @@ describe('AtaEditorPage — complete draft persistence', () => {
       referenced_documents: [{ label: '', reference: null }],
       attachments: [{ label: '', kind: 'Exhibit', digest: null, beginning_of_proof: false }],
     });
+  });
+});
+
+describe('AtaEditorPage — unsaved-work registration (t52)', () => {
+  it('registers only while the draft actually differs from the saved act', async () => {
+    const shared = stateful(baseAct);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    const view = renderEditor();
+
+    expect(await screen.findByDisplayValue('Assembleia Geral Anual')).toBeTruthy();
+    // Loading an act is not unsaved work — a freshly-opened editor must never prompt.
+    expect(hasUnsavedChanges()).toBe(false);
+
+    fireEvent.change(document.getElementById('ed-title')!, {
+      target: { value: 'Assembleia revista' },
+    });
+    expect(hasUnsavedChanges()).toBe(true);
+
+    // Reverting the edit by hand is as good as saving it.
+    fireEvent.change(document.getElementById('ed-title')!, {
+      target: { value: 'Assembleia Geral Anual' },
+    });
+    expect(hasUnsavedChanges()).toBe(false);
+
+    fireEvent.change(document.getElementById('ed-title')!, {
+      target: { value: 'Assembleia revista' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    // Saving clears it: the server echo and the working copy normalize to the same patch.
+    await waitFor(() => expect(hasUnsavedChanges()).toBe(false));
+
+    // …and leaving the editor takes the registration with it.
+    fireEvent.change(document.getElementById('ed-title')!, { target: { value: 'Outra vez' } });
+    expect(hasUnsavedChanges()).toBe(true);
+    view.unmount();
+    expect(hasUnsavedChanges()).toBe(false);
   });
 });

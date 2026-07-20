@@ -86,6 +86,7 @@ import {
   type WrittenResolutionReviewStatus,
 } from '../../api/types';
 import { formatAtaNumber } from '../../format';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useT } from '../../i18n';
 import { formatAiProvenanceReviewPacket } from './aiProvenanceReviewPacket';
 import {
@@ -2876,6 +2877,20 @@ export function AtaEditorPage() {
       emptyManualSignatureOriginalReferenceDraft(),
     );
   const handledConveningHashRef = useRef<string | null>(null);
+
+  // Unsaved-work guard (t52). This editor does NOT autosave — `onSave` is an explicit
+  // "Guardar" button — so the working `draft` is the one genuinely expensive thing in the
+  // app that a closed tab or a stray navigation would destroy. Dirtiness is DERIVED from
+  // the working copy vs. the act as the server last returned it, so saving, reverting an
+  // edit, or a refetch all clear it with no extra bookkeeping (and the happy path after a
+  // save never prompts). Both sides go through `draftToPatch`, so the comparison is
+  // literally "what a save would send" vs "what the server already has": the trim/null
+  // normalisation the patch applies cannot leave the page stuck dirty after a save.
+  useUnsavedChanges(
+    draft != null &&
+      act.data != null &&
+      JSON.stringify(draftToPatch(draft)) !== JSON.stringify(draftToPatch(toDraft(act.data))),
+  );
 
   // Seed the working copy once per act identity; refetches of the same act (after an
   // advance/seal) update the read-only header via the cache without clobbering edits.

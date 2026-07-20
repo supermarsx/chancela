@@ -5407,4 +5407,12 @@ export const ptPT = {
   'settings.providerCredentials.table.endpointDefault': 'Endereço predefinido',
   'settings.providerCredentials.table.fields': 'Campos',
   'settings.providerCredentials.table.actions': 'Ações',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Sair sem guardar?',
+  'unsaved.body': 'Há alterações por guardar nesta página. Se sair agora, perde-as.',
+  'unsaved.stay': 'Continuar a editar',
+  'unsaved.leave': 'Sair sem guardar',
+  'unsaved.close.title': 'Fechar a aplicação?',
+  'unsaved.close.body': 'Há alterações por guardar. Se fechar a aplicação agora, perde-as.',
+  'unsaved.close.confirm': 'Fechar sem guardar',
 };

@@ -5356,4 +5356,12 @@ export const enUS: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Default endpoint',
   'settings.providerCredentials.table.fields': 'Fields',
   'settings.providerCredentials.table.actions': 'Actions',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Leave without saving?',
+  'unsaved.body': 'This page has unsaved changes. If you leave now, they will be lost.',
+  'unsaved.stay': 'Keep editing',
+  'unsaved.leave': 'Leave without saving',
+  'unsaved.close.title': 'Close the app?',
+  'unsaved.close.body': 'There are unsaved changes. If you close the app now, they will be lost.',
+  'unsaved.close.confirm': 'Close without saving',
 };

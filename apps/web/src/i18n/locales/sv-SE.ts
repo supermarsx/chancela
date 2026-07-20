@@ -5399,4 +5399,13 @@ export const svSE: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Standardadress',
   'settings.providerCredentials.table.fields': 'Fält',
   'settings.providerCredentials.table.actions': 'Åtgärder',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Lämna utan att spara?',
+  'unsaved.body': 'Den här sidan har osparade ändringar. Om du lämnar den nu går de förlorade.',
+  'unsaved.stay': 'Fortsätt redigera',
+  'unsaved.leave': 'Lämna utan att spara',
+  'unsaved.close.title': 'Stäng programmet?',
+  'unsaved.close.body':
+    'Det finns osparade ändringar. Om du stänger programmet nu går de förlorade.',
+  'unsaved.close.confirm': 'Stäng utan att spara',
 };

@@ -5445,4 +5445,14 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Standaardadres',
   'settings.providerCredentials.table.fields': 'Velden',
   'settings.providerCredentials.table.actions': 'Acties',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Weggaan zonder op te slaan?',
+  'unsaved.body':
+    'Deze pagina bevat niet-opgeslagen wijzigingen. Als u nu weggaat, gaan ze verloren.',
+  'unsaved.stay': 'Verder bewerken',
+  'unsaved.leave': 'Weggaan zonder opslaan',
+  'unsaved.close.title': 'Toepassing sluiten?',
+  'unsaved.close.body':
+    'Er zijn niet-opgeslagen wijzigingen. Als u de toepassing nu sluit, gaan ze verloren.',
+  'unsaved.close.confirm': 'Sluiten zonder opslaan',
 };

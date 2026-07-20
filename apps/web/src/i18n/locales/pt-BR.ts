@@ -5405,4 +5405,13 @@ export const ptBR: Catalog = {
   'settings.providerCredentials.table.endpointDefault': 'Endereço padrão',
   'settings.providerCredentials.table.fields': 'Campos',
   'settings.providerCredentials.table.actions': 'Ações',
+  // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
+  'unsaved.title': 'Sair sem salvar?',
+  'unsaved.body': 'Esta página tem alterações não salvas. Se sair agora, você vai perdê-las.',
+  'unsaved.stay': 'Continuar editando',
+  'unsaved.leave': 'Sair sem salvar',
+  'unsaved.close.title': 'Fechar o aplicativo?',
+  'unsaved.close.body':
+    'Há alterações não salvas. Se fechar o aplicativo agora, você vai perdê-las.',
+  'unsaved.close.confirm': 'Fechar sem salvar',
 };
