@@ -10,8 +10,14 @@ WORKDIR /build
 
 # aws-lc (used by the maintained S3 SDK TLS stack) needs a native C/CMake
 # toolchain. Build-only packages never enter the runtime image.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential cmake perl pkg-config \
+# DEBIAN_FRONTEND is set per-invocation rather than as an ENV so it cannot leak
+# into anything built from this stage. Without it debconf probes Dialog, then
+# Readline, then Teletype, fails each one for want of a tty and prints six
+# warning lines before falling back to Noninteractive on its own — this simply
+# tells it the answer up front. Install behaviour is unchanged.
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential cmake perl pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . .

@@ -31,8 +31,14 @@ WORKDIR /build
 # (space-separated; a single --features accepts the whole set).
 ARG CARGO_FEATURES="chancela-server/sqlcipher"
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends pkg-config libpcsclite-dev perl make \
+# DEBIAN_FRONTEND is set per-invocation rather than as an ENV so it cannot leak
+# into anything built from this stage. Without it debconf probes Dialog, then
+# Readline, then Teletype, fails each one for want of a tty and prints six
+# warning lines before falling back to Noninteractive on its own — this simply
+# tells it the answer up front. Install behaviour is unchanged.
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        pkg-config libpcsclite-dev perl make \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the whole workspace (see .dockerignore for what is excluded: target,
@@ -70,13 +76,17 @@ ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 # changes, using the committed root npm lockfile.
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/
-# npm can omit Rollup's platform-native optional package when the lockfile was
-# authored on another OS. Install the exact optional version Rollup declares so
-# Vite can load its Linux native binding in this container.
+# Vite 8 bundles Rolldown, not Rollup: `rollup` is absent from package-lock.json
+# entirely, so the former `@rollup/rollup-linux-x64-gnu` top-up could not work.
+# Its `node -p require('./node_modules/rollup/package.json')` threw
+# MODULE_NOT_FOUND on every build, the command substitution collapsed to an
+# empty string, and `npm install @rollup/rollup-linux-x64-gnu@` therefore
+# fetched the floating *latest* tag — an unpinned package outside the lockfile,
+# which the supply-chain pin policy exists to prevent. The lockfile carries
+# every @rolldown/binding-* platform package with correct os/cpu/libc fields, so
+# `npm ci` alone installs the right Linux binding at its pinned version.
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --no-fund \
-    && npm install --no-save --no-audit --no-fund \
-        @rollup/rollup-linux-x64-gnu@$(node -p "require('./node_modules/rollup/package.json').optionalDependencies['@rollup/rollup-linux-x64-gnu']")
+    npm ci --no-audit --no-fund
 
 # Build the web workspace (@chancela/web) -> apps/web/dist.
 COPY . .
