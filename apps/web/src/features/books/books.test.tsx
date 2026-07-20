@@ -336,6 +336,23 @@ describe('BooksPage', () => {
     expect(screen.queryByLabelText('Tipo de livro')).toBeNull();
   });
 
+  it('announces the loading books list through a busy region instead of loading silently', async () => {
+    // Same contract as the Arquivo skeleton: the shimmer bars are aria-hidden, so the
+    // region is the only thing a screen reader can hear while the first paint waits.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch,
+    );
+    renderWithProviders(<BooksPage />, ['/livros']);
+
+    const region = await screen.findByRole('status');
+    expect(region.getAttribute('aria-busy')).toBe('true');
+    expect(region.textContent).toContain('A carregar');
+    const bars = region.querySelectorAll('.skeleton');
+    expect(bars.length).toBeGreaterThan(0);
+    for (const bar of bars) expect(bar.closest('[aria-hidden="true"]')).toBeTruthy();
+  });
+
   it('shows the owning entity for each book, resolved to a linked name', async () => {
     const books: BookView[] = [{ ...BOOK, id: 'book-ag', entity_id: 'ent-1' }];
     vi.stubGlobal(
@@ -2491,6 +2508,50 @@ describe('BookDetailPage — sub-tabs', () => {
     expect(await screen.findByText('rec-1')).toBeTruthy();
     expect(screen.getByText('Arquivo de livros')).toBeTruthy();
     expect(screen.queryByText('cand-2')).toBeNull();
+  });
+
+  it('blocks the legal-hold controls with an explanation instead of a button that would 403', async () => {
+    // The sibling test below covers the READ side (the retention scan is withheld). This is
+    // the WRITE side of the same tab: a principal who may read the hold but not change it
+    // must get a control that says why, never an enabled button whose only outcome is a 403.
+    const { fn, calls } = bookDetailFetch();
+    vi.stubGlobal('fetch', fn);
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <ToastProvider>
+          <StaticPermissionsProvider
+            value={{
+              can: (perm: string) => perm !== 'book.export',
+              canAny: (perm: string) => perm !== 'book.export',
+              grants: [],
+              ready: true,
+            }}
+          >
+            <MemoryRouter initialEntries={['/livros/book-1?sec=retencao']}>
+              <Routes>
+                <Route path="/livros/:id" element={<BookDetailPage />} />
+              </Routes>
+            </MemoryRouter>
+          </StaticPermissionsProvider>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+
+    // The hold itself stays readable — withholding the control is not withholding the fact.
+    expect(await screen.findByText('Sem retenção')).toBeTruthy();
+
+    // A reason is filled in, so the button's own validation cannot be what disables it.
+    fireEvent.change(screen.getByLabelText('Motivo da retenção legal'), {
+      target: { value: 'Litígio pendente' },
+    });
+    const apply = screen.getByRole('button', { name: /Aplicar retenção legal/ });
+    expect(apply.getAttribute('data-gated')).toBe('true');
+    expect(apply.getAttribute('aria-disabled')).toBe('true');
+    // …and it is inert rather than merely styled: the click reaches no endpoint.
+    fireEvent.click(apply);
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method !== 'GET' && c.url.includes('legal-hold'))).toEqual([]),
+    );
   });
 
   it('says so honestly when the reader may not read retention, instead of firing a 403', async () => {

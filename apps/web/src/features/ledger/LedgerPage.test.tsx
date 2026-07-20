@@ -400,6 +400,34 @@ describe('LedgerPage', () => {
     expect(screen.queryByText('event.950')).toBeNull();
   });
 
+  it('announces the loading archive through a busy region instead of loading silently', async () => {
+    // Every skeleton bar is `aria-hidden`, so without the region a screen reader hears
+    // NOTHING while the archive loads — a regression against the plain "A carregar…" line
+    // the skeletons replaced. The region is what carries that announcement now.
+    const fn = ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/v1/ledger/events/page')) return new Promise<Response>(() => {});
+      if (url.includes('/v1/ledger/verify')) {
+        return Promise.resolve(jsonResponse({ valid: true, length: 1 }));
+      }
+      if (url.includes('/v1/ledger/integrity')) return Promise.resolve(jsonResponse(INTEGRITY));
+      if (url.includes('/v1/books')) return Promise.resolve(jsonResponse([makeBook()]));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LedgerPage />);
+
+    const region = await screen.findByRole('status');
+    expect(region.getAttribute('aria-busy')).toBe('true');
+    expect(region.textContent).toContain('A carregar');
+    // …and the decorative bars stay out of the accessibility tree: the region speaks once
+    // rather than the shimmer being read as content.
+    const bars = region.querySelectorAll('.skeleton');
+    expect(bars.length).toBeGreaterThan(0);
+    for (const bar of bars) expect(bar.closest('[aria-hidden="true"]')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
   it('shows a filtered empty state without losing the clear action', async () => {
     stubLedgerFetch(page([]));
     renderWithProviders(<LedgerPage />);
@@ -489,6 +517,20 @@ describe('LedgerPage — sub-tabs', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Registo' }));
     await waitFor(() => expect(locationValue()).toBe('/arquivo'));
+  });
+
+  it('paints the incoming sub-tab on the click, not after the enter animation', async () => {
+    stubLedgerFetch(page([makeEvent(10)]));
+    renderLedger();
+    expect(await screen.findByText('event.10')).toBeTruthy();
+
+    // Deliberately NO `await` between the click and the query. The keyed wrapper is a
+    // remount, not a mount-after-animation: `.route-transition`/`panel-enter` fade content
+    // that is already in the DOM, and no animation-end callback sits in this path. If a
+    // transition ever starts gating the swap, this is the assertion that catches it.
+    fireEvent.click(screen.getByRole('button', { name: 'Exportação' }));
+    expect(screen.getByText('Documento do registo de auditoria')).toBeTruthy();
+    expect(screen.queryByText('event.10')).toBeNull();
   });
 
   it('opens Exportação directly from a deep link and falls back to Registo for an unknown sec', async () => {

@@ -809,6 +809,32 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.detail).not.toContain('Raw backend');
   });
 
+  it('titles a recent operation with the human event label, and an unknown kind legibly', () => {
+    // t17 replaced `Evento act.sealed` with the friendly label. The two halves matter
+    // equally: a mapped kind must not leak the wire identifier as the title, and a kind
+    // this build has never heard of must still say SOMETHING — the raw id is the honest
+    // answer, and it is the value the Arquivo "Tipo de evento" filter accepts, so an
+    // unlabelled new kind stays actionable rather than rendering blank or `undefined`.
+    const items = buildDashboardNotifications(
+      dashboard({
+        recent_events: [
+          event({ id: 'event-sealed', seq: 9, kind: 'act.sealed' }),
+          event({ id: 'event-new', seq: 8, kind: 'act.teleported' }),
+        ],
+      }),
+      t,
+    );
+    const operations = items.filter((i) => i.kind === 'operation');
+
+    expect(operations.map((i) => i.title)).toEqual(['Ata selada', 'act.teleported']);
+    for (const title of operations.map((i) => i.title)) {
+      expect(title.trim()).not.toBe('');
+      expect(title).not.toContain('undefined');
+    }
+    // The label replaces the identifier in the title; it does not merely decorate it.
+    expect(operations[0]?.title).not.toContain('act.sealed');
+  });
+
   it('prioritizes actionable alerts and reminders in the popup over recent operations', () => {
     const items = buildDashboardNotifications(
       dashboard({

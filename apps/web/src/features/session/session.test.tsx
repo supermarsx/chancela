@@ -199,6 +199,52 @@ describe('AuthGate', () => {
     expect(screen.queryByText('APP CHROME')).toBeNull();
   });
 
+  it('fetches no user list before authentication', async () => {
+    const { fn, calls } = serverStub({
+      roster: { onboarding_required: false },
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+    expect(await screen.findByText('Iniciar sessão')).toBeTruthy();
+
+    // Not the same property as "no account is rendered" (asserted above): a request whose
+    // RESPONSE names accounts is an enumeration oracle whether or not the UI paints it —
+    // the payload sits in the network tab either way. So the screen must never ask.
+    expect(calls.filter((c) => c.url.includes('/v1/users'))).toEqual([]);
+
+    // And the whole signed-out request set, enumerated, so a new pre-authentication fetch
+    // cannot be introduced without this assertion being revisited on purpose.
+    expect([...new Set(calls.map((c) => `${c.method} ${c.url.split('?')[0]}`))].sort()).toEqual([
+      'GET /v1/session',
+      'GET /v1/session/roster',
+    ]);
+  });
+
+  it('names no account even when the roster payload still carries one', async () => {
+    // t33-e2 reduced `GET /v1/session/roster` to `{onboarding_required}`. An older server —
+    // or a rolled-back one — still answers with the full user array, and the client must not
+    // become the enumeration surface the endpoint used to be.
+    const legacyRoster = {
+      onboarding_required: false,
+      users: [AMELIA, BRUNO],
+    } as unknown as SessionRoster;
+    const { fn } = serverStub({ roster: legacyRoster });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+    expect(await screen.findByText('Iniciar sessão')).toBeTruthy();
+
+    for (const secret of [
+      AMELIA.display_name,
+      AMELIA.username,
+      BRUNO.display_name,
+      BRUNO.username,
+    ]) {
+      expect(document.body.textContent).not.toContain(secret);
+    }
+  });
+
   it('the identifier is a real text input with the autofill attributes password managers need', async () => {
     const { fn } = serverStub({
       roster: { onboarding_required: false },

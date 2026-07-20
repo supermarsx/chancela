@@ -86,6 +86,30 @@ describe('Tooltip', () => {
     expect(bubble.className).not.toContain('is-open');
   });
 
+  it('keeps focus on the trigger when Escape dismisses, and does not re-open by itself', () => {
+    render(
+      <Tooltip label="Editar">
+        <button type="button">alvo</button>
+      </Tooltip>,
+    );
+    const trigger = screen.getByRole('button');
+    const bubble = screen.getByRole('tooltip');
+    trigger.focus();
+    fireEvent.focus(trigger);
+    expect(bubble.className).toContain('is-open');
+
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(bubble.className).not.toContain('is-open');
+    // Escape dismisses the bubble, NOT the focus. A keyboard operator who reads a hint and
+    // presses Escape must still be on the control they were about to activate — otherwise
+    // dismissing a passive hint silently throws them back to the top of the document.
+    expect(document.activeElement).toBe(trigger);
+    // …and the still-focused trigger must not re-announce it on the next tick, or Escape
+    // would be a no-op for anyone navigating by keyboard.
+    fireEvent.mouseLeave(trigger);
+    expect(bubble.className).not.toContain('is-open');
+  });
+
   it("preserves the child's own handlers", () => {
     const onFocus = vi.fn();
     render(
