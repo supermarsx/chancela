@@ -382,6 +382,12 @@ volumes:
 
 # File-based docker secrets. The referenced files are gitignored (real secrets);
 # copy the committed docker/secrets/*.example templates and fill them in:
+#
+# Run `sh docker/preflight-secrets.sh` first. If one of these files is absent
+# Compose downgrades it to a warning and still hands the path to the daemon,
+# which either fails the container with `invalid mount config for type "bind":
+# bind source path does not exist: .../docker/secrets/<name>` or creates a
+# DIRECTORY there -- and a directory is not fixed by re-running the cp below.
 #   cp docker/secrets/postgres_password.example docker/secrets/postgres_password
 #   cp docker/secrets/database_url.example      docker/secrets/database_url
 #   cp docker/secrets/credential_key.example    docker/secrets/credential_key

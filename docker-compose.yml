@@ -7,7 +7,18 @@
 #
 #   docker compose up --build                       # single-node (default)
 #   docker compose --profile worker up --build      # + sync/backup worker
-#   docker compose --profile postgres up --build    # Postgres + Redis
+#
+# The `postgres` profile is the exception and MUST be launched with the
+# explicit `-f` form, which suppresses the override files:
+#
+#   docker compose -f docker/docker-compose.yml --profile postgres up --build
+#
+# There the `chancela` service REPLACES `server`, but docker-compose.override.yml
+# makes `server` unconditional, so a bare `--profile postgres up` starts both and
+# the second one to bind ${CHANCELA_HOST_PORT:-8080} dies with "port is already
+# allocated". Run docker/preflight-secrets.sh first: the profile's three docker
+# secrets are gitignored, and a missing one surfaces as a bind-mount error from
+# the daemon. See docs/deployment.md.
 #
 # `include` resolves the included file's relative paths (build context `..`,
 # `./secrets/*`, `./postgres-tls-init.sh`) against docker/, so both invocation

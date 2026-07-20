@@ -136,11 +136,36 @@ published to the host — they are reachable only on the compose network.
     # (they must match); a high-entropy value in credential_key.
     ```
 
-2. Start the profile:
+2. Check them before starting anything:
+
+    ```sh
+    sh docker/preflight-secrets.sh
+    ```
+
+3. Start the profile:
 
     ```sh
     docker compose -f docker/docker-compose.yml --profile postgres up --build
     ```
+
+!!! warning "Skipping step 1 fails at the Docker daemon, not in the app"
+
+    The three secret files are gitignored, so a fresh checkout does not have
+    them. Compose only logs `secret file chancela_postgres_password does not
+    exist` as a warning and hands the path to the daemon anyway, which fails
+    the container with a message naming a path you have never edited:
+
+    ```
+    Container chancela-postgres-1  Error response from daemon: invalid mount
+    config for type "bind": bind source path does not exist:
+    .../docker/secrets/postgres_password
+    ```
+
+    Some daemons instead create a **directory** at that path. Postgres then
+    reads `POSTGRES_PASSWORD_FILE` as a directory, and re-running the `cp` from
+    step 1 nests the file *inside* it instead of fixing anything. Delete the
+    directory (`rm -rf docker/secrets/postgres_password`) before copying the
+    template again. `docker/preflight-secrets.sh` detects both states.
 
 See [Configuration → Secrets](configuration.md#secrets-postgres-profile) for what
 each secret does. The credential-store root key
