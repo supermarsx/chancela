@@ -21,7 +21,7 @@
 #     the process needs no writable image paths; scratch space is a tmpfs.
 
 ########################  Stage 1: Rust build  ########################
-FROM rust:1.97.0-slim-trixie@sha256:466074ef42a9485c726d71017fa629f1954cd5e09b473dcd00467ddc6afdc753 AS rust-build
+FROM rust:1.97.0-slim-trixie@sha256:686a437ead83701e8f871e66e838c3ec55f46b5fc235b025756396ac823bdc51 AS rust-build
 WORKDIR /build
 
 # Cargo features compiled into `chancela-server`. Defaults to today's
@@ -55,7 +55,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/chancela-server /chancela-server
 
 ########################  Stage 2: Web build  ########################
-FROM node:24.18.0-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS web-build
+FROM node:26.5.0-trixie-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae53bc57583 AS web-build
 WORKDIR /app
 
 # The pinned base image bundles npm 11.16.0, but the supply-chain policy
