@@ -317,6 +317,20 @@ impl Authorizer {
     pub fn can_delegate(&self, perm: Permission, scope: Scope) -> bool {
         chancela_authz::can_delegate(&self.eff, perm, scope, self.rel())
     }
+
+    /// **Delegation invariant over a set.** May the principal delegate *every* one of `perms` at
+    /// `scope`? Each element is checked independently — no aggregate shortcut — and the first
+    /// offender is returned so the caller can refuse the whole delegation and name it.
+    ///
+    /// # Errors
+    /// The first permission that is meta or not held via a role at `scope`.
+    pub fn can_delegate_all(
+        &self,
+        perms: &[Permission],
+        scope: Scope,
+    ) -> Result<(), chancela_authz::DelegationRefusal> {
+        chancela_authz::can_delegate_all(&self.eff, perms.iter().copied(), scope, self.rel())
+    }
 }
 
 /// Resolve the session actor into an [`Authorizer`] (its effective authority + the live
@@ -573,13 +587,13 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // GET book.import@Global (read-only local OCR/canonical rehearsal)
     ("/v1/books/paper-import/{id}/bytes", RouteClass::Gated), // GET book.import@Global (package bytes)
-    ("/v1/books/{id}/legal-hold", RouteClass::Gated),         // GET/PUT/DELETE book.export@Book
-    ("/v1/books/{id}/archive/package", RouteClass::Gated),    // GET book.export@Book
+    ("/v1/books/{id}/legal-hold", RouteClass::Gated), // GET book.export@Book · PUT/DELETE legal_hold.manage@Book
+    ("/v1/books/{id}/archive/package", RouteClass::Gated), // GET book.export@Book
     (
         "/v1/books/{id}/archive/local-dglab-interchange-manifest",
         RouteClass::Gated,
     ), // GET book.export@Book (read-only local manifest)
-    ("/v1/books/{id}/archive/disposal", RouteClass::Gated), // GET/POST book.export@Book (dry-run only)
+    ("/v1/books/{id}/archive/disposal", RouteClass::Gated), // GET/POST book.export@Book · POST dry_run=false also legal_hold.manage@Book
     ("/v1/books/{id}/export", RouteClass::Gated),           // POST book.export@Book
     ("/v1/books/import/preflight", RouteClass::Gated),      // POST book.import@Global (read-only)
     ("/v1/books/import", RouteClass::Gated),                // POST book.import@Global
@@ -588,6 +602,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts", RouteClass::Gated), // POST act.draft@Book(body.book_id)
     ("/v1/acts/{id}", RouteClass::Gated), // GET act.read@Book · PATCH act.edit@Book
     ("/v1/acts/{id}/advance", RouteClass::Gated), // POST act.advance@Book
+    ("/v1/acts/{id}/reopen", RouteClass::Gated), // POST signing.perform@Book + act.edit@Book
     ("/v1/acts/{id}/human-verification", RouteClass::Gated), // POST act.advance@Book
     ("/v1/acts/{id}/compliance", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/seal", RouteClass::Gated), // POST signing.perform@Book
@@ -714,12 +729,12 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/ledger/attestations/{seq}", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/recovery/reanchor", RouteClass::Gated), // POST ledger.recover@Global + step-up
     ("/v1/ledger/recovery/restore", RouteClass::Gated), // POST ledger.recover@Global + step-up
-    ("/v1/ledger/recovery/restore/preflight", RouteClass::Gated), // POST ledger.recover@Global + step-up preflight
+    ("/v1/ledger/recovery/restore/preflight", RouteClass::Gated), // POST ledger.recover@Global (read-only; no step-up by design)
     // --- Data management ------------------------------------------------------------------------
     ("/v1/data/reset", RouteClass::Gated), // POST data.wipe@Global + step-up
     ("/v1/data/status", RouteClass::Gated), // GET settings.read@Global
     ("/v1/data/cleanup", RouteClass::Gated), // POST settings.manage@Global
-    ("/v1/data/key-rotation", RouteClass::Gated), // POST settings.manage@Global + interactive session
+    ("/v1/data/key-rotation", RouteClass::Gated), // POST settings.manage@Global + interactive session + step-up
     ("/v1/data/key-rotation/preflight", RouteClass::Gated), // POST settings.manage@Global (read-only)
     ("/v1/data/start-over", RouteClass::Gated),             // POST data.start_over@Global + step-up
     ("/v1/backup", RouteClass::Gated),                      // POST data.backup@Global
@@ -759,6 +774,12 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/notifications/triage/{id}", RouteClass::Gated),          // PATCH act.read@Global
     // --- Settings -------------------------------------------------------------------------------
     ("/v1/settings", RouteClass::Gated), // GET settings.read@Global · PUT settings.manage@Global
+    // Outbound email (t23). Reading the status is `settings.read`; setting/clearing the relay
+    // password and running a test send are all `settings.manage` — administrator-only, the same
+    // gate as `PUT /v1/settings`.
+    ("/v1/settings/email/status", RouteClass::Gated), // GET settings.read@Global
+    ("/v1/settings/email/password", RouteClass::Gated), // PUT/DELETE settings.manage@Global
+    ("/v1/settings/email/test", RouteClass::Gated),   // POST settings.manage@Global
     ("/v1/platform/services", RouteClass::Gated), // GET settings.read@Global
     (
         "/v1/platform/services/{id}/actions/{action}",
@@ -775,18 +796,18 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/cae/{code}/children", RouteClass::Gated), // GET cae.read@Global
     ("/v1/trust/status", RouteClass::Gated), // GET cae.read@Global (read-only trust reference)
     ("/v1/trust/catalog", RouteClass::Gated), // GET cae.read@Global (read-only trust reference)
-    ("/v1/trust/refresh", RouteClass::Gated), // POST cae.refresh@Global (operator TSL import)
-    ("/v1/trust/tsa", RouteClass::Gated),    // GET cae.read@Global (read-only TSA diagnostics)
+    ("/v1/trust/refresh", RouteClass::Gated), // POST trust.manage@Global (operator TSL import; ledgered)
+    ("/v1/trust/tsa", RouteClass::Gated),     // GET cae.read@Global (read-only TSA diagnostics)
     ("/v1/trust/providers/{id}", RouteClass::Gated), // GET cae.read@Global
     ("/v1/trust/services/{id}", RouteClass::Gated), // GET cae.read@Global
-    ("/v1/law", RouteClass::Gated),          // GET law.read@Global
-    ("/v1/law/corpus", RouteClass::Gated),   // GET law.read@Global (corpus reader)
+    ("/v1/law", RouteClass::Gated),           // GET law.read@Global
+    ("/v1/law/corpus", RouteClass::Gated),    // GET law.read@Global (corpus reader)
     ("/v1/law/corpus/search", RouteClass::Gated), // GET law.read@Global (full-text search)
     ("/v1/law/corpus/{diploma}", RouteClass::Gated), // GET law.read@Global
     ("/v1/law/corpus/{diploma}/{article}", RouteClass::Gated), // GET law.read@Global
     ("/v1/law/citations/resolve", RouteClass::Gated), // POST law.read@Global
     ("/v1/law/{id}/fetch", RouteClass::Gated), // POST law.manage@Global
-    ("/v1/law/{id}/pdf", RouteClass::Gated), // GET law.read@Global · DELETE law.manage@Global
+    ("/v1/law/{id}/pdf", RouteClass::Gated),  // GET law.read@Global · DELETE law.manage@Global
     // --- Users ----------------------------------------------------------------------------------
     ("/v1/users", RouteClass::Gated), // GET user.read@Global · POST user.manage@Global (bootstrap exempt)
     ("/v1/users/{id}", RouteClass::Gated), // GET user.read@Global · PATCH user.manage@Global
@@ -810,7 +831,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/execute",
         RouteClass::Gated,
-    ), // POST user.manage@Global
+    ), // POST user.manage@Global + step-up (interactive only)
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/rectification",
         RouteClass::Gated,
@@ -1092,6 +1113,138 @@ mod tests {
                 wire
             );
         }
+    }
+
+    /// **The step-up annotations must describe the handlers (t22).**
+    ///
+    /// The per-route verb/step-up notes in [`ROUTE_CLASSIFICATION`] are trailing `//` comments that
+    /// nothing enforced, and they decayed exactly as untested comments do: three of them advertised
+    /// step-up on handlers that had none, for a whole-store restore and a per-book start-over. The
+    /// router walk below proves every route is *classified*; this proves the annotations are *true*.
+    ///
+    /// The binding is two-way. Every route annotated `+ step-up` must name a handler that really
+    /// calls `require_step_up`, and the number of annotated routes must equal the number of
+    /// `require_step_up` call sites in the crate — so adding step-up to a handler without annotating
+    /// its route fails here just as loudly as annotating a route whose handler never got it.
+    #[test]
+    fn every_step_up_annotation_names_a_handler_that_actually_steps_up() {
+        // (route path, handler source, handler fn) for each `+ step-up` annotation in the map.
+        const STEP_UP_ROUTES: &[(&str, &str, &str)] = &[
+            (
+                "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects/{object_id}/versions/{version}/readability-package",
+                include_str!("zk_repository.rs"),
+                "create_readability_package",
+            ),
+            (
+                "/v1/books/{id}/start-over",
+                include_str!("bundles.rs"),
+                "start_over_book",
+            ),
+            (
+                "/v1/ledger/recovery/reanchor",
+                include_str!("recovery.rs"),
+                "reanchor_ledger",
+            ),
+            (
+                "/v1/ledger/recovery/restore",
+                include_str!("recovery.rs"),
+                "restore_store",
+            ),
+            ("/v1/data/reset", include_str!("data.rs"), "reset_data"),
+            (
+                "/v1/data/key-rotation",
+                include_str!("data_status.rs"),
+                "execute_data_key_rotation",
+            ),
+            (
+                "/v1/data/start-over",
+                include_str!("data.rs"),
+                "start_over_instance",
+            ),
+            (
+                "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/execute",
+                include_str!("privacy.rs"),
+                "erasure_execute",
+            ),
+        ];
+
+        // The annotations live in this file's own source, one trailing comment per entry.
+        let authz_src = include_str!("authz.rs").replace("\r\n", "\n");
+        // Anchor on the const's own declaration, not the first textual mention — the doc comment
+        // above it names ROUTE_CLASSIFICATION and talks about step-up, which would be miscounted.
+        let map_start = authz_src
+            .find("ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[")
+            .expect("the map must exist");
+        let map_end = authz_src[map_start..]
+            .find("\n];\n")
+            .map(|e| e + map_start)
+            .expect("the map must terminate");
+        let map_src = &authz_src[map_start..map_end];
+
+        // A route is "annotated" when the `+ step-up` note sits in the same entry as its path. The
+        // entries are separated by `),`, so splitting on the path and reading to the end of that
+        // entry keeps a neighbouring route's annotation from being credited to this one.
+        let annotated = |path: &str| -> bool {
+            let Some(at) = map_src.find(&format!("\"{path}\"")) else {
+                panic!("{path} is not in ROUTE_CLASSIFICATION");
+            };
+            let entry = &map_src[at..];
+            let end = entry.find('\n').unwrap_or(entry.len());
+            // The note may trail the path's own line, or the `), //` line of a wrapped entry.
+            let line = &entry[..end];
+            line.contains("step-up")
+                || entry[end..]
+                    .lines()
+                    .take_while(|l| !l.trim_start().starts_with('('))
+                    .any(|l| l.contains("step-up"))
+        };
+
+        for (path, handler_src, handler_fn) in STEP_UP_ROUTES {
+            assert!(
+                annotated(path),
+                "{path} calls require_step_up but the route map does not say so"
+            );
+            let src = handler_src.replace("\r\n", "\n");
+            let at = src
+                .find(&format!("fn {handler_fn}("))
+                .unwrap_or_else(|| panic!("handler {handler_fn} not found"));
+            // The handler body ends at the next top-level `\n}`.
+            let body = &src[at..];
+            let end = body.find("\n}\n").unwrap_or(body.len());
+            assert!(
+                body[..end].contains("require_step_up("),
+                "{path}: the map advertises step-up but {handler_fn} never calls require_step_up"
+            );
+        }
+
+        // Two-way: no handler steps up without its route saying so. `data.rs` also *defines*
+        // `require_step_up` and references it in prose, so count call sites only.
+        let call_sites: usize = [
+            include_str!("data.rs"),
+            include_str!("recovery.rs"),
+            include_str!("zk_repository.rs"),
+            include_str!("bundles.rs"),
+            include_str!("data_status.rs"),
+            include_str!("privacy.rs"),
+        ]
+        .iter()
+        .map(|src| src.matches("require_step_up(&state").count())
+        .sum();
+        assert_eq!(
+            call_sites,
+            STEP_UP_ROUTES.len(),
+            "a require_step_up call site exists that no annotated route accounts for"
+        );
+
+        // And the map must not claim step-up anywhere outside that set — this is the assertion the
+        // three false annotations would have failed.
+        let claimed = map_src.matches("step-up").count();
+        let disclaimed = map_src.matches("no step-up by design").count();
+        assert_eq!(
+            claimed - disclaimed,
+            STEP_UP_ROUTES.len(),
+            "the map claims step-up on more routes than enforce it"
+        );
     }
 
     /// **Fail-closed router walk (E8 guard).** Every route the router serves must be classified in

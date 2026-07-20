@@ -54,6 +54,10 @@ const CACHE_CANDIDATES: &[&str] = &[
     "trusted-list.xml",
     "trusted-list.pt.xml",
 ];
+/// Ledger kind for an operator TSL import attempt (t22). Recorded for both outcomes — see
+/// [`refresh_trust_tsl`].
+const TRUST_TSL_IMPORTED_EVENT_KIND: &str = "trust.tsl.imported";
+
 const TRUST_CACHE_FILE: &str = "tsl.xml";
 const TRUST_REFRESH_STATUS_FILE: &str = "tsl-refresh-status.json";
 /// Sidecar recording the provenance (authenticated/stale + anchor counts) of the trust material
@@ -550,7 +554,7 @@ pub async fn trust_status(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<TslSummaryView>, ApiError> {
-    require_reference_read(&state, &actor).await?;
+    require_trust_read(&state, &actor).await?;
     let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
@@ -575,7 +579,8 @@ pub async fn refresh_trust_tsl(
     actor: CurrentActor,
     Json(request): Json<TslRefreshRequest>,
 ) -> Result<Json<TslRefreshStatusView>, ApiError> {
-    require_reference_refresh(&state, &actor).await?;
+    require_trust_manage(&state, &actor).await?;
+    let event_actor = actor.resolve("api");
     let data_dir = state.data_dir().ok_or_else(|| {
         ApiError::Unprocessable(
             "TSL import requires CHANCELA_DATA_DIR so the cache and last-attempt status can be persisted"
@@ -608,6 +613,30 @@ pub async fn refresh_trust_tsl(
     })
     .await
     .map_err(|e| ApiError::Internal(format!("TSL import worker failed: {e}")))??;
+
+    // t22: until now a TSL import was the only critical mutation in the product that left NO entry
+    // in the append-only ledger — the trust anchors could be swapped and the audit trail would not
+    // show it. Record the whole attempt, not just the successes: a REFUSED import (fail-closed, the
+    // previous cache preserved) is exactly the event an incident review needs to see, and the status
+    // view already carries the outcome, source, validation result and the resulting service counts.
+    // The `trust` keyword scope lands on the application audit chain, which fixes no genesis kind,
+    // so appending here can never break `Ledger::verify()`.
+    let payload = serde_json::to_vec(&attempt)?;
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            &event_actor,
+            "trust",
+            TRUST_TSL_IMPORTED_EVENT_KIND,
+            Some("trusted-service list import"),
+            &payload,
+        )?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
+    }
+
     Ok(Json(attempt))
 }
 
@@ -618,7 +647,7 @@ pub async fn trust_catalog(
     actor: CurrentActor,
     Query(query): Query<TslCatalogQuery>,
 ) -> Result<Response, ApiError> {
-    require_reference_read(&state, &actor).await?;
+    require_trust_read(&state, &actor).await?;
     let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
@@ -650,7 +679,7 @@ pub async fn trust_tsa(
     actor: CurrentActor,
     Query(query): Query<TsaCatalogQuery>,
 ) -> Result<Response, ApiError> {
-    require_reference_read(&state, &actor).await?;
+    require_trust_read(&state, &actor).await?;
     let signing = state.settings.read().await.signing.clone();
     let tsa_selection = signing.runtime_tsa_selection();
     let loaded = load_tsl(&state)?;
@@ -682,7 +711,7 @@ pub async fn trust_provider(
     Path(id): Path<String>,
     actor: CurrentActor,
 ) -> Result<Json<TslProviderDetailView>, ApiError> {
-    require_reference_read(&state, &actor).await?;
+    require_trust_read(&state, &actor).await?;
     let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
@@ -707,7 +736,7 @@ pub async fn trust_service(
     Path(id): Path<String>,
     actor: CurrentActor,
 ) -> Result<Json<TslServiceDetailView>, ApiError> {
-    require_reference_read(&state, &actor).await?;
+    require_trust_read(&state, &actor).await?;
     let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
@@ -736,16 +765,20 @@ pub async fn trust_service(
     Err(ApiError::NotFound)
 }
 
-async fn require_reference_read(state: &AppState, actor: &CurrentActor) -> Result<(), ApiError> {
-    // There is no trust-specific verb in the current RBAC catalog. Reuse the read-only reference
-    // permission until a future authz migration can add `trust.read` without widening roles here.
+async fn require_trust_read(state: &AppState, actor: &CurrentActor) -> Result<(), ApiError> {
+    // Reading the trust catalog stays on `cae.read`, deliberately, even though the import moved to
+    // its own verb (t22): a read cannot change which signatures validate, so a dedicated `trust.read`
+    // would buy no safety and would either need seeding to almost every role (churn for nothing) or
+    // would silently take trust-catalog visibility away from operators who have it today.
     require_permission(state, actor, Permission::CaeRead, Scope::Global).await
 }
 
-async fn require_reference_refresh(state: &AppState, actor: &CurrentActor) -> Result<(), ApiError> {
-    // There is no trust-specific mutation verb yet. Reuse the reference refresh permission used by
-    // CAE operator refreshes until an authz migration can add `trust.refresh`.
-    require_permission(state, actor, Permission::CaeRefresh, Scope::Global).await
+async fn require_trust_manage(state: &AppState, actor: &CurrentActor) -> Result<(), ApiError> {
+    // The TSL decides WHICH SIGNATURES THE PRODUCT CONSIDERS VALID. That is security configuration,
+    // not reference data, so it no longer shares `cae.refresh` with the CAE economic-activity table
+    // (t22) — `cae.refresh` is seeded to Gestor and Company Owner, who have no business swapping the
+    // trust anchors. `trust.manage` is seeded to Owner + Platform Administrator only.
+    require_permission(state, actor, Permission::TrustManage, Scope::Global).await
 }
 
 // --- Catalog assembly --------------------------------------------------------------------------

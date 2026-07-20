@@ -193,8 +193,9 @@ impl Role {
     }
 
     /// The seeded **Platform Administrator** role: broad administrative authority, including RBAC
-    /// meta-permissions and full tenant provisioning/administration (`tenant.create`/`tenant.read`/
-    /// `tenant.admin`), but not the Owner-only destructive reset/wipe verbs.
+    /// meta-permissions, full tenant provisioning/administration (`tenant.create`/`tenant.read`/
+    /// `tenant.admin`), and the two t22 security-configuration verbs `legal_hold.manage` and
+    /// `trust.manage`, but not the Owner-only destructive reset/wipe verbs.
     #[must_use]
     pub fn platform_administrator() -> Self {
         Role {
@@ -216,6 +217,7 @@ impl Role {
                 Permission::BookImport,
                 Permission::BookStartOver,
                 Permission::BookReopen,
+                Permission::LegalHoldManage,
                 Permission::ActRead,
                 Permission::ActDraft,
                 Permission::ActEdit,
@@ -235,6 +237,7 @@ impl Role {
                 Permission::CaeRefresh,
                 Permission::LawRead,
                 Permission::LawManage,
+                Permission::TrustManage,
                 Permission::UserRead,
                 Permission::UserManage,
                 Permission::RoleManage,
@@ -437,7 +440,8 @@ impl Role {
     }
 
     /// The seeded **Legal Counsel** role: advisory read access without law-management or workflow
-    /// mutation authority.
+    /// mutation authority, plus `legal_hold.manage` — placing and lifting a litigation hold, and
+    /// authorising archive disposal, is the one mutation this advisory role exists to perform (t22).
     #[must_use]
     pub fn legal_counsel() -> Self {
         Role {
@@ -446,6 +450,7 @@ impl Role {
             permission_set: [
                 Permission::EntityRead,
                 Permission::BookRead,
+                Permission::LegalHoldManage,
                 Permission::ActRead,
                 Permission::LedgerRead,
                 Permission::CaeRead,
@@ -700,6 +705,10 @@ mod tests {
             assert!(!role.permission_set.contains(&Permission::DataStartOver));
             assert!(!role.permission_set.contains(&Permission::LedgerRecover));
             assert!(!role.permission_set.contains(&Permission::UserManage));
+            // t22. `legal_hold.manage` is intentionally absent from this battery — Legal Counsel is
+            // a non-admin seeded role and holds it by design (see the note in
+            // `explicit_company_archetypes_exclude_sensitive_platform_and_meta_authority`).
+            assert!(!role.permission_set.contains(&Permission::TrustManage));
         }
     }
 
@@ -724,6 +733,68 @@ mod tests {
         }
     }
 
+    /// t22: `legal_hold.manage` and `trust.manage` were split off `book.export` / `cae.refresh`
+    /// precisely because those verbs are broadly held. The split is only worth anything if the
+    /// seeded holders stay narrow, so pin both sets exhaustively — a future seed edit that widens
+    /// either one has to come through this test.
+    #[test]
+    fn legal_hold_and_trust_verbs_are_seeded_only_to_their_intended_holders() {
+        let holders = |p: Permission| -> Vec<String> {
+            default_roles()
+                .into_iter()
+                .filter(|r| r.permission_set.contains(&p))
+                .map(|r| r.name)
+                .collect()
+        };
+
+        assert_eq!(
+            holders(Permission::LegalHoldManage),
+            vec!["Proprietário", "Legal Counsel", "Platform Administrator"]
+        );
+        assert_eq!(
+            holders(Permission::TrustManage),
+            vec!["Proprietário", "Platform Administrator"]
+        );
+
+        // The point of the split: these roles keep the broad verb they are supposed to have and
+        // lose the narrow one they were reaching it through. Auditor and API Client are the two the
+        // t22 audit called out by name.
+        for role in [
+            Role::gestor(),
+            Role::company_owner(),
+            Role::corporate_secretary(),
+            Role::records_manager(),
+            Role::tenant_administrator(),
+            Role::auditor(),
+            Role::api_client(),
+        ] {
+            assert!(
+                role.permission_set.contains(&Permission::BookExport),
+                "{} unexpectedly lost book.export",
+                role.name
+            );
+            assert!(
+                !role.permission_set.contains(&Permission::LegalHoldManage),
+                "{} still reaches legal hold through book.export",
+                role.name
+            );
+        }
+
+        // Likewise `cae.refresh` no longer carries a TSL import with it.
+        for role in [Role::gestor(), Role::company_owner()] {
+            assert!(
+                role.permission_set.contains(&Permission::CaeRefresh),
+                "{} unexpectedly lost cae.refresh",
+                role.name
+            );
+            assert!(
+                !role.permission_set.contains(&Permission::TrustManage),
+                "{} still reaches the TSL import through cae.refresh",
+                role.name
+            );
+        }
+    }
+
     #[test]
     fn api_client_role_is_api_key_compatible() {
         let role = Role::api_client();
@@ -736,6 +807,8 @@ mod tests {
             Permission::LedgerRecover,
             Permission::DataWipe,
             Permission::DataStartOver,
+            Permission::LegalHoldManage,
+            Permission::TrustManage,
         ] {
             assert!(
                 !role.permission_set.contains(&forbidden),
@@ -887,6 +960,7 @@ mod tests {
             permissions([
                 Permission::EntityRead,
                 Permission::BookRead,
+                Permission::LegalHoldManage,
                 Permission::ActRead,
                 Permission::LedgerRead,
                 Permission::CaeRead,
@@ -967,6 +1041,14 @@ mod tests {
                 Permission::LedgerRecover,
                 Permission::DataWipe,
                 Permission::DataStartOver,
+                // t22: importing a trusted-service list decides which signatures the product
+                // considers valid — platform authority, never a company archetype's.
+                //
+                // `legal_hold.manage` deliberately does NOT belong on this list: Legal Counsel is
+                // one of its three seeded holders, because placing and lifting a litigation hold is
+                // the mutation that role exists to perform. Its holders are pinned exhaustively in
+                // `legal_hold_and_trust_verbs_are_seeded_only_to_their_intended_holders` instead.
+                Permission::TrustManage,
             ] {
                 assert!(
                     !role.permission_set.contains(&forbidden),

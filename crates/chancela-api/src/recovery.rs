@@ -17,12 +17,15 @@
 //!   rebuilds the chain hashes and is the most evidence-sensitive op. `422` empty reason; `409` when
 //!   the chain already verifies (nothing to repair); `422` in-memory (no durable store to persist
 //!   the rebuild into).
-//! - `POST /v1/ledger/recovery/restore` `{ archive }` → [`RestoreOutcomeView`]. `archive` is an
-//!   absolute path or a bare name resolved under `<data_dir>/backups/`. A backup that does not
-//!   verify BEFORE the swap is refused with `422` and the live store is untouched.
+//! - `POST /v1/ledger/recovery/restore` `{ archive, passphrase?, reauth, actor? }` →
+//!   [`RestoreOutcomeView`]. `archive` is an absolute path or a bare name resolved under
+//!   `<data_dir>/backups/`. Also requires **step-up re-auth**, on the same terms as the re-anchor
+//!   above (t22) — a restore replaces every book and the ledger. A backup that does not verify
+//!   BEFORE the swap is refused with `422` and the live store is untouched.
 //! - `POST /v1/ledger/recovery/restore/preflight` `{ archive, passphrase? }` →
 //!   [`RestorePreflightOutcomeView`]. Same archive/key mode as restore, but read-only: no DB swap,
-//!   no sidecar staging, no `ledger.restored`, no reload.
+//!   no sidecar staging, no `ledger.restored`, no reload — and therefore **no step-up**, which
+//!   would otherwise make the safe way to inspect a backup harder than the destructive one.
 
 use axum::Json;
 use axum::extract::State;
@@ -310,6 +313,11 @@ pub struct RestoreRequest {
     pub archive: String,
     /// Optional passphrase for encrypted `.cbackup` envelopes. Omit for legacy plaintext zips.
     pub passphrase: Option<String>,
+    /// Step-up re-auth proof (§8-F) — required by the **executing** restore, ignored by the
+    /// read-only preflight. The archive passphrase above proves nothing about the operator: it
+    /// travels with the backup file, so anyone holding the file holds it.
+    #[serde(default)]
+    pub reauth: ReAuth,
     #[serde(default = "default_actor")]
     pub actor: String,
 }
@@ -432,6 +440,11 @@ pub async fn restore_store(
 ) -> Result<Json<RestoreOutcomeView>, ApiError> {
     // RBAC (t64-E3): a whole-store restore requires `ledger.recover` at Global.
     require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
+    // t22: and step-up, which the route map has claimed since it was written but the handler never
+    // had. A restore silently replaces every book and the ledger; it is at least as destructive as
+    // the re-anchor immediately above, which has required step-up all along. The t69 carve-out in
+    // `require_step_up` keeps a credential-less operator from being locked out of recovery.
+    require_step_up(&state, &actor, &req.reauth).await?;
     let actor = actor.resolve(&req.actor);
     let Some(store) = state.store.clone() else {
         return Err(ApiError::Unprocessable(

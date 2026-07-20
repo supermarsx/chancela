@@ -61,6 +61,14 @@ pub enum Permission {
     #[serde(rename = "book.reopen")]
     BookReopen,
 
+    // --- Legal hold (retention / compliance) ---
+    /// Set, replace or release a book-level **legal hold**, and execute archive disposal against a
+    /// book. A hold is the retention control that blocks disposal of the evidentiary record, so
+    /// releasing one unblocks destruction — it is a compliance authority, deliberately NOT the
+    /// broadly-held `book.export` read/export authority it used to share (t22).
+    #[serde(rename = "legal_hold.manage")]
+    LegalHoldManage,
+
     // --- Acts ---
     #[serde(rename = "act.read")]
     ActRead,
@@ -124,6 +132,14 @@ pub enum Permission {
     #[serde(rename = "law.manage")]
     LawManage,
 
+    // --- Trust services (TSL / LOTL) ---
+    /// Import a trusted-service list (`POST /v1/trust/refresh`). The trust list decides **which
+    /// signatures the product will consider valid**, so this is security configuration, not
+    /// reference data — it is deliberately separate from `cae.refresh`, which it used to share
+    /// (t22). Reading the trust catalog stays on `cae.read`: the risk is entirely in the import.
+    #[serde(rename = "trust.manage")]
+    TrustManage,
+
     // --- Users ---
     #[serde(rename = "user.read")]
     UserRead,
@@ -143,7 +159,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 42] = [
+    pub const ALL: [Permission; 44] = [
         Permission::TenantRead,
         Permission::TenantCreate,
         Permission::TenantAdmin,
@@ -159,6 +175,7 @@ impl Permission {
         Permission::BookImport,
         Permission::BookStartOver,
         Permission::BookReopen,
+        Permission::LegalHoldManage,
         Permission::ActRead,
         Permission::ActDraft,
         Permission::ActEdit,
@@ -180,6 +197,7 @@ impl Permission {
         Permission::CaeRefresh,
         Permission::LawRead,
         Permission::LawManage,
+        Permission::TrustManage,
         Permission::UserRead,
         Permission::UserManage,
         Permission::RoleManage,
@@ -217,6 +235,7 @@ impl Permission {
             Permission::BookImport => "book.import",
             Permission::BookStartOver => "book.start_over",
             Permission::BookReopen => "book.reopen",
+            Permission::LegalHoldManage => "legal_hold.manage",
             Permission::ActRead => "act.read",
             Permission::ActDraft => "act.draft",
             Permission::ActEdit => "act.edit",
@@ -238,6 +257,7 @@ impl Permission {
             Permission::CaeRefresh => "cae.refresh",
             Permission::LawRead => "law.read",
             Permission::LawManage => "law.manage",
+            Permission::TrustManage => "trust.manage",
             Permission::UserRead => "user.read",
             Permission::UserManage => "user.manage",
             Permission::RoleManage => "role.manage",
@@ -276,6 +296,115 @@ mod tests {
     fn all_is_deduplicated_and_complete() {
         let set: std::collections::BTreeSet<_> = Permission::ALL.iter().copied().collect();
         assert_eq!(set.len(), Permission::ALL.len(), "ALL has duplicates");
+    }
+
+    /// `Permission::ALL` **is** the Owner permission-set, and Owner is what the first user of a
+    /// fresh instance receives — so a verb missing from `ALL` silently makes the maximal role less
+    /// than maximal. The exhaustive `match` makes adding a variant without touching this test a
+    /// COMPILE error, and the list then catches a variant that was declared but left out of `ALL`.
+    #[test]
+    fn every_permission_variant_is_in_all_so_owner_is_always_maximal() {
+        // The compile-time half: adding a variant without touching this test is a
+        // "non-exhaustive patterns" error here, which points at the list below.
+        fn is_enumerated_below(p: Permission) -> bool {
+            match p {
+                Permission::TenantRead
+                | Permission::TenantCreate
+                | Permission::TenantAdmin
+                | Permission::EntityRead
+                | Permission::EntityCreate
+                | Permission::EntityUpdate
+                | Permission::EntityRegistryImport
+                | Permission::EntityArchive
+                | Permission::BookRead
+                | Permission::BookOpen
+                | Permission::BookClose
+                | Permission::BookExport
+                | Permission::BookImport
+                | Permission::BookStartOver
+                | Permission::BookReopen
+                | Permission::LegalHoldManage
+                | Permission::ActRead
+                | Permission::ActDraft
+                | Permission::ActEdit
+                | Permission::ActAdvance
+                | Permission::ActArchive
+                | Permission::SigningPerform
+                | Permission::DocumentGenerate
+                | Permission::TemplateManage
+                | Permission::LedgerRead
+                | Permission::LedgerRecover
+                | Permission::DataBackup
+                | Permission::DataExport
+                | Permission::DataWipe
+                | Permission::DataStartOver
+                | Permission::SettingsRead
+                | Permission::SettingsManage
+                | Permission::PlatformLogsWrite
+                | Permission::CaeRead
+                | Permission::CaeRefresh
+                | Permission::LawRead
+                | Permission::LawManage
+                | Permission::TrustManage
+                | Permission::UserRead
+                | Permission::UserManage
+                | Permission::RoleManage
+                | Permission::RoleAssign
+                | Permission::DelegationGrant
+                | Permission::DelegationRevoke => true,
+            }
+        }
+
+        // The runtime half: every enumerated variant must actually BE in ALL (= the Owner set).
+        for p in [
+            Permission::TenantRead,
+            Permission::TenantCreate,
+            Permission::TenantAdmin,
+            Permission::EntityRead,
+            Permission::EntityCreate,
+            Permission::EntityUpdate,
+            Permission::EntityRegistryImport,
+            Permission::EntityArchive,
+            Permission::BookRead,
+            Permission::BookOpen,
+            Permission::BookClose,
+            Permission::BookExport,
+            Permission::BookImport,
+            Permission::BookStartOver,
+            Permission::BookReopen,
+            Permission::LegalHoldManage,
+            Permission::ActRead,
+            Permission::ActDraft,
+            Permission::ActEdit,
+            Permission::ActAdvance,
+            Permission::ActArchive,
+            Permission::SigningPerform,
+            Permission::DocumentGenerate,
+            Permission::TemplateManage,
+            Permission::LedgerRead,
+            Permission::LedgerRecover,
+            Permission::DataBackup,
+            Permission::DataExport,
+            Permission::DataWipe,
+            Permission::DataStartOver,
+            Permission::SettingsRead,
+            Permission::SettingsManage,
+            Permission::PlatformLogsWrite,
+            Permission::CaeRead,
+            Permission::CaeRefresh,
+            Permission::LawRead,
+            Permission::LawManage,
+            Permission::TrustManage,
+            Permission::UserRead,
+            Permission::UserManage,
+            Permission::RoleManage,
+            Permission::RoleAssign,
+            Permission::DelegationGrant,
+            Permission::DelegationRevoke,
+        ] {
+            assert!(is_enumerated_below(p));
+            assert!(Permission::ALL.contains(&p), "{p} missing from ALL");
+        }
     }
 
     #[test]

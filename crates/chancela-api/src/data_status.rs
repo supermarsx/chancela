@@ -27,6 +27,7 @@ use tokio::task;
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::{authorizer, require_permission};
+use crate::data::{ReAuth, require_step_up};
 use crate::database::DatabaseEncryptionKeySource;
 use crate::error::ApiError;
 
@@ -321,6 +322,10 @@ impl fmt::Debug for DataKeyRotationPreflightRequest {
 pub struct DataKeyRotationExecuteRequest {
     #[serde(default, alias = "replacement_key")]
     new_key: Option<String>,
+    /// Step-up re-auth proof (§8-F) — required (t22). Never logged: [`fmt::Debug`] below is
+    /// hand-written and deliberately does not name this field at all.
+    #[serde(default)]
+    reauth: ReAuth,
 }
 
 impl fmt::Debug for DataKeyRotationExecuteRequest {
@@ -701,6 +706,11 @@ pub async fn execute_data_key_rotation(
     // read-only preflight if granted settings.manage, but not mutate the data-store key.
     let principal = authz.principal()?;
     authz.require(Permission::SettingsManage, Scope::Global)?;
+    // t22: rekeying the data store is irreversible — get it wrong and the store is unopenable — and
+    // an interactive session by itself is only proof that a session token exists, not that the
+    // operator is still at the keyboard. Additive: the preflight above stays session-only, so the
+    // safe rehearsal is not made harder than the act it rehearses.
+    require_step_up(&state, &actor, &req.reauth).await?;
 
     let Some(data_dir) = state.data_dir() else {
         return Err(ApiError::Unprocessable(
@@ -3130,11 +3140,20 @@ mod tests {
     fn key_rotation_execute_request_debug_redacts_key_material() {
         let req = DataKeyRotationExecuteRequest {
             new_key: Some("new-secret".to_owned()),
+            // t22 added a step-up proof to this body. The hand-written `Debug` below names only
+            // `new_key`, so the password/recovery phrase can never reach a log line — pin that,
+            // because the redaction is a property of the impl, not of the type.
+            reauth: ReAuth {
+                password: Some("operator-password".to_owned()),
+                recovery_phrase: Some("recovery-phrase-secret".to_owned()),
+            },
         };
 
         let debug = format!("{req:?}");
 
         assert!(debug.contains("configured"));
         assert!(!debug.contains("new-secret"));
+        assert!(!debug.contains("operator-password"));
+        assert!(!debug.contains("recovery-phrase-secret"));
     }
 }

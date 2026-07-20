@@ -108,7 +108,9 @@ impl ScopedPermissionSet {
 /// - Each [`RoleAssignment`] contributes its role's whole permission-set at the assignment's scope
 ///   (a missing role in the catalog contributes nothing — fail-closed).
 /// - Each **active** (started, non-revoked, non-expired) [`Delegation`] whose `to == principal`
-///   contributes its single permission at its scope, into the *delegated* bucket.
+///   contributes **every** permission in its set ([`Delegation::permissions`]) at its scope, into
+///   the *delegated* bucket. A revoked or expired delegation contributes none of them — the set
+///   shares one lifetime, so it starts and ends together.
 ///
 /// `delegations` may be the full delegation table; only those addressed to `principal` are consulted.
 #[must_use]
@@ -131,7 +133,9 @@ pub fn effective_permissions(
 
     for d in delegations {
         if d.to == principal && d.is_active(now) {
-            set.delegated_grants.insert((d.permission, d.scope));
+            for perm in d.permissions() {
+                set.delegated_grants.insert((perm, d.scope));
+            }
         }
     }
 
@@ -205,6 +209,55 @@ pub fn can_delegate(
     books: &impl BookScope,
 ) -> bool {
     !perm.is_meta() && actor.has_via_role(perm, scope, books)
+}
+
+/// Why a permission may not be delegated. Returned by [`can_delegate_all`] so the caller can name
+/// the offender instead of refusing the whole batch anonymously.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelegationRefusal {
+    /// The permission is a meta-permission, which is never delegable.
+    Meta(Permission),
+    /// The actor does not hold the permission **via a role** covering the scope — delegating it
+    /// would either escalate privilege or re-delegate a received grant.
+    NotHeldViaRole(Permission),
+}
+
+impl DelegationRefusal {
+    /// The permission that caused the refusal.
+    #[must_use]
+    pub fn permission(&self) -> Permission {
+        match *self {
+            DelegationRefusal::Meta(p) | DelegationRefusal::NotHeldViaRole(p) => p,
+        }
+    }
+}
+
+/// **Delegation invariant, applied element-wise.** May a principal with `actor` authority delegate
+/// *every* permission in `permissions` at `scope`?
+///
+/// Each element is put through [`can_delegate`] independently — there is no aggregate shortcut, so a
+/// batch can never smuggle a verb past the ceiling on the strength of its siblings. Returns the
+/// **first** offender (in iteration order) rather than a bare bool, so the caller can refuse the
+/// whole delegation and say which permission was the problem. An empty set is vacuously delegable;
+/// callers must reject it separately (a delegation of nothing is meaningless, not dangerous).
+///
+/// # Errors
+/// The first permission that is meta or not held via a role at `scope`.
+pub fn can_delegate_all(
+    actor: &ScopedPermissionSet,
+    permissions: impl IntoIterator<Item = Permission>,
+    scope: Scope,
+    books: &impl BookScope,
+) -> Result<(), DelegationRefusal> {
+    for perm in permissions {
+        if perm.is_meta() {
+            return Err(DelegationRefusal::Meta(perm));
+        }
+        if !actor.has_via_role(perm, scope, books) {
+            return Err(DelegationRefusal::NotHeldViaRole(perm));
+        }
+    }
+    Ok(())
 }
 
 /// **Last-Owner guard.** Given the number of principals that currently hold an administrative Owner
@@ -631,6 +684,124 @@ mod tests {
             Scope::Global,
             &books()
         ));
+    }
+
+    #[test]
+    fn a_multi_permission_delegation_contributes_every_verb() {
+        let cat = RoleCatalog::seeded_defaults();
+        let grant = Delegation::with_permissions(
+            uid(9),
+            uid(1),
+            [Permission::DataBackup, Permission::ActAdvance],
+            Scope::Global,
+        )
+        .unwrap();
+        let eff = effective_permissions(uid(1), &[], &cat, std::slice::from_ref(&grant), epoch());
+        assert!(has_permission(
+            &eff,
+            Permission::DataBackup,
+            Scope::Global,
+            &books()
+        ));
+        assert!(has_permission(
+            &eff,
+            Permission::ActAdvance,
+            Scope::Global,
+            &books()
+        ));
+        // Every verb lands in the *delegated* bucket, so none of them can be re-delegated.
+        assert_eq!(eff.role_grants().count(), 0);
+        assert!(!can_delegate(
+            &eff,
+            Permission::ActAdvance,
+            Scope::Global,
+            &books()
+        ));
+
+        // Revoking the delegation withdraws the whole set at once — the set shares one lifetime.
+        let mut revoked = grant;
+        revoked.revoked = true;
+        let eff = effective_permissions(uid(1), &[], &cat, &[revoked], epoch());
+        assert!(eff.is_empty());
+    }
+
+    #[test]
+    fn can_delegate_all_checks_element_wise_and_names_the_offender() {
+        let owner = owner_eff();
+        // A wholly-delegable batch passes.
+        assert_eq!(
+            can_delegate_all(
+                &owner,
+                [Permission::ActRead, Permission::ActAdvance],
+                Scope::Global,
+                &books()
+            ),
+            Ok(())
+        );
+        // One meta verb hidden behind delegable siblings still refuses the batch, by name.
+        let meta = Permission::META[0];
+        assert_eq!(
+            can_delegate_all(
+                &owner,
+                [Permission::ActRead, meta, Permission::ActAdvance],
+                Scope::Global,
+                &books()
+            ),
+            Err(DelegationRefusal::Meta(meta))
+        );
+
+        // Above-ceiling: a Gestor of entity 1 cannot smuggle an entity-2 grant in behind a held one.
+        let cat = RoleCatalog::seeded_defaults();
+        let gestor = effective_permissions(
+            uid(1),
+            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1)))],
+            &cat,
+            &[],
+            epoch(),
+        );
+        assert_eq!(
+            can_delegate_all(
+                &gestor,
+                [Permission::BookOpen, Permission::DataWipe],
+                Scope::Entity(ent(1)),
+                &books()
+            ),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::DataWipe))
+        );
+    }
+
+    #[test]
+    fn a_received_multi_delegation_cannot_be_re_delegated_element_wise() {
+        let cat = RoleCatalog::seeded_defaults();
+        // The attacker holds Leitor via a role and DataWipe only by delegation.
+        let attacker = effective_permissions(
+            uid(1),
+            &[RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            &cat,
+            &[Delegation::new(
+                uid(9),
+                uid(1),
+                Permission::DataWipe,
+                Scope::Global,
+            )],
+            epoch(),
+        );
+        assert!(has_permission(
+            &attacker,
+            Permission::DataWipe,
+            Scope::Global,
+            &books()
+        ));
+        // Pairing it with a role-held verb does not launder it into a delegable batch.
+        assert_eq!(
+            can_delegate_all(
+                &attacker,
+                [Permission::ActRead, Permission::DataWipe],
+                Scope::Global,
+                &books()
+            ),
+            Err(DelegationRefusal::NotHeldViaRole(Permission::DataWipe))
+        );
     }
 
     #[test]

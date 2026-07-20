@@ -273,8 +273,10 @@ async fn persist(state: &AppState) -> Result<(), ApiError> {
     crate::sidecar_store::persist_users(state).await
 }
 
-/// `POST /v1/users` — create a profile. **Bootstrap (t41):** when no users exist yet, callable
-/// WITHOUT a session. Once at least one user exists, a valid session is required.
+/// `POST /v1/users` — create a profile. **Bootstrap (t41):** on a genuinely uninitialised instance
+/// (no users AND no durable user directory — see [`is_uninitialised_instance`]) this is callable
+/// WITHOUT a session and the created user is the instance's Owner\@Global. Once the instance is
+/// initialised, a valid session plus `user.manage`\@Global is required.
 pub async fn create_user(
     State(state): State<AppState>,
     parts: axum::http::HeaderMap,
@@ -283,7 +285,7 @@ pub async fn create_user(
 ) -> Result<(StatusCode, Json<UserView>), ApiError> {
     let (session_username, is_bootstrap) = {
         let user_count = state.users.read().await.len();
-        if user_count == 0 {
+        if user_count == 0 && is_uninitialised_instance(&state) {
             (None, true)
         } else {
             let token = parts
@@ -379,6 +381,34 @@ pub async fn create_user(
     }
 
     Ok((StatusCode::CREATED, Json(UserView::from(&user))))
+}
+
+/// Whether this instance is genuinely **uninitialised** — the only state in which the
+/// unauthenticated first-run bootstrap (`POST /v1/users` with no session ⇒ Owner\@Global) may fire.
+///
+/// An empty in-memory user map is NOT sufficient evidence on its own. On the file-backed
+/// (SQLite / single-node) path `load_users` is deliberately malformed-tolerant — an unreadable or
+/// corrupt `users.json` loads as `None` and boots as **zero users**, which would otherwise let an
+/// unauthenticated caller mint themselves an Owner\@Global on an instance that already has an
+/// operator directory (and then overwrite that directory on the next `persist_users`). So the
+/// durable evidence is consulted too: an existing users document means "already initialised",
+/// whatever the in-memory map says.
+///
+/// - **file-backed with a data dir:** uninitialised ⇔ `users.json` does not exist. A fresh install
+///   has no file; the first successful create writes one; a factory reset removes the sidecars
+///   (so a reset instance legitimately becomes bootstrappable again — it is not bricked).
+/// - **DB-backed sidecars (Postgres):** boot hydration already fails startup closed on a store
+///   error, so an empty user table is authoritative.
+/// - **pure in-memory state (tests, ephemeral):** nothing durable to consult; the map is
+///   authoritative.
+pub(crate) fn is_uninitialised_instance(state: &AppState) -> bool {
+    if state.sidecars_db_backed {
+        return true;
+    }
+    match state.data_dir() {
+        Some(dir) => !dir.join(USERS_FILE).exists(),
+        None => true,
+    }
 }
 
 fn bootstrap_state_for_insert(

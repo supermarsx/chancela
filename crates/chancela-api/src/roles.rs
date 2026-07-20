@@ -248,12 +248,30 @@ pub async fn effective_permissions_for(
             )
         })
         .collect();
+    // Continuous revalidation, applied **per delegated permission**. A delegation may carry several
+    // verbs (t26); the grantor's authority can decay verb-by-verb, so each is rechecked against
+    // their *current* role authority independently and the delegation is narrowed to the survivors.
+    // A delegation whose grantor still holds nothing it granted contributes nothing at all — the
+    // primary verb surviving must never keep an extra alive (that would retain revoked authority).
     let delegations: Vec<Delegation> = stored_delegations
         .into_iter()
-        .filter(|d| {
-            grantor_role_authority
-                .get(&d.from)
-                .is_some_and(|eff| eff.has_via_role(d.permission, d.scope, &relations))
+        .filter_map(|d| {
+            let eff = grantor_role_authority.get(&d.from)?;
+            let scope = d.scope;
+            let mut retained: Vec<Permission> = d
+                .permissions()
+                .into_iter()
+                .filter(|&p| eff.has_via_role(p, scope, &relations))
+                .collect();
+            if retained.is_empty() {
+                return None;
+            }
+            let extra_permissions = retained.split_off(1);
+            Some(Delegation {
+                permission: retained[0],
+                extra_permissions,
+                ..d
+            })
         })
         .collect();
 
@@ -1186,6 +1204,44 @@ mod tests {
 
         assert!(!permits(&eff, Permission::ActAdvance, Scope::Global));
         assert_eq!(state.delegations.read().await.len(), 1);
+    }
+
+    /// t26 — continuous revalidation is **per permission**. A grantor who delegated a set and then
+    /// lost one of its verbs keeps conveying only the verbs they still hold via a role; the ones
+    /// they lost stop resolving immediately. The surviving primary must not keep an extra alive.
+    #[tokio::test]
+    async fn t26_a_multi_permission_delegation_decays_verb_by_verb_with_the_grantor() {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        // The grantor delegated act.advance + data.backup, but now holds only act.advance.
+        let narrowed_role = custom_role(0xA11CE, "Act operator", &[Permission::ActAdvance]);
+        let grantor = user(
+            1,
+            "2026-01-01T00:00:00Z",
+            vec![RoleAssignment::new(narrowed_role.id, Scope::Global)],
+        );
+        let grantee = user(2, "2026-01-02T00:00:00Z", vec![]);
+        let delegation = StoredDelegation::new(
+            DelegationId(Uuid::from_u128(1)),
+            now.format(&Rfc3339).expect("valid timestamp"),
+            Delegation::with_permissions(
+                AuthzUserId(grantor.id.0),
+                AuthzUserId(grantee.id.0),
+                [Permission::ActAdvance, Permission::DataBackup],
+                Scope::Global,
+            )
+            .expect("non-empty set"),
+        );
+        let state = state_with_rbac(
+            vec![grantor, grantee.clone()],
+            [narrowed_role].into_iter().collect(),
+            vec![delegation],
+        )
+        .await;
+
+        let eff = effective_permissions_for(&state, grantee.id, now).await;
+        assert!(permits(&eff, Permission::ActAdvance, Scope::Global));
+        // The verb the grantor no longer holds is dropped even though its sibling survived.
+        assert!(!permits(&eff, Permission::DataBackup, Scope::Global));
     }
 
     #[tokio::test]

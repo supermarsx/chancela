@@ -25,6 +25,7 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{authorizer, forbidden, require_permission};
+use crate::data::{ReAuth, require_step_up};
 use crate::dto::{LedgerEventView, format_date};
 use crate::error::ApiError;
 use crate::sidecar_store::persist_users;
@@ -7490,6 +7491,9 @@ pub struct ExecuteErasureBody {
     /// Must equal the approved authorization digest AND a fresh recompute at execution time.
     #[serde(default)]
     pub preflight_digest: String,
+    /// Step-up re-auth proof (§8-F) — required (t22).
+    #[serde(default)]
+    pub reauth: ReAuth,
 }
 
 struct ErasurePlanEnumeration {
@@ -7837,6 +7841,10 @@ pub async fn erasure_execute(
 ) -> Result<Json<DsrRequestView>, ApiError> {
     require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
     reject_api_key_for_destructive(&actor)?;
+    // t22: erasure destroys the subject DEK and physically removes the directory identity. Dual
+    // control already forces a second principal to approve, but the EXECUTING principal proved
+    // nothing beyond holding a session — step-up closes that, on the same terms as the wipes.
+    require_step_up(&state, &actor, &body.reauth).await?;
     let subject = UserId(user_id);
     let request_id = DsrRequestId(request_id);
     let executed_by = actor.resolve("api");

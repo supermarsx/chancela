@@ -22,7 +22,7 @@ use chancela_authz::Permission;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{require_permission, scope_of_book, scope_of_entity};
+use crate::authz::{authorizer, forbidden, require_permission, scope_of_book, scope_of_entity};
 use crate::dto::{
     ActView, BookView, BooksQuery, CloseBook, CreateBook, normalize_termo_signatories,
     read_redaction_for_actor,
@@ -382,25 +382,34 @@ pub async fn list_book_acts(
 }
 
 /// `GET /v1/books/{id}/legal-hold` — read the persisted book-level legal hold.
+///
+/// Readable with EITHER `book.export` (unchanged — visibility of a hold was never the risk, and the
+/// export-holding roles have always been able to see one) OR `legal_hold.manage`. The second half
+/// matters: t22 seeded the hold verb to Legal Counsel, which deliberately holds no export authority,
+/// and an operator who may place a hold but cannot read one back is not a coherent role.
 pub async fn get_legal_hold(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     actor: CurrentActor,
 ) -> Result<Json<LegalHoldView>, ApiError> {
     let book_id = BookId(id);
-    require_permission(
-        &state,
-        &actor,
-        Permission::BookExport,
-        scope_of_book(book_id),
-    )
-    .await?;
+    let scope = scope_of_book(book_id);
+    let authz = authorizer(&state, &actor).await?;
+    if !authz.permits(Permission::BookExport, scope)
+        && !authz.permits(Permission::LegalHoldManage, scope)
+    {
+        return Err(forbidden());
+    }
     let books = state.books.read().await;
     let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
     Ok(Json(LegalHoldView::from(book.legal_hold.as_ref())))
 }
 
 /// `PUT /v1/books/{id}/legal-hold` — set or replace a persisted book-level legal hold.
+///
+/// Gated by `legal_hold.manage`, NOT the `book.export` verb it shared until t22: a hold is the
+/// retention control that stands between a book and disposal, and `book.export` is held by 9 of the
+/// 15 seeded roles (including Auditor and API Client) precisely because export is meant to be broad.
 pub async fn set_legal_hold(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -411,7 +420,7 @@ pub async fn set_legal_hold(
     require_permission(
         &state,
         &actor,
-        Permission::BookExport,
+        Permission::LegalHoldManage,
         scope_of_book(book_id),
     )
     .await?;
@@ -453,6 +462,12 @@ pub async fn set_legal_hold(
 }
 
 /// `DELETE /v1/books/{id}/legal-hold` — clear the persisted book-level legal hold.
+///
+/// Same `legal_hold.manage` gate as [`set_legal_hold`], and this is the asymmetric-risk half:
+/// releasing a hold unblocks destruction of the evidentiary record. Set and release are kept on the
+/// SAME verb deliberately — a spurious hold is itself a denial of a lawful disposal, so both
+/// directions are compliance decisions, and an operator who may place a hold but never lift it
+/// cannot correct their own mistake without escalating.
 pub async fn clear_legal_hold(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -463,7 +478,7 @@ pub async fn clear_legal_hold(
     require_permission(
         &state,
         &actor,
-        Permission::BookExport,
+        Permission::LegalHoldManage,
         scope_of_book(book_id),
     )
     .await?;
