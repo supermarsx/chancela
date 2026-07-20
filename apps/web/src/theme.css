@@ -2185,7 +2185,53 @@ a.btn.btn--iconOnly {
   }
 }
 
+/* --------------------------------------------------------------------------
+ * Entities list — column widths proportional to what each column HOLDS (t72).
+ *
+ * The table was already `table-layout: fixed` but declared no per-column width
+ * except Actions, and CSS 2.1 §17.5.2.1 then splits the remaining width EQUALLY.
+ * Measured at the shell's 934px content box: NIPC (9 digits, needs 99px) and Tipo
+ * ("Unip. Lda.", needs 91px) each claimed 217px, while Entidade — the one column
+ * whose value is long and meaningful — got the same 217px and clipped a real name
+ * by 278px. With all 14 columns enabled every column collapsed to 67px and the
+ * NIPC itself truncated mid-identifier.
+ *
+ * The `--entity-cell-max` max-widths below the fold were inert throughout: under a
+ * fixed layout only `width` on the first row participates in column sizing, so a
+ * `max-width` on the `td` could never widen or narrow a column. They are replaced
+ * by real widths on the header cells.
+ *
+ * Each fixed-shape column now declares the width its value actually needs — an
+ * identifier, a date, an enum label and a badge are all bounded — and `Entidade`
+ * is the ONLY column left `auto`, so it absorbs every pixel of slack. The column
+ * set is user-configurable (5 by default, up to 14), so the table's floor cannot
+ * be a constant: `--entities-table-floor` is summed from these same tokens by
+ * `EntitiesPage` for the columns actually shown, and `.table-wrap` scrolls when a
+ * wide set outgrows the card (the Minutas-catalog treatment) instead of crushing
+ * every column into an unreadable stub.
+ * -------------------------------------------------------------------------- */
+
 .entities-table {
+  /* One token per column, consumed twice: by the `th` width rules below and by the
+     floor `EntitiesPage` composes from the visible subset. Sized from measured
+     content, not guessed: an identifier is 9 monospace digits, a date is
+     dd/mm/aaaa, a family/kind is a short enum label, a badge line is a chip plus
+     a truncatable meta trail. */
+  --ec-name: 18rem; /* floor only — the column itself stays `auto` */
+  --ec-nipc: 7.5rem;
+  --ec-seat: 16rem;
+  --ec-type: 6.5rem;
+  --ec-matricula: 7.5rem;
+  --ec-constitution: 7.5rem;
+  --ec-capital: 9rem;
+  --ec-cae: 13rem;
+  --ec-registry: 14rem;
+  --ec-last-registry-change: 13rem;
+  --ec-fiscal-year-end: 7rem;
+  --ec-last-book: 15rem;
+  --ec-last-activity: 13rem;
+  --ec-actions: 3.6rem;
+
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
@@ -2193,14 +2239,17 @@ a.btn.btn--iconOnly {
 
 .entities-table .table-wrap {
   max-width: 100%;
-  overflow-x: hidden;
+  /* Was `hidden`, which is what turned "too many columns" into "every column
+     crushed and clipped". A wide column set now scrolls inside its own bounded box. */
+  overflow-x: auto;
 }
 
 .entities-table .table {
   width: 100%;
-  max-width: 100%;
   table-layout: fixed;
-  min-width: 0;
+  /* Composed by EntitiesPage from the tokens above for the visible columns; the
+     fallback keeps the table fluid if the property is ever absent. */
+  min-width: var(--entities-table-floor, 0);
 }
 
 .entities-table .table th,
@@ -2215,45 +2264,63 @@ a.btn.btn--iconOnly {
   text-overflow: ellipsis;
 }
 
+/* `Name` is deliberately absent: leaving it `auto` makes it the single column that
+   takes the leftover width, which is the whole point — an entity name is the long,
+   variable, meaningful value and everything else is bounded. */
+.entities-table .table th[data-entity-column='Nipc'] {
+  width: var(--ec-nipc);
+}
+
+.entities-table .table th[data-entity-column='Seat'] {
+  width: var(--ec-seat);
+}
+
+.entities-table .table th[data-entity-column='Type'] {
+  width: var(--ec-type);
+}
+
+.entities-table .table th[data-entity-column='Matricula'] {
+  width: var(--ec-matricula);
+}
+
+.entities-table .table th[data-entity-column='Constitution'] {
+  width: var(--ec-constitution);
+}
+
+.entities-table .table th[data-entity-column='Capital'] {
+  width: var(--ec-capital);
+}
+
+.entities-table .table th[data-entity-column='Cae'] {
+  width: var(--ec-cae);
+}
+
+.entities-table .table th[data-entity-column='Registry'] {
+  width: var(--ec-registry);
+}
+
+.entities-table .table th[data-entity-column='LastRegistryChange'] {
+  width: var(--ec-last-registry-change);
+}
+
+.entities-table .table th[data-entity-column='FiscalYearEnd'] {
+  width: var(--ec-fiscal-year-end);
+}
+
+.entities-table .table th[data-entity-column='LastBook'] {
+  width: var(--ec-last-book);
+}
+
+.entities-table .table th[data-entity-column='LastActivity'] {
+  width: var(--ec-last-activity);
+}
+
 .entities-table .table th[data-entity-column='Actions'] {
-  width: 4.2rem;
+  width: var(--ec-actions);
   text-align: right;
 }
 
-.entities-table__cell {
-  --entity-cell-max: 16rem;
-}
-
-.entities-table__cell[data-entity-column='Name'] {
-  --entity-cell-max: clamp(14rem, 28vw, 24rem);
-}
-
-.entities-table__cell[data-entity-column='Seat'],
-.entities-table__cell[data-entity-column='Cae'],
-.entities-table__cell[data-entity-column='Registry'],
-.entities-table__cell[data-entity-column='LastRegistryChange'],
-.entities-table__cell[data-entity-column='LastBook'] {
-  --entity-cell-max: clamp(13rem, 24vw, 22rem);
-}
-
-.entities-table__cell[data-entity-column='Type'] {
-  --entity-cell-max: clamp(8rem, 13vw, 12rem);
-}
-
-.entities-table__cell[data-entity-column='LastActivity'] {
-  --entity-cell-max: clamp(10rem, 16vw, 14rem);
-}
-
-.entities-table__cell[data-entity-column='Nipc'],
-.entities-table__cell[data-entity-column='Matricula'],
-.entities-table__cell[data-entity-column='Constitution'],
-.entities-table__cell[data-entity-column='Capital'],
-.entities-table__cell[data-entity-column='FiscalYearEnd'] {
-  --entity-cell-max: 12rem;
-}
-
 .entities-table__cell--truncate {
-  max-width: var(--entity-cell-max);
   overflow: hidden;
 }
 
@@ -2261,10 +2328,6 @@ a.btn.btn--iconOnly {
   display: block;
   line-height: 1.25;
   white-space: nowrap;
-}
-
-.entities-table__cell--truncate > .entity-cell-line {
-  max-width: var(--entity-cell-max);
 }
 
 .entity-cell-line {
@@ -2283,6 +2346,37 @@ a.btn.btn--iconOnly {
 .entity-cell-line .badge {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+/* A NIPC is an identifier: half of one is worse than none, so this cell never
+   ellipsises. The column is sized for the nine digits; the "por validar" flag is
+   an exception state that would double the column's width for every ordinary row,
+   so it wraps under the number on the rare unvalidated entity instead of clipping
+   either the flag or the identifier. */
+.entity-cell-line--nipc {
+  flex-wrap: wrap;
+}
+
+.entity-cell-line--nipc > code {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+/* Última atividade is a bounded date next to an UNbounded label — event labels run to
+   sixty characters in some locales, so no column width can hold the worst case. The
+   date is therefore the part that never shrinks (a half-date reads as broken), and the
+   label is the part that ellipsises; the cell's own tooltip already carries the full
+   label, the wire kind, the exact instant and the actor, on hover AND focus, so nothing
+   the ellipsis hides is unreachable. */
+.entity-cell-line--activity .badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entity-cell-line--activity .entity-cell-line__text {
+  flex: 0 0 auto;
 }
 
 .entity-cell-line__primary,
@@ -2304,7 +2398,7 @@ a.btn.btn--iconOnly {
 }
 
 .entities-table__cell--actions {
-  width: 4.2rem;
+  width: var(--ec-actions);
 }
 
 .entities-table .table td.entities-table__cell--actions {
@@ -3541,6 +3635,130 @@ a,
    sub-nav (t66-webfix #3). */
 .settings-section {
   max-width: none;
+}
+
+/* --- THE settings row grid (t69) ---------------------------------------------------
+   The one shared layout rule for configuration forms. A settings tab opts in by adding
+   ONE class to a form container it already has:
+
+       <div className="form settings-rows">
+
+   and every `Field` inside it becomes an aligned label-column / control-column row,
+   separated by a hairline — so a tab reads as a neat table of settings.
+
+   It is deliberately NOT a `<table>`. These are form controls, not tabular data; a real
+   table would report them to a screen reader as a grid of cells and strip the label/control
+   relationship that makes a form usable. Aligned CSS columns give the same neatness and
+   tell the truth. Where a settings surface genuinely IS repeated homogeneous rows (the TSL
+   sources, the TSA providers, the API keys, the SMTP configuration state), use the `Table`
+   primitive with its visually-hidden `caption` instead — that content is tabular and should
+   say so.
+
+   Nothing inside `Field` changes, so every `<label for>` association is untouched: this is
+   pure layout. The label track is a token, so all tabs align identically and one edit
+   re-tunes the whole settings area.
+
+   NOT to be confused with `.settings-grid` a few rules above: that one tiles whole CARDS into
+   auto-fit 22rem columns. This one lays out the FIELDS inside a single card. The names are close
+   because the concepts are adjacent; the distinction is cards vs. rows.
+
+   NEW SETTINGS TAB? Add `settings-rows` to your `form` container. Do not re-implement this. */
+:root {
+  /* The label column, sized for FOURTEEN locales rather than for pt-PT.
+     Settings labels are much longer in some of them — the longest single unbreakable word in
+     the settings catalogs is nl-NL's "Voorkeurshandtekeningfamilie" (28 chars), then fi-FI's
+     "Oletusnumerointimalli" (21) and de-DE's "Nummerierungsschema" (19), against 15 for pt-PT.
+     At the label's 0.72rem uppercase with 0.1em tracking that word alone is ~14.5rem, so a
+     track sized to Portuguese would have clipped or overflowed in Dutch.
+
+     `--settings-label-col` is the FALLBACK fixed track (see the subgrid block below, which is
+     what actually runs in every browser we ship to). It only has to be wide enough that a long
+     label wraps to a second line rather than looking broken, and `overflow-wrap` below means
+     even the 28-char word breaks instead of overflowing. */
+  --settings-label-col: 15rem;
+  /* The ceiling for the content-sized track: the column grows to the widest label in the card,
+     but never past this, so one very long label cannot squeeze every control on the tab. */
+  --settings-label-col-max: 22rem;
+}
+
+.settings-rows > .field {
+  display: grid;
+  grid-template-columns: minmax(0, var(--settings-label-col)) minmax(0, 1fr);
+  column-gap: calc(var(--space) * 1.25);
+  row-gap: 0.3rem;
+  align-items: start;
+}
+
+/* The label moves beside the control instead of above it. The nudge aligns its uppercase
+   cap-height with the control's first text line rather than with the control's box top. */
+.settings-rows > .field > .field__label,
+.settings-rows > .field > .field__labelrow {
+  grid-column: 1;
+  grid-row: 1;
+  padding-top: 0.5rem;
+  /* A compound noun longer than the track breaks rather than escaping it. Without this, Dutch
+     and Finnish labels would overflow the column instead of wrapping inside it. */
+  overflow-wrap: anywhere;
+}
+
+/* The control and anything explaining it — hint, error — stack in the second column. */
+.settings-rows > .field > *:not(.field__label):not(.field__labelrow) {
+  grid-column: 2;
+}
+
+/* Row separation: a hairline instead of `.form`'s plain 1rem gap. This is what makes the
+   sections read as neat bands rather than as one undifferentiated column. */
+.settings-rows > * + * {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Below the point where a label column plus a usable control still fit, drop back to the
+   stacked layout. Aligned columns that force a horizontal scroll are worse than no
+   alignment, so the columns collapse rather than the panel scrolling. */
+@media (max-width: 48rem) {
+  .settings-rows > .field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-rows > .field > .field__label,
+  .settings-rows > .field > .field__labelrow,
+  .settings-rows > .field > *:not(.field__label):not(.field__labelrow) {
+    grid-column: 1;
+  }
+
+  .settings-rows > .field > .field__label,
+  .settings-rows > .field > .field__labelrow {
+    padding-top: 0;
+  }
+}
+
+/* The label column, sized by CONTENT rather than by a guess — this is what actually runs.
+   Each `.field` keeps its own grid but borrows the container's tracks via `subgrid`, so the
+   first track is measured once across every row: it grows to fit the widest label in the card
+   (capped at `--settings-label-col-max`) and shrinks when the labels are short. That is what
+   makes the same rule sit correctly in pt-PT, de-DE, fi-FI and nl-NL without a per-locale
+   override — the column is whatever that locale's longest label needs.
+
+   The fixed-track rule above remains the fallback for anything without `subgrid`, and the
+   min-width bound keeps this off the narrow layout, where the columns are collapsed anyway. */
+@media (min-width: 48.01rem) {
+  @supports (grid-template-columns: subgrid) {
+    .settings-rows {
+      display: grid;
+      grid-template-columns: fit-content(var(--settings-label-col-max)) minmax(0, 1fr);
+    }
+
+    /* Everything that is not a Field — a lede, a hint, an actions row — spans both tracks. */
+    .settings-rows > * {
+      grid-column: 1 / -1;
+    }
+
+    .settings-rows > .field {
+      grid-template-columns: subgrid;
+    }
+  }
 }
 
 .settings-toggle {
@@ -4790,6 +5008,11 @@ a.btn--primary {
   white-space: nowrap;
 }
 
+/* The unabbreviated digest, carried for print only (t68) — see `ui/Digest.tsx`. */
+.digest__full {
+  display: none;
+}
+
 .digest__copy {
   display: inline-flex;
   align-items: center;
@@ -5515,6 +5738,204 @@ a.btn--primary {
   color: var(--warn);
   border-color: var(--warn);
   background: var(--warn-bg);
+}
+
+/* ==========================================================================
+ * Printing a signature-verification report (t68).
+ *
+ * The verification report is the surface an operator hands to somebody else, so it
+ * has to leave the app as a document. `printValidationReport()` toggles
+ * `body.printing-validation` immediately before `window.print()` and removes it on
+ * `afterprint` — the same scoping trick `documents.css` uses for `printing-doc`, so
+ * these rules stay dormant for every other page and every other print.
+ *
+ * The verdict column is the reason most of this exists: on screen a verdict is a
+ * tinted pill, and a tint is the first thing a monochrome printer discards. The
+ * label text is already the verdict (t35 made sure of that); print drops the tints
+ * entirely so nothing is left depending on colour, and the label carries it alone.
+ * ========================================================================== */
+
+/* The provenance header exists in the DOM at all times and is paper-only. */
+.validation-print {
+  display: none;
+}
+
+@media print {
+  body.printing-validation {
+    /* Hide the whole running app without needing to know its chrome's class names,
+       then re-reveal only the report subtree. Nav, sub-nav, titlebar, buttons and
+       the leather background all go with it. */
+    visibility: hidden;
+    background: #fff;
+  }
+
+  body.printing-validation .pdf-validator-report,
+  body.printing-validation .pdf-validator-report * {
+    visibility: visible;
+  }
+
+  body.printing-validation .pdf-validator-report {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    gap: 0.6rem;
+    background: #fff;
+    color: #000;
+    font-size: 9pt;
+  }
+
+  /* Controls print as dead chrome: a paper button is noise, and the copy glyph on
+     every digest would litter the evidence column. */
+  body.printing-validation .pdf-validator-report-actions,
+  body.printing-validation .pdf-validator-action-buttons,
+  body.printing-validation .pdf-validator-report .digest__copy,
+  body.printing-validation .pdf-validator-report button {
+    display: none !important;
+  }
+
+  body.printing-validation .validation-print {
+    display: block;
+    margin-bottom: 10pt;
+  }
+
+  .validation-print__title {
+    margin: 0;
+    font-size: 13pt;
+    font-weight: 700;
+  }
+
+  .validation-print__fields {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 10pt;
+    row-gap: 2pt;
+    margin: 7pt 0 0;
+    font-size: 8.5pt;
+  }
+
+  .validation-print__pair {
+    display: contents;
+  }
+
+  .validation-print__fields dt {
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .validation-print__fields dd {
+    margin: 0;
+    /* A SHA-256 is 64 characters and must never run off the sheet. */
+    overflow-wrap: anywhere;
+  }
+
+  .validation-print__mono {
+    font-family: var(--font-mono, monospace);
+  }
+
+  .validation-print__notice {
+    margin: 7pt 0 0;
+    padding-top: 5pt;
+    border-top: 0.5pt solid #999;
+    font-size: 7.5pt;
+    line-height: 1.4;
+  }
+
+  /* The on-screen summary card repeats the filename and notice the print header now
+     states properly; printing both would open the sheet with a duplicate. */
+  body.printing-validation .pdf-validator-summary {
+    display: none;
+  }
+
+  /* The wrapper scrolls on screen and would CLIP on paper; the min-width floor that
+     stops the three columns crushing at 900px is equally a guarantee of clipping on
+     a 180mm text block. Both are released for print and the table reflows instead. */
+  body.printing-validation .pdf-validator-report .table-wrap {
+    overflow: visible !important;
+    max-width: none;
+  }
+
+  body.printing-validation .pdf-validator-table .table {
+    min-width: 0;
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+  }
+
+  /* A verdict table that runs to several pages is unreadable if only page one is
+     labelled. */
+  body.printing-validation .pdf-validator-report thead {
+    display: table-header-group;
+  }
+
+  body.printing-validation .pdf-validator-report tr,
+  body.printing-validation .pdf-validator-report .pdf-validator-table__group th {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Keep a group heading with at least the rows it introduces. */
+  body.printing-validation .pdf-validator-table__group {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  body.printing-validation .pdf-validator-report .table th,
+  body.printing-validation .pdf-validator-report .table td {
+    padding: 2.5pt 4pt;
+    border-bottom: 0.4pt solid #bbb;
+    color: #000;
+    background: none !important;
+    overflow-wrap: anywhere;
+  }
+
+  body.printing-validation .pdf-validator-report thead th {
+    border-bottom: 0.8pt solid #000;
+    text-align: left;
+  }
+
+  /* Monochrome verdicts. Every tint is dropped — the pill keeps a hairline outline
+     so it still reads as a discrete verdict, and the text label carries the meaning
+     on its own. A failure additionally gets weight, which survives any printer. */
+  body.printing-validation .pdf-validator-verdict__pill {
+    padding: 0.5pt 3pt;
+    border: 0.4pt solid #000 !important;
+    color: #000 !important;
+    background: none !important;
+    font-size: 7.5pt;
+  }
+
+  body.printing-validation
+    .pdf-validator-verdict[data-verdict='fail']
+    .pdf-validator-verdict__pill {
+    border-width: 1pt !important;
+    font-weight: 700;
+  }
+
+  /* An abbreviated digest is useless on paper — nothing to hover, nothing to copy —
+     so the full value (always in the DOM, hidden on screen) takes its place. */
+  body.printing-validation .pdf-validator-report .digest__value {
+    display: none;
+  }
+
+  body.printing-validation .pdf-validator-report .digest__full {
+    display: inline;
+    font-family: var(--font-mono, monospace);
+    overflow-wrap: anywhere;
+  }
+
+  /* The ASiC inspector is built out of <details>; `printValidationReport` opens the
+     collapsed ones, and this keeps the disclosure triangle off the sheet. */
+  body.printing-validation .pdf-validator-report summary {
+    list-style: none;
+    font-weight: 700;
+  }
+
+  body.printing-validation .pdf-validator-report summary::marker,
+  body.printing-validation .pdf-validator-report summary::-webkit-details-marker {
+    display: none;
+  }
 }
 
 /* ==========================================================================
@@ -6591,6 +7012,15 @@ a.btn--primary {
   display: none;
 }
 
+/* A relative timestamp ("há 3 minutos") carries its exact instant in a hover tooltip and an
+ * `aria-label` — neither of which exists on paper. On a printed sheet a relative date is
+ * unanchored and therefore worthless as evidence, so the two halves swap for print: the
+ * relative phrase drops out and the absolute instant becomes the visible text. See
+ * `ui/DateTime.tsx` (`RelativeDateTime`). */
+.datetime__absolute {
+  display: none;
+}
+
 @page {
   margin: 18mm 16mm;
 }
@@ -6599,6 +7029,15 @@ a.btn--primary {
   /* Force a light paper document regardless of the on-screen theme. */
   :root {
     color-scheme: light;
+  }
+
+  /* Swap the relative phrase for the absolute instant (see `.datetime__absolute` above). */
+  .datetime__relative {
+    display: none;
+  }
+
+  .datetime__absolute {
+    display: inline;
   }
 
   /* The app shell holds html/body at 100% height with overflow hidden (the window
@@ -6611,8 +7050,15 @@ a.btn--primary {
     background: #fff !important;
   }
 
-  /* Hide the whole running application; only the portaled abstract remains. */
-  #root {
+  /* Hide the whole running application; only the portaled abstract remains.
+   *
+   * Scoped to prints that are NOT isolating a subtree of the live app. This rule is
+   * unconditional on `@media print`, so it applied to every print in the product:
+   * the document print (`body.printing-doc`, features/documents) reveals
+   * `.doc-preview`, which lives INSIDE `#root`, and `display: none` on the ancestor
+   * beat it — that print emitted a blank sheet. The validation-report print (t68)
+   * would have hit exactly the same wall. Both opt out here. */
+  body:not(.printing-doc):not(.printing-validation) #root {
     display: none !important;
   }
 
@@ -7645,6 +8091,128 @@ a.btn--primary {
   white-space: nowrap;
 }
 
+/* --- t67: a search that never scrolls away + a bookmark rail of the diploma's articles ------ */
+
+/* `.panel` clips with `overflow: hidden`, which would make it the sticky elements' scrollport and
+   pin them to a box that never scrolls. The reader defers its clipping to the app scroller so the
+   search bar and the article rail stick against the real viewport. */
+.leg-corpus {
+  overflow: visible;
+}
+
+/* The search box rides the top of the reader while a law's full text is read. It bleeds into the
+   panel's padding so the text scrolls under an opaque band, never behind a transparent gap. */
+.leg-corpus__searchbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0 -1.25rem;
+  padding: 0.5rem 1.25rem 0.6rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The active filter, stated in words beside the box (its "Limpar" way out sits next to it). */
+.leg-corpus__filter {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Text column + the article rail. Only a reader with a diploma open gets the second column. */
+.leg-corpus__layout {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.leg-corpus__main {
+  min-width: 0;
+}
+
+@media (min-width: 60rem) {
+  .leg-corpus__layout--indexed {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 17rem);
+    align-items: start;
+  }
+}
+
+/* The rail itself: sticky under the search bar, scrolling on its own so a long code's index
+   never stretches the page. */
+.leg-corpus__index {
+  position: sticky;
+  top: 4.25rem;
+  max-height: min(32rem, calc(100vh - 10rem));
+  overflow-y: auto;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.leg-corpus__index-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.leg-corpus__index-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leg-corpus__index-item {
+  display: grid;
+  width: 100%;
+  gap: 0.1rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.leg-corpus__index-item:hover,
+.leg-corpus__index-item:focus-visible {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.leg-corpus__index-item[aria-current] {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.leg-corpus__index-label {
+  font-family: var(--font-display);
+}
+
+.leg-corpus__index-heading {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+/* Narrow viewports: a floating right rail has nowhere to float without covering the statute, so
+   the index stops floating and reorders ABOVE the text as a capped, scrollable jump list. */
+@media (max-width: 59.99rem) {
+  .leg-corpus__index {
+    position: static;
+    order: -1;
+    max-height: 13rem;
+  }
+}
+
 .dashboard-archive-link {
   min-width: 2.25rem;
   min-height: 2.25rem;
@@ -8096,6 +8664,103 @@ a.btn--primary {
 @media (prefers-reduced-motion: reduce) {
   .skeleton {
     background-image: none;
+  }
+}
+
+/* --- Indeterminate loading bar (t74) ------------------------------------------- */
+/* The shared `<Loading>` wait. Replaces the bare muted paragraph that used to be the
+   only thing on screen during an unresolved route.
+
+   DELIBERATELY INDETERMINATE: the indicator sweeps across a fixed-width track and never
+   reports a percentage. We do not have a numerator for these waits, and a bar that
+   crawled to 90% on a timer would be a lie about state — costly in a product where the
+   real waits are signing, sealing and validation.
+
+   No `will-change` here (see the budget note on `.skeleton`): this is a transform
+   animation, which the compositor promotes on its own while it runs. */
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* The ~180ms delay is the point of this animation, not the 140ms fade: `both` holds the
+     `from` frame (opacity 0) through the delay, so a response that arrives quickly never
+     flashes a bar in and out — a flicker reads as a glitch, not as progress. The global
+     reduced-motion block zeroes `animation-duration` but NOT `animation-delay`, so the
+     anti-flicker delay survives there while the fade itself does not. */
+  animation: loading-appear 140ms ease-out 180ms both;
+}
+
+@keyframes loading-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.loading__track {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  width: 100%;
+  max-width: 22rem;
+  height: 0.25rem;
+  border-radius: var(--radius);
+  background-color: color-mix(in srgb, var(--text-muted) 22%, transparent);
+}
+
+.loading__indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  border-radius: inherit;
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 85%, transparent),
+    transparent
+  );
+  animation: loading-sweep 1.15s ease-in-out infinite;
+}
+
+@keyframes loading-sweep {
+  from {
+    transform: translateX(-105%);
+  }
+  to {
+    transform: translateX(315%);
+  }
+}
+
+.loading__label {
+  font-size: 0.85rem;
+}
+
+/* The route-level fallback: the bar is the whole page for a moment, so give it room and
+   keep it left-aligned with the content that is about to replace it (a centred indicator
+   would jump the eye away from where the page actually starts). */
+.route-loading {
+  padding: 2.5rem 0;
+}
+
+/* Reduced motion: the global block would freeze the sweep at its first frame — an
+   indicator parked off the left edge, i.e. an empty track that communicates nothing. So
+   the indicator is re-laid-out as a static filled bar instead. Still a bar, still themed,
+   simply not moving; the label carries the meaning either way. */
+@media (prefers-reduced-motion: reduce) {
+  .loading__indicator {
+    position: static;
+    /* `display: block` is load-bearing, not tidiness: dropping `position: absolute` returns
+       this span to `display: inline`, where `width` does not apply — the bar measured 0px
+       wide and the track rendered empty. */
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-image: none;
+    background-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    animation: none;
   }
 }
 
