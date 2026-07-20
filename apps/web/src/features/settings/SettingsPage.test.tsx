@@ -2461,7 +2461,6 @@ describe('SettingsPage', () => {
     // A segmented sub-tab per section (Gestão included).
     for (const name of [
       'Aparência',
-      'Identidade',
       'Documentos',
       'Assinaturas',
       'Gestão',
@@ -2489,6 +2488,25 @@ describe('SettingsPage', () => {
     // Switching to Sobre surfaces the /health version there.
     fireEvent.click(screen.getByRole('button', { name: 'Sobre' }));
     expect(await screen.findByText('9.9.9')).toBeTruthy();
+  });
+
+  it('hosts Identidade as its own card inside Documentos, and keeps its retired deep link working', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    // Identidade is no longer a sub-tab…
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+    expect(await screen.findByLabelText('Nome da organização')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Identidade' })).toBeNull();
+
+    // …but the old link lands on Documentos, which shows both cards, each under its own
+    // heading, and marks Documentos as the active sub-tab.
+    expect(screen.getByRole('heading', { name: 'Identidade', level: 3 })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Documentos', level: 3 })).toBeTruthy();
+    expect(screen.getByLabelText('URL de atualização do catálogo CAE')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Documentos' }).getAttribute('aria-pressed'),
+    ).toBe('true');
   });
 
   it('surfaces an initial settings read failure instead of loading forever', async () => {
@@ -3188,17 +3206,19 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/configuracoes']);
 
-    // Edit the org name under Identidade…
-    fireEvent.click(await screen.findByRole('button', { name: 'Identidade' }));
+    // Edit the org name under Documentos (Identidade is a card there now)…
+    fireEvent.click(await screen.findByRole('button', { name: 'Documentos' }));
     const nameInput = (await screen.findByLabelText('Nome da organização')) as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: 'Encosto Estratégico, Lda.' } });
 
-    // …then the CAE URL under Documentos (the working copy spans sub-tabs).
-    fireEvent.click(screen.getByRole('button', { name: 'Documentos' }));
     const caeUrl = (await screen.findByLabelText(
       'URL de atualização do catálogo CAE',
     )) as HTMLInputElement;
     fireEvent.change(caeUrl, { target: { value: 'https://catalog.example.pt/cae_dataset.json' } });
+
+    // …then the theme under Aparência (the working copy spans sub-tabs).
+    fireEvent.click(screen.getByRole('button', { name: 'Aparência' }));
+    fireEvent.change(await screen.findByLabelText('Tema'), { target: { value: 'dark' } });
 
     // Autosave is always-on (no manual "Guardar agora" button while enabled): the debounced
     // autosave PUTs the whole document on its own, spanning every edited sub-tab.
@@ -3212,7 +3232,7 @@ describe('SettingsPage', () => {
     const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
     // The whole document is sent, not a partial patch.
     expect(sent.organization.name).toBe('Encosto Estratégico, Lda.');
-    expect(sent.appearance).toBeTruthy();
+    expect(sent.appearance.theme).toBe('dark');
     expect(sent.documents).toBeTruthy();
     expect(sent.signing).toBeTruthy();
     // The audit actor is passed through (attributed from the session, not edited here).

@@ -10,7 +10,7 @@
  * (mounted in the shell) stays in step everywhere else in the app.
  *
  * Sections are reached through a segmented sub-nav (the Ferramentas idiom, via the shared
- * `<SubNav>`): Aparência · Identidade · Documentos · Assinaturas · Gestão · Sobre. The
+ * `<SubNav>`): Aparência · Documentos · Assinaturas · Gestão · Sobre. The
  * active section is deep-linkable (`?sec=`); the working copy spans all of them, so the
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
@@ -531,7 +531,6 @@ function toWireBody(draft: Settings): Settings {
  *  The array is appended cleanly by peers (t60 Utilizadores, t62 Administração). */
 type SettingsSection =
   | 'aparencia'
-  | 'identidade'
   | 'documentos'
   | 'assinaturas'
   | 'email'
@@ -554,7 +553,6 @@ type SettingsSectionNav =
 
 const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'aparencia', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
-  { id: 'identidade', label: 'settings.identity.cardTitle', icon: <Icon.IdCard /> },
   { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
   { id: 'email', label: 'settings.email.cardTitle', icon: <Icon.Tray /> },
@@ -620,6 +618,15 @@ const ENTITY_COLUMN_LABEL_KEYS: Record<RegisteredEntityColumn, MessageKey> = {
 
 const isSettingsSection = (v: string | null): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
+
+/** Retired sub-tabs, kept resolvable so their deep links still land where the content went.
+ *  `identidade` (the organisation name printed ON generated documents) merged into
+ *  Documentos as its own card — same subject matter, one fewer sub-tab. The old link
+ *  therefore opens Documentos and scrolls to the moved card rather than 404ing. */
+const RETIRED_SECTIONS: Record<string, SettingsSection> = { identidade: 'documentos' };
+
+/** Anchor for the moved Identidade card, targeted by the retired `?sec=identidade` link. */
+const IDENTITY_ANCHOR_ID = 'settings-identidade';
 
 function providerModeLabel(provider: SigningProviderMetadata, t: ReturnType<typeof useT>): string {
   switch (provider.mode) {
@@ -902,7 +909,9 @@ export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   // Aparência is the default and carries no `sec` param (so `/configuracoes` lands on it).
   const secParam = params.get('sec');
-  const section: SettingsSection = isSettingsSection(secParam) ? secParam : 'aparencia';
+  const retired = secParam === null ? undefined : RETIRED_SECTIONS[secParam];
+  const section: SettingsSection =
+    retired ?? (isSettingsSection(secParam) ? secParam : 'aparencia');
   const selectedUser = section === 'utilizadores' ? params.get('user') : null;
   const selectSection = (next: SettingsSection) =>
     setParams(
@@ -998,6 +1007,14 @@ export function SettingsPage() {
     onSuccess: () => toast.success(t('toast.settings.saved')),
     onError: (e) => toast.error(e),
   });
+
+  // A retired deep link opens the section that absorbed it; once the section has actually
+  // rendered, take the operator to the card that moved rather than to the top of a section
+  // they did not ask for. (`scrollIntoView` is absent in jsdom, hence the optional call.)
+  useEffect(() => {
+    if (!retired || !draft) return;
+    document.getElementById(IDENTITY_ANCHOR_ID)?.scrollIntoView?.({ block: 'start' });
+  }, [retired, draft]);
 
   if (settings.isLoading) return <Loading />;
   if (settings.error) return <ErrorNote error={settings.error} />;
@@ -1337,76 +1354,81 @@ export function SettingsPage() {
             </Card>
           ) : null}
 
-          {/* Identidade -------------------------------------------------------------- */}
-          {section === 'identidade' ? (
-            <Card title={t('settings.identity.cardTitle')}>
-              <div className="form">
-                <Field
-                  label={t('settings.identity.orgName.label')}
-                  htmlFor="set-org-name"
-                  hint={t('settings.identity.orgName.hint')}
-                  help={t('settings.identity.orgName.help')}
-                >
-                  <Input
-                    id="set-org-name"
-                    value={draft.organization.name ?? ''}
-                    placeholder={t('settings.identity.orgName.placeholder')}
-                    onChange={(e) => setOrganization('name', e.target.value)}
-                  />
-                </Field>
-                <p className="field__hint">{t('settings.identity.actorNote')}</p>
-              </div>
-            </Card>
-          ) : null}
-
           {/* Documentos -------------------------------------------------------------- */}
+          {/* Identidade used to be its own sub-tab, but the organisation name it holds is
+              what appears ON generated documents — the same subject matter. It lives here
+              now as its own card (t36's grouping idiom: one card per concern, stacked),
+              kept as a distinct heading rather than interleaved with the document defaults
+              so it stays findable. `?sec=identidade` still resolves here, anchored below. */}
           {section === 'documentos' ? (
-            <Card title={t('settings.documents.cardTitle')}>
-              <div className="form">
-                <Field
-                  label={t('settings.documents.locale.label')}
-                  htmlFor="set-locale"
-                  hint={t('settings.documents.locale.hint')}
-                  help={t('settings.documents.locale.help')}
-                >
-                  <Select
-                    id="set-locale"
-                    value={draft.documents.locale}
-                    onChange={(e) => setDocuments('locale', e.target.value as Locale)}
-                    options={optionsFrom(LOCALES, localeLabels)}
-                  />
-                </Field>
-                <Field
-                  label={t('settings.documents.numbering.label')}
-                  htmlFor="set-numbering"
-                  hint={t('settings.documents.numbering.hint')}
-                  help={t('settings.documents.numbering.help')}
-                >
-                  <Select
-                    id="set-numbering"
-                    value={draft.documents.numbering_scheme_default}
-                    onChange={(e) =>
-                      setDocuments('numbering_scheme_default', e.target.value as NumberingScheme)
-                    }
-                    options={optionsFrom(NUMBERING_SCHEMES, numberingSchemeLabels)}
-                  />
-                </Field>
-                <Field
-                  label={t('settings.documents.caeUrl.label')}
-                  htmlFor="set-cae-url"
-                  hint={t('settings.documents.caeUrl.hint')}
-                  help={t('settings.documents.caeUrl.help')}
-                >
-                  <Input
-                    id="set-cae-url"
-                    type="url"
-                    value={draft.catalog.cae_update_url ?? ''}
-                    placeholder={t('settings.documents.caeUrl.placeholder')}
-                    onChange={(e) => setCatalog('cae_update_url', e.target.value)}
-                  />
-                </Field>
+            <div className="stack">
+              <div id={IDENTITY_ANCHOR_ID}>
+                <Card title={t('settings.identity.cardTitle')}>
+                  <div className="form">
+                    <Field
+                      label={t('settings.identity.orgName.label')}
+                      htmlFor="set-org-name"
+                      hint={t('settings.identity.orgName.hint')}
+                      help={t('settings.identity.orgName.help')}
+                    >
+                      <Input
+                        id="set-org-name"
+                        value={draft.organization.name ?? ''}
+                        placeholder={t('settings.identity.orgName.placeholder')}
+                        onChange={(e) => setOrganization('name', e.target.value)}
+                      />
+                    </Field>
+                    <p className="field__hint">{t('settings.identity.actorNote')}</p>
+                  </div>
+                </Card>
               </div>
-            </Card>
+              <Card title={t('settings.documents.cardTitle')}>
+                <div className="form">
+                  <Field
+                    label={t('settings.documents.locale.label')}
+                    htmlFor="set-locale"
+                    hint={t('settings.documents.locale.hint')}
+                    help={t('settings.documents.locale.help')}
+                  >
+                    <Select
+                      id="set-locale"
+                      value={draft.documents.locale}
+                      onChange={(e) => setDocuments('locale', e.target.value as Locale)}
+                      options={optionsFrom(LOCALES, localeLabels)}
+                    />
+                  </Field>
+                  <Field
+                    label={t('settings.documents.numbering.label')}
+                    htmlFor="set-numbering"
+                    hint={t('settings.documents.numbering.hint')}
+                    help={t('settings.documents.numbering.help')}
+                  >
+                    <Select
+                      id="set-numbering"
+                      value={draft.documents.numbering_scheme_default}
+                      onChange={(e) =>
+                        setDocuments('numbering_scheme_default', e.target.value as NumberingScheme)
+                      }
+                      options={optionsFrom(NUMBERING_SCHEMES, numberingSchemeLabels)}
+                    />
+                  </Field>
+                  <Field
+                    label={t('settings.documents.caeUrl.label')}
+                    htmlFor="set-cae-url"
+                    hint={t('settings.documents.caeUrl.hint')}
+                    help={t('settings.documents.caeUrl.help')}
+                  >
+                    <Input
+                      id="set-cae-url"
+                      type="url"
+                      value={draft.catalog.cae_update_url ?? ''}
+                      placeholder={t('settings.documents.caeUrl.placeholder')}
+                      onChange={(e) => setCatalog('cae_update_url', e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </Card>
+            </div>
           ) : null}
 
           {/* Assinaturas ------------------------------------------------------------- */}
