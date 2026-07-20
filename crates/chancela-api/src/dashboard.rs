@@ -3480,6 +3480,7 @@ mod tests {
             Attendee {
                 name: "Fração A".to_owned(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(520)),
@@ -3487,6 +3488,7 @@ mod tests {
             Attendee {
                 name: "Fração B".to_owned(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Absent,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(280)),
@@ -3494,6 +3496,7 @@ mod tests {
             Attendee {
                 name: "Fração C".to_owned(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Absent,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(200)),

@@ -35,6 +35,7 @@ use chancela_authz::{Permission, Scope};
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_book};
+use crate::data::{ReAuth, require_step_up};
 use crate::dto::{BookView, TermoSignatoryInput, normalize_termo_signatories, parse_date};
 use crate::error::ApiError;
 use crate::recovery::{ChainBreakView, map_store_error};
@@ -437,6 +438,9 @@ pub struct StartOverBookRequest {
     pub numbering_scheme: chancela_core::NumberingScheme,
     pub opening_date: String,
     pub required_signatories: Vec<TermoSignatoryInput>,
+    /// Step-up re-auth proof (§8-F) — required (t22).
+    #[serde(default)]
+    pub reauth: ReAuth,
     #[serde(default = "default_actor")]
     pub actor: String,
 }
@@ -478,12 +482,19 @@ pub async fn start_over_book(
         scope_of_book(BookId(id)),
     )
     .await?;
+    // t22: and step-up, which the route map has claimed all along while the handler did not enforce
+    // it. Start-over archives the book and opens a fresh successor in its place — the same shape of
+    // irreversible act as the instance-wide start-over, which has always required it. Three seeded
+    // roles beyond the administrators reach this route, so the session token alone was the weakest
+    // proof standing in front of the widest destructive surface.
+    require_step_up(&state, &actor, &req.reauth).await?;
     let StartOverBookRequest {
         reason,
         purpose,
         numbering_scheme,
         opening_date,
         required_signatories,
+        reauth: _,
         actor: req_actor,
     } = req;
     // Fail fast on a bad date before any lock or archive.

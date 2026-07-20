@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { renderWithProviders } from '../../test/utils';
+import { getByRevealedText, renderWithProviders } from '../../test/utils';
 import {
   EXTERNAL_INVITE_SIGNED_PDF_RAW_MAX_BYTES,
   ExternalSignerInvitePage,
@@ -184,7 +184,7 @@ describe('ExternalSignerInvitePage', () => {
 
     await waitFor(() => expect(screen.getByText('Artefacto técnico preservado')).toBeTruthy());
     expect(screen.getByText('Assinado')).toBeTruthy();
-    expect(screen.getByTitle(signedDigest)).toBeTruthy();
+    expect(getByRevealedText(signedDigest)).toBeTruthy();
     expect(screen.getByText('technical_evidence_only')).toBeTruthy();
     expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({
       token: 'cxi_secret_token_456',

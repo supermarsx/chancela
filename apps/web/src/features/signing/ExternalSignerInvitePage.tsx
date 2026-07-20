@@ -21,6 +21,7 @@ import {
 } from '../../ui';
 import { TitleBar } from '../../desktop/TitleBar';
 import { useT, type TFunction } from '../../i18n';
+import { hasTemplateName, templateDisplayName } from '../templates/templateNames';
 
 type LoadState =
   | { kind: 'missing' }
@@ -338,7 +339,17 @@ export function ExternalSignerInvitePage() {
                       </div>
                       <div>
                         <dt>{t('externalInvite.document.template')}</dt>
-                        <dd className="mono">{envelope.document.template_id}</dd>
+                        <dd>
+                          {/* Technical evidence panel: name for the reader, id kept verbatim. */}
+                          {hasTemplateName(envelope.document.template_id) ? (
+                            <span className="stack--tight">
+                              <span>{templateDisplayName(envelope.document.template_id)}</span>
+                              <span className="mono muted">{envelope.document.template_id}</span>
+                            </span>
+                          ) : (
+                            <span className="mono">{envelope.document.template_id}</span>
+                          )}
+                        </dd>
                       </div>
                       <div>
                         <dt>{t('externalInvite.document.profile')}</dt>

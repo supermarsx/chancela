@@ -7507,6 +7507,9 @@ fn provider_credential_runtime_err(
             "credential key unavailable or field authentication failed"
         }
         ProviderCredentialError::Poisoned => "credential store unavailable",
+        ProviderCredentialError::NotPersistent => {
+            "this server is running in-memory, so no credentials are stored"
+        }
         ProviderCredentialError::UnknownField { .. } | ProviderCredentialError::Io { .. } => {
             "credential store operation failed"
         }

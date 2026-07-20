@@ -7,7 +7,8 @@
  * The suite runs serially against ONE shared server (`workers: 1`), so the first spec to
  * run onboards the shared **operador** (now with the mandatory password + recovery phrase);
  * later specs — and each fresh page, whose in-memory token is gone — find users already
- * exist and sign in through the roster. {@link signInAt} handles both paths, so any spec can
+ * exist and sign in by typing the identifier (t33-e2: there is no roster to pick from, and
+ * the server resolves the username). {@link signInAt} handles both paths, so any spec can
  * call it regardless of order.
  */
 import type { Page } from '@playwright/test';

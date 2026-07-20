@@ -812,6 +812,12 @@ pub async fn get_book_disposal_status(
 /// `POST /v1/books/{id}/archive/disposal` - `dry_run=true` simulates disposal, while
 /// `dry_run=false` records a guarded non-destructive execution/evidence state. This slice never
 /// physically deletes stored archive/source records.
+///
+/// Two verbs, by intent (t22): the dry-run is a review step and stays on `book.export` alongside the
+/// status read, but recording a disposal EXECUTION is the act a legal hold exists to block, so it
+/// requires `legal_hold.manage` — the same authority that could have lifted the hold. Leaving
+/// execution on `book.export` would have let an Auditor or an API key dispose of a record they were
+/// only ever meant to be able to read.
 pub async fn simulate_book_disposal(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -827,6 +833,15 @@ pub async fn simulate_book_disposal(
         scope_of_book(book_id),
     )
     .await?;
+    if !req.dry_run {
+        require_permission(
+            &state,
+            &actor,
+            Permission::LegalHoldManage,
+            scope_of_book(book_id),
+        )
+        .await?;
+    }
 
     let inventory = load_book_archive_inventory(&state, book_id).await?;
     let status = disposal_status(book_id, &inventory);

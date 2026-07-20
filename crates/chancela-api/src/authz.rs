@@ -446,6 +446,12 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/livez", RouteClass::Exempt),
     ("/readyz", RouteClass::Exempt),
     ("/v1/session", RouteClass::Exempt),
+    // The first-run probe: answers `{onboarding_required}` and NOTHING else (t33-e2). It used to
+    // also return every active user's `{id, username, display_name, has_secret}`, which handed any
+    // anonymous caller the instance's full valid-account list. Exempt is still correct — the
+    // bootstrap create it gates is itself unauthenticated on a fresh instance, and `create_user`
+    // fails closed via `is_uninitialised_instance` regardless of what this reports. Do not re-add a
+    // per-user field here; the signed-in `GET /v1/users` is the only user directory.
     ("/v1/session/roster", RouteClass::Exempt),
     // The password strength ruleset — public knowledge the onboarding checklist renders before any
     // session exists (t68). Read-only, no secrets; mirrors the roster's unauth-onboarding rationale.
@@ -780,12 +786,12 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/settings/email/status", RouteClass::Gated), // GET settings.read@Global
     ("/v1/settings/email/password", RouteClass::Gated), // PUT/DELETE settings.manage@Global
     ("/v1/settings/email/test", RouteClass::Gated),   // POST settings.manage@Global
-    ("/v1/platform/services", RouteClass::Gated), // GET settings.read@Global
+    ("/v1/platform/services", RouteClass::Gated),     // GET settings.read@Global
     (
         "/v1/platform/services/{id}/actions/{action}",
         RouteClass::Gated,
     ), // POST settings.manage@Global
-    ("/v1/platform/logs", RouteClass::Gated), // GET settings.read@Global
+    ("/v1/platform/logs", RouteClass::Gated),         // GET settings.read@Global
     ("/v1/platform/logs/forwarded", RouteClass::Gated), // POST platform.logs.write@Global
     // --- Reference: CAE + law -------------------------------------------------------------------
     ("/v1/cae", RouteClass::Gated),          // GET cae.read@Global

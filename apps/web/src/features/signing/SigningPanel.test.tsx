@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { SigningPanel } from './SigningPanel';
-import { renderWithProviders } from '../../test/utils';
+import { getByRevealedText, renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import type {
@@ -961,7 +961,7 @@ describe('SigningPanel — external signer invites', () => {
     expect(screen.getByText('Assinado')).toBeTruthy();
     expect(screen.getByText('Signed PDF SHA-256')).toBeTruthy();
     expect(screen.getByText('technical upload')).toBeTruthy();
-    expect(screen.getByTitle('f'.repeat(64))).toBeTruthy();
+    expect(getByRevealedText('f'.repeat(64))).toBeTruthy();
     expect(screen.getByText('Contact channel evidence')).toBeTruthy();
     expect(screen.getByText('operator-log:contact-control')).toBeTruthy();
     expect(screen.getByText('Controlo do contacto')).toBeTruthy();

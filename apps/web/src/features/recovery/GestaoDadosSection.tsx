@@ -77,6 +77,7 @@ import {
   Loading,
   SubNav,
   TextArea,
+  TooltipText,
   useToast,
 } from '../../ui';
 import { GateButton } from '../session/permissions';
@@ -1620,9 +1621,9 @@ function SqliteTablePayloadList({
             className="data-status-sqlite-table-row"
             aria-label={meta.join(' · ')}
           >
-            <span className="data-status-sqlite-table-row__label" title={concern.label}>
+            <TooltipText className="data-status-sqlite-table-row__label" label={concern.label}>
               {label}
-            </span>
+            </TooltipText>
             <span className="data-status-sqlite-table-row__rows">{rowCount}</span>
             <span className="data-status-sqlite-table-row__bytes mono">
               {formatBytes(stats.estimated_payload_bytes, locale)}

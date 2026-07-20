@@ -1350,6 +1350,8 @@ describe('GestaoDadosSection', () => {
       'M15.5 4a4.5',
     );
     expect(executeBeforePreview.disabled).toBe(true);
+    // Still a native `title`: this hint rides on `GateButton`'s prop spread, one of the
+    // call-site families t31 did not migrate (see .orchestration/logs/t31-tooltips.md).
     expect(screen.getByTitle(/Executa a limpeza apenas dos ficheiros locais retidos/)).toBeTruthy();
 
     fireEvent.click(previewButton);

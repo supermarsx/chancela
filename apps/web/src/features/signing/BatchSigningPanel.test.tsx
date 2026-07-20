@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { BatchSigningPanel } from './BatchSigningPanel';
-import { renderWithProviders, Wrapper } from '../../test/utils';
+import { Wrapper, getByRevealedText, renderWithProviders } from '../../test/utils';
 import { scopeBook } from '../session/permissions';
 import type { ActView, CcBatchSignResponse } from '../../api/types';
 
@@ -169,7 +169,7 @@ describe('BatchSigningPanel', () => {
     expect(screen.getByText('Autenticação única')).toBeTruthy();
     expect(screen.getByText('source-doc-1')).toBeTruthy();
     expect(
-      screen.getByTitle('a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00'),
+      getByRevealedText('a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00'),
     ).toBeTruthy();
     expect(screen.getByText('cartão não detetado')).toBeTruthy();
     expect(screen.getByText(/Presidente da Mesa/)).toBeTruthy();

@@ -80,6 +80,17 @@ pub(crate) struct TenantRepositoryPolicy {
     pub updated_at: OffsetDateTime,
 }
 
+/// The read shape of `GET /v1/tenants/{tenant_id}/repository-policy`.
+///
+/// Zero-knowledge custody is opt-in, so "this tenant has not configured a policy" is the
+/// normal steady state, not a missing resource: the endpoint answers `200` with `policy:
+/// null` rather than `404`. That keeps `404` meaning what it says on this path — an unknown
+/// tenant — and keeps a healthy page load out of the browser's error console.
+#[derive(Debug, Serialize)]
+pub(crate) struct TenantRepositoryPolicyView {
+    policy: Option<TenantRepositoryPolicy>,
+}
+
 impl TenantRepositoryPolicy {
     fn validate(&self) -> Result<(), ApiError> {
         let synthetic_repository = RepositoryId(Uuid::from_u128(1));
@@ -824,7 +835,7 @@ pub(crate) async fn get_tenant_repository_policy(
     State(state): State<AppState>,
     Path(tenant): Path<Uuid>,
     actor: CurrentActor,
-) -> Result<Json<TenantRepositoryPolicy>, ApiError> {
+) -> Result<Json<TenantRepositoryPolicyView>, ApiError> {
     let tenant_id = TenantId(tenant);
     require_permission(
         &state,
@@ -836,11 +847,9 @@ pub(crate) async fn get_tenant_repository_policy(
     require_known_tenant(&state, tenant_id).await?;
     let store = state.zk_repositories.read().await;
     store.ready_root()?;
-    store
-        .tenant_policy(tenant)
-        .cloned()
-        .map(Json)
-        .ok_or(ApiError::NotFound)
+    Ok(Json(TenantRepositoryPolicyView {
+        policy: store.tenant_policy(tenant).cloned(),
+    }))
 }
 
 pub(crate) async fn put_tenant_repository_policy(
@@ -2800,6 +2809,72 @@ mod tests {
         }
         assert!(rendered.contains("ciphertext_sha256"));
         assert!(rendered.contains("wrapped_key_slot_count"));
+    }
+
+    /// A tenant that never opted into zero-knowledge custody is a normal, healthy state, so the
+    /// read answers `200` with `policy: null`. `404` on this path is reserved for a tenant that
+    /// does not exist.
+    #[tokio::test]
+    async fn unconfigured_tenant_policy_reads_as_an_empty_policy_not_a_missing_resource() {
+        let temp = TempDir::new().unwrap();
+        let state = AppState::with_data_dir(temp.path());
+        let tenant = DEFAULT_TENANT_ID.0;
+        let owner = token_for_scope(&state, "zk.policy.owner", Scope::Global).await;
+        let uri = format!("/v1/tenants/{tenant}/repository-policy");
+
+        let (status, body) = send(
+            state.clone(),
+            json_request(Method::GET, &uri, &owner, serde_json::Value::Null),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+        let view: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(view["policy"].is_null(), "{view}");
+
+        // An unknown tenant still 404s — the status keeps its one honest meaning here.
+        let unknown = format!("/v1/tenants/{}/repository-policy", Uuid::new_v4());
+        let (status, _) = send(
+            state.clone(),
+            json_request(Method::GET, &unknown, &owner, serde_json::Value::Null),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, body) = send(
+            state.clone(),
+            json_request(
+                Method::PUT,
+                &uri,
+                &owner,
+                serde_json::json!({
+                    "encryption_mode": "zero_knowledge",
+                    "custody": {
+                        "bring_your_own_key": true,
+                        "webauthn_prf_unsealing": false,
+                        "split_key_recovery": null
+                    },
+                    "gdpr_obligations_remain": true
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+        let (status, body) = send(
+            state.clone(),
+            json_request(Method::GET, &uri, &owner, serde_json::Value::Null),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let view: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            view["policy"]["tenant_id"].as_str().unwrap(),
+            tenant.to_string()
+        );
+        assert_eq!(
+            view["policy"]["encryption_mode"].as_str().unwrap(),
+            "zero_knowledge"
+        );
     }
 
     #[tokio::test]

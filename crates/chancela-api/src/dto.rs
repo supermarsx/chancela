@@ -30,13 +30,14 @@ use chancela_core::book::{ClosingReason, TermoSignatory};
 use chancela_core::entity::EntityId;
 use chancela_core::{
     Act, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee, Book,
-    BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient, DeliberationItem,
-    DispatchChannel, DocumentReference, Entity, EntityFamily, EntityKind, LegalBasis,
-    LegalBasisVerification, MeetingChannel, MemberStatement, Mesa, NumberingScheme, PresenceMode,
-    SealMetadata, SecondCall, Severity, SignatoryCapacity, SignatorySlot, SignaturePolicyHint,
-    StatuteOverrides, VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY,
-    WrittenResolutionEvidence, WrittenResolutionEvidenceItem, WrittenResolutionEvidenceSummary,
-    profile_for, written_resolution_evidence_summary,
+    BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient, ConveningWaiver,
+    DeliberationItem, DispatchChannel, DocumentReference, Entity, EntityFamily, EntityKind,
+    LegalBasis, LegalBasisVerification, MeetingChannel, MemberStatement, Mesa, NoConveningBasis,
+    NumberingScheme, PresenceMode, SealMetadata, SecondCall, Severity, SignatoryCapacity,
+    SignatorySlot, SignaturePolicyHint, StatuteOverrides, SupersededSigningSnapshot, VoteResult,
+    WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY, WrittenResolutionEvidence,
+    WrittenResolutionEvidenceItem, WrittenResolutionEvidenceSummary, profile_for,
+    written_resolution_evidence_summary,
 };
 use chancela_ledger::Event;
 use chancela_registry::{
@@ -419,6 +420,10 @@ pub struct EntityProfileView {
     pub signature_policy: SignaturePolicyHint,
     pub template_family: String,
     pub calendar_presets: Vec<CalendarPresetView>,
+    /// The qualidades an attendance row may be recorded under for this legal type (t28). The
+    /// editor's «na qualidade de» picker reads this rather than re-deriving the mapping, so a
+    /// sociedade anónima offers *acionista* and a condomínio *condómino*.
+    pub attendee_qualities: Vec<SignatoryCapacity>,
 }
 
 impl EntityProfileView {
@@ -431,6 +436,7 @@ impl EntityProfileView {
             allowed_channels: p.allowed_channels,
             signature_policy: p.signature_policy,
             template_family: p.template_family.to_owned(),
+            attendee_qualities: p.attendee_qualities.clone(),
             calendar_presets: p
                 .calendar_presets
                 .iter()
@@ -1285,11 +1291,47 @@ impl ConveningView {
     }
 }
 
+/// Wire view of a no-convocatória basis. Carries no date fields, so it mirrors the core type; the
+/// `basis` enum keeps its bare serde variant name.
+#[derive(Serialize)]
+pub struct ConveningWaiverView {
+    pub basis: NoConveningBasis,
+    pub grounds: Option<String>,
+    pub all_agreed_to_meet: bool,
+    pub all_agreed_to_agenda: bool,
+    pub evidence_reference: Option<String>,
+}
+
+impl From<&ConveningWaiver> for ConveningWaiverView {
+    fn from(w: &ConveningWaiver) -> Self {
+        ConveningWaiverView {
+            basis: w.basis,
+            grounds: w.grounds.clone(),
+            all_agreed_to_meet: w.all_agreed_to_meet,
+            all_agreed_to_agenda: w.all_agreed_to_agenda,
+            evidence_reference: w.evidence_reference.clone(),
+        }
+    }
+}
+
+impl ConveningWaiverView {
+    fn redact_sensitive(&mut self) {
+        // `grounds` is operator prose that can name the people who agreed; the evidence reference
+        // is an archive locator. Both follow `ConveningView`'s redaction, while the structured
+        // basis and the agreement flags stay visible — they carry no personal data and they are
+        // the part a redacted view still needs to explain why there was no convocatória.
+        self.grounds = self.grounds.as_ref().map(|_| redacted());
+        self.evidence_reference = None;
+    }
+}
+
 /// Wire view of one attendance row (G2). Carries no date fields, so it mirrors the core type.
 #[derive(Serialize)]
 pub struct AttendeeView {
     pub name: String,
     pub quality: SignatoryCapacity,
+    /// Free-text qualidade; only ever `Some` alongside `quality: Other`.
+    pub quality_note: Option<String>,
     pub presence: PresenceMode,
     pub represented_by: Option<String>,
     pub weight: Option<AttendanceWeight>,
@@ -1300,6 +1342,7 @@ impl From<&Attendee> for AttendeeView {
         AttendeeView {
             name: a.name.clone(),
             quality: a.quality,
+            quality_note: a.quality_note.clone(),
             presence: a.presence,
             represented_by: a.represented_by.clone(),
             weight: a.weight,
@@ -1360,6 +1403,47 @@ impl ConveningInput {
             evidence_reference: self.evidence_reference,
             recipients,
             second_call,
+        })
+    }
+}
+
+/// A no-convocatória basis as accepted on a PATCH.
+///
+/// [`Self::into_core`] enforces the one thing that cannot be left to the rules engine: an `Other`
+/// basis with no stated ground is content-free, and accepting it would let a caller persist a
+/// "there was no convocatória" record that says nothing about why. `AssembleiaUniversal` may carry
+/// grounds too (extra context is welcome); the agreement flags default to `false`, so a caller that
+/// omits them is recorded as *not having captured* the agreement, never as having it.
+#[derive(Deserialize)]
+pub struct ConveningWaiverInput {
+    pub basis: NoConveningBasis,
+    #[serde(default)]
+    pub grounds: Option<String>,
+    #[serde(default)]
+    pub all_agreed_to_meet: bool,
+    #[serde(default)]
+    pub all_agreed_to_agenda: bool,
+    #[serde(default)]
+    pub evidence_reference: Option<String>,
+}
+
+impl ConveningWaiverInput {
+    /// Convert to the core [`ConveningWaiver`] (`422` when an `Other` basis states no ground).
+    pub fn into_core(self) -> Result<ConveningWaiver, ApiError> {
+        let grounds = self.grounds.filter(|g| !g.trim().is_empty());
+        if self.basis == NoConveningBasis::Other && grounds.is_none() {
+            return Err(ApiError::Unprocessable(
+                "convening_waiver.grounds is required when basis is Other".to_owned(),
+            ));
+        }
+        Ok(ConveningWaiver {
+            basis: self.basis,
+            grounds,
+            all_agreed_to_meet: self.all_agreed_to_meet,
+            all_agreed_to_agenda: self.all_agreed_to_agenda,
+            evidence_reference: self
+                .evidence_reference
+                .filter(|r| !r.trim().is_empty()),
         })
     }
 }
@@ -1429,6 +1513,8 @@ impl SecondCallInput {
 pub struct AttendeeInput {
     pub name: String,
     pub quality: SignatoryCapacity,
+    #[serde(default)]
+    pub quality_note: Option<String>,
     pub presence: PresenceMode,
     #[serde(default)]
     pub represented_by: Option<String>,
@@ -1445,6 +1531,24 @@ impl AttendeeInput {
                 self.name
             )));
         }
+        // The free-text qualidade is an escape hatch, not a second name for a capacity that is
+        // already in the vocabulary: it is accepted only alongside `Other`, so that a report
+        // grouping by `quality` can never be split by prose. Blank/whitespace is dropped rather
+        // than stored, and `Other` with nothing to say is allowed (the ata simply omits the
+        // clause) rather than being a 422 the operator cannot act on mid-draft.
+        let note = self
+            .quality_note
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(str::to_owned);
+        if note.is_some() && self.quality != SignatoryCapacity::Other {
+            return Err(ApiError::Unprocessable(format!(
+                "attendee {:?}: quality_note is only accepted when quality is Other",
+                self.name
+            )));
+        }
+
         let is_represented = matches!(self.presence, PresenceMode::Represented);
         if is_represented != self.represented_by.is_some() {
             return Err(ApiError::Unprocessable(format!(
@@ -1455,6 +1559,7 @@ impl AttendeeInput {
         Ok(Attendee {
             name: self.name,
             quality: self.quality,
+            quality_note: note,
             presence: self.presence,
             represented_by: self.represented_by,
             weight: self.weight,
@@ -1624,6 +1729,11 @@ pub struct ActView {
     /// convening-less acts stay byte-identical and the web contract test is not forced to change.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub convening: Option<ConveningView>,
+    /// The recorded basis for holding the meeting **without** a convocatória, when there was one.
+    /// Skip-serialized when absent, so responses for the overwhelmingly common convened act are
+    /// byte-identical to what they were before this field existed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub convening_waiver: Option<ConveningWaiverView>,
     /// The structured attendance rows (G2). **Skip-serialized when empty** (t61-E1 drift-safe): an
     /// act with no attendees emits **no** `attendees` key.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1675,6 +1785,7 @@ impl From<&Act> for ActView {
             seal_metadata: a.seal_metadata.as_ref().map(SealMetadataView::from),
             retifies: a.retifies.map(|r| r.to_string()),
             convening: a.convening.as_ref().map(ConveningView::from),
+            convening_waiver: a.convening_waiver.as_ref().map(ConveningWaiverView::from),
             attendees: a.attendees.iter().map(AttendeeView::from).collect(),
             ai_provenance: a.ai_provenance.as_ref().map(AiProvenanceView::from),
         }
@@ -1722,6 +1833,9 @@ impl ActView {
         }
         if let Some(convening) = &mut self.convening {
             convening.redact_sensitive();
+        }
+        if let Some(waiver) = &mut self.convening_waiver {
+            waiver.redact_sensitive();
         }
         for attendee in &mut self.attendees {
             attendee.redact_sensitive();
@@ -1841,6 +1955,9 @@ pub struct DraftAct {
     pub ai_provenance: Option<AiProvenanceInput>,
     #[serde(default)]
     pub convening: Option<ConveningInput>,
+    /// Recorded when the meeting was held with **no** convocatória, naming the lawful basis.
+    #[serde(default)]
+    pub convening_waiver: Option<ConveningWaiverInput>,
     pub retifies: Option<Uuid>,
     #[serde(default = "default_actor")]
     pub actor: String,
@@ -2271,6 +2388,11 @@ pub struct PatchAct {
     /// [`parse_time`] (malformed ⇒ `422`).
     #[serde(default, deserialize_with = "double_option")]
     pub convening: Option<Option<ConveningInput>>,
+    /// The no-convocatória basis. Same [`double_option`] semantics as `convening`: absent ⇒ leave
+    /// untouched, explicit `null` ⇒ clear (the act *was* convened after all), a value ⇒ replace.
+    /// An `Other` basis with no stated ground is a `422` ([`ConveningWaiverInput::into_core`]).
+    #[serde(default, deserialize_with = "double_option")]
+    pub convening_waiver: Option<Option<ConveningWaiverInput>>,
     /// The structured attendance rows (G2). Present ⇒ replace wholesale (`[]` clears); absent ⇒
     /// leave untouched. Each row is validated in [`AttendeeInput::into_core`] (permilage/proxy).
     pub attendees: Option<Vec<AttendeeInput>>,
@@ -2287,6 +2409,62 @@ pub struct AdvanceAct {
     /// it with another template.
     #[serde(default)]
     pub template_id: Option<String>,
+}
+
+/// Body of `POST /v1/acts/{id}/reopen`.
+#[derive(Deserialize)]
+pub struct ReopenAct {
+    #[serde(default = "default_actor")]
+    pub actor: String,
+    /// Why the act is being pulled back out of signature collection. Required and non-empty: a
+    /// state regression on an evidentiary object has to be reconstructable from the ledger alone.
+    pub reason: String,
+}
+
+/// The canonical signing snapshot a reopen retired.
+#[derive(Debug, Serialize, Clone)]
+pub struct SupersededSigningSnapshotView {
+    pub document_id: String,
+    pub pdf_digest: String,
+    pub actor: String,
+    pub superseded_at: String,
+    pub reason: String,
+}
+
+impl SupersededSigningSnapshotView {
+    #[must_use]
+    pub fn from_core(snapshot: &SupersededSigningSnapshot) -> Self {
+        SupersededSigningSnapshotView {
+            document_id: snapshot.document_id.clone(),
+            pdf_digest: snapshot.pdf_digest.clone(),
+            actor: snapshot.actor.clone(),
+            superseded_at: snapshot
+                .superseded_at
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
+            reason: snapshot.reason.clone(),
+        }
+    }
+}
+
+/// Response of `POST /v1/acts/{id}/reopen`.
+#[derive(Serialize)]
+pub struct ReopenActResponse {
+    pub act: ActView,
+    /// State the act was reopened from (always `Signing`).
+    pub from: ActState,
+    /// State it was reopened into (always `TextApproved`).
+    pub to: ActState,
+    /// Sequence number of the `act.reopened` ledger event.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_seq: Option<u64>,
+    /// The retired canonical snapshot, when the act had one. It is no longer resolvable as the
+    /// act's signing document; its bytes stay in the store as evidence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_signing_snapshot: Option<SupersededSigningSnapshotView>,
+    /// The frozen page count (F15) the reopen released, when one had been captured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub released_page_count: Option<u32>,
 }
 
 /// Body of `POST /v1/acts/{id}/human-verification`.
@@ -3449,6 +3627,74 @@ pub struct RegistryImportReport {
 mod tests {
     use super::*;
 
+    fn waiver_input(json: serde_json::Value) -> Result<ConveningWaiver, ApiError> {
+        serde_json::from_value::<ConveningWaiverInput>(json)
+            .expect("waiver input deserializes")
+            .into_core()
+    }
+
+    #[test]
+    fn an_other_basis_must_state_its_ground() {
+        // "There was no convocatória, for reasons unstated" is not a record of anything.
+        let err = waiver_input(serde_json::json!({ "basis": "Other" }))
+            .expect_err("a groundless Other basis must be refused");
+        assert!(matches!(err, ApiError::Unprocessable(_)), "{err:?}");
+
+        let err = waiver_input(serde_json::json!({ "basis": "Other", "grounds": "   " }))
+            .expect_err("whitespace is not a ground");
+        assert!(matches!(err, ApiError::Unprocessable(_)), "{err:?}");
+
+        let ok = waiver_input(serde_json::json!({
+            "basis": "Other",
+            "grounds": "Reunião do órgão realizada por acordo de todos os titulares."
+        }))
+        .expect("a stated ground is accepted");
+        assert_eq!(ok.basis, NoConveningBasis::Other);
+    }
+
+    #[test]
+    fn omitted_agreement_flags_default_to_not_captured() {
+        // Never the other way round: a caller that says nothing about the art. 54.º agreement must
+        // be recorded as not having captured it, so the rule pack still asks for it.
+        let waiver = waiver_input(serde_json::json!({ "basis": "AssembleiaUniversal" }))
+            .expect("universal basis needs no free-text ground");
+        assert!(!waiver.all_agreed_to_meet);
+        assert!(!waiver.all_agreed_to_agenda);
+        assert_eq!(waiver.grounds, None);
+    }
+
+    #[test]
+    fn a_waiver_view_redacts_prose_but_keeps_the_basis_legible() {
+        let mut view = ConveningWaiverView::from(&ConveningWaiver {
+            basis: NoConveningBasis::AssembleiaUniversal,
+            grounds: Some("Todos os sócios presentes na sede.".to_owned()),
+            all_agreed_to_meet: true,
+            all_agreed_to_agenda: true,
+            evidence_reference: Some("archive:declaracao-conjunta".to_owned()),
+        });
+        view.redact_sensitive();
+
+        let value = serde_json::to_value(&view).expect("view serializes");
+        assert_eq!(value["basis"], "AssembleiaUniversal");
+        assert_eq!(value["all_agreed_to_meet"], true);
+        assert_ne!(value["grounds"], "Todos os sócios presentes na sede.");
+        assert_eq!(value["evidence_reference"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn an_act_without_a_waiver_emits_no_waiver_key() {
+        let act = Act::draft(
+            chancela_core::BookId::new(),
+            "Ata n.º 1",
+            MeetingChannel::Physical,
+        );
+        let value = serde_json::to_value(ActView::from(&act)).expect("act view serializes");
+        assert!(
+            !value.as_object().expect("object").contains_key("convening_waiver"),
+            "convened acts must not gain a key: {value}"
+        );
+    }
+
     #[test]
     fn issue_view_serializes_pending_legal_basis_without_source_claims() {
         let issue = ComplianceIssue {
@@ -3712,6 +3958,7 @@ mod tests {
         act.attendees.push(Attendee {
             name: "Presente Identificado".to_owned(),
             quality: SignatoryCapacity::Member,
+            quality_note: None,
             presence: PresenceMode::InPerson,
             represented_by: None,
             weight: None,
@@ -3797,5 +4044,89 @@ mod tests {
         assert_eq!(receipt["legal_sufficiency_claimed"], false);
         assert_eq!(receipt["authority_certified_claimed"], false);
         assert_eq!(evidence["note"], serde_json::Value::Null);
+    }
+
+    /// The qualidade round-trips through the wire DTOs, and the free-text escape hatch stays
+    /// welded to `Other` so a report grouping by `quality` cannot be split by prose (t28).
+    #[test]
+    fn attendee_quality_round_trips_and_free_text_stays_paired_with_other() {
+        let parse = |v: serde_json::Value| serde_json::from_value::<AttendeeInput>(v).unwrap();
+
+        // A sociedade anonima's acionista survives the wire in both directions.
+        let core = parse(serde_json::json!({
+            "name": "Amelia Marques",
+            "quality": "Shareholder",
+            "presence": "InPerson"
+        }))
+        .into_core()
+        .expect("a shareholder attendance row is accepted");
+        assert_eq!(core.quality, SignatoryCapacity::Shareholder);
+        assert_eq!(core.quality_note, None);
+        let view = serde_json::to_value(AttendeeView::from(&core)).unwrap();
+        assert_eq!(view["quality"], "Shareholder");
+        assert_eq!(view["quality_note"], serde_json::Value::Null);
+
+        // `Other` + a note: the note is carried, trimmed, and surfaced on the view.
+        let core = parse(serde_json::json!({
+            "name": "Amelia Marques",
+            "quality": "Other",
+            "quality_note": "  usufrutuario da quota  ",
+            "presence": "InPerson"
+        }))
+        .into_core()
+        .expect("a free-text qualidade is accepted alongside Other");
+        assert_eq!(core.quality, SignatoryCapacity::Other);
+        assert_eq!(core.quality_note.as_deref(), Some("usufrutuario da quota"));
+        let view = serde_json::to_value(AttendeeView::from(&core)).unwrap();
+        assert_eq!(view["quality_note"], "usufrutuario da quota");
+
+        // Blank free text is dropped rather than stored, and `Other` alone is legal mid-draft.
+        let core = parse(serde_json::json!({
+            "name": "Amelia Marques",
+            "quality": "Other",
+            "quality_note": "   ",
+            "presence": "InPerson"
+        }))
+        .into_core()
+        .expect("an unfilled note is not an error");
+        assert_eq!(core.quality_note, None);
+
+        // A note on a structured capacity is a 422: it would poison reporting over `quality`.
+        let err = parse(serde_json::json!({
+            "name": "Amelia Marques",
+            "quality": "Member",
+            "quality_note": "socio maioritario",
+            "presence": "InPerson"
+        }))
+        .into_core()
+        .expect_err("a note on a structured capacity is rejected");
+        assert!(matches!(err, ApiError::Unprocessable(_)), "{err:?}");
+    }
+
+    /// The offered qualidades reach the wire profile, and they differ by legal type (t28).
+    #[test]
+    fn entity_profile_view_carries_the_attendee_qualities_of_its_kind() {
+        let sa = EntityProfileView::from(EntityKind::SociedadeAnonima);
+        let lda = EntityProfileView::from(EntityKind::SociedadePorQuotas);
+        let condo = EntityProfileView::from(EntityKind::Condominio);
+
+        assert!(
+            sa.attendee_qualities
+                .contains(&SignatoryCapacity::Shareholder)
+        );
+        assert!(!sa.attendee_qualities.contains(&SignatoryCapacity::Member));
+        assert!(lda.attendee_qualities.contains(&SignatoryCapacity::Member));
+        assert!(
+            !lda.attendee_qualities
+                .contains(&SignatoryCapacity::Shareholder)
+        );
+        assert!(
+            condo
+                .attendee_qualities
+                .contains(&SignatoryCapacity::CondoOwner)
+        );
+
+        let json = serde_json::to_value(&sa).unwrap();
+        assert_eq!(json["attendee_qualities"][0], "Shareholder");
     }
 }

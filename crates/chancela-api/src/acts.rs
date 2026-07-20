@@ -14,7 +14,8 @@ use axum::response::{IntoResponse, Response};
 use chancela_core::act::AiHumanVerificationStatus;
 use chancela_core::{
     Act, ActError, ActId, ActState, Book, BookId, DEFAULT_TENANT_ID, Entity, EntityFamily,
-    EntityKind, PresenceMode, SealEvidence, Severity, rule_pack_for, seal_act_with_evidence,
+    EntityKind, PresenceMode, SealEvidence, Severity, SupersededSigningSnapshot, rule_pack_for,
+    seal_act_with_evidence,
 };
 use chancela_store::{StoredDocument, StoredSignedDocument};
 use serde_json::json;
@@ -28,10 +29,12 @@ use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_act, scope_of_book};
 use crate::dto::{
     ActView, AdvanceAct, ArchiveAct, ComplianceResponse, ConveningAdvisory, DispatchConvening,
-    DraftAct, HumanVerificationDecision, IssueView, PatchAct, SealAct, SealResponse,
-    VerifyAiHumanReview, WrittenResolutionEvidenceStatusView, read_redaction_for_actor,
+    DraftAct, HumanVerificationDecision, IssueView, PatchAct, ReopenAct, ReopenActResponse,
+    SealAct, SealResponse, SupersededSigningSnapshotView, VerifyAiHumanReview,
+    WrittenResolutionEvidenceStatusView, read_redaction_for_actor,
 };
 use crate::error::ApiError;
+use time::format_description::well_known::Rfc3339;
 
 /// `POST /v1/acts` — draft a new ata inside an open book (WFL-14).
 pub async fn draft_act(
@@ -71,6 +74,9 @@ pub async fn draft_act(
     }
     if let Some(convening) = req.convening {
         act.convening = Some(convening.into_core()?);
+    }
+    if let Some(waiver) = req.convening_waiver {
+        act.convening_waiver = Some(waiver.into_core()?);
     }
     if let Some(ai_provenance) = req.ai_provenance {
         act.ai_provenance = Some(ai_provenance.into_core()?);
@@ -250,6 +256,16 @@ pub async fn patch_act(
             None => None,
         };
     }
+    // The no-convocatória basis, same double_option semantics. Setting one does **not** clear
+    // `convening` here: which of the two is stale is the caller's call, and the rule packs raise
+    // `CONV/waiver-conflict` when both survive, so the contradiction is surfaced rather than
+    // silently resolved by whichever field was patched last.
+    if let Some(waiver) = req.convening_waiver {
+        next.convening_waiver = match waiver {
+            Some(w) => Some(w.into_core()?),
+            None => None,
+        };
+    }
     // G2 attendance (replace-when-present, [] clears). Convert first so a validation failure
     // (permilage/proxy ⇒ 422) leaves the act untouched.
     if let Some(attendees) = req.attendees {
@@ -294,6 +310,30 @@ pub async fn patch_act(
     *act = next;
 
     Ok(Json(ActView::from(&*act)))
+}
+
+/// The blocking (`Error`-severity) findings of the act's dispatched rule pack.
+///
+/// One evaluation, shared by the seal gate and the `Signing` entry gate. Deliberately not a second
+/// hand-maintained list of "what blocks an advance": a list that could drift from what blocks a
+/// seal would recreate the dead end in a new form. Synchronous so the non-`Send` `Box<dyn RulePack>`
+/// cannot be held across an await.
+fn blocking_compliance_issues(act: &Act, entity: &Entity) -> Vec<IssueView> {
+    rule_pack_for(entity)
+        .check_act(act, entity)
+        .iter()
+        .filter(|issue| issue.severity == Severity::Error)
+        .map(IssueView::from)
+        .collect()
+}
+
+/// Render issues the way the core seal refusal renders them, so both messages read alike.
+fn render_issue_views(issues: &[IssueView]) -> String {
+    issues
+        .iter()
+        .map(|issue| format!("[{}] {}", issue.rule_id, issue.message))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// `POST /v1/acts/{id}/advance` — one forward lifecycle step (Draft→…→Signing).
@@ -350,6 +390,25 @@ pub async fn advance_act(
     }
     next.advance_to(target_state)
         .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
+
+    // Entering `Signing` freezes the act: `is_mutable()` goes false, so the act can no longer be
+    // corrected, while the seal gate refuses on any blocking compliance error. Advancing an act
+    // that already carries one therefore stranded it — neither sealable nor fixable. Run the *same*
+    // rule pack the seal gate runs, against the same act, at the last moment the operator can still
+    // fix what it names. Warnings never block here, exactly as they never block a seal the operator
+    // acknowledges; only `Error` severity does.
+    if target_state == ActState::Signing {
+        let blocking = blocking_compliance_issues(&next, entity);
+        if !blocking.is_empty() {
+            return Err(ApiError::ComplianceBlocked {
+                message: format!(
+                    "advance to Signing blocked by compliance errors: {}",
+                    render_issue_views(&blocking)
+                ),
+                issues: blocking,
+            });
+        }
+    }
 
     let signing_snapshot = if target_state == ActState::Signing {
         Some(
@@ -414,6 +473,140 @@ pub async fn advance_act(
     }
 
     Ok(Json(ActView::from(&*act)))
+}
+
+/// `POST /v1/acts/{id}/reopen` — pull a `Signing` act back to `TextApproved` for correction.
+///
+/// The rescue path for the dead end this endpoint's sibling gate now prevents: an act that reached
+/// `Signing` with a blocking compliance defect is frozen (`is_mutable()` false) and unsealable
+/// (the seal gate refuses), so before this existed it could never leave `Signing`.
+///
+/// Refused, in order, when: a signature has been collected (a reopen would invalidate somebody's
+/// assent — correct such an act with a new act that retifies it, WFL-21); the book is under legal
+/// hold; the book is not open; or the act is not in `Signing`. On success the canonical signing
+/// snapshot is **superseded**: its bytes stay in the store and its `document.generated` event stays
+/// in the chain, but it stops resolving as this act's signing document, so no one can sign or seal
+/// against it and a re-advance mints a fresh snapshot over the corrected content.
+pub async fn reopen_act(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<ReopenAct>,
+) -> Result<Json<ReopenActResponse>, ApiError> {
+    let act_id = ActId(id);
+    // RBAC: reopening is a state regression on an evidentiary object, so it is gated on **both**
+    // the permission governing the `Signing → Sealed` boundary it walks back (`signing.perform`)
+    // and the permission to make the correction it exists for (`act.edit`). No new permission is
+    // minted. The pair lands on Gestor / Tenant Administrator / Platform Administrator / Owner and
+    // deliberately excludes Signatário, which holds `signing.perform` but not `act.edit`: a
+    // signatory must not be able to pull a document back out from under a collection in progress.
+    let scope = scope_of_act(&state, act_id).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    require_permission(&state, &actor, Permission::ActEdit, scope).await?;
+
+    let reason = req.reason.trim().to_owned();
+    if reason.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "reopen requires a non-empty reason; the regression must be reconstructable from the ledger"
+                .to_owned(),
+        ));
+    }
+    let actor = actor.resolve(&req.actor);
+
+    // A collected cryptographic signature is checked before anything is touched. `signatories[]`
+    // slots are checked too, inside `reopen_for_correction`.
+    if crate::signature::load_signed(&state, act_id)
+        .await?
+        .is_some()
+    {
+        return Err(ApiError::Conflict(
+            ActError::SignaturesCollected.to_string(),
+        ));
+    }
+    // Read outside the write locks, mirroring the seal handler.
+    let canonical = crate::documents::load_document(&state, act_id).await?;
+
+    // books → acts → ledger.
+    let books = state.books.read().await;
+    let mut acts = state.acts.write().await;
+    let mut ledger = state.ledger.write().await;
+
+    let act = acts.get_mut(&act_id).ok_or(ApiError::NotFound)?;
+    let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+    ensure_book_open_for_act_mutation(book)?;
+    // Legal hold: a held book's acts must not move. The disposal paths already honour holds and
+    // this is the same class of mutation — a hold is exactly the circumstance in which the state
+    // an act is preserved in matters most.
+    if let Some(hold) = &book.legal_hold {
+        return Err(ApiError::Conflict(format!(
+            "book {} is under legal hold ({:?}); reopening an act is refused while the hold stands",
+            book.id, hold.reason
+        )));
+    }
+    let entity_id = book.entity_id;
+
+    // Reopen a clone, so the read model moves only after the durable write commits.
+    let mut next = act.clone();
+    let released_page_count = next
+        .reopen_for_correction()
+        .map_err(|e| ApiError::Conflict(e.to_string()))?;
+
+    let reopened_at = time::OffsetDateTime::now_utc();
+    let superseded = canonical.as_ref().map(|doc| SupersededSigningSnapshot {
+        document_id: doc.id.clone(),
+        pdf_digest: doc.pdf_digest.clone(),
+        actor: actor.clone(),
+        superseded_at: reopened_at,
+        reason: reason.clone(),
+    });
+    if let Some(snapshot) = superseded.clone() {
+        next.record_superseded_signing_snapshot(snapshot);
+    }
+
+    let scope = format!("entity:{}/book:{}/act:{}", entity_id, next.book_id, next.id);
+    let justification = format!("reopen for correction: {reason}");
+    let payload = serde_json::to_vec(&json!({
+        "act_id": next.id.to_string(),
+        "book_id": next.book_id.to_string(),
+        "from": ActState::Signing,
+        "to": next.state,
+        "actor": actor,
+        "reopened_at": reopened_at.format(&Rfc3339).unwrap_or_default(),
+        "reason": reason,
+        "superseded_signing_snapshot": superseded.as_ref().map(|snapshot| json!({
+            "document_id": snapshot.document_id,
+            "pdf_digest": snapshot.pdf_digest,
+        })),
+        "released_page_count": released_page_count,
+        "collected_signatures": 0,
+    }))?;
+    crate::try_append_event(
+        &mut ledger,
+        &actor,
+        &scope,
+        "act.reopened",
+        Some(&justification),
+        &payload,
+    )?;
+    let event_seq = ledger.events().last().map(|event| event.seq);
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_act(&next_for_store))
+        .await?;
+    state.attest_latest(&attestor, &ledger).await;
+    *act = next;
+
+    Ok(Json(ReopenActResponse {
+        act: ActView::from(&*act),
+        from: ActState::Signing,
+        to: act.state,
+        event_seq,
+        superseded_signing_snapshot: superseded
+            .as_ref()
+            .map(SupersededSigningSnapshotView::from_core),
+        released_page_count,
+    }))
 }
 
 /// `POST /v1/acts/{id}/human-verification` — accept/reject human review of AI-assisted draft text.
@@ -1421,6 +1614,7 @@ mod tests {
             channel: MeetingChannel::Physical,
             ai_provenance: None,
             convening: None,
+            convening_waiver: None,
             retifies: None,
             actor: "amelia.marques".to_owned(),
         };

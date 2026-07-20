@@ -14,8 +14,7 @@ use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use chancela_authz::{IntegrationId, Permission, RepositoryId, Scope};
 use chancela_connectors::{
-    EnvSecretProvider, JobPurpose, NetworkPolicy, TargetConfig, build_connector,
-    validate_destination,
+    EnvSecretProvider, JobPurpose, TargetConfig, build_connector, validate_destination,
 };
 use chancela_core::{ActId, TenantId};
 use chancela_worker::{DurableQueue, JobSnapshot, JobState, WorkerError};
@@ -27,6 +26,7 @@ use uuid::Uuid;
 
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{authorizer, require_permission, scope_of_act, scope_of_tenant};
+use crate::settings::effective_network_policy;
 use crate::{ApiError, AppState};
 
 pub(crate) const CONNECTOR_TARGETS_FILE: &str = "connector-targets.json";
@@ -254,7 +254,7 @@ fn validate_purposes(
     Ok(())
 }
 
-async fn validate_api_target(config: &TargetConfig) -> Result<(), ApiError> {
+async fn validate_api_target(state: &AppState, config: &TargetConfig) -> Result<(), ApiError> {
     if matches!(config, TargetConfig::Local(_)) {
         return Err(ApiError::Unprocessable(
             "local filesystem connector targets are deployment-only and cannot be created through the API"
@@ -264,8 +264,12 @@ async fn validate_api_target(config: &TargetConfig) -> Result<(), ApiError> {
     config
         .validate()
         .map_err(|error| ApiError::Unprocessable(error.to_string()))?;
-    let policy =
-        NetworkPolicy::from_env().map_err(|error| ApiError::Unprocessable(error.to_string()))?;
+    // The effective boundary: the deployment ceiling narrowed by whatever an administrator saved
+    // in Settings. Resolved from live state, so a target accepted before a narrowing is re-checked
+    // against the current allowlist on every subsequent probe/run, not only at creation.
+    let policy = effective_network_policy(state)
+        .await
+        .map_err(|error| ApiError::Unprocessable(error.to_string()))?;
     config
         .validate_network_policy(&policy)
         .await
@@ -486,7 +490,7 @@ pub(crate) async fn create_target(
     let name = normalized_name(body.name)?;
     let id = Uuid::new_v4();
     let config = body.config.with_id(id.to_string());
-    validate_api_target(&config).await?;
+    validate_api_target(&state, &config).await?;
     validate_purposes(&body.purposes, &config)?;
     let now = now_rfc3339();
     let record = ConnectorTargetRecord {
@@ -594,7 +598,7 @@ pub(crate) async fn patch_target(
     }
     if let Some(config) = body.config {
         updated.config = config.with_id(updated.id.to_string());
-        validate_api_target(&updated.config).await?;
+        validate_api_target(&state, &updated.config).await?;
     }
     validate_purposes(&updated.purposes, &updated.config)?;
     updated.updated_at = now_rfc3339();
@@ -687,7 +691,7 @@ pub(crate) async fn probe_target(
             "connector target is disabled or archived".to_owned(),
         ));
     }
-    validate_api_target(&record.config).await?;
+    validate_api_target(&state, &record.config).await?;
     let connector = build_connector(&record.config, std::sync::Arc::new(EnvSecretProvider))
         .map_err(|error| ApiError::Unprocessable(error.to_string()))?;
     let checked_at = now_rfc3339();
@@ -987,7 +991,7 @@ pub(crate) async fn run_target(
         JobPurpose::Backup => Permission::DataBackup,
     };
     require_permission(&state, &actor, permission, record.repository_scope()).await?;
-    validate_api_target(&record.config).await?;
+    validate_api_target(&state, &record.config).await?;
     let materialized = materialize_artifact(
         &state,
         &actor,

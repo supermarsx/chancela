@@ -46,6 +46,23 @@
   --radius: 4px;
   --measure: 68ch;
 
+  /* Motion — ONE language for every content swap, so a route change, a sub-tab change and
+     a panel swap read as the same gesture instead of three invented durations.
+     Two roles, deliberately:
+       - `enter`: something arriving. Expo ease-out — quick to appear, long decelerating
+         settle. Used by `.route-transition` / `.panel-transition`.
+       - `glide`: something already on screen moving to a new position (the sub-tab
+         indicator). A gentler in-out so the travel reads as continuous, not thrown.
+     Durations stay in the honest 180-300ms band: long enough to register, short enough
+     that no one waits on them. The page level is the only one that translates; anything
+     nested is opacity-only (see `.route-transition .route-transition`). Every rule below
+     collapses under the global `prefers-reduced-motion` block and `[data-safe-mode]`. */
+  --motion-page-duration: 300ms;
+  --motion-panel-duration: 200ms;
+  --motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-glide: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --motion-page-rise: 16px;
+
   color-scheme: light dark;
 }
 
@@ -1041,7 +1058,10 @@ a.btn.btn--iconOnly {
   background: var(--green-deep);
   color: var(--gold-bright);
   border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
-  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.5);
+  /* Shadow derived from the brand ink token rather than a raw rgba() literal, so the whole
+     bubble is token-driven and a theme retune moves it too (t31). --green-ink is the darkest
+     brand constant, which is what a drop shadow wants in BOTH themes. */
+  box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--green-ink) 55%, transparent);
   opacity: 0;
   visibility: hidden;
   transition:
@@ -1814,34 +1834,142 @@ a.btn.btn--iconOnly {
   min-width: 4.5rem;
 }
 
-/* Lifecycle stepper. */
+/* Horizontal, full-width progress stepper (ui/Stepper.tsx). A marker rail joined by a
+   connector that fills up to the current step — the shape of a form progress bar. Every
+   marker stays visible at every width; below the compact breakpoint only the current
+   step keeps a visible label (the others go visually-hidden, never `display: none`). */
 .stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.stepper__summary {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+}
+
+.stepper__summary-count {
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+}
+
+.stepper__summary-label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.stepper__track {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  width: 100%;
 }
 
-.step {
+.stepper__step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: center;
+}
+
+/* The connector runs from the previous marker to this one, at marker mid-height. */
+.stepper__step::before {
+  content: '';
+  position: absolute;
+  top: calc(0.9rem - 1px);
+  right: 50%;
+  left: -50%;
+  margin: 0 1.15rem;
+  height: 2px;
+  background: var(--rule);
+}
+
+.stepper__step:first-child::before {
+  content: none;
+}
+
+.stepper__step[data-state='done']::before,
+.stepper__step[data-state='current']::before {
+  background: var(--accent-strong);
+}
+
+.stepper__marker {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 1.8rem;
+  height: 1.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
   font-family: var(--font-sans);
   font-size: 0.72rem;
-  padding: 0.2rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
   color: var(--text-muted);
 }
 
-.step--done {
-  color: var(--ok);
-  border-color: var(--ok);
+.stepper__marker svg {
+  width: 0.85rem;
+  height: 0.85rem;
 }
 
-.step--current {
-  color: var(--on-accent);
+.stepper__step[data-state='done'] .stepper__marker {
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+}
+
+/* The current marker: filled AND ringed, so it reads without relying on colour. */
+.stepper__step[data-state='current'] .stepper__marker {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
+  color: var(--on-accent);
+  outline: 1px solid var(--rule);
+  outline-offset: 2px;
+}
+
+.stepper__label {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.stepper__step[data-state='current'] .stepper__label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Compact rail: the labels of the non-current steps stay in the accessibility tree but
+   leave the layout, so eight steps never overflow or shrink into unreadability. */
+@media (max-width: 780px) {
+  .stepper__step:not([data-state='current']) .stepper__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }
 
 .ai-review__meta {
@@ -2923,8 +3051,11 @@ body {
      resting frame. It STOPS DEAD under both kill-switches: `prefers-reduced-motion` snaps
      the animation to its resting frame (base opacity, no scale), and safe mode both zeroes
      `animation` on `*` AND hides `.leather-bg` entirely — so no motion ever escapes. */
+  /* No `will-change`: this layer is `position: fixed; inset: 0`, so it is the single
+     largest promotable surface in the document and it dominated the budget. The animation
+     is infinite, so it is always running and therefore always compositor-promoted on its
+     own — the hint was redundant, not load-bearing. */
   animation: leather-breathe 11s ease-in-out infinite;
-  will-change: opacity, transform;
 }
 
 @keyframes leather-breathe {
@@ -3241,19 +3372,64 @@ body {
    `@media (prefers-reduced-motion: reduce)` block forces `animation-duration: 0.01ms`
    (settles on the `to` frame immediately), and `:root[data-safe-mode='on']` forces
    `animation: none` (renders at the natural resting state) — no motion escapes either. */
+/* No `will-change` here on purpose. This class nests — the Layout wrapper, the `<main>`
+   in router.tsx, and each tabbed page all carry it — so a permanent promotion hint costs
+   ~3 stacked full-content-area compositor layers, against a Firefox budget of exactly
+   document surface x 3. That is what blew the budget, and once over it Firefox ignores
+   the extra declarations, so the hints stopped working anyway. It bought nothing to begin
+   with: this is a one-shot enter that starts on mount, and engines already promote an
+   element for the duration of a running opacity/transform animation — `will-change` only
+   helps when a promotion must be ready *before* an animation starts, which never applies
+   here. After the 300ms it was pure dead weight held for the life of the page. */
 .route-transition {
-  animation: route-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: opacity, transform;
+  animation: route-enter var(--motion-page-duration) var(--motion-ease-enter) both;
 }
 
 @keyframes route-enter {
   from {
     opacity: 0;
-    transform: translate3d(0, 16px, 0);
+    transform: translate3d(0, var(--motion-page-rise), 0);
   }
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0);
+  }
+}
+
+/* A `.route-transition` nested inside another one is a PANEL swap, not a page entry. The
+   sub-tabbed surfaces (Configurações, Ferramentas, Validador, Privacidade, Gestão de dados,
+   book detail, arquivo, operações, legislação, painel) put their keyed wrapper inside the
+   Layout's keyed `<main>`, so a full navigation INTO one of those pages mounts both levels
+   at once and, before this rule, replayed `route-enter` on both: the opacity ramps compound
+   (the content starts from 0 twice over, so it reads dimmer for longer than either duration
+   suggests) and the two 16px rises stack into a 32px slide. That was the one place the
+   existing motion genuinely read as jank, and it got worse with depth — Ferramentas ▸
+   Validador nests three.
+
+   Nested levels therefore get the shorter, riseless variant. Opacity only, so no depth of
+   nesting can ever produce a compound translate; and it finishes well inside the parent's
+   window rather than trailing it. It is also simply the right motion for a sub-tab switch
+   on its own: nothing above the panel moves, so nothing should slide. Purely a CSS
+   consequence of nesting — no call site had to be changed, and a page that later adds or
+   removes a wrapper level gets the correct motion automatically.
+
+   `.panel-transition` is the same motion under an explicit name, for a keyed panel that is
+   NOT inside a route wrapper (a swap within a modal or a detached surface). Both are
+   compositor-only and one-shot-on-mount, so — exactly as for `.route-transition` above —
+   they take no `will-change`: the engine promotes for the life of a running opacity
+   animation by itself, and a base-rule hint on a nesting container is precisely what
+   overran Firefox's budget before. */
+.route-transition .route-transition,
+.panel-transition {
+  animation: panel-enter var(--motion-panel-duration) var(--motion-ease-enter) both;
+}
+
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -3284,7 +3460,7 @@ a,
 }
 
 .badge,
-.step {
+.stepper__marker {
   transition:
     color 0.15s ease,
     background-color 0.15s ease,
@@ -3553,6 +3729,18 @@ a,
   overflow-wrap: anywhere;
   color: var(--text);
   font-weight: 650;
+}
+
+/* Editable settings grids (t36 — Assinaturas). A `.control` is `width: 100%`, so inside a table
+   cell it would happily shrink to the column's content width and leave a URL field two characters
+   wide. Give the editable cells a usable floor and let `.table-wrap` scroll horizontally instead.
+   Scoped to the Configurações panel, which is the only surface that puts inputs inside a grid. */
+.settings-section .table .control {
+  min-width: 9rem;
+}
+
+.settings-section .table td {
+  vertical-align: top;
 }
 
 .platform-log-table-wrap {
@@ -5124,6 +5312,129 @@ a.btn--primary {
 
 .pdf-validator-signatures .pdf-validator-kv {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+}
+
+/* --------------------------------------------------------------------------
+ * PDF validator result table — one row per check, grouped by section.
+ *
+ * Every colour below is a theme token: the verdict must survive greyscale
+ * printing and colour-blind reading, so the tint only reinforces the label
+ * text that the verdict cell always renders.
+ * -------------------------------------------------------------------------- */
+
+.pdf-validator-table .table {
+  /* Below this the three columns crush; `.table-wrap` scrolls instead of clipping. */
+  min-width: 44rem;
+}
+
+.pdf-validator-table .table td,
+.pdf-validator-table .table tbody th {
+  vertical-align: top;
+}
+
+.pdf-validator-table__group th {
+  padding-top: 1.15rem;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
+}
+
+.pdf-validator-table__group-title {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.pdf-validator-table__group-note {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+.pdf-validator-table__check {
+  min-width: 0;
+  font-weight: 600;
+  text-align: left;
+}
+
+.pdf-validator-table__check-label {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* The reason a check failed, the scope it applies to, the notice text: the tighter
+   row must not cost the operator the explanation, so it rides as a second line. */
+.pdf-validator-table__check-note {
+  display: block;
+  margin-top: 0.2rem;
+  font-weight: 400;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.pdf-validator-table__evidence {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pdf-validator-table__evidence .digest {
+  max-width: 100%;
+}
+
+.pdf-validator-verdict {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.pdf-validator-verdict__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.pdf-validator-verdict__mark {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pdf-validator-verdict__mark svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.pdf-validator-verdict[data-verdict='pass'] .pdf-validator-verdict__pill {
+  color: var(--ok);
+  border-color: var(--ok);
+  background: var(--ok-bg);
+}
+
+.pdf-validator-verdict[data-verdict='fail'] .pdf-validator-verdict__pill {
+  color: var(--error);
+  border-color: var(--error);
+  background: var(--error-bg);
+}
+
+.pdf-validator-verdict[data-verdict='inconclusive'] .pdf-validator-verdict__pill {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-bg);
 }
 
 /* ==========================================================================
@@ -6702,10 +7013,21 @@ a.btn--primary {
   pointer-events: none;
   border-radius: 999px;
   background: var(--accent-strong);
+  /* On the shared motion tokens (was a hand-written 0.24s/0.22-0.61-0.36-1, now the
+     `glide` role at `--motion-panel-duration`). The pill and the panel underneath it now
+     move on exactly the same clock, so a sub-tab click reads as one gesture instead of two
+     that finish 40ms apart. The easing stays the glide curve — this element travels
+     between positions, it does not arrive. */
   transition:
-    transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1),
-    width 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
-  will-change: transform, width;
+    transform var(--motion-panel-duration) var(--motion-ease-glide),
+    width var(--motion-panel-duration) var(--motion-ease-glide);
+  /* Kept, but narrowed to `transform`. This is the one genuinely warranted hint on the
+     page: the transition fires later, on a tab click, so the promotion does need to exist
+     before the animation starts. The element is a small pill and there is at most one per
+     subnav, so the area it costs is negligible. `width` was dropped — width is a layout
+     property that cannot be composited, so hinting it promoted the element for a
+     transition the compositor was never going to run. */
+  will-change: transform;
 }
 
 .ferramentas-subnav__btn,
@@ -7236,6 +7558,13 @@ a.btn--primary {
   line-height: 1.55;
 }
 
+/* "Voltar" — right-aligned in the reader's panel head (t34), so leaving a law's full text is
+   always in the same place, next to the "Texto integral da legislação" title. */
+.leg-corpus__back {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .dashboard-archive-link {
   min-width: 2.25rem;
   min-height: 2.25rem;
@@ -7484,85 +7813,109 @@ a.btn--primary {
   gap: 0.45rem 1rem;
 }
 
-.templates-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
-  gap: 1rem;
+/* The catalog is a table, not a card wall: the metadata lines up in columns so two
+   modelos can be compared without scrolling. Nine columns do not fit a narrow viewport,
+   so `.table-wrap`'s `overflow-x: auto` is kept and the table is given a floor width —
+   the wide content scrolls inside its own bounded box (the docs-site treatment) instead
+   of being clipped or crushed into unreadable one-word columns. */
+.templates-table .table {
+  min-width: 62rem;
 }
 
-.template-card {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-top: 3px solid var(--accent-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
+.templates-table .table td {
+  vertical-align: top;
 }
 
-.template-card__head,
-.template-card__actions {
+.templates-table .table th[data-template-column] {
+  padding: 0.5rem 0.6rem;
+}
+
+.templates-table .table th:has(.templates-table__sort) {
+  padding: 0;
+}
+
+/* The header button inherits the header's own type so sorting does not change how a
+   header reads; only the direction marker is added. */
+.templates-table__sort {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.template-card__head .card__label {
-  margin: 0;
+.templates-table__sort:hover {
+  color: var(--text);
 }
 
-.template-card__id {
+.templates-table__sort-marker {
+  display: inline-flex;
+  width: 0.8rem;
+  opacity: 0;
+}
+
+.templates-table__sort:hover .templates-table__sort-marker,
+.templates-table .table th[aria-sort='ascending'] .templates-table__sort-marker,
+.templates-table .table th[aria-sort='descending'] .templates-table__sort-marker {
+  opacity: 1;
+}
+
+.templates-table__sort-marker svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.templates-table__name {
   display: block;
-  min-width: 0;
+  line-height: 1.3;
+}
+
+/* Secondary to the name when there is one, but never hidden: the `/vN` is provenance. */
+.templates-table__id {
+  display: block;
   font-family: var(--font-mono);
-  font-size: 0.86rem;
+  font-size: 0.8rem;
   line-height: 1.4;
+  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
-.template-card__code {
+/* An unnamed template keeps the id as its only label, so it is not demoted. */
+.templates-table__id:first-child {
+  color: inherit;
+  font-size: 0.86rem;
+}
+
+.templates-table__code {
   font-family: var(--font-mono);
   font-size: 0.82rem;
   overflow-wrap: anywhere;
 }
 
-.template-card__meta {
-  display: grid;
-  gap: 0.6rem;
-  margin: 0;
-}
-
-.template-card__meta div {
-  min-width: 0;
-}
-
-.template-card__meta dt {
-  font-family: var(--font-sans);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.template-card__meta dd {
-  margin: 0.12rem 0 0;
-  overflow-wrap: anywhere;
-}
-
-.template-card__channels {
+.templates-table__badges {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
   align-items: center;
 }
 
-.template-card__actions {
-  margin-top: auto;
-  justify-content: flex-start;
+.templates-table__actions {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.templates-table .table td[data-template-column='LawSource'] {
+  min-width: 14rem;
 }
 
 @media (max-width: 720px) {
@@ -7597,6 +7950,14 @@ a.btn--primary {
 }
 
 /* --- Skeleton loaders (item c) -------------------------------------------------- */
+/* Deliberately NO `will-change` on `.skeleton`. This rule matches the most-repeated
+   animated element in the app — a single `SkeletonTable` can be 60 blocks, and several
+   can be on screen at once — so a promotion hint here would multiply straight into the
+   Firefox will-change budget and get every hint on the page ignored. The sweep animates
+   `background-position`, which is not compositor-accelerated anyway, so the hint could
+   not have helped. Total animated area stays bounded by keeping the default row/col
+   counts small, and the whole thing stops under `prefers-reduced-motion` (below, plus
+   the global block that zeroes `animation-duration`). */
 .skeleton {
   display: block;
   width: 100%;
@@ -8429,10 +8790,15 @@ input[type='radio']:disabled {
   font-size: 0.9rem;
 }
 
+/* The device-local recents list (t33). It is a <ul> of remembered identifiers — NOT the
+   instance roster, which this screen no longer renders. */
 .signin__list {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .signin__user {
@@ -8560,6 +8926,79 @@ input[type='radio']:disabled {
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: center;
+}
+
+/* --- Recently used identifiers on THIS device (t33) ------------------------
+   The sign-in identifier is typed; this block is the convenience list of accounts that
+   have successfully signed in in this browser. Each row pairs a "fill the field" button
+   with its own ✕ remove control, so the two are separate focus stops (a button cannot
+   nest inside a button). */
+.signin__recents {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.signin__recents-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.signin__recents-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.signin__recent {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.signin__recent .signin__user {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.signin__recent-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.signin__recent-remove:hover:not(:disabled),
+.signin__recent-remove:focus-visible {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--error-bg) 55%, transparent);
+  color: var(--error);
+}
+
+.signin__recent-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* One action left on the form (the roster "escolher outro utilizador" back-button is gone
+   with the picker), so the submit sits at the trailing edge rather than space-between. */
+.signin__actions--single {
+  justify-content: flex-end;
 }
 
 /* --- Auth-gate boot / retry panel ----------------------------------------- */
@@ -8745,8 +9184,10 @@ input[type='radio']:disabled {
   flex-direction: column;
   align-items: center;
   gap: 0.85rem;
+  /* No `will-change`: same one-shot-on-mount shape as `.route-transition` — the animation
+     is already running when the element first paints, so there is no pre-start promotion
+     to buy, and the splash unmounts moments later. */
   animation: boot-splash-in 460ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
-  will-change: opacity, transform;
 }
 
 .boot-splash__crest {
@@ -9768,6 +10209,24 @@ input[type='radio']:disabled {
 .color-customizer__swatch:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* The reset-to-defaults row (t31 follow-up).
+   Why this rule exists rather than a margin on the button: the appearance form's vertical
+   rhythm comes from `.form > * + *`, a DIRECT-child selector. The "baralhar" actions row is
+   a direct child of `.form` and picks up that 1rem step; this one is nested inside
+   `.color-customizer`, so the combinator never reaches it and it had NO top spacing at all —
+   it collapsed against the swatch grid. That is why it read as cramped while its twin two
+   rows up looked fine. Restore the same 1rem step the section already uses (deliberately the
+   literal that `.form > * + *` uses, so the two rows stay locked together) instead of giving
+   this one control a bespoke margin. */
+.color-customizer > .form__actions {
+  margin-top: 1rem;
+  /* The row is button + "a usar predefinições" note; let it wrap instead of overflowing the
+     card once the settings column narrows. */
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 0.5rem;
 }
 
 .color-customizer__status {

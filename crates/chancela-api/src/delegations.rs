@@ -23,11 +23,11 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
-use chancela_authz::{Delegation, Permission, Scope, UserId as AuthzUserId};
+use chancela_authz::{Delegation, DelegationRefusal, Permission, Scope, UserId as AuthzUserId};
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{authorizer, forbidden};
+use crate::authz::authorizer;
 use crate::error::ApiError;
 use crate::roles::ScopeInput;
 use crate::session::ScopeView;
@@ -152,15 +152,27 @@ fn tmp_path(path: &Path) -> PathBuf {
 // re-delegation); revocation is immediate (revoked delegations resolve to no authority). FROZEN DTOs.
 // =================================================================================================
 
-/// Body of `POST /v1/delegations` — delegate one permission to a grantee, optionally scoped and
-/// optionally expiring. `permission` deserialises from its dotted id; a meta verb / unknown verb /
-/// out-of-authority verb is refused by [`grant_delegation`] (`403`) or at deserialisation (`422`).
-/// New grants must carry a non-empty operator-supplied local evidence/rationale string in
-/// `legal_basis`; legacy stored records that predate this field still load with `None`.
+/// Body of `POST /v1/delegations` — delegate one **or several** permissions to a grantee, optionally
+/// scoped and optionally expiring. Each permission deserialises from its dotted id; a meta verb /
+/// unknown verb / out-of-authority verb is refused by [`grant_delegation`] (`403`) or at
+/// deserialisation (`422`). New grants must carry a non-empty operator-supplied local
+/// evidence/rationale string in `legal_basis`; legacy stored records that predate this field still
+/// load with `None`.
+///
+/// **Back-compatible.** The legacy singular `permission` and the plural `permissions` are both
+/// accepted and their union (order-preserving, de-duplicated) is the delegated set; at least one
+/// verb must arrive or the request is a `422`. A pre-existing single-`permission` client is
+/// therefore unaffected.
 #[derive(Deserialize)]
 pub struct GrantDelegation {
     pub to: Uuid,
-    pub permission: Permission,
+    /// The legacy single permission. Optional now that `permissions` exists.
+    #[serde(default)]
+    pub permission: Option<Permission>,
+    /// The delegated set. Every element is validated **individually**; one bad verb refuses the
+    /// whole request (see [`grant_delegation`]).
+    #[serde(default)]
+    pub permissions: Vec<Permission>,
     pub scope: ScopeInput,
     /// RFC 3339 start timestamp; absent ⇒ starts at grant time.
     #[serde(default)]
@@ -181,7 +193,11 @@ pub struct DelegationView {
     pub id: String,
     pub from: String,
     pub to: String,
+    /// The primary delegated verb. Retained verbatim so pre-existing consumers of the frozen DTO
+    /// keep working; `permissions` is the authoritative full set.
     pub permission: String,
+    /// Every delegated verb, in grant order (always non-empty; `permission` is its first element).
+    pub permissions: Vec<String>,
     pub scope: ScopeView,
     pub granted_at: String,
     pub starts_at: String,
@@ -203,6 +219,12 @@ impl From<&StoredDelegation> for DelegationView {
             from: d.inner.from.0.to_string(),
             to: d.inner.to.0.to_string(),
             permission: d.inner.permission.as_str().to_owned(),
+            permissions: d
+                .inner
+                .permissions()
+                .into_iter()
+                .map(|p| p.as_str().to_owned())
+                .collect(),
             scope: ScopeView::from(d.inner.scope),
             granted_at: d.granted_at.clone(),
             starts_at: d.inner.starts_at.format(&Rfc3339).unwrap_or_default(),
@@ -262,10 +284,16 @@ pub async fn list_delegations(
     Ok(Json(list))
 }
 
-/// `POST /v1/delegations` — grant a scoped, revocable, optionally-expiring delegation. Gated
-/// `delegation.grant` at the delegation's scope, **and** the DELEGATION INVARIANT: the permission
-/// must be non-meta AND held by the actor **via a role** covering that scope. The via-role rule makes
-/// re-delegation structurally impossible (a received permission is never a role grant).
+/// `POST /v1/delegations` — grant a scoped, revocable, optionally-expiring delegation over one or
+/// more permissions. Gated `delegation.grant` at the delegation's scope, **and** the DELEGATION
+/// INVARIANT applied to **every** permission in the set independently: each must be non-meta AND
+/// held by the actor **via a role** covering that scope. The via-role rule makes re-delegation
+/// structurally impossible (a received permission is never a role grant).
+///
+/// **All-or-nothing.** The whole set is validated before anything is written, so a batch containing
+/// one non-delegable or above-ceiling verb is refused *entirely* (`403`, naming that verb) and no
+/// partial delegation is ever persisted. Naming the offender is safe: the caller supplied the verb
+/// list and can already introspect their own authority via `GET /v1/session/permissions`.
 pub async fn grant_delegation(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -273,13 +301,13 @@ pub async fn grant_delegation(
     Json(req): Json<GrantDelegation>,
 ) -> Result<(StatusCode, Json<DelegationView>), ApiError> {
     let scope: Scope = req.scope.into();
+    let requested = requested_permissions(req.permission, &req.permissions)?;
     let authz = authorizer(&state, &actor).await?;
     // Meta gate at the delegation's scope.
     authz.require(Permission::DelegationGrant, scope)?;
-    // DELEGATION INVARIANT: non-meta + hold-via-role at scope (blocks escalation AND re-delegation).
-    if !authz.can_delegate(req.permission, scope) {
-        return Err(forbidden());
-    }
+    // DELEGATION INVARIANT, ELEMENT-WISE: every verb must be non-meta + held via a role at scope
+    // (blocks escalation AND re-delegation). One offender refuses the entire delegation.
+    authz.can_delegate_all(&requested, scope).map_err(refusal)?;
 
     let grantor = authz.principal()?;
     let grantee = UserId(req.to);
@@ -293,12 +321,14 @@ pub async fn grant_delegation(
         parse_optional_rfc3339(req.starts_at.as_deref(), "starts_at")?.unwrap_or(granted_at_time);
     let expires_at = parse_optional_rfc3339(req.expires_at.as_deref(), "expires_at")?;
 
-    let mut inner = Delegation::new(
+    // `requested` is non-empty (checked above), so `with_permissions` always yields a delegation.
+    let mut inner = Delegation::with_permissions(
         AuthzUserId(grantor.0),
         AuthzUserId(grantee.0),
-        req.permission,
+        requested,
         scope,
     )
+    .ok_or_else(|| ApiError::Unprocessable(EMPTY_PERMISSION_SET.to_owned()))?
     .starting_at(starts_at)
     .with_legal_basis(Some(legal_basis));
     if let Some(exp) = expires_at {
@@ -332,6 +362,11 @@ pub async fn grant_delegation(
 /// `DELETE /v1/delegations/{id}` — revoke a delegation. The **grantor** may always revoke their own;
 /// otherwise `delegation.revoke` at the delegation's scope is required. Revocation is **immediate**
 /// (a revoked delegation contributes no authority). Idempotent for an already-revoked delegation.
+///
+/// **Whole-set revocation.** A delegation is the unit of revocation: revoking it withdraws *every*
+/// permission it carries, atomically. There is deliberately no per-permission revoke — the set was
+/// granted together under one legal basis, scope and expiry, so it is withdrawn together. To reduce
+/// a grantee's delegated authority, revoke the delegation and grant a narrower one.
 pub async fn revoke_delegation(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -379,6 +414,42 @@ pub async fn revoke_delegation(
     // wp16 P3b: the grantee's effective authority changed — signal other nodes (no-op on single-node).
     state.publish_role_changed(updated.inner.to.0);
     Ok(Json(view))
+}
+
+pub(crate) const EMPTY_PERMISSION_SET: &str =
+    "uma delegação tem de indicar pelo menos uma permissão";
+
+/// Resolve the delegated set from the legacy singular field and the plural one: their union, in
+/// first-seen order, de-duplicated. Empty ⇒ `422` (a delegation that grants nothing is meaningless).
+fn requested_permissions(
+    single: Option<Permission>,
+    many: &[Permission],
+) -> Result<Vec<Permission>, ApiError> {
+    let mut out: Vec<Permission> = Vec::with_capacity(many.len() + 1);
+    for p in single.into_iter().chain(many.iter().copied()) {
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    if out.is_empty() {
+        return Err(ApiError::Unprocessable(EMPTY_PERMISSION_SET.to_owned()));
+    }
+    Ok(out)
+}
+
+/// Turn an element-wise delegation refusal into a `403` that names the offending verb and the
+/// reason, and states that the whole delegation was refused (nothing was granted).
+fn refusal(refusal: DelegationRefusal) -> ApiError {
+    let permission = refusal.permission().as_str();
+    let reason = match refusal {
+        DelegationRefusal::Meta(_) => "é uma meta-permissão e não é delegável",
+        DelegationRefusal::NotHeldViaRole(_) => {
+            "não é detida através de uma função neste âmbito, logo não pode ser delegada"
+        }
+    };
+    ApiError::Forbidden(format!(
+        "delegação recusada na íntegra: a permissão «{permission}» {reason}"
+    ))
 }
 
 fn parse_optional_rfc3339(
@@ -536,6 +607,117 @@ mod tests {
         let path = dir.join(DELEGATIONS_FILE);
         std::fs::write(&path, b"{ this is not json").unwrap();
         assert!(load_delegations(&path).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn requested_permissions_unions_the_legacy_field_with_the_array() {
+        // Legacy single-permission request.
+        assert_eq!(
+            requested_permissions(Some(Permission::ActRead), &[]).unwrap(),
+            vec![Permission::ActRead]
+        );
+        // Array-only request.
+        assert_eq!(
+            requested_permissions(None, &[Permission::ActRead, Permission::ActAdvance]).unwrap(),
+            vec![Permission::ActRead, Permission::ActAdvance]
+        );
+        // Both, overlapping: union, first-seen order, de-duplicated.
+        assert_eq!(
+            requested_permissions(
+                Some(Permission::ActAdvance),
+                &[Permission::ActRead, Permission::ActAdvance]
+            )
+            .unwrap(),
+            vec![Permission::ActAdvance, Permission::ActRead]
+        );
+        // Neither: a delegation of nothing is refused.
+        let err = requested_permissions(None, &[]).expect_err("empty set");
+        assert!(matches!(err, ApiError::Unprocessable(m) if m == EMPTY_PERMISSION_SET));
+    }
+
+    #[test]
+    fn a_refusal_names_the_offending_permission_and_says_nothing_was_granted() {
+        let err = refusal(DelegationRefusal::Meta(Permission::DelegationGrant));
+        let ApiError::Forbidden(message) = err else {
+            panic!("expected 403")
+        };
+        assert!(message.contains("delegation.grant"));
+        assert!(message.contains("meta-permissão"));
+        assert!(message.contains("na íntegra"));
+
+        let err = refusal(DelegationRefusal::NotHeldViaRole(Permission::DataWipe));
+        let ApiError::Forbidden(message) = err else {
+            panic!("expected 403")
+        };
+        assert!(message.contains("data.wipe"));
+        assert!(message.contains("função"));
+    }
+
+    #[test]
+    fn the_view_lists_every_delegated_permission() {
+        let granted_at = OffsetDateTime::UNIX_EPOCH.format(&Rfc3339).unwrap();
+        let inner = Delegation::with_permissions(
+            uid(1),
+            uid(2),
+            [Permission::ActAdvance, Permission::DataBackup],
+            Scope::Global,
+        )
+        .unwrap();
+        let d = StoredDelegation::new(DelegationId(Uuid::from_u128(3)), granted_at, inner);
+        let view = DelegationView::from(&d);
+        // The legacy singular field keeps naming the primary verb…
+        assert_eq!(view.permission, "act.advance");
+        // …and the array carries the whole set (this is what the ledger entry records).
+        assert_eq!(view.permissions, vec!["act.advance", "data.backup"]);
+    }
+
+    #[test]
+    fn a_legacy_single_permission_record_views_as_a_one_element_set() {
+        let raw = serde_json::json!([{
+            "id": "00000000-0000-0000-0000-000000000009",
+            "granted_at": "2026-01-01T00:00:00Z",
+            "from": "00000000-0000-0000-0000-000000000001",
+            "to": "00000000-0000-0000-0000-000000000002",
+            "permission": "act.advance",
+            "scope": "Global",
+            "revoked": false
+        }]);
+        let back: Vec<StoredDelegation> = serde_json::from_value(raw).expect("legacy delegation");
+        let view = DelegationView::from(&back[0]);
+        assert_eq!(view.permission, "act.advance");
+        assert_eq!(view.permissions, vec!["act.advance"]);
+    }
+
+    #[test]
+    fn a_multi_permission_record_round_trips_on_disk() {
+        let dir = std::env::temp_dir().join(format!("chancela-deleg-multi-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(DELEGATIONS_FILE);
+
+        let granted_at = OffsetDateTime::UNIX_EPOCH.format(&Rfc3339).unwrap();
+        let stored = StoredDelegation::new(
+            DelegationId(Uuid::from_u128(1)),
+            granted_at,
+            Delegation::with_permissions(
+                uid(1),
+                uid(2),
+                [Permission::ActAdvance, Permission::DataBackup],
+                Scope::Global,
+            )
+            .unwrap(),
+        );
+        let mut table: HashMap<DelegationId, StoredDelegation> = HashMap::new();
+        table.insert(stored.id, stored.clone());
+
+        write_delegations_atomic(&path, &table).expect("write");
+        let loaded = load_delegations(&path).expect("load");
+        assert_eq!(loaded[&stored.id], stored);
+        assert_eq!(
+            loaded[&stored.id].authz().permissions(),
+            vec![Permission::ActAdvance, Permission::DataBackup]
+        );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

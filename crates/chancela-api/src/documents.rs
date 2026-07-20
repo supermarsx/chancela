@@ -6788,27 +6788,40 @@ pub(crate) fn is_ata_template(template_id: &str) -> bool {
         .is_some_and(|spec| spec.stage == LifecycleStage::Ata)
 }
 
-fn first_ata_document(docs: impl IntoIterator<Item = StoredDocument>) -> Option<StoredDocument> {
+fn first_ata_document(
+    docs: impl IntoIterator<Item = StoredDocument>,
+    superseded: &[String],
+) -> Option<StoredDocument> {
     docs.into_iter()
-        .find(|doc| is_ata_template(&doc.template_id))
+        .find(|doc| is_ata_template(&doc.template_id) && !superseded.iter().any(|id| id == &doc.id))
 }
 
 /// Fetch the canonical persisted document for an owner. For real acts this is the sealed Ata (the
 /// first generated Ata row), so later certidão/extrato generation cannot change signing/download/
 /// bundle targets. Book instruments (termos keyed by book id cast to `ActId`) keep the historical
 /// newest-by-owner lookup.
+///
+/// Snapshots a reopen retired (`act.superseded_signing_snapshots`) are skipped: their bytes and
+/// their `document.generated` event remain, but they are no longer this act's signing document, so
+/// nothing downstream — signing, seal, download, bundling — can bind to a snapshot that was pulled
+/// back for correction.
 pub(crate) async fn load_document(
     state: &AppState,
     act_id: ActId,
 ) -> Result<Option<StoredDocument>, ApiError> {
-    let is_real_act = state.acts.read().await.contains_key(&act_id);
-    if is_real_act {
+    let superseded: Option<Vec<String>> = state.acts.read().await.get(&act_id).map(|act| {
+        act.superseded_signing_snapshots
+            .iter()
+            .map(|snapshot| snapshot.document_id.clone())
+            .collect()
+    });
+    if let Some(superseded) = superseded {
         if let Some(store) = state.store.clone() {
             let docs = store
                 .read_blocking_async(move |s| s.documents_for_act(act_id))
                 .await
                 .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")))?;
-            return Ok(first_ata_document(docs));
+            return Ok(first_ata_document(docs, &superseded));
         }
         return Ok(state
             .documents
@@ -6816,7 +6829,9 @@ pub(crate) async fn load_document(
             .await
             .get(&act_id)
             .cloned()
-            .filter(|doc| is_ata_template(&doc.template_id)));
+            .filter(|doc| {
+                is_ata_template(&doc.template_id) && !superseded.iter().any(|id| id == &doc.id)
+            }));
     }
 
     if let Some(doc) = state
@@ -10289,6 +10304,7 @@ mod tests {
             Attendee {
                 name: "Ana Rocha".to_owned(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(520)),
@@ -10296,6 +10312,7 @@ mod tests {
             Attendee {
                 name: "Bruno Dias".to_owned(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Absent,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(125)),
@@ -10442,6 +10459,7 @@ mod tests {
             Attendee {
                 name: "Fração A".to_owned(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(600)),
@@ -10449,6 +10467,7 @@ mod tests {
             Attendee {
                 name: "Fração B".to_owned(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Absent,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(400)),
@@ -11364,6 +11383,7 @@ mod tests {
             Attendee {
                 name: "Amélia Marques".to_string(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::InPerson,
                 represented_by: None,
                 weight: Some(AttendanceWeight::Permilage(250)),
@@ -11371,6 +11391,7 @@ mod tests {
             Attendee {
                 name: "Bruno Cardoso".to_string(),
                 quality: SignatoryCapacity::CondoOwner,
+                quality_note: None,
                 presence: PresenceMode::Represented,
                 represented_by: Some("Amélia Marques".to_string()),
                 weight: Some(AttendanceWeight::Permilage(180)),
