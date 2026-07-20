@@ -138,6 +138,17 @@ a:focus-visible {
   padding-top: clamp(0.9rem, 1.8vw, 1.35rem);
 }
 
+/* Opt-out from the shell measure for pages whose content is a wide ledger table rather
+   than prose (t64). The 1080px measure leaves ~61.5rem of content, which is under the
+   Minutas catalog's own 62rem floor: the nine columns scrolled sideways inside their box
+   at every viewport, however large the window. A page opts in by putting `.wide-page` on
+   its root; `.app` keeps its own horizontal padding, so the content area grows but the
+   gutters stay and text never runs to the viewport edge. Below the wider measure the rule
+   is inert — `.app` is already fluid there. */
+.app:has(.wide-page) {
+  max-width: 92rem;
+}
+
 .external-signature-page {
   position: fixed;
   top: var(--titlebar-h);
@@ -693,9 +704,28 @@ a:focus-visible {
   gap: 0.6rem;
 }
 
-.rowline .control {
+/* Only controls sitting *directly* in the row are flex items of the row. The
+   descendant form of this rule also matched controls nested in a `.field`, which
+   is a column flex container — there `flex: 1 1 8rem` reads as a 8rem tall
+   flex-basis and stretched the input to that height. */
+.rowline > .control {
   width: auto;
   flex: 1 1 8rem;
+}
+
+/* When the row holds labelled fields, the `.field` is the flex item; its control
+   keeps the default `width: 100%` and so fills it. `min-width: 0` lets a field
+   shrink below the intrinsic width of its label instead of overflowing the row. */
+.rowline > .field {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+/* Labels sit above their controls, so such a row aligns on its bottom edge: a
+   label that wraps to two lines then grows upwards and leaves the controls (and
+   the row's buttons) on one line, rather than centring each field separately. */
+.rowline:has(> .field) {
+  align-items: flex-end;
 }
 
 .check {
