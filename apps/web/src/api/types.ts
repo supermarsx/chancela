@@ -3547,7 +3547,7 @@ export interface LawCitationReport {
 // since t41 every mutation requires a session, and since t29 a user may hold an optional
 // sign-in secret (argon2id) and a PKI audit-attestation key. No secret material ever
 // crosses the wire (`UserView` carries only booleans + a key fingerprint). A session is an
-// in-memory token (`X-Chancela-Session`) minted by `POST /v1/session` that resolves the
+// opaque token (`X-Chancela-Session`) minted by `POST /v1/session` that resolves the
 // current user; a password is required for account creation and sign-in. It is a local
 // tamper speed-bump, not at-rest encryption.
 

@@ -458,8 +458,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) headers[SESSION_HEADER] = token;
   if (init?.body) headers['Content-Type'] = 'application/json';
   const res = await fetch(resolveApiUrl(path), { ...init, headers });
-  // A 401 usually means the server no longer recognises the token (e.g. it restarted and the
-  // in-memory session was lost): clear the stale token and notify listeners so the session
+  // A 401 usually means the server no longer recognises the token (revoked, idle-expired, or past
+  // its absolute lifetime cap): clear the stale token and notify listeners so the session
   // query refetches and the UI reflects the signed-out state (L-1). A credential-proof path
   // is the exception — there the 401 is about the submitted proof, not the session.
   handleUnauthorized(res, path);

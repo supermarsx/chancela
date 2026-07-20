@@ -157,7 +157,7 @@ import type {
   StoredRepositoryPolicy,
 } from './types';
 import { api, type ActDocumentWorkingCopyFormat } from './client';
-import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
+import { clearSessionToken, getSessionToken, onSessionCleared, setSessionToken } from './session';
 
 export const keys = {
   entities: ['entities'] as const,
@@ -2248,10 +2248,16 @@ export function useUpdateUser(id: string) {
 }
 
 /**
- * The current session (`GET /v1/session`), read from the in-memory token. On a fresh
- * page load the token is gone (it is never persisted — see `./session`), so this
- * resolves to `{ user: null, permissions: [] }` until a user is picked; that is the
- * intended v1 behaviour. The picker keys its display off this query.
+ * The current session (`GET /v1/session`), read from the token in `./session`. That token now
+ * survives a page reload (tab-scoped `sessionStorage`, t51), so on a refresh this re-reads the
+ * SAME session — same user, same effective permission grants — instead of dropping to the
+ * signed-out system actor. The picker keys its display off this query.
+ *
+ * The server stays the sole authority on whether a restored token is still alive: this endpoint
+ * answers `200 { user: null }` (not a 401) for a token it no longer honours, so the client's 401
+ * path never fires for it. Hence the explicit clear below — otherwise a revoked or aged-out token
+ * would sit in `sessionStorage` and be re-presented on every future reload. Guarded on a token
+ * actually being present so the clear cannot loop against the invalidation it triggers.
  *
  * This hook is always mounted at the app shell (via `CurrentUserPicker` in `layout`),
  * so it is the natural place to register the 401-clear listener: when the API client
@@ -2267,7 +2273,14 @@ export function useSession() {
       void qc.invalidateQueries({ queryKey: keys.session });
     });
   }, [qc]);
-  return useQuery({ queryKey: keys.session, queryFn: () => api.getSession() });
+  return useQuery({
+    queryKey: keys.session,
+    queryFn: async () => {
+      const view = await api.getSession();
+      if (!view.user && getSessionToken() !== null) clearSessionToken();
+      return view;
+    },
+  });
 }
 
 /**
@@ -2312,8 +2325,9 @@ export type SignInArgs = { password: string } & (
 );
 
 /**
- * Sign in as a user (`POST /v1/session`, t29). The issued token is stored in memory so
- * every subsequent request carries it; the session query is primed with a full session
+ * Sign in as a user (`POST /v1/session`, t29). The issued token is stored in tab-scoped
+ * `sessionStorage` (t51) so every subsequent request — and every request after a page
+ * reload, until the tab closes — carries it; the session query is primed with a full session
  * read so RBAC-gated UI has the effective permission grants immediately. A password is
  * always sent; a wrong password **and an unknown username** are the same opaque **401**
  * (deliberately indistinguishable — see {@link SignInArgs}), a legacy account with no

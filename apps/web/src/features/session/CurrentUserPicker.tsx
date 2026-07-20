@@ -2,12 +2,13 @@
  * Current-user picker (plan t14 §2.8) — a compact control at the right of the fixed
  * tab bar. It shows the active user's display name, or the system actor "api" when no
  * one is signed in. Opening it lists the active users; picking one prompts for a password
- * and signs in (`POST /v1/session`, token kept in memory), signing out clears the session
- * (`DELETE /v1/session`). While signed in, the API client sends `X-Chancela-Session`
- * on every request so the ledger attributes the actor to the chosen user.
+ * and signs in (`POST /v1/session`), signing out clears the session (`DELETE /v1/session`).
+ * While signed in, the API client sends `X-Chancela-Session` on every request so the ledger
+ * attributes the actor to the chosen user.
  *
- * The token is deliberately never persisted (see `api/session`); a page reload returns
- * to the system actor until a user is picked again — `useSession` reflects that on load.
+ * The token is held in tab-scoped `sessionStorage` (see `api/session`), so a page reload keeps
+ * the same user signed in rather than dropping to the system actor. Signing out clears it on
+ * both sides; closing the tab clears it here.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
