@@ -1828,6 +1828,32 @@ pub enum Locale {
     EsEs,
 }
 
+impl Locale {
+    /// The BCP 47 tag — the same string serde reads and writes.
+    ///
+    /// Added for the server-side email templates (t70), which pick a copy catalog by tag and are
+    /// not going through serde to get there. `locale_as_str_matches_serde` pins the two together so
+    /// they cannot drift, which is the same trap `SmtpEncryption::StartTls` fell into.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Locale::PtPt => "pt-PT",
+            Locale::PtBr => "pt-BR",
+            Locale::DaDk => "da-DK",
+            Locale::DeDe => "de-DE",
+            Locale::FrFr => "fr-FR",
+            Locale::FiFi => "fi-FI",
+            Locale::SvFi => "sv-FI",
+            Locale::ItIt => "it-IT",
+            Locale::NlNl => "nl-NL",
+            Locale::PlPl => "pl-PL",
+            Locale::EnGb => "en-GB",
+            Locale::EnUs => "en-US",
+            Locale::SvSe => "sv-SE",
+            Locale::EsEs => "es-ES",
+        }
+    }
+}
+
 /// Preferred qualified-signature family. Variant names match the domain vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SignatureFamily {
