@@ -72,7 +72,7 @@ describe('ExternalSignerInvitePage', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     renderWithProviders(<ExternalSignerInvitePage />, [
-      '/assinatura-externa?token=cxi_secret_token_123',
+      '/external-signature?token=cxi_secret_token_123',
     ]);
 
     expect(await screen.findByText('Convite externo')).toBeTruthy();
@@ -165,7 +165,7 @@ describe('ExternalSignerInvitePage', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     renderWithProviders(<ExternalSignerInvitePage />, [
-      '/assinatura-externa?token=cxi_secret_token_456',
+      '/external-signature?token=cxi_secret_token_456',
     ]);
 
     expect(await screen.findByText('Carregamento de evidência técnica')).toBeTruthy();
@@ -254,7 +254,7 @@ describe('ExternalSignerInvitePage', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     renderWithProviders(<ExternalSignerInvitePage />, [
-      '/assinatura-externa?token=cxi_identity_token',
+      '/external-signature?token=cxi_identity_token',
     ]);
 
     expect(await screen.findByText('Carregamento de evidência técnica')).toBeTruthy();
@@ -304,7 +304,7 @@ describe('ExternalSignerInvitePage', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     renderWithProviders(<ExternalSignerInvitePage />, [
-      '/assinatura-externa?token=cxi_oversized_token',
+      '/external-signature?token=cxi_oversized_token',
     ]);
 
     expect(await screen.findByText('Carregamento de evidência técnica')).toBeTruthy();
@@ -337,7 +337,7 @@ describe('ExternalSignerInvitePage', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProviders(<ExternalSignerInvitePage />, ['/assinatura-externa']);
+    renderWithProviders(<ExternalSignerInvitePage />, ['/external-signature']);
 
     expect(screen.getByText('Ligação sem token')).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();

@@ -185,7 +185,7 @@ afterEach(() => {
 describe('ExternalSigningWorkflowsPage', () => {
   it('lists external invite statuses with technical-only workflow limits', async () => {
     vi.stubGlobal('fetch', externalSigningFetch());
-    renderWithProviders(<ExternalSigningWorkflowsPage />, ['/ferramentas?tool=external-signing']);
+    renderWithProviders(<ExternalSigningWorkflowsPage />, ['/tools?tool=external-signing']);
 
     expect(await screen.findByText('Maria Pending')).toBeTruthy();
     expect(screen.getByText('João Accepted')).toBeTruthy();
@@ -213,7 +213,7 @@ describe('ExternalSigningWorkflowsPage', () => {
       configurable: true,
     });
 
-    renderWithProviders(<ExternalSigningWorkflowsPage />, ['/ferramentas?tool=external-signing']);
+    renderWithProviders(<ExternalSigningWorkflowsPage />, ['/tools?tool=external-signing']);
 
     const unsafeLookingToken = 'javascript:alert(1)&next=https://evil.test';
     const expected = externalSignerInviteLink(unsafeLookingToken, window.location.origin);
@@ -222,7 +222,7 @@ describe('ExternalSigningWorkflowsPage', () => {
     });
 
     expect(await screen.findByText(expected!)).toBeTruthy();
-    expect(expected).toContain('/assinatura-externa?token=javascript%3Aalert');
+    expect(expected).toContain('/external-signature?token=javascript%3Aalert');
     expect(expected).not.toContain('token=javascript:alert');
 
     fireEvent.click(screen.getByRole('button', { name: 'Copiar ligação' }));

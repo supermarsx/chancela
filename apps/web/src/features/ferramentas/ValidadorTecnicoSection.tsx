@@ -13,9 +13,9 @@
  * `asic_signature_validation.rs`, `external_validator_evidence.rs`); nothing here is a
  * placeholder for an unbuilt capability.
  *
- * Navigation reuses the shared `<SubNav>` primitive and the `?sec=` deep-link convention
+ * Navigation reuses the shared `<SubNav>` primitive and the path-segment deep-link convention
  * that Configurações and the book detail tabs already use, including the "default section
- * carries no `sec` param" rule — so `/ferramentas?tool=pdf` still lands on PDF validation
+ * carries no segment" rule — so `/tools/pdf` still lands on PDF validation
  * and existing deep links are unchanged.
  *
  * **Deliberate divergence: this level pushes history instead of replacing it.**
@@ -24,15 +24,15 @@
  * is fixing in Legislação, so the sub-tab switch here pushes: Back returns to the sub-tab
  * you came from and keeps you inside the tool.
  */
-import { useSearchParams } from 'react-router-dom';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { Icon, SubNav } from '../../ui';
+import { useSectionNav } from '../../app/navPath';
 import { PdfSignatureValidatorPanel } from './PdfSignatureValidatorPanel';
 import { AsicSignatureInspectorPanel } from './AsicSignatureInspectorPanel';
 import { ExternalValidatorReportsPanel } from './ExternalValidatorReportsPanel';
 
-export type ValidadorTecnicoSectionId = 'pdf' | 'asic' | 'relatorios';
+export type ValidadorTecnicoSectionId = 'pdf' | 'asic' | 'reports';
 
 const DEFAULT_SECTION: ValidadorTecnicoSectionId = 'pdf';
 
@@ -43,30 +43,26 @@ const SECTIONS: {
 }[] = [
   { id: 'pdf', label: 'tools.pdf.section.pdf', icon: <Icon.FileText /> },
   { id: 'asic', label: 'tools.pdf.section.asic', icon: <Icon.Archive /> },
-  { id: 'relatorios', label: 'tools.pdf.section.reports', icon: <Icon.Tray /> },
+  { id: 'reports', label: 'tools.pdf.section.reports', icon: <Icon.Tray /> },
 ];
 
-/** An unknown `sec` falls back to the default rather than rendering nothing. */
-export function parseValidadorTecnicoSection(value: string | null): ValidadorTecnicoSectionId {
-  if (value === 'asic' || value === 'relatorios') return value;
+/** An unknown segment falls back to the default rather than rendering nothing. */
+export function parseValidadorTecnicoSection(
+  value: string | null | undefined,
+): ValidadorTecnicoSectionId {
+  if (value === 'asic' || value === 'reports') return value;
   return DEFAULT_SECTION;
 }
 
 export function ValidadorTecnicoSection() {
   const t = useT();
-  const [params, setParams] = useSearchParams();
-  const section = parseValidadorTecnicoSection(params.get('sec'));
-
-  function selectSection(next: ValidadorTecnicoSectionId) {
-    setParams((prev) => {
-      const p = new URLSearchParams(prev);
-      // The PDF validator is the default, so it carries no `sec` param — `?tool=pdf`
-      // stays the canonical link to it.
-      if (next === DEFAULT_SECTION) p.delete('sec');
-      else p.set('sec', next);
-      return p;
-    });
-  }
+  // Second level under `/tools/pdf`. The PDF validator itself is the default, so it
+  // carries no segment of its own — `/tools/pdf` stays the canonical link to it.
+  const { section, select: selectSection } = useSectionNav<ValidadorTecnicoSectionId>({
+    base: '/tools/pdf',
+    parse: parseValidadorTecnicoSection,
+    fallback: DEFAULT_SECTION,
+  });
 
   return (
     <div className="stack">
@@ -82,7 +78,7 @@ export function ValidadorTecnicoSection() {
       <div className="route-transition" key={section} data-subanim-key={section}>
         {section === 'asic' ? (
           <AsicSignatureInspectorPanel />
-        ) : section === 'relatorios' ? (
+        ) : section === 'reports' ? (
           <ExternalValidatorReportsPanel />
         ) : (
           <PdfSignatureValidatorPanel />

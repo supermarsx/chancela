@@ -114,7 +114,7 @@ describe('buildDashboardNotifications', () => {
 
     expect(items[0]).toMatchObject({
       kind: 'alert',
-      action: { href: '/entidades/entity-1', label: 'Abrir entidade' },
+      action: { href: '/entities/entity-1', label: 'Abrir entidade' },
     });
     expect(items[0]?.title).toContain('perto do fim');
     expect(items[0]?.detail).toContain('2026-08-01');
@@ -147,7 +147,7 @@ describe('buildDashboardNotifications', () => {
               kind: 'open_backup_recovery_policy',
               label_key: 'notifications.alert.backupRecoveryFreshness.action',
               api_href: null,
-              route: '/configuracoes?sec=dados',
+              route: '/settings?sec=dados',
             },
             i18n: {
               title_key: 'notifications.alert.backupRecoveryFreshness.title',
@@ -165,7 +165,7 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]).toMatchObject({
       kind: 'alert',
       title: 'Rever atualidade da recuperação de backups',
-      action: { href: '/configuracoes?sec=dados', label: 'Abrir gestão de dados' },
+      action: { href: '/settings?sec=dados', label: 'Abrir gestão de dados' },
     });
     expect(items[0]?.detail).toContain('stale');
     expect(items[0]?.detail).toContain('90 dias');
@@ -208,7 +208,7 @@ describe('buildDashboardNotifications', () => {
               kind: 'open_entity',
               label_key: 'notifications.alert.entity.managerRemuneration.action',
               api_href: '/v1/entities/entity-2',
-              route: '/entidades/entity-2',
+              route: '/entities/entity-2',
             },
             law_refs: [
               {
@@ -284,19 +284,19 @@ describe('buildDashboardNotifications', () => {
     const byId = new Map(items.map((item) => [item.id, item]));
     expect(byId.get('alert:entity.book.no_open_book:entity-1:-:-:0')).toMatchObject({
       title: 'Sem livro aberto registado',
-      action: { href: '/entidades/entity-1', label: 'Abrir entidade' },
+      action: { href: '/entities/entity-1', label: 'Abrir entidade' },
     });
     expect(
       byId.get('alert:entity.manager_remuneration.setup_recommended:entity-2:-:-:1'),
     ).toMatchObject({
       title: 'Definir remuneração da gerência',
-      action: { href: '/entidades/entity-2', label: 'Abrir entidade' },
+      action: { href: '/entities/entity-2', label: 'Abrir entidade' },
     });
     expect(
       byId.get('alert:book.termo_abertura.missing_metadata:entity-1:book-1:-:2'),
     ).toMatchObject({
       title: 'Rever termo de abertura',
-      action: { href: '/livros/book-1', label: 'Abrir livro' },
+      action: { href: '/books/book-1', label: 'Abrir livro' },
     });
     expect(
       byId.get('alert:book.termo_abertura.missing_metadata:entity-1:book-1:-:2')?.detail,
@@ -305,21 +305,21 @@ describe('buildDashboardNotifications', () => {
       title: 'Livro sem atas registadas',
       detail:
         'O livro aberto ainda não tem atas. Crie a ata n.º 2 ou importe atas históricas quando aplicável.',
-      action: { href: '/livros/book-1', label: 'Abrir livro' },
+      action: { href: '/books/book-1', label: 'Abrir livro' },
     });
     expect(byId.get('alert:act.lifecycle.advance_available:entity-1:book-1:act-1:4')).toMatchObject(
       {
         title: 'Próximo passo da ata disponível',
         detail:
           'A ata está em Draft. Avance para Review quando o trabalho de suporte estiver pronto.',
-        action: { href: '/atas/act-1', label: 'Abrir ata' },
+        action: { href: '/acts/act-1', label: 'Abrir ata' },
       },
     );
     expect(byId.get('alert:act.lifecycle.signing_ready:entity-1:book-1:act-1:5')).toMatchObject({
       title: 'Ata pronta para assinaturas',
       detail:
         'A ata está em assinatura e não tem erros de conformidade em PT-CSC. Recolha ou importe as assinaturas necessárias.',
-      action: { href: '/atas/act-1', label: 'Abrir ata' },
+      action: { href: '/acts/act-1', label: 'Abrir ata' },
     });
   });
 
@@ -346,7 +346,7 @@ describe('buildDashboardNotifications', () => {
 
     expect(items[0]?.title).toBe('Alerta do painel (unknown.alert.code)');
     expect(items[0]?.detail).toContain('Detalhe tecnico do backend.');
-    expect(items[0]?.action).toEqual({ href: '/atas/act-1', label: 'Abrir ata' });
+    expect(items[0]?.action).toEqual({ href: '/acts/act-1', label: 'Abrir ata' });
   });
 
   it('falls through unsafe links and blank higher-priority ids to the next valid alert target', () => {
@@ -374,7 +374,7 @@ describe('buildDashboardNotifications', () => {
       t,
     );
 
-    expect(items[0]?.action).toEqual({ href: '/livros/book-1', label: 'Abrir livro' });
+    expect(items[0]?.action).toEqual({ href: '/books/book-1', label: 'Abrir livro' });
   });
 
   it('does not duplicate the ledger-integrity fallback when the structured alert is present', () => {
@@ -401,7 +401,7 @@ describe('buildDashboardNotifications', () => {
     expect(
       items.filter((item) => item.id.includes('ledger.integrity.review_required')),
     ).toHaveLength(1);
-    expect(items[0]?.action).toEqual({ href: '/arquivo', label: 'Abrir arquivo' });
+    expect(items[0]?.action).toEqual({ href: '/archive', label: 'Abrir arquivo' });
   });
 
   it('renders act follow-up reminders with localized compact copy and act action metadata', () => {
@@ -450,7 +450,7 @@ describe('buildDashboardNotifications', () => {
       title: 'Enviar certidão ao contabilista',
       detail:
         'Acme, S.A. - Ata de aprovação de contas: Confirmar envio depois da assinatura externa.',
-      action: { href: '/atas/act-1', label: 'Abrir ata' },
+      action: { href: '/acts/act-1', label: 'Abrir ata' },
     });
     expect(items[0]?.detail).not.toContain('Raw backend');
   });
@@ -496,7 +496,7 @@ describe('buildDashboardNotifications', () => {
       title: 'Registar presenças: Ata de aprovação de contas',
       detail:
         'Ata de aprovação de contas de Acme, S.A. está marcada para 2026-07-20 e ainda não tem registo de presenças suficiente. Registe a referência de presenças e os totais ou participantes estruturados antes de a avançar.',
-      action: { href: '/atas/act-1', label: 'Registar presenças' },
+      action: { href: '/acts/act-1', label: 'Registar presenças' },
     });
     expect(items[0]?.detail).not.toContain('Raw backend');
     expect(items[0]?.detail).not.toContain('attendance_reference');
@@ -550,7 +550,7 @@ describe('buildDashboardNotifications', () => {
       title: 'Rever convocatória: Ata de aprovação de contas',
       detail:
         'Os estatutos registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A. com reunião marcada para 2026-03-30; a data local de aviso é 2026-03-20. A evidência de expedição registada não demonstra essa antecedência. Aviso consultivo local; não afirma suficiência legal, entrega externa ou conclusão do workflow.',
-      action: { href: '/atas/act-notice-1#convening-guidance', label: 'Rever convocatória' },
+      action: { href: '/acts/act-notice-1#convening-guidance', label: 'Rever convocatória' },
     });
     expect(items[0]?.detail).not.toContain('Raw backend');
     expect(items[0]?.detail).toContain('Aviso consultivo local');
@@ -611,7 +611,7 @@ describe('buildDashboardNotifications', () => {
       detail:
         'Os metadados estatutários locais registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A., mas a data da reunião ainda não está registada. A data local de aviso não pode ser calculada até a data da reunião ser registada. Registe a data da reunião e reveja a evidência de expedição. Aviso consultivo local; não afirma suficiência legal, cálculo de prazo legal, entrega externa, conclusão do workflow nem aceitação por registo, DRE ou fornecedor.',
       meta: ['Sem data', 'Fonte Convocatória da reunião'],
-      action: { href: '/atas/act-notice-1#convening-guidance', label: 'Rever convocatória' },
+      action: { href: '/acts/act-notice-1#convening-guidance', label: 'Rever convocatória' },
     });
     expect(items[0]?.detail).not.toContain('Raw backend');
     expect(items[0]?.detail).not.toContain('data local de aviso é');
@@ -647,7 +647,7 @@ describe('buildDashboardNotifications', () => {
               kind: 'open_entity',
               label_key: 'notifications.reminder.annual.action',
               api_href: '/v1/entities/condo-1',
-              route: '/entidades/condo-1',
+              route: '/entities/condo-1',
             },
           }),
         ],
@@ -661,7 +661,7 @@ describe('buildDashboardNotifications', () => {
       tone: 'accent',
       badge: 'Próximo',
       title: 'Assembleia anual de condomínio pendente',
-      action: { href: '/entidades/condo-1', label: 'Abrir entidade' },
+      action: { href: '/entities/condo-1', label: 'Abrir entidade' },
     });
     expect(items[0]?.title).not.toBe('Condomínio Horizonte');
     expect(items[0]?.detail).toContain('Condomínio Horizonte');
@@ -691,7 +691,7 @@ describe('buildDashboardNotifications', () => {
               kind: 'open_absent_owner_dispatch_evidence',
               label_key: 'notifications.reminder.absentOwnerDispatch.action',
               api_href: '/v1/documents/generated/generated-absent-1/dispatch-evidence',
-              route: '/atas/act-absent-1',
+              route: '/acts/act-absent-1',
             },
             i18n: {
               title_key: 'notifications.reminder.absentOwnerDispatch.title',
@@ -708,7 +708,7 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]).toMatchObject({
       kind: 'reminder',
       action: {
-        href: '/atas/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence',
+        href: '/acts/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence',
         label: 'Abrir ata',
       },
     });
@@ -741,7 +741,7 @@ describe('buildDashboardNotifications', () => {
               kind: 'open_generated_convening_dispatch_evidence',
               label_key: 'notifications.reminder.absentOwnerDispatch.action',
               api_href: '/v1/documents/generated/generated-conv-1/dispatch-evidence',
-              route: '/atas/act-conv-1',
+              route: '/acts/act-conv-1',
             },
             i18n: null,
           }),
@@ -754,7 +754,7 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]).toMatchObject({
       kind: 'reminder',
       action: {
-        href: '/atas/act-conv-1?generated_document_id=generated-conv-1&focus=dispatch-evidence#generated-dispatch-evidence',
+        href: '/acts/act-conv-1?generated_document_id=generated-conv-1&focus=dispatch-evidence#generated-dispatch-evidence',
         label: 'Abrir ata',
       },
     });
@@ -785,7 +785,7 @@ describe('buildDashboardNotifications', () => {
               kind: 'open_imported_document_review',
               label_key: 'notifications.reminder.importedDocumentReview.action',
               api_href: '/v1/documents/imported/import-1',
-              route: '/atas/act-import-1',
+              route: '/acts/act-import-1',
             },
             i18n: {
               title_key: 'notifications.reminder.importedDocumentReview.title',
@@ -802,7 +802,7 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]).toMatchObject({
       kind: 'reminder',
       action: {
-        href: '/atas/act-import-1?imported_document_id=import-1&focus=import-review#imported-documents',
+        href: '/acts/act-import-1?imported_document_id=import-1&focus=import-review#imported-documents',
         label: 'Rever documento importado',
       },
     });
@@ -847,7 +847,7 @@ describe('buildDashboardNotifications', () => {
 
     expect(popup).toHaveLength(1);
     expect(popup[0]?.kind).toBe('reminder');
-    expect(popup[0]?.action).toEqual({ href: '/entidades/entity-1', label: 'Abrir entidade' });
+    expect(popup[0]?.action).toEqual({ href: '/entities/entity-1', label: 'Abrir entidade' });
   });
 
   it('deduplicates reminders and keeps invalid, missing, overdue, and upcoming dates honest', () => {
@@ -890,12 +890,12 @@ describe('buildDashboardNotifications', () => {
     expect(items.find((item) => item.id.includes('2026-02-30'))).toMatchObject({
       tone: 'warn',
       meta: ['Data inválida', expect.any(String)],
-      action: { href: '/livros/book-edge', label: 'Abrir livro' },
+      action: { href: '/books/book-edge', label: 'Abrir livro' },
     });
-    expect(items.find((item) => item.action?.href === '/atas/act-upcoming')).toMatchObject({
+    expect(items.find((item) => item.action?.href === '/acts/act-upcoming')).toMatchObject({
       tone: 'neutral',
       badge: 'Planeado',
-      action: { href: '/atas/act-upcoming', label: 'Abrir entidade' },
+      action: { href: '/acts/act-upcoming', label: 'Abrir entidade' },
     });
     expect(items.some((item) => item.id === 'compliance')).toBe(true);
   });
@@ -951,11 +951,11 @@ describe('buildDashboardNotifications', () => {
     );
 
     expect(items.map((item) => item.action?.href)).toEqual([
-      '/arquivo',
-      '/atas/act-fallback',
-      '/livros/book-fallback',
-      '/entidades/entity-fallback',
-      '/configuracoes',
+      '/archive',
+      '/acts/act-fallback',
+      '/books/book-fallback',
+      '/entities/entity-fallback',
+      '/settings',
     ]);
   });
 
@@ -970,7 +970,7 @@ describe('buildDashboardNotifications', () => {
       title: 'Beta',
       detail: 'detail',
       meta: [],
-      action: { href: '/configuracoes', label: 'Abrir' },
+      action: { href: '/settings', label: 'Abrir' },
       ...overrides,
     });
 

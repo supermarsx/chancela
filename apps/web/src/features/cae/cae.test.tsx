@@ -45,7 +45,7 @@ describe('CaeCatalogPanel — refresh toast', () => {
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<CaeCatalogPanel />, ['/ferramentas']);
+    renderWithProviders(<CaeCatalogPanel />, ['/tools']);
 
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     expect(await screen.findByText('Catálogo CAE atualizado.')).toBeTruthy();
@@ -72,7 +72,7 @@ describe('CaeCatalogPanel — refresh toast', () => {
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<CaeCatalogPanel />, ['/ferramentas']);
+    renderWithProviders(<CaeCatalogPanel />, ['/tools']);
 
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     await waitFor(() =>
@@ -168,7 +168,7 @@ describe('CaePage redirect', () => {
     renderWithProviders(
       <Routes>
         <Route path="/cae" element={<CaePage />} />
-        <Route path="/ferramentas" element={<FerramentasPage />} />
+        <Route path="/tools" element={<FerramentasPage />} />
       </Routes>,
       ['/cae?code=68110&rev=Rev4'],
     );

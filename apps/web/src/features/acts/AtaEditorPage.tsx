@@ -3092,7 +3092,7 @@ export function AtaEditorPage() {
           <>
             {book.data ? (
               <>
-                <Link to={`/livros/${book.data.id}`}>{t('acts.book')}</Link> ·{' '}
+                <Link to={`/books/${book.data.id}`}>{t('acts.book')}</Link> ·{' '}
               </>
             ) : null}
             {t('acts.crumb')}

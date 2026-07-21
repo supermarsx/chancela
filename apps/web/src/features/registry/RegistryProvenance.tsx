@@ -242,7 +242,7 @@ function CommercialCards({
           <GateButtonLink
             perm="entity.registry.import"
             scope={scopeEntity(entityId)}
-            to={`/entidades/${entityId}/importar`}
+            to={`/entities/${entityId}/import`}
             icon={<Icon.Refresh />}
           >
             {t('registry.provenance.updateCode')}

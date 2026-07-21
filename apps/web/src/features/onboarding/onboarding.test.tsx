@@ -22,6 +22,7 @@ const USER: UserView = {
   has_attestation_key: false,
   has_recovery_phrase: false,
   language: 'auto',
+  role_assignments: [],
 };
 
 const STRONG_PASSWORD = 'Str0ng!Vault9';
@@ -84,6 +85,7 @@ function wizardStub(): { fn: typeof fetch; calls: Recorded[] } {
         has_secret: true,
         has_recovery_phrase: true,
         language: 'auto',
+        role_assignments: [],
         recovery_phrase: RECOVERY_PHRASE,
       });
     if (url.includes('/v1/session') && method === 'POST') {
@@ -99,10 +101,10 @@ function wizardStub(): { fn: typeof fetch; calls: Recorded[] } {
 function renderWizard() {
   return renderWithProviders(
     <Routes>
-      <Route path="/bem-vindo" element={<OnboardingWizard />} />
+      <Route path="/welcome" element={<OnboardingWizard />} />
       <Route path="/" element={<div>APP HOME</div>} />
     </Routes>,
-    ['/bem-vindo'],
+    ['/welcome'],
   );
 }
 

@@ -45,15 +45,15 @@ function pendingFetch() {
 
 /**
  * Mount the form on its route with a marker route for the ata editor, so a successful
- * draft that navigates to `/atas/:id` is observable.
+ * draft that navigates to `/acts/:id` is observable.
  */
 function renderDraft(bookId = 'book-1') {
   return renderWithProviders(
     <Routes>
-      <Route path="/livros/:id/nova-ata" element={<DraftAtaForm bookId={bookId} />} />
-      <Route path="/atas/:id" element={<div>EDITOR DE ATA</div>} />
+      <Route path="/books/:id/new-act" element={<DraftAtaForm bookId={bookId} />} />
+      <Route path="/acts/:id" element={<div>EDITOR DE ATA</div>} />
     </Routes>,
-    ['/livros/book-1/nova-ata'],
+    ['/books/book-1/new-act'],
   );
 }
 

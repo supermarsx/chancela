@@ -54,12 +54,12 @@ describe('OperationsPage', () => {
   it('explains the current tenant-directory boundary when no entity exposes a tenant', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([])));
 
-    renderWithProviders(<OperationsPage />, ['/operacoes']);
+    renderWithProviders(<OperationsPage />, ['/operations']);
 
     expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
     expect(await screen.findByText('Ainda não existe uma organização selecionável')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Criar entidade' }).getAttribute('href')).toBe(
-      '/entidades/nova',
+      '/entities/new',
     );
     expect(screen.queryByLabelText('Organização')).toBeNull();
   });
@@ -70,7 +70,7 @@ describe('OperationsPage', () => {
       vi.fn().mockResolvedValue(json({ error: 'Diretório indisponível' }, 503)),
     );
 
-    renderWithProviders(<OperationsPage />, ['/operacoes']);
+    renderWithProviders(<OperationsPage />, ['/operations']);
 
     expect(await screen.findByText('Diretório indisponível')).toBeTruthy();
     expect(screen.queryByText('Ainda não existe uma organização selecionável')).toBeNull();
@@ -95,7 +95,7 @@ describe('OperationsPage', () => {
         <OperationsPage />
         <LocationProbe />
       </>,
-      ['/operacoes?tenant=tenant-1&group=group-1&repository=repo-1&object=obj-1'],
+      ['/operations?tenant=tenant-1&group=group-1&repository=repo-1&object=obj-1'],
     );
 
     const picker = (await screen.findByLabelText('Organização')) as HTMLSelectElement;
@@ -104,7 +104,7 @@ describe('OperationsPage', () => {
     fireEvent.change(picker, { target: { value: 'tenant-2' } });
 
     await waitFor(() =>
-      expect(screen.getByTestId('location').textContent).toBe('/operacoes?tenant=tenant-2'),
+      expect(screen.getByTestId('location').textContent).toBe('/operations?tenant=tenant-2'),
     );
   });
 
@@ -132,7 +132,7 @@ describe('OperationsPage', () => {
         <OperationsPage />
         <LocationProbe />
       </>,
-      ['/operacoes?view=connectors'],
+      ['/operations/connectors'],
     );
 
     const tabs = await screen.findByRole('group', { name: 'Áreas de operações' });
@@ -145,19 +145,19 @@ describe('OperationsPage', () => {
     expect(screen.getByText('Apenas referências de credenciais')).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByTestId('location').textContent).toBe(
-        '/operacoes?view=connectors&tenant=tenant-1',
+        '/operations/connectors?tenant=tenant-1',
       ),
     );
 
     fireEvent.click(within(tabs).getByRole('button', { name: 'Grupos e bibliotecas' }));
     expect(await screen.findByText('Ainda não existem grupos nesta organização.')).toBeTruthy();
-    expect(screen.getByTestId('location').textContent).toBe('/operacoes?tenant=tenant-1');
+    expect(screen.getByTestId('location').textContent).toBe('/operations?tenant=tenant-1');
 
     fireEvent.click(within(tabs).getByRole('button', { name: 'Repositórios ZK' }));
     expect(await screen.findByText('Ainda não existem repositórios.')).toBeTruthy();
     expect(screen.getByText('Zero knowledge é uma opção explícita')).toBeTruthy();
     expect(screen.getByTestId('location').textContent).toBe(
-      '/operacoes?tenant=tenant-1&view=repositories',
+      '/operations/repositories?tenant=tenant-1',
     );
 
     expect(requests.some((url) => url.includes('/connector-targets'))).toBe(true);

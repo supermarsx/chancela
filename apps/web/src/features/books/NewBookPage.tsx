@@ -1,5 +1,5 @@
 /**
- * Open a book (WFL-10/11) on its own route (`/livros/novo`), reached from the neat "Abrir
+ * Open a book (WFL-10/11) on its own route (`/books/new`), reached from the neat "Abrir
  * livro" button on the Livros list and on an entity's detail page (t13 item 7). When an
  * `?entidade=<id>` query parameter is present the book is fixed to that entity (no
  * picker); otherwise the operator picks from the registered entities. At least one entity
@@ -22,7 +22,7 @@ export function NewBookPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/livros">{t('books.crumb')}</Link> · {t('books.newBookCrumb')}
+            <Link to="/books">{t('books.crumb')}</Link> · {t('books.newBookCrumb')}
           </>
         }
         title={t('books.newBook')}
@@ -47,7 +47,7 @@ export function NewBookPage() {
           <EmptyState title={t('books.noEntities')}>
             <p>
               {t('books.needEntity.before')}
-              <Link to="/entidades">{t('books.needEntity.link')}</Link>
+              <Link to="/entities">{t('books.needEntity.link')}</Link>
               {t('books.needEntity.after')}
             </p>
           </EmptyState>

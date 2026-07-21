@@ -346,7 +346,7 @@ function ImportReport({
         <div className="registry-next-actions">
           <p className="field__label">{t('uiLiteral.registryImportPanel.proximoPasso')}</p>
           <ButtonLink
-            to={`/entidades/${report.entity.id}`}
+            to={`/entities/${report.entity.id}`}
             variant="primary"
             icon={<Icon.ArrowRight />}
           >

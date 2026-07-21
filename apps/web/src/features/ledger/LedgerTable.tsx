@@ -19,9 +19,19 @@ function shortChain(chain: string): string {
 export function LedgerTable({
   events,
   showChains = false,
+  compact = false,
+  rowCount,
 }: {
   events: LedgerEventView[];
   showChains?: boolean;
+  /**
+   * The Arquivo reading mode: hundreds of rows scanned in one sitting, so the row is tightened
+   * to the floor the digest copy control sets (see `.ledger-table` in `theme.css`). The
+   * dashboard's short recent-events list keeps the app-wide table rhythm.
+   */
+  compact?: boolean;
+  /** `aria-rowcount`; `-1` while the server holds rows this table has not fetched. */
+  rowCount?: number;
 }) {
   const t = useT();
   // One pair of list queries for the whole table — never one per row. Both are shared query keys
@@ -37,8 +47,10 @@ export function LedgerTable({
   }
   return (
     <Table
+      className={compact ? 'ledger-table' : undefined}
+      rowCount={rowCount}
       head={
-        <tr>
+        <tr aria-rowindex={rowCount === undefined ? undefined : 1}>
           <th>{t('ledger.th.seq')}</th>
           <th>{t('ledger.th.event')}</th>
           <th>{t('ledger.th.scope')}</th>
@@ -49,8 +61,11 @@ export function LedgerTable({
         </tr>
       }
     >
-      {rows.map((e) => (
-        <tr key={e.id}>
+      {/* `aria-rowindex` is 1-based over the whole table, header included, so the first event
+          is row 2. It is what lets a screen reader say "row 137" while the total is still
+          unknown — without it a lazily-extending table renumbers itself on every load. */}
+      {rows.map((e, index) => (
+        <tr key={e.id} aria-rowindex={rowCount === undefined ? undefined : index + 2}>
           <td>{e.seq}</td>
           <td>
             <Badge tone="accent">

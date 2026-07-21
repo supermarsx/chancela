@@ -270,7 +270,7 @@ export function dateTimeInputToIso(value: string): string {
 }
 
 export function externalInviteLink(token: string): string {
-  const path = `/assinatura-externa?token=${encodeURIComponent(token)}`;
+  const path = `/external-signature?token=${encodeURIComponent(token)}`;
   if (typeof window === 'undefined') return path;
   return new URL(path, window.location.origin).toString();
 }

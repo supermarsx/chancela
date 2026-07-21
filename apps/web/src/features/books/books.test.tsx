@@ -329,10 +329,10 @@ afterEach(() => {
 describe('BooksPage', () => {
   it('offers a neat button to the open-book route instead of an inline form', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/books', body: [] }]));
-    renderWithProviders(<BooksPage />, ['/livros']);
+    renderWithProviders(<BooksPage />, ['/books']);
 
     const abrir = await screen.findByRole('link', { name: /abrir livro/i });
-    expect(abrir.getAttribute('href')).toBe('/livros/novo');
+    expect(abrir.getAttribute('href')).toBe('/books/new');
     // No inline open-book form on the list page.
     expect(screen.queryByLabelText('Tipo de livro')).toBeNull();
   });
@@ -344,7 +344,7 @@ describe('BooksPage', () => {
       'fetch',
       vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch,
     );
-    renderWithProviders(<BooksPage />, ['/livros']);
+    renderWithProviders(<BooksPage />, ['/books']);
 
     const region = await screen.findByRole('status');
     expect(region.getAttribute('aria-busy')).toBe('true');
@@ -363,7 +363,7 @@ describe('BooksPage', () => {
         { match: '/v1/books', body: books },
       ]),
     );
-    const { container } = renderWithProviders(<BooksPage />, ['/livros']);
+    const { container } = renderWithProviders(<BooksPage />, ['/books']);
 
     // Owning-entity column header is present on the all-books list.
     expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
@@ -371,7 +371,7 @@ describe('BooksPage', () => {
 
     // entity_id resolves to the entity name, linked to its detail page.
     const link = await screen.findByRole('link', { name: 'Encosto Estratégico, Lda.' });
-    expect(link.getAttribute('href')).toBe('/entidades/ent-1');
+    expect(link.getAttribute('href')).toBe('/entities/ent-1');
     const entityCell = container.querySelector("td[data-book-column='Entity']");
     expect(entityCell?.contains(link)).toBe(true);
     // The raw id is not surfaced once the entity name is resolved.
@@ -401,7 +401,7 @@ describe('BooksPage', () => {
       },
     ];
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/books', body: books }]));
-    renderWithProviders(<BooksPage />, ['/livros']);
+    renderWithProviders(<BooksPage />, ['/books']);
 
     expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
     expect(screen.getByText('Atas da Gerência')).toBeTruthy();
@@ -450,7 +450,7 @@ describe('BooksPage', () => {
         },
       ]),
     );
-    const { container } = renderWithProviders(<BooksPage />, ['/livros']);
+    const { container } = renderWithProviders(<BooksPage />, ['/books']);
 
     expect(await screen.findByText(longPurpose)).toBeTruthy();
     const searchRegion = screen.getByRole('search', { name: 'Pesquisar e filtrar livros' });
@@ -514,7 +514,7 @@ describe('BooksPage', () => {
       },
     ];
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/books', body: books }]));
-    const { container } = renderWithProviders(<BooksPage />, ['/livros']);
+    const { container } = renderWithProviders(<BooksPage />, ['/books']);
 
     expect(await screen.findByText('Sem atas ainda')).toBeTruthy();
     const advanced = container.querySelector('details.filter-advanced') as HTMLDetailsElement;
@@ -542,7 +542,7 @@ describe('BooksPage', () => {
 
   it('shows an empty filtered state without losing the clear action', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/books', body: [BOOK] }]));
-    renderWithProviders(<BooksPage />, ['/livros']);
+    renderWithProviders(<BooksPage />, ['/books']);
 
     expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Pesquisar'), {
@@ -596,7 +596,7 @@ describe('BooksPage', () => {
         { match: '/v1/books', body: [BOOK] },
       ]),
     );
-    renderWithProviders(<BooksPage />, ['/livros']);
+    renderWithProviders(<BooksPage />, ['/books']);
     await screen.findByRole('table');
     // The page root carries the opt-in; the width itself is a CSS concern jsdom cannot lay out.
     expect(document.querySelector('.wide-page')).toBeTruthy();
@@ -615,9 +615,9 @@ describe('BookDetailPage — preservation package download', () => {
   function renderAtBook() {
     renderWithProviders(
       <Routes>
-        <Route path="/livros/:id" element={<BookDetailPage />} />
+        <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
       </Routes>,
-      ['/livros/book-1'],
+      ['/books/book-1'],
     );
   }
 
@@ -845,9 +845,9 @@ describe('BookDetailPage — termo signatories', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/livros/:id" element={<BookDetailPage />} />
+        <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
       </Routes>,
-      ['/livros/book-1?sec=termo'],
+      ['/books/book-1/opening'],
     );
 
     expect(await screen.findByText(/Amélia Marques/)).toBeTruthy();
@@ -863,9 +863,9 @@ describe('BookDetailPage — paper-book preserved imports', () => {
   function renderAtBook() {
     renderWithProviders(
       <Routes>
-        <Route path="/livros/:id" element={<BookDetailPage />} />
+        <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
       </Routes>,
-      ['/livros/book-1?sec=importacoes'],
+      ['/books/book-1/imports'],
     );
   }
 
@@ -1451,7 +1451,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       ).toBeTruthy();
       expect(
         (await screen.findAllByRole('link', { name: 'abrir ata' })).some(
-          (link) => link.getAttribute('href') === '/atas/77777777-7777-4777-8777-777777777777',
+          (link) => link.getAttribute('href') === '/acts/77777777-7777-4777-8777-777777777777',
         ),
       ).toBe(true);
       const actDraftCall = calls.find(
@@ -2112,9 +2112,9 @@ describe('BookDetailPage — legal hold', () => {
   function renderAtBook() {
     renderWithProviders(
       <Routes>
-        <Route path="/livros/:id" element={<BookDetailPage />} />
+        <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
       </Routes>,
-      ['/livros/book-1?sec=retencao'],
+      ['/books/book-1/retention'],
     );
   }
 
@@ -2216,7 +2216,7 @@ describe('NewBookPage', () => {
   function renderAt(path: string) {
     return renderWithProviders(
       <Routes>
-        <Route path="/livros/novo" element={<NewBookPage />} />
+        <Route path="/books/new" element={<NewBookPage />} />
       </Routes>,
       [path],
     );
@@ -2230,7 +2230,7 @@ describe('NewBookPage', () => {
         { match: '/v1/entities', body: [ENTITY] },
       ]),
     );
-    renderAt('/livros/novo?entidade=ent-1');
+    renderAt('/books/new?entidade=ent-1');
 
     // The open-book form renders with no entity picker; the entity is fixed.
     expect(await screen.findByLabelText('Tipo de livro')).toBeTruthy();
@@ -2243,7 +2243,7 @@ describe('NewBookPage', () => {
 
   it('shows an empty state when there are no entities to open a book against', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/entities', body: [] }]));
-    renderAt('/livros/novo');
+    renderAt('/books/new');
 
     expect(await screen.findByText('Sem entidades')).toBeTruthy();
   });
@@ -2255,9 +2255,9 @@ describe('OpenBookForm — book-open guidance (t60)', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/ent-1" element={<OpenBookForm entityId="ent-1" />} />
+        <Route path="/entities/ent-1" element={<OpenBookForm entityId="ent-1" />} />
       </Routes>,
-      ['/entidades/ent-1'],
+      ['/entities/ent-1'],
     );
 
     // The concise autonomy-oriented info panel sits at the top of the form.
@@ -2280,10 +2280,10 @@ describe('OpenBookForm — toast on success', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/ent-1" element={<OpenBookForm entityId="ent-1" />} />
-        <Route path="/livros/:id" element={<div>DETALHE DO LIVRO</div>} />
+        <Route path="/entities/ent-1" element={<OpenBookForm entityId="ent-1" />} />
+        <Route path="/books/:id" element={<div>DETALHE DO LIVRO</div>} />
       </Routes>,
-      ['/entidades/ent-1'],
+      ['/entities/ent-1'],
     );
 
     fireEvent.change(await screen.findByLabelText('Finalidade'), {
@@ -2317,10 +2317,10 @@ describe('OpenBookForm — structured termo signatories', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/ent-1" element={<OpenBookForm entityId="ent-1" />} />
-        <Route path="/livros/:id" element={<div>DETALHE DO LIVRO</div>} />
+        <Route path="/entities/ent-1" element={<OpenBookForm entityId="ent-1" />} />
+        <Route path="/books/:id" element={<div>DETALHE DO LIVRO</div>} />
       </Routes>,
-      ['/entidades/ent-1'],
+      ['/entities/ent-1'],
     );
 
     fireEvent.change(await screen.findByLabelText('Finalidade'), {
@@ -2392,7 +2392,7 @@ describe('CloseBookForm — structured termo signatories', () => {
       return Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
-    renderWithProviders(<CloseBookForm bookId="book-1" />, ['/livros/book-1/encerrar']);
+    renderWithProviders(<CloseBookForm bookId="book-1" />, ['/books/book-1/close']);
 
     fireEvent.change(screen.getByLabelText('Data de encerramento'), {
       target: { value: '2026-12-31' },
@@ -2422,14 +2422,15 @@ describe('CloseBookForm — structured termo signatories', () => {
 
 describe('BookDetailPage — sub-tabs', () => {
   /** Renders the router's live query string so the deep-link contract is assertable. */
+  // The sub-tab is a path segment now, so the probe reports the pathname.
   function SearchProbe() {
-    return <span data-testid="search-probe">{useLocation().search}</span>;
+    return <span data-testid="search-probe">{useLocation().pathname}</span>;
   }
 
-  function renderAtBook(entry = '/livros/book-1') {
+  function renderAtBook(entry = '/books/book-1') {
     return renderWithProviders(
       <Routes>
-        <Route path="/livros/:id" element={<BookDetailPage />} />
+        <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
       </Routes>,
       [entry],
     );
@@ -2448,7 +2449,7 @@ describe('BookDetailPage — sub-tabs', () => {
     ]);
   });
 
-  it('lands on Atas with no sec param, and marks only that tab pressed', async () => {
+  it('lands on Atas with no section segment, and marks only that tab pressed', async () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
     renderAtBook();
 
@@ -2462,17 +2463,17 @@ describe('BookDetailPage — sub-tabs', () => {
     ).toBe('false');
   });
 
-  it('reflects the chosen tab in the URL as ?sec=, matching the Configurações convention', async () => {
+  it('reflects the chosen tab in the URL as a path segment, matching the Configurações convention', async () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
     // MemoryRouter keeps history in memory, so a sibling probe reports the live search.
     render(
       <QueryClientProvider client={makeClient()}>
         <ToastProvider>
           <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
-            <MemoryRouter initialEntries={['/livros/book-1']}>
+            <MemoryRouter initialEntries={['/books/book-1']}>
               <SearchProbe />
               <Routes>
-                <Route path="/livros/:id" element={<BookDetailPage />} />
+                <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
               </Routes>
             </MemoryRouter>
           </StaticPermissionsProvider>
@@ -2481,22 +2482,24 @@ describe('BookDetailPage — sub-tabs', () => {
     );
 
     const subnav = await screen.findByRole('group', { name: 'Secções do livro' });
-    expect(screen.getByTestId('search-probe').textContent).toBe('');
+    expect(screen.getByTestId('search-probe').textContent).toBe('/books/book-1');
 
     fireEvent.click(within(subnav).getByRole('button', { name: 'Retenção legal' }));
     await waitFor(() =>
-      expect(screen.getByTestId('search-probe').textContent).toBe('?sec=retencao'),
+      expect(screen.getByTestId('search-probe').textContent).toBe('/books/book-1/retention'),
     );
     expect(await screen.findByText('Sem retenção legal')).toBeTruthy();
 
-    // Back to the default section drops the param rather than writing `?sec=atas`.
+    // Back to the default section drops the segment rather than writing `/books/book-1/acts`.
     fireEvent.click(within(subnav).getByRole('button', { name: 'Atas' }));
-    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe(''));
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('/books/book-1'),
+    );
   });
 
   it('deep-links straight into the Termo de abertura tab', async () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
-    renderAtBook('/livros/book-1?sec=termo');
+    renderAtBook('/books/book-1/opening');
 
     expect(await screen.findByText('Termo de abertura em registo')).toBeTruthy();
     // The termo editor is deliberately absent: the instrument and its API are not built yet.
@@ -2506,7 +2509,7 @@ describe('BookDetailPage — sub-tabs', () => {
 
   it('deep-links straight into the Retenção legal tab and shows retention alongside the hold', async () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
-    renderAtBook('/livros/book-1?sec=retencao');
+    renderAtBook('/books/book-1/retention');
 
     expect(await screen.findByText('Sem retenção legal')).toBeTruthy();
     expect(await screen.findByText('Sem candidatos vencidos')).toBeTruthy();
@@ -2514,7 +2517,7 @@ describe('BookDetailPage — sub-tabs', () => {
 
   it('deep-links straight into the Importações tab', async () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
-    renderAtBook('/livros/book-1?sec=importacoes');
+    renderAtBook('/books/book-1/imports');
 
     expect(await screen.findByText('Sem importações preservadas')).toBeTruthy();
   });
@@ -2528,10 +2531,10 @@ describe('BookDetailPage — sub-tabs', () => {
     // asserts the absence so nobody re-widens the page without redoing the measurement.
     const panel = () => document.querySelector('.route-transition');
     for (const entry of [
-      '/livros/book-1',
-      '/livros/book-1?sec=termo',
-      '/livros/book-1?sec=retencao',
-      '/livros/book-1?sec=importacoes',
+      '/books/book-1',
+      '/books/book-1/opening',
+      '/books/book-1/retention',
+      '/books/book-1/imports',
     ]) {
       vi.stubGlobal('fetch', bookDetailFetch().fn);
       const { unmount } = renderAtBook(entry);
@@ -2544,7 +2547,7 @@ describe('BookDetailPage — sub-tabs', () => {
 
   it('falls back to Atas for an unknown sec value rather than rendering nothing', async () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
-    renderAtBook('/livros/book-1?sec=inventado');
+    renderAtBook('/books/book-1/inventado');
 
     expect(await screen.findByText('Sem atas neste livro')).toBeTruthy();
   });
@@ -2588,7 +2591,7 @@ describe('BookDetailPage — sub-tabs', () => {
         : null,
     );
     vi.stubGlobal('fetch', fn);
-    renderAtBook('/livros/book-1?sec=retencao');
+    renderAtBook('/books/book-1/retention');
 
     expect(await screen.findByText('rec-1')).toBeTruthy();
     expect(screen.getByText('Arquivo de livros')).toBeTruthy();
@@ -2612,9 +2615,9 @@ describe('BookDetailPage — sub-tabs', () => {
               ready: true,
             }}
           >
-            <MemoryRouter initialEntries={['/livros/book-1?sec=retencao']}>
+            <MemoryRouter initialEntries={['/books/book-1/retention']}>
               <Routes>
-                <Route path="/livros/:id" element={<BookDetailPage />} />
+                <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
               </Routes>
             </MemoryRouter>
           </StaticPermissionsProvider>
@@ -2653,9 +2656,9 @@ describe('BookDetailPage — sub-tabs', () => {
               ready: true,
             }}
           >
-            <MemoryRouter initialEntries={['/livros/book-1?sec=retencao']}>
+            <MemoryRouter initialEntries={['/books/book-1/retention']}>
               <Routes>
-                <Route path="/livros/:id" element={<BookDetailPage />} />
+                <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
               </Routes>
             </MemoryRouter>
           </StaticPermissionsProvider>

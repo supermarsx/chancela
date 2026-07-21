@@ -115,14 +115,14 @@ describe('EntitiesPage', () => {
         { match: '/v1/entities', body: [] },
       ]),
     );
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     await screen.findByText('Ainda não há entidades');
 
     const nova = screen.getByRole('link', { name: /nova entidade/i });
-    expect(nova.getAttribute('href')).toBe('/entidades/nova');
+    expect(nova.getAttribute('href')).toBe('/entities/new');
     const importar = screen.getByRole('link', { name: /importar do registo/i });
-    expect(importar.getAttribute('href')).toBe('/entidades/importar');
+    expect(importar.getAttribute('href')).toBe('/entities/import');
 
     // No inline create form on the list page anymore.
     expect(screen.queryByLabelText('Denominação')).toBeNull();
@@ -138,7 +138,7 @@ describe('EntitiesPage', () => {
         { match: '/v1/entities', body: [unvalidated] },
       ]),
     );
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText('GB-12345')).toBeTruthy();
     expect(screen.getByText('não validado')).toBeTruthy();
@@ -152,7 +152,7 @@ describe('EntitiesPage', () => {
         { match: '/v1/entities', body: [ENTITY] },
       ]),
     );
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText(ENTITY.name)).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Denominação' })).toBeTruthy();
@@ -172,7 +172,7 @@ describe('EntitiesPage', () => {
         { match: '/v1/entities', body: [ENTITY] },
       ]),
     );
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText(ENTITY.name)).toBeTruthy();
     const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar entidades' });
@@ -261,6 +261,42 @@ describe('EntitiesPage', () => {
     expect(activityDateRule).toContain('flex: 0 0 auto;');
   });
 
+  it('keeps Última atividade and Ações wide enough for what they actually hold', async () => {
+    const css = await themeCss();
+
+    // Measured in headless Chromium against this stylesheet, at 1920/1440/1280 and with
+    // every locale's labels — see .orchestration/logs/t98-entitycolwidths.md. These two
+    // numbers are the answer to a measurement, not a preference, so pin them:
+    //
+    //  --ec-last-activity  the cell is a dd/mm/aaaa date (79px, `flex: 0 0 auto`) + a
+    //    7px gap + 19px of cell padding + the event badge. 13rem left the badge 103px,
+    //    which fitted 2 of the 134 pt-PT event labels; 17rem leaves it 167px and fits 43.
+    //    It cannot go higher: 17rem already puts the default five-column floor at 888px
+    //    against the 900px the card offers at a 1024 viewport.
+    //
+    //  --ec-actions  one 31px icon button always fitted; the COLUMN HEADING did not.
+    //    da-DK "Handlinger" needs 101px, fi-FI "Toiminnot" 92, de-DE "Aktionen" 84, and
+    //    pt-PT "Ações" 60 — all clipped at 3.6rem/58px. 6.5rem clears the widest.
+    expect(css).toContain('--ec-last-activity: 17rem;');
+    expect(css).toContain('--ec-actions: 6.5rem;');
+
+    // The two widened columns must not become elastic — `Name` stays the sole slack
+    // absorber, which is the whole reason the layout is predictable (see the test above).
+    expect(css).toMatch(
+      /\.table th\[data-entity-column='LastActivity'\]\s*{[^}]*width: var\(--ec-last-activity\);/s,
+    );
+    expect(css).toMatch(
+      /\.table th\[data-entity-column='Actions'\]\s*{[^}]*width: var\(--ec-actions\);/s,
+    );
+
+    // The composed floor still sums the same tokens, so widening a column raises the
+    // floor rather than silently letting the table crush below it.
+    expect(css).toContain('min-width: var(--entities-table-floor, 0);');
+    // …and a set too wide for the card scrolls inside its own box, never the page.
+    const wrapRule = css.match(/\.entities-table \.table-wrap\s*{(?<body>[^}]*)}/s)?.groups?.body;
+    expect(wrapRule).toContain('overflow-x: auto;');
+  });
+
   it('composes the table width floor from the visible columns', async () => {
     vi.stubGlobal(
       'fetch',
@@ -269,7 +305,7 @@ describe('EntitiesPage', () => {
         { match: '/v1/entities', body: [ENTITY] },
       ]),
     );
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
     const table = await screen.findByRole('table');
     const box = table.closest('.entities-table') as HTMLElement;
     // The default column set (Name, Nipc, Type, LastActivity, Actions) — the floor names
@@ -287,7 +323,7 @@ describe('EntitiesPage', () => {
         { match: '/v1/entities', body: [ENTITY] },
       ]),
     );
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
     await screen.findByRole('table');
     // The page root carries the opt-in; the width itself is a CSS concern jsdom cannot lay out.
     expect(document.querySelector('.wide-page')).toBeTruthy();
@@ -394,7 +430,7 @@ describe('EntitiesPage', () => {
         { match: '/v1/entities', body: [longEntity] },
       ]),
     );
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     const name = await screen.findByText(longEntity.name);
     expect(name.className).toContain('truncate');
@@ -442,10 +478,10 @@ describe('EntitiesPage', () => {
     );
     renderWithProviders(
       <Routes>
-        <Route path="/entidades" element={<EntitiesPage />} />
-        <Route path="/entidades/:id" element={<div>DETALHE DA ENTIDADE</div>} />
+        <Route path="/entities" element={<EntitiesPage />} />
+        <Route path="/entities/:id" element={<div>DETALHE DA ENTIDADE</div>} />
       </Routes>,
-      ['/entidades'],
+      ['/entities'],
     );
 
     // The open control is an icon-only button named by its tooltip (no visible link text).
@@ -459,7 +495,7 @@ describe('EntitiesPage', () => {
 describe('NewEntityPage', () => {
   it('adds inline help to core entity identity fields', () => {
     vi.stubGlobal('fetch', fetchTable([]));
-    renderWithProviders(<NewEntityPage />, ['/entidades/nova']);
+    renderWithProviders(<NewEntityPage />, ['/entities/new']);
 
     expect(screen.getAllByRole('button', { name: 'Ajuda' }).length).toBeGreaterThanOrEqual(4);
     expect(document.body.textContent).toContain(entityFieldHelp.nipc);
@@ -485,10 +521,10 @@ describe('NewEntityPage', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/nova" element={<NewEntityPage />} />
-        <Route path="/entidades/:id" element={<div>DETALHE DA ENTIDADE</div>} />
+        <Route path="/entities/new" element={<NewEntityPage />} />
+        <Route path="/entities/:id" element={<div>DETALHE DA ENTIDADE</div>} />
       </Routes>,
-      ['/entidades/nova'],
+      ['/entities/new'],
     );
 
     fireEvent.change(screen.getByLabelText('Denominação'), {
@@ -527,10 +563,10 @@ describe('NewEntityPage', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/nova" element={<NewEntityPage />} />
-        <Route path="/entidades/:id" element={<div>DETALHE DA ENTIDADE</div>} />
+        <Route path="/entities/new" element={<NewEntityPage />} />
+        <Route path="/entities/:id" element={<div>DETALHE DA ENTIDADE</div>} />
       </Routes>,
-      ['/entidades/nova'],
+      ['/entities/new'],
     );
 
     fireEvent.change(screen.getByLabelText('Denominação'), {
@@ -558,7 +594,7 @@ describe('NewEntityPage', () => {
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<NewEntityPage />, ['/entidades/nova']);
+    renderWithProviders(<NewEntityPage />, ['/entities/new']);
 
     fireEvent.change(screen.getByLabelText('Denominação'), {
       target: { value: 'Encosto Estratégico, Lda.' },
@@ -591,10 +627,10 @@ describe('NewEntityPage', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/nova" element={<NewEntityPage />} />
-        <Route path="/entidades/:id" element={<div>DETALHE DA ENTIDADE</div>} />
+        <Route path="/entities/new" element={<NewEntityPage />} />
+        <Route path="/entities/:id" element={<div>DETALHE DA ENTIDADE</div>} />
       </Routes>,
-      ['/entidades/nova'],
+      ['/entities/new'],
     );
 
     fireEvent.change(screen.getByLabelText('Denominação'), {
@@ -619,9 +655,9 @@ describe('EntityDetailPage', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/:id" element={<EntityDetailPage />} />
+        <Route path="/entities/:id/:sec?" element={<EntityDetailPage />} />
       </Routes>,
-      ['/entidades/new-ent-1?sec=identificacao'],
+      ['/entities/new-ent-1/identification'],
     );
 
     expect((await screen.findAllByText('12-31 (por omissão)')).length).toBeGreaterThan(0);
@@ -638,9 +674,9 @@ describe('EntityDetailPage', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/:id" element={<EntityDetailPage />} />
+        <Route path="/entities/:id/:sec?" element={<EntityDetailPage />} />
       </Routes>,
-      ['/entidades/new-ent-1?sec=fiscal'],
+      ['/entities/new-ent-1/fiscal'],
     );
 
     expect((await screen.findAllByText('12-31 (por omissão)')).length).toBeGreaterThan(0);
@@ -665,9 +701,9 @@ describe('EntityDetailPage', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades/:id" element={<EntityDetailPage />} />
+        <Route path="/entities/:id/:sec?" element={<EntityDetailPage />} />
       </Routes>,
-      ['/entidades/new-ent-1?sec=fiscal'],
+      ['/entities/new-ent-1/fiscal'],
     );
 
     const input = (await screen.findByLabelText('Fecho do exercício (MM-DD)')) as HTMLInputElement;
@@ -902,9 +938,9 @@ describe('EntityDetailPage', () => {
 
     const { container } = renderWithProviders(
       <Routes>
-        <Route path="/entidades/:id" element={<EntityDetailPage />} />
+        <Route path="/entities/:id/:sec?" element={<EntityDetailPage />} />
       </Routes>,
-      ['/entidades/new-ent-1?sec=cronologia'],
+      ['/entities/new-ent-1/chronology'],
     );
 
     // Twice: the sub-nav pill and the card it heads.
@@ -958,7 +994,7 @@ describe('EntityDetailPage', () => {
 });
 
 /**
- * The entity detail sub-tabs (t62): the seventh surface on the shared `<SubNav>` + `?sec=`
+ * The entity detail sub-tabs (t62): the seventh surface on the shared `<SubNav>` + path-segment
  * convention. These pin the deep-link contract, the fact that every pre-existing action
  * still has a home, and that the sparse sections tell the truth instead of inventing content.
  */
@@ -979,10 +1015,11 @@ describe('EntityDetailPage — sub-tabs', () => {
    * a history entry (MemoryRouter keeps its own history, so `window.history.back()` cannot
    * be used to probe it).
    */
+  // The sub-tab is a path segment now, so the probe reports the pathname.
   function SearchProbe() {
     return (
       <>
-        <span data-testid="search-probe">{useLocation().search}</span>
+        <span data-testid="search-probe">{useLocation().pathname}</span>
         <span data-testid="navtype-probe">{useNavigationType()}</span>
       </>
     );
@@ -1056,10 +1093,10 @@ describe('EntityDetailPage — sub-tabs', () => {
     return { fn, calls: base.calls };
   }
 
-  function renderAtEntity(entry = '/entidades/new-ent-1') {
+  function renderAtEntity(entry = '/entities/new-ent-1') {
     return renderWithProviders(
       <Routes>
-        <Route path="/entidades/:id" element={<EntityDetailPage />} />
+        <Route path="/entities/:id/:sec?" element={<EntityDetailPage />} />
       </Routes>,
       [entry],
     );
@@ -1073,7 +1110,7 @@ describe('EntityDetailPage — sub-tabs', () => {
     expect(within(subnav).getAllByRole('button').map((b) => b.textContent)).toEqual(TAB_LABELS);
   });
 
-  it('lands on Livros with no sec param, and marks only that tab pressed', async () => {
+  it('lands on Livros with no section segment, and marks only that tab pressed', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
     renderAtEntity();
 
@@ -1090,17 +1127,17 @@ describe('EntityDetailPage — sub-tabs', () => {
     expect(screen.getByRole('link', { name: /abrir livro/i })).toBeTruthy();
   });
 
-  it('reflects the chosen tab in the URL as ?sec= and PUSHES it so Back returns to it', async () => {
+  it('reflects the chosen tab in the URL as a path segment and PUSHES it so Back returns to it', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
     // MemoryRouter keeps history in memory, so a sibling probe reports the live search.
     render(
       <QueryClientProvider client={makeClient()}>
         <ToastProvider>
           <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
-            <MemoryRouter initialEntries={['/entidades/new-ent-1']}>
+            <MemoryRouter initialEntries={['/entities/new-ent-1']}>
               <SearchProbe />
               <Routes>
-                <Route path="/entidades/:id" element={<EntityDetailPage />} />
+                <Route path="/entities/:id/:sec?" element={<EntityDetailPage />} />
               </Routes>
             </MemoryRouter>
           </StaticPermissionsProvider>
@@ -1109,10 +1146,12 @@ describe('EntityDetailPage — sub-tabs', () => {
     );
 
     const subnav = await screen.findByRole('group', { name: SUBNAV });
-    expect(screen.getByTestId('search-probe').textContent).toBe('');
+    expect(screen.getByTestId('search-probe').textContent).toBe('/entities/new-ent-1');
 
     fireEvent.click(within(subnav).getByRole('button', { name: 'Exercício fiscal' }));
-    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('?sec=fiscal'));
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('/entities/new-ent-1/fiscal'),
+    );
 
     // Each tab is a PUSH, so browser Back returns to the previous tab rather than leaving the
     // entity — the trap t34 had to undo in the legislação reader, where `replace: true`
@@ -1121,17 +1160,21 @@ describe('EntityDetailPage — sub-tabs', () => {
     expect(panel().getByLabelText('Fecho do exercício (MM-DD)')).toBeTruthy();
 
     fireEvent.click(within(subnav).getByRole('button', { name: 'Registo comercial' }));
-    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('?sec=registo'));
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('/entities/new-ent-1/registry'),
+    );
     expect(screen.getByTestId('navtype-probe').textContent).toBe('PUSH');
 
-    // Back to the default section drops the param rather than writing `?sec=livros`.
+    // Back to the default section drops the segment rather than writing `.../books`.
     fireEvent.click(within(subnav).getByRole('button', { name: 'Livros' }));
-    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe(''));
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('/entities/new-ent-1'),
+    );
   });
 
   it('deep-links straight into Identificação, which also carries the statute overlay', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
-    renderAtEntity('/entidades/new-ent-1?sec=identificacao');
+    renderAtEntity('/entities/new-ent-1/identification');
 
     expect(await screen.findByRole('group', { name: SUBNAV })).toBeTruthy();
     expect(panel().getByText('503004642')).toBeTruthy();
@@ -1143,7 +1186,7 @@ describe('EntityDetailPage — sub-tabs', () => {
 
   it('deep-links straight into Registo comercial with the import action and the registry payload', async () => {
     vi.stubGlobal('fetch', detailFetch(EXTRACT).fn);
-    renderAtEntity('/entidades/new-ent-1?sec=registo');
+    renderAtEntity('/entities/new-ent-1/registry');
 
     await waitFor(() => expect(panel().getByText('Dados do registo')).toBeTruthy());
     expect(panel().getByText('Conservatória do Registo Comercial de Lisboa')).toBeTruthy();
@@ -1156,7 +1199,7 @@ describe('EntityDetailPage — sub-tabs', () => {
 
   it('deep-links straight into Inscrições e averbamentos, keeping anotações beside them', async () => {
     vi.stubGlobal('fetch', detailFetch(EXTRACT).fn);
-    renderAtEntity('/entidades/new-ent-1?sec=inscricoes');
+    renderAtEntity('/entities/new-ent-1/filings');
 
     await waitFor(() =>
       expect(panel().getByText('Inscrições, averbamentos e anotações')).toBeTruthy(),
@@ -1170,17 +1213,17 @@ describe('EntityDetailPage — sub-tabs', () => {
 
   it('renders an honest empty state on both registry tabs when nothing was imported', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
-    const { unmount } = renderAtEntity('/entidades/new-ent-1?sec=registo');
+    const { unmount } = renderAtEntity('/entities/new-ent-1/registry');
     expect(await screen.findByText('Sem dados do registo')).toBeTruthy();
     unmount();
 
-    renderAtEntity('/entidades/new-ent-1?sec=inscricoes');
+    renderAtEntity('/entities/new-ent-1/filings');
     expect(await screen.findByText('Sem dados do registo')).toBeTruthy();
   });
 
   it('lets the Cronologia tab look as sparse as the parser actually left it', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
-    renderAtEntity('/entidades/new-ent-1?sec=cronologia');
+    renderAtEntity('/entities/new-ent-1/chronology');
 
     // The certidão parser extracts almost nothing today, so a 404 chronology is the honest
     // answer. No invented timeline, no placeholder graph.
@@ -1215,7 +1258,7 @@ describe('EntityDetailPage — sub-tabs', () => {
 
   it('gets the panel width right on a deep link, not only after a tab switch', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
-    const { unmount } = renderAtEntity('/entidades/new-ent-1?sec=identificacao');
+    const { unmount } = renderAtEntity('/entities/new-ent-1/identification');
     // The loading skeleton also renders an "Identificação" card, so wait on the sub-nav —
     // it only exists once the entity has resolved and the real panel is mounted.
     await screen.findByRole('group', { name: SUBNAV });
@@ -1225,14 +1268,14 @@ describe('EntityDetailPage — sub-tabs', () => {
     unmount();
 
     vi.stubGlobal('fetch', detailFetch().fn);
-    renderAtEntity('/entidades/new-ent-1?sec=livros');
+    renderAtEntity('/entities/new-ent-1/books');
     await screen.findByRole('link', { name: /abrir livro/i });
     expect(document.querySelector('.route-transition')?.classList.contains('wide-page')).toBe(true);
   });
 
   it('falls back to Livros for an unknown sec value rather than rendering nothing', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
-    renderAtEntity('/entidades/new-ent-1?sec=inventado');
+    renderAtEntity('/entities/new-ent-1/inventado');
 
     const subnav = await screen.findByRole('group', { name: SUBNAV });
     expect(within(subnav).getByRole('button', { name: 'Livros' }).getAttribute('aria-pressed')).toBe(
@@ -1257,9 +1300,9 @@ describe('EntityDetailPage — sub-tabs', () => {
               ready: true,
             }}
           >
-            <MemoryRouter initialEntries={['/entidades/new-ent-1']}>
+            <MemoryRouter initialEntries={['/entities/new-ent-1']}>
               <Routes>
-                <Route path="/entidades/:id" element={<EntityDetailPage />} />
+                <Route path="/entities/:id/:sec?" element={<EntityDetailPage />} />
               </Routes>
             </MemoryRouter>
           </StaticPermissionsProvider>
@@ -1274,7 +1317,7 @@ describe('EntityDetailPage — sub-tabs', () => {
 
   it('keeps the print abstract mounted from any tab', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
-    renderAtEntity('/entidades/new-ent-1?sec=cronologia');
+    renderAtEntity('/entities/new-ent-1/chronology');
 
     expect(await screen.findByRole('button', { name: /imprimir/i })).toBeTruthy();
     await waitFor(() => expect(document.querySelector('.print-doc')).toBeTruthy());

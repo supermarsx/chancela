@@ -104,7 +104,7 @@ function SearchProbe() {
   return <output data-testid="search">{params.toString()}</output>;
 }
 
-function renderConnectors(entries = ['/operacoes?view=connectors']) {
+function renderConnectors(entries = ['/operations?view=connectors']) {
   return renderWithProviders(
     <>
       <ConnectorOperations tenantId={TENANT} />
@@ -320,7 +320,7 @@ describe('CreateConnectorForm', () => {
 describe('TargetEditor', () => {
   it('reports a successful probe with the capabilities the destination advertises', async () => {
     stubFetch((call) => (call.url.endsWith('/probe') ? jsonResponse(PROBE_READY) : null));
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     fireEvent.click(await screen.findByRole('button', { name: /Testar ligação/ }));
 
@@ -339,7 +339,7 @@ describe('TargetEditor', () => {
           })
         : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     fireEvent.click(await screen.findByRole('button', { name: /Testar ligação/ }));
 
@@ -352,7 +352,7 @@ describe('TargetEditor', () => {
         ? jsonResponse([{ ...TARGET, enabled: false }])
         : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     expect(
       (await screen.findByRole('button', { name: /Testar ligação/ })).hasAttribute('disabled'),
@@ -370,7 +370,7 @@ describe('TargetEditor', () => {
     const calls = stubFetch((call) =>
       call.url.endsWith('/run') ? jsonResponse(job({ id: 'job-new' })) : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     const destination = (await screen.findByLabelText('Destino relativo')) as HTMLInputElement;
     fireEvent.change(destination, { target: { value: '  atas/2026/ata-3.pdf  ' } });
@@ -390,7 +390,7 @@ describe('TargetEditor', () => {
     const calls = stubFetch((call) =>
       call.url.endsWith('/run') ? jsonResponse(job({ id: 'job-new', purpose: 'backup' })) : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     fireEvent.change(await screen.findByLabelText('Finalidade'), {
       target: { value: 'backup' },
@@ -414,7 +414,7 @@ describe('TargetEditor', () => {
         ? jsonResponse([{ ...TARGET, purposes: ['backup'] }])
         : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     const purpose = (await screen.findByLabelText('Finalidade')) as HTMLSelectElement;
     expect(Array.from(purpose.options, (option) => option.value)).toEqual(['backup']);
@@ -424,7 +424,7 @@ describe('TargetEditor', () => {
     stubFetch((call) =>
       call.url.endsWith('/run') ? jsonResponse({ error: 'Destino fora da raiz' }, 422) : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     const destination = (await screen.findByLabelText('Destino relativo')) as HTMLInputElement;
     fireEvent.change(destination, { target: { value: '../fora' } });
@@ -437,7 +437,7 @@ describe('TargetEditor', () => {
 
   it('refuses to save configuration that fails the credential boundary', async () => {
     const calls = stubFetch();
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     fireEvent.change(
       await screen.findByLabelText('Configuração avançada JSON', {
@@ -461,7 +461,7 @@ describe('TargetEditor', () => {
     const calls = stubFetch((call) =>
       call.method === 'PATCH' ? jsonResponse({ ...TARGET, purposes: ['sync'] }) : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     const name = (await screen.findByLabelText('Nome', {
       selector: '#operations-target-edit-name',
@@ -482,7 +482,7 @@ describe('TargetEditor', () => {
     stubFetch((call) =>
       call.method === 'PATCH' ? jsonResponse({ error: 'Destino arquivado' }, 409) : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     const name = await screen.findByLabelText('Nome', {
       selector: '#operations-target-edit-name',
@@ -498,7 +498,7 @@ describe('TargetEditor', () => {
     const calls = stubFetch((call) =>
       call.url.endsWith('/run') ? jsonResponse(job({ id: 'job-new' })) : null,
     );
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     fireEvent.change(await screen.findByLabelText('Destino relativo'), {
       target: { value: 'atas/2026/ata-3.pdf' },
@@ -517,7 +517,7 @@ describe('TargetEditor', () => {
 
   it('archives the target through its own action', async () => {
     const calls = stubFetch();
-    renderConnectors(['/operacoes?view=connectors&target=target-1']);
+    renderConnectors(['/operations?view=connectors&target=target-1']);
 
     fireEvent.click(await screen.findByRole('button', { name: /Arquivar destino/ }));
 
@@ -621,7 +621,7 @@ describe('connector jobs', () => {
     const calls = stubFetch((call) =>
       call.url.endsWith('/cancel') ? jsonResponse(job({ state: 'cancelled' })) : null,
     );
-    renderConnectors(['/operacoes?view=connectors&job=job-1']);
+    renderConnectors(['/operations?view=connectors&job=job-1']);
 
     const cancel = await screen.findByRole('button', { name: 'Cancelar trabalho' });
     expect(cancel.hasAttribute('disabled')).toBe(false);
@@ -641,7 +641,7 @@ describe('connector jobs', () => {
       }
       return null;
     });
-    renderConnectors(['/operacoes?view=connectors&job=job-1']);
+    renderConnectors(['/operations?view=connectors&job=job-1']);
 
     const retry = await screen.findByRole('button', { name: 'Tentar novamente' });
     expect(retry.hasAttribute('disabled')).toBe(false);
@@ -659,7 +659,7 @@ describe('connector jobs', () => {
         ? jsonResponse({ error: 'Trabalho desconhecido' }, 404)
         : null,
     );
-    renderConnectors(['/operacoes?view=connectors&job=job-missing']);
+    renderConnectors(['/operations?view=connectors&job=job-missing']);
 
     expect(await screen.findByText('Trabalho desconhecido')).toBeTruthy();
   });

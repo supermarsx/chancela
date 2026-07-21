@@ -164,7 +164,7 @@ afterEach(() => {
 
 describe('ImportFromRegistryForm', () => {
   it('renders a clear initial import form with the expected controls', () => {
-    renderWithProviders(<ImportFromRegistryForm />, ['/entidades/importar']);
+    renderWithProviders(<ImportFromRegistryForm />, ['/entities/import']);
 
     expect(screen.getByText('Consulta')).toBeTruthy();
     expect(screen.getByText('Aguardando código')).toBeTruthy();
@@ -189,7 +189,7 @@ describe('ImportFromRegistryForm', () => {
   });
 
   it('reveals and re-masks the código de acesso from the eye toggle', () => {
-    renderWithProviders(<ImportFromRegistryForm />, ['/entidades/importar']);
+    renderWithProviders(<ImportFromRegistryForm />, ['/entities/import']);
 
     const codeInput = screen.getByLabelText('Código da certidão permanente') as HTMLInputElement;
     fireEvent.change(codeInput, { target: { value: FULL_CODE } });
@@ -219,13 +219,13 @@ describe('ImportFromRegistryForm', () => {
   });
 
   it('does not carry the reveal state across a remount', () => {
-    const first = renderWithProviders(<ImportFromRegistryForm />, ['/entidades/importar']);
+    const first = renderWithProviders(<ImportFromRegistryForm />, ['/entities/import']);
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar código' }));
     expect(screen.getByRole('button', { name: 'Ocultar código' })).toBeTruthy();
     first.unmount();
 
     // Remounting is the navigate-away-and-back case: the code must be masked again.
-    renderWithProviders(<ImportFromRegistryForm />, ['/entidades/importar']);
+    renderWithProviders(<ImportFromRegistryForm />, ['/entities/import']);
     const codeInput = screen.getByLabelText('Código da certidão permanente') as HTMLInputElement;
     expect(codeInput.type).toBe('password');
     expect(screen.getByRole('button', { name: 'Mostrar código' })).toBeTruthy();
@@ -248,10 +248,10 @@ describe('ImportFromRegistryForm', () => {
 
     renderWithProviders(
       <Routes>
-        <Route path="/entidades" element={<ImportFromRegistryForm />} />
-        <Route path="/entidades/:id" element={<div>DETALHE DA ENTIDADE</div>} />
+        <Route path="/entities" element={<ImportFromRegistryForm />} />
+        <Route path="/entities/:id" element={<div>DETALHE DA ENTIDADE</div>} />
       </Routes>,
-      ['/entidades'],
+      ['/entities'],
     );
 
     fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
@@ -278,7 +278,7 @@ describe('ImportFromRegistryForm', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<ImportFromRegistryForm />, ['/entidades']);
+    renderWithProviders(<ImportFromRegistryForm />, ['/entities']);
 
     fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
       target: { value: FULL_CODE },
@@ -296,7 +296,7 @@ describe('ImportFromRegistryForm', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<ImportFromRegistryForm />, ['/entidades']);
+    renderWithProviders(<ImportFromRegistryForm />, ['/entities']);
 
     fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
       target: { value: FULL_CODE },
@@ -317,7 +317,7 @@ describe('ImportFromRegistryForm', () => {
     const { fn } = recordingFetch(() => jsonResponse({ error: 'erro de gateway' }, 502));
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<ImportFromRegistryForm />, ['/entidades']);
+    renderWithProviders(<ImportFromRegistryForm />, ['/entities']);
 
     fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
       target: { value: FULL_CODE },
@@ -348,7 +348,7 @@ describe('RegistryImportPanel', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entidades/ent-1/importar']);
+    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entities/ent-1/import']);
 
     fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
       target: { value: FULL_CODE },
@@ -366,7 +366,7 @@ describe('RegistryImportPanel', () => {
     expect(document.body.textContent).toContain(registryFieldHelp.digest);
 
     const back = screen.getByRole('link', { name: /voltar à entidade/i }) as HTMLAnchorElement;
-    expect(back.getAttribute('href')).toBe('/entidades/ent-1');
+    expect(back.getAttribute('href')).toBe('/entities/ent-1');
   });
 
   it('shows the conflict table and re-submits with overwrite:true on confirm', async () => {
@@ -395,7 +395,7 @@ describe('RegistryImportPanel', () => {
     });
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entidades/ent-1']);
+    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entities/ent-1']);
 
     fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
       target: { value: FULL_CODE },
@@ -437,7 +437,7 @@ describe('RegistryImportPanel', () => {
     const deferred = deferredResponse();
     vi.stubGlobal('fetch', deferred.fn);
 
-    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entidades/ent-1/importar']);
+    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entities/ent-1/import']);
 
     const codeInput = screen.getByLabelText('Código da certidão permanente') as HTMLInputElement;
     fireEvent.change(codeInput, { target: { value: FULL_CODE } });
@@ -478,7 +478,7 @@ describe('RegistryProvenance', () => {
     vi.stubGlobal('fetch', fn);
 
     const { container } = renderWithProviders(<RegistryProvenance entityId="ent-1" />, [
-      '/entidades/ent-1',
+      '/entities/ent-1',
     ]);
 
     // The masked code and an inscrição both render.
@@ -506,7 +506,7 @@ describe('RegistryProvenance', () => {
     const { fn } = recordingFetch(() => jsonResponse({ error: 'not found' }, 404));
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entities/ent-1']);
 
     expect(await screen.findByText('Sem dados do registo')).toBeTruthy();
   });
@@ -517,13 +517,13 @@ describe('RegistryProvenance', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entities/ent-1']);
 
     const update = (await screen.findByRole('link', {
       name: /atualizar código de acesso/i,
     })) as HTMLAnchorElement;
     // Scoped to THIS entity's import route, not the generic import screen.
-    expect(update.getAttribute('href')).toBe('/entidades/ent-1/importar');
+    expect(update.getAttribute('href')).toBe('/entities/ent-1/import');
 
     // The honest reason the code has to be typed again sits next to the masked value.
     expect(screen.getByText(/nunca é guardado/)).toBeTruthy();
@@ -536,7 +536,7 @@ describe('RegistryProvenance', () => {
     vi.stubGlobal('fetch', fn);
 
     const { container } = renderWithProviders(<RegistryProvenance entityId="ent-1" />, [
-      '/entidades/ent-1',
+      '/entities/ent-1',
     ]);
 
     // Wait for the card to render.
@@ -692,7 +692,7 @@ describe('RegistryProvenance — structured inscriptions', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entities/ent-1']);
 
     // Multi-act apresentação: one accent badge per act kind.
     expect(await screen.findByText('CONSTITUIÇÃO DE SOCIEDADE')).toBeTruthy();
@@ -731,7 +731,7 @@ describe('RegistryProvenance — structured inscriptions', () => {
     vi.stubGlobal('fetch', fn);
 
     const { container } = renderWithProviders(<RegistryProvenance entityId="ent-1" />, [
-      '/entidades/ent-1',
+      '/entities/ent-1',
     ]);
 
     // Structured entry: raw body is present but tucked under a collapsible toggle.
@@ -753,7 +753,7 @@ describe('RegistryProvenance — structured inscriptions', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entities/ent-1']);
 
     expect(await screen.findByText('Anotações')).toBeTruthy();
     expect(screen.getByText('An. 1')).toBeTruthy();
@@ -771,7 +771,7 @@ describe('RegistryProvenance — structured inscriptions', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entities/ent-1']);
 
     expect(await screen.findByText('Certidão expirada')).toBeTruthy();
     // The validity window + conservatória/oficial surface in the provenance card.
@@ -796,7 +796,7 @@ describe('RegistryImportPanel — expired warning', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entidades/ent-1']);
+    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entities/ent-1']);
 
     fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
       target: { value: FULL_CODE },
@@ -815,7 +815,7 @@ describe('EntityPrintDocument — structured constitution', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<EntityPrintDocument entityId="ent-1" />, ['/entidades/ent-1']);
+    renderWithProviders(<EntityPrintDocument entityId="ent-1" />, ['/entities/ent-1']);
 
     // The print sheet composes the structured constitution, not just the raw feed.
     expect(await screen.findByText('Sócios e quotas')).toBeTruthy();

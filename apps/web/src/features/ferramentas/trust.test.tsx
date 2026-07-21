@@ -575,7 +575,7 @@ afterEach(() => {
 describe('Ferramentas — TSL trust catalog', () => {
   it('exposes the trust section and renders scheme/source/signature status', async () => {
     vi.stubGlobal('fetch', trustFetch());
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<FerramentasPage />, ['/tools/trust']);
 
     expect(
       screen.getByRole('button', { name: 'Lista de confiança' }).getAttribute('aria-pressed'),
@@ -591,7 +591,7 @@ describe('Ferramentas — TSL trust catalog', () => {
   it('imports the TSL on operator request and renders the persisted attempt status', async () => {
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
     await screen.findByRole('group', { name: 'Resumo TSL' });
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar TSL' }));
@@ -615,7 +615,7 @@ describe('Ferramentas — TSL trust catalog', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
     const acceptedHash = TSA_CATALOG.summary.accepted_hash.digest;
 
@@ -679,7 +679,7 @@ describe('Ferramentas — TSL trust catalog', () => {
 
   it('searches services and opens the selected service detail', async () => {
     vi.stubGlobal('fetch', trustFetch());
-    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
     expect(await screen.findByRole('group', { name: 'Filtros TSL' })).toBeTruthy();
     const providersGroup = await screen.findByRole('group', { name: 'Prestadores' });
@@ -705,7 +705,7 @@ describe('Ferramentas — TSL trust catalog', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
     await screen.findByRole('group', { name: 'Filtros TSL' });
     expect(
@@ -757,7 +757,7 @@ describe('Ferramentas — TSL trust catalog', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
     await screen.findByRole('group', { name: 'Resumo TSA' });
     const ski = TSA_CATALOG.records[0].identities.subject_key_ids[0];
@@ -801,7 +801,7 @@ describe('Ferramentas — TSL trust catalog', () => {
   it('passes identifier lookups to TSA search and shows the empty state for no matches', async () => {
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
     await screen.findByRole('group', { name: 'Resumo TSA' });
     fireEvent.change(screen.getByLabelText('Procurar registos TSA por identificador técnico'), {
@@ -825,7 +825,7 @@ describe('Ferramentas — TSL trust catalog', () => {
 
   it('filters to providers and drills from provider detail into a service', async () => {
     vi.stubGlobal('fetch', trustFetch());
-    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Prestadores' }));
     fireEvent.click(await screen.findByRole('button', { name: /MULTICERT S\.A\./i }));
@@ -839,10 +839,71 @@ describe('Ferramentas — TSL trust catalog', () => {
     expect(await screen.findByText('MIID-tsa-test')).toBeTruthy();
   });
 
+  it('renders the catalog as tables: facts as field/value rows, repeated entries as grids', async () => {
+    // The user asked for the trust list "table displayed styled so its easier to read". Two
+    // different shapes came out of that, and this asserts the distinction rather than just
+    // counting tables:
+    //
+    //  - read-only facts about ONE subject are a two-column field/value table, with the field
+    //    as a row header so a screen reader knows the left cell names the right one;
+    //  - repeated homogeneous entries are real multi-column grids, and those — and only those —
+    //    carry the keyboard-reachable per-column help.
+    vi.stubGlobal('fetch', trustFetch());
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Prestadores' }));
+    fireEvent.click(await screen.findByRole('button', { name: /MULTICERT S\.A\./i }));
+
+    // Facts: a field/value table. The field name is a ROW header — that is the part carrying the
+    // meaning, and it is what tells a screen reader the left cell names the right one.
+    const tradeNames = await screen.findByRole('rowheader', { name: 'Nomes comerciais' });
+    const factTable = tradeNames.closest('table') as HTMLTableElement;
+    expect(factTable.closest('.trust-fact-table')).toBeTruthy();
+    expect(within(factTable).getByRole('columnheader', { name: 'Campo' })).toBeTruthy();
+    expect(within(factTable).getByRole('columnheader', { name: 'Valor' })).toBeTruthy();
+    // The old shape was a definition list; assert the element genuinely changed.
+    expect(factTable.closest('[role="group"]')?.querySelector('dl')).toBeFalsy();
+
+    // A field/value header says nothing a tooltip could improve on, so it deliberately has none.
+    expect(within(factTable).queryByRole('button', { name: /^Ajuda sobre a coluna/ })).toBeNull();
+
+    // Repeated entries: the provider's services, as a grid with described column help.
+    const servicesTable = screen.getByRole('table', { name: 'Serviços deste prestador' });
+    for (const column of ['Serviço', 'Tipo', 'Estado e atributos']) {
+      const header = within(servicesTable).getByRole('columnheader', { name: column });
+      const trigger = within(header).getByRole('button', {
+        name: `Ajuda sobre a coluna ${column}`,
+      });
+      trigger.focus();
+      expect(document.activeElement, column).toBe(trigger);
+      const bubble = document.getElementById(trigger.getAttribute('aria-describedby') as string);
+      expect(bubble?.textContent?.length ?? 0, column).toBeGreaterThan(60);
+    }
+    // The row's own affordance is still a real button, so the grid stays keyboard-navigable.
+    // The qualified CA is the service with published status history, so its record exercises
+    // both of the remaining grids.
+    fireEvent.click(within(servicesTable).getByRole('button', { name: /MULTICERT Qualified CA/i }));
+
+    // The service record: digital identities and status history are both grids now.
+    const identities = await screen.findByRole('table', {
+      name: 'Identidades digitais do serviço',
+    });
+    expect(within(identities).getByRole('columnheader', { name: 'SHA-256' })).toBeTruthy();
+    // Identifiers are never truncated away: the value is present in full in the DOM, and the
+    // block inherits the wrap + text-selection opt-in rather than being ellipsised.
+    expect(within(identities).getByText('MIID-qualified-test')).toBeTruthy();
+    expect(identities.closest('.trust-opaque')).toBeTruthy();
+
+    const history = screen.getByRole('table', { name: 'Histórico de estado do serviço' });
+    expect(within(history).getByRole('columnheader', { name: 'Nome nessa altura' })).toBeTruthy();
+    // The count is a sentence, not a one-row table pretending to be one.
+    expect(screen.getByText(/Entradas de histórico: \d+/)).toBeTruthy();
+  });
+
   it('shows empty states for structured no-match filters', async () => {
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
     fireEvent.change(await screen.findByLabelText('Procurar na lista de confiança TSL'), {
       target: { value: 'qualified' },

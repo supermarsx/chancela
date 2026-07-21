@@ -57,7 +57,7 @@ const STATUS_ORDER: Record<ExternalSignerInviteStatus, number> = {
 export function externalSignerInviteLink(token: string, origin?: string): string | null {
   const trimmed = token.trim();
   if (!trimmed) return null;
-  const path = `/assinatura-externa?token=${encodeURIComponent(trimmed)}`;
+  const path = `/external-signature?token=${encodeURIComponent(trimmed)}`;
   const base =
     origin ??
     (typeof window !== 'undefined' && window.location.origin ? window.location.origin : null);
@@ -393,7 +393,7 @@ export function ExternalSigningWorkflowsPage() {
                   </td>
                   <td>
                     <ButtonLink
-                      to={`/atas/${encodeURIComponent(row.act.id)}`}
+                      to={`/acts/${encodeURIComponent(row.act.id)}`}
                       icon={<Icon.ExternalLink />}
                     >
                       {t('externalSigning.openAct')}

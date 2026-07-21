@@ -9,6 +9,7 @@ import type {
   DashboardReminder,
   LedgerEventView,
 } from '../../api/types';
+import { normalizeLegacyRoute } from '../../app/legacySlugs';
 import type { MessageKey, TFunction, TParams } from '../../i18n';
 import { actConveningGuidanceRoute } from '../acts/anchors';
 
@@ -47,7 +48,7 @@ interface ReminderCopy {
   action: MessageKey;
 }
 
-const SETTINGS_ROUTE = '/configuracoes';
+const SETTINGS_ROUTE = '/settings';
 const CONVENING_NOTICE_MISSING_MEETING_DATE_BODY: MessageKey =
   'notifications.reminder.act.conveningNotice.missingMeetingDate.body';
 
@@ -290,21 +291,24 @@ export function frontendNotificationRouteFromApi(
   path: string | null | undefined,
 ): string | undefined {
   if (!path) return undefined;
-  const route = path.trim();
+  // The server still emits the Portuguese addresses (`/configuracoes?sec=dados`), and these
+  // arrive as DATA rather than as navigations, so the router's redirect never sees them.
+  // Normalising here means the rendered link is the real address, not one that bounces.
+  const route = normalizeLegacyRoute(path.trim());
   if (!route) return undefined;
-  if (route.startsWith('/entidades/') || route === '/entidades') return route;
-  if (route.startsWith('/livros/') || route === '/livros') return route;
-  if (route.startsWith('/atas/') || route === '/atas') return route;
-  if (route.startsWith('/arquivo') || route.startsWith('/configuracoes')) return route;
+  if (route.startsWith('/entities/') || route === '/entities') return route;
+  if (route.startsWith('/books/') || route === '/books') return route;
+  if (route.startsWith('/acts/') || route === '/acts') return route;
+  if (route.startsWith('/archive') || route.startsWith('/settings')) return route;
 
   const entity = /^\/v1\/entities\/([^/?#]+)/.exec(route);
-  if (entity) return `/entidades/${entity[1]}`;
+  if (entity) return `/entities/${entity[1]}`;
   const book = /^\/v1\/books\/([^/?#]+)/.exec(route);
-  if (book) return `/livros/${book[1]}`;
+  if (book) return `/books/${book[1]}`;
   const act = /^\/v1\/acts\/([^/?#]+)/.exec(route);
-  if (act) return `/atas/${act[1]}`;
-  if (route.startsWith('/v1/ledger')) return '/arquivo';
-  if (route.startsWith('/v1/settings')) return '/configuracoes';
+  if (act) return `/acts/${act[1]}`;
+  if (route.startsWith('/v1/ledger')) return '/archive';
+  if (route.startsWith('/v1/settings')) return '/settings';
   return undefined;
 }
 
@@ -404,19 +408,19 @@ function actionFromMetadata(
       ? actConveningGuidanceRoute(
           frontendRouteFromApi(action.route) ??
             frontendRouteFromApi(action.api_href) ??
-            (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
+            (paramText(params, 'act_id') ? `/acts/${paramText(params, 'act_id')}` : undefined),
         )
       : action.kind === 'open_imported_document_review'
         ? importedDocumentReviewRoute(
             frontendRouteFromApi(action.route) ??
-              (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
+              (paramText(params, 'act_id') ? `/acts/${paramText(params, 'act_id')}` : undefined),
             paramText(params, 'imported_document_id') ?? importedDocumentIdFromApi(action.api_href),
           )
         : action.kind === 'open_absent_owner_dispatch_evidence' ||
             action.kind === 'open_generated_convening_dispatch_evidence'
           ? generatedDispatchEvidenceRoute(
               frontendRouteFromApi(action.route) ??
-                (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
+                (paramText(params, 'act_id') ? `/acts/${paramText(params, 'act_id')}` : undefined),
               paramText(params, 'generated_document_id') ??
                 paramText(params, 'document_id') ??
                 generatedDispatchDocumentIdFromApi(action.api_href),
@@ -436,17 +440,17 @@ function actionFromTarget(
   const links = alert.target.links;
   const ordered = [
     {
-      href: frontendRouteFromApi(links.act) ?? routeFromTargetId('/atas', alert.target.act_id),
+      href: frontendRouteFromApi(links.act) ?? routeFromTargetId('/acts', alert.target.act_id),
       label: preferredLabel ?? 'notifications.action.openAct',
     },
     {
-      href: frontendRouteFromApi(links.book) ?? routeFromTargetId('/livros', alert.target.book_id),
+      href: frontendRouteFromApi(links.book) ?? routeFromTargetId('/books', alert.target.book_id),
       label: preferredLabel ?? 'notifications.action.openBook',
     },
     {
       href:
         frontendRouteFromApi(links.entity) ??
-        routeFromTargetId('/entidades', alert.target.entity_id),
+        routeFromTargetId('/entities', alert.target.entity_id),
       label: preferredLabel ?? 'notifications.action.openEntity',
     },
     {
@@ -466,11 +470,11 @@ function fallbackAlertAction(
 ): NotificationAction {
   const code = alert.code.trim();
   if (code === 'ledger.integrity.review_required') {
-    return routeAction('/arquivo', preferredLabel ?? 'notifications.action.openLedger', t, params);
+    return routeAction('/archive', preferredLabel ?? 'notifications.action.openLedger', t, params);
   }
   if (alert.target.act_id?.trim()) {
     return routeAction(
-      `/atas/${alert.target.act_id.trim()}`,
+      `/acts/${alert.target.act_id.trim()}`,
       preferredLabel ?? 'notifications.action.openAct',
       t,
       params,
@@ -478,7 +482,7 @@ function fallbackAlertAction(
   }
   if (alert.target.book_id?.trim()) {
     return routeAction(
-      `/livros/${alert.target.book_id.trim()}`,
+      `/books/${alert.target.book_id.trim()}`,
       preferredLabel ?? 'notifications.action.openBook',
       t,
       params,
@@ -486,7 +490,7 @@ function fallbackAlertAction(
   }
   if (alert.target.entity_id?.trim()) {
     return routeAction(
-      `/entidades/${alert.target.entity_id.trim()}`,
+      `/entities/${alert.target.entity_id.trim()}`,
       preferredLabel ?? 'notifications.action.openEntity',
       t,
       params,
@@ -525,15 +529,15 @@ function actionFromReminderTarget(
   const actId = paramId(reminder.params, 'act_id');
   if (actId) {
     const href = isConveningNoticeReminder(reminder)
-      ? (actConveningGuidanceRoute(`/atas/${actId}`) ?? `/atas/${actId}`)
-      : `/atas/${actId}`;
+      ? (actConveningGuidanceRoute(`/acts/${actId}`) ?? `/acts/${actId}`)
+      : `/acts/${actId}`;
     return routeAction(href, preferredLabel ?? 'notifications.action.openAct', t, params);
   }
 
   const bookId = paramId(reminder.params, 'book_id');
   if (bookId) {
     return routeAction(
-      `/livros/${bookId}`,
+      `/books/${bookId}`,
       preferredLabel ?? 'notifications.action.openBook',
       t,
       params,
@@ -543,7 +547,7 @@ function actionFromReminderTarget(
   const entityId = reminder.entity_id.trim() || paramId(reminder.params, 'entity_id');
   if (entityId) {
     return routeAction(
-      `/entidades/${entityId}`,
+      `/entities/${entityId}`,
       preferredLabel ?? 'notifications.action.openEntity',
       t,
       params,
@@ -624,7 +628,7 @@ function buildEventNotification(event: LedgerEventView, t: TFunction): Notificat
     title: t('notifications.operation.title', { kind: ledgerEventKindLabel(event.kind) }),
     detail: t('notifications.operation.detail', { actor: event.actor, scope: event.scope }),
     meta: [t('notifications.operation.meta', { seq: event.seq })],
-    action: { href: '/arquivo', label: t('notifications.action.openLedger') },
+    action: { href: '/archive', label: t('notifications.action.openLedger') },
     timestamp: event.timestamp,
     seq: event.seq,
   };
@@ -668,7 +672,7 @@ export function buildDashboardNotifications(
       title: t('dashboard.workQueue.integrity.title'),
       detail: t('dashboard.workQueue.integrity.detail'),
       meta: [t('dashboard.workQueue.integrity.meta')],
-      action: { href: '/arquivo', label: t('notifications.action.openLedger') },
+      action: { href: '/archive', label: t('notifications.action.openLedger') },
     });
   }
 

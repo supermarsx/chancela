@@ -229,14 +229,14 @@ function stateful(
   return { fetchImpl, patches, seals, verifications, dispatches };
 }
 
-function renderEditor(initialEntry = '/atas/act-1') {
+function renderEditor(initialEntry = '/acts/act-1') {
   return render(
     <QueryClientProvider client={makeClient()}>
       <ToastProvider>
         <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
           <MemoryRouter initialEntries={[initialEntry]}>
             <Routes>
-              <Route path="/atas/:id" element={<AtaEditorPage />} />
+              <Route path="/acts/:id" element={<AtaEditorPage />} />
             </Routes>
           </MemoryRouter>
         </StaticPermissionsProvider>
@@ -577,7 +577,7 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     const shared = stateful(withMissingNoticeMetadata);
     vi.stubGlobal('fetch', shared.fetchImpl);
 
-    renderEditor(`/atas/act-1${ACT_CONVENING_GUIDANCE_HASH}`);
+    renderEditor(`/acts/act-1${ACT_CONVENING_GUIDANCE_HASH}`);
 
     expect(await screen.findByText('Aviso local da convocatória estatutária')).toBeTruthy();
     const target = document.getElementById(ACT_CONVENING_GUIDANCE_ID);

@@ -2,7 +2,7 @@
  * Auth-gating shell (plan t44 §3, R1/R2). Wraps the app chrome inside {@link Layout} and
  * decides, from the UNAUTHENTICATED roster + the current session, what a visitor may see:
  *
- *  - first-run (no user exists → `onboarding_required`) → redirect to the `/bem-vindo`
+ *  - first-run (no user exists → `onboarding_required`) → redirect to the `/welcome`
  *    wizard (a sibling route outside this chrome);
  *  - users exist but nobody is signed in → the {@link SignIn} surface (a mid-session 401
  *    lands here too: the client clears the token, the session query flips to `{user:null}`
@@ -61,7 +61,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   // Fresh install: no user exists → the onboarding wizard.
-  if (roster.data.onboarding_required) return <Navigate to="/bem-vindo" replace />;
+  if (roster.data.onboarding_required) return <Navigate to="/welcome" replace />;
 
   // Users exist, nobody signed in → sign in.
   return <SignIn />;

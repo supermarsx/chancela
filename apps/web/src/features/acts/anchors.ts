@@ -6,7 +6,7 @@ export function actConveningGuidanceRoute(actRoute: string | undefined): string 
   if (!route) return undefined;
 
   const url = new URL(route, 'http://chancela.local');
-  if (url.pathname !== '/atas' && !url.pathname.startsWith('/atas/')) return undefined;
+  if (url.pathname !== '/acts' && !url.pathname.startsWith('/acts/')) return undefined;
 
   url.hash = ACT_CONVENING_GUIDANCE_HASH;
   return `${url.pathname}${url.search}${url.hash}`;

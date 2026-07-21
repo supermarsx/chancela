@@ -99,10 +99,10 @@ function installFetch(handleImport: () => Response | Promise<Response>): Recorde
 function renderPage() {
   return renderWithProviders(
     <Routes>
-      <Route path="/entidades/importar" element={<ImportEntityPage />} />
-      <Route path="/entidades/:id" element={<div>DETALHE DA ENTIDADE</div>} />
+      <Route path="/entities/import" element={<ImportEntityPage />} />
+      <Route path="/entities/:id" element={<div>DETALHE DA ENTIDADE</div>} />
     </Routes>,
-    ['/entidades/importar'],
+    ['/entities/import'],
   );
 }
 
@@ -118,7 +118,7 @@ describe('ImportEntityPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Importar do registo comercial' })).toBeTruthy();
     // Crumb chain: Entidades · Importar do registo.
-    expect(screen.getByRole('link', { name: 'Entidades' }).getAttribute('href')).toBe('/entidades');
+    expect(screen.getByRole('link', { name: 'Entidades' }).getAttribute('href')).toBe('/entities');
     expect(screen.getByLabelText('Código da certidão permanente')).toBeTruthy();
     expect(
       (screen.getByRole('button', { name: 'Importar do registo' }) as HTMLButtonElement).disabled,

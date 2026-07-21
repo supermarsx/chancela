@@ -31,10 +31,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 function renderPage() {
   return renderWithProviders(
     <Routes>
-      <Route path="/livros/:id/encerrar" element={<CloseBookPage />} />
-      <Route path="/livros/:id" element={<div>DETALHE DO LIVRO</div>} />
+      <Route path="/books/:id/close" element={<CloseBookPage />} />
+      <Route path="/books/:id" element={<div>DETALHE DO LIVRO</div>} />
     </Routes>,
-    ['/livros/book-1/encerrar'],
+    ['/books/book-1/close'],
   );
 }
 
@@ -54,9 +54,9 @@ describe('CloseBookPage', () => {
     expect(screen.getByText('Termo de encerramento')).toBeTruthy();
 
     const booksCrumb = screen.getByRole('link', { name: 'Livros' });
-    expect(booksCrumb.getAttribute('href')).toBe('/livros');
+    expect(booksCrumb.getAttribute('href')).toBe('/books');
     const bookCrumb = screen.getByRole('link', { name: 'Livro' });
-    expect(bookCrumb.getAttribute('href')).toBe('/livros/book-1');
+    expect(bookCrumb.getAttribute('href')).toBe('/books/book-1');
 
     // The embedded CloseBookForm renders its fields.
     expect(screen.getByLabelText('Data de encerramento')).toBeTruthy();

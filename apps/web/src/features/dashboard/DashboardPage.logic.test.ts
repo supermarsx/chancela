@@ -168,11 +168,11 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
     expect(dashboardActivityKind(bookEvent)).toBe('book');
     expect(dashboardActivityKind(entityEvent)).toBe('entity');
     expect(dashboardActivityKind(event())).toBeNull();
-    expect(routeFromDashboardActivity(actEvent, 'act')).toBe('/atas/A1');
+    expect(routeFromDashboardActivity(actEvent, 'act')).toBe('/acts/A1');
     expect(routeFromDashboardActivity(event({ scope: 'global' }), 'act')).toBeUndefined();
-    expect(routeFromDashboardActivity(bookEvent, 'book')).toBe('/livros/B1');
-    expect(routeFromDashboardActivity(entityEvent, 'entity')).toBe('/entidades/E1');
-    expect(routeFromDashboardActivity(plainEntity, 'entity')).toBe('/entidades/E2');
+    expect(routeFromDashboardActivity(bookEvent, 'book')).toBe('/books/B1');
+    expect(routeFromDashboardActivity(entityEvent, 'entity')).toBe('/entities/E1');
+    expect(routeFromDashboardActivity(plainEntity, 'entity')).toBe('/entities/E2');
     expect(routeFromDashboardActivity(event(), 'entity')).toBeUndefined();
     expect(firstChainId(bookEvent, 'book')).toBe('B1');
     expect(firstChainId(event(), 'book')).toBeUndefined();
@@ -259,18 +259,18 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
     expect(dashboardMessageKey('  ')).toBeUndefined();
     expect(dashboardMessageKey(undefined)).toBeUndefined();
     for (const route of [
-      '/entidades',
-      '/livros/B1',
-      '/atas/A1',
-      '/arquivo?q=x',
-      '/configuracoes',
+      '/entities',
+      '/books/B1',
+      '/acts/A1',
+      '/archive?q=x',
+      '/settings',
     ]) {
       expect(dashboardFrontendRouteFromApi(route)).toBe(route);
     }
-    expect(dashboardFrontendRouteFromApi('/v1/entities/E1?x=1')).toBe('/entidades/E1');
-    expect(dashboardFrontendRouteFromApi('/v1/books/B1')).toBe('/livros/B1');
-    expect(dashboardFrontendRouteFromApi('/v1/acts/A1')).toBe('/atas/A1');
-    expect(dashboardFrontendRouteFromApi('/v1/ledger/events')).toBe('/arquivo');
+    expect(dashboardFrontendRouteFromApi('/v1/entities/E1?x=1')).toBe('/entities/E1');
+    expect(dashboardFrontendRouteFromApi('/v1/books/B1')).toBe('/books/B1');
+    expect(dashboardFrontendRouteFromApi('/v1/acts/A1')).toBe('/acts/A1');
+    expect(dashboardFrontendRouteFromApi('/v1/ledger/events')).toBe('/archive');
     expect(dashboardFrontendRouteFromApi('/health')).toBeUndefined();
     expect(dashboardFrontendRouteFromApi(' ')).toBeUndefined();
 
@@ -285,12 +285,12 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
     expect(importedDocumentIdFromApi('/v1/documents/imported/%E0%A4')).toBe('%E0%A4');
     expect(importedDocumentIdFromApi('/other')).toBeUndefined();
 
-    expect(generatedDispatchEvidenceRoute('/atas/A1?old=1', 'DOC1')).toContain(
+    expect(generatedDispatchEvidenceRoute('/acts/A1?old=1', 'DOC1')).toContain(
       'focus=dispatch-evidence',
     );
     expect(generatedDispatchEvidenceRoute(undefined, 'DOC1')).toBeUndefined();
-    expect(generatedDispatchEvidenceRoute('/atas/A1', ' ')).toBeUndefined();
-    expect(importedDocumentReviewRoute('/atas/A1', 'IMP1')).toContain('focus=import-review');
+    expect(generatedDispatchEvidenceRoute('/acts/A1', ' ')).toBeUndefined();
+    expect(importedDocumentReviewRoute('/acts/A1', 'IMP1')).toContain('focus=import-review');
     expect(importedDocumentReviewRoute(undefined, 'IMP1')).toBeUndefined();
   });
 
@@ -300,14 +300,14 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
       params: { act_id: 'A1' },
     });
     expect(isConveningNoticeReminder(convening)).toBe(true);
-    expect(dashboardReminderActRoute(convening)).toBe('/atas/A1');
-    expect(routeFromDashboardReminder(convening)).toContain('/atas/A1');
+    expect(dashboardReminderActRoute(convening)).toBe('/acts/A1');
+    expect(routeFromDashboardReminder(convening)).toContain('/acts/A1');
 
     const imported = reminder({
       action: {
         kind: 'open_imported_document_review',
         label_key: 'x',
-        route: '/atas/A2',
+        route: '/acts/A2',
         api_href: '/v1/documents/imported/IMP%2F2',
       },
     });
@@ -317,12 +317,12 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
       action: {
         kind: 'open_generated_convening_dispatch_evidence',
         label_key: 'x',
-        route: '/atas/A3',
+        route: '/acts/A3',
         api_href: '/v1/documents/generated/DOC3/dispatch-evidence',
       },
     });
     expect(routeFromDashboardReminder(dispatch)).toContain('generated_document_id=DOC3');
-    expect(routeFromDashboardReminder(reminder({ action: null }))).toBe('/entidades/E1');
+    expect(routeFromDashboardReminder(reminder({ action: null }))).toBe('/entities/E1');
     expect(routeFromDashboardReminder(reminder({ entity_id: '', action: null }))).toBeUndefined();
 
     expect(reminderHasMissingMeetingDate(convening, 'different')).toBe(false);
@@ -371,12 +371,12 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
       'Lei CSC:376',
     );
 
-    expect(routeFromDashboardAlert(alert())).toBe('/entidades/E1');
+    expect(routeFromDashboardAlert(alert())).toBe('/entities/E1');
     expect(
       routeFromDashboardAlert(
-        alert({ action: { kind: 'open', label_key: 'x', route: '/arquivo', api_href: null } }),
+        alert({ action: { kind: 'open', label_key: 'x', route: '/archive', api_href: null } }),
       ),
-    ).toBe('/arquivo');
+    ).toBe('/archive');
     expect(
       routeFromDashboardAlert(
         alert({
@@ -388,7 +388,7 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
           },
         }),
       ),
-    ).toBe('/atas/A1');
+    ).toBe('/acts/A1');
     expect(
       routeFromDashboardAlert(
         alert({
@@ -400,7 +400,7 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
           },
         }),
       ),
-    ).toBe('/livros/B1');
+    ).toBe('/books/B1');
     expect(dashboardAlertTone(alert({ severity: 'Error' }))).toBe('error');
     expect(dashboardAlertTone(alert({ severity: 'Warning' }))).toBe('warn');
     expect(dashboardAlertTone(alert())).toBe('accent');

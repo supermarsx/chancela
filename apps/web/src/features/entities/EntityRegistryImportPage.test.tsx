@@ -112,9 +112,9 @@ function installFetch(handleImport: () => Response | Promise<Response>): Recorde
 function renderPage() {
   return renderWithProviders(
     <Routes>
-      <Route path="/entidades/:id/importar" element={<EntityRegistryImportPage />} />
+      <Route path="/entities/:id/import" element={<EntityRegistryImportPage />} />
     </Routes>,
-    ['/entidades/new-ent-1/importar'],
+    ['/entities/new-ent-1/import'],
   );
 }
 
@@ -131,9 +131,9 @@ describe('EntityRegistryImportPage', () => {
     expect(await screen.findByText('Importar do registo comercial')).toBeTruthy();
     // The entity name arrives from the useEntity query and lands in the breadcrumb link.
     const nameLink = await screen.findByRole('link', { name: 'Encosto Estratégico, Lda.' });
-    expect(nameLink.getAttribute('href')).toBe('/entidades/new-ent-1');
+    expect(nameLink.getAttribute('href')).toBe('/entities/new-ent-1');
     expect(screen.getByRole('link', { name: 'Voltar à entidade' }).getAttribute('href')).toBe(
-      '/entidades/new-ent-1',
+      '/entities/new-ent-1',
     );
     // The panel's código field is present and the submit starts disabled (no code yet).
     expect(screen.getByLabelText('Código da certidão permanente')).toBeTruthy();

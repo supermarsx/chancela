@@ -1,6 +1,6 @@
 /**
  * Draft a new ata inside an open book (WFL-14, `POST /v1/acts`). Extracted from the book
- * detail aside onto its own route (`/livros/:id/nova-ata`) so the book view runs full
+ * detail aside onto its own route (`/books/:id/new-act`) so the book view runs full
  * width (t13 item 7). On success it navigates straight to the ata editor for the new act.
  */
 import { useState } from 'react';
@@ -26,7 +26,7 @@ export function DraftAtaForm({ bookId }: { bookId: string }) {
       {
         onSuccess: (act) => {
           toast.success(t('toast.ata.created'));
-          navigate(`/atas/${act.id}`);
+          navigate(`/acts/${act.id}`);
         },
         onError: (e) => toast.error(e),
       },

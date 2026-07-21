@@ -96,7 +96,7 @@ function httpHref(value: string): string | null {
 function corpusHref(sourceId: string, article: string | null): string {
   const params = new URLSearchParams({ tool: 'legislacao', diploma: sourceId });
   if (article) params.set('artigo', article);
-  return `/ferramentas?${params.toString()}`;
+  return `/tools?${params.toString()}`;
 }
 
 function firstString(record: MetadataRecord, keys: readonly string[]): string | null {

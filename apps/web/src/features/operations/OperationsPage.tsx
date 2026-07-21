@@ -19,11 +19,13 @@ import { tenantIdsFromEntities } from './operatorModels';
 import { ConnectorOperations } from './ConnectorOperations';
 import { GroupsOperations } from './GroupsOperations';
 import { RepositoryOperations } from './RepositoryOperations';
+import { useSectionNav } from '../../app/navPath';
 import './OperationsPage.css';
 
 export type OperationsSection = 'groups' | 'connectors' | 'repositories';
 
-export function operationsSectionFromParam(value: string | null): OperationsSection {
+/** An unknown segment falls back to Grupos rather than blanking the panel. */
+export function operationsSectionFromParam(value: string | null | undefined): OperationsSection {
   if (value === 'connectors' || value === 'repositories') return value;
   return 'groups';
 }
@@ -35,7 +37,15 @@ export function OperationsPage() {
   const tenantIds = tenantIdsFromEntities(entities.data ?? []);
   const requestedTenant = params.get('tenant') ?? '';
   const tenantId = tenantIds.includes(requestedTenant) ? requestedTenant : (tenantIds[0] ?? '');
-  const section = operationsSectionFromParam(params.get('view'));
+  // `/operations/connectors`; Grupos is the default and owns the bare `/operations`. The tenant
+  // and the per-panel selections stay query params: they narrow what a panel shows rather than
+  // naming which panel you are on.
+  const { section, select: selectSection } = useSectionNav<OperationsSection>({
+    base: '/operations',
+    parse: operationsSectionFromParam,
+    fallback: 'groups',
+    replace: true,
+  });
 
   useEffect(() => {
     if (!tenantId || requestedTenant === tenantId) return;
@@ -60,18 +70,6 @@ export function OperationsPage() {
         next.delete('job');
         next.delete('repository');
         next.delete('object');
-        return next;
-      },
-      { replace: true },
-    );
-  }
-
-  function selectSection(nextSection: OperationsSection) {
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        if (nextSection === 'groups') next.delete('view');
-        else next.set('view', nextSection);
         return next;
       },
       { replace: true },
@@ -135,7 +133,7 @@ export function OperationsPage() {
       {!entities.isLoading && !entities.error && tenantIds.length === 0 ? (
         <InlineWarning tone="info" title={t('operations.tenant.empty.title')}>
           <p>{t('operations.tenant.empty.body')}</p>
-          <Link className="btn btn--secondary" to="/entidades/nova">
+          <Link className="btn btn--secondary" to="/entities/new">
             {t('operations.tenant.empty.action')}
           </Link>
         </InlineWarning>

@@ -1,5 +1,5 @@
 /**
- * First-run onboarding wizard (`/bem-vindo`, plan t44 §3.2). A full-screen, editorial
+ * First-run onboarding wizard (`/welcome`, plan t44 §3.2). A full-screen, editorial
  * gilt surface rendered as a sibling route OUTSIDE the app {@link Layout} chrome: no
  * PageHeader, no tab bar, no session picker — just the guided setup an operator sees on a
  * fresh install.

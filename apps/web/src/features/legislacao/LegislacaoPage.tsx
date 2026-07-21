@@ -1,7 +1,8 @@
 /**
  * Legislação (t24, extended t55-E3) — the law surface on the Ferramentas tab.
  *
- * It hosts two complementary views behind a {@link SubNav}, deep-linked via `?leg=`:
+ * It hosts two complementary views behind a {@link SubNav}, deep-linked as a path segment
+ * (`/tools/legislation/shelf`):
  *  - **Texto integral** ({@link CorpusReader}, the default) — the full, searchable statute
  *    corpus: full-text search across every diploma/article, browse-by-diploma, article view,
  *    and per-article Verified/Pending authenticity, backed by the read-only corpus API (t55).
@@ -10,34 +11,28 @@
  *
  * The corpus reader is the default because it is the primary way to "check out" and text-search
  * the full law data; the curated shelf remains one click away. Each view manages its own search /
- * navigation params (`?q=`, `?diploma=`, `?artigo=`); switching view is `?leg=` and re-keys the
- * content region so it replays the enter animation.
+ * navigation params (`?q=`, `?diploma=`, `?artigo=`) — those describe what you are searching
+ * for, not which view you are in, so they stay in the query; switching view is a path segment
+ * and re-keys the content region so it replays the enter animation.
  */
-import { useSearchParams } from 'react-router-dom';
 import { useT } from '../../i18n';
 import { Icon, SubNav } from '../../ui';
+import { useSectionNav } from '../../app/navPath';
 import { CorpusReader } from './CorpusReader';
 import { CuratedShelf } from './CuratedShelf';
 
-type LegView = 'corpus' | 'prateleira';
+type LegView = 'corpus' | 'shelf';
 
 export function LegislacaoPage() {
   const t = useT();
-  const [params, setParams] = useSearchParams();
-  const view: LegView = params.get('leg') === 'prateleira' ? 'prateleira' : 'corpus';
-
-  function selectView(next: LegView) {
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        // The corpus reader is the default, so it carries no `leg` param.
-        if (next === 'corpus') p.delete('leg');
-        else p.set('leg', next);
-        return p;
-      },
-      { replace: true },
-    );
-  }
+  // Second level under `/tools/legislation`; the corpus reader is the default, so it
+  // carries no segment of its own.
+  const { section: view, select: selectView } = useSectionNav<LegView>({
+    base: '/tools/legislation',
+    parse: (raw) => (raw === 'shelf' ? 'shelf' : 'corpus'),
+    fallback: 'corpus',
+    replace: true,
+  });
 
   return (
     <div className="stack--tight">
@@ -47,11 +42,11 @@ export function LegislacaoPage() {
         onSelect={selectView}
         items={[
           { id: 'corpus', label: t('legislacao.subnav.corpus'), icon: <Icon.FileText /> },
-          { id: 'prateleira', label: t('legislacao.subnav.shelf'), icon: <Icon.Scale /> },
+          { id: 'shelf', label: t('legislacao.subnav.shelf'), icon: <Icon.Scale /> },
         ]}
       />
       <div className="route-transition" key={view}>
-        {view === 'prateleira' ? <CuratedShelf /> : <CorpusReader />}
+        {view === 'shelf' ? <CuratedShelf /> : <CorpusReader />}
       </div>
     </div>
   );

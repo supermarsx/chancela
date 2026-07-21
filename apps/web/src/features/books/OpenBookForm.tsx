@@ -209,7 +209,7 @@ export function OpenBookForm({ entityId, entities }: Props) {
           // dirty surface and prompt on the app's OWN post-save navigation. The work is
           // saved; exempt exactly this navigation.
           allowNextNavigation();
-          navigate(`/livros/${book.id}`);
+          navigate(`/books/${book.id}`);
         },
         onError: (e) => toast.error(e),
       },

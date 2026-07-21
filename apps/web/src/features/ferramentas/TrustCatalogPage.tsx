@@ -6,7 +6,7 @@
  * a compact status card for scheme/source/signature validity, plus a two-pane catalog
  * explorer with URL-backed search/filter/selection and provider/service detail panes.
  */
-import { useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   useTsaCatalog,
@@ -33,13 +33,17 @@ import {
   Select,
   Skeleton,
   SkeletonDeflist,
+  ColumnHead,
   SkeletonRegion,
+  Table,
   Toggle,
 } from '../../ui';
 import type {
   TslCatalogSearchParams,
   TslCatalogView,
   TslProviderView,
+  TslDigitalIdentityView,
+  TslServiceHistoryView,
   TslServiceStatusKind,
   TslServiceSummaryView,
   TslSignatureStatus,
@@ -282,6 +286,12 @@ function TsaRecordFlags({ record }: { record: TsaRecordView }) {
   );
 }
 
+/**
+ * The enclosing section's heading, so a fact table inside it can caption itself with the block it
+ * belongs to instead of every call site repeating the string (t101).
+ */
+const TrustSectionTitle = createContext<string | null>(null);
+
 function TrustDetailSection({
   title,
   tone,
@@ -292,19 +302,216 @@ function TrustDetailSection({
   children: ReactNode;
 }) {
   return (
-    <section
-      role="group"
-      aria-label={title}
-      className={`trust-detail-section${tone === 'warn' ? ' trust-detail-section--warn' : ''}`}
-    >
-      <h4 className="field__label trust-detail-section__title">{title}</h4>
-      {children}
-    </section>
+    <TrustSectionTitle.Provider value={title}>
+      <section
+        role="group"
+        aria-label={title}
+        className={`trust-detail-section${tone === 'warn' ? ' trust-detail-section--warn' : ''}`}
+      >
+        <h4 className="field__label trust-detail-section__title">{title}</h4>
+        {children}
+      </section>
+    </TrustSectionTitle.Provider>
   );
 }
 
-function TrustKeyValueGrid({ children }: { children: ReactNode }) {
-  return <dl className="deflist deflist--tight trust-kv-grid">{children}</dl>;
+/**
+ * Read-only facts about ONE subject, as a two-column table (t101).
+ *
+ * The user asked for the trust list "table displayed styled so its easier to read". These blocks
+ * were a `<dl>` tiled by `auto-fit, minmax(11rem, 1fr)`, so a term and its value sat in whatever
+ * column the viewport happened to produce and the eye had to re-find the label/value rhythm on
+ * every row — the exact complaint. A field/value pair genuinely IS tabular data, and the About
+ * panel already set that precedent here (`settings.about.column.item` / `.value`), so this follows
+ * it rather than inventing a shape: a real `<table>` with `<th scope="col">` above and
+ * `<th scope="row">` beside every value, which is also what tells a screen reader that the left
+ * cell names the right one.
+ *
+ * The header carries no help glyph. These two columns are "Campo" and "Valor" — there is nothing
+ * to say about them that the words do not already say, and "Campo — o campo" is worse than an
+ * absent tooltip. Per-column help is reserved for the multi-column grids below, where the column
+ * names are domain terms.
+ *
+ * The caption comes from the enclosing {@link TrustDetailSection}, so each table is announced as
+ * the block it belongs to ("Identificação da lista", "Configuração") rather than as an anonymous
+ * grid; `Table` renders it visually hidden.
+ */
+function TrustFactTable({ children }: { children: ReactNode }) {
+  const t = useT();
+  const title = useContext(TrustSectionTitle);
+  return (
+    <Table
+      className="trust-fact-table trust-opaque"
+      caption={title ?? t('trust.table.facts.caption')}
+      head={
+        <tr>
+          <th scope="col">{t('trust.table.field')}</th>
+          <th scope="col">{t('trust.table.value')}</th>
+        </tr>
+      }
+    >
+      {children}
+    </Table>
+  );
+}
+
+/**
+ * Repeated homogeneous entries — the three blocks on this page that genuinely are grids of the
+ * same shape repeated, and so become real tables with per-column help (t101).
+ *
+ * These get `ColumnHead` where the fact tables above do not, because their column names are domain
+ * terms an operator cannot infer: what a *status-history* row is evidence of, what distinguishes a
+ * digital identity's raw value from its SHA-256, what the attributes column is asserting.
+ *
+ * Identifier discipline (the entity-column rule, which bites harder here because these ARE the
+ * identifiers): nothing is truncated to fit. A digest renders through `Digest`, which abbreviates
+ * with a focus-reachable tooltip carrying the full value and keeps the text selectable; every other
+ * identifier wraps inside `.trust-opaque`, which the global selection policy already opts back into
+ * text selection, so a fingerprint stays copyable.
+ */
+function StatusHistoryTable({ history }: { history: readonly TslServiceHistoryView[] }) {
+  const t = useT();
+  return (
+    <Table
+      className="trust-history-table trust-opaque"
+      caption={t('trust.table.history.caption')}
+      head={
+        <tr>
+          <ColumnHead
+            label={t('trust.table.history.status')}
+            help={t('trust.table.history.status.help')}
+          />
+          <ColumnHead
+            label={t('trust.table.history.name')}
+            help={t('trust.table.history.name.help')}
+          />
+          <ColumnHead
+            label={t('trust.table.history.type')}
+            help={t('trust.table.history.type.help')}
+          />
+          <ColumnHead
+            label={t('trust.table.history.since')}
+            help={t('trust.table.history.since.help')}
+          />
+        </tr>
+      }
+    >
+      {history.map((entry, index) => (
+        <tr key={`${entry.service_type}-${entry.status.kind}-${index}`}>
+          <td data-label={t('trust.table.history.status')}>
+            <ServiceStatusBadge status={entry.status.kind} />
+          </td>
+          <td data-label={t('trust.table.history.name')}>{entry.name || '—'}</td>
+          <td className="mono trust-opaque" data-label={t('trust.table.history.type')}>
+            {entry.service_type}
+          </td>
+          <td className="mono" data-label={t('trust.table.history.since')}>
+            {entry.status_starting_time ?? entry.status_starting_time_raw ?? '—'}
+          </td>
+        </tr>
+      ))}
+    </Table>
+  );
+}
+
+function DigitalIdentitiesTable({ identities }: { identities: readonly TslDigitalIdentityView[] }) {
+  const t = useT();
+  return (
+    <Table
+      className="trust-identity-table trust-opaque"
+      caption={t('trust.table.identity.caption')}
+      head={
+        <tr>
+          <ColumnHead
+            label={t('trust.table.identity.kind')}
+            help={t('trust.table.identity.kind.help')}
+          />
+          <ColumnHead
+            label={t('trust.table.identity.value')}
+            help={t('trust.table.identity.value.help')}
+          />
+          <ColumnHead
+            label={t('trust.table.identity.digest')}
+            help={t('trust.table.identity.digest.help')}
+          />
+        </tr>
+      }
+    >
+      {identities.map((identity) => (
+        <tr key={`${identity.kind}-${identity.value}-${identity.sha256 ?? ''}`}>
+          <td className="mono" data-label={t('trust.table.identity.kind')}>
+            {identity.kind}
+          </td>
+          <td data-label={t('trust.table.identity.value')}>
+            <IdentityValue value={identity.value} />
+          </td>
+          <td data-label={t('trust.table.identity.digest')}>
+            {/* Only when it adds something: for a digest-shaped identity the value column already
+                IS the SHA-256, and repeating it would suggest two different fingerprints. */}
+            {identity.sha256 && identity.sha256 !== identity.value ? (
+              <IdentityValue value={identity.sha256} />
+            ) : (
+              <span className="muted">—</span>
+            )}
+          </td>
+        </tr>
+      ))}
+    </Table>
+  );
+}
+
+function ProviderServicesTable({
+  services,
+  onSelectService,
+}: {
+  services: readonly TslServiceSummaryView[];
+  onSelectService: (id: string) => void;
+}) {
+  const t = useT();
+  return (
+    <Table
+      className="trust-services-table trust-opaque"
+      caption={t('trust.table.service.caption')}
+      head={
+        <tr>
+          <ColumnHead
+            label={t('trust.table.service.name')}
+            help={t('trust.table.service.name.help')}
+          />
+          <ColumnHead
+            label={t('trust.table.service.type')}
+            help={t('trust.table.service.type.help')}
+          />
+          <ColumnHead
+            label={t('trust.table.service.attributes')}
+            help={t('trust.table.service.attributes.help')}
+          />
+        </tr>
+      }
+    >
+      {services.map((service) => (
+        <tr key={service.id}>
+          <td data-label={t('trust.table.service.name')}>
+            {/* The row's own affordance stays a real button, so the table is navigable by keyboard
+                exactly as the list of rows it replaced was. */}
+            <button
+              type="button"
+              className="trust-provider-link"
+              onClick={() => onSelectService(service.id)}
+            >
+              {service.name}
+            </button>
+          </td>
+          <td className="mono trust-opaque" data-label={t('trust.table.service.type')}>
+            {service.service_type}
+          </td>
+          <td data-label={t('trust.table.service.attributes')}>
+            <ServiceFlags service={service} />
+          </td>
+        </tr>
+      ))}
+    </Table>
+  );
 }
 
 function TrustControlPanel({ title, children }: { title: string; children: ReactNode }) {
@@ -388,31 +595,31 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
       <IdentifierMatchNote fields={record.identifier_match} />
 
       <TrustDetailSection title={t('trust.detail.summary')}>
-        <TrustKeyValueGrid>
-          <div>
-            <dt>{t('trust.service.type')}</dt>
-            <dd className="mono trust-opaque" title={record.service_type}>
+        <TrustFactTable>
+          <tr>
+            <th scope="row">{t('trust.service.type')}</th>
+            <td className="mono trust-opaque" title={record.service_type}>
               {record.service_type}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('trust.service.statusStartingTime')}</dt>
-            <dd className="mono">
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.service.statusStartingTime')}</th>
+            <td className="mono">
               {record.status_starting_time ?? record.status_starting_time_raw ?? '—'}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('trust.tsa.detail.grantedEffective')}</dt>
-            <dd>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.tsa.detail.grantedEffective')}</th>
+            <td>
               {record.granted ? t('common.yes') : t('common.no')} /{' '}
               {record.effective ? t('common.yes') : t('common.no')}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('trust.service.certificates')}</dt>
-            <dd className="mono">{record.identities.certificates}</dd>
-          </div>
-        </TrustKeyValueGrid>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.service.certificates')}</th>
+            <td className="mono">{record.identities.certificates}</td>
+          </tr>
+        </TrustFactTable>
       </TrustDetailSection>
 
       <TrustDetailSection title={t('trust.detail.supplyPoints')}>
@@ -430,20 +637,20 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
       </TrustDetailSection>
 
       <TrustDetailSection title={t('trust.detail.history')}>
-        <TrustKeyValueGrid>
-          <div>
-            <dt>{t('trust.detail.historyEntries')}</dt>
-            <dd className="mono">{record.history_count}</dd>
-          </div>
-          <div>
-            <dt>{t('trust.tsa.detail.classification')}</dt>
-            <dd>{record.analysis.classification}</dd>
-          </div>
-          <div>
-            <dt>{t('trust.tsa.detail.trustBasis')}</dt>
-            <dd>{record.analysis.trust_basis}</dd>
-          </div>
-        </TrustKeyValueGrid>
+        <TrustFactTable>
+          <tr>
+            <th scope="row">{t('trust.detail.historyEntries')}</th>
+            <td className="mono">{record.history_count}</td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.tsa.detail.classification')}</th>
+            <td>{record.analysis.classification}</td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.tsa.detail.trustBasis')}</th>
+            <td>{record.analysis.trust_basis}</td>
+          </tr>
+        </TrustFactTable>
       </TrustDetailSection>
 
       {record.analysis.blocking_reasons.length ? (
@@ -595,108 +802,108 @@ function TsaToolingPanel() {
 
           <div className="trust-diagnostics-grid">
             <TrustDetailSection title={t('trust.tsa.configuration')}>
-              <TrustKeyValueGrid>
-                <div>
-                  <dt>{t('trust.tsa.configuredUrl')}</dt>
-                  <dd className="mono">{tsa.data.summary.configured_url ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>{t('trust.tsa.status')}</dt>
-                  <dd>
+              <TrustFactTable>
+                <tr>
+                  <th scope="row">{t('trust.tsa.configuredUrl')}</th>
+                  <td className="mono">{tsa.data.summary.configured_url ?? '—'}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.tsa.status')}</th>
+                  <td>
                     <Badge tone={tsaStatusTone(tsa.data.summary.status)}>
                       {t(tsaStatusLabel(tsa.data.summary.status))}
                     </Badge>
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.tsa.profile')}</dt>
-                  <dd>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.tsa.profile')}</th>
+                  <td>
                     {tsa.data.summary.profile.protocol} · {tsa.data.summary.profile.hash_algorithm}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.tsa.acceptedHash')}</dt>
-                  <dd className="trust-digest-cell">
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.tsa.acceptedHash')}</th>
+                  <td className="trust-digest-cell">
                     <TsaAcceptedHash digest={tsa.data.summary.accepted_hash.digest} />
-                  </dd>
-                </div>
-              </TrustKeyValueGrid>
+                  </td>
+                </tr>
+              </TrustFactTable>
             </TrustDetailSection>
 
             <TrustDetailSection title={t('trust.tsa.fixtureProof')}>
-              <TrustKeyValueGrid>
-                <div>
-                  <dt>{t('trust.tsa.fixture')}</dt>
-                  <dd>
+              <TrustFactTable>
+                <tr>
+                  <th scope="row">{t('trust.tsa.fixture')}</th>
+                  <td>
                     <Badge tone={probeTone(tsa.data.summary.last_probe.status)}>
                       {t(probeLabel(tsa.data.summary.last_probe.status))}
                     </Badge>
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.checkedAt')}</dt>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.checkedAt')}</th>
                   {/* A probe is a record of something having happened: evidentiary. */}
-                  <dd>
+                  <td>
                     <DateTime
                       className="mono"
                       value={tsa.data.summary.last_probe.checked_at}
                       evidentiary
                     />
-                  </dd>
-                </div>
-              </TrustKeyValueGrid>
+                  </td>
+                </tr>
+              </TrustFactTable>
             </TrustDetailSection>
 
             <TrustDetailSection title={t('trust.tsa.timestampToken')}>
-              <TrustKeyValueGrid>
-                <div>
-                  <dt>GenTime</dt>
-                  <dd className="mono">{tsa.data.summary.timestamp?.gen_time ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>{t('trust.tsa.policySerial')}</dt>
-                  <dd className="mono">
+              <TrustFactTable>
+                <tr>
+                  <th scope="row">GenTime</th>
+                  <td className="mono">{tsa.data.summary.timestamp?.gen_time ?? '—'}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.tsa.policySerial')}</th>
+                  <td className="mono">
                     {tsa.data.summary.timestamp
                       ? `${tsa.data.summary.timestamp.policy} / ${tsa.data.summary.timestamp.serial_number}`
                       : '—'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.tsa.policyAnalysis')}</dt>
-                  <dd>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.tsa.policyAnalysis')}</th>
+                  <td>
                     {tsa.data.summary.policy_analysis.fixture_policy ?? '—'} ·{' '}
                     {tsa.data.summary.policy_analysis.advisory
                       ? t('trust.tsa.policyAdvisory')
                       : t('trust.tsa.policyTrusted')}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.tsa.token')}</dt>
-                  <dd className="mono">
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.tsa.token')}</th>
+                  <td className="mono">
                     {t('trust.tsa.tokenBytes', {
                       bytes: tsa.data.summary.timestamp?.token_bytes ?? '—',
                     })}
-                  </dd>
-                </div>
-              </TrustKeyValueGrid>
+                  </td>
+                </tr>
+              </TrustFactTable>
             </TrustDetailSection>
 
             <TrustDetailSection title={t('trust.tsa.tslRecords')}>
-              <TrustKeyValueGrid>
-                <div>
-                  <dt>{t('trust.tsa.totalTrusted')}</dt>
-                  <dd className="mono">
+              <TrustFactTable>
+                <tr>
+                  <th scope="row">{t('trust.tsa.totalTrusted')}</th>
+                  <td className="mono">
                     {t('trust.tsa.totalTrusted.value', {
                       total: tsa.data.summary.records,
                       trusted: tsa.data.summary.trusted_records,
                     })}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.tsa.granted')}</dt>
-                  <dd className="mono">{tsa.data.summary.granted_records}</dd>
-                </div>
-              </TrustKeyValueGrid>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.tsa.granted')}</th>
+                  <td className="mono">{tsa.data.summary.granted_records}</td>
+                </tr>
+              </TrustFactTable>
             </TrustDetailSection>
           </div>
 
@@ -906,55 +1113,55 @@ function TrustStatusPanel() {
 
           {status.data.last_refresh ? (
             <TrustDetailSection title={t('trust.refresh.lastAttempt')}>
-              <TrustKeyValueGrid>
-                <div>
-                  <dt>{t('trust.refresh.result')}</dt>
-                  <dd>
+              <TrustFactTable>
+                <tr>
+                  <th scope="row">{t('trust.refresh.result')}</th>
+                  <td>
                     <Badge tone={refreshOutcomeTone(status.data.last_refresh.outcome)}>
                       {t(refreshOutcomeLabel(status.data.last_refresh.outcome))}
                     </Badge>
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.refresh.attemptedAt')}</dt>
-                  <dd>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.refresh.attemptedAt')}</th>
+                  <td>
                     <DateTime
                       className="mono"
                       value={status.data.last_refresh.attempted_at}
                       evidentiary
                     />
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.source')}</dt>
-                  <dd className="mono trust-opaque">
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.source')}</th>
+                  <td className="mono trust-opaque">
                     {status.data.last_refresh.source_url ??
                       status.data.last_refresh.source_path ??
                       '—'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.refresh.records')}</dt>
-                  <dd className="mono">
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.refresh.records')}</th>
+                  <td className="mono">
                     {t('trust.search.count', {
                       providers: status.data.last_refresh.providers ?? '—',
                       services: status.data.last_refresh.services ?? '—',
                     })}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.refresh.importSignature')}</dt>
-                  <dd>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.refresh.importSignature')}</th>
+                  <td>
                     <SignatureBadge status={status.data.last_refresh.validation.signature} />
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.trusted')}</dt>
-                  <dd className="mono">
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.trusted')}</th>
+                  <td className="mono">
                     {status.data.last_refresh.trusted_esignature_services ?? '—'}
-                  </dd>
-                </div>
-              </TrustKeyValueGrid>
+                  </td>
+                </tr>
+              </TrustFactTable>
               {status.data.last_refresh.error ? (
                 <p className="muted trust-source-note">{status.data.last_refresh.error}</p>
               ) : status.data.last_refresh.validation.error ? (
@@ -967,64 +1174,64 @@ function TrustStatusPanel() {
 
           <div className="trust-diagnostics-grid">
             <TrustDetailSection title={t('trust.status.listIdentification')}>
-              <TrustKeyValueGrid>
-                <div>
-                  <dt>{t('trust.status.scheme')}</dt>
-                  <dd>{status.data.scheme_name}</dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.operator')}</dt>
-                  <dd>{status.data.scheme_operator_name}</dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.territory')}</dt>
-                  <dd className="mono">{status.data.scheme_territory}</dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.sequence')}</dt>
-                  <dd className="mono">{status.data.sequence_number ?? '—'}</dd>
-                </div>
-              </TrustKeyValueGrid>
+              <TrustFactTable>
+                <tr>
+                  <th scope="row">{t('trust.status.scheme')}</th>
+                  <td>{status.data.scheme_name}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.operator')}</th>
+                  <td>{status.data.scheme_operator_name}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.territory')}</th>
+                  <td className="mono">{status.data.scheme_territory}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.sequence')}</th>
+                  <td className="mono">{status.data.sequence_number ?? '—'}</td>
+                </tr>
+              </TrustFactTable>
             </TrustDetailSection>
 
             <TrustDetailSection title={t('trust.status.dates')}>
-              <TrustKeyValueGrid>
-                <div>
-                  <dt>{t('trust.status.issueDate')}</dt>
+              <TrustFactTable>
+                <tr>
+                  <th scope="row">{t('trust.status.issueDate')}</th>
                   {/* When the scheme operator issued this list — evidentiary. */}
-                  <dd>
+                  <td>
                     <DateTime className="mono" value={status.data.issue_date_time} evidentiary />
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.nextUpdate')}</dt>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.nextUpdate')}</th>
                   {/* A scheduled future update, not a record of an event. */}
-                  <dd>
+                  <td>
                     <DateTime className="mono" value={status.data.next_update} />
-                  </dd>
-                </div>
-              </TrustKeyValueGrid>
+                  </td>
+                </tr>
+              </TrustFactTable>
             </TrustDetailSection>
 
             <TrustDetailSection title={t('trust.status.coverage')}>
-              <TrustKeyValueGrid>
-                <div>
-                  <dt>{t('trust.status.providers')}</dt>
-                  <dd className="mono">{status.data.providers}</dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.services')}</dt>
-                  <dd className="mono">{status.data.services}</dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.qualified')}</dt>
-                  <dd className="mono">{status.data.qualified_esignature_services}</dd>
-                </div>
-                <div>
-                  <dt>{t('trust.status.trusted')}</dt>
-                  <dd className="mono">{status.data.trusted_esignature_services}</dd>
-                </div>
-              </TrustKeyValueGrid>
+              <TrustFactTable>
+                <tr>
+                  <th scope="row">{t('trust.status.providers')}</th>
+                  <td className="mono">{status.data.providers}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.services')}</th>
+                  <td className="mono">{status.data.services}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.qualified')}</th>
+                  <td className="mono">{status.data.qualified_esignature_services}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('trust.status.trusted')}</th>
+                  <td className="mono">{status.data.trusted_esignature_services}</td>
+                </tr>
+              </TrustFactTable>
             </TrustDetailSection>
           </div>
 
@@ -1261,30 +1468,30 @@ function ProviderDetail({
         <h3 className="trust-detail__title">{provider.name}</h3>
       </div>
       <TrustDetailSection title={t('trust.detail.summary')}>
-        <TrustKeyValueGrid>
-          <div>
-            <dt>{t('trust.provider.tradeNames')}</dt>
-            <dd>{provider.trade_names.length ? provider.trade_names.join(', ') : '—'}</dd>
-          </div>
-          <div>
-            <dt>{t('trust.provider.informationUris')}</dt>
-            <dd>{provider.information_uris.length ? provider.information_uris.join(', ') : '—'}</dd>
-          </div>
-          <div>
-            <dt>{t('trust.status.services')}</dt>
-            <dd className="mono">{provider.services.length}</dd>
-          </div>
-          <div>
-            <dt>{t('trust.provider.analysis')}</dt>
-            <dd>
+        <TrustFactTable>
+          <tr>
+            <th scope="row">{t('trust.provider.tradeNames')}</th>
+            <td>{provider.trade_names.length ? provider.trade_names.join(', ') : '—'}</td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.provider.informationUris')}</th>
+            <td>{provider.information_uris.length ? provider.information_uris.join(', ') : '—'}</td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.status.services')}</th>
+            <td className="mono">{provider.services.length}</td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.provider.analysis')}</th>
+            <td>
               {t('trust.provider.analysis.value', {
                 granted: provider.analysis.granted_services,
                 history: provider.analysis.services_with_history,
                 supply: provider.analysis.services_with_supply_points,
               })}
-            </dd>
-          </div>
-        </TrustKeyValueGrid>
+            </td>
+          </tr>
+        </TrustFactTable>
       </TrustDetailSection>
 
       {provider.analysis.duplicate_service_names.length ? (
@@ -1298,23 +1505,7 @@ function ProviderDetail({
       ) : null}
 
       <TrustDetailSection title={t('trust.provider.services')}>
-        <ul className="trust-service-list">
-          {provider.services.map((service) => (
-            <li key={service.id}>
-              <button
-                type="button"
-                className="trust-service-row"
-                onClick={() => onSelectService(service.id)}
-              >
-                <span>
-                  <span className="trust-service-row__name">{service.name}</span>
-                  <span className="trust-service-row__type muted">{service.service_type}</span>
-                </span>
-                <ServiceFlags service={service} />
-              </button>
-            </li>
-          ))}
-        </ul>
+        <ProviderServicesTable services={provider.services} onSelectService={onSelectService} />
       </TrustDetailSection>
     </div>
   );
@@ -1358,28 +1549,28 @@ function ServiceDetail({
       <IdentifierMatchNote fields={matchFields} />
 
       <TrustDetailSection title={t('trust.detail.summary')}>
-        <TrustKeyValueGrid>
-          <div>
-            <dt>{t('trust.service.type')}</dt>
-            <dd className="mono trust-opaque" title={service.service_type}>
+        <TrustFactTable>
+          <tr>
+            <th scope="row">{t('trust.service.type')}</th>
+            <td className="mono trust-opaque" title={service.service_type}>
               {service.service_type}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('trust.service.statusUri')}</dt>
-            <dd className="mono">{service.status.uri ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>{t('trust.service.statusStartingTime')}</dt>
-            <dd className="mono">
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.service.statusUri')}</th>
+            <td className="mono">{service.status.uri ?? '—'}</td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.service.statusStartingTime')}</th>
+            <td className="mono">
               {service.status_starting_time ?? service.status_starting_time_raw ?? '—'}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('trust.service.certificates')}</dt>
-            <dd className="mono">{service.identities.certificates}</dd>
-          </div>
-        </TrustKeyValueGrid>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">{t('trust.service.certificates')}</th>
+            <td className="mono">{service.identities.certificates}</td>
+          </tr>
+        </TrustFactTable>
       </TrustDetailSection>
 
       {service.additional_service_info.length ? (
@@ -1407,25 +1598,11 @@ function ServiceDetail({
       </TrustDetailSection>
 
       <TrustDetailSection title={t('trust.detail.history')}>
-        <TrustKeyValueGrid>
-          <div>
-            <dt>{t('trust.detail.historyEntries')}</dt>
-            <dd className="mono">{service.history_count}</dd>
-          </div>
-        </TrustKeyValueGrid>
+        {/* The count was a one-row fact table, which is a table pretending to be a sentence. It is
+            a sentence, and the history itself — repeated homogeneous entries — is the table. */}
+        <p className="muted">{t('trust.detail.historyCount', { count: service.history_count })}</p>
         {service.history.length ? (
-          <ul className="trust-identity-list">
-            {service.history.map((entry, index) => (
-              <li key={`${entry.service_type}-${entry.status.kind}-${index}`}>
-                <span className="trust-identity-list__kind">{entry.status.kind}</span>
-                <span>{entry.name || '—'}</span>
-                <code className="mono">{entry.service_type}</code>
-                <span className="muted mono">
-                  {entry.status_starting_time ?? entry.status_starting_time_raw ?? '—'}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <StatusHistoryTable history={service.history} />
         ) : (
           <p className="muted">{t('trust.detail.noStatusHistory')}</p>
         )}
@@ -1449,17 +1626,7 @@ function ServiceDetail({
         <div className="trust-detail-subsection">
           <p className="field__label">{t('trust.service.digitalIdentities')}</p>
           {service.digital_identities.length ? (
-            <ul className="trust-identity-list">
-              {service.digital_identities.slice(0, 8).map((identity) => (
-                <li key={`${identity.kind}-${identity.value}-${identity.sha256 ?? ''}`}>
-                  <span className="trust-identity-list__kind">{identity.kind}</span>
-                  <IdentityValue value={identity.value} />
-                  {identity.sha256 && identity.sha256 !== identity.value ? (
-                    <IdentityValue value={identity.sha256} />
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <DigitalIdentitiesTable identities={service.digital_identities.slice(0, 8)} />
           ) : (
             <p className="muted">{t('trust.detail.none')}</p>
           )}

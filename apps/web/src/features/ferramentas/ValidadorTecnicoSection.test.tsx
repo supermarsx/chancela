@@ -1,6 +1,6 @@
 /**
  * The second navigation level inside Ferramentas → Validador PDF: three sub-tabs on the
- * shared `<SubNav>`, deep-linked through `?sec=`, with a browser Back that stays inside
+ * shared `<SubNav>`, deep-linked through a path segment, with a browser Back that stays inside
  * the tool instead of leaving it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -53,7 +53,7 @@ function subnav(): HTMLElement {
 describe('Ferramentas — validador técnico sub-tabs', () => {
   it('reuses the shared SubNav with the three sections in the requested order', () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
 
     expect(
       within(subnav())
@@ -67,7 +67,7 @@ describe('Ferramentas — validador técnico sub-tabs', () => {
 
   it('lands on the PDF validator with no sec param and marks only that tab pressed', () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
 
     expect(screen.getByText('Validador técnico de assinaturas PDF')).toBeTruthy();
     expect(
@@ -83,23 +83,23 @@ describe('Ferramentas — validador técnico sub-tabs', () => {
   it('deep-links each section, and an unknown sec falls back to the PDF validator', () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
 
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=asic']);
+    renderWithProviders(<FerramentasPage />, ['/tools/pdf/asic']);
     expect(screen.getByText('Inspetor técnico ASiC')).toBeTruthy();
     cleanup();
 
     vi.stubGlobal('fetch', validatorToolsFetch());
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=relatorios']);
+    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
     expect(screen.getByText('Relatórios técnicos de validador externo')).toBeTruthy();
     cleanup();
 
     vi.stubGlobal('fetch', validatorToolsFetch());
-    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf&sec=nao-existe']);
+    renderWithProviders(<FerramentasPage />, ['/tools/pdf/nao-existe']);
     expect(screen.getByText('Validador técnico de assinaturas PDF')).toBeTruthy();
   });
 
   it('re-keys the content on sub-tab switch so the enter animation replays', () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
-    const { container } = renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+    const { container } = renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
     const animKey = () =>
       container.querySelector('[data-subanim-key]')?.getAttribute('data-subanim-key');
 
@@ -110,12 +110,12 @@ describe('Ferramentas — validador técnico sub-tabs', () => {
 });
 
 describe('Ferramentas — validador técnico deep-link and Back behaviour', () => {
-  /** Renders the live query string and a Back control, so history is assertable. */
+  /** Renders the live address and a Back control, so history is assertable. */
   function HistoryProbe() {
     const navigate = useNavigate();
     return (
       <>
-        <span data-testid="search-probe">{useLocation().search}</span>
+        <span data-testid="search-probe">{useLocation().pathname}</span>
         <button type="button" onClick={() => navigate(-1)}>
           probe-back
         </button>
@@ -123,7 +123,7 @@ describe('Ferramentas — validador técnico deep-link and Back behaviour', () =
     );
   }
 
-  function renderWithProbe(entry = '/ferramentas?tool=pdf') {
+  function renderWithProbe(entry = '/tools/pdf') {
     return render(
       <QueryClientProvider client={makeClient()}>
         <ToastProvider>
@@ -136,22 +136,22 @@ describe('Ferramentas — validador técnico deep-link and Back behaviour', () =
     );
   }
 
-  const search = () => screen.getByTestId('search-probe').textContent;
+  const path = () => screen.getByTestId('search-probe').textContent;
 
-  it('writes ?sec= on switch and drops it again on the default section', async () => {
+  it('writes the sub-tab segment on switch and drops it again on the default section', async () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
     renderWithProbe();
-    expect(search()).toBe('?tool=pdf');
+    expect(path()).toBe('/tools/pdf');
 
     fireEvent.click(screen.getByRole('button', { name: 'Contentores ASiC' }));
-    await waitFor(() => expect(search()).toBe('?tool=pdf&sec=asic'));
+    await waitFor(() => expect(path()).toBe('/tools/pdf/asic'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Relatórios técnicos' }));
-    await waitFor(() => expect(search()).toBe('?tool=pdf&sec=relatorios'));
+    await waitFor(() => expect(path()).toBe('/tools/pdf/reports'));
 
-    // The default section carries no param, matching the Configurações / livros rule.
+    // The default section carries no segment, matching the Configurações / livros rule.
     fireEvent.click(screen.getByRole('button', { name: 'Assinaturas PDF' }));
-    await waitFor(() => expect(search()).toBe('?tool=pdf'));
+    await waitFor(() => expect(path()).toBe('/tools/pdf'));
   });
 
   it('keeps browser Back inside the tool instead of leaving it', async () => {
@@ -159,13 +159,13 @@ describe('Ferramentas — validador técnico deep-link and Back behaviour', () =
     renderWithProbe();
 
     fireEvent.click(screen.getByRole('button', { name: 'Contentores ASiC' }));
-    await waitFor(() => expect(search()).toBe('?tool=pdf&sec=asic'));
+    await waitFor(() => expect(path()).toBe('/tools/pdf/asic'));
     expect(screen.getByText('Inspetor técnico ASiC')).toBeTruthy();
 
     // The sub-tab switch pushes rather than replaces, so Back returns to the sub-tab we
     // came from and the tool stays mounted — the t34-lawback failure mode, avoided.
     fireEvent.click(screen.getByRole('button', { name: 'probe-back' }));
-    await waitFor(() => expect(search()).toBe('?tool=pdf'));
+    await waitFor(() => expect(path()).toBe('/tools/pdf'));
     expect(screen.getByText('Validador técnico de assinaturas PDF')).toBeTruthy();
     expect(screen.queryByText('Inspetor técnico ASiC')).toBeNull();
   });

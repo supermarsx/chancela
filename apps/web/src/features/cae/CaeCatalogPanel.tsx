@@ -36,7 +36,7 @@ function RefreshOutcome({ refresh }: { refresh: ReturnType<typeof useRefreshCae>
           <Badge tone="error">{t('cae.refresh.notConfigured.badge')}</Badge>
           <p className="muted">
             {t('cae.refresh.notConfigured.hintBefore')}{' '}
-            <Link to="/configuracoes">{t('cae.refresh.notConfigured.link')}</Link>.
+            <Link to="/settings">{t('cae.refresh.notConfigured.link')}</Link>.
           </p>
           <ErrorNote error={refresh.error} />
         </div>

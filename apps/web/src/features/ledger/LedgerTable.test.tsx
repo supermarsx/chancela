@@ -63,6 +63,39 @@ describe('LedgerTable', () => {
     expect(screen.getByText('Sem eventos')).toBeTruthy();
   });
 
+  it('leaves the table plain when no row count is given', () => {
+    // The dashboard's recent-events list renders every row it has, so `aria-rowcount` would be
+    // noise; and it keeps the app-wide table rhythm rather than the Arquivo's compact one.
+    const { container } = renderWithProviders(<LedgerTable events={[makeEvent(1)]} />);
+
+    const table = screen.getByRole('table');
+    expect(table.getAttribute('aria-rowcount')).toBeNull();
+    expect(screen.getAllByRole('row')[1].getAttribute('aria-rowindex')).toBeNull();
+    expect(container.querySelector('.ledger-table')).toBeNull();
+  });
+
+  it('reports an unknown total rather than the loaded count while rows remain unfetched', () => {
+    // The load-bearing assertion of the whole lazy surface: -1 is the ARIA value for "the total
+    // is not known". Passing `rows.length` here instead would tell a screen-reader user the
+    // audit log ENDS where the fetching happened to stop — on an evidentiary record that is a
+    // lie, not a rounding error.
+    const { container } = renderWithProviders(
+      <LedgerTable events={[makeEvent(1), makeEvent(2)]} compact rowCount={-1} />,
+    );
+
+    expect(screen.getByRole('table').getAttribute('aria-rowcount')).toBe('-1');
+    // Header is row 1, so the events are 2 and 3 — stable numbering as the table extends.
+    const rows = screen.getAllByRole('row');
+    expect(rows.map((r) => r.getAttribute('aria-rowindex'))).toEqual(['1', '2', '3']);
+    expect(container.querySelector('.ledger-table')).toBeTruthy();
+  });
+
+  it('states the real total once the server reports no more rows', () => {
+    renderWithProviders(<LedgerTable events={[makeEvent(1), makeEvent(2)]} compact rowCount={3} />);
+
+    expect(screen.getByRole('table').getAttribute('aria-rowcount')).toBe('3');
+  });
+
   it('renders an event whose payload omits the chain list', () => {
     const events = [makeEvent(3, { chains: undefined as unknown as string[] })];
 

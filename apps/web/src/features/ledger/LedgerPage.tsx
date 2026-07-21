@@ -1,7 +1,7 @@
 /**
  * Arquivo — the append-only ledger, split into two deep-linkable sub-tabs through the shared
- * `<SubNav>` primitive and the `?sec=` convention `SettingsPage`/`BookDetailPage` already use
- * (Registo is the default and carries no `sec` param):
+ * `<SubNav>` primitive and the path-segment convention `SettingsPage`/`BookDetailPage` already
+ * use — `/archive/export` (Registo is the default and owns the bare `/archive`):
  *
  *  - **Registo** — the ledger itself: the chain-valid badge from `GET /v1/ledger/verify`, the
  *    filter block, and the table lazily paging `GET /v1/ledger/events/page` newest-first.
@@ -10,7 +10,6 @@
  *    server), so the filter state lives here on the page and both tabs share it.
  */
 import { useDeferredValue, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import {
   useBooks,
   useDownloadBookArchivePackage,
@@ -56,17 +55,22 @@ import {
   Toggle,
   useToast,
 } from '../../ui';
+import { useSectionNav } from '../../app/navPath';
 import { LedgerTable } from './LedgerTable';
 
 const DEFAULT_PAGE_LIMIT = 100;
 
-/** The two Arquivo sub-tabs. `registo` is the default and carries no `sec` param. */
-const LEDGER_SECTIONS = ['registo', 'exportacao'] as const;
+/** The two Arquivo sub-tabs. `registo` is the default and owns the bare `/archive`. */
+const LEDGER_SECTIONS = ['register', 'export'] as const;
 type LedgerSection = (typeof LEDGER_SECTIONS)[number];
 
-function isLedgerSection(value: string | null): value is LedgerSection {
-  return value !== null && (LEDGER_SECTIONS as readonly string[]).includes(value);
+function isLedgerSection(value: string | undefined): value is LedgerSection {
+  return value !== undefined && (LEDGER_SECTIONS as readonly string[]).includes(value);
 }
+
+/** An unknown segment falls back to Registo rather than blanking the panel. */
+const parseLedgerSection = (raw: string | undefined): LedgerSection =>
+  isLedgerSection(raw) ? raw : 'register';
 
 /**
  * The two per-book ZIP profiles, spelled out because picking the wrong one is a real operator
@@ -419,20 +423,13 @@ function BookExportControls() {
 export function LedgerPage() {
   const t = useT();
   const toast = useToast();
-  const [params, setParams] = useSearchParams();
-  const secParam = params.get('sec');
-  const section: LedgerSection = isLedgerSection(secParam) ? secParam : 'registo';
-  const selectSection = (next: LedgerSection) =>
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        // Registo is the default, so it carries no `sec` param (`/arquivo` lands on it).
-        if (next === 'registo') p.delete('sec');
-        else p.set('sec', next);
-        return p;
-      },
-      { replace: true },
-    );
+  // `/archive/export`; Registo is the default, so it stays at the bare `/archive`.
+  const { section, select: selectSection } = useSectionNav<LedgerSection>({
+    base: '/archive',
+    parse: parseLedgerSection,
+    fallback: 'register',
+    replace: true,
+  });
   const [filters, setFilters] = useState<LedgerFilters>(INITIAL_FILTERS);
   const deferredSearch = useDeferredValue(filters.search);
   const [archiveFormat, setArchiveFormat] = useState<LedgerArchiveDocumentFormat>('pdfa');
@@ -536,14 +533,22 @@ export function LedgerPage() {
   const resultStatus = eventsQuery.hasNextPage
     ? t('ledger.status.loadedMore', { shown: events.length })
     : t('ledger.status.loaded', { shown: events.length });
+  /*
+   * `aria-rowcount`, header row included. The page endpoint reports `has_more`/`next_cursor` but
+   * never a total, so while older events remain the honest value is `-1` — the ARIA constant for
+   * "the total is not known" — rather than the loaded count, which would tell a screen-reader user
+   * the archive ends where the fetching happens to have stopped. Once `has_more` is false the
+   * table IS the whole filtered set and the real total can be stated.
+   */
+  const ledgerRowCount = eventsQuery.hasNextPage ? -1 : events.length + 1;
 
   return (
     <div className="stack">
       <PageHeader title={t('ledger.page.title')}>
         <SubNav
           items={[
-            { id: 'registo', label: t('ledger.subnav.registo'), icon: <Icon.Layers /> },
-            { id: 'exportacao', label: t('ledger.subnav.exportacao'), icon: <Icon.Archive /> },
+            { id: 'register', label: t('ledger.subnav.registo'), icon: <Icon.Layers /> },
+            { id: 'export', label: t('ledger.subnav.exportacao'), icon: <Icon.Archive /> },
           ]}
           active={section}
           onSelect={selectSection}
@@ -569,13 +574,13 @@ export function LedgerPage() {
       {/* One sub-tab at a time; the panel replays the route-enter fade on each switch.
           `wide-page` rides on the PANEL, not the page: Registo's seven-column chain table
           wants the room, while Exportação is two cards that read better at the prose
-          measure. `section` is derived from `?sec=` on every render, so a deep link into
+          measure. `section` is derived from the path on every render, so a deep link into
           either tab gets the right width on first paint. */}
       <div
-        className={section === 'registo' ? 'route-transition wide-page' : 'route-transition'}
+        className={section === 'register' ? 'route-transition wide-page' : 'route-transition'}
         key={section}
       >
-        {section === 'exportacao' ? (
+        {section === 'export' ? (
           <div className="stack">
             <Card title={t('ledger.export.document.title')}>
               <div className="stack">
@@ -629,7 +634,7 @@ export function LedgerPage() {
                     type="button"
                     variant="ghost"
                     icon={<Icon.Search />}
-                    onClick={() => selectSection('registo')}
+                    onClick={() => selectSection('register')}
                   >
                     {t('ledger.export.document.editFilters')}
                   </Button>
@@ -750,7 +755,10 @@ export function LedgerPage() {
                 <div className="ledger-resultbar">
                   <Badge tone="accent">{t('ledger.order.newestFirst')}</Badge>
                   <Badge>{t('ledger.filters.activeCount', { count: activeFilterCount })}</Badge>
-                  <span aria-label={resultStatus}>
+                  {/* A live region, not just a label: loading older events changes this count
+                      without moving focus, so without `role="status"` the only feedback a
+                      screen-reader user gets from "Carregar eventos mais antigos" is silence. */}
+                  <span role="status" aria-label={resultStatus}>
                     <Badge>{resultStatus}</Badge>
                   </span>
                 </div>
@@ -768,7 +776,7 @@ export function LedgerPage() {
                 </EmptyState>
               ) : (
                 <>
-                  <LedgerTable events={events} showChains />
+                  <LedgerTable events={events} showChains compact rowCount={ledgerRowCount} />
                   {eventsQuery.hasNextPage ? (
                     <div className="ledger-load-more">
                       <Button

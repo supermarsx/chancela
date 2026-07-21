@@ -117,6 +117,7 @@ const USER: UserView = {
   has_attestation_key: false,
   has_recovery_phrase: false,
   language: 'auto',
+  role_assignments: [],
 };
 
 // --- Subset honesty (permission-matrix editor) ----------------------------------
@@ -747,6 +748,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       has_attestation_key: false,
       has_recovery_phrase: false,
       language: 'auto',
+      role_assignments: [],
       created_at: '2026-01-01',
     },
   ];

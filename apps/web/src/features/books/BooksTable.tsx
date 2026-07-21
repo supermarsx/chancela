@@ -62,7 +62,7 @@ function BookEntityRef({
       <span className="books-table__entity">
         <Link
           className="truncate books-table__entity-link"
-          to={`/entidades/${entity.id}`}
+          to={`/entities/${entity.id}`}
           title={entity.name}
         >
           {entity.name}
@@ -152,7 +152,7 @@ export function BooksTable({
                   <Tooltip label={actionLabel} placement="left">
                     <Link
                       className="btn btn--ghost btn--icon btn--iconOnly books-table__open"
-                      to={`/livros/${book.id}`}
+                      to={`/books/${book.id}`}
                       aria-label={actionLabel}
                     >
                       <span className="btn__icon" aria-hidden="true">

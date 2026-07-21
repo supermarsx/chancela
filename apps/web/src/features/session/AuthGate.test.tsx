@@ -48,7 +48,7 @@ function renderGate() {
   return renderWithProviders(
     <Routes>
       <Route path="/" element={<AuthGate>{<div>APP CHROME</div>}</AuthGate>} />
-      <Route path="/bem-vindo" element={<div>WIZARD</div>} />
+      <Route path="/welcome" element={<div>WIZARD</div>} />
     </Routes>,
     ['/'],
   );

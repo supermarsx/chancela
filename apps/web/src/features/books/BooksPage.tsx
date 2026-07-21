@@ -1,7 +1,7 @@
 /**
  * Livros - the full-width list of every book across all entities. Opening a book lives
  * behind a neat "Abrir livro" button in the panel header, which opens the dedicated
- * open-book route (`/livros/novo`) rather than an always-visible aside form (t13 item 7).
+ * open-book route (`/books/new`) rather than an always-visible aside form (t13 item 7).
  */
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useBooks, useEntities } from '../../api/hooks';
@@ -182,7 +182,7 @@ export function BooksPage() {
           <GateButtonLink
             perm="book.open"
             anyScope
-            to="/livros/novo"
+            to="/books/new"
             variant="primary"
             icon={<Icon.BookPlus />}
           >

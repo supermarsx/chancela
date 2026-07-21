@@ -104,7 +104,7 @@ export function ImportFromRegistryForm() {
           // RegistryErrorNote below still handles the 422/502 error cases.
           setCode('');
           toast.success(t('toast.registry.imported'));
-          navigate(`/entidades/${report.entity.id}`);
+          navigate(`/entities/${report.entity.id}`);
         },
         onError: (e) => toast.error(e),
       },

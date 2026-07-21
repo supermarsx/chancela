@@ -91,9 +91,9 @@ function renderEditor(act: ActView, compliance: ComplianceReport) {
     <QueryClientProvider client={makeClient()}>
       <ToastProvider>
         <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
-          <MemoryRouter initialEntries={['/atas/act-1']}>
+          <MemoryRouter initialEntries={['/acts/act-1']}>
             <Routes>
-              <Route path="/atas/:id" element={<AtaEditorPage />} />
+              <Route path="/acts/:id" element={<AtaEditorPage />} />
             </Routes>
           </MemoryRouter>
         </StaticPermissionsProvider>
@@ -201,7 +201,7 @@ describe('CompliancePanel legal-source references', () => {
       name: /Código das Sociedades Comerciais, Artigo 63.º/i,
     });
     expect(link.getAttribute('href')).toBe(
-      '/ferramentas?tool=legislacao&diploma=csc+consolidado&artigo=63.%C2%BA+n.%C2%BA+2',
+      '/tools?tool=legislacao&diploma=csc+consolidado&artigo=63.%C2%BA+n.%C2%BA+2',
     );
     expect(link.getAttribute('target')).toBeNull();
     expect(link.getAttribute('rel')).toBeNull();
@@ -237,7 +237,7 @@ describe('CompliancePanel legal-source references', () => {
     renderPanel(report);
 
     const link = screen.getByRole('link', { name: /Código das Sociedades Comerciais/i });
-    expect(link.getAttribute('href')).toBe('/ferramentas?tool=legislacao&diploma=csc');
+    expect(link.getAttribute('href')).toBe('/tools?tool=legislacao&diploma=csc');
     expect(screen.getByText('Verificado')).toBeTruthy();
     expect(screen.queryByText(/fonte pendente/)).toBeNull();
   });

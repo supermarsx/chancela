@@ -4,7 +4,9 @@
  * events. Everything is derived from `GET /v1/dashboard`, which the seal/mutation hooks
  * invalidate, so the numbers stay live.
  */
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { useSectionNav } from '../../app/navPath';
+import { normalizeLegacyRoute } from '../../app/legacySlugs';
 import { useDashboard } from '../../api/hooks';
 import {
   actStateLabels,
@@ -80,7 +82,12 @@ function withDashboardDefaults(data: Dashboard): Dashboard {
 
 const RECENT_EVENTS_LIMIT = 10;
 const SUMMARY_LIST_LIMIT = 5;
-const DASHBOARD_TAB_PARAM = 'painel';
+/**
+ * The panels other than the landing one live under `/dashboard/:tab` (t97). The default panel keeps
+ * the bare `/`, so the dashboard is still the app's root address; both are the same PAGE, which
+ * is why the route table gives them a `navDepth` of 0 and the shell does not remount between them.
+ */
+const DASHBOARD_TAB_BASE = '/dashboard';
 
 type QueueTone = 'neutral' | 'accent' | 'warn' | 'error';
 type ActivityKind = 'act' | 'book' | 'entity';
@@ -142,11 +149,11 @@ function Metric({ label, value, note }: { label: string; value: number | string;
 }
 
 /**
- * `current` is the landing panel, so — following the `?sec=` convention the other sub-tab
- * surfaces use — it is the section that carries no param. Every other section, `stats`
- * included, keeps an explicit value, which is why `?painel=stats` has to be recognised here.
+ * `current` is the landing panel, so — following the path-segment convention the other sub-tab
+ * surfaces use — it is the section that carries no segment. Every other section, `stats`
+ * included, keeps an explicit value, which is why `/dashboard/stats` has to be recognised here.
  */
-export function dashboardTabFromParam(value: string | null): DashboardTab {
+export function dashboardTabFromParam(value: string | null | undefined): DashboardTab {
   if (
     value === 'stats' ||
     value === 'activity' ||
@@ -201,11 +208,11 @@ export function routeFromDashboardActivity(
 ): string | undefined {
   if (kind === 'act') {
     const actId = idFromScopedValue(event.scope, 'act');
-    return actId ? `/atas/${actId}` : undefined;
+    return actId ? `/acts/${actId}` : undefined;
   }
   if (kind === 'book') {
     const bookId = idFromScopedValue(event.scope, 'book') ?? firstChainId(event, 'book');
-    return bookId ? `/livros/${bookId}` : undefined;
+    return bookId ? `/books/${bookId}` : undefined;
   }
 
   const entityId =
@@ -214,7 +221,7 @@ export function routeFromDashboardActivity(
     (!event.scope.includes(':') && event.scope !== 'global' && event.scope !== 'application'
       ? event.scope
       : undefined);
-  return entityId ? `/entidades/${entityId}` : undefined;
+  return entityId ? `/entities/${entityId}` : undefined;
 }
 
 export function dashboardActivityTone(kind: ActivityKind): QueueTone {
@@ -399,20 +406,23 @@ export function dashboardMessageKey(value: string | null | undefined): MessageKe
 
 export function dashboardFrontendRouteFromApi(path: string | null | undefined): string | undefined {
   if (!path) return undefined;
-  const route = path.trim();
+  // The server still emits the Portuguese addresses (`/configuracoes?sec=dados`), and these
+  // arrive as DATA rather than as navigations, so the router's redirect never sees them.
+  // Normalising here means the rendered link is the real address, not one that bounces.
+  const route = normalizeLegacyRoute(path.trim());
   if (!route) return undefined;
-  if (route.startsWith('/entidades/') || route === '/entidades') return route;
-  if (route.startsWith('/livros/') || route === '/livros') return route;
-  if (route.startsWith('/atas/') || route === '/atas') return route;
-  if (route.startsWith('/arquivo') || route.startsWith('/configuracoes')) return route;
+  if (route.startsWith('/entities/') || route === '/entities') return route;
+  if (route.startsWith('/books/') || route === '/books') return route;
+  if (route.startsWith('/acts/') || route === '/acts') return route;
+  if (route.startsWith('/archive') || route.startsWith('/settings')) return route;
 
   const entity = /^\/v1\/entities\/([^/?#]+)/.exec(route);
-  if (entity) return `/entidades/${entity[1]}`;
+  if (entity) return `/entities/${entity[1]}`;
   const book = /^\/v1\/books\/([^/?#]+)/.exec(route);
-  if (book) return `/livros/${book[1]}`;
+  if (book) return `/books/${book[1]}`;
   const act = /^\/v1\/acts\/([^/?#]+)/.exec(route);
-  if (act) return `/atas/${act[1]}`;
-  if (route.startsWith('/v1/ledger')) return '/arquivo';
+  if (act) return `/acts/${act[1]}`;
+  if (route.startsWith('/v1/ledger')) return '/archive';
   return undefined;
 }
 
@@ -472,7 +482,7 @@ export function dashboardReminderActRoute(reminder: DashboardReminder): string |
   return (
     dashboardFrontendRouteFromApi(reminder.action?.route) ??
     dashboardFrontendRouteFromApi(reminder.action?.api_href) ??
-    (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined)
+    (reminder.params?.act_id?.trim() ? `/acts/${reminder.params.act_id.trim()}` : undefined)
   );
 }
 
@@ -491,11 +501,11 @@ export function routeFromDashboardAlert(alert: DashboardAlert): string | undefin
   const links = alert.target.links;
   return (
     dashboardFrontendRouteFromApi(links.act) ??
-    (alert.target.act_id?.trim() ? `/atas/${alert.target.act_id.trim()}` : undefined) ??
+    (alert.target.act_id?.trim() ? `/acts/${alert.target.act_id.trim()}` : undefined) ??
     dashboardFrontendRouteFromApi(links.book) ??
-    (alert.target.book_id?.trim() ? `/livros/${alert.target.book_id.trim()}` : undefined) ??
+    (alert.target.book_id?.trim() ? `/books/${alert.target.book_id.trim()}` : undefined) ??
     dashboardFrontendRouteFromApi(links.entity) ??
-    (alert.target.entity_id?.trim() ? `/entidades/${alert.target.entity_id.trim()}` : undefined) ??
+    (alert.target.entity_id?.trim() ? `/entities/${alert.target.entity_id.trim()}` : undefined) ??
     dashboardFrontendRouteFromApi(links.ledger)
   );
 }
@@ -509,7 +519,7 @@ export function routeFromDashboardReminder(reminder: DashboardReminder): string 
   if (reminder.action?.kind === 'open_imported_document_review') {
     const actRoute =
       dashboardFrontendRouteFromApi(reminder.action.route) ??
-      (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined);
+      (reminder.params?.act_id?.trim() ? `/acts/${reminder.params.act_id.trim()}` : undefined);
     const importedDocumentId =
       reminder.params?.imported_document_id?.trim() ??
       importedDocumentIdFromApi(reminder.action.api_href);
@@ -523,7 +533,7 @@ export function routeFromDashboardReminder(reminder: DashboardReminder): string 
   ) {
     const actRoute =
       dashboardFrontendRouteFromApi(reminder.action.route) ??
-      (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined);
+      (reminder.params?.act_id?.trim() ? `/acts/${reminder.params.act_id.trim()}` : undefined);
     const documentId =
       reminder.params?.generated_document_id?.trim() ??
       reminder.params?.document_id?.trim() ??
@@ -537,7 +547,7 @@ export function routeFromDashboardReminder(reminder: DashboardReminder): string 
     dashboardFrontendRouteFromApi(reminder.action?.api_href);
   if (metadataRoute) return metadataRoute;
   const entityId = reminder.entity_id.trim();
-  return entityId ? `/entidades/${entityId}` : undefined;
+  return entityId ? `/entities/${entityId}` : undefined;
 }
 
 export function dashboardAlertTone(alert: DashboardAlert): QueueTone {
@@ -731,7 +741,7 @@ export function buildDashboardWorkQueue({
       title: t('dashboard.workQueue.integrity.title'),
       detail: t('dashboard.workQueue.integrity.detail'),
       meta: [t('dashboard.workQueue.integrity.meta')],
-      href: '/arquivo',
+      href: '/archive',
     });
   }
 
@@ -939,7 +949,7 @@ function OpenBooksSummary({ openBooks }: { openBooks: DashboardOpenBook[] }) {
             {items.map((book) => {
               const title = book.entity_name?.trim() || t('dashboard.openItems.unnamedEntity');
               const href =
-                dashboardFrontendRouteFromApi(book.links.book) ?? `/livros/${book.book_id}`;
+                dashboardFrontendRouteFromApi(book.links.book) ?? `/books/${book.book_id}`;
               return (
                 <li className="dashboard-list__item" key={book.book_id}>
                   <div className="dashboard-list__head">
@@ -1073,7 +1083,7 @@ function DashboardStats({ data }: { data: Dashboard }) {
           <h3 className="dashboard-card-section__title" id="dashboard-connector-jobs-title">
             {t('dashboard.connectors.title')}
           </h3>
-          <Link className="btn btn--secondary" to="/operacoes?view=connectors">
+          <Link className="btn btn--secondary" to="/operations/connectors">
             {t('dashboard.connectors.open')}
           </Link>
         </div>
@@ -1211,21 +1221,16 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
 
 export function DashboardPage() {
   const t = useT();
-  const [params, setParams] = useSearchParams();
   const { data: payload, isLoading, error } = useDashboard();
-  const tab = dashboardTabFromParam(params.get(DASHBOARD_TAB_PARAM));
-
-  function selectTab(next: DashboardTab) {
-    setParams(
-      (prev) => {
-        const nextParams = new URLSearchParams(prev);
-        if (next === 'current') nextParams.delete(DASHBOARD_TAB_PARAM);
-        else nextParams.set(DASHBOARD_TAB_PARAM, next);
-        return nextParams;
-      },
-      { replace: true },
-    );
-  }
+  const { section: tab, select: selectTab } = useSectionNav<DashboardTab>({
+    base: DASHBOARD_TAB_BASE,
+    parse: dashboardTabFromParam,
+    fallback: 'current',
+    // The landing panel is the app root, not `/dashboard` — the one surface whose default
+    // section lives at an address of its own.
+    defaultPath: '/',
+    replace: true,
+  });
 
   if (isLoading) {
     return (
@@ -1317,7 +1322,7 @@ export function DashboardPage() {
             actions={
               <Tooltip label={t('dashboard.viewFullArchive')} placement="left">
                 <Link
-                  to="/arquivo"
+                  to="/archive"
                   className="btn btn--secondary btn--icon btn--iconOnly dashboard-archive-link"
                   aria-label={t('dashboard.viewFullArchive')}
                 >

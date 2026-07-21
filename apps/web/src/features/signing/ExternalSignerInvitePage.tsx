@@ -164,7 +164,7 @@ export function ExternalSignerInvitePage() {
 
   useEffect(() => {
     if (searchParams.has('token')) {
-      navigate('/assinatura-externa', { replace: true });
+      navigate('/external-signature', { replace: true });
     }
   }, [navigate, searchParams]);
 

@@ -12,7 +12,7 @@
  * filters the cards live across each diploma's title, reference, why-note and extract via
  * {@link searchDiplomas}. The match count and a clear affordance appear while searching; an
  * empty theme is hidden and a no-match state is shown when nothing matches. The committed
- * query is deep-linkable in the tool's search params (`?q=`, alongside `?tool=legislacao`).
+ * query is deep-linkable in the tool's search params (`?q=`, under `/tools/legislation`).
  *
  * ## Mini law archive (t27)
  * When the running server exposes the law store (`GET /v1/law` — feature-detected via
@@ -223,7 +223,7 @@ export function CuratedShelf() {
   }, [term]);
 
   // Reflect the committed query in the URL (?q=), so a search is deep-linkable alongside
-  // ?tool=legislacao. Replace-history so typing does not flood the Back stack; the CAE
+  // /tools/legislation. Replace-history so typing does not flood the Back stack; the CAE
   // explorer's own ?code=/?rev= params are preserved (we compose from the previous params).
   useEffect(() => {
     setParams(

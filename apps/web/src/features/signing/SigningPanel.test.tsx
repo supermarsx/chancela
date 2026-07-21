@@ -862,7 +862,7 @@ describe('SigningPanel — external signer invites', () => {
 
     expect(await screen.findByText('Token do convite emitido uma vez')).toBeTruthy();
     expect(screen.getByText('cxi_fulltoken_1234567890')).toBeTruthy();
-    expect(screen.getByText(/assinatura-externa\?token=cxi_fulltoken_1234567890/)).toBeTruthy();
+    expect(screen.getByText(/external-signature\?token=cxi_fulltoken_1234567890/)).toBeTruthy();
     expect(bodies[0]).toMatchObject({
       recipient_name: 'Bruno Dias',
       recipient_email: 'bruno@example.test',

@@ -174,7 +174,7 @@ function SearchProbe() {
 }
 
 function renderRepositories(
-  entries = ['/operacoes?view=repositories'],
+  entries = ['/operations?view=repositories'],
   entities: Entity[] = [ENTITY, OTHER_TENANT_ENTITY],
 ) {
   return renderWithProviders(
@@ -530,7 +530,7 @@ describe('repository list', () => {
 
   it('opening a repository deep-links it and drops a stale object selection', async () => {
     stubFetch({ repositories: [repository()] });
-    renderRepositories(['/operacoes?view=repositories&object=object-9:1']);
+    renderRepositories(['/operations?view=repositories&object=object-9:1']);
 
     const row = (await screen.findByText('Arquivo principal')).closest('tr') as HTMLTableRowElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Abrir' }));
@@ -544,7 +544,7 @@ describe('repository list', () => {
 describe('RepositoryDetail', () => {
   it('explains that opaque object operations need zero knowledge on a standard repository', async () => {
     stubFetch({ repositories: [repository()] });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     expect(await screen.findByText('Operações opacas indisponíveis')).toBeTruthy();
     expect(screen.queryByText('Cifrar e carregar objeto')).toBeNull();
@@ -552,7 +552,7 @@ describe('RepositoryDetail', () => {
 
   it('deletes the repository through its own action', async () => {
     const calls = stubFetch({ repositories: [repository()] });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     fireEvent.click(await screen.findByRole('button', { name: /Eliminar repositório/ }));
 
@@ -568,7 +568,7 @@ describe('RepositoryDetail', () => {
       repositories: [repository()],
       override: (call) => (call.method === 'PATCH' ? jsonResponse(ZK_REPOSITORY) : null),
     });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     const name = await screen.findByLabelText('Nome', {
       selector: '#operations-repository-edit-name',
@@ -597,7 +597,7 @@ describe('RepositoryDetail', () => {
       override: (call) =>
         call.method === 'PATCH' ? jsonResponse({ error: 'Modo imutável' }, 409) : null,
     });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     const name = (await screen.findByLabelText('Nome', {
       selector: '#operations-repository-edit-name',
@@ -616,7 +616,7 @@ describe('ZkObjects', () => {
   it('lists opaque versions with their ciphertext size and opens one', async () => {
     const { view } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view] });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     const row = (await screen.findByText('object-1')).closest('tr') as HTMLTableRowElement;
     const cells = within(row).getAllByRole('cell');
@@ -629,7 +629,7 @@ describe('ZkObjects', () => {
 
   it('shows the empty state when a zero-knowledge repository holds no objects yet', async () => {
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [] });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     expect(await screen.findByText('Ainda não existem objetos neste repositório.')).toBeTruthy();
   });
@@ -642,14 +642,14 @@ describe('ZkObjects', () => {
           ? jsonResponse({ error: 'Objetos indisponíveis' }, 503)
           : null,
     });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     expect(await screen.findByText('Objetos indisponíveis')).toBeTruthy();
   });
 
   it('refuses an unusable client key in the browser, before any upload is attempted', async () => {
     const calls = stubFetch({ repositories: [ZK_REPOSITORY], objects: [] });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     const fileInput = (await screen.findByLabelText('Pacote de preservação')) as HTMLInputElement;
     attachFile(fileInput, 'conteudo do arquivo');
@@ -675,7 +675,7 @@ describe('ZkObjects', () => {
       override: (call) =>
         call.url.endsWith('/uploads') ? jsonResponse({ error: 'Versão já existe' }, 409) : null,
     });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     const fileInput = (await screen.findByLabelText('Pacote de preservação')) as HTMLInputElement;
     attachFile(fileInput, 'conteudo do arquivo');
@@ -726,7 +726,7 @@ describe('ZkObjects', () => {
         return null;
       },
     });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1']);
 
     const fileInput = (await screen.findByLabelText('Pacote de preservação')) as HTMLInputElement;
     attachFile(fileInput, 'segredo do arquivo');
@@ -753,7 +753,7 @@ describe('ZkObjectDetail downloads', () => {
   it('saves the opaque bytes once they match the immutable manifest', async () => {
     const { view, ciphertext } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1&object=object-1:1']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Transferir bytes cifrados' }));
 
@@ -768,7 +768,7 @@ describe('ZkObjectDetail downloads', () => {
     const tampered = ciphertext.slice(0);
     new Uint8Array(tampered)[0] ^= 0xff;
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext: tampered });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1&object=object-1:1']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Transferir bytes cifrados' }));
 
@@ -781,7 +781,7 @@ describe('ZkObjectDetail downloads', () => {
   it('decrypts locally with the right key and clears it afterwards', async () => {
     const { view, ciphertext } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1&object=object-1:1']);
 
     const keyField = (await screen.findByLabelText('Chave BYOK de 32 bytes em base64', {
       selector: '#operations-object-byok',
@@ -804,7 +804,7 @@ describe('ZkObjectDetail downloads', () => {
   it('reports a client key that is not a recipient of the object', async () => {
     const { view, ciphertext } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1&object=object-1:1']);
 
     fireEvent.change(
       await screen.findByLabelText('Chave BYOK de 32 bytes em base64', {
@@ -825,7 +825,7 @@ describe('readability package', () => {
   it('offers only books belonging to entities of the current tenant', async () => {
     const { view, ciphertext } = await encryptedObject('pacote de preservação');
     stubFetch({ repositories: [ZK_REPOSITORY], objects: [view], ciphertext });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1&object=object-1:1']);
 
     const books = (await screen.findByLabelText('Livro associado')) as HTMLSelectElement;
     await waitFor(() => expect(books.options.length).toBe(2));
@@ -845,7 +845,7 @@ describe('readability package', () => {
             })
           : null,
     });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1&object=object-1:1']);
 
     fireEvent.change(await screen.findByLabelText('Modo de entrega'), {
       target: { value: 'encrypted_archive_with_portable_key_package' },
@@ -894,7 +894,7 @@ describe('readability package', () => {
           ? new Response(new Blob(['zip']), { headers: { 'Content-Type': 'application/zip' } })
           : null,
     });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1&object=object-1:1']);
 
     await screen.findByRole('option', { name: /book-1/ });
     fireEvent.change(screen.getByLabelText('Livro associado'), { target: { value: 'book-1' } });
@@ -935,7 +935,7 @@ describe('readability package', () => {
           ? jsonResponse({ error: 'Reautenticação recusada' }, 401)
           : null,
     });
-    renderRepositories(['/operacoes?view=repositories&repository=repo-1&object=object-1:1']);
+    renderRepositories(['/operations?view=repositories&repository=repo-1&object=object-1:1']);
 
     await screen.findByRole('option', { name: /book-1/ });
     fireEvent.change(screen.getByLabelText('Livro associado'), { target: { value: 'book-1' } });

@@ -35,20 +35,20 @@ describe('notification routing and ordering helpers', () => {
 
     expect(frontendNotificationRouteFromApi(undefined)).toBeUndefined();
     expect(frontendNotificationRouteFromApi('  ')).toBeUndefined();
-    expect(frontendNotificationRouteFromApi('/entidades/entity-1')).toBe('/entidades/entity-1');
-    expect(frontendNotificationRouteFromApi('/livros')).toBe('/livros');
-    expect(frontendNotificationRouteFromApi('/atas/act-1')).toBe('/atas/act-1');
-    expect(frontendNotificationRouteFromApi('/arquivo?kind=sealed')).toBe('/arquivo?kind=sealed');
-    expect(frontendNotificationRouteFromApi('/configuracoes#privacy')).toBe(
-      '/configuracoes#privacy',
+    expect(frontendNotificationRouteFromApi('/entities/entity-1')).toBe('/entities/entity-1');
+    expect(frontendNotificationRouteFromApi('/books')).toBe('/books');
+    expect(frontendNotificationRouteFromApi('/acts/act-1')).toBe('/acts/act-1');
+    expect(frontendNotificationRouteFromApi('/archive?kind=sealed')).toBe('/archive?kind=sealed');
+    expect(frontendNotificationRouteFromApi('/settings#privacy')).toBe(
+      '/settings#privacy',
     );
     expect(frontendNotificationRouteFromApi('/v1/entities/entity-2?x=1')).toBe(
-      '/entidades/entity-2',
+      '/entities/entity-2',
     );
-    expect(frontendNotificationRouteFromApi('/v1/books/book-2')).toBe('/livros/book-2');
-    expect(frontendNotificationRouteFromApi('/v1/acts/act-2')).toBe('/atas/act-2');
-    expect(frontendNotificationRouteFromApi('/v1/ledger/events')).toBe('/arquivo');
-    expect(frontendNotificationRouteFromApi('/v1/settings')).toBe('/configuracoes');
+    expect(frontendNotificationRouteFromApi('/v1/books/book-2')).toBe('/books/book-2');
+    expect(frontendNotificationRouteFromApi('/v1/acts/act-2')).toBe('/acts/act-2');
+    expect(frontendNotificationRouteFromApi('/v1/ledger/events')).toBe('/archive');
+    expect(frontendNotificationRouteFromApi('/v1/settings')).toBe('/settings');
     expect(frontendNotificationRouteFromApi('/v1/unknown')).toBeUndefined();
   });
 

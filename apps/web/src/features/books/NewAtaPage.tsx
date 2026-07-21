@@ -1,5 +1,5 @@
 /**
- * Draft a new ata on its own route (`/livros/:id/nova-ata`), reached from the neat "Nova
+ * Draft a new ata on its own route (`/books/:id/new-act`), reached from the neat "Nova
  * ata" button on an open book (t13 item 7). Thin shell around `DraftAtaForm`, which
  * navigates to the ata editor on success.
  */
@@ -17,8 +17,8 @@ export function NewAtaPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/livros">{t('books.crumb')}</Link> ·{' '}
-            <Link to={`/livros/${id}`}>{t('books.singular')}</Link> · {t('acts.newAta')}
+            <Link to="/books">{t('books.crumb')}</Link> ·{' '}
+            <Link to={`/books/${id}`}>{t('books.singular')}</Link> · {t('acts.newAta')}
           </>
         }
         title={t('acts.newAta')}

@@ -1,22 +1,22 @@
 /**
  * A single book, full width. The surface splits into four sub-tabs (t25) — Atas ·
  * Termo de abertura · Retenção legal · Importações — reusing the SHARED `<SubNav>` and the
- * `?sec=` deep-link convention already established by Configurações (`SettingsPage.tsx`),
- * so there is exactly one sub-tab idiom in the app. `Atas` is the default and carries no
- * `sec` param, so `/livros/:id` still lands on the minutes.
+ * path-segment deep-link convention already established by Configurações (`SettingsPage.tsx`),
+ * so there is exactly one sub-tab idiom in the app — `/books/:id/opening`. `Atas` is the default
+ * and carries no segment, so `/books/:id` still lands on the minutes.
  *
  * Like the Ferramentas/Configurações pill, `<SubNav>` is a `role="group"` of `aria-pressed`
  * buttons rather than an ARIA tablist — deliberately matched here rather than forked.
  *
  * Atas are sealed first by number, then drafts (the API orders them). While the book is
  * Open, drafting an ata (WFL-14) and closing the book (WFL-13) are neat buttons in the Atas
- * panel header, each opening its own route (`/livros/:id/nova-ata`, `/livros/:id/encerrar`)
+ * panel header, each opening its own route (`/books/:id/new-act`, `/books/:id/close`)
  * so the view is no longer split by an aside (t13 item 7). The page header (outside the
  * tabs, because it applies to the whole book) exposes the read-only Chancela internal
  * preservation ZIP and the local DGLAB interchange manifest.
  */
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   useBook,
   useBookActs,
@@ -93,6 +93,7 @@ import {
   TextArea,
   useToast,
 } from '../../ui';
+import { useSectionNav } from '../../app/navPath';
 import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
 import {
   GateButton,
@@ -106,18 +107,22 @@ import {
  * The book sub-tabs, in the order the operator asked for. Labels reuse the section titles
  * they head (identical text), exactly as the Configurações sub-nav does.
  */
-type BookSection = 'atas' | 'termo' | 'retencao' | 'importacoes';
+type BookSection = 'acts' | 'opening' | 'retention' | 'imports';
 
 const BOOK_SECTIONS: { id: BookSection; label: MessageKey; icon: ReactNode }[] = [
-  { id: 'atas', label: 'books.atas', icon: <Icon.Layers /> },
-  { id: 'termo', label: 'books.termoAbertura', icon: <Icon.BookPlus /> },
-  { id: 'retencao', label: 'books.detail.legalHold.title', icon: <Icon.Scale /> },
+  { id: 'acts', label: 'books.atas', icon: <Icon.Layers /> },
+  { id: 'opening', label: 'books.termoAbertura', icon: <Icon.BookPlus /> },
+  { id: 'retention', label: 'books.detail.legalHold.title', icon: <Icon.Scale /> },
   // Short label: the imports card title is a full sentence, too long for a pill.
-  { id: 'importacoes', label: 'books.detail.subnav.imports', icon: <Icon.Tray /> },
+  { id: 'imports', label: 'books.detail.subnav.imports', icon: <Icon.Tray /> },
 ];
 
-const isBookSection = (value: string | null): value is BookSection =>
+const isBookSection = (value: string | undefined): value is BookSection =>
   BOOK_SECTIONS.some((section) => section.id === value);
+
+/** An unknown segment falls back to Atas rather than blanking the panel. */
+const parseBookSection = (raw: string | undefined): BookSection =>
+  isBookSection(raw) ? raw : 'acts';
 
 function preservationPackageFilename(bookId: string): string {
   return `chancela-preservation-book-${bookId}.zip`;
@@ -793,7 +798,7 @@ function PaperBookOcrConversionExecutionArtifactPanel({
         <div>
           <dt>{t('uiLiteral.bookDetailPage.ataMutavelDeDestino')}</dt>
           <dd>
-            <Link to={`/atas/${artifact.target_act_id}`}>
+            <Link to={`/acts/${artifact.target_act_id}`}>
               {t('uiLiteral.bookDetailPage.abrirAta')}
             </Link>{' '}
             · <span className="mono">{artifact.target_act_id}</span>{' '}
@@ -1598,7 +1603,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                       <p className="muted">
                         {' '}
                         {translateNow('uiLiteral.bookDetailPage.rascunhoCriado')}{' '}
-                        <Link to={`/atas/${createdActDrafts[draft.draft_id].act.id}`}>
+                        <Link to={`/acts/${createdActDrafts[draft.draft_id].act.id}`}>
                           {' '}
                           {translateNow('uiLiteral.bookDetailPage.abrirAta')}{' '}
                         </Link>{' '}
@@ -1989,7 +1994,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                       <span className="muted">
                         {' '}
                         {translateNow('uiLiteral.bookDetailPage.livro')}{' '}
-                        <Link to={`/livros/${row.book_ref}`}>{row.book_ref}</Link>{' '}
+                        <Link to={`/books/${row.book_ref}`}>{row.book_ref}</Link>{' '}
                         {translateNow('uiLiteral.bookDetailPage.entidade')}{' '}
                         {row.entity_name || row.entity_ref}
                       </span>
@@ -2076,21 +2081,15 @@ export function BookDetailPage() {
   const t = useT();
   const toast = useToast();
   const { id = '' } = useParams();
-  const [params, setParams] = useSearchParams();
-  // Atas is the default and carries no `sec` param (so `/livros/:id` lands on it) — the
-  // exact convention Configurações uses for its own sub-nav.
-  const secParam = params.get('sec');
-  const section: BookSection = isBookSection(secParam) ? secParam : 'atas';
-  const selectSection = (next: BookSection) =>
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        if (next === 'atas') p.delete('sec');
-        else p.set('sec', next);
-        return p;
-      },
-      { replace: true },
-    );
+  // Atas is the default and carries no segment (so `/books/:id` lands on it) — the exact
+  // convention Configurações uses for its own sub-nav. The base is sliced off the pathname,
+  // so the id in it is never re-encoded.
+  const { section, select: selectSection } = useSectionNav<BookSection>({
+    depth: 2,
+    parse: parseBookSection,
+    fallback: 'acts',
+    replace: true,
+  });
   const book = useBook(id);
   const acts = useBookActs(id);
   const packageDownload = useDownloadBookArchivePackage(id);
@@ -2100,7 +2099,7 @@ export function BookDetailPage() {
     return (
       <div className="stack">
         <PageHeader
-          crumbs={<Link to="/livros">{t('books.crumb')}</Link>}
+          crumbs={<Link to="/books">{t('books.crumb')}</Link>}
           title={<Skeleton width="18rem" height="1.6rem" />}
         />
         <Card title={t('books.termoAbertura')}>
@@ -2169,7 +2168,7 @@ export function BookDetailPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/livros">{t('books.crumb')}</Link> · {bookKindLabels[b.kind]}
+            <Link to="/books">{t('books.crumb')}</Link> · {bookKindLabels[b.kind]}
           </>
         }
         title={
@@ -2233,7 +2232,7 @@ export function BookDetailPage() {
           definition list, `retenção` and `importações` are three-column tables of stacked
           prose. The book LIST is where the columns are, and that page is wide. */}
       <div className="route-transition stack" key={section}>
-        {section === 'termo' ? (
+        {section === 'opening' ? (
           <>
             <Card title={t('books.termoAbertura')}>
               <dl className="deflist">
@@ -2266,7 +2265,7 @@ export function BookDetailPage() {
                   <div>
                     <dt>{t('books.predecessor')}</dt>
                     <dd>
-                      <Link to={`/livros/${b.predecessor}`}>{b.predecessor}</Link>
+                      <Link to={`/books/${b.predecessor}`}>{b.predecessor}</Link>
                     </dd>
                   </div>
                 ) : null}
@@ -2306,16 +2305,16 @@ export function BookDetailPage() {
           </>
         ) : null}
 
-        {section === 'retencao' ? (
+        {section === 'retention' ? (
           <>
             <LegalHoldPanel bookId={b.id} />
             <BookRetentionPanel bookId={b.id} />
           </>
         ) : null}
 
-        {section === 'importacoes' ? <PaperBookImportsPanel book={b} /> : null}
+        {section === 'imports' ? <PaperBookImportsPanel book={b} /> : null}
 
-        {section === 'atas' ? (
+        {section === 'acts' ? (
           <Card
             title={t('books.atas')}
             actions={
@@ -2324,7 +2323,7 @@ export function BookDetailPage() {
                   <GateButtonLink
                     perm="book.close"
                     scope={scopeBook(b.id)}
-                    to={`/livros/${b.id}/encerrar`}
+                    to={`/books/${b.id}/close`}
                     icon={<Icon.BookClosed />}
                   >
                     {t('books.closeBook')}
@@ -2332,7 +2331,7 @@ export function BookDetailPage() {
                   <GateButtonLink
                     perm="act.draft"
                     scope={scopeBook(b.id)}
-                    to={`/livros/${b.id}/nova-ata`}
+                    to={`/books/${b.id}/new-act`}
                     variant="primary"
                     icon={<Icon.Plus />}
                   >
@@ -2377,7 +2376,7 @@ export function BookDetailPage() {
                       </Badge>
                     </td>
                     <td>
-                      <Link to={`/atas/${act.id}`}>{t('common.open')}</Link>
+                      <Link to={`/acts/${act.id}`}>{t('common.open')}</Link>
                     </td>
                   </tr>
                 ))}

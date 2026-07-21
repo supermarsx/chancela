@@ -23,10 +23,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 function renderPage() {
   return renderWithProviders(
     <Routes>
-      <Route path="/livros/:id/nova-ata" element={<NewAtaPage />} />
-      <Route path="/atas/:id" element={<div>EDITOR DE ATA</div>} />
+      <Route path="/books/:id/new-act" element={<NewAtaPage />} />
+      <Route path="/acts/:id" element={<div>EDITOR DE ATA</div>} />
     </Routes>,
-    ['/livros/book-1/nova-ata'],
+    ['/books/book-1/new-act'],
   );
 }
 
@@ -45,9 +45,9 @@ describe('NewAtaPage', () => {
     expect(screen.getAllByText('Nova ata').length).toBeGreaterThanOrEqual(1);
 
     const booksCrumb = screen.getByRole('link', { name: 'Livros' });
-    expect(booksCrumb.getAttribute('href')).toBe('/livros');
+    expect(booksCrumb.getAttribute('href')).toBe('/books');
     const bookCrumb = screen.getByRole('link', { name: 'Livro' });
-    expect(bookCrumb.getAttribute('href')).toBe('/livros/book-1');
+    expect(bookCrumb.getAttribute('href')).toBe('/books/book-1');
 
     // The embedded DraftAtaForm renders its title field.
     expect(screen.getByLabelText('Título da ata')).toBeTruthy();

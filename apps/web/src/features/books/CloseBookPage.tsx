@@ -1,5 +1,5 @@
 /**
- * Close a book on its own route (`/livros/:id/encerrar`), reached from the neat "Encerrar
+ * Close a book on its own route (`/books/:id/close`), reached from the neat "Encerrar
  * livro" button on an open book (t13 item 7). Thin shell around `CloseBookForm`; on close
  * it returns to the book, which now shows the termo de encerramento.
  */
@@ -18,15 +18,15 @@ export function CloseBookPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/livros">{t('books.crumb')}</Link> ·{' '}
-            <Link to={`/livros/${id}`}>{t('books.singular')}</Link> · {t('books.closeCrumb')}
+            <Link to="/books">{t('books.crumb')}</Link> ·{' '}
+            <Link to={`/books/${id}`}>{t('books.singular')}</Link> · {t('books.closeCrumb')}
           </>
         }
         title={t('books.closeBook')}
       />
 
       <Card title={t('books.termoEncerramento')}>
-        <CloseBookForm bookId={id} onClosed={() => navigate(`/livros/${id}`)} />
+        <CloseBookForm bookId={id} onClosed={() => navigate(`/books/${id}`)} />
       </Card>
     </div>
   );

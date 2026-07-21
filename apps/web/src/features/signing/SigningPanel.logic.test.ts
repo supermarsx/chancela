@@ -203,7 +203,7 @@ describe('SigningPanel presentation and conversion logic', () => {
     vi.setSystemTime(new Date('2026-07-16T12:00:00Z'));
     expect(dateTimeInputToIso(defaultInviteExpiryInput())).toBe('2026-07-18T12:00:00.000Z');
     expect(externalInviteLink('token with/slash')).toContain(
-      '/assinatura-externa?token=token%20with%2Fslash',
+      '/external-signature?token=token%20with%2Fslash',
     );
 
     const bytes = new Uint8Array([0, 1, 127, 128, 255]);

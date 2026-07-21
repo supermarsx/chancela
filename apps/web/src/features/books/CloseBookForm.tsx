@@ -1,6 +1,6 @@
 /**
  * Write the termo de encerramento and close a book (WFL-13, `POST /v1/books/:id/close`).
- * Extracted from the book detail aside onto its own route (`/livros/:id/encerrar`) so the
+ * Extracted from the book detail aside onto its own route (`/books/:id/close`) so the
  * book view runs full width (t13 item 7). The optional `onClosed` callback lets the host
  * page navigate back to the book once it is closed.
  */

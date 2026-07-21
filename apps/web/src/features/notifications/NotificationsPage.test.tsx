@@ -168,7 +168,7 @@ describe('NotificationsPage', () => {
       }),
     );
 
-    renderWithProviders(<NotificationsPage />, ['/notificacoes']);
+    renderWithProviders(<NotificationsPage />, ['/notifications']);
 
     expectIconOnlyFilter('Todas');
     expectIconOnlyFilter('Alertas');
@@ -200,7 +200,7 @@ describe('NotificationsPage', () => {
     expect(within(resolvedItem).queryByText('Dispensada', { selector: '.badge' })).toBeNull();
     const action = screen.getByRole('link', { name: 'Rever ata' });
     const restore = screen.getByRole('button', { name: 'Reabrir' });
-    expect(action.getAttribute('href')).toBe('/atas/act-1');
+    expect(action.getAttribute('href')).toBe('/acts/act-1');
     expectIconOnlyControl(action, 'Rever ata');
     expectIconOnlyControl(restore, 'Reabrir');
 
@@ -238,7 +238,7 @@ describe('NotificationsPage', () => {
       ]),
     );
 
-    renderWithProviders(<NotificationsPage />, ['/notificacoes']);
+    renderWithProviders(<NotificationsPage />, ['/notifications']);
 
     expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
     const item = screen
@@ -278,7 +278,7 @@ describe('NotificationsPage', () => {
       ]),
     );
 
-    renderWithProviders(<NotificationsPage />, ['/notificacoes']);
+    renderWithProviders(<NotificationsPage />, ['/notifications']);
     expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
 
     const read = await screen.findByRole('button', { name: 'Marcar como lida' });
@@ -308,7 +308,7 @@ describe('NotificationsPage', () => {
       ]),
     );
 
-    const { container } = renderWithProviders(<NotificationsPage />, ['/notificacoes']);
+    const { container } = renderWithProviders(<NotificationsPage />, ['/notifications']);
     await screen.findByText('Rever conformidade da ata');
 
     const before = container.querySelector('.route-transition');

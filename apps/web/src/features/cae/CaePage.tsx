@@ -8,5 +8,5 @@ import { Navigate, useLocation } from 'react-router-dom';
 
 export function CaePage() {
   const { search } = useLocation();
-  return <Navigate to={{ pathname: '/ferramentas', search }} replace />;
+  return <Navigate to={{ pathname: '/tools', search }} replace />;
 }

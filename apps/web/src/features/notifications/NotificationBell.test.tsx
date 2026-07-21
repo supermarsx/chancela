@@ -160,7 +160,7 @@ describe('NotificationBell', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
     const action = within(dialog).getByRole('link', { name: 'Rever ata' });
-    expect(action.getAttribute('href')).toBe('/atas/act-1');
+    expect(action.getAttribute('href')).toBe('/acts/act-1');
 
     fireEvent.click(action);
 
@@ -266,7 +266,7 @@ describe('NotificationBell', () => {
                   kind: 'open_entity',
                   label_key: 'notifications.reminder.annual.action',
                   api_href: '/v1/entities/condo-1',
-                  route: '/entidades/condo-1',
+                  route: '/entities/condo-1',
                 },
               }),
             ],
@@ -284,7 +284,7 @@ describe('NotificationBell', () => {
     expect(within(dialog).queryByText('Raw backend condominium fallback.')).toBeNull();
 
     const action = within(dialog).getByRole('link', { name: 'Abrir entidade' });
-    expect(action.getAttribute('href')).toBe('/entidades/condo-1');
+    expect(action.getAttribute('href')).toBe('/entities/condo-1');
   });
 
   it('closes the popup when clicking outside the bell and popup', async () => {

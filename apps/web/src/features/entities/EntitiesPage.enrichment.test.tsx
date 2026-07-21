@@ -319,7 +319,7 @@ describe('EntitiesPage enrichment and filtering', () => {
     stubEntitiesPageFetch({
       entities: [{ ...ENTITY_A, registry_summary: REGISTRY_SUMMARY_A }, ENTITY_B],
     });
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText('Registo importado').length).toBeGreaterThan(0));
@@ -367,7 +367,7 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(describedText(typeLine)).toContain('Regras csc-art63/v2');
 
     const bookLink = screen.getByRole('link', { name: 'Assembleia Geral' });
-    expect(bookLink.getAttribute('href')).toBe('/livros/book-open');
+    expect(bookLink.getAttribute('href')).toBe('/books/book-open');
     expect(screen.getAllByText('Aberto').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Assembleia anual 2026/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Última ata\s+4/).length).toBeGreaterThan(0);
@@ -394,7 +394,7 @@ describe('EntitiesPage enrichment and filtering', () => {
         ledgerEvent(ENTITY_B, 'entity.created', 3),
       ],
     });
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText('Entidade criada').length).toBeGreaterThan(0));
@@ -452,7 +452,7 @@ describe('EntitiesPage enrichment and filtering', () => {
         ledgerEvent(ENTITY_B, 'registry.imported', 3),
       ],
     });
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText('Expirado').length).toBeGreaterThan(1));
@@ -483,13 +483,13 @@ describe('EntitiesPage enrichment and filtering', () => {
         bookLedgerEvent(CLOSED_BOOK, 'book.closed', 4),
       ],
     });
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText('Livro encerrado').length).toBeGreaterThan(0));
 
     const latestBook = screen.getByRole('link', { name: 'Conselho Fiscal' });
-    expect(latestBook.getAttribute('href')).toBe('/livros/book-closed');
+    expect(latestBook.getAttribute('href')).toBe('/books/book-closed');
     expect(screen.getAllByText(/Fiscalização 2026/).length).toBeGreaterThan(0);
     expect(screen.getByText('2 livros · Aberto: 1 · Encerrado: 1')).toBeTruthy();
     expect(screen.getByText('Motivo Livro completo')).toBeTruthy();
@@ -518,7 +518,7 @@ describe('EntitiesPage enrichment and filtering', () => {
 
   it('keeps the entity list usable when optional books or activity summaries are unavailable', async () => {
     stubEntitiesPageFetch({ booksStatus: 403, summaries: false });
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
     await waitFor(() =>

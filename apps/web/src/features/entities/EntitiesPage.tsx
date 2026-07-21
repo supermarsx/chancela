@@ -1,7 +1,7 @@
 /**
  * Entidades — the full-width list of registered entities. Creating an entity (by hand or
  * from a certidão permanente) lives behind neat buttons in the panel header, each opening
- * its own dedicated route (`/entidades/nova`, `/entidades/importar`) — so the list is no
+ * its own dedicated route (`/entities/new`, `/entities/import`) — so the list is no
  * longer squeezed by an always-visible aside form (t13 items 1–2).
  */
 import { useDeferredValue, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
@@ -604,7 +604,7 @@ function BookSummary({
   ]);
   return (
     <CellLine title={title}>
-      <Link className="entity-cell-line__link" to={`/livros/${book.id}`}>
+      <Link className="entity-cell-line__link" to={`/books/${book.id}`}>
         {bookKindLabels[book.kind]}
       </Link>
       <Badge tone={bookStateTone(book.state)}>{bookStateLabels[book.state]}</Badge>
@@ -1026,12 +1026,12 @@ export function EntitiesPage() {
         lede={t('entities.lede')}
         actions={
           <>
-            <GateButtonLink perm="entity.create" to="/entidades/importar" icon={<Icon.Tray />}>
+            <GateButtonLink perm="entity.create" to="/entities/import" icon={<Icon.Tray />}>
               {t('entities.importButton')}
             </GateButtonLink>
             <GateButtonLink
               perm="entity.create"
-              to="/entidades/nova"
+              to="/entities/new"
               variant="primary"
               icon={<Icon.Plus />}
             >
@@ -1256,7 +1256,7 @@ export function EntitiesPage() {
                             activity={activity}
                             loadingBooks={!hasActivitySummary && books.isLoading}
                             booksError={hasActivitySummary ? null : books.error}
-                            onOpen={() => navigate(`/entidades/${ent.id}`)}
+                            onOpen={() => navigate(`/entities/${ent.id}`)}
                             openLabel={t('common.open')}
                             t={t}
                           />

@@ -2,11 +2,11 @@
  * A single entity, full width, split into sub-tabs: Livros · Identificação ·
  * Exercício fiscal · Registo comercial · Inscrições e averbamentos · Cronologia e grafo.
  *
- * Seventh surface on the shared `<SubNav>` (`apps/web/src/ui/SubNav.tsx`) + the `?sec=`
+ * Seventh surface on the shared `<SubNav>` (`apps/web/src/ui/SubNav.tsx`) + the path-segment
  * deep-link convention established by Configurações and reused by Ferramentas, Privacidade,
  * o livro (t25), o arquivo (t32) and o validador PDF (t35). Same `route-transition` fade
  * keyed on the active id, same "the default section carries no `sec` param" rule
- * (`/entidades/:id` still lands on Livros), same deliberate `role="group"` + `aria-pressed`
+ * (`/entities/:id` still lands on Livros), same deliberate `role="group"` + `aria-pressed`
  * semantics rather than an ARIA tablist — that divergence belongs in `SubNav` for all seven
  * surfaces at once, not here.
  *
@@ -14,11 +14,11 @@
  * to the previous tab instead of leaving the entity, which is the trap t34 had to undo in
  * the legislação reader.
  *
- * The certidão import stays a neat button on the Registo comercial tab (`/entidades/:id/importar`);
+ * The certidão import stays a neat button on the Registo comercial tab (`/entities/:id/import`);
  * opening a book is likewise a button on Livros that carries the entity through.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useBooks, useEntity, useUpdateEntity } from '../../api/hooks';
 import { entityFamilyLabels, entityKindLabels } from '../../api/labels';
 import type { Entity } from '../../api/types';
@@ -37,6 +37,7 @@ import {
   SubNav,
   useToast,
 } from '../../ui';
+import { useSectionNav } from '../../app/navPath';
 import {
   GateButton,
   GateButtonLink,
@@ -60,23 +61,23 @@ import { entityFieldHelp } from './fieldHelp';
  * "Inscrições, averbamentos e anotações".
  */
 type EntitySection =
-  | 'livros'
-  | 'identificacao'
+  | 'books'
+  | 'identification'
   | 'fiscal'
-  | 'registo'
-  | 'inscricoes'
-  | 'cronologia';
+  | 'registry'
+  | 'filings'
+  | 'chronology';
 
 const ENTITY_SECTIONS: { id: EntitySection; label: MessageKey; icon: ReactNode }[] = [
-  { id: 'livros', label: 'entities.booksCard', icon: <Icon.BookClosed /> },
-  { id: 'identificacao', label: 'entities.identificationCard', icon: <Icon.IdCard /> },
+  { id: 'books', label: 'entities.booksCard', icon: <Icon.BookClosed /> },
+  { id: 'identification', label: 'entities.identificationCard', icon: <Icon.IdCard /> },
   { id: 'fiscal', label: 'entities.fiscalYearEnd.cardTitle', icon: <Icon.Calendar /> },
-  { id: 'registo', label: 'entities.registrySection', icon: <Icon.Seal /> },
-  { id: 'inscricoes', label: 'entities.subnav.inscricoes', icon: <Icon.Layers /> },
-  { id: 'cronologia', label: 'entities.chronology.title', icon: <Icon.Shuffle /> },
+  { id: 'registry', label: 'entities.registrySection', icon: <Icon.Seal /> },
+  { id: 'filings', label: 'entities.subnav.inscricoes', icon: <Icon.Layers /> },
+  { id: 'chronology', label: 'entities.chronology.title', icon: <Icon.Shuffle /> },
 ];
 
-const isEntitySection = (value: string | null): value is EntitySection =>
+const isEntitySection = (value: string | undefined): value is EntitySection =>
   ENTITY_SECTIONS.some((section) => section.id === value);
 
 function displayFiscalYearEnd(value: string | null | undefined, t: TFunction) {
@@ -198,19 +199,14 @@ export function EntityDetailPage() {
   const t = useT();
   const can = useCan();
   const { id = '' } = useParams();
-  const [params, setParams] = useSearchParams();
-  // Livros is the default and carries no `sec` param, so `/entidades/:id` still lands on it.
-  const secParam = params.get('sec');
-  const section: EntitySection = isEntitySection(secParam) ? secParam : 'livros';
+  // Livros is the default and carries no segment, so `/entities/:id` still lands on it.
   // A PUSH, not a replace: the tab is a place the operator navigated to, so browser Back
   // must return to the previous tab rather than leaving the entity altogether (t34).
-  const selectSection = (next: EntitySection) =>
-    setParams((prev) => {
-      const p = new URLSearchParams(prev);
-      if (next === 'livros') p.delete('sec');
-      else p.set('sec', next);
-      return p;
-    });
+  const { section, select: selectSection } = useSectionNav<EntitySection>({
+    depth: 2,
+    parse: (raw) => (isEntitySection(raw) ? raw : 'books'),
+    fallback: 'books',
+  });
 
   // `GET /v1/books` is gated `book.read@Global`, which a principal holding only
   // `entity.read` on this entity may not have. Don't fire a request we know would 403 —
@@ -223,7 +219,7 @@ export function EntityDetailPage() {
     return (
       <div className="stack">
         <PageHeader
-          crumbs={<Link to="/entidades">{t('entities.crumb')}</Link>}
+          crumbs={<Link to="/entities">{t('entities.crumb')}</Link>}
           title={<Skeleton width="16rem" height="1.6rem" />}
         />
         <Card title={t('entities.identificationCard')}>
@@ -242,7 +238,7 @@ export function EntityDetailPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/entidades">{t('entities.crumb')}</Link> · {ent.name}
+            <Link to="/entities">{t('entities.crumb')}</Link> · {ent.name}
           </>
         }
         title={ent.name}
@@ -262,22 +258,22 @@ export function EntityDetailPage() {
           1920). The other five are prose-shaped — a definition list, a form, two registry
           transcriptions and a chronology whose descrição column wraps — and the 68ch
           measure this design system defines is what makes them readable. `section` is
-          derived from `?sec=` on every render, so a deep link gets the right width on
+          derived from the path on every render, so a deep link gets the right width on
           first paint. */}
       <div
         className={
-          section === 'livros' ? 'route-transition stack wide-page' : 'route-transition stack'
+          section === 'books' ? 'route-transition stack wide-page' : 'route-transition stack'
         }
         key={section}
       >
-        {section === 'livros' ? (
+        {section === 'books' ? (
           <Card
             title={t('entities.booksCard')}
             actions={
               <GateButtonLink
                 perm="book.open"
                 scope={scopeEntity(ent.id)}
-                to={`/livros/novo?entidade=${ent.id}`}
+                to={`/books/new?entidade=${ent.id}`}
                 variant="primary"
                 icon={<Icon.BookPlus />}
               >
@@ -297,7 +293,7 @@ export function EntityDetailPage() {
           </Card>
         ) : null}
 
-        {section === 'identificacao' ? (
+        {section === 'identification' ? (
           <>
             <Card title={t('entities.identificationCard')}>
               <dl className="deflist">
@@ -354,14 +350,14 @@ export function EntityDetailPage() {
 
         {section === 'fiscal' ? <FiscalYearEndEditor entity={ent} /> : null}
 
-        {section === 'registo' ? (
+        {section === 'registry' ? (
           <section className="stack">
             <div className="section-head">
               <h3 className="section-subtitle">{t('entities.registrySection')}</h3>
               <GateButtonLink
                 perm="entity.registry.import"
                 scope={scopeEntity(ent.id)}
-                to={`/entidades/${ent.id}/importar`}
+                to={`/entities/${ent.id}/import`}
                 icon={<Icon.Tray />}
               >
                 {t('entities.importButton')}
@@ -371,11 +367,11 @@ export function EntityDetailPage() {
           </section>
         ) : null}
 
-        {section === 'inscricoes' ? (
+        {section === 'filings' ? (
           <RegistryProvenance entityId={ent.id} part="inscriptions" />
         ) : null}
 
-        {section === 'cronologia' ? <EntityChronologyPanel entityId={ent.id} /> : null}
+        {section === 'chronology' ? <EntityChronologyPanel entityId={ent.id} /> : null}
       </div>
 
       {/* Print-only filing abstract (portaled to <body>, hidden on screen). Kept outside the

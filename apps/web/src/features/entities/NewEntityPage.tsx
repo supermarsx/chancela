@@ -1,6 +1,6 @@
 /**
  * Create an entity by hand (t13 item 1). The manual create form used to sit permanently
- * in the Entidades aside; it now lives on its own editorial route (`/entidades/nova`),
+ * in the Entidades aside; it now lives on its own editorial route (`/entities/new`),
  * reached from a neat button, so the list can run full width. On success we follow the
  * freshly created entity to its detail page. The NIPC field still surfaces the API's 422
  * (bad check digit) inline via the `ApiError` message.
@@ -87,7 +87,7 @@ export function NewEntityPage() {
           // R6: the success toast fires even though the handler navigates away — the
           // ToastProvider is above the router. R7: the inline NIPC 422 note stays.
           toast.success(t('toast.entity.created'));
-          navigate(`/entidades/${entity.id}`);
+          navigate(`/entities/${entity.id}`);
         },
         onError: (e) => toast.error(e),
       },
@@ -99,7 +99,7 @@ export function NewEntityPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/entidades">{t('entities.crumb')}</Link> · {t('entities.newCrumb')}
+            <Link to="/entities">{t('entities.crumb')}</Link> · {t('entities.newCrumb')}
           </>
         }
         title={t('entities.newPageTitle')}
@@ -190,7 +190,7 @@ export function NewEntityPage() {
             >
               {create.isPending ? t('entities.form.creating') : t('entities.form.create')}
             </Button>
-            <ButtonLink to="/entidades" variant="ghost" icon={<Icon.Close />}>
+            <ButtonLink to="/entities" variant="ghost" icon={<Icon.Close />}>
               {t('common.cancel')}
             </ButtonLink>
           </div>

@@ -243,7 +243,7 @@ describe('DashboardPage', () => {
       'Fila de trabalho',
       'Últimos eventos',
     ]);
-    // The landing panel is also the leftmost tab, and it is the one selected with no `?painel=`.
+    // The landing panel is also the leftmost tab, and it is the one selected with no segment.
     expect(
       within(tabs).getByRole('button', { name: 'Atividades atuais' }).getAttribute('aria-pressed'),
     ).toBe('true');
@@ -258,13 +258,13 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('Entidades')).toBeNull();
 
     // The section that used to be the default now needs its own param, and the deep links
-    // that already existed (`?painel=queue` and friends) still open what they always did.
+    // that already existed (`/dashboard/queue` and friends) still open what they always did.
     cleanup();
-    renderWithProviders(<DashboardPage />, ['/?painel=stats']);
+    renderWithProviders(<DashboardPage />, ['/dashboard/stats']);
     expect(await screen.findByText('Entidades')).toBeTruthy();
 
     cleanup();
-    renderWithProviders(<DashboardPage />, ['/?painel=queue']);
+    renderWithProviders(<DashboardPage />, ['/dashboard/queue']);
     expect(await screen.findByRole('heading', { name: 'Fila de trabalho' })).toBeTruthy();
   });
 
@@ -331,7 +331,7 @@ describe('DashboardPage', () => {
     expect(within(section).getByText('2')).toBeTruthy();
     expect(
       within(section).getByRole('link', { name: 'Abrir operações' }).getAttribute('href'),
-    ).toBe('/operacoes?view=connectors');
+    ).toBe('/operations/connectors');
   });
 
   it('shows only the 10 most recent dashboard events, newest first', async () => {
@@ -377,7 +377,7 @@ describe('DashboardPage', () => {
     await openDashboardTab('Últimos eventos');
 
     const archive = await screen.findByRole('link', { name: 'Ver arquivo completo' });
-    expectIconOnlyActionLink(archive, 'Ver arquivo completo', '/arquivo');
+    expectIconOnlyActionLink(archive, 'Ver arquivo completo', '/archive');
   });
 
   it('shows the 10 most recent act, book, and entity activities with inferred links', async () => {
@@ -457,8 +457,8 @@ describe('DashboardPage', () => {
     ]);
     // The raw dotted id is revealed through the tooltip description now, not a native title.
     expect(getByRevealedText('Evento act.sealed')).toBe(within(items[2]).getByRole('link'));
-    expect(within(items[0]).getByRole('link').getAttribute('href')).toBe('/livros/book-12');
-    expect(within(items[2]).getByRole('link').getAttribute('href')).toBe('/atas/act-10');
+    expect(within(items[0]).getByRole('link').getAttribute('href')).toBe('/books/book-12');
+    expect(within(items[2]).getByRole('link').getAttribute('href')).toBe('/acts/act-10');
     expect(screen.queryByText('Entidade criada')).toBeNull();
     expect(screen.queryByText('Definições atualizadas')).toBeNull();
   });
@@ -517,7 +517,7 @@ describe('DashboardPage', () => {
       within(openItems)
         .getByRole('link', { name: 'Encosto Estratégico, S.A.' })
         .getAttribute('href'),
-    ).toBe('/livros/book-1');
+    ).toBe('/books/book-1');
     expect(within(openItems).getByText('Assembleia Geral')).toBeTruthy();
     expect(within(openItems).getByText('Próxima ata n.º 4')).toBeTruthy();
     expect(within(openItems).getByText('2 atas abertas')).toBeTruthy();
@@ -637,7 +637,7 @@ describe('DashboardPage', () => {
     const item = within(queue).getByRole('listitem');
     expect(within(item).getByText('Assembleia geral anual pendente')).toBeTruthy();
     const link = within(item).getByRole('link', { name: 'Abrir entidade' });
-    expect(link.getAttribute('href')).toBe('/entidades/entity-1');
+    expect(link.getAttribute('href')).toBe('/entities/entity-1');
     expect(within(queue).getByText('Data 2026-03-31')).toBeTruthy();
     expect(
       within(queue).getByText(
@@ -739,7 +739,7 @@ describe('DashboardPage', () => {
       ).toBeTruthy();
       expect(within(item).getByText(`Data ${annualCase.dueDate}`)).toBeTruthy();
       const link = within(item).getByRole('link', { name: 'Abrir entidade' });
-      expect(link.getAttribute('href')).toBe(`/entidades/${annualCase.entityId}`);
+      expect(link.getAttribute('href')).toBe(`/entities/${annualCase.entityId}`);
       const itemText = item.textContent ?? '';
       expect(itemText).not.toContain(`Raw fallback for ${annualCase.rule}`);
       expect(itemText).not.toContain('legal deadline');
@@ -780,7 +780,7 @@ describe('DashboardPage', () => {
             kind: 'open_entity',
             label_key: 'notifications.reminder.annual.action',
             api_href: '/v1/entities/condo-1',
-            route: '/entidades/condo-1',
+            route: '/entities/condo-1',
           },
           recommended_next_steps: [
             'Review the annual condominium assembly record.',
@@ -798,7 +798,7 @@ describe('DashboardPage', () => {
     const item = within(queue).getByRole('listitem');
     expect(within(item).getByText('Assembleia anual de condomínio pendente')).toBeTruthy();
     const link = within(item).getByRole('link', { name: 'Abrir entidade' });
-    expect(link.getAttribute('href')).toBe('/entidades/condo-1');
+    expect(link.getAttribute('href')).toBe('/entities/condo-1');
     expect(within(item).getByText('Próximo')).toBeTruthy();
     expect(within(item).getByText('Data 2026-01-15')).toBeTruthy();
     expect(
@@ -867,7 +867,7 @@ describe('DashboardPage', () => {
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     const item = within(queue).getByRole('listitem');
     const link = within(item).getByRole('link', { name: 'Enviar certidão ao contabilista' });
-    expect(link.getAttribute('href')).toBe('/atas/act-1');
+    expect(link.getAttribute('href')).toBe('/acts/act-1');
     expect(
       within(item).getByText(
         'Acme, S.A. - Ata de aprovação de contas: Confirmar envio depois da assinatura externa.',
@@ -905,7 +905,7 @@ describe('DashboardPage', () => {
             kind: 'open_act_attendance',
             label_key: 'notifications.reminder.act.attendance.action',
             api_href: '/v1/acts/act-1',
-            route: '/atas/act-1',
+            route: '/acts/act-1',
           },
           i18n: {
             title_key: 'notifications.reminder.act.attendance.title',
@@ -926,7 +926,7 @@ describe('DashboardPage', () => {
     const link = within(item).getByRole('link', {
       name: 'Registar presenças: Ata de aprovação de contas',
     });
-    expect(link.getAttribute('href')).toBe('/atas/act-1');
+    expect(link.getAttribute('href')).toBe('/acts/act-1');
     expect(
       within(item).getByText(
         'Ata de aprovação de contas de Acme, S.A. está marcada para 2026-07-20 e ainda não tem registo de presenças suficiente. Registe a referência de presenças e os totais ou participantes estruturados antes de a avançar.',
@@ -971,7 +971,7 @@ describe('DashboardPage', () => {
             kind: 'open_act_convening_notice',
             label_key: 'notifications.reminder.act.conveningNotice.action',
             api_href: '/v1/acts/act-notice-1',
-            route: '/atas/act-notice-1',
+            route: '/acts/act-notice-1',
           },
         },
       ],
@@ -986,7 +986,7 @@ describe('DashboardPage', () => {
     const link = within(item).getByRole('link', {
       name: 'Rever convocatória',
     });
-    expect(link.getAttribute('href')).toBe('/atas/act-notice-1#convening-guidance');
+    expect(link.getAttribute('href')).toBe('/acts/act-notice-1#convening-guidance');
     expect(
       within(item).getByText(
         'Os estatutos registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A. com reunião marcada para 2026-03-30; a data local de aviso é 2026-03-20. A evidência de expedição registada não demonstra essa antecedência. Aviso consultivo local; não afirma suficiência legal, entrega externa ou conclusão do workflow.',
@@ -1052,7 +1052,7 @@ describe('DashboardPage', () => {
     const link = within(item).getByRole('link', {
       name: 'Rever convocatória',
     });
-    expect(link.getAttribute('href')).toBe('/atas/act-notice-1#convening-guidance');
+    expect(link.getAttribute('href')).toBe('/acts/act-notice-1#convening-guidance');
     expect(
       within(item).getByText(
         'Os metadados estatutários locais registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A., mas a data da reunião ainda não está registada. A data local de aviso não pode ser calculada até a data da reunião ser registada. Registe a data da reunião e reveja a evidência de expedição. Aviso consultivo local; não afirma suficiência legal, cálculo de prazo legal, entrega externa, conclusão do workflow nem aceitação por registo, DRE ou fornecedor.',
@@ -1094,7 +1094,7 @@ describe('DashboardPage', () => {
             kind: 'open_absent_owner_dispatch_evidence',
             label_key: 'notifications.reminder.absentOwnerDispatch.action',
             api_href: '/v1/documents/generated/generated-absent-1/dispatch-evidence',
-            route: '/atas/act-absent-1',
+            route: '/acts/act-absent-1',
           },
           i18n: {
             title_key: 'notifications.reminder.absentOwnerDispatch.title',
@@ -1115,7 +1115,7 @@ describe('DashboardPage', () => {
       name: 'Evidência de expedição pendente: Ata da assembleia de condóminos',
     });
     expect(link.getAttribute('href')).toBe(
-      '/atas/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence',
+      '/acts/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence',
     );
     expect(within(item).getByText('Pendente')).toBeTruthy();
     expect(
@@ -1164,7 +1164,7 @@ describe('DashboardPage', () => {
             kind: 'open_generated_convening_dispatch_evidence',
             label_key: 'notifications.reminder.absentOwnerDispatch.action',
             api_href: '/v1/documents/generated/generated-conv-1/dispatch-evidence',
-            route: '/atas/act-conv-1',
+            route: '/acts/act-conv-1',
           },
           i18n: null,
         },
@@ -1186,7 +1186,7 @@ describe('DashboardPage', () => {
     expect(within(item).queryByText('Entrega confirmada')).toBeNull();
     expect(within(item).queryByText('Workflow concluído')).toBeNull();
     expect(within(item).getByRole('link').getAttribute('href')).toBe(
-      '/atas/act-conv-1?generated_document_id=generated-conv-1&focus=dispatch-evidence#generated-dispatch-evidence',
+      '/acts/act-conv-1?generated_document_id=generated-conv-1&focus=dispatch-evidence#generated-dispatch-evidence',
     );
   });
 
@@ -1216,7 +1216,7 @@ describe('DashboardPage', () => {
             kind: 'open_imported_document_review',
             label_key: 'notifications.reminder.importedDocumentReview.action',
             api_href: '/v1/documents/imported/import-1',
-            route: '/atas/act-import-1',
+            route: '/acts/act-import-1',
           },
           i18n: {
             title_key: 'notifications.reminder.importedDocumentReview.title',
@@ -1237,7 +1237,7 @@ describe('DashboardPage', () => {
       name: 'Revisão de documento importado pendente: Ata com documento importado',
     });
     expect(link.getAttribute('href')).toBe(
-      '/atas/act-import-1?imported_document_id=import-1&focus=import-review#imported-documents',
+      '/acts/act-import-1?imported_document_id=import-1&focus=import-review#imported-documents',
     );
     expect(within(item).getByText('Pendente')).toBeTruthy();
     expect(
@@ -1268,7 +1268,7 @@ describe('DashboardPage', () => {
             kind: 'open_settings_privacy',
             label_key: 'settings.privacy.title',
             api_href: '/v1/privacy/dpias',
-            route: '/configuracoes?sec=privacidade',
+            route: '/settings?sec=privacidade',
           },
         },
         {
@@ -1285,7 +1285,7 @@ describe('DashboardPage', () => {
             kind: 'open_settings_privacy',
             label_key: 'settings.privacy.title',
             api_href: '/v1/privacy/breach-playbooks/breach-review-1',
-            route: '/configuracoes?sec=privacidade',
+            route: '/settings?sec=privacidade',
           },
         },
         {
@@ -1302,7 +1302,7 @@ describe('DashboardPage', () => {
             kind: 'open_settings_privacy',
             label_key: 'settings.privacy.title',
             api_href: '/v1/privacy/transfer-controls/transfer-review-1',
-            route: '/configuracoes?sec=privacidade',
+            route: '/settings?sec=privacidade',
           },
         },
       ],
@@ -1323,7 +1323,7 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
     expect(
       within(dpia!).getByRole('link', { name: 'Biometric access DPIA' }).getAttribute('href'),
-    ).toBe('/configuracoes?sec=privacidade');
+    ).toBe('/settings?sec=privacidade');
 
     const breach = within(queue).getByText('Supplier token breach playbook').closest('li');
     expect(breach).toBeTruthy();
@@ -1335,7 +1335,7 @@ describe('DashboardPage', () => {
       within(breach!)
         .getByRole('link', { name: 'Supplier token breach playbook' })
         .getAttribute('href'),
-    ).toBe('/configuracoes?sec=privacidade');
+    ).toBe('/settings?sec=privacidade');
 
     const transfer = within(queue).getByText('UK support access transfer review').closest('li');
     expect(transfer).toBeTruthy();
@@ -1348,7 +1348,7 @@ describe('DashboardPage', () => {
       within(transfer!)
         .getByRole('link', { name: 'UK support access transfer review' })
         .getAttribute('href'),
-    ).toBe('/configuracoes?sec=privacidade');
+    ).toBe('/settings?sec=privacidade');
   });
 
   it('shows an empty work-queue state when dashboard data exposes no operator work', async () => {
@@ -1396,7 +1396,7 @@ describe('DashboardPage', () => {
             kind: 'open_entity',
             label_key: 'notifications.alert.entity.managerRemuneration.action',
             api_href: '/v1/entities/entity-1',
-            route: '/entidades/entity-1',
+            route: '/entities/entity-1',
           },
           recommended_next_steps: [
             'Review registry officers.',
@@ -1419,7 +1419,7 @@ describe('DashboardPage', () => {
     expectIconOnlyActionLink(
       within(queue).getByRole('link', { name: 'Definir remuneração da gerência' }),
       'Definir remuneração da gerência',
-      '/entidades/entity-1',
+      '/entities/entity-1',
     );
     expect(within(queue).getByText(/Encosto Estratégico, Lda./)).toBeTruthy();
     expect(within(queue).getByText('Lei csc:255 · fonte pendente')).toBeTruthy();
@@ -1460,7 +1460,7 @@ describe('DashboardPage', () => {
             kind: 'open_entity',
             label_key: 'notifications.alert.entity.administratorRemuneration.action',
             api_href: '/v1/entities/entity-sa',
-            route: '/entidades/entity-sa',
+            route: '/entities/entity-sa',
           },
           recommended_next_steps: [
             'Review registry officers and statutes.',
@@ -1484,7 +1484,7 @@ describe('DashboardPage', () => {
       within(queue)
         .getByRole('link', { name: 'Definir remuneração dos administradores' })
         .getAttribute('href'),
-    ).toBe('/entidades/entity-sa');
+    ).toBe('/entities/entity-sa');
     expect(within(queue).getByText(/Atlântico Estratégico, S.A./)).toBeTruthy();
     expect(within(queue).getByText('Lei csc:399 · fonte pendente')).toBeTruthy();
   });
@@ -1524,7 +1524,7 @@ describe('DashboardPage', () => {
             kind: 'open_book_legal_hold',
             label_key: 'notifications.alert.book.legalHold.action',
             api_href: '/v1/books/book-held/legal-hold',
-            route: '/livros/book-held',
+            route: '/books/book-held',
           },
           recommended_next_steps: [
             'Open the book legal-hold panel.',
@@ -1566,7 +1566,7 @@ describe('DashboardPage', () => {
             kind: 'archive_act',
             label_key: 'notifications.alert.act.archivePending.action',
             api_href: '/v1/acts/act-sealed/archive',
-            route: '/atas/act-sealed',
+            route: '/acts/act-sealed',
           },
           recommended_next_steps: [
             'Open the sealed act.',
@@ -1588,7 +1588,7 @@ describe('DashboardPage', () => {
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     expect(
       within(queue).getByRole('link', { name: 'Retenção legal ativa' }).getAttribute('href'),
-    ).toBe('/livros/book-held');
+    ).toBe('/books/book-held');
     expect(
       within(queue).getByText(
         'O livro book-held tem retenção legal ativa: litígio pendente. Reveja a retenção antes de decisões de descarte de arquivo.',
@@ -1598,7 +1598,7 @@ describe('DashboardPage', () => {
 
     expect(
       within(queue).getByRole('link', { name: 'Ata selada por arquivar' }).getAttribute('href'),
-    ).toBe('/atas/act-sealed');
+    ).toBe('/acts/act-sealed');
     expect(
       within(queue).getByText(
         'A ata act-sealed está selada e ainda não foi arquivada. Arquive-a quando a evidência de preservação estiver pronta.',
@@ -1674,7 +1674,7 @@ describe('DashboardPage', () => {
             kind: 'open_backup_recovery_policy',
             label_key: 'notifications.alert.backupRecoveryFreshness.action',
             api_href: null,
-            route: '/configuracoes?sec=dados',
+            route: '/settings?sec=dados',
           },
           recommended_next_steps: ['Review local recovery-drill freshness.'],
           i18n: {
@@ -1695,7 +1695,7 @@ describe('DashboardPage', () => {
       within(queue)
         .getByRole('link', { name: 'Rever atualidade da recuperação de backups' })
         .getAttribute('href'),
-    ).toBe('/configuracoes?sec=dados');
+    ).toBe('/settings?sec=dados');
     expect(
       within(queue).getByText(
         'O estado local do ensaio de recuperação está failed. Política: máximo 90 dias; último recibo 2026-07-10T10:40:00Z; idade 4 dias; pré-validação pronta false; verificação isolada false. É apenas um aviso local com recibos guardados.',
@@ -1743,7 +1743,7 @@ describe('DashboardPage', () => {
             kind: 'open_entity',
             label_key: 'notifications.alert.entity.noOpenBook.action',
             api_href: '/v1/entities/entity-verified',
-            route: '/entidades/entity-verified',
+            route: '/entities/entity-verified',
           },
           recommended_next_steps: ['Review books.'],
           i18n: {
@@ -1833,11 +1833,11 @@ describe('DashboardPage', () => {
     const items = within(queue).getAllByRole('listitem');
     expect(items).toHaveLength(5);
     expect(items.map((item) => within(item).getByRole('link').getAttribute('href'))).toEqual([
-      '/entidades/entity-overdue',
-      '/entidades/entity-invalid',
-      '/entidades/entity-due-soon',
-      '/entidades/entity-upcoming',
-      '/entidades/entity-missing',
+      '/entities/entity-overdue',
+      '/entities/entity-invalid',
+      '/entities/entity-due-soon',
+      '/entities/entity-upcoming',
+      '/entities/entity-missing',
     ]);
     expect(within(items[0]).getByText(longName, { exact: false })).toBeTruthy();
     expect(within(items[1]).getByText('Data inválida')).toBeTruthy();
@@ -1861,7 +1861,7 @@ describe('DashboardPage', () => {
     const integrityLink = within(queue).getByRole('link', {
       name: 'Verificar cadeia do registo',
     });
-    expect(integrityLink.getAttribute('href')).toBe('/arquivo');
+    expect(integrityLink.getAttribute('href')).toBe('/archive');
 
     const complianceItem = within(queue).getByText('2 verificações pendentes').closest('li');
     expect(complianceItem).toBeTruthy();

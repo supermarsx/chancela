@@ -155,7 +155,7 @@ export function NotificationBell() {
           <div className="notification-center__footer">
             <Tooltip label={viewAllLabel}>
               <Link
-                to="/notificacoes"
+                to="/notifications"
                 className="notification-center__view-all btn btn--ghost btn--icon btn--iconOnly"
                 aria-label={viewAllLabel}
                 onClick={closePopup}

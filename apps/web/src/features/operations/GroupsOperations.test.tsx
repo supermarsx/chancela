@@ -163,7 +163,7 @@ function SearchProbe() {
   return <output data-testid="search">{params.toString()}</output>;
 }
 
-function renderGroups(entries = ['/operacoes'], entities: Entity[] = [UNGROUPED, MEMBER]) {
+function renderGroups(entries = ['/operations'], entities: Entity[] = [UNGROUPED, MEMBER]) {
   return renderWithProviders(
     <>
       <GroupsOperations tenantId={TENANT} entities={entities} />
@@ -206,7 +206,7 @@ describe('GroupsOperations list', () => {
 
   it('opening a group deep-links it and drops a stale library selection', async () => {
     stubFetch();
-    renderGroups(['/operacoes?library=lib-stale']);
+    renderGroups(['/operations?library=lib-stale']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir' }));
 
@@ -261,7 +261,7 @@ describe('CreateGroupForm', () => {
 describe('GroupDetail', () => {
   it('blocks archiving while the group still has member entities and explains why', async () => {
     stubFetch();
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     const archive = await screen.findByRole('button', { name: /Arquivar grupo/ });
     expect(archive.hasAttribute('disabled')).toBe(true);
@@ -276,7 +276,7 @@ describe('GroupDetail', () => {
         ? jsonResponse([{ ...GROUP, member_count: 0 }])
         : null,
     );
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     const archive = await screen.findByRole('button', { name: /Arquivar grupo/ });
     expect(archive.hasAttribute('disabled')).toBe(false);
@@ -297,7 +297,7 @@ describe('GroupDetail', () => {
 
   it('clears a wiped description to null rather than an empty string', async () => {
     const calls = stubFetch((call) => (call.method === 'PATCH' ? jsonResponse(GROUP) : null));
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     const description = (await screen.findByLabelText('Descrição', {
       selector: '#operations-group-edit-description',
@@ -319,7 +319,7 @@ describe('GroupDetail', () => {
 describe('GroupDashboard', () => {
   it('reports the operational totals and flags only the overdue reminders', async () => {
     stubFetch();
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     const metrics = await screen.findByLabelText('Resumo operacional do grupo');
     expect(within(metrics).getByText('Livros').nextElementSibling?.textContent).toBe('4');
@@ -338,7 +338,7 @@ describe('GroupDashboard', () => {
     stubFetch((call) =>
       call.url.endsWith('/dashboard') ? jsonResponse({ error: 'Resumo indisponível' }, 500) : null,
     );
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     await waitFor(() =>
       expect(screen.getAllByText('Resumo indisponível').length).toBeGreaterThan(0),
@@ -350,7 +350,7 @@ describe('GroupDashboard', () => {
 describe('GroupMembers', () => {
   it('offers only entities that belong to no group, and assigns the chosen one', async () => {
     const calls = stubFetch();
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     const picker = (await screen.findByLabelText('Entidade')) as HTMLSelectElement;
     const offered = Array.from(picker.options).map((option) => option.value);
@@ -375,7 +375,7 @@ describe('GroupMembers', () => {
 
   it('removes a member entity through its own row action', async () => {
     const calls = stubFetch();
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     const row = (await screen.findByText('Fundação Norte')).closest('tr');
     fireEvent.click(
@@ -398,7 +398,7 @@ describe('GroupMembers', () => {
         ? jsonResponse({ ...DASHBOARD, member_entities: [], reminders: [] })
         : null,
     );
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     expect(await screen.findByText('Este grupo ainda não tem entidades.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Remover do grupo' })).toBeNull();
@@ -412,7 +412,7 @@ describe('GroupLibraries', () => {
         ? jsonResponse({ ...LIBRARY, id: 'lib-new' })
         : null,
     );
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     const create = await screen.findByRole('button', { name: 'Criar biblioteca' });
     expect(create.hasAttribute('disabled')).toBe(true);
@@ -445,7 +445,7 @@ describe('GroupLibraries', () => {
         ? jsonResponse({ error: 'Minuta desconhecida' }, 422)
         : null,
     );
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     const name = (await screen.findByLabelText('Nome da biblioteca')) as HTMLInputElement;
     fireEvent.change(name, { target: { value: 'Minutas do sul' } });
@@ -465,7 +465,7 @@ describe('GroupLibraries', () => {
 
   it('selecting a library from the list deep-links it', async () => {
     stubFetch();
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Minutas do norte · revisão 2' }));
 
@@ -481,7 +481,7 @@ describe('GroupLibraries', () => {
         ? jsonResponse([{ ...LIBRARY, current_revision: null }])
         : null,
     );
-    renderGroups(['/operacoes?group=group-1']);
+    renderGroups(['/operations?group=group-1']);
 
     expect(
       await screen.findByRole('button', { name: 'Minutas do norte · revisão 0' }),
@@ -494,7 +494,7 @@ describe('GroupLibraries', () => {
         ? jsonResponse([])
         : null,
     );
-    renderGroups(['/operacoes?group=group-1&library=lib-1']);
+    renderGroups(['/operations?group=group-1&library=lib-1']);
 
     expect(await screen.findByText('Ainda não existem bibliotecas neste grupo.')).toBeTruthy();
     expect(screen.queryByLabelText('Nome da biblioteca')).toBeTruthy();
@@ -505,7 +505,7 @@ describe('GroupLibraries', () => {
 describe('LibraryDetail', () => {
   it('renders the immutable revision history of the selected library', async () => {
     stubFetch();
-    renderGroups(['/operacoes?group=group-1&library=lib-1']);
+    renderGroups(['/operations?group=group-1&library=lib-1']);
 
     const historyRow = (await screen.findByText('amelia.marques')).closest('tr');
     const cells = within(historyRow as HTMLTableRowElement).getAllByRole('cell');
@@ -515,7 +515,7 @@ describe('LibraryDetail', () => {
 
   it('shows the history empty state when the library has no revisions recorded', async () => {
     stubFetch((call) => (call.url.endsWith('/history') ? jsonResponse([]) : null));
-    renderGroups(['/operacoes?group=group-1&library=lib-1']);
+    renderGroups(['/operations?group=group-1&library=lib-1']);
 
     expect(await screen.findByText('Ainda não existe histórico de revisões.')).toBeTruthy();
   });
@@ -524,7 +524,7 @@ describe('LibraryDetail', () => {
     const calls = stubFetch((call) =>
       call.method === 'POST' && call.url.endsWith('/revisions') ? jsonResponse(REVISION) : null,
     );
-    renderGroups(['/operacoes?group=group-1&library=lib-1']);
+    renderGroups(['/operations?group=group-1&library=lib-1']);
 
     const append = await screen.findByRole('button', { name: 'Adicionar revisão' });
     // The revision picker starts from the library's current revision, so it is submittable.
@@ -549,7 +549,7 @@ describe('LibraryDetail', () => {
 
   it('refuses to append an empty revision', async () => {
     const calls = stubFetch();
-    renderGroups(['/operacoes?group=group-1&library=lib-1']);
+    renderGroups(['/operations?group=group-1&library=lib-1']);
 
     const picker = (await screen.findByLabelText('Minutas incluídas', {
       selector: '#operations-library-revision-templates',
@@ -567,7 +567,7 @@ describe('LibraryDetail', () => {
 
   it('archives the selected library through its own action', async () => {
     const calls = stubFetch();
-    renderGroups(['/operacoes?group=group-1&library=lib-1']);
+    renderGroups(['/operations?group=group-1&library=lib-1']);
 
     fireEvent.click(await screen.findByRole('button', { name: /Arquivar biblioteca/ }));
 
@@ -584,7 +584,7 @@ describe('LibraryDetail', () => {
     stubFetch((call) =>
       call.method === 'PATCH' ? jsonResponse({ error: 'Biblioteca arquivada' }, 409) : null,
     );
-    renderGroups(['/operacoes?group=group-1&library=lib-1']);
+    renderGroups(['/operations?group=group-1&library=lib-1']);
 
     const name = (await screen.findByLabelText('Nome da biblioteca', {
       selector: '#operations-library-edit-name',

@@ -208,7 +208,7 @@ describe('LedgerPage', () => {
 
   it('widens the Registo panel when it is reached by deep link, not only by first paint', async () => {
     stubLedgerFetch(page([makeEvent(10)]));
-    renderLedger(['/arquivo?sec=exportacao']);
+    renderLedger(['/archive/export']);
 
     expect(await screen.findByText('Documento do registo de auditoria')).toBeTruthy();
     expect(document.querySelector('.route-transition')?.classList.contains('wide-page')).toBe(
@@ -217,7 +217,7 @@ describe('LedgerPage', () => {
 
     cleanup();
     stubLedgerFetch(page([makeEvent(10)]));
-    renderLedger(['/arquivo?sec=registo']);
+    renderLedger(['/archive/register']);
 
     expect(await screen.findByText('event.10')).toBeTruthy();
     expect(document.querySelector('.route-transition')?.classList.contains('wide-page')).toBe(true);
@@ -274,6 +274,38 @@ describe('LedgerPage', () => {
       calls.some((c) => c.url === '/v1/ledger/events/page?before_seq=950&limit=100&order=desc'),
     ).toBe(true);
   }, 15_000);
+
+  it('never claims a total it does not have, and announces the count when more is loaded', async () => {
+    // The page endpoint reports `has_more`/`next_cursor` and no total. A lazily-extending table
+    // that published `aria-rowcount="100"` would tell a screen-reader user the audit log ends at
+    // the fetch boundary; -1 is ARIA's "not known". The count then only becomes real when the
+    // server says there is nothing older.
+    const calls = stubLedgerFetch(
+      page([makeEvent(100)], { next_cursor: 99, has_more: true }),
+      page([makeEvent(99)]),
+    );
+    renderWithProviders(<LedgerPage />);
+
+    expect(await screen.findByText('event.100')).toBeTruthy();
+    expect(screen.getByRole('table').getAttribute('aria-rowcount')).toBe('-1');
+    // The count is a live region, so clicking "load older" — which moves no focus — is not silent.
+    const status = screen
+      .getAllByRole('status')
+      .find((el) => el.textContent?.includes('eventos carregados'));
+    expect(status?.textContent).toContain('1 eventos carregados; existem mais');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Carregar eventos mais antigos' }));
+
+    expect(await screen.findByText('event.99')).toBeTruthy();
+    // Exhausted: header + two events, and the badge stops hedging.
+    expect(screen.getByRole('table').getAttribute('aria-rowcount')).toBe('3');
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((el) => el.textContent?.includes('2 eventos carregados') === true),
+    ).toBe(true);
+    expect(calls.filter((c) => c.url.includes('/v1/ledger/events/page'))).toHaveLength(2);
+  });
 
   it('applies server-backed filters and exposes an icon-only clear button with a tooltip', async () => {
     const calls = stubLedgerFetch(page([makeEvent(88, { kind: 'act.sealed' })]));
@@ -511,13 +543,13 @@ describe('LedgerPage', () => {
   });
 });
 
-/** Reads the live location so a `?sec=` assertion works under MemoryRouter (history in memory). */
+/** Reads the live location so an address assertion works under MemoryRouter (history in memory). */
 function LocationProbe() {
   const location = useLocation();
   return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
 }
 
-function renderLedger(initialEntries = ['/arquivo']) {
+function renderLedger(initialEntries = ['/archive']) {
   return render(
     <Wrapper initialEntries={initialEntries}>
       <LedgerPage />
@@ -541,21 +573,21 @@ describe('LedgerPage — sub-tabs', () => {
     expect(tabs[0].getAttribute('aria-pressed')).toBe('true');
     expect(tabs[1].getAttribute('aria-pressed')).toBe('false');
 
-    // The default section carries no `sec` param.
-    expect(locationValue()).toBe('/arquivo');
+    // The default section carries no segment of its own.
+    expect(locationValue()).toBe('/archive');
     expect(await screen.findByText('event.10')).toBeTruthy();
   });
 
-  it('writes ?sec= when leaving Registo and drops it on the way back', async () => {
+  it('writes the section segment when leaving Registo and drops it on the way back', async () => {
     stubLedgerFetch(page([makeEvent(10)]));
     renderLedger();
 
     expect(await screen.findByText('event.10')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Exportação' }));
-    await waitFor(() => expect(locationValue()).toBe('/arquivo?sec=exportacao'));
+    await waitFor(() => expect(locationValue()).toBe('/archive/export'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Registo' }));
-    await waitFor(() => expect(locationValue()).toBe('/arquivo'));
+    await waitFor(() => expect(locationValue()).toBe('/archive'));
   });
 
   it('paints the incoming sub-tab on the click, not after the enter animation', async () => {
@@ -574,14 +606,14 @@ describe('LedgerPage — sub-tabs', () => {
 
   it('opens Exportação directly from a deep link and falls back to Registo for an unknown sec', async () => {
     stubLedgerFetch(page([makeEvent(10)]));
-    const deep = renderLedger(['/arquivo?sec=exportacao']);
+    const deep = renderLedger(['/archive/export']);
 
     expect(await screen.findByText('Documento do registo de auditoria')).toBeTruthy();
     expect(screen.getByText('Exportações de um livro')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
     deep.unmount();
 
-    renderLedger(['/arquivo?sec=nao-existe']);
+    renderLedger(['/archive/nao-existe']);
     expect(await screen.findByText('event.10')).toBeTruthy();
     expect(screen.queryByText('Documento do registo de auditoria')).toBeNull();
   });
@@ -610,13 +642,13 @@ describe('LedgerPage — sub-tabs', () => {
 
     await waitFor(() => expect(screen.getByText('Filtros ativos: 1')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Alterar filtros no Registo' }));
-    await waitFor(() => expect(locationValue()).toBe('/arquivo'));
+    await waitFor(() => expect(locationValue()).toBe('/archive'));
     expect((screen.getByLabelText('Filtrar por âmbito') as HTMLInputElement).value).toBe('act:88');
   });
 
   it('labels the preservation package and the portability bundle as different formats', async () => {
     stubLedgerFetch(page([makeEvent(10)]));
-    renderLedger(['/arquivo?sec=exportacao']);
+    renderLedger(['/archive/export']);
 
     expect(await screen.findByText('Pacote de preservação — depósito e prova')).toBeTruthy();
     expect(screen.getByText('Pacote de portabilidade — mudar de instância')).toBeTruthy();
@@ -637,7 +669,7 @@ describe('LedgerPage — sub-tabs', () => {
       bytes: 15,
     });
     const calls = stubLedgerFetch(page([makeEvent(10)]));
-    renderLedger(['/arquivo?sec=exportacao']);
+    renderLedger(['/archive/export']);
 
     expect(
       await screen.findByRole('option', { name: 'Assembleia Geral · Atas da assembleia geral' }),
@@ -670,7 +702,7 @@ describe('LedgerPage — sub-tabs', () => {
       bytes: 9,
     });
     const calls = stubLedgerFetch(page([makeEvent(10)]));
-    renderLedger(['/arquivo?sec=exportacao']);
+    renderLedger(['/archive/export']);
 
     fireEvent.click(
       await screen.findByRole('button', { name: 'Exportar pacote de portabilidade' }),
@@ -684,7 +716,7 @@ describe('LedgerPage — sub-tabs', () => {
 
   it('shows an honest empty state when there is no book to package', async () => {
     stubLedgerFetch(page([makeEvent(10)]), page([]), []);
-    renderLedger(['/arquivo?sec=exportacao']);
+    renderLedger(['/archive/export']);
 
     expect(await screen.findByText('Sem livros para exportar')).toBeTruthy();
     // The instance-wide ledger export does not depend on a book, so it stays available.
@@ -694,7 +726,7 @@ describe('LedgerPage — sub-tabs', () => {
   it('replaces the book exports with a permission note and fires no book request', async () => {
     const calls = stubLedgerFetch(page([makeEvent(10)]));
     render(
-      <Wrapper initialEntries={['/arquivo?sec=exportacao']}>
+      <Wrapper initialEntries={['/archive/export']}>
         <StaticPermissionsProvider value={permissionsValue((perm) => perm !== 'book.export')}>
           <LedgerPage />
         </StaticPermissionsProvider>
