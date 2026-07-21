@@ -193,6 +193,10 @@ import type {
   AttestationKeyBody,
   IssueRecoveryBody,
   RecoveryIssued,
+  TwoFactorStatus,
+  TotpEnrolment,
+  TotpConfirmBody,
+  BackupCodes,
   Settings,
   EmailStatusView,
   EmailTestResult,
@@ -308,8 +312,14 @@ interface ApiErrorBody {
  * verify the target's CURRENT password (`verify_current`) and answer a bad proof with
  * `401 palavra-passe atual incorreta`. Signing the operator out on those would mean a typo
  * in the current-password field ejects them from the whole app.
+ *
+ * The TOTP **confirm** endpoint (t103/t107) belongs here for the same reason: it answers a wrong
+ * six-digit activation code with `401`, and a mistyped code during enrolment must not eject the
+ * operator from the app. Only `confirm` verifies a code — enrol/disable/backup-codes do not —
+ * so the pattern names it specifically rather than matching the whole `two-factor` subtree.
  */
-const CREDENTIAL_PROOF_PATH = /\/v1\/users\/[^/]+\/(secret|attestation-key|recovery)(\?|$)/;
+const CREDENTIAL_PROOF_PATH =
+  /\/v1\/users\/[^/]+\/(secret|attestation-key|recovery|two-factor\/totp\/confirm)(\?|$)/;
 
 /** Whether a 401 on `path` is a rejected credential proof rather than an expired session. */
 export function isCredentialProofPath(path: string | undefined): boolean {
@@ -1324,6 +1334,17 @@ export const api = {
   // never crosses the wire again (stored only as a verifier) — callers must not persist it.
   issueRecovery: (id: string, body: IssueRecoveryBody = {}) =>
     post<RecoveryIssued>(`/v1/users/${id}/recovery`, body),
+  // Two-factor (TOTP) — frozen contract from t107 (t95 §2.3). The status read is visible to the
+  // holder and to an admin (`user.manage`) for another account; enrol/confirm/disable/backup are
+  // self-only (`require_self`). The `secret`, `provisioning_uri` and backup codes are each shown
+  // ONCE by the caller and never persisted — these methods return them, they do not cache them.
+  getTwoFactor: (id: string) => get<TwoFactorStatus>(`/v1/users/${id}/two-factor`),
+  enrolTotp: (id: string) => post<TotpEnrolment>(`/v1/users/${id}/two-factor/totp/enrol`, {}),
+  confirmTotp: (id: string, body: TotpConfirmBody) =>
+    post<BackupCodes>(`/v1/users/${id}/two-factor/totp/confirm`, body),
+  disableTotp: (id: string) => del<UserView>(`/v1/users/${id}/two-factor/totp`),
+  regenerateBackupCodes: (id: string) =>
+    post<BackupCodes>(`/v1/users/${id}/two-factor/backup-codes`, {}),
   getSession: () => get<SessionView>('/v1/session'),
   // Active password-strength ruleset (t68). Exempt so onboarding can render the checklist
   // before a user/session exists; the server remains authoritative on submit.

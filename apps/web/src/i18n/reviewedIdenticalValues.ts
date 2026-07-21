@@ -1096,6 +1096,8 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Membro',
     'Membros obrigatórios presentes',
     'Mensagem',
+    'Mensagem de boas-vindas enviada',
+    'Mensagem de boas-vindas não enviada',
     'Mesa',
     'Meta',
     'Metadados',
@@ -1544,6 +1546,10 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Sede',
     'Segredo',
     'Segunda-feira',
+    // t95 P1-C: the `user.totp.enrolled` / `user.totp.disabled` ledger labels. Shared Portuguese —
+    // pt-BR and pt-PT phrase these identically (the backup-codes label differs and is translated).
+    'Segundo fator ativado',
+    'Segundo fator desativado',
     'Segurança',
     'Segurança da conta',
     'Selagem',

@@ -21,6 +21,8 @@ const USER: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  has_totp: false,
+  two_factor_required: false,
   language: 'auto',
   role_assignments: [],
 };
@@ -84,6 +86,8 @@ function wizardStub(): { fn: typeof fetch; calls: Recorded[] } {
         ...USER,
         has_secret: true,
         has_recovery_phrase: true,
+        has_totp: false,
+        two_factor_required: false,
         language: 'auto',
         role_assignments: [],
         recovery_phrase: RECOVERY_PHRASE,

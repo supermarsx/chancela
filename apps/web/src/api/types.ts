@@ -3577,6 +3577,17 @@ export interface UserView {
   has_attestation_key: boolean;
   /** Whether a recovery phrase is set (t51). No phrase material ever crosses the wire. */
   has_recovery_phrase: boolean;
+  /**
+   * Whether the user has a **confirmed** TOTP second factor (t95 P1-C). A boolean only — the
+   * secret, provisioning URI and backup codes never cross the wire. A pending (unconfirmed)
+   * enrolment reads `false`.
+   */
+  has_totp: boolean;
+  /**
+   * Whether this account is required to hold a second factor (t95 §2.3). Enforced as
+   * enrol-on-next-sign-in, never a hard lockout.
+   */
+  two_factor_required: boolean;
   /** 32-hex fingerprint of the attestation key; omitted when none (t29). */
   attestation_key_fingerprint?: string;
   /** The user's language preference (t71); `'auto'` for one who has never chosen. */
@@ -4172,6 +4183,56 @@ export interface IssueRecoveryBody {
  */
 export interface RecoveryIssued extends UserView {
   recovery_phrase: string;
+}
+
+// --- Two-factor (TOTP) — frozen contract from t107 (t95 §2.3) --------------------
+//
+// The web half of the `GET /v1/users/{id}/two-factor` + enrol/confirm/disable/backup-codes
+// endpoints. Self-scoped enrolment (`require_self` — a session that IS the target; API keys
+// refused); the status read is also visible to an admin (`user.manage`) for another account,
+// but `backup_codes_remaining` is `null` cross-user. The `has_totp` / `two_factor_required`
+// booleans on `UserView` are the at-a-glance state; this is the fuller per-user read.
+
+/**
+ * `GET /v1/users/{id}/two-factor` — the second-factor state of one account.
+ *
+ * `enrolled` means a secret exists; `confirmed` means it has been activated with a code (an
+ * enrolled-but-unconfirmed secret does not yet gate sign-in). `backup_codes_remaining` is
+ * present only when the viewer is the account holder — an administrator reading another user's
+ * state gets `null`, because how many recovery codes someone has left is theirs to know.
+ */
+export interface TwoFactorStatus {
+  enrolled: boolean;
+  confirmed: boolean;
+  confirmed_at?: string;
+  /** Self only; `null` when an administrator reads another account's state. */
+  backup_codes_remaining?: number | null;
+  required: boolean;
+}
+
+/**
+ * `POST /v1/users/{id}/two-factor/totp/enrol` — begins enrolment. Returns the shared `secret`
+ * and a `provisioning_uri` (the `otpauth://` URL an authenticator app scans) **shown exactly
+ * once**; the factor is NOT active until confirmed. Neither value is persisted client-side.
+ */
+export interface TotpEnrolment {
+  secret: string;
+  provisioning_uri: string;
+  confirmed: false;
+}
+
+/**
+ * `POST /v1/users/{id}/two-factor/totp/confirm` `{ code }` and
+ * `POST /v1/users/{id}/two-factor/backup-codes` — activation and regeneration both return the
+ * ten backup codes **shown exactly once**. `401` on a wrong confirmation code.
+ */
+export interface BackupCodes {
+  backup_codes: string[];
+  backup_codes_remaining: number;
+}
+
+export interface TotpConfirmBody {
+  code: string;
 }
 
 export const DSR_REQUEST_TYPES = ['export', 'rectification', 'erasure', 'restriction'] as const;

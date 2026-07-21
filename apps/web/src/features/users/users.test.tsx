@@ -73,6 +73,8 @@ const AMELIA: UserView = {
   has_secret: false,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  has_totp: false,
+  two_factor_required: false,
   language: 'auto',
   role_assignments: [],
 };
@@ -228,6 +230,8 @@ const BRUNO_INACTIVE: UserView = {
   has_secret: true,
   has_attestation_key: true,
   has_recovery_phrase: false,
+  has_totp: false,
+  two_factor_required: false,
   language: 'auto',
   role_assignments: [],
 };
@@ -241,6 +245,8 @@ const CLARA_RECOVERY: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: true,
+  has_totp: false,
+  two_factor_required: false,
   language: 'auto',
   role_assignments: [],
 };
@@ -791,6 +797,8 @@ const BRUNO: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  has_totp: false,
+  two_factor_required: false,
   language: 'auto',
   role_assignments: [],
 };
@@ -1321,6 +1329,8 @@ const OPERATOR: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  has_totp: false,
+  two_factor_required: false,
   language: 'auto',
   role_assignments: [],
 };
@@ -1667,6 +1677,8 @@ describe('EditUserPage — Segurança tab', () => {
       has_secret: true,
       has_attestation_key: true,
       has_recovery_phrase: true,
+      has_totp: false,
+      two_factor_required: false,
       attestation_key_fingerprint: 'b'.repeat(32),
     };
     renderSecurity(withKey, withKey);

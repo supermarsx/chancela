@@ -3625,6 +3625,8 @@ describe('SettingsPage', () => {
         has_secret: true,
         has_attestation_key: false,
         has_recovery_phrase: false,
+        has_totp: false,
+        two_factor_required: false,
         language: 'auto',
       },
     ];

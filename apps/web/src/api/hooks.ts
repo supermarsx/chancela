@@ -86,6 +86,7 @@ import type {
   RemoveSecretBody,
   AttestationKeyBody,
   IssueRecoveryBody,
+  TotpConfirmBody,
   UpdateActBody,
   UpdateEntityBody,
   UpdateUserBody,
@@ -246,6 +247,7 @@ export const keys = {
   users: ['users'] as const,
   user: (id: string) => ['users', id] as const,
   userDsrRequests: (id: string) => ['users', id, 'dsr-requests'] as const,
+  userTwoFactor: (id: string) => ['users', id, 'two-factor'] as const,
   session: ['session'] as const,
   passwordPolicy: ['session', 'password-policy'] as const,
   sessionPermissions: ['session', 'permissions'] as const,
@@ -2227,6 +2229,76 @@ export function useIssueRecovery(id: string) {
 
 export function useExportUserDsr(id: string) {
   return useMutation({ mutationFn: () => api.exportUserDsr(id) });
+}
+
+// --- Two-factor (TOTP), t103 against t107's frozen contract ----------------------
+//
+// The enrolment secret, provisioning URI and backup codes are shown ONCE by the caller and
+// never persisted — these hooks return them and invalidate the caches so `has_totp` /
+// `two_factor_required` and the status read flip; the once-shown material never enters a cache.
+
+/**
+ * One account's second-factor state (`GET /v1/users/{id}/two-factor`). Visible to the holder
+ * and to an admin (`user.manage`) for another account; `retry: false` so a `403`/`404` shows a
+ * refusal rather than hammering. `enabled` gates it on an id so a cold mount does not fire.
+ */
+export function useTwoFactor(id: string) {
+  return useQuery({
+    queryKey: keys.userTwoFactor(id),
+    queryFn: () => api.getTwoFactor(id),
+    enabled: !!id,
+    retry: false,
+  });
+}
+
+/** Begin TOTP enrolment (`POST …/two-factor/totp/enrol`). Self-only; returns the once-shown
+ *  secret + provisioning URI. Nothing is active until {@link useConfirmTotp}. */
+export function useEnrolTotp(id: string) {
+  return useMutation({ mutationFn: () => api.enrolTotp(id) });
+}
+
+/**
+ * Confirm enrolment with a code (`POST …/two-factor/totp/confirm`). Activates the factor and
+ * returns the ten backup codes (shown once). A wrong code is a `401` the API client flags as a
+ * credential proof — it does NOT sign the operator out. On success the status and `has_totp`
+ * flip, so the caches are invalidated.
+ */
+export function useConfirmTotp(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TotpConfirmBody) => api.confirmTotp(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.userTwoFactor(id) });
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Disable own TOTP (`DELETE …/two-factor/totp`). Refused `409` when `two_factor_required` is
+ *  set on the account — the server is the guard; the UI hides the control to match. */
+export function useDisableTotp(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.disableTotp(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.userTwoFactor(id) });
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Regenerate backup codes (`POST …/two-factor/backup-codes`). Requires an active factor;
+ *  returns a fresh set shown once and resets `backup_codes_remaining`. */
+export function useRegenerateBackupCodes(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.regenerateBackupCodes(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.userTwoFactor(id) });
+    },
+  });
 }
 
 export function useUserDsrRequests(id: string) {

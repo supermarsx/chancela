@@ -36,6 +36,8 @@ function user(overrides: Partial<UserView> = {}): UserView {
     has_secret: true,
     has_attestation_key: false,
     has_recovery_phrase: false,
+    has_totp: false,
+    two_factor_required: false,
     language: LANGUAGE_AUTO,
     role_assignments: [],
     ...overrides,

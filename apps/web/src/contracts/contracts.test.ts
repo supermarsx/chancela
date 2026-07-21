@@ -7014,6 +7014,8 @@ describe('contract fixtures parse through the real client', () => {
         has_secret: true,
         has_attestation_key: true,
         has_recovery_phrase: true,
+        has_totp: true,
+        two_factor_required: true,
         language: true,
         role_assignments: true,
       },
@@ -7023,6 +7025,8 @@ describe('contract fixtures parse through the real client', () => {
     );
     expect(typeof user.has_secret).toBe('boolean');
     expect(typeof user.has_attestation_key).toBe('boolean');
+    expect(typeof user.has_totp).toBe('boolean');
+    expect(typeof user.two_factor_required).toBe('boolean');
     expect(user.username).toMatch(/^[a-z0-9._-]+$/);
     expect(typeof user.active).toBe('boolean');
     assertTimestamp(user.created_at, 'UserView.created_at');
@@ -7065,6 +7069,8 @@ describe('contract fixtures parse through the real client', () => {
         has_secret: true,
         has_attestation_key: true,
         has_recovery_phrase: true,
+        has_totp: true,
+        two_factor_required: true,
         language: true,
         role_assignments: true,
       },
@@ -7336,6 +7342,8 @@ describe('contract fixtures parse through the real client', () => {
         has_secret: true,
         has_attestation_key: true,
         has_recovery_phrase: true,
+        has_totp: true,
+        two_factor_required: true,
         language: true,
         role_assignments: true,
       },

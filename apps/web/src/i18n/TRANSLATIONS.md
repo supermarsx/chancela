@@ -50,7 +50,12 @@ still apply, so a missing safety label fails CI instead of disappearing at runti
 ### Ledger event-kind labels (t17) — a translated key group pending native review
 
 `src/i18n/ledgerEventLabels.ts` holds the display labels for the ledger's event kinds
-(`enum.ledgerEventKind.*`, 133 kinds) plus `dashboard.activity.sequence.title` — **134 keys**.
+(`enum.ledgerEventKind.*`, 135 kinds) plus `dashboard.activity.sequence.title` — **136 keys**.
+The two most recent are `user.welcome_email_sent` / `user.welcome_email_failed` (t108): the
+outcome of the account welcome mail, labelled by what the ledger actually records — the relay
+*accepted the send* (not that the recipient received it), or the send *did not go out* (never
+that the account was not created; it was, which is precisely why the outcome is recorded rather
+than failing creation).
 Unlike `operationsFallback.ts` this slice is **fully translated into all 14 locales**, one
 `LedgerEventLabels` per locale in that single file, each spread by its own catalog. Keeping the
 14 columns in one file is deliberate: a reviewer can diff a language against pt-PT without
