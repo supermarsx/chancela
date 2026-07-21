@@ -654,9 +654,9 @@ export const ptPT = {
   'registry.conflicts.replacing': 'A substituir…',
   'registry.conflicts.confirmReplace': 'Confirmar e substituir',
   'registry.error.cannotImport': 'Não foi possível importar',
-  'registry.error.unavailableTitle': 'Registo indisponível',
+  'registry.error.unavailableTitle': 'Não foi possível obter a certidão',
   'registry.error.unavailableHint':
-    'A consulta à certidão permanente falhou no serviço de registo. Verifique o código e tente novamente dentro de momentos.',
+    'Ou o código de acesso expirou ou está incorreto — nesse caso obtenha um novo código junto do registo comercial — ou o serviço de registo está temporariamente indisponível, bastando repetir a consulta dentro de momentos. A resposta recebida não distingue os dois casos.',
   'registry.officer.ceased': 'Cessou funções',
   'registry.officer.active': 'Em funções',
   'registry.officer.appointment': 'Designação: {date}',
@@ -719,6 +719,9 @@ export const ptPT = {
   'registry.provenance.validUntil': 'Válida até',
   'registry.provenance.expired': 'Certidão expirada',
   'registry.provenance.valid': 'Certidão válida',
+  'registry.provenance.updateCode': 'Atualizar código de acesso',
+  'registry.provenance.updateCodeHint':
+    'O código de acesso completo nunca é guardado. Para atualizar a certidão — por ter expirado ou por ter passado a dispor de outro código — introduza-o novamente.',
   'registry.anotacoes.title': 'Anotações',
   'registry.anotacoes.empty': 'A certidão não continha anotações.',
   'registry.anotacoes.item': 'An. {number}',

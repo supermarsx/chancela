@@ -648,9 +648,9 @@ export const esES: Catalog = {
   'registry.conflicts.replacing': 'Reemplazando…',
   'registry.conflicts.confirmReplace': 'Confirmar y reemplazar',
   'registry.error.cannotImport': 'No se ha podido importar',
-  'registry.error.unavailableTitle': 'Registro no disponible',
+  'registry.error.unavailableTitle': 'No se ha podido obtener el certificado',
   'registry.error.unavailableHint':
-    'La consulta de la certificación permanente ha fallado en el servicio del registro. Compruebe el código y vuelva a intentarlo en unos instantes.',
+    'O bien el código de acceso ha caducado o es incorrecto —en ese caso hace falta un código nuevo del registro mercantil— o bien el servicio del registro no está disponible temporalmente, y basta con repetir la consulta en unos instantes. La respuesta recibida no distingue ambos casos.',
   'registry.officer.ceased': 'Cesó en sus funciones',
   'registry.officer.active': 'En funciones',
   'registry.officer.appointment': 'Nombramiento: {date}',
@@ -713,6 +713,9 @@ export const esES: Catalog = {
   'registry.provenance.validUntil': 'Válida hasta',
   'registry.provenance.expired': 'Certificado caducado',
   'registry.provenance.valid': 'Certificado vigente',
+  'registry.provenance.updateCode': 'Actualizar código de acceso',
+  'registry.provenance.updateCodeHint':
+    'El código de acceso completo nunca se guarda. Para actualizar el certificado —porque ha caducado o porque se dispone de otro código— introdúzcalo de nuevo.',
   'registry.anotacoes.title': 'Anotaciones',
   'registry.anotacoes.empty': 'La certificación no contenía anotaciones.',
   'registry.anotacoes.item': 'Un. {number}',

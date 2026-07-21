@@ -4990,6 +4990,26 @@ a,
   font-size: 0.82rem;
 }
 
+/* Refresh action under the Proveniência deflist: the explanation and the button read as one
+   block, wrapping the button under the sentence on narrow screens. */
+.registry-provenance__refresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.registry-provenance__refresh p {
+  flex: 1 1 22rem;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 /* Validity badge in the Proveniência card header; the expired variant reads loudest. */
 .registry-validity--expired .badge {
   font-weight: 700;

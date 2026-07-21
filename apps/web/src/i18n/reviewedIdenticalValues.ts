@@ -415,6 +415,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Atualizações incrementais posteriores',
     'Atualizado',
     'Atualizar catálogo',
+    'Atualizar código de acesso',
     'Atualizar TSL',
     'Auditor',
     'Auditoria de operações',

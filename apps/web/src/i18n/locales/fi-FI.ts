@@ -644,9 +644,9 @@ export const fiFI: Catalog = {
   'registry.conflicts.replacing': 'Korvataan…',
   'registry.conflicts.confirmReplace': 'Vahvista ja korvaa',
   'registry.error.cannotImport': 'Tuonti ei onnistunut',
-  'registry.error.unavailableTitle': 'Rekisteri ei ole käytettävissä',
+  'registry.error.unavailableTitle': 'Todistusta ei voitu hakea',
   'registry.error.unavailableHint':
-    'Pysyvän otteen haku epäonnistui rekisteripalvelussa. Tarkista koodi ja yritä hetken kuluttua uudelleen.',
+    'Joko käyttökoodi on vanhentunut tai virheellinen — tällöin tarvitaan uusi koodi kaupparekisteristä — tai rekisteripalvelu ei ole hetkellisesti käytettävissä, jolloin riittää, että haku toistetaan hetken kuluttua. Saatu vastaus ei erottele näitä kahta tapausta.',
   'registry.officer.ceased': 'Tehtävä päättynyt',
   'registry.officer.active': 'Tehtävässä',
   'registry.officer.appointment': 'Nimitys: {date}',
@@ -709,6 +709,9 @@ export const fiFI: Catalog = {
   'registry.provenance.validUntil': 'Voimassa asti',
   'registry.provenance.expired': 'Todistus vanhentunut',
   'registry.provenance.valid': 'Todistus voimassa',
+  'registry.provenance.updateCode': 'Päivitä käyttökoodi',
+  'registry.provenance.updateCodeHint':
+    'Täydellistä käyttökoodia ei tallenneta koskaan. Todistuksen päivittäminen — kun se on vanhentunut tai kun käytössä on toinen koodi — edellyttää koodin syöttämistä uudelleen.',
   'registry.anotacoes.title': 'Merkinnät',
   'registry.anotacoes.empty': 'Rekisteriote ei sisältänyt huomautuksia.',
   'registry.anotacoes.item': 'Huom. {number}',

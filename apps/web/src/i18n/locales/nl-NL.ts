@@ -646,9 +646,9 @@ export const nlNL: Catalog = {
   'registry.conflicts.replacing': 'Vervangen…',
   'registry.conflicts.confirmReplace': 'Bevestigen en vervangen',
   'registry.error.cannotImport': 'Kon niet importeren',
-  'registry.error.unavailableTitle': 'Register niet beschikbaar',
+  'registry.error.unavailableTitle': 'Het certificaat kon niet worden opgehaald',
   'registry.error.unavailableHint':
-    'De raadpleging van het permanente uittreksel mislukte bij de registerdienst. Controleer de code en probeer het over enkele ogenblikken opnieuw.',
+    'Ofwel is de toegangscode verlopen of onjuist — dan is een nieuwe code bij het handelsregister nodig — ofwel is de registerdienst tijdelijk onbereikbaar, en volstaat het de raadpleging over enkele ogenblikken te herhalen. Het ontvangen antwoord maakt geen onderscheid tussen beide gevallen.',
   'registry.officer.ceased': 'Functie beëindigd',
   'registry.officer.active': 'In functie',
   'registry.officer.appointment': 'Benoeming: {date}',
@@ -711,6 +711,9 @@ export const nlNL: Catalog = {
   'registry.provenance.validUntil': 'Geldig tot',
   'registry.provenance.expired': 'Certificaat verlopen',
   'registry.provenance.valid': 'Certificaat geldig',
+  'registry.provenance.updateCode': 'Toegangscode bijwerken',
+  'registry.provenance.updateCodeHint':
+    'De volledige toegangscode wordt nooit bewaard. Om het certificaat bij te werken — omdat het verlopen is of omdat er een andere code beschikbaar is — voert u die opnieuw in.',
   'registry.anotacoes.title': 'Aantekeningen',
   'registry.anotacoes.empty': 'Het uittreksel bevatte geen aantekeningen.',
   'registry.anotacoes.item': 'Aant. {number}',

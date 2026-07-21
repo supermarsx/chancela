@@ -653,9 +653,9 @@ export const frFR: Catalog = {
   'registry.conflicts.replacing': 'Remplacement…',
   'registry.conflicts.confirmReplace': 'Confirmer et remplacer',
   'registry.error.cannotImport': 'Importation impossible',
-  'registry.error.unavailableTitle': 'Registre indisponible',
+  'registry.error.unavailableTitle': 'Impossible d’obtenir le certificat',
   'registry.error.unavailableHint':
-    'La consultation du certificat permanent a échoué auprès du service du registre. Vérifiez le code et réessayez dans un instant.',
+    'Soit le code d’accès a expiré ou est erroné — il faut alors un nouveau code auprès du registre du commerce — soit le service du registre est momentanément indisponible, et il suffit de relancer la consultation dans un instant. La réponse reçue ne permet pas de distinguer les deux cas.',
   'registry.officer.ceased': 'A cessé ses fonctions',
   'registry.officer.active': 'En fonction',
   'registry.officer.appointment': 'Désignation : {date}',
@@ -718,6 +718,9 @@ export const frFR: Catalog = {
   'registry.provenance.validUntil': "Valable jusqu'au",
   'registry.provenance.expired': 'Certificat expiré',
   'registry.provenance.valid': 'Certificat valide',
+  'registry.provenance.updateCode': 'Mettre à jour le code d’accès',
+  'registry.provenance.updateCodeHint':
+    'Le code d’accès complet n’est jamais conservé. Pour actualiser le certificat — parce qu’il a expiré ou parce qu’un autre code est disponible — saisissez-le à nouveau.',
   'registry.anotacoes.title': 'Annotations',
   'registry.anotacoes.empty': 'L’extrait ne contenait aucune annotation.',
   'registry.anotacoes.item': 'Ann. {number}',

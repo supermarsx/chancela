@@ -650,9 +650,9 @@ export const itIT: Catalog = {
   'registry.conflicts.replacing': 'Sostituzione…',
   'registry.conflicts.confirmReplace': 'Conferma e sostituisci',
   'registry.error.cannotImport': 'Impossibile importare',
-  'registry.error.unavailableTitle': 'Registro non disponibile',
+  'registry.error.unavailableTitle': 'Non è stato possibile ottenere il certificato',
   'registry.error.unavailableHint':
-    'La consultazione del certificato permanente non è riuscita presso il servizio del registro. Verifica il codice e riprova tra qualche istante.',
+    'O il codice di accesso è scaduto o è errato — in tal caso occorre un nuovo codice presso il registro delle imprese — oppure il servizio del registro è temporaneamente non raggiungibile, e allora basta ripetere la consultazione tra qualche istante. La risposta ricevuta non distingue i due casi.',
   'registry.officer.ceased': 'Funzioni cessate',
   'registry.officer.active': 'In carica',
   'registry.officer.appointment': 'Nomina: {date}',
@@ -715,6 +715,9 @@ export const itIT: Catalog = {
   'registry.provenance.validUntil': 'Valida fino al',
   'registry.provenance.expired': 'Certificato scaduto',
   'registry.provenance.valid': 'Certificato valido',
+  'registry.provenance.updateCode': 'Aggiorna codice di accesso',
+  'registry.provenance.updateCodeHint':
+    'Il codice di accesso completo non viene mai conservato. Per aggiornare il certificato — perché è scaduto o perché è disponibile un altro codice — inseriscilo di nuovo.',
   'registry.anotacoes.title': 'Annotazioni',
   'registry.anotacoes.empty': 'La visura non conteneva note.',
   'registry.anotacoes.item': 'UN. {number}',

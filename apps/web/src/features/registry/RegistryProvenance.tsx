@@ -10,7 +10,10 @@
  *     seeds the future chronology view (DOC-30).
  *
  * The provenance only ever carries the masked code; the full código de acesso is never
- * present in this response and so never reaches the DOM.
+ * present in this response and so never reaches the DOM. That is also why the Proveniência
+ * card carries an "atualizar código de acesso" action (t93): a new or unexpired code cannot
+ * be patched into the stored provenance — the only way to refresh a certidão is to consult
+ * the registry again, which means typing the code in full one more time.
  *
  * `part` selects which of those groups to render (see {@link RegistryPart}); it defaults to
  * the whole document, so call-sites that want one column are unchanged.
@@ -30,11 +33,13 @@ import {
   EmptyState,
   ErrorNote,
   FieldHelp,
+  Icon,
   SkeletonDeflist,
   SkeletonRegion,
   Truncate,
 } from '../../ui';
 import { CaeRefList } from '../cae/CaeRefList';
+import { GateButtonLink, scopeEntity } from '../session/permissions';
 import { AnotacoesList, InscriptionDetailBody } from './InscriptionDetail';
 import { registryFieldHelp } from './fieldHelp';
 import type {
@@ -184,7 +189,13 @@ export type RegistryPart = 'all' | 'commercial' | 'inscriptions';
  * identification it carried. One coherent group: the "Dados do registo" card is the payload
  * the provenance above it vouches for.
  */
-function CommercialCards({ extract }: { extract: RegistryExtractView }) {
+function CommercialCards({
+  entityId,
+  extract,
+}: {
+  entityId: string;
+  extract: RegistryExtractView;
+}) {
   const t = useT();
   const p = extract.provenance;
   const formaJuridica =
@@ -221,6 +232,22 @@ function CommercialCards({ extract }: { extract: RegistryExtractView }) {
             <Digest value={p.raw_digest} />
           </Row>
         </dl>
+        {/* Refresh affordance (t93). The stored provenance keeps only the mask, so a certidão
+            that has expired — or a code the operator has since replaced — can only be refreshed
+            by consulting the registry again with a code typed in full. The sentence says exactly
+            that, next to the masked value it explains, and the button opens the entity's own
+            import route rather than the generic one. */}
+        <div className="registry-provenance__refresh">
+          <p className="muted">{t('registry.provenance.updateCodeHint')}</p>
+          <GateButtonLink
+            perm="entity.registry.import"
+            scope={scopeEntity(entityId)}
+            to={`/entidades/${entityId}/importar`}
+            icon={<Icon.Refresh />}
+          >
+            {t('registry.provenance.updateCode')}
+          </GateButtonLink>
+        </div>
       </Card>
 
       <Card title={t('registry.registryData')}>
@@ -315,10 +342,18 @@ function InscriptionCards({
   );
 }
 
-function ExtractBody({ extract, part }: { extract: RegistryExtractView; part: RegistryPart }) {
+function ExtractBody({
+  entityId,
+  extract,
+  part,
+}: {
+  entityId: string;
+  extract: RegistryExtractView;
+  part: RegistryPart;
+}) {
   return (
     <div className="stack">
-      {part !== 'inscriptions' ? <CommercialCards extract={extract} /> : null}
+      {part !== 'inscriptions' ? <CommercialCards entityId={entityId} extract={extract} /> : null}
       {part !== 'commercial' ? (
         <InscriptionCards extract={extract} standalone={part === 'inscriptions'} />
       ) : null}
@@ -371,5 +406,5 @@ export function RegistryProvenance({
   }
 
   if (!registry.data) return null;
-  return <ExtractBody extract={registry.data} part={part} />;
+  return <ExtractBody entityId={id} extract={registry.data} part={part} />;
 }

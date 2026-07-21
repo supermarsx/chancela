@@ -646,9 +646,9 @@ export const svSE: Catalog = {
   'registry.conflicts.replacing': 'Ersätter…',
   'registry.conflicts.confirmReplace': 'Bekräfta och ersätt',
   'registry.error.cannotImport': 'Kunde inte importera',
-  'registry.error.unavailableTitle': 'Registret är otillgängligt',
+  'registry.error.unavailableTitle': 'Intyget kunde inte hämtas',
   'registry.error.unavailableHint':
-    'Sökningen av det permanenta beviset misslyckades i registertjänsten. Kontrollera koden och försök igen om en stund.',
+    'Antingen har åtkomstkoden gått ut eller angetts felaktigt — då behövs en ny kod från handelsregistret — eller så är registertjänsten tillfälligt otillgänglig, och då räcker det att upprepa sökningen om en stund. Svaret som togs emot skiljer inte de två fallen åt.',
   'registry.officer.ceased': 'Avträdd',
   'registry.officer.active': 'I tjänst',
   'registry.officer.appointment': 'Utnämning: {date}',
@@ -711,6 +711,9 @@ export const svSE: Catalog = {
   'registry.provenance.validUntil': 'Giltig till',
   'registry.provenance.expired': 'Intyget har upphört',
   'registry.provenance.valid': 'Intyget giltigt',
+  'registry.provenance.updateCode': 'Uppdatera åtkomstkod',
+  'registry.provenance.updateCodeHint':
+    'Den fullständiga åtkomstkoden sparas aldrig. För att uppdatera intyget — för att det har gått ut eller för att en annan kod finns — måste koden anges på nytt.',
   'registry.anotacoes.title': 'Anteckningar',
   'registry.anotacoes.empty': 'Registerutdraget innehöll inga noteringar.',
   'registry.anotacoes.item': 'Anm. {number}',

@@ -648,9 +648,9 @@ export const ptBR: Catalog = {
   'registry.conflicts.replacing': 'Substituindo…',
   'registry.conflicts.confirmReplace': 'Confirme e substitua',
   'registry.error.cannotImport': 'Não foi possível importar',
-  'registry.error.unavailableTitle': 'Registro indisponível',
+  'registry.error.unavailableTitle': 'A certidão não pôde ser obtida',
   'registry.error.unavailableHint':
-    'A consulta à certidão permanente falhou no serviço de registro. Verifique o código e tente novamente dentro de instantes.',
+    'Ou o código de acesso expirou ou está incorreto — nesse caso obtenha um novo código junto ao registro comercial — ou o serviço de registro está temporariamente indisponível, bastando repetir a consulta dentro de instantes. A resposta recebida não distingue os dois casos.',
   'registry.officer.ceased': 'Funções cessadas',
   'registry.officer.active': 'Em funções',
   'registry.officer.appointment': 'Designação: {date}',
@@ -713,6 +713,9 @@ export const ptBR: Catalog = {
   'registry.provenance.validUntil': 'Válido até',
   'registry.provenance.expired': 'Certificado expirado',
   'registry.provenance.valid': 'Certificado válido',
+  'registry.provenance.updateCode': 'Atualizar código de acesso',
+  'registry.provenance.updateCodeHint':
+    'O código de acesso completo nunca fica salvo. Para atualizar a certidão — por ter expirado ou por já existir outro código — digite-o novamente.',
   'registry.anotacoes.title': 'Notas',
   'registry.anotacoes.empty': 'A certidão não continha notas.',
   'registry.anotacoes.item': 'Um. {number}',

@@ -303,11 +303,34 @@ describe('ImportFromRegistryForm', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /importar do registo/i }));
 
-    expect(await screen.findByText('Registo indisponível')).toBeTruthy();
+    expect(await screen.findByText('Não foi possível obter a certidão')).toBeTruthy();
     // Inline note + error toast both carry the server message (R7).
     expect(screen.getAllByText(/connection refused/).length).toBeGreaterThanOrEqual(1);
     // Not confused with the 422 rendering.
     expect(screen.queryByText('Não foi possível importar')).toBeNull();
+  });
+
+  // The server collapses "this code is expired/invalid" and "the registry is unreachable"
+  // into one 502 with no discriminator (see the report), so the note must name BOTH causes
+  // and both remedies rather than asserting the registry is down.
+  it('names both causes of a 502 — an expired/invalid code and an unreachable registry', async () => {
+    const { fn } = recordingFetch(() => jsonResponse({ error: 'erro de gateway' }, 502));
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<ImportFromRegistryForm />, ['/entidades']);
+
+    fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
+      target: { value: FULL_CODE },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /importar do registo/i }));
+
+    await screen.findByText('Não foi possível obter a certidão');
+    const note = document.body.textContent ?? '';
+    expect(note).toContain('código de acesso expirou');
+    expect(note).toContain('obtenha um novo código');
+    expect(note).toContain('temporariamente indisponível');
+    // And it does not claim to know which of the two happened.
+    expect(note).toContain('não distingue os dois casos');
   });
 });
 
@@ -429,7 +452,7 @@ describe('RegistryImportPanel', () => {
 
     deferred.resolve(jsonResponse({ error: 'registry upstream failure: timeout' }, 502));
 
-    expect(await screen.findByText('Registo indisponível')).toBeTruthy();
+    expect(await screen.findByText('Não foi possível obter a certidão')).toBeTruthy();
     expect(screen.getByText('Ação necessária')).toBeTruthy();
     expect((screen.getByLabelText('Código da certidão permanente') as HTMLInputElement).value).toBe(
       FULL_CODE,
@@ -486,6 +509,24 @@ describe('RegistryProvenance', () => {
     renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
 
     expect(await screen.findByText('Sem dados do registo')).toBeTruthy();
+  });
+
+  it('offers an entity-scoped "atualizar código de acesso" action explaining the re-entry', async () => {
+    const { fn } = recordingFetch((r) =>
+      r.url.includes('/registry') ? jsonResponse(EXTRACT) : jsonResponse([]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+
+    const update = (await screen.findByRole('link', {
+      name: /atualizar código de acesso/i,
+    })) as HTMLAnchorElement;
+    // Scoped to THIS entity's import route, not the generic import screen.
+    expect(update.getAttribute('href')).toBe('/entidades/ent-1/importar');
+
+    // The honest reason the code has to be typed again sits next to the masked value.
+    expect(screen.getByText(/nunca é guardado/)).toBeTruthy();
   });
 
   it('lays out "Dados do registo" as a two-column pair grid with wide long fields', async () => {

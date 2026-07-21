@@ -644,9 +644,9 @@ export const daDK: Catalog = {
   'registry.conflicts.replacing': 'Erstatter…',
   'registry.conflicts.confirmReplace': 'Bekræft og erstat',
   'registry.error.cannotImport': 'Kunne ikke importere',
-  'registry.error.unavailableTitle': 'Registret er utilgængeligt',
+  'registry.error.unavailableTitle': 'Attesten kunne ikke hentes',
   'registry.error.unavailableHint':
-    'Forespørgslen på den permanente attest mislykkedes i registertjenesten. Kontrollér koden, og prøv igen om et øjeblik.',
+    'Enten er adgangskoden udløbet eller forkert — så skal der hentes en ny kode hos handelsregistret — eller også er registertjenesten midlertidigt utilgængelig, og så er det nok at gentage forespørgslen om et øjeblik. Svaret skelner ikke mellem de to tilfælde.',
   'registry.officer.ceased': 'Fratrådt',
   'registry.officer.active': 'I funktion',
   'registry.officer.appointment': 'Udnævnelse: {date}',
@@ -709,6 +709,9 @@ export const daDK: Catalog = {
   'registry.provenance.validUntil': 'Gyldig indtil',
   'registry.provenance.expired': 'Attest udløbet',
   'registry.provenance.valid': 'Attest gyldig',
+  'registry.provenance.updateCode': 'Opdater adgangskode',
+  'registry.provenance.updateCodeHint':
+    'Den fulde adgangskode gemmes aldrig. For at opdatere attesten — fordi den er udløbet, eller fordi der findes en anden kode — skal koden indtastes igen.',
   'registry.anotacoes.title': 'Anmærkninger',
   'registry.anotacoes.empty': 'Attesten indeholdt ingen anmærkninger.',
   'registry.anotacoes.item': 'Anm. {number}',

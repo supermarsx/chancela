@@ -643,9 +643,9 @@ export const enUS: Catalog = {
   'registry.conflicts.replacing': 'Replacing…',
   'registry.conflicts.confirmReplace': 'Confirm and replace',
   'registry.error.cannotImport': 'Could not import',
-  'registry.error.unavailableTitle': 'Registry unavailable',
+  'registry.error.unavailableTitle': 'Could not retrieve the certificate',
   'registry.error.unavailableHint':
-    'The permanent-certificate query failed at the registry service. Check the code and try again in a moment.',
+    'Either the access code has expired or is wrong — in which case a new code from the commercial registry is needed — or the registry service is temporarily unreachable, in which case running the query again in a moment is enough. The response received does not tell the two cases apart.',
   'registry.officer.ceased': 'Ceased duties',
   'registry.officer.active': 'In office',
   'registry.officer.appointment': 'Appointment: {date}',
@@ -708,6 +708,9 @@ export const enUS: Catalog = {
   'registry.provenance.validUntil': 'Valid until',
   'registry.provenance.expired': 'Certificate expired',
   'registry.provenance.valid': 'Certificate valid',
+  'registry.provenance.updateCode': 'Update access code',
+  'registry.provenance.updateCodeHint':
+    'The full access code is never stored. To refresh the certificate — because it has expired or because a different code is now available — enter it again.',
   'registry.anotacoes.title': 'Annotations',
   'registry.anotacoes.empty': 'The registry certificate contained no annotations.',
   'registry.anotacoes.item': 'An. {number}',

@@ -651,9 +651,9 @@ export const deDE: Catalog = {
   'registry.conflicts.replacing': 'Wird ersetzt…',
   'registry.conflicts.confirmReplace': 'Bestätigen und ersetzen',
   'registry.error.cannotImport': 'Import nicht möglich',
-  'registry.error.unavailableTitle': 'Register nicht verfügbar',
+  'registry.error.unavailableTitle': 'Die Bescheinigung konnte nicht abgerufen werden',
   'registry.error.unavailableHint':
-    'Die Abfrage der dauerhaften Bescheinigung ist beim Registerdienst fehlgeschlagen. Prüfen Sie den Code und versuchen Sie es in einem Moment erneut.',
+    'Entweder ist der Zugangscode abgelaufen oder falsch — dann wird ein neuer Code vom Handelsregister benötigt — oder der Registerdienst ist vorübergehend nicht erreichbar, dann genügt es, die Abfrage in einem Moment zu wiederholen. Die erhaltene Antwort unterscheidet die beiden Fälle nicht.',
   'registry.officer.ceased': 'Amt beendet',
   'registry.officer.active': 'Im Amt',
   'registry.officer.appointment': 'Bestellung: {date}',
@@ -716,6 +716,9 @@ export const deDE: Catalog = {
   'registry.provenance.validUntil': 'Gültig bis',
   'registry.provenance.expired': 'Bescheinigung abgelaufen',
   'registry.provenance.valid': 'Bescheinigung gültig',
+  'registry.provenance.updateCode': 'Zugangscode aktualisieren',
+  'registry.provenance.updateCodeHint':
+    'Der vollständige Zugangscode wird nie gespeichert. Um die Bescheinigung zu aktualisieren — weil sie abgelaufen ist oder weil ein anderer Code vorliegt — geben Sie ihn bitte erneut ein.',
   'registry.anotacoes.title': 'Anmerkungen',
   'registry.anotacoes.empty': 'Die Registerauskunft enthielt keine Anmerkungen.',
   'registry.anotacoes.item': 'Anm. {number}',

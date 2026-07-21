@@ -647,9 +647,9 @@ export const plPL: Catalog = {
   'registry.conflicts.replacing': 'Zastępowanie…',
   'registry.conflicts.confirmReplace': 'Potwierdź i zastąp',
   'registry.error.cannotImport': 'Nie można zaimportować',
-  'registry.error.unavailableTitle': 'Rejestr niedostępny',
+  'registry.error.unavailableTitle': 'Nie udało się pobrać zaświadczenia',
   'registry.error.unavailableHint':
-    'Przeszukanie stałego odpisu nie powiodło się w usłudze rejestru. Sprawdź kod i spróbuj ponownie za chwilę.',
+    'Albo kod dostępu wygasł lub jest błędny — wtedy potrzebny jest nowy kod z rejestru handlowego — albo usługa rejestru jest chwilowo niedostępna i wystarczy powtórzyć zapytanie za chwilę. Otrzymana odpowiedź nie rozróżnia tych dwóch przypadków.',
   'registry.officer.ceased': 'Zaprzestał pełnienia funkcji',
   'registry.officer.active': 'Pełni funkcję',
   'registry.officer.appointment': 'Powołanie: {date}',
@@ -712,6 +712,9 @@ export const plPL: Catalog = {
   'registry.provenance.validUntil': 'Ważna do',
   'registry.provenance.expired': 'Zaświadczenie wygasło',
   'registry.provenance.valid': 'Zaświadczenie ważne',
+  'registry.provenance.updateCode': 'Zaktualizuj kod dostępu',
+  'registry.provenance.updateCodeHint':
+    'Pełny kod dostępu nigdy nie jest przechowywany. Aby zaktualizować zaświadczenie — gdy wygasło lub gdy dostępny jest inny kod — należy wprowadzić go ponownie.',
   'registry.anotacoes.title': 'Adnotacje',
   'registry.anotacoes.empty': 'Odpis nie zawierał adnotacji.',
   'registry.anotacoes.item': 'Adn. {number}',
