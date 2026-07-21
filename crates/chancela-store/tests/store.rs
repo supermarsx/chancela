@@ -23,7 +23,8 @@ use chancela_store::{
     LedgerEventUpperBound, PaperBookOcrConversionDossierUpsert,
     PaperBookOcrConversionExecutionArtifactUpsert, Store, StoreError, StoreKeyRotationStatus,
     StoreOpenOptions, StoredCredentialRecord, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
-    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredEmailDelivery, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
+    StoredImportedDocumentMeta,
     StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
     StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
     StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
@@ -1554,8 +1555,10 @@ fn schema_version_is_current() {
     // single-row `signed_documents` data-loss defect) landed as schema v23; the producing template
     // spec beside each generated document (`documents.template_spec_json` — t74 §8, so an in-place
     // edit of a shipped template cannot retroactively change what a past seal meant) landed as
-    // schema v24. A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 24);
+    // schema v24; the outbound-message delivery record (`email_deliveries` — t108, so the outcome
+    // of the only real mail the product sends is queryable rather than a discarded `Result`) landed
+    // as schema v25. A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 25);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -3819,4 +3822,83 @@ fn erase_subject_rejects_unknown_collection_and_deletes_nothing() {
             .unwrap_err(),
         StoreError::UnknownErasableCollection { .. }
     ));
+}
+
+/// t108: an outbound-message delivery attempt round-trips through the store — every field of a
+/// `sent` and a `failed` row survives a write and read-back, and a retry appends a *new* row rather
+/// than overwriting the attempt it retried.
+#[test]
+fn email_delivery_round_trips_and_a_retry_appends_rather_than_overwrites() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    let sent = StoredEmailDelivery {
+        id: "d1".to_owned(),
+        template_id: "user.welcome".to_owned(),
+        user_id: Some("u-1".to_owned()),
+        recipient: "amelia.marques@encosto-estrategico.pt".to_owned(),
+        status: "sent".to_owned(),
+        attempt: 1,
+        previous_id: None,
+        token_subject: None,
+        token_purpose: None,
+        tls: Some(true),
+        authenticated: Some(true),
+        failure_stage: None,
+        failure_kind: None,
+        failure_code: None,
+        failure_detail: None,
+        created_at: OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap(),
+        event_seq: Some(7),
+        actor: "rui.bastos".to_owned(),
+    };
+    let failed = StoredEmailDelivery {
+        id: "d0".to_owned(),
+        status: "failed".to_owned(),
+        attempt: 1,
+        tls: Some(false),
+        authenticated: Some(false),
+        failure_stage: Some("rcpt_to".to_owned()),
+        failure_kind: Some("rejected".to_owned()),
+        failure_code: Some(550),
+        // The relay quotes the address back — which is exactly why this text lives in this erasable
+        // table and never in a ledger event.
+        failure_detail: Some(
+            "550 5.1.1 <amelia.marques@encosto-estrategico.pt>: Recipient address rejected"
+                .to_owned(),
+        ),
+        event_seq: Some(6),
+        created_at: OffsetDateTime::from_unix_timestamp(1_799_999_000).unwrap(),
+        ..sent.clone()
+    };
+    // A retry of the failed attempt: a distinct row, linked back, attempt 2.
+    let retry = StoredEmailDelivery {
+        id: "d2".to_owned(),
+        status: "sent".to_owned(),
+        attempt: 2,
+        previous_id: Some("d0".to_owned()),
+        created_at: OffsetDateTime::from_unix_timestamp(1_800_000_100).unwrap(),
+        ..sent.clone()
+    };
+
+    store.insert_email_delivery(&failed).expect("insert failed");
+    store.insert_email_delivery(&sent).expect("insert sent");
+    store.insert_email_delivery(&retry).expect("insert retry");
+
+    // Read-back by id preserves every field, including the two booleans that cross a BIGINT column.
+    assert_eq!(store.email_delivery("d0").unwrap().as_ref(), Some(&failed));
+    assert_eq!(store.email_delivery("d1").unwrap().as_ref(), Some(&sent));
+
+    // The retry did not overwrite the attempt it retried: both survive, and the chain is intact.
+    let all = store.email_deliveries(100).unwrap();
+    assert_eq!(all.len(), 3, "a retry must append, not overwrite");
+    let retried = all.iter().find(|d| d.id == "d2").unwrap();
+    assert_eq!(retried.previous_id.as_deref(), Some("d0"));
+    assert_eq!(retried.attempt, 2);
+    // Newest first.
+    assert_eq!(all[0].id, "d2");
+
+    // The bound is honoured.
+    assert_eq!(store.email_deliveries(1).unwrap().len(), 1);
+    assert!(store.email_delivery("nope").unwrap().is_none());
 }
