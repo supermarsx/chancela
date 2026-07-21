@@ -20,7 +20,7 @@ import { NewUserPage } from './NewUserPage';
 import { EditUserPage } from './EditUserPage';
 import { isValidUsername, usernameError } from './username';
 import { formatDateTime, formatTimestamp } from '../../format';
-import type { DsrRequestView, DsrRequestType, UserView } from '../../api/types';
+import type { DsrRequestView, DsrRequestType, TwoFactorStatus, UserView } from '../../api/types';
 
 /**
  * Render the edit screen at its real path so `useParams` and the section hook both resolve.
@@ -1626,10 +1626,24 @@ describe('EditUserPage — sub-tabs live in the path', () => {
 
 // --- Segurança tab (t103) -------------------------------------------------------------
 describe('EditUserPage — Segurança tab', () => {
-  /** `session` decides self-vs-other; the edited user is always `u1` (Amélia). */
-  function renderSecurity(user: UserView, sessionUser: UserView) {
+  /** `session` decides self-vs-other; the edited user is always `u1` (Amélia). `twoFactor`, when
+   *  given, answers `GET …/two-factor` — otherwise a state derived from `user.has_totp`. */
+  function renderSecurity(
+    user: UserView,
+    sessionUser: UserView,
+    twoFactor?: Partial<TwoFactorStatus>,
+  ) {
     const { fn } = recordingFetch((r) => {
       if (r.url.endsWith('/v1/session')) return jsonResponse({ user: sessionUser });
+      if (r.url.endsWith(`/v1/users/${user.id}/two-factor`)) {
+        return jsonResponse({
+          enrolled: user.has_totp,
+          confirmed: user.has_totp,
+          required: user.two_factor_required,
+          backup_codes_remaining: user.has_totp ? 8 : undefined,
+          ...twoFactor,
+        });
+      }
       if (r.url.endsWith(`/v1/users/${user.id}`)) return jsonResponse(user);
       return jsonResponse([user]);
     });
@@ -1703,15 +1717,16 @@ describe('EditUserPage — Segurança tab', () => {
     expect(screen.getByRole('button', { name: 'Gerir em Acesso e auditoria' })).toBeTruthy();
   });
 
-  it('does not stub TOTP or an active-sessions list — both are seams, not placeholders', async () => {
+  it('renders the real TOTP block now that t107 landed it, but still no sessions placeholder', async () => {
+    // TOTP has shipped against t107's frozen contract, so it is present (not a stub). The
+    // sessions panel is still a seam — its backend (enriched record + list/revoke) is funded but
+    // not built — so there is deliberately no "Sessões ativas" text or placeholder for it yet.
     renderSecurity(AMELIA, AMELIA);
     await screen.findByText('Segurança da conta');
 
-    // The lead was explicit: no fake second factor, no "pending" session list on a security
-    // surface. Until t107's backends land there is deliberately nothing here for either.
     const body = document.body.textContent ?? '';
-    expect(body).not.toMatch(/TOTP|autenticaç.o de dois fatores|dois fatores/i);
-    expect(body).not.toMatch(/sess(ões|ao) ativ/i);
+    expect(body).toMatch(/dois fatores/i); // TOTP block is real
+    expect(body).not.toMatch(/sess(ões|ão) ativ/i); // sessions still a seam, no fake list
   });
 
   it('is visible without user.manage, unlike the DSR tab', async () => {
@@ -1737,5 +1752,161 @@ describe('EditUserPage — Segurança tab', () => {
 
     expect(await screen.findByText('Segurança da conta')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Pedidos DSR' })).toBeNull();
+  });
+});
+
+// --- TOTP block on the Segurança tab (t103 against t107's frozen contract) -------------
+describe('EditUserPage — two-factor (TOTP)', () => {
+  const SELF = { ...AMELIA };
+
+  function stub(user: UserView, sessionUser: UserView, handlers: Record<string, () => Response>) {
+    const { fn, calls } = recordingFetch((r) => {
+      for (const [suffix, make] of Object.entries(handlers)) {
+        if (r.url.endsWith(suffix)) return make();
+      }
+      if (r.url.endsWith('/v1/session')) return jsonResponse({ user: sessionUser });
+      if (r.url.endsWith(`/v1/users/${user.id}/two-factor`)) {
+        return jsonResponse({
+          enrolled: user.has_totp,
+          confirmed: user.has_totp,
+          required: user.two_factor_required,
+          backup_codes_remaining: user.has_totp ? 8 : undefined,
+        });
+      }
+      if (r.url.endsWith(`/v1/users/${user.id}`)) return jsonResponse(user);
+      return jsonResponse([user]);
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(
+      <Routes>
+        <Route path="/users/:id/:sec?" element={<EditUserPage />} />
+      </Routes>,
+      [`/users/${user.id}/security`],
+    );
+    return calls;
+  }
+
+  it('walks a self-service enrolment: QR + secret, confirm, then backup codes shown once', async () => {
+    let enrolled = false;
+    const calls = stub(SELF, SELF, {
+      '/two-factor/totp/enrol': () =>
+        jsonResponse({
+          secret: 'JBSWY3DPEHPK3PXP',
+          provisioning_uri: 'otpauth://totp/Chancela:amelia?secret=JBSWY3DPEHPK3PXP',
+          confirmed: false,
+        }),
+      '/two-factor/totp/confirm': () => {
+        enrolled = true;
+        return jsonResponse({
+          backup_codes: Array.from({ length: 10 }, (_, i) => `code-${i}`),
+          backup_codes_remaining: 10,
+        });
+      },
+    });
+    void enrolled;
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ativar dois fatores' }));
+
+    // The manual secret is shown for keying by hand, and a QR (an <svg>) for scanning.
+    expect(await screen.findByText('JBSWY3DPEHPK3PXP')).toBeTruthy();
+    const card = screen.getByText('JBSWY3DPEHPK3PXP').closest('.panel') as HTMLElement;
+    expect(card.querySelector('svg')).not.toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Código de verificação'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    // The ten backup codes are shown once, with the save-now warning.
+    expect(await screen.findByText('Guarde os códigos de recuperação')).toBeTruthy();
+    expect(screen.getByText('code-0')).toBeTruthy();
+    expect(screen.getByText('code-9')).toBeTruthy();
+    expect(
+      calls.some((c) => c.url.endsWith('/two-factor/totp/confirm') && c.body?.code === '123456'),
+    ).toBe(true);
+  });
+
+  it('surfaces a wrong confirmation code inline without ejecting the operator', async () => {
+    stub(SELF, SELF, {
+      '/two-factor/totp/enrol': () =>
+        jsonResponse({
+          secret: 'JBSWY3DPEHPK3PXP',
+          provisioning_uri: 'otpauth://totp/Chancela:amelia?secret=JBSWY3DPEHPK3PXP',
+          confirmed: false,
+        }),
+      // A wrong code is a 401 — the API client must treat it as a credential proof, NOT a dead
+      // session, or a typo would sign the operator out of the whole app.
+      '/two-factor/totp/confirm': () => jsonResponse({ message: 'código inválido' }, 401),
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ativar dois fatores' }));
+    fireEvent.change(await screen.findByLabelText('Código de verificação'), {
+      target: { value: '000000' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    // Inline refusal, field still there to retry.
+    expect(await screen.findByText('Código incorreto. Tente novamente.')).toBeTruthy();
+    expect(screen.getByLabelText('Código de verificação')).toBeTruthy();
+  });
+
+  it('offers regenerate + disable when enrolled and the account is not required', async () => {
+    const enrolledUser: UserView = { ...SELF, has_totp: true, two_factor_required: false };
+    stub(enrolledUser, enrolledUser, {});
+
+    expect(await screen.findByRole('button', { name: 'Gerar novos códigos' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Desativar dois fatores' })).toBeTruthy();
+    // The remaining-codes count comes from the two-factor read.
+    expect(screen.getByText('8')).toBeTruthy();
+  });
+
+  it('replaces disable with an explanation when the account is required to keep 2FA', async () => {
+    const requiredUser: UserView = { ...SELF, has_totp: true, two_factor_required: true };
+    stub(requiredUser, requiredUser, {});
+
+    // Wait for the SELF branch — the regenerate button only exists there — so the assertion does
+    // not race the session query (before it resolves, `isSelf` is false and the admin branch shows).
+    expect(await screen.findByRole('button', { name: 'Gerar novos códigos' })).toBeTruthy();
+    // The server would 409 a disable on a required account, so the UI does not offer the button.
+    expect(screen.queryByRole('button', { name: 'Desativar dois fatores' })).toBeNull();
+    expect(screen.getByText(/obrigada a manter dois fatores/i)).toBeTruthy();
+  });
+
+  it('shows an admin read-only state plus the require toggle, never enrol or disable', async () => {
+    const other: UserView = { ...SELF, has_totp: true, two_factor_required: false };
+    const calls = stub(other, OPERATOR, {
+      '/v1/users/u1': () => jsonResponse(other), // PATCH echoes; GET returns the user
+    });
+
+    // Read-only for an admin: no enrol, no disable, no confirmation field.
+    await screen.findByText('Segurança da conta');
+    expect(screen.queryByRole('button', { name: 'Ativar dois fatores' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Desativar dois fatores' })).toBeNull();
+    expect(screen.queryByLabelText('Código de verificação')).toBeNull();
+
+    // The one legitimate admin action: require a second factor.
+    fireEvent.click(screen.getByRole('button', { name: 'Exigir' }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'PATCH' && c.body?.two_factor_required === true)).toBe(
+        true,
+      ),
+    );
+  });
+
+  it('regenerates backup codes and shows the fresh set once', async () => {
+    const enrolledUser: UserView = { ...SELF, has_totp: true, two_factor_required: false };
+    const calls = stub(enrolledUser, enrolledUser, {
+      '/two-factor/backup-codes': () =>
+        jsonResponse({
+          backup_codes: Array.from({ length: 10 }, (_, i) => `fresh-${i}`),
+          backup_codes_remaining: 10,
+        }),
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Gerar novos códigos' }));
+
+    expect(await screen.findByText('fresh-0')).toBeTruthy();
+    expect(screen.getByText('Guarde os códigos de recuperação')).toBeTruthy();
+    expect(calls.some((c) => c.url.endsWith('/two-factor/backup-codes'))).toBe(true);
   });
 });

@@ -3639,6 +3639,12 @@ export interface UpdateUserBody {
   active?: boolean;
   /** t71: `'auto'` is a real value here — it restores "keep detecting", it does not clear. */
   language?: UserLanguage;
+  /**
+   * t103/t107: require this account to hold a second factor, enforced as enrol-on-next-sign-in
+   * (never a hard lockout). An administrative action gated `user.manage`; the server refuses
+   * with `422` unless `auth.two_factor.totp_enabled` is on instance-wide.
+   */
+  two_factor_required?: boolean;
 }
 
 // --- RBAC permissions (§ t64-E3, FROZEN for the E5 web permissions context) ------

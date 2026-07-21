@@ -3141,8 +3141,7 @@ export function useZkStorageStatus() {
 export function usePutZkSharedObjectRoot() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (sharedObjectRoot: string | null) =>
-      api.putZkSharedObjectRoot(sharedObjectRoot),
+    mutationFn: (sharedObjectRoot: string | null) => api.putZkSharedObjectRoot(sharedObjectRoot),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.zkStorageStatus });
       void qc.invalidateQueries({ queryKey: keys.settings });

@@ -10174,6 +10174,42 @@ input[type='radio']:disabled {
    three e2e specs, and has never had a rule here. Left as-is: it is a test hook, and inventing
    a style for it now would change how a security-critical block looks without review. */
 
+/* --- TOTP enrolment (t103) --------------------------------------------------------------
+   The QR + manual-secret pair shown once during enrolment, and the backup-codes list. Tokens
+   only; the QR itself is fixed dark-on-light (a scanner needs canonical contrast) and that is
+   handled inside the QrCode component, not here. */
+.totp-enrol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.totp-enrol > .qr-code,
+.totp-enrol svg {
+  flex: 0 0 auto;
+}
+
+.totp-enrol__secret {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The ten once-shown backup codes, two-up so all ten fit without a tall scroll. `list-style`
+   is cleared because each item is a monospace code, not prose. */
+.totp-backup-codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+  gap: 0.35rem 1rem;
+  margin: 0.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.totp-backup-codes > li {
+  font-size: 0.95rem;
+}
+
 /* ============================================================================
  * Startup splash + entrance choreography (t50 W4).
  *
