@@ -639,3 +639,96 @@ async fn retiring_a_key_retains_no_secret_material() {
         "but its public half does — that is the point"
     );
 }
+
+/// **Retiring a key does not stop a session that already holds it** (found by t88 while reviewing
+/// t92's retention work). Pinned because the behaviour is surprising and, since retention, no
+/// longer self-announcing.
+///
+/// `create_session` unlocks the scalar at sign-in and keeps it for the life of the token
+/// (`session.rs:790`), and nothing in `users.rs` touches the session layer — so removing the key
+/// at rest leaves an existing session signing with it. Before retention such a signature failed to
+/// verify ("signing key not found"), which at least made the window visible; now the fingerprint
+/// is retained and the verdict is `valid`. The signature genuinely was produced by that key, so
+/// `valid` is not wrong — but it means the only remaining evidence of the window is this test.
+///
+/// This asserts the CURRENT behaviour. It is not an endorsement: closing the gap means resolving
+/// the key per request, as `roles::effective_permissions_for` already does for authority. If that
+/// changes, this test should flip to assert no attestation is produced at all.
+#[tokio::test]
+async fn a_live_session_keeps_signing_with_a_retired_key() {
+    let dir = TempDir::new("live-session");
+    let state = AppState::with_data_dir(&dir.0);
+    let (owner_id, owner) = bootstrap_owner(&state).await;
+
+    // Remove the key at rest, using the session that is holding the unlocked copy.
+    let removal = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/users/{owner_id}/attestation-key"))
+        .header("content-type", "application/json")
+        .header("x-chancela-session", &owner)
+        .body(Body::from(
+            json!({ "current_password": TEST_PASSWORD }).to_string(),
+        ))
+        .expect("request builds");
+    let (status, view) = send(state.clone(), removal).await;
+    assert_eq!(status, StatusCode::OK, "key removed: {view}");
+    assert_eq!(view["has_attestation_key"], json!(false));
+
+    // That SAME session now makes a mutation.
+    let (status, entity) = send(
+        state.clone(),
+        post_as(
+            "/api/v1/entities",
+            json!({
+                "name": "Encosto Estratégico Lda",
+                "nipc": "503004642",
+                "seat": "Lisboa",
+                "kind": "SociedadeAnonima",
+            }),
+            &owner,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "entity created: {entity}");
+
+    let (_, events) = send(state.clone(), get_as("/api/v1/ledger/events", &owner)).await;
+    let created = events
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|e| e["kind"] == "entity.created")
+        .next_back()
+        .expect("entity.created present")
+        .clone();
+
+    // The event IS attested — the removal did not reach the session's in-memory key.
+    assert!(
+        !created["attestation"].is_null(),
+        "a removed key still signs from a live session: {created}"
+    );
+    let seq = created["seq"].as_u64().expect("seq");
+
+    // And because the public half is retained, that post-removal signature verifies.
+    let (status, verdict) = send(
+        state.clone(),
+        get_as(&format!("/api/v1/ledger/attestations/{seq}"), &owner),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        verdict["valid"],
+        json!(true),
+        "post-removal signature verifies against the retained fingerprint: {verdict}"
+    );
+
+    // The user holds no key at rest — the signing capability lives only in the open session.
+    let stored = state
+        .users
+        .read()
+        .await
+        .get(&chancela_api::UserId(owner_id.parse().expect("owner uuid")))
+        .expect("owner stored")
+        .clone();
+    assert!(stored.attestation_key.is_none());
+    assert_eq!(stored.retired_attestation_keys.len(), 1);
+}

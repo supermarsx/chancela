@@ -131,6 +131,29 @@ impl User {
     /// specific to rotation: it was that the fingerprint disappeared. Idempotent when the user has
     /// no key, and a repeated retirement of an already-recorded fingerprint is not appended twice
     /// (a removal followed by a fresh generation and another removal must not accumulate copies).
+    ///
+    /// ## What retiring does NOT do: it does not stop a live session signing (t92, found by t88)
+    ///
+    /// Retiring removes the key **at rest**. It does not reach the sessions already holding it:
+    /// `create_session` unlocks the scalar from the password once at sign-in and keeps it in
+    /// memory for the life of that token (`session.rs:790`, `mint_session`), and nothing in this
+    /// module touches the session layer. So a session opened *before* a rotation or removal keeps
+    /// attesting with the superseded key until it ends.
+    ///
+    /// That gap predates retention — but retention changes its *symptom*, which is why it is
+    /// documented here rather than left implicit. Before, a signature made by a live session after
+    /// a removal failed to verify ("signing key not found"); now the fingerprint is retained, so it
+    /// verifies as `valid`. Both are arguably right — the signature really was produced by that key
+    /// — but the second no longer looks like an anomaly to anyone reading the verdict, so the
+    /// window is invisible unless stated. Pinned by
+    /// `a_live_session_keeps_signing_with_a_retired_key` in
+    /// `crates/chancela-api/tests/attestation_key_at_create.rs`.
+    ///
+    /// Closing it means resolving the key per request instead of caching it at sign-in — the
+    /// pattern `roles::effective_permissions_for` already follows for authority (t87/t88 verified:
+    /// role, active-flag and delegation changes all take effect on the next request). The counter
+    /// argument is cost: unlocking is an argon2 KEK derivation, which is exactly why it is cached.
+    /// That trade-off is a product decision and is **not** taken here.
     pub(crate) fn retire_attestation_key(&mut self, retired_at: String) {
         let Some(blob) = self.attestation_key.take() else {
             return;
