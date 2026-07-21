@@ -1,0 +1,17 @@
+{
+  "_comment": [
+    "Ratchet baseline for the Rust coverage gate. Written ONLY by",
+    "`node scripts/rust-coverage-gate.mjs --report <json> --update-baseline` running on Linux;",
+    "the script refuses to write it from any other platform, because the gate is pinned to Linux/CI",
+    "and the workspace has 25 cfg(windows)/cfg(unix) sites that make the platforms non-comparable.",
+    "",
+    "`crates` is EMPTY on purpose. The only figures measured so far came from a Windows host",
+    "(2026-07-21, HEAD ea75441, .orchestration/logs/t75-coverage.md) and baking those into a Linux",
+    "gate is exactly what the standing ruling forbids. Until the coverage job runs once on",
+    "ubuntu-latest and records real numbers here, every non-hard-90 crate reports as 'no baseline'",
+    "and is not gated. The four hard-90% crates are rule-driven and need no baseline."
+  ],
+  "measuredOn": null,
+  "measuredAt": null,
+  "crates": {}
+}

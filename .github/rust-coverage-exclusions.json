@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "The ONLY Rust coverage exclusions approved by the user (.orchestration/state.md, 2026-07-19).",
+    "No executor may add an entry here; propose, do not apply.",
+    "",
+    "Approval (a): crates/chancela-smartcard/src/pkcs11.rs, the cryptoki-CALLING functions only.",
+    "The approval is deliberately narrower than the file, so this list is per-function rather than",
+    "a filename regex: default_module_path(), resolve_module_path(), resolve_module_path_from(),",
+    "key_label_for(), pkcs11_err() and map_login_error() are pure, are unit-tested, and STAY in the",
+    "numerator. Excluding pkcs11.rs wholesale would have quietly taken them out too.",
+    "",
+    "Approval (b) — spec requirements blocked on external parties — is not a coverage exclusion.",
+    "It belongs to the spec-coverage tracker, is reported as its own BLOCKED row with a named",
+    "blocker per requirement, and never enters this numerator."
+  ],
+  "functions": [
+    { "file": "pkcs11.rs", "name": "open", "reason": "calls Cryptoki::new / initialize against a real PKCS#11 module" },
+    { "file": "pkcs11.rs", "name": "open_session", "reason": "opens a live token session" },
+    { "file": "pkcs11.rs", "name": "pin_tries_left", "reason": "reads live token info" },
+    { "file": "pkcs11.rs", "name": "find_key", "reason": "searches objects on a live token" },
+    { "file": "pkcs11.rs", "name": "list_certificates", "reason": "enumerates certificates on a live token" },
+    { "file": "pkcs11.rs", "name": "sign_digest", "reason": "signs on a live token" },
+    { "file": "pkcs11.rs", "name": "sign_digest_with_pin", "reason": "logs in and signs on a live token" }
+  ]
+}
