@@ -45,7 +45,9 @@ use crate::error::ApiError;
 use crate::provider_credentials_write::map_store_err_for;
 use crate::secretstore_persist::{FIELD_SMTP_PASSWORD, SmtpCredentialFields};
 use crate::settings::EmailSettings;
-use crate::smtp::{SmtpClient, SmtpEncryption, SmtpFailure, SmtpMessage, SmtpTrace};
+use crate::smtp::{
+    SmtpClient, SmtpDelivery, SmtpEncryption, SmtpFailure, SmtpMessage, SmtpTrace,
+};
 use crate::{AppState, CredentialMode};
 
 /// The ledger scope every mail-configuration change is recorded under.
@@ -127,6 +129,68 @@ pub struct EmailTestResult {
     /// conversation transcript. Present on success as well as failure: a send that works but runs
     /// unencrypted, or takes 19 seconds, is worth seeing.
     pub trace: SmtpTrace,
+}
+
+/// Wire view of one recorded delivery attempt (t108) — the admin surface's row.
+///
+/// This is a **delivery record, not a queue**: there is no `queued`/`sending` status because
+/// nothing drains a queue in this build, and the UI must not imply one exists. Every attempt is
+/// terminal — `sent` or `failed`. The full `recipient` and the relay's own `failure_detail` are
+/// here on purpose: an operator manages mail from this list, and both live in a table that can be
+/// erased on request, which the ledger cannot.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct EmailDeliveryView {
+    pub id: String,
+    pub template_id: String,
+    pub user_id: Option<String>,
+    pub recipient: String,
+    /// `sent` or `failed`. Never `queued` — see the type note.
+    pub status: String,
+    pub attempt: i64,
+    /// The attempt this one retried, if any, so the admin UI can show the chain.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_stage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_code: Option<i64>,
+    /// The relay's own words on a failure. Present only on `failed` rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_detail: Option<String>,
+    pub created_at: String,
+    /// The ledger event this attempt appended, for cross-reference with the immutable record.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_seq: Option<i64>,
+    pub actor: String,
+    /// Whether this message can be **re-sent** from durable state. A token-bearing message is not
+    /// (its secret is unrecoverable); its honest counterpart is **re-issue**, a different operation
+    /// under a different permission. See [`delivery_is_resendable`].
+    pub resendable: bool,
+}
+
+impl From<&chancela_store::StoredEmailDelivery> for EmailDeliveryView {
+    fn from(row: &chancela_store::StoredEmailDelivery) -> Self {
+        use time::format_description::well_known::Rfc3339;
+        EmailDeliveryView {
+            id: row.id.clone(),
+            template_id: row.template_id.clone(),
+            user_id: row.user_id.clone(),
+            recipient: row.recipient.clone(),
+            status: row.status.clone(),
+            attempt: row.attempt,
+            previous_id: row.previous_id.clone(),
+            failure_stage: row.failure_stage.clone(),
+            failure_kind: row.failure_kind.clone(),
+            failure_code: row.failure_code,
+            failure_detail: row.failure_detail.clone(),
+            created_at: row.created_at.format(&Rfc3339).unwrap_or_default(),
+            event_seq: row.event_seq,
+            actor: row.actor.clone(),
+            resendable: delivery_is_resendable(row),
+        }
+    }
 }
 
 // --- Handlers -----------------------------------------------------------------------------------
@@ -297,6 +361,139 @@ pub async fn post_email_test(
     Ok(Json(result))
 }
 
+/// How many recorded deliveries the admin list returns at most. Bounded because the delivery
+/// history grows without limit; the list is "most recent first", which is what an operator chasing
+/// a just-failed message wants.
+const DELIVERIES_PAGE_LIMIT: i64 = 200;
+
+/// `GET /v1/settings/email/deliveries` — the recorded outcome of every outbound message, newest
+/// first (t108).
+///
+/// This is the surface the user asked to "see" and "manage". It is a **delivery record**, not a
+/// queue: every row is a terminal `sent`/`failed` outcome, and there is deliberately no pending
+/// state to display. Gated on `settings.read` — the same audience as the rest of the email
+/// configuration.
+pub async fn list_email_deliveries(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<EmailDeliveryView>>, ApiError> {
+    require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
+    let Some(store) = &state.store else {
+        // An in-memory instance keeps no delivery history; an empty list is the honest answer, not
+        // an error.
+        return Ok(Json(Vec::new()));
+    };
+    let rows = store
+        .read_blocking_async(move |s| s.email_deliveries(DELIVERIES_PAGE_LIMIT))
+        .await
+        .map_err(|e| ApiError::Internal(format!("reading the delivery record failed: {e}")))?;
+    Ok(Json(rows.iter().map(EmailDeliveryView::from).collect()))
+}
+
+/// `POST /v1/settings/email/deliveries/{id}/resend` — re-send a recorded message from durable state
+/// (t108).
+///
+/// ## Why this is a *resend* and not a general retry button
+///
+/// It re-sends only messages whose content is fully derivable from durable non-secret state — today
+/// exactly the welcome mail (see [`delivery_is_resendable`]). A token-bearing message
+/// (invitation, recovery, 2FA) is refused with `422` and a pointer to re-issue, because its secret
+/// is unrecoverable and, more importantly, minting a fresh one **grants access** and so belongs to
+/// the token flow's own permission (`user.invite`), never this one. Offering it here would be a
+/// privilege-escalation path disguised as a convenience: whoever administers the SMTP relay could
+/// mint invitations.
+///
+/// A resend **inserts a new row** linked to the one it retried by `previous_id`, so the history of
+/// attempts is preserved rather than overwritten, and appends its own ledger event (attempt N).
+/// Gated on `settings.manage`, the same bar as the test send.
+pub async fn resend_email_delivery(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Result<Json<EmailDeliveryView>, ApiError> {
+    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+
+    let Some(store) = &state.store else {
+        return Err(ApiError::Unprocessable(
+            "this instance keeps no delivery record to resend from".to_owned(),
+        ));
+    };
+    let lookup_id = id.clone();
+    let previous = store
+        .read_blocking_async(move |s| s.email_delivery(&lookup_id))
+        .await
+        .map_err(|e| ApiError::Internal(format!("reading the delivery record failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+
+    if !delivery_is_resendable(&previous) {
+        // The honest refusal names the alternative rather than silently doing nothing. A
+        // token-bearing message is re-issued through its own flow, under its own authority.
+        return Err(ApiError::Unprocessable(
+            "this message carried a one-time credential and cannot be resent from the delivery \
+             record; re-issue it through the flow that owns it (for an invitation, issue a new \
+             invite)"
+                .to_owned(),
+        ));
+    }
+
+    // Re-render the welcome message from durable, non-secret account state. The recipient recorded
+    // on the row is authoritative; the display name and locale come from the account, so a resend
+    // reflects the account as it stands now (e.g. a since-corrected name).
+    let user_id = previous
+        .user_id
+        .as_deref()
+        .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
+        .ok_or_else(|| {
+            ApiError::Unprocessable(
+                "this delivery is not linked to an account and cannot be re-rendered".to_owned(),
+            )
+        })?;
+    let (display_name, locale_override) = {
+        let users = state.users.read().await;
+        let user = users
+            .get(&crate::users::UserId(user_id))
+            .ok_or(ApiError::NotFound)?;
+        (
+            user.display_name.clone(),
+            user.language.fixed().map(|l| l.as_str().to_owned()),
+        )
+    };
+
+    let actor_label = actor.resolve("system");
+    let outcome = send_welcome_email(
+        &state,
+        &previous.recipient,
+        Some(&display_name),
+        // Not the resending operator: they did not create the account, and the welcome body's
+        // "created by" line would misstate history if it named them.
+        None,
+        locale_override.as_deref(),
+    )
+    .await;
+
+    let new_row = record_send_outcome(
+        &state,
+        &actor_label,
+        &attestor,
+        SendRecord {
+            template_id: WELCOME_TEMPLATE_ID,
+            user_id: Some(user_id),
+            recipient: &previous.recipient,
+            token_subject: None,
+            token_purpose: None,
+        },
+        &outcome,
+        Some(&previous),
+    )
+    .await?;
+
+    // The resend's own outcome is the response. Unlike account creation, a resend is an operator
+    // action *about delivery*, so a relay refusal here is reported to the caller — surfaced as the
+    // new `failed` row — rather than swallowed.
+    Ok(Json(EmailDeliveryView::from(&new_row)))
+}
+
 // --- Sending -------------------------------------------------------------------------------------
 
 /// A relay ready to send, assembled from the settings document plus the stored password.
@@ -368,7 +565,59 @@ async fn build_relay(state: &AppState, purpose: &str) -> Result<Relay, ApiError>
     })
 }
 
+/// Why an outbound send did not deliver, in a shape a recorder can file rather than a string.
+///
+/// The two arms are genuinely different facts and an operator needs to tell them apart: nobody ever
+/// spoke to a relay in the first case, and a relay was reached and refused in the second. Flattening
+/// both into one `ApiError` string — which is what this module did before t108 — destroyed the
+/// stage, kind and code before anything could record them.
+#[derive(Debug)]
+pub(crate) enum SendFailure {
+    /// Mail is not configured well enough to attempt a send; [`build_relay`] refused. Carries our
+    /// own refusal text, which is server-authored and names a missing setting, never a credential.
+    NotConfigured(ApiError),
+    /// A relay was reached and said no, in its own words.
+    Refused(SmtpFailure),
+}
+
+impl SendFailure {
+    /// The stage this failed at, using the SMTP stage vocabulary plus `not_configured` for the
+    /// case that never reached a socket. Enum-valued and therefore safe to store verbatim in a
+    /// hash-chained field: unlike a relay's free text, it cannot carry a recipient address.
+    fn stage(&self) -> &'static str {
+        match self {
+            SendFailure::NotConfigured(_) => "not_configured",
+            SendFailure::Refused(failure) => failure.stage.as_str(),
+        }
+    }
+
+    /// The failure kind, same vocabulary rule as [`stage`](Self::stage).
+    fn kind(&self) -> &'static str {
+        match self {
+            SendFailure::NotConfigured(_) => "not_configured",
+            SendFailure::Refused(failure) => failure.kind.as_str(),
+        }
+    }
+}
+
+impl From<SendFailure> for ApiError {
+    fn from(failure: SendFailure) -> ApiError {
+        match failure {
+            SendFailure::NotConfigured(error) => error,
+            SendFailure::Refused(failure) => ApiError::Unprocessable(format!(
+                "the welcome message was not accepted by the relay at stage {}: {}",
+                failure.stage.as_str(),
+                failure.summary()
+            )),
+        }
+    }
+}
+
 /// Send the welcome message for a newly created account (t70, for t71's `send_welcome_email` flag).
+///
+/// **Private since t108.** [`send_and_record_welcome_email`] is the only crate-visible way to send
+/// one, so a new caller cannot accidentally send mail that nothing records — which is exactly how
+/// the outcome of the only real message this product sends came to be recorded nowhere at all.
 ///
 /// ## What it does not send
 ///
@@ -401,7 +650,7 @@ async fn build_relay(state: &AppState, purpose: &str) -> Result<Relay, ApiError>
 ///
 /// An unrecognised tag is not an error: [`crate::email_template::copy_for`] falls back to the source
 /// locale, so a stale stored preference sends Portuguese mail rather than no mail.
-pub(crate) async fn send_welcome_email(
+async fn send_welcome_email(
     state: &AppState,
     recipient_email: &str,
     recipient_name: Option<&str>,
@@ -410,12 +659,14 @@ pub(crate) async fn send_welcome_email(
     // (`settings.documents.locale`), which is also what an `"auto"` preference resolves to —
     // there is no browser to detect from when the server renders a message.
     locale_override: Option<&str>,
-) -> Result<(), ApiError> {
+) -> Result<SmtpDelivery, SendFailure> {
     let Relay {
         client,
         from_address,
         from_name,
-    } = build_relay(state, "sending a welcome message").await?;
+    } = build_relay(state, "sending a welcome message")
+        .await
+        .map_err(SendFailure::NotConfigured)?;
 
     let (instance_name, locale, sign_in_url) = {
         let all = state.settings.read().await;
@@ -428,11 +679,16 @@ pub(crate) async fn send_welcome_email(
                 .unwrap_or(email_template::PRODUCT_NAME)
                 .to_owned(),
             locale_override.unwrap_or_else(|| all.documents.locale.as_str()),
-            // The instance's own base URL is not recorded in settings, and guessing one would put a
-            // wrong link in front of a new user. Omitted until there is a configured value to use.
-            None,
+            // t95 P0-3. There is now a configured value to use — and it is the ONLY thing that may
+            // be used. `platform.public_base_url` is set by an operator; it is never derived from
+            // the `Host` header of whatever request happens to be creating this user, because that
+            // is host-header injection and would let a caller aim the link at a domain they own.
+            // The original refusal to guess stands unchanged for the unconfigured case: absent
+            // means the mail goes out with no sign-in link, not with a plausible-looking one.
+            all.platform.resolved_public_base_url(),
         )
     };
+    let sign_in_url = sign_in_url.as_deref();
 
     let rendered = email_template::welcome_email(&WelcomeEmail {
         recipient_name,
@@ -455,16 +711,304 @@ pub(crate) async fn send_welcome_email(
         message_id: format!("{}@chancela.invalid", uuid::Uuid::new_v4()),
     };
 
-    client.send(&message).await.map_err(|failure| {
-        // The relay's own code and text, not a generic "could not send" — the same fidelity the
-        // test-send gives, because this is the same class of problem.
-        ApiError::Unprocessable(format!(
-            "the welcome message was not accepted by the relay at stage {}: {}",
-            failure.stage.as_str(),
-            failure.summary()
-        ))
-    })?;
-    Ok(())
+    // The relay's own structured refusal, kept structured. The `ApiError` prose the caller used to
+    // get is still available via `From<SendFailure>`, but it is now derived at the point of display
+    // rather than at the point of failure — so the recorder above sees stage, kind and code.
+    client.send(&message).await.map_err(SendFailure::Refused)
+}
+
+// --- Recording outbound sends (t108) --------------------------------------------------------------
+
+/// The ledger scope outbound-message outcomes are recorded under. `"user"` rather than `"email"`:
+/// the question these events answer is "what happened to *this person's* invitation", which belongs
+/// beside `user.created` in the user's own audit trail, not in the relay's configuration history.
+const SEND_SCOPE: &str = "user";
+
+/// A welcome message to send and file the outcome of.
+///
+/// Grouped into a struct rather than added to an already-five-argument positional list, because the
+/// recording wrapper is the entry point new senders will copy and a call site of eight positional
+/// arguments is one a future caller gets wrong silently.
+pub(crate) struct WelcomeMessage<'a> {
+    /// The account the message is about. This is the **pseudonymous key** the outcome is filed
+    /// under, and deliberately the only account identifier that reaches the hash chain.
+    pub user_id: uuid::Uuid,
+    /// Where it is going. Used to send, and to derive the domain that is recorded; the address
+    /// itself is not written to the ledger — see [`send_and_record_welcome_email`].
+    pub recipient_email: &'a str,
+    pub recipient_name: Option<&'a str>,
+    /// Who created the account, as the message body names them.
+    pub created_by: Option<&'a str>,
+    /// The recipient's locale preference; `None` ⇒ the platform default (t71).
+    pub locale_override: Option<&'a str>,
+}
+
+/// Send a welcome message **and record what happened to it** (t108).
+///
+/// ## Why this exists
+///
+/// Before t108 the outcome of the only real mail this product sends was recorded nowhere durable:
+/// `create_user` called the sender inline and dropped the `Result` into a `tracing::warn!`. An
+/// operator asking "did this person ever receive their invitation?" had no way to answer it from
+/// the product. Every send now appends `user.welcome_email_sent` or `user.welcome_email_failed`.
+///
+/// [`send_welcome_email`] is private so that this is the only way to send one. A recorder a caller
+/// can forget to call is a recorder that will eventually not be called.
+///
+/// ## What reaches the hash chain, and what deliberately does not
+///
+/// The ledger keeps only a **digest** of the payload (`Ledger::append` hashes it and drops the
+/// bytes; the `events` table has no payload column). So the readable facts are the ones in `kind`
+/// and `justification`, and both are held to non-personal, enum-or-uuid content:
+///
+/// - **No body content**, in any form. This function never touches `rendered.text_body` or
+///   `html_body` — they exist only inside the private sender and go to the socket. The same line
+///   `SmtpTrace` already holds by summarising a body as `<message body: N bytes>`.
+/// - **No credential.** Nothing here reads the relay password; it is decrypted only inside
+///   `build_relay`, into a `Zeroizing` buffer, and the trace's `&'static str` redaction path keeps
+///   it out of diagnostics. This function is downstream of all of that and takes no secret.
+/// - **Not the recipient address**, only its **domain**. The address is personal data and a hash
+///   chain cannot honour an erasure request. It would also be inert if included: the payload bytes
+///   are discarded, so the address would survive only as *preimage to a published digest* — and an
+///   e-mail address is low-entropy enough that such a digest is a confirmation oracle, which is a
+///   disclosure with no compensating benefit. The domain is what actually diagnoses a relay problem
+///   ("everything to one provider is being refused") and is not personal to an individual.
+/// - **Not the relay's own refusal text**, for the same reason and one more: an `RCPT TO` rejection
+///   routinely quotes the address back (`550 5.1.1 <…>: Recipient address rejected`), so storing it
+///   verbatim would reintroduce exactly what the line above excludes. Only the **stage** and
+///   **kind** are recorded — enum values that cannot carry an address. The relay's full text still
+///   reaches the operator through the caller's log line, at full fidelity and undiminished.
+///
+/// ## What it returns
+///
+/// The `Result`, unchanged in meaning: a failed welcome message must not fail the account creation,
+/// and the caller stays free to decide that. What changed is that ignoring it no longer makes the
+/// failure invisible.
+pub(crate) async fn send_and_record_welcome_email(
+    state: &AppState,
+    actor: &str,
+    attestor: &CurrentAttestor,
+    message: WelcomeMessage<'_>,
+) -> Result<(), ApiError> {
+    let outcome = send_welcome_email(
+        state,
+        message.recipient_email,
+        message.recipient_name,
+        message.created_by,
+        message.locale_override,
+    )
+    .await;
+
+    // The welcome message carries no bearer credential (no token, no sign-in link — it is the one
+    // mail whose content is fully derivable from durable non-secret state), so `token_*` are `None`
+    // and this message is resendable. A token-bearing sender would fill them in and be re-issuable
+    // rather than resendable.
+    record_send_outcome(
+        state,
+        actor,
+        attestor,
+        SendRecord {
+            template_id: WELCOME_TEMPLATE_ID,
+            user_id: Some(message.user_id),
+            recipient: message.recipient_email,
+            token_subject: None,
+            token_purpose: None,
+        },
+        &outcome,
+        None,
+    )
+    .await?;
+
+    outcome.map(|_| ()).map_err(ApiError::from)
+}
+
+/// What a send was, independent of its outcome — the descriptor every sender hands the recorder.
+///
+/// Deliberately small and non-secret: a template id, the account it concerns, where it went, and a
+/// *reference* to any bearer credential (subject + purpose), never the credential itself. There is
+/// no field for a rendered body, so the recorder cannot file one even by mistake.
+pub(crate) struct SendRecord<'a> {
+    pub template_id: &'a str,
+    pub user_id: Option<uuid::Uuid>,
+    pub recipient: &'a str,
+    /// The bearer credential's subject, when the message carried one. Presence of a token is what
+    /// makes a message re-issuable rather than resendable.
+    pub token_subject: Option<&'a str>,
+    pub token_purpose: Option<&'a str>,
+}
+
+/// Append the ledger event **and** write the durable delivery row for one send outcome (t108).
+///
+/// The two records answer different questions and this product wants both:
+///
+/// - **the ledger event** is immutable and attestable — "an invitation to this account failed, by
+///   this operator, at this instant"; it carries only the recipient's *domain* and the failure
+///   *stage/kind*, because a hash chain cannot be erased and the relay's own text quotes the
+///   address back;
+/// - **the `email_deliveries` row** is mutable and operable — it holds the full recipient and the
+///   relay's own words so an operator can act on them, and can be erased on request.
+///
+/// The row references the event by `seq`, so the erasable record and the immutable one can be
+/// reconciled. Neither record can hold a rendered body or a token: the ledger drops its payload
+/// bytes, and the row has no column for either.
+///
+/// A store failure here does not un-send a message that already went, and — via the caller's
+/// swallow — does not fail an account creation. It fails *this recording*, which the caller logs.
+async fn record_send_outcome(
+    state: &AppState,
+    actor: &str,
+    attestor: &CurrentAttestor,
+    record: SendRecord<'_>,
+    outcome: &Result<SmtpDelivery, SendFailure>,
+    // The attempt this one retries, when it is a resend. `None` for a first attempt. Its `id`
+    // becomes `previous_id` and its `attempt` is incremented, so history chains rather than
+    // overwrites.
+    previous: Option<&chancela_store::StoredEmailDelivery>,
+) -> Result<chancela_store::StoredEmailDelivery, ApiError> {
+    let attempt = previous.map_or(1, |p| p.attempt + 1);
+    let user_label = record
+        .user_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "-".to_owned());
+    // A resend's ledger event names itself as attempt N, so the immutable record distinguishes it
+    // from the original send without needing the mutable row.
+    let attempt_note = if attempt > 1 {
+        format!(" (attempt {attempt})")
+    } else {
+        String::new()
+    };
+    let (kind, status, justification, payload) = match outcome {
+        Ok(delivery) => (
+            "user.welcome_email_sent",
+            "sent",
+            format!(
+                "{} for user {user_label} accepted by the relay{attempt_note}",
+                record.template_id
+            ),
+            serde_json::json!({
+                "template": record.template_id,
+                "user_id": record.user_id,
+                "recipient_domain": recipient_domain(record.recipient),
+                "ok": true,
+                "tls": delivery.tls,
+                "authenticated": delivery.authenticated,
+            }),
+        ),
+        Err(failure) => (
+            "user.welcome_email_failed",
+            "failed",
+            format!(
+                "{} for user {user_label} not sent: {} at {}",
+                record.template_id,
+                failure.kind(),
+                failure.stage()
+            ),
+            serde_json::json!({
+                "template": record.template_id,
+                "user_id": record.user_id,
+                "recipient_domain": recipient_domain(record.recipient),
+                "ok": false,
+                "failure_stage": failure.stage(),
+                "failure_kind": failure.kind(),
+                "failure_code": match failure {
+                    SendFailure::Refused(f) => f.code,
+                    SendFailure::NotConfigured(_) => None,
+                },
+            }),
+        ),
+    };
+    let event_seq =
+        append_audit_as(state, actor, attestor, SEND_SCOPE, kind, Some(&justification), payload)
+            .await?;
+
+    // The durable, erasable half. `failure_detail` is the relay's own words — kept only here.
+    let (tls, authenticated, failure_stage, failure_kind, failure_code, failure_detail) =
+        match outcome {
+            Ok(delivery) => (
+                Some(delivery.tls),
+                Some(delivery.authenticated),
+                None,
+                None,
+                None,
+                None,
+            ),
+            Err(failure) => (
+                None,
+                None,
+                Some(failure.stage().to_owned()),
+                Some(failure.kind().to_owned()),
+                match failure {
+                    SendFailure::Refused(f) => f.code.map(i64::from),
+                    SendFailure::NotConfigured(_) => None,
+                },
+                Some(match failure {
+                    SendFailure::Refused(f) => f.summary(),
+                    // Our own server-authored refusal, which names a missing setting and carries
+                    // no credential. `build_relay` only ever raises `Unprocessable` here.
+                    SendFailure::NotConfigured(ApiError::Unprocessable(msg)) => msg.clone(),
+                    SendFailure::NotConfigured(_) => "mail is not configured".to_owned(),
+                }),
+            ),
+        };
+    let delivery = chancela_store::StoredEmailDelivery {
+        id: uuid::Uuid::new_v4().to_string(),
+        template_id: record.template_id.to_owned(),
+        user_id: record.user_id.map(|id| id.to_string()),
+        recipient: record.recipient.to_owned(),
+        status: status.to_owned(),
+        attempt,
+        previous_id: previous.map(|p| p.id.clone()),
+        token_subject: record.token_subject.map(str::to_owned),
+        token_purpose: record.token_purpose.map(str::to_owned),
+        tls,
+        authenticated,
+        failure_stage,
+        failure_kind,
+        failure_code,
+        failure_detail,
+        created_at: OffsetDateTime::now_utc(),
+        event_seq: Some(event_seq as i64),
+        actor: actor.to_owned(),
+    };
+    if let Some(store) = &state.store {
+        let row = delivery.clone();
+        store
+            .read_blocking_async(move |s| s.insert_email_delivery(&row))
+            .await
+            .map_err(|e| ApiError::Internal(format!("recording the send outcome failed: {e}")))?;
+    }
+    Ok(delivery)
+}
+
+/// The template identifier recorded against a welcome message, so a later sender's outcomes are
+/// distinguishable from these without adding an event kind per template.
+const WELCOME_TEMPLATE_ID: &str = "user.welcome";
+
+/// Whether a recorded delivery can be **re-sent** — as opposed to re-issued.
+///
+/// True only when the message's content is fully derivable from durable non-secret state, which is
+/// the case exactly when it carried no bearer credential. A row with a `token_subject` referenced a
+/// token whose secret the server no longer holds (`AuthTokenStore` keeps only `sha256(secret)`), so
+/// its original body is *mathematically* unreproducible — not merely disallowed. Such a message is
+/// re-issuable instead, which mints a fresh secret and therefore **grants access**; that is a
+/// different operation gated on the token flow's own permission (`user.invite`), never on the
+/// email-settings permission. See [`resend_email_delivery`].
+///
+/// Today the only re-renderable template is the welcome message: given a `user_id`, its body is
+/// rebuilt from the account's stored display name and locale, with no secret anywhere in the path.
+fn delivery_is_resendable(row: &chancela_store::StoredEmailDelivery) -> bool {
+    row.token_subject.is_none() && row.template_id == WELCOME_TEMPLATE_ID
+}
+
+/// The domain half of an address, lowercased, or `"unknown"` when there is no `@` to split on.
+///
+/// Only ever the part after the last `@`: a local part can itself contain one in a quoted address,
+/// and taking the first would leak a fragment of the personal half into the record.
+fn recipient_domain(address: &str) -> String {
+    match address.rsplit_once('@') {
+        Some((_, domain)) if !domain.is_empty() => domain.to_ascii_lowercase(),
+        _ => "unknown".to_owned(),
+    }
 }
 
 // --- Helpers ------------------------------------------------------------------------------------
@@ -621,20 +1165,41 @@ async fn append_audit(
     payload: serde_json::Value,
 ) -> Result<(), ApiError> {
     let actor_label = actor.resolve("system");
+    append_audit_as(state, &actor_label, attestor, AUDIT_SCOPE, kind, None, payload)
+        .await
+        .map(|_seq| ())
+}
+
+/// [`append_audit`] for a caller that already holds a resolved actor label and needs to choose the
+/// scope and justification — the outbound-send recorder, whose events belong in the `user` scope
+/// (t108) and whose justification is the only field an operator can actually read back.
+///
+/// Returns the appended event's global `seq`, so the delivery row can reference the immutable
+/// record it sits beside.
+async fn append_audit_as(
+    state: &AppState,
+    actor_label: &str,
+    attestor: &CurrentAttestor,
+    scope: &str,
+    kind: &str,
+    justification: Option<&str>,
+    payload: serde_json::Value,
+) -> Result<u64, ApiError> {
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     let mut ledger = state.ledger.write().await;
-    ledger.append(&actor_label, AUDIT_SCOPE, kind, None, &bytes);
+    let seq = ledger.append(actor_label, scope, kind, justification, &bytes).seq;
     state
         .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
         .await?;
     state.attest_latest(attestor, &ledger).await;
-    Ok(())
+    Ok(seq)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ProviderCredentialStore;
+    use chancela_store::StoredEmailDelivery;
     use crate::actor::SESSION_TTL_SECS;
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
@@ -707,6 +1272,9 @@ mod tests {
             password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
             retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role, Scope::Global)],
@@ -1178,6 +1746,560 @@ mod tests {
             decoded.contains(crate::email_template::copy_for("pt-PT").welcome_never_sends),
             "{decoded}"
         );
+    }
+
+    // --- Recording the outcome of a send (t108) --------------------------------------------------
+
+    /// A relay that gets as far as `RCPT TO` and refuses, **quoting the recipient's address back**
+    /// in its reply — which is what real relays do (`550 5.1.1 <…>: Recipient address rejected`).
+    ///
+    /// That detail is the whole point of this helper rather than a generic rejection: it makes the
+    /// leakage assertion below load-bearing. A record that stored "the relay's own failure text"
+    /// verbatim would pass a test against a relay that answered `550 no`, and would silently write
+    /// a recipient's address into an append-only chain the moment it met a relay that answered like
+    /// a real one.
+    async fn address_quoting_rejecting_relay() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.expect("accept");
+            let mut stream = BufReader::new(socket);
+            stream
+                .get_mut()
+                .write_all(b"220 relay.example.pt ESMTP ready\r\n")
+                .await
+                .expect("greeting");
+            loop {
+                let mut line = String::new();
+                if stream.read_line(&mut line).await.unwrap_or(0) == 0 {
+                    return;
+                }
+                let upper = line.trim_end_matches(['\r', '\n']).to_ascii_uppercase();
+                let reply = if upper.starts_with("EHLO") {
+                    "250-relay.example.pt\r\n250-PIPELINING\r\n250 AUTH PLAIN LOGIN\r\n".to_owned()
+                } else if upper.starts_with("AUTH") {
+                    "235 2.7.0 Authentication successful\r\n".to_owned()
+                } else if upper.starts_with("RCPT") {
+                    format!("550 5.1.1 <{RECIPIENT}>: Recipient address rejected: no such user\r\n")
+                } else if upper.starts_with("QUIT") {
+                    let _ = stream.get_mut().write_all(b"221 Bye\r\n").await;
+                    return;
+                } else {
+                    "250 Ok\r\n".to_owned()
+                };
+                if stream.get_mut().write_all(reply.as_bytes()).await.is_err() {
+                    return;
+                }
+            }
+        });
+        port
+    }
+
+    /// The one address these tests send to, so every leak assertion has a single needle.
+    const RECIPIENT: &str = "amelia.marques@encosto-estrategico.pt";
+
+    /// Everything an operator can actually read back off an event. Deliberately *not* the payload:
+    /// `Ledger::append` hashes the payload and drops the bytes, and the `events` table has no
+    /// column for it, so a test that asserted against the payload would be asserting against data
+    /// no operator will ever see — and would report a leak-free record that leaked.
+    async fn readable_events(state: &AppState) -> Vec<(String, String, String, String)> {
+        state
+            .ledger
+            .read()
+            .await
+            .events()
+            .iter()
+            .map(|e| {
+                (
+                    e.kind.clone(),
+                    e.scope.clone(),
+                    e.actor.clone(),
+                    e.justification.clone().unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
+
+    fn welcome_message(user_id: uuid::Uuid) -> WelcomeMessage<'static> {
+        WelcomeMessage {
+            user_id,
+            recipient_email: RECIPIENT,
+            recipient_name: Some("Amélia Marques"),
+            created_by: Some("Rui Bastos"),
+            locale_override: None,
+        }
+    }
+
+    /// The gap t108 exists to close: a send that worked is now a fact in the ledger, not a
+    /// discarded `Ok`.
+    #[tokio::test]
+    async fn a_delivered_welcome_message_is_recorded_as_sent() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        let (port, _captured) = capturing_relay().await;
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+        let user_id = uuid::Uuid::new_v4();
+
+        send_and_record_welcome_email(
+            &state,
+            "rui.bastos",
+            &CurrentAttestor::default(),
+            welcome_message(user_id),
+        )
+        .await
+        .expect("the relay accepted the welcome message");
+
+        let events = readable_events(&state).await;
+        let (kind, scope, actor, justification) = events
+            .iter()
+            .find(|(kind, ..)| kind.starts_with("user.welcome_email"))
+            .expect("the send was recorded");
+        assert_eq!(kind, "user.welcome_email_sent");
+        assert_eq!(scope, "user", "the outcome belongs in the user's audit trail");
+        assert_eq!(actor, "rui.bastos", "the record names who caused the send");
+        assert!(
+            justification.contains(&user_id.to_string()),
+            "the record does not say which account it is about: {justification}"
+        );
+    }
+
+    /// **The one that closes the reported gap.** A relay refusal used to vanish into a
+    /// `tracing::warn!`, so an operator could not tell "invitation delivered" from "invitation
+    /// silently refused" — for the only real message this product sends.
+    #[tokio::test]
+    async fn a_refused_welcome_message_is_recorded_as_failed_and_still_reports_the_error() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        let port = address_quoting_rejecting_relay().await;
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+        let user_id = uuid::Uuid::new_v4();
+
+        let error = send_and_record_welcome_email(
+            &state,
+            "rui.bastos",
+            &CurrentAttestor::default(),
+            welcome_message(user_id),
+        )
+        .await
+        .expect_err("the relay refused the recipient");
+        // The caller still gets the relay's own words at full fidelity — that half is unchanged,
+        // and is now the *only* place they appear.
+        let reported = format!("{error:?}");
+        assert!(reported.contains("rcpt_to"), "{reported}");
+        assert!(reported.contains("550"), "{reported}");
+
+        let events = readable_events(&state).await;
+        let (kind, scope, _, justification) = events
+            .iter()
+            .find(|(kind, ..)| kind.starts_with("user.welcome_email"))
+            .expect("the refusal was recorded");
+        assert_eq!(kind, "user.welcome_email_failed");
+        assert_eq!(scope, "user");
+        // Enough to act on: which account, and where in the conversation it died.
+        assert!(justification.contains(&user_id.to_string()), "{justification}");
+        assert!(
+            justification.contains("rcpt_to"),
+            "the record does not say where it failed: {justification}"
+        );
+    }
+
+    /// Mail that was never configured is a *different* fact from a relay that said no, and an
+    /// operator chasing a missing invitation needs to tell them apart — one is their own settings,
+    /// the other is the recipient's provider. Neither reached a socket in the same way.
+    #[tokio::test]
+    async fn an_unconfigured_relay_is_recorded_as_a_failure_too() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        let user_id = uuid::Uuid::new_v4();
+
+        send_and_record_welcome_email(
+            &state,
+            "rui.bastos",
+            &CurrentAttestor::default(),
+            welcome_message(user_id),
+        )
+        .await
+        .expect_err("no relay is configured");
+
+        let events = readable_events(&state).await;
+        let (kind, _, _, justification) = events
+            .iter()
+            .find(|(kind, ..)| kind.starts_with("user.welcome_email"))
+            .expect("the unattempted send was recorded");
+        assert_eq!(kind, "user.welcome_email_failed");
+        assert!(
+            justification.contains("not_configured"),
+            "an unconfigured relay is indistinguishable from a rejection: {justification}"
+        );
+    }
+
+    /// **The load-bearing one, and the counterpart of
+    /// [`the_delivered_welcome_message_carries_no_credential`].** That test guards what leaves the
+    /// process; this guards what the process keeps.
+    ///
+    /// Asserted against every readable field of every event — not against the record this task
+    /// wrote, because a leak that mattered would be one some *other* append introduced.
+    #[tokio::test]
+    async fn no_readable_field_of_the_record_carries_an_address_a_body_or_a_credential() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        // The relay quotes the address back in its refusal, so a record that stored the relay's
+        // text verbatim would fail here — which is exactly the regression being guarded.
+        let port = address_quoting_rejecting_relay().await;
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+
+        send_and_record_welcome_email(
+            &state,
+            "rui.bastos",
+            &CurrentAttestor::default(),
+            welcome_message(uuid::Uuid::new_v4()),
+        )
+        .await
+        .expect_err("the relay refused the recipient");
+
+        let events = readable_events(&state).await;
+        assert!(
+            events.iter().any(|(k, ..)| k == "user.welcome_email_failed"),
+            "nothing was recorded, so this test proved nothing"
+        );
+        // The body a recipient would have read, in the locale it was rendered in.
+        let body_phrase = crate::email_template::copy_for("pt-PT").welcome_never_sends;
+        for (kind, scope, actor, justification) in &events {
+            for field in [kind, scope, actor, justification] {
+                assert!(
+                    !field.contains(RECIPIENT),
+                    "a recipient address reached a readable ledger field: {field}"
+                );
+                assert!(
+                    !field.contains("amelia.marques"),
+                    "the local part of an address reached a readable ledger field: {field}"
+                );
+                assert!(
+                    !field.contains(RELAY_PASSWORD),
+                    "the relay password reached a readable ledger field: {field}"
+                );
+                assert!(
+                    !field.contains(body_phrase),
+                    "message body content reached a readable ledger field: {field}"
+                );
+                assert!(
+                    !field.contains("Recipient address rejected"),
+                    "the relay's verbatim text reached a readable ledger field, and it quotes \
+                     the address: {field}"
+                );
+            }
+        }
+    }
+
+    /// The durable half: a store-backed instance writes an `email_deliveries` **row** whose full
+    /// recipient and whose relay text are present — the erasable record an operator manages — while
+    /// the same attempt's ledger event holds neither. This is the split the whole design turns on,
+    /// so it is asserted against both records at once.
+    #[tokio::test]
+    async fn a_store_backed_send_writes_an_erasable_row_that_the_ledger_event_does_not_mirror() {
+        let temp = TempDir::new();
+        // A store-backed state, unlike `state_with_store`, actually persists the delivery row.
+        let state = crate::AppState::with_data_dir(&temp.dir);
+        let port = address_quoting_rejecting_relay().await;
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+        let user_id = uuid::Uuid::new_v4();
+
+        send_and_record_welcome_email(
+            &state,
+            "rui.bastos",
+            &CurrentAttestor::default(),
+            welcome_message(user_id),
+        )
+        .await
+        .expect_err("the relay refused the recipient");
+
+        // The row: the full address and the relay's own words are here, where they can be erased.
+        let rows = state
+            .store
+            .as_ref()
+            .expect("store-backed")
+            .email_deliveries(10)
+            .expect("read deliveries");
+        assert_eq!(rows.len(), 1, "exactly one attempt was recorded");
+        let row = &rows[0];
+        assert_eq!(row.status, "failed");
+        assert_eq!(row.recipient, RECIPIENT, "the row keeps the full recipient");
+        assert_eq!(row.failure_stage.as_deref(), Some("rcpt_to"));
+        assert_eq!(row.template_id, WELCOME_TEMPLATE_ID);
+        assert_eq!(row.user_id.as_deref(), Some(user_id.to_string().as_str()));
+        assert_eq!(row.attempt, 1);
+        assert!(row.previous_id.is_none(), "a first attempt links to nothing");
+        assert!(
+            row.token_subject.is_none(),
+            "the welcome message carries no bearer credential"
+        );
+        assert!(
+            row.failure_detail
+                .as_deref()
+                .is_some_and(|d| d.contains(RECIPIENT)),
+            "the relay's own words, which quote the address, live in the erasable row"
+        );
+
+        // The ledger event for the same attempt mirrors none of that: no full address, no relay
+        // text. The row references it by seq, so the two can be reconciled without duplicating the
+        // sensitive fields into the immutable record.
+        let events = readable_events(&state).await;
+        for (_, _, _, justification) in &events {
+            assert!(!justification.contains(RECIPIENT), "{justification}");
+            assert!(
+                !justification.contains("Recipient address rejected"),
+                "the relay's verbatim text reached the immutable ledger: {justification}"
+            );
+        }
+        assert!(
+            row.event_seq.is_some(),
+            "the erasable row must reference the immutable event it sits beside"
+        );
+    }
+
+    /// A token-bearing message is **not resendable** and a welcome message is, decided purely from
+    /// the durable row. This is the guard that keeps a resend button from becoming a
+    /// privilege-escalation path: a message that carried a credential can only be re-issued, under
+    /// the token flow's authority, never re-sent from here.
+    #[test]
+    fn resendability_is_decided_by_whether_the_message_carried_a_credential() {
+        let base = StoredEmailDelivery {
+            id: "x".to_owned(),
+            template_id: WELCOME_TEMPLATE_ID.to_owned(),
+            user_id: Some(uuid::Uuid::new_v4().to_string()),
+            recipient: RECIPIENT.to_owned(),
+            status: "failed".to_owned(),
+            attempt: 1,
+            previous_id: None,
+            token_subject: None,
+            token_purpose: None,
+            tls: None,
+            authenticated: None,
+            failure_stage: Some("rcpt_to".to_owned()),
+            failure_kind: Some("rejected".to_owned()),
+            failure_code: Some(550),
+            failure_detail: Some("550 no".to_owned()),
+            created_at: OffsetDateTime::now_utc(),
+            event_seq: Some(1),
+            actor: "rui.bastos".to_owned(),
+        };
+        assert!(delivery_is_resendable(&base), "welcome mail is resendable");
+
+        // A welcome-shaped row that nonetheless references a token is not resendable: the presence
+        // of a credential reference is decisive, whatever the template says.
+        let with_token = StoredEmailDelivery {
+            token_subject: Some("amelia.marques@encosto-estrategico.pt".to_owned()),
+            token_purpose: Some("invite".to_owned()),
+            ..base.clone()
+        };
+        assert!(!delivery_is_resendable(&with_token));
+
+        // An invite template is not resendable even with no token subject recorded: we have no
+        // renderer that can rebuild it without the secret, so the honest answer is "re-issue".
+        let invite = StoredEmailDelivery {
+            template_id: "user.invite".to_owned(),
+            ..base
+        };
+        assert!(!delivery_is_resendable(&invite));
+    }
+
+    /// Seed a store-backed account with a known id, so a resend can re-render from durable state.
+    async fn seed_recipient_account(state: &AppState) -> uuid::Uuid {
+        use crate::users::{User, UserId};
+        use time::format_description::well_known::Rfc3339;
+        let uid = UserId(uuid::Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: "amelia.marques".to_owned(),
+            display_name: "Amélia Marques".to_owned(),
+            email: Some(RECIPIENT.to_owned()),
+            created_at: OffsetDateTime::now_utc().format(&Rfc3339).unwrap(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: Vec::new(),
+            language: crate::users::UserLanguage::Fixed(crate::settings::Locale::PtPt),
+        };
+        state.users.write().await.insert(uid, user);
+        uid.0
+    }
+
+    /// End to end through the router: a failed welcome delivery is resent by an administrator, and
+    /// the resend **appends** a new attempt linked to the original rather than overwriting it — the
+    /// operable half of "manageable". Driven through `POST …/resend` so the permission gate and the
+    /// route are exercised, not just the handler body.
+    #[tokio::test]
+    async fn a_failed_welcome_delivery_can_be_resent_and_the_attempt_chains() {
+        let temp = TempDir::new();
+        let state = crate::AppState::with_data_dir(&temp.dir);
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        let user_id = seed_recipient_account(&state).await;
+
+        // First attempt: the relay refuses, so a `failed` row lands.
+        let reject_port = address_quoting_rejecting_relay().await;
+        configure_relay(&state, reject_port, crate::settings::Locale::PtPt).await;
+        send_and_record_welcome_email(
+            &state,
+            "rui.bastos",
+            &CurrentAttestor::default(),
+            welcome_message(user_id),
+        )
+        .await
+        .expect_err("the relay refused");
+
+        let failed = state.store.as_ref().unwrap().email_deliveries(10).unwrap();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].status, "failed");
+        let failed_id = failed[0].id.clone();
+
+        // Point at a working relay and resend the failed attempt through the real endpoint.
+        let (ok_port, _captured) = capturing_relay().await;
+        configure_relay(&state, ok_port, crate::settings::Locale::PtPt).await;
+        let (status, body) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                &format!("/v1/settings/email/deliveries/{failed_id}/resend"),
+                json!({}),
+            ),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "sent", "the resend reached the working relay");
+        assert_eq!(body["attempt"], 2, "a resend is the next attempt");
+        assert_eq!(body["previous_id"], failed_id);
+        assert_eq!(body["resendable"], true);
+
+        // The history chains rather than overwrites: both attempts survive.
+        let all = state.store.as_ref().unwrap().email_deliveries(10).unwrap();
+        assert_eq!(all.len(), 2, "the resend appended; it did not overwrite");
+    }
+
+    /// A token-bearing delivery is **refused** at resend with a pointer to re-issue, not silently
+    /// resent — the privilege-escalation path the design closes. Also through the router.
+    #[tokio::test]
+    async fn a_token_bearing_delivery_is_refused_at_resend_and_pointed_to_reissue() {
+        let temp = TempDir::new();
+        let state = crate::AppState::with_data_dir(&temp.dir);
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        // Record an invite delivery directly: it references a token subject, so it is not
+        // resendable regardless of its template.
+        let invite = StoredEmailDelivery {
+            id: "inv-1".to_owned(),
+            template_id: "user.invite".to_owned(),
+            user_id: None,
+            recipient: RECIPIENT.to_owned(),
+            status: "failed".to_owned(),
+            attempt: 1,
+            previous_id: None,
+            token_subject: Some(RECIPIENT.to_owned()),
+            token_purpose: Some("invite".to_owned()),
+            tls: None,
+            authenticated: None,
+            failure_stage: Some("rcpt_to".to_owned()),
+            failure_kind: Some("rejected".to_owned()),
+            failure_code: Some(550),
+            failure_detail: Some("550 no".to_owned()),
+            created_at: OffsetDateTime::now_utc(),
+            event_seq: Some(1),
+            actor: "rui.bastos".to_owned(),
+        };
+        state.store.as_ref().unwrap().insert_email_delivery(&invite).unwrap();
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("POST", "/v1/settings/email/deliveries/inv-1/resend", json!({})),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            body["error"].as_str().unwrap_or_default().contains("re-issue"),
+            "the refusal names the alternative: {body}"
+        );
+
+        // And nothing was sent or appended — the refusal is before any send.
+        assert_eq!(
+            state.store.as_ref().unwrap().email_deliveries(10).unwrap().len(),
+            1,
+            "a refused resend must not append an attempt"
+        );
+    }
+
+    /// The list endpoint returns the recorded deliveries newest-first with `resendable` derived,
+    /// and is gated on `settings.read`.
+    #[tokio::test]
+    async fn the_admin_list_returns_recorded_deliveries_with_resendability() {
+        let temp = TempDir::new();
+        let state = crate::AppState::with_data_dir(&temp.dir);
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        let user_id = seed_recipient_account(&state).await;
+
+        let (port, _captured) = capturing_relay().await;
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+        send_and_record_welcome_email(
+            &state,
+            "rui.bastos",
+            &CurrentAttestor::default(),
+            welcome_message(user_id),
+        )
+        .await
+        .expect("delivered");
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("GET", "/v1/settings/email/deliveries", json!({})),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let rows = body.as_array().expect("a list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["status"], "sent");
+        assert_eq!(rows[0]["recipient"], RECIPIENT);
+        assert_eq!(rows[0]["resendable"], true);
+
+        // Reading the record is `settings.read` (the audience is the whole email-config surface),
+        // but *resending* is `settings.manage`: an outbound action a plain reader must not take.
+        let reader_row_id = rows[0]["id"].as_str().unwrap().to_owned();
+        let reader = seed_token(&state, READER_ROLE_ID).await;
+        let (status, _) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                &format!("/v1/settings/email/deliveries/{reader_row_id}/resend"),
+                json!({}),
+            ),
+            Some(&reader),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "a reader must not be able to trigger an outbound resend"
+        );
+    }
+
+    /// The domain is recorded and the local part is not, so a relay-wide problem is diagnosable
+    /// without writing an individual's address into a chain that cannot honour an erasure request.
+    #[test]
+    fn only_the_domain_half_of_an_address_is_derived_for_the_record() {
+        assert_eq!(
+            recipient_domain("amelia.marques@Encosto-Estrategico.PT"),
+            "encosto-estrategico.pt"
+        );
+        // A quoted local part may itself contain an `@`; splitting on the first would carry a
+        // fragment of the personal half into the record.
+        assert_eq!(recipient_domain("\"a@b\"@example.pt"), "example.pt");
+        assert_eq!(recipient_domain("malformed"), "unknown");
+        assert_eq!(recipient_domain("trailing@"), "unknown");
     }
 
     // --- Settings round-trip, password write-only ------------------------------------------------

@@ -69,6 +69,12 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+# t95 P1-C: RFC 6238 TOTP second factor. SHA-1 HMAC (authenticator-app default) + constant-time
+# digit comparison. Both are already in the dependency tree; declared here so the TOTP verifier can
+# use them directly rather than re-deriving HMAC.
+sha1 = { workspace = true }
+hmac = { workspace = true }
+subtle = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tower-http = { workspace = true }

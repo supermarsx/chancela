@@ -89,6 +89,11 @@ pub struct Settings {
     /// Outbound email (SMTP) relay configuration (t23). Non-secret only — the relay password lives
     /// in the credential store, never here. Disabled by default.
     pub email: EmailSettings,
+    /// Authentication, self-signup and second-factor policy (t95). Every field fails closed, and
+    /// the whole slice is skipped on the wire while it is at its defaults, so an existing
+    /// `settings.json` — and `contracts/settings.json` — are unchanged by its arrival.
+    #[serde(default, skip_serializing_if = "AuthSettings::is_default")]
+    pub auth: AuthSettings,
     /// Tenant-level AI/MCP controls. Defaults off so older settings documents do not enable AI.
     pub ai: AiSettings,
     /// Platform operations controls: service desired state, logging levels, and audit metadata.
@@ -114,6 +119,7 @@ impl Default for Settings {
             data_management: DataManagementSettings::default(),
             connectors: ConnectorSettings::default(),
             email: EmailSettings::default(),
+            auth: AuthSettings::default(),
             ai: AiSettings::default(),
             platform: PlatformSettings::default(),
             appearance: AppearanceSettings::default(),
@@ -402,6 +408,22 @@ pub struct DataManagementSettings {
     /// Operator-declared local backup recovery review policy. It only drives local freshness
     /// warnings; it does not execute restore, prove custody, or certify production DR targets.
     pub backup_recovery: BackupRecoveryPolicySettings,
+    /// Operator declaration of the shared-mounted zero-knowledge object root, equivalent to
+    /// `CHANCELA_ZK_SHARED_OBJECT_ROOT` (which wins when both are set).
+    ///
+    /// This is a **fail-closed safety interlock, not a preference**. On PostgreSQL/HA the ZK
+    /// repository routes refuse to serve until this names the shared mount, because a node-local
+    /// root would split object storage silently across the cluster — each node holding objects the
+    /// others cannot see, with no error anywhere. Absent by default, so an older settings document
+    /// can never open the interlock by omission.
+    ///
+    /// It is resolved **once at startup**, so writing it here takes effect at the next restart and
+    /// the UI says so. Deep validation (absolute, exactly `<data_dir>/zk-repositories`, exists,
+    /// writable) happens in `put_settings`, which has the data directory; see
+    /// [`crate::zk_repository::validate_shared_object_root`] for what a single node can and cannot
+    /// check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zk_shared_object_root: Option<String>,
 }
 
 impl DataManagementSettings {
@@ -715,6 +737,403 @@ impl EmailSettings {
     }
 }
 
+// --- Authentication & signup (t95 P0-1) ---------------------------------------------------------
+
+/// Authentication, self-signup and second-factor policy (t95 §3).
+///
+/// **Every field fails closed.** `#[serde(default)]` on the container means a `settings.json`
+/// written before this slice existed deserializes with signup `Disabled`, no recovery links and no
+/// second factor — which is the difference between "we shipped a feature" and "we opened every
+/// existing instance to strangers on upgrade".
+///
+/// The slice carries **no behaviour** in P0: nothing reads it yet. It exists so that the handlers
+/// that will read it (P1) are written against a shape whose invariants — above all the §2.6
+/// default-role ceiling — are already enforced at the door.
+///
+/// No secret ever enters this document. TOTP secrets live AEAD-encrypted in the credential store
+/// and token verifiers live in [`crate::auth_token`], exactly as the SMTP password does.
+///
+/// Magic link is deliberately absent: it was dropped from the tranche by explicit ruling, because a
+/// passwordless session cannot unwrap the user's attestation key and would produce silently
+/// unattested acts.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AuthSettings {
+    /// Who, if anyone, may create their own account.
+    pub signup: SignupSettings,
+    /// Email-based account recovery.
+    pub password_recovery: PasswordRecoverySettings,
+    /// Second-factor policy.
+    pub two_factor: TwoFactorSettings,
+}
+
+/// Who may create an account without an administrator doing it for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignupMode {
+    /// Nobody. Accounts are created by an administrator through `POST /v1/users`. **Default**, and
+    /// what every pre-t95 settings document deserializes to.
+    #[default]
+    Disabled,
+    /// Only the holder of a valid invitation (`user.invite` issued it).
+    InviteOnly,
+    /// Anyone with an address at one of [`SignupSettings::allowed_domains`].
+    DomainAllowlist,
+    /// Anyone at all.
+    Public,
+}
+
+impl SignupMode {
+    /// The stable id (matches the serde representation).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SignupMode::Disabled => "disabled",
+            SignupMode::InviteOnly => "invite_only",
+            SignupMode::DomainAllowlist => "domain_allowlist",
+            SignupMode::Public => "public",
+        }
+    }
+}
+
+impl std::fmt::Display for SignupMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Self-signup policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SignupSettings {
+    /// Who may sign themselves up. [`SignupMode::Disabled`] by default.
+    pub mode: SignupMode,
+    /// Exact, lowercased mail domains accepted when `mode` is
+    /// [`SignupMode::DomainAllowlist`].
+    ///
+    /// **No wildcards.** `*.example.pt` looks convenient and is a subdomain-takeover signup
+    /// vector: anyone who gets `abandoned-staging.example.pt` gets accounts on this instance. An
+    /// entry containing `*` is refused, not silently ignored, so an operator who tries it finds out
+    /// at the moment they try rather than the moment it is abused.
+    pub allowed_domains: Vec<String>,
+    /// The single role a self-signed-up account receives. Guest by default, and ceiling-checked —
+    /// see [`AuthSettings::validate_default_role_against`].
+    pub default_role: chancela_authz::RoleId,
+    /// Whether a self-signed-up account must prove control of its address before it can be used.
+    /// Defaults **on**: the safe direction, and the one that makes the address in the account real.
+    pub require_email_verification: bool,
+    /// How long an invitation stays redeemable. Clamped 1 hour … 30 days.
+    pub invite_ttl_hours: u32,
+}
+
+impl Default for SignupSettings {
+    fn default() -> Self {
+        SignupSettings {
+            mode: SignupMode::Disabled,
+            allowed_domains: Vec::new(),
+            default_role: chancela_authz::GUEST_ROLE_ID,
+            require_email_verification: true,
+            invite_ttl_hours: 168,
+        }
+    }
+}
+
+impl SignupSettings {
+    /// The allow-list, trimmed, lowercased, de-duplicated and ordered. Stored normalized (the
+    /// [`ConnectorSettings::normalized`] precedent) so a match is a byte comparison and the
+    /// audit diff shows a boundary change rather than a whitespace change.
+    #[must_use]
+    pub fn normalized_domains(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .allowed_domains
+            .iter()
+            .map(|d| d.trim().to_lowercase())
+            .filter(|d| !d.is_empty())
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+}
+
+/// Email-based account recovery.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PasswordRecoverySettings {
+    /// Whether "forgot my password" issues an emailed reset link. Off by default.
+    ///
+    /// Turning this on has a consequence that must reach the user before they commit: the reset
+    /// happens without the old password, so the attestation key cannot be re-wrapped and is
+    /// **retired**, exactly as a recovery-phrase reset already does.
+    pub email_link_enabled: bool,
+    /// Whether "I forgot my username" mails the matching username(s) to the address. Off by
+    /// default. It answers only into the mailbox — never over HTTP, which would be an enumeration
+    /// oracle no rate limit repairs.
+    pub username_by_email: bool,
+    /// Reset-link lifetime in minutes. Clamped 5 … 60.
+    pub link_ttl_minutes: u32,
+}
+
+impl Default for PasswordRecoverySettings {
+    fn default() -> Self {
+        PasswordRecoverySettings {
+            email_link_enabled: false,
+            username_by_email: false,
+            link_ttl_minutes: 15,
+        }
+    }
+}
+
+/// Second-factor policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TwoFactorSettings {
+    /// Authenticator-app second factor (RFC 6238). Off by default.
+    pub totp_enabled: bool,
+    /// Emailed second factor. Off by default, and see
+    /// [`acknowledge_single_channel_risk`](Self::acknowledge_single_channel_risk) before turning it
+    /// on.
+    pub email_enabled: bool,
+    /// Whether a second factor is required instance-wide. Off by default, and refused unless
+    /// [`totp_enabled`](Self::totp_enabled) is on — a requirement that can only be satisfied over
+    /// the mail relay is a lockout waiting for the relay to have a bad day.
+    pub required: bool,
+    /// The operator's **explicit** acknowledgement that email is about to be both the second factor
+    /// and the recovery channel — that is one factor wearing two hats, and an attacker with the
+    /// mailbox then has everything, password included.
+    ///
+    /// A server-enforced gate in the [`EmailSettings::allow_insecure`] mould, not UI copy: the
+    /// combination is refused outright without it.
+    pub acknowledge_single_channel_risk: bool,
+}
+
+impl AuthSettings {
+    /// Whether the slice is entirely at its (closed) defaults. Drives `skip_serializing_if`, so a
+    /// `GET /v1/settings` on an instance that has never touched authentication is byte-identical to
+    /// one from before this slice existed.
+    pub(crate) fn is_default(&self) -> bool {
+        self == &AuthSettings::default()
+    }
+
+    /// Whether any enabled feature needs to put a **link to this instance** in an email, and
+    /// therefore needs [`PlatformSettings::public_base_url`] configured.
+    #[must_use]
+    pub fn requires_instance_base_url(&self) -> bool {
+        self.password_recovery.email_link_enabled
+            || matches!(self.signup.mode, SignupMode::InviteOnly)
+            || (!matches!(self.signup.mode, SignupMode::Disabled)
+                && self.signup.require_email_verification)
+    }
+
+    /// Whether any enabled feature needs to send mail at all, and therefore needs
+    /// [`EmailSettings::enabled`].
+    #[must_use]
+    pub fn requires_outbound_email(&self) -> bool {
+        self.requires_instance_base_url()
+            || self.password_recovery.username_by_email
+            || self.two_factor.email_enabled
+    }
+
+    /// Structural validation — everything that can be decided without resolving the role catalog.
+    ///
+    /// The default-role **ceiling** is deliberately split: the part that needs no catalog (never
+    /// Owner) is here, and the part that needs the role's permission-set is
+    /// [`validate_default_role_against`](Self::validate_default_role_against). Both run on every
+    /// `PUT /v1/settings`.
+    fn validate(&self) -> Result<(), ApiError> {
+        // --- §2.6 ceiling, the half that needs no catalog -------------------------------------
+        if self.signup.default_role == chancela_authz::OWNER_ROLE_ID {
+            return Err(ApiError::Unprocessable(
+                "auth.signup.default_role must never be the Owner role — self-signup may not \
+                 grant the protected super-role"
+                    .to_owned(),
+            ));
+        }
+
+        // --- Domain allow-list ----------------------------------------------------------------
+        for (i, raw) in self.signup.allowed_domains.iter().enumerate() {
+            validate_signup_domain(&format!("auth.signup.allowed_domains[{i}]"), raw)?;
+        }
+        if matches!(self.signup.mode, SignupMode::DomainAllowlist)
+            && self.signup.normalized_domains().is_empty()
+        {
+            return Err(ApiError::Unprocessable(
+                "auth.signup.mode \"domain_allowlist\" requires at least one entry in \
+                 auth.signup.allowed_domains; an empty list would either admit everyone or nobody, \
+                 and neither is what the operator asked for"
+                    .to_owned(),
+            ));
+        }
+
+        // --- Lifetimes ------------------------------------------------------------------------
+        if !(1..=720).contains(&self.signup.invite_ttl_hours) {
+            return Err(ApiError::Unprocessable(format!(
+                "auth.signup.invite_ttl_hours must be between 1 and 720 (30 days), got {}",
+                self.signup.invite_ttl_hours
+            )));
+        }
+        if !(5..=60).contains(&self.password_recovery.link_ttl_minutes) {
+            return Err(ApiError::Unprocessable(format!(
+                "auth.password_recovery.link_ttl_minutes must be between 5 and 60, got {}",
+                self.password_recovery.link_ttl_minutes
+            )));
+        }
+
+        // --- §2.4: email must not be both the second factor and the recovery channel ----------
+        if self.two_factor.email_enabled
+            && !self.two_factor.totp_enabled
+            && self.password_recovery.email_link_enabled
+            && !self.two_factor.acknowledge_single_channel_risk
+        {
+            return Err(ApiError::Unprocessable(
+                "auth.two_factor.email_enabled as the only second factor together with \
+                 auth.password_recovery.email_link_enabled makes the mailbox both the second factor \
+                 and the reset channel, so an attacker holding it does not need the password at \
+                 all; enable auth.two_factor.totp_enabled, or set \
+                 auth.two_factor.acknowledge_single_channel_risk to true to confirm that is intended"
+                    .to_owned(),
+            ));
+        }
+
+        // --- §5 #9: a requirement that only mail can satisfy is a lockout ---------------------
+        if self.two_factor.required && !self.two_factor.totp_enabled {
+            return Err(ApiError::Unprocessable(
+                "auth.two_factor.required needs auth.two_factor.totp_enabled: a second factor that \
+                 can only arrive over the mail relay locks every user out — including the last \
+                 Owner — the first time the relay is unavailable"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The half of the §2.6 ceiling that needs the role catalog: the configured default role must
+    /// exist, must not be protected, and must hold none of
+    /// [`Permission::SELF_SIGNUP_FORBIDDEN`](chancela_authz::Permission::SELF_SIGNUP_FORBIDDEN).
+    ///
+    /// An unresolvable role is a refusal, not a shrug: "the default role does not exist" would
+    /// otherwise be discovered at the moment a stranger signs up, which is the worst possible time
+    /// to find out what happens next.
+    ///
+    /// **This is one of two call sites the ceiling needs.** The other is role *edit* time — a role
+    /// that is eligible today can be edited tomorrow to hold `settings.manage` while remaining the
+    /// configured signup default, and checking only here would leave that bypass wide open. Both
+    /// sites share [`Role::signup_default_refusal`](chancela_authz::Role::signup_default_refusal)
+    /// so they cannot drift apart. Wiring the role-edit site belongs to P1.
+    pub(crate) fn validate_default_role_against(
+        &self,
+        roles: &chancela_authz::RoleCatalog,
+    ) -> Result<(), ApiError> {
+        let id = self.signup.default_role;
+        let Some(role) = roles.get(id) else {
+            return Err(ApiError::Unprocessable(format!(
+                "auth.signup.default_role {id} does not name a role in the catalog"
+            )));
+        };
+        if let Some(refusal) = role.signup_default_refusal() {
+            return Err(ApiError::Unprocessable(format!(
+                "auth.signup.default_role {:?} cannot be the self-signup default role because \
+                 {refusal}",
+                role.name
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// The instance's public base URL (t95 P0-3): absolute, `https://`, no credentials, no query, no
+/// fragment.
+///
+/// Deliberately strict. This string becomes the origin of a URL carrying a single-use credential
+/// into someone's mailbox, and every rejection below corresponds to a way that URL could point
+/// somewhere other than where the operator thinks it points:
+///
+/// - **`http://`** — a recovery token travelling in the clear.
+/// - **userinfo (`https://livros.example.pt@evil.example/`)** — reads as the real host to a human
+///   skimming a mail client's status bar, resolves to the attacker's.
+/// - **a query or fragment** — appended to by the link builder, producing a URL nobody wrote.
+/// - **whitespace or control characters** — header and body injection into the outgoing message.
+/// - **`..` in the path** — a link that traverses out of the deployment's subpath.
+fn validate_public_base_url(field: &str, raw: &str) -> Result<(), ApiError> {
+    let value = raw.trim();
+    let refuse = |why: &str| {
+        Err(ApiError::Unprocessable(format!(
+            "{field} must be the absolute https:// URL this instance is reached at, because every \
+             emailed link is built from it and it is never inferred from a request header: {why} \
+             (got {raw:?})"
+        )))
+    };
+    if value.len() > 512 {
+        return refuse("it is longer than 512 characters");
+    }
+    if value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return refuse("it contains whitespace or control characters");
+    }
+    let Some(rest) = value.strip_prefix("https://") else {
+        return refuse(
+            "it does not start with \"https://\" — plain http would put a single-use recovery \
+             credential on the wire in the clear",
+        );
+    };
+    if value.contains(['?', '#']) {
+        return refuse("it carries a query string or fragment, which the link builder appends to");
+    }
+    let (authority, path) = match rest.split_once('/') {
+        Some((authority, path)) => (authority, path),
+        None => (rest, ""),
+    };
+    if authority.is_empty() {
+        return refuse("it has no host");
+    }
+    if authority.contains('@') {
+        return refuse(
+            "it embeds credentials before the host, which renders as the real host in a mail \
+             client while resolving somewhere else",
+        );
+    }
+    let host = authority.rsplit_once(':').map_or(authority, |(h, _)| h);
+    if host.is_empty()
+        || host.starts_with(['.', '-'])
+        || host.ends_with(['.', '-'])
+        || host.contains("..")
+    {
+        return refuse("its host is not a well-formed name");
+    }
+    if path.contains("..") {
+        return refuse("its path traverses upwards");
+    }
+    Ok(())
+}
+
+/// One entry of [`SignupSettings::allowed_domains`]: an **exact** mail domain.
+fn validate_signup_domain(field: &str, raw: &str) -> Result<(), ApiError> {
+    let value = raw.trim().to_lowercase();
+    // Named separately from the generic shape error, because "wildcards are not supported" and
+    // "that is not a domain" send an operator to two different places.
+    if value.contains('*') {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be an exact domain: wildcards such as {raw:?} are refused because a \
+             subdomain that is later abandoned or taken over would grant signup on this instance"
+        )));
+    }
+    let looks_like_a_domain = !value.is_empty()
+        && value.len() <= 253
+        && value.contains('.')
+        && !value.starts_with(['.', '-'])
+        && !value.ends_with(['.', '-'])
+        && !value.contains("..")
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.');
+    if !looks_like_a_domain {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be a bare mail domain such as \"example.pt\" — no scheme, no \"@\", no \
+             path, no wildcard — got {raw:?}"
+        )));
+    }
+    Ok(())
+}
+
 /// Tenant-level AI/MCP controls.
 ///
 /// Additive and serde-defaulted: an older `settings.json` that omits this section deserializes with
@@ -744,6 +1163,34 @@ const PLATFORM_AUDIT_LIMIT: usize = 100;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PlatformSettings {
+    /// **The instance's own public base URL** — the origin every emailed link is built from
+    /// (t95 P0-3). `null` until an operator sets it, and there is no fallback.
+    ///
+    /// ## It must never be derived from the request
+    ///
+    /// The obvious shortcut is to read the `Host` (or `X-Forwarded-Host`) header of whatever
+    /// request is issuing the link. **That is host-header injection**, and on this surface it is
+    /// the single most dangerous line in the tranche: `POST /v1/auth/recover` is unauthenticated,
+    /// so an attacker sends it with `Host: evil.example` naming *someone else's* account, and the
+    /// victim receives a genuine, correctly-addressed, correctly-signed password-recovery mail
+    /// whose link points at the attacker's server. The victim clicks their own reset link and
+    /// hands over a live single-use credential. No amount of TTL, single-use or rate limiting helps
+    /// — the token is valid and the victim delivered it themselves.
+    ///
+    /// So the value is **configured or absent**, never inferred, and never guessed from a
+    /// certificate, a bind address or an `Origin`. `smtp_settings.rs` already refused to guess one
+    /// for the welcome mail; this is that same refusal, made configurable rather than reversed.
+    ///
+    /// ## When it is absent
+    ///
+    /// Every link-issuing feature is **unavailable and says so**. Settings validation refuses to
+    /// enable one (`422`, naming this field), and the welcome mail omits its sign-in link rather
+    /// than inventing one. Nothing silently falls back to a plausible-looking origin.
+    ///
+    /// Must be an absolute `https://` URL. Plain `http` is refused: a recovery link is a bearer
+    /// credential in a URL, and putting one on the wire in the clear defeats the rest of this
+    /// design.
+    pub public_base_url: Option<String>,
     /// Logging levels by platform area and service override.
     pub logging: PlatformLoggingSettings,
     /// Desired state for the API server represented by the current process.
@@ -757,6 +1204,7 @@ pub struct PlatformSettings {
 impl Default for PlatformSettings {
     fn default() -> Self {
         Self {
+            public_base_url: None,
             logging: PlatformLoggingSettings::default(),
             api_server: PlatformServiceControlSettings {
                 enabled: true,
@@ -770,7 +1218,27 @@ impl Default for PlatformSettings {
 }
 
 impl PlatformSettings {
+    /// The configured public base URL with trailing slashes removed, ready to have `"/reset"` and
+    /// friends appended — or `None` when it is unset or blank.
+    ///
+    /// **This is the only source of a link origin.** There is no request-derived variant of this
+    /// function and there must never be one; see [`PlatformSettings::public_base_url`].
+    #[must_use]
+    pub fn resolved_public_base_url(&self) -> Option<String> {
+        self.public_base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|raw| !raw.is_empty())
+            .map(|raw| raw.trim_end_matches('/').to_owned())
+            .filter(|raw| !raw.is_empty())
+    }
+
     pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        if let Some(raw) = self.public_base_url.as_deref()
+            && !raw.trim().is_empty()
+        {
+            validate_public_base_url("platform.public_base_url", raw)?;
+        }
         self.logging.validate()?;
         for event in &self.audit {
             validate_platform_service_id(&event.service_id)?;
@@ -1949,6 +2417,36 @@ impl Settings {
         self.connectors.validate()?;
         self.email.validate()?;
         self.platform.validate()?;
+        self.auth.validate()?;
+        self.validate_auth_prerequisites()?;
+        Ok(())
+    }
+
+    /// The cross-slice half of the t95 rules: a feature that mails a link to this instance cannot
+    /// be enabled while the instance has no configured origin to link to, and a feature that mails
+    /// anything cannot be enabled while the relay is off.
+    ///
+    /// Refusing here — rather than enabling the toggle and discovering at send time that there is
+    /// no URL — is what "unavailable and says so" means in practice. The alternative is an operator
+    /// who believes recovery is on, and users who find out it is not while locked out.
+    fn validate_auth_prerequisites(&self) -> Result<(), ApiError> {
+        if self.auth.requires_instance_base_url() && self.platform.resolved_public_base_url().is_none()
+        {
+            return Err(ApiError::Unprocessable(
+                "this authentication setting emails a link back to this instance, so \
+                 platform.public_base_url must be configured first; it is never inferred from the \
+                 request's Host header, because an attacker could then aim a live recovery link at \
+                 their own domain"
+                    .to_owned(),
+            ));
+        }
+        if self.auth.requires_outbound_email() && !self.email.enabled {
+            return Err(ApiError::Unprocessable(
+                "this authentication setting sends mail, so email.enabled must be on and the relay \
+                 configured first"
+                    .to_owned(),
+            ));
+        }
         Ok(())
     }
 }
@@ -2769,9 +3267,34 @@ pub async fn put_settings(
     )
     .await?;
     // Parse by hand (rather than via the `Json` extractor) so every rejection — malformed
-    // JSON, a bad enum, a bad locale — renders through `ApiError` as the standard body.
-    let mut settings: Settings = serde_json::from_slice(&body)
+    // JSON, a bad enum, a bad locale — renders through `ApiError` as the standard body. The
+    // intermediate `Value` is kept because the carry-forward below needs to tell "the client sent
+    // this key" from "serde defaulted it", which the typed document can no longer express.
+    let raw: serde_json::Value = serde_json::from_slice(&body)
         .map_err(|e| ApiError::Unprocessable(format!("invalid settings document: {e}")))?;
+    let mut settings: Settings = serde_json::from_value(raw.clone())
+        .map_err(|e| ApiError::Unprocessable(format!("invalid settings document: {e}")))?;
+
+    let previous = state.settings.read().await.clone();
+
+    // `PUT` is a whole-document replace, and `#[serde(default)]` means an omitted section arrives
+    // as its default rather than as "unchanged". For a section a client has simply never heard of
+    // — the t95 `auth` slice, or `platform.public_base_url` — that turns "save the appearance tab
+    // from a tab opened before the upgrade" into "silently switch password recovery off and blank
+    // the link origin". So an *absent* key carries the stored value forward. An explicitly sent
+    // one, including an explicit `null`, still replaces it: this restores intent, it does not make
+    // the field unwritable.
+    if raw.get("auth").is_none() {
+        settings.auth = previous.auth.clone();
+    }
+    if raw
+        .get("platform")
+        .and_then(|platform| platform.get("public_base_url"))
+        .is_none()
+    {
+        settings.platform.public_base_url = previous.platform.public_base_url.clone();
+    }
+
     // Always stamp the current schema version regardless of what the client sent.
     settings.schema_version = SETTINGS_SCHEMA_VERSION;
     stamp_signing_provider_metadata(&state, &mut settings);
@@ -2779,9 +3302,43 @@ pub async fn put_settings(
     // than whitespace and casing. The stamped ceiling is server-owned: drop whatever came back.
     settings.connectors.allowed_hosts = settings.connectors.normalized();
     settings.connectors.environment_ceiling = None;
+    // Same reasoning for the signup allow-list: a domain match must be a byte comparison, so it is
+    // stored trimmed, lowercased and de-duplicated rather than compared that way at every signup.
+    settings.auth.signup.allowed_domains = settings.auth.signup.normalized_domains();
     settings.validate()?;
+    // The §2.6 ceiling's catalog-dependent half. It runs here rather than inside `validate()`
+    // because the role catalog is state, not part of the document — and it must run on the same
+    // request that stores the document, or the ceiling is advisory.
+    settings
+        .auth
+        .validate_default_role_against(&*state.roles.read().await)?;
 
-    let previous_allowed_hosts = state.settings.read().await.connectors.normalized();
+    // The zero-knowledge object root is checked here, not in `validate()`, for the same reason as
+    // the line above: the answer depends on state (the data directory and the real filesystem),
+    // not on the document. Refusing at save time is the whole point — this value's failure mode is
+    // that a wrong path looks fine until the next restart, or worse, quietly gives each node its
+    // own object storage. Only a *changed* value is checked, so an instance whose directory has
+    // since become unwritable can still save an unrelated tab rather than being locked out of
+    // settings entirely.
+    if settings.data_management.zk_shared_object_root != previous.data_management.zk_shared_object_root
+        && let Some(candidate) = settings.data_management.zk_shared_object_root.as_deref()
+    {
+        let data_dir = state
+            .data_dir()
+            .ok_or_else(|| ApiError::Unprocessable(
+                "data_management.zk_shared_object_root requires CHANCELA_DATA_DIR persistence"
+                    .to_owned(),
+            ))?;
+        crate::zk_repository::validate_shared_object_root(&data_dir, candidate).map_err(
+            |reason| {
+                ApiError::Unprocessable(format!(
+                    "data_management.zk_shared_object_root is invalid: {reason}"
+                ))
+            },
+        )?;
+    }
+
+    let previous_allowed_hosts = previous.connectors.normalized();
     let allowlist_changed = previous_allowed_hosts != settings.connectors.allowed_hosts;
 
     // Persist before we acknowledge success, so we never report a write we did not make. wp16 P3b:
@@ -3188,5 +3745,371 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    // --- t95 P0-1 / P0-3: authentication slice + instance base URL ----------------------------
+
+    /// A settings document with the relay and base URL already configured, so a test can turn one
+    /// auth toggle on without tripping the unrelated prerequisites.
+    fn settings_ready_for_links() -> Settings {
+        let mut settings = Settings::default();
+        settings.email.enabled = true;
+        settings.email.host = Some("smtp.example.pt".to_owned());
+        settings.email.from_address = Some("sistema@example.pt".to_owned());
+        settings.platform.public_base_url = Some("https://livros.example.pt".to_owned());
+        settings
+    }
+
+    fn refusal(result: Result<(), ApiError>) -> String {
+        match result.expect_err("expected a 422") {
+            ApiError::Unprocessable(message) => message,
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// **The upgrade test.** A `settings.json` written before t95 has no `auth` key at all. If it
+    /// deserialized into anything other than "signup off, no recovery links, no second factor",
+    /// upgrading a live instance would open it to strangers — the one outcome in this tranche that
+    /// cannot be walked back, because the accounts would already exist.
+    ///
+    /// The fixture below is a real pre-t95 document (the shape `contracts/settings.json` had), not
+    /// a `Settings::default()` re-serialized, so it also proves the missing sections are genuinely
+    /// missing rather than round-tripped.
+    #[test]
+    fn a_pre_t95_settings_document_loads_with_signup_disabled_and_everything_else_off() {
+        let pre_t95 = serde_json::json!({
+            "schema_version": 1,
+            "organization": { "name": "Encosto Estratégico, S.A.", "default_actor": "amelia.marques" },
+            "documents": { "locale": "pt-PT", "numbering_scheme_default": "Sequential" },
+            "email": {
+                "enabled": true,
+                "host": "smtp.encosto-estrategico.pt",
+                "port": 587,
+                "encryption": "starttls",
+                "from_address": "sistema@encosto-estrategico.pt"
+            },
+            "ai": { "enabled": false },
+            "platform": { "logging": { "global": "info" } },
+            "appearance": { "theme": "system" },
+            "onboarding": { "completed": true }
+        });
+
+        let settings: Settings =
+            serde_json::from_value(pre_t95).expect("a pre-t95 document still deserializes");
+
+        // The headline: signup is OFF on a document that has never heard of signup.
+        assert_eq!(settings.auth.signup.mode, SignupMode::Disabled);
+        // And every other new switch is closed too.
+        assert_eq!(settings.auth, AuthSettings::default());
+        assert!(!settings.auth.password_recovery.email_link_enabled);
+        assert!(!settings.auth.password_recovery.username_by_email);
+        assert!(!settings.auth.two_factor.totp_enabled);
+        assert!(!settings.auth.two_factor.email_enabled);
+        assert!(!settings.auth.two_factor.required);
+        assert!(!settings.auth.two_factor.acknowledge_single_channel_risk);
+        assert!(settings.auth.signup.allowed_domains.is_empty());
+        assert_eq!(settings.auth.signup.default_role, chancela_authz::GUEST_ROLE_ID);
+        // P0-3: no base URL, so no link-issuing feature can be live either.
+        assert_eq!(settings.platform.public_base_url, None);
+        assert_eq!(settings.platform.resolved_public_base_url(), None);
+        assert!(!settings.auth.requires_instance_base_url());
+        // It is a document the server would accept unchanged — the upgrade is not a validation
+        // failure on first save.
+        settings.validate().expect("a pre-t95 document stays valid");
+    }
+
+    /// The whole slice is skipped while it is at its defaults, so the on-the-wire document — and
+    /// therefore `contracts/settings.json` and every stored `settings.json` — is unchanged by the
+    /// arrival of this feature. `connectors` and `registry_auto_update` set this precedent.
+    #[test]
+    fn the_auth_slice_is_absent_from_the_wire_until_it_is_configured() {
+        let mut settings = Settings::default();
+        let wire = serde_json::to_value(&settings).expect("serializes");
+        assert!(
+            wire.get("auth").is_none(),
+            "a default auth slice must not appear on the wire: {wire}"
+        );
+
+        settings.auth.signup.mode = SignupMode::InviteOnly;
+        let wire = serde_json::to_value(&settings).expect("serializes");
+        assert_eq!(wire["auth"]["signup"]["mode"], "invite_only");
+    }
+
+    #[test]
+    fn signup_mode_ids_are_stable_in_both_directions() {
+        for (mode, id) in [
+            (SignupMode::Disabled, "disabled"),
+            (SignupMode::InviteOnly, "invite_only"),
+            (SignupMode::DomainAllowlist, "domain_allowlist"),
+            (SignupMode::Public, "public"),
+        ] {
+            assert_eq!(mode.as_str(), id);
+            assert_eq!(serde_json::to_value(mode).unwrap(), serde_json::json!(id));
+            assert_eq!(
+                serde_json::from_value::<SignupMode>(serde_json::json!(id)).unwrap(),
+                mode
+            );
+        }
+        // Magic link was dropped from the tranche; nothing here should resurrect it by accident.
+        assert!(serde_json::from_value::<SignupMode>(serde_json::json!("magic_link")).is_err());
+    }
+
+    /// §2.6, the half that needs no role catalog.
+    #[test]
+    fn the_signup_default_role_may_never_be_owner() {
+        let mut settings = Settings::default();
+        settings.auth.signup.default_role = chancela_authz::OWNER_ROLE_ID;
+        let message = refusal(settings.validate());
+        assert!(message.contains("auth.signup.default_role"), "{message}");
+        assert!(message.contains("Owner"), "{message}");
+    }
+
+    /// §2.6, the half that needs the catalog — including the bypass it exists to close: a role that
+    /// is eligible today, edited tomorrow, must stop being an acceptable signup default.
+    #[test]
+    fn the_signup_default_role_ceiling_is_enforced_against_the_role_catalog() {
+        use chancela_authz::{Permission, Role, RoleCatalog};
+
+        let catalog = RoleCatalog::seeded_defaults();
+        let settings = Settings::default();
+        settings
+            .auth
+            .validate_default_role_against(&catalog)
+            .expect("Guest is an acceptable default");
+
+        // A role that does not exist is a refusal, not a shrug — otherwise the discovery happens
+        // when a stranger signs up.
+        let mut settings = Settings::default();
+        settings.auth.signup.default_role =
+            chancela_authz::RoleId(uuid::Uuid::from_u128(0xdead_beef));
+        let message = refusal(settings.auth.validate_default_role_against(&catalog));
+        assert!(message.contains("does not name a role"), "{message}");
+
+        // A privileged seeded role is refused outright.
+        let mut settings = Settings::default();
+        settings.auth.signup.default_role = chancela_authz::PLATFORM_ADMIN_ROLE_ID;
+        let message = refusal(settings.auth.validate_default_role_against(&catalog));
+        assert!(message.contains("Platform Administrator"), "{message}");
+
+        // THE BYPASS: keep Guest as the default and edit Guest to hold `settings.manage`. Checking
+        // the ceiling only when the default role is *chosen* would let this through.
+        let mut edited = RoleCatalog::seeded_defaults();
+        let mut guest = Role::guest();
+        guest.permission_set.insert(Permission::SettingsManage);
+        edited.insert(guest);
+        let message = refusal(Settings::default().auth.validate_default_role_against(&edited));
+        assert!(message.contains("settings.manage"), "{message}");
+    }
+
+    /// Wildcards are refused by name, not silently ignored: `*.example.pt` invites
+    /// subdomain-takeover signup, and an operator who tries it must find out immediately.
+    #[test]
+    fn the_signup_domain_allowlist_takes_exact_domains_only() {
+        for bad in [
+            "*.example.pt",
+            "example.*",
+            "https://example.pt",
+            "ana@example.pt",
+            "example.pt/signup",
+            "localhost",
+            ".example.pt",
+            "example..pt",
+            "example.pt-",
+        ] {
+            let mut settings = Settings::default();
+            settings.auth.signup.allowed_domains = vec![bad.to_owned()];
+            let message = refusal(settings.validate());
+            assert!(
+                message.contains("auth.signup.allowed_domains[0]"),
+                "{bad:?} was accepted or misreported: {message}"
+            );
+            if bad.contains('*') {
+                assert!(
+                    message.contains("wildcard"),
+                    "a wildcard must be refused by name: {message}"
+                );
+            }
+        }
+
+        let mut settings = Settings::default();
+        settings.auth.signup.allowed_domains =
+            vec![" Example.PT ".to_owned(), "example.pt".to_owned(), "b.example.pt".to_owned()];
+        settings.validate().expect("valid domains");
+        assert_eq!(
+            settings.auth.signup.normalized_domains(),
+            vec!["b.example.pt".to_owned(), "example.pt".to_owned()],
+            "domains are stored lowercased, trimmed and de-duplicated"
+        );
+    }
+
+    #[test]
+    fn domain_allowlist_mode_requires_at_least_one_domain() {
+        let mut settings = settings_ready_for_links();
+        settings.auth.signup.mode = SignupMode::DomainAllowlist;
+        settings.auth.signup.require_email_verification = false;
+        let message = refusal(settings.validate());
+        assert!(message.contains("auth.signup.allowed_domains"), "{message}");
+
+        settings.auth.signup.allowed_domains = vec!["example.pt".to_owned()];
+        settings.validate().expect("one domain is enough");
+    }
+
+    #[test]
+    fn token_lifetimes_are_bounded() {
+        for (hours, ok) in [(0, false), (1, true), (168, true), (720, true), (721, false)] {
+            let mut settings = Settings::default();
+            settings.auth.signup.invite_ttl_hours = hours;
+            assert_eq!(settings.validate().is_ok(), ok, "invite_ttl_hours {hours}");
+        }
+        for (minutes, ok) in [(4, false), (5, true), (15, true), (60, true), (61, false)] {
+            let mut settings = Settings::default();
+            settings.auth.password_recovery.link_ttl_minutes = minutes;
+            assert_eq!(settings.validate().is_ok(), ok, "link_ttl_minutes {minutes}");
+        }
+    }
+
+    /// §2.4. Email as the only second factor *and* the recovery channel is one factor wearing two
+    /// hats: whoever holds the mailbox does not need the password. Refused unless the operator says
+    /// so explicitly, in the `email.allow_insecure` mould.
+    #[test]
+    fn email_cannot_be_both_the_only_second_factor_and_the_recovery_channel() {
+        let mut settings = settings_ready_for_links();
+        settings.auth.two_factor.email_enabled = true;
+        settings.auth.password_recovery.email_link_enabled = true;
+        let message = refusal(settings.validate());
+        assert!(message.contains("acknowledge_single_channel_risk"), "{message}");
+
+        // TOTP alongside it removes the objection: the mailbox is no longer the whole model.
+        let mut with_totp = settings.clone();
+        with_totp.auth.two_factor.totp_enabled = true;
+        with_totp.validate().expect("TOTP resolves the single-channel risk");
+
+        // Or the operator acknowledges it on purpose.
+        let mut acknowledged = settings.clone();
+        acknowledged.auth.two_factor.acknowledge_single_channel_risk = true;
+        acknowledged
+            .validate()
+            .expect("an explicit acknowledgement is accepted");
+    }
+
+    /// §5 #9. A required second factor that only the mail relay can deliver locks every user out —
+    /// the last Owner included — the first time the relay has a bad day.
+    #[test]
+    fn a_required_second_factor_must_be_satisfiable_without_the_mail_relay() {
+        let mut settings = settings_ready_for_links();
+        settings.auth.two_factor.required = true;
+        settings.auth.two_factor.email_enabled = true;
+        let message = refusal(settings.validate());
+        assert!(message.contains("totp_enabled"), "{message}");
+
+        settings.auth.two_factor.totp_enabled = true;
+        settings.validate().expect("TOTP makes the requirement satisfiable");
+    }
+
+    /// P0-3. The base URL is the origin of every emailed link, so the shapes that could aim one
+    /// somewhere other than this instance are all refused.
+    #[test]
+    fn the_public_base_url_must_be_an_absolute_https_origin() {
+        for bad in [
+            "http://livros.example.pt",
+            "livros.example.pt",
+            "//livros.example.pt",
+            "https://",
+            "https://livros.example.pt@evil.example",
+            "https://livros.example.pt/?next=x",
+            "https://livros.example.pt/#/reset",
+            "https://livros.example.pt/app/../../evil",
+            "https://livros.example.pt/ x",
+            "ftp://livros.example.pt",
+            "https://.example.pt",
+        ] {
+            let mut settings = Settings::default();
+            settings.platform.public_base_url = Some(bad.to_owned());
+            let message = refusal(settings.validate());
+            assert!(
+                message.contains("platform.public_base_url"),
+                "{bad:?} was accepted or misreported: {message}"
+            );
+            assert!(
+                message.contains("never inferred from a request header"),
+                "the refusal must carry the reason the field exists: {message}"
+            );
+        }
+
+        for good in [
+            "https://livros.example.pt",
+            "https://livros.example.pt/",
+            "https://livros.example.pt:8443/livros/",
+            "https://livros.example.pt/livros",
+        ] {
+            let mut settings = Settings::default();
+            settings.platform.public_base_url = Some(good.to_owned());
+            settings.validate().unwrap_or_else(|e| panic!("{good:?}: {e:?}"));
+        }
+
+        // Resolution strips trailing slashes so the link builder can append a path unconditionally.
+        let mut settings = Settings::default();
+        settings.platform.public_base_url = Some("  https://livros.example.pt///  ".to_owned());
+        assert_eq!(
+            settings.platform.resolved_public_base_url().as_deref(),
+            Some("https://livros.example.pt")
+        );
+        // Blank is "unset", not "the empty origin".
+        settings.platform.public_base_url = Some("   ".to_owned());
+        assert_eq!(settings.platform.resolved_public_base_url(), None);
+        settings.validate().expect("a blank value is treated as unset");
+    }
+
+    /// P0-3's other half: with no configured origin, a feature that emails a link cannot be turned
+    /// on at all. "Unavailable and says so" — not enabled-then-broken, and never a guessed origin.
+    #[test]
+    fn a_link_issuing_feature_cannot_be_enabled_without_a_configured_base_url() {
+        let link_issuing: [(&str, fn(&mut Settings)); 3] = [
+            ("recovery link", |s| {
+                s.auth.password_recovery.email_link_enabled = true
+            }),
+            ("invite-only signup", |s| {
+                s.auth.signup.mode = SignupMode::InviteOnly
+            }),
+            ("signup with email verification", |s| {
+                s.auth.signup.mode = SignupMode::Public;
+                s.auth.signup.require_email_verification = true;
+            }),
+        ];
+
+        for (label, enable) in link_issuing {
+            let mut settings = settings_ready_for_links();
+            settings.platform.public_base_url = None;
+            enable(&mut settings);
+            let message = refusal(settings.validate());
+            assert!(
+                message.contains("platform.public_base_url"),
+                "{label} was allowed with no base URL: {message}"
+            );
+            assert!(message.contains("Host header"), "{label}: {message}");
+
+            // With an origin configured it is accepted.
+            let mut settings = settings_ready_for_links();
+            enable(&mut settings);
+            settings
+                .validate()
+                .unwrap_or_else(|e| panic!("{label} with a base URL: {e:?}"));
+        }
+    }
+
+    /// A feature that sends mail at all needs the relay on. `username_by_email` needs no link, so
+    /// it is the case that separates the two prerequisites.
+    #[test]
+    fn a_mail_sending_feature_cannot_be_enabled_without_the_relay() {
+        let mut settings = Settings::default();
+        settings.platform.public_base_url = Some("https://livros.example.pt".to_owned());
+        settings.auth.password_recovery.username_by_email = true;
+        assert!(!settings.auth.requires_instance_base_url());
+        let message = refusal(settings.validate());
+        assert!(message.contains("email.enabled"), "{message}");
+
+        let mut settings = settings_ready_for_links();
+        settings.auth.password_recovery.username_by_email = true;
+        settings.validate().expect("with the relay on it is accepted");
     }
 }

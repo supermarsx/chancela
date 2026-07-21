@@ -203,14 +203,157 @@ pub struct ZkRepositoryStore {
     root: Option<PathBuf>,
     index: ZkRepositoryIndex,
     availability: RepositoryStoreAvailability,
+    /// Where the declared root came from, for read-only display. Never consulted by any code path
+    /// that decides whether the store serves — that stays [`Self::availability`].
+    source: ZkSharedRootSource,
+    /// Whether this backend demands the explicit declaration (Postgres/HA) at all.
+    requires_shared_root: bool,
+}
+
+/// Where the declared shared object root came from. The environment always wins so a deployment
+/// that pins the value in its unit file / compose file cannot be overridden from the web UI.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ZkSharedRootSource {
+    /// Read from `CHANCELA_ZK_SHARED_OBJECT_ROOT`.
+    Environment,
+    /// Read from `data_management.zk_shared_object_root` in the settings document.
+    Settings,
+    /// Neither is set.
+    #[default]
+    Unset,
+}
+
+/// Resolve the declared shared object root: `CHANCELA_ZK_SHARED_OBJECT_ROOT` first, then the
+/// persisted settings value. Blank strings count as unset on both sides so that clearing the field
+/// in the UI, or exporting an empty env var, closes the interlock rather than half-opening it.
+pub(crate) fn resolve_declared_shared_root(
+    settings_value: Option<&str>,
+) -> (Option<PathBuf>, ZkSharedRootSource) {
+    if let Some(value) = std::env::var_os(ZK_SHARED_OBJECT_ROOT_ENV)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+    {
+        return (Some(value), ZkSharedRootSource::Environment);
+    }
+    match settings_value.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => (Some(PathBuf::from(value)), ZkSharedRootSource::Settings),
+        None => (None, ZkSharedRootSource::Unset),
+    }
+}
+
+/// Save-time validation for an operator-declared shared object root.
+///
+/// This runs on `PUT /v1/settings` so a wrong value is refused at the point it is typed rather than
+/// discovered at the next restart. It checks everything a **single node** can check:
+///
+/// * the value is absolute (a relative path would resolve against the server's working directory,
+///   which differs per node and per supervisor);
+/// * it normalizes to exactly `<data_dir>/zk-repositories`, which is what
+///   [`ZkRepositoryStore::open_with_shared_root`] demands at startup — so the UI cannot store a
+///   value that is guaranteed to fail closed later;
+/// * the directory exists and is writable by this process.
+///
+/// **What it cannot check, by construction:** whether the path is genuinely a *shared* mount rather
+/// than node-local storage. Nothing visible from one node distinguishes them, and a wrong answer
+/// there is the dangerous one — every node would pass this check against its own private directory
+/// and the cluster would silently split its object storage. That assurance is the operator's
+/// declaration, and the UI copy says so rather than implying this function verified it.
+pub(crate) fn validate_shared_object_root(data_dir: &FsPath, candidate: &str) -> Result<(), String> {
+    let candidate = candidate.trim();
+    if candidate.is_empty() {
+        return Err("the shared object root must not be blank".to_owned());
+    }
+    let raw = FsPath::new(candidate);
+    if !raw.is_absolute() {
+        return Err(format!(
+            "{candidate} is not an absolute path; a relative path resolves against each node's \
+             working directory and cannot name a shared mount"
+        ));
+    }
+    let configured = normalized_absolute(raw)?;
+    let expected = normalized_absolute(&data_dir.join(ZK_REPOSITORY_DIR))?;
+    if configured != expected {
+        return Err(format!(
+            "it must be exactly {} so verified backup/restore addresses the same object root",
+            expected.display()
+        ));
+    }
+    if !configured.is_dir() {
+        return Err(format!(
+            "{} does not exist as a directory on this node; create and mount it before declaring it",
+            configured.display()
+        ));
+    }
+    probe_writable(&configured)
+}
+
+/// Confirm the process can actually create and remove a file under `root`. A read-only bind mount
+/// is a realistic misconfiguration and passes every path-shape check above.
+fn probe_writable(root: &FsPath) -> Result<(), String> {
+    let probe = root.join(".chancela-zk-write-probe");
+    match OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&probe)
+    {
+        Ok(_) => {
+            let _ = fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(e) => Err(format!("{} is not writable by the server ({e})", root.display())),
+    }
+}
+
+/// What the running process resolved for the ZK object store, for read-only display.
+///
+/// Deliberately reports the **live** interlock, which is resolved once at startup. A settings write
+/// that has not been followed by a restart shows here as still-closed with the old reason, which is
+/// the honest answer: the client compares its saved value against `declared_root` to tell the
+/// operator a restart is outstanding.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZkStorageStatus {
+    /// `true` when repository routes will serve; `false` when the interlock is closed.
+    pub ready: bool,
+    /// Why it is closed, verbatim from the startup resolution. `null` when ready.
+    pub reason: Option<String>,
+    /// Whether this instance is on a backend that requires the explicit declaration at all.
+    pub requires_shared_root: bool,
+    /// The root this process is using, if it resolved one.
+    pub declared_root: Option<String>,
+    /// Where that value came from.
+    pub source: ZkSharedRootSource,
 }
 
 impl ZkRepositoryStore {
-    pub(crate) fn open(data_dir: &FsPath, postgres_or_ha: bool) -> Self {
-        let shared_root = std::env::var_os(ZK_SHARED_OBJECT_ROOT_ENV)
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from);
-        Self::open_with_shared_root(data_dir, postgres_or_ha, shared_root)
+    pub(crate) fn open(
+        data_dir: &FsPath,
+        postgres_or_ha: bool,
+        settings_value: Option<&str>,
+    ) -> Self {
+        let (shared_root, source) = resolve_declared_shared_root(settings_value);
+        let mut store = Self::open_with_shared_root(data_dir, postgres_or_ha, shared_root);
+        store.source = source;
+        store.requires_shared_root = postgres_or_ha;
+        store
+    }
+
+    /// Read-only projection of the live interlock for the operations UI.
+    pub(crate) fn status(&self) -> ZkStorageStatus {
+        ZkStorageStatus {
+            ready: matches!(self.availability, RepositoryStoreAvailability::Ready),
+            reason: match &self.availability {
+                RepositoryStoreAvailability::Ready => None,
+                RepositoryStoreAvailability::NotPersistent => {
+                    Some("zero-knowledge repositories require CHANCELA_DATA_DIR persistence".to_owned())
+                }
+                RepositoryStoreAvailability::FailClosed(message) => Some(message.clone()),
+            },
+            requires_shared_root: self.requires_shared_root,
+            declared_root: self.root.as_ref().map(|root| root.display().to_string()),
+            source: self.source,
+        }
     }
 
     fn open_with_shared_root(
@@ -264,6 +407,7 @@ impl ZkRepositoryStore {
                 root: Some(root),
                 index,
                 availability: RepositoryStoreAvailability::Ready,
+                ..Self::default()
             },
             Err(message) => Self::fail_closed(root, message),
         }
@@ -275,6 +419,7 @@ impl ZkRepositoryStore {
             root: Some(root),
             index: ZkRepositoryIndex::default(),
             availability: RepositoryStoreAvailability::FailClosed(message),
+            ..Self::default()
         }
     }
 
@@ -986,6 +1131,79 @@ pub(crate) async fn delete_tenant_repository_policy(
         return Err(rollback_failure(error, store.rollback_index(previous)));
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// `GET /v1/zk-repositories/storage-status` — the live state of the fail-closed object-root
+/// interlock, for the Operações › Gestão de dados pane.
+///
+/// Global `settings.read` rather than a tenant scope: this describes the *instance's* storage
+/// wiring, not any tenant's data, and it is what an operator needs before they can be told why
+/// repository routes are refusing. It exposes a filesystem path and no repository content.
+pub(crate) async fn get_zk_storage_status(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<ZkStorageStatus>, ApiError> {
+    require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
+    let status = state.zk_repositories.read().await.status();
+    Ok(Json(status))
+}
+
+/// Body of `PUT /v1/zk-repositories/shared-object-root`. `null` clears the declaration, which
+/// closes the interlock at the next restart — a deliberate, explicit action rather than a side
+/// effect of omitting a key.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PutSharedObjectRootBody {
+    pub shared_object_root: Option<String>,
+}
+
+/// `PUT /v1/zk-repositories/shared-object-root` — declare (or clear) the shared object root.
+///
+/// **Why this is its own endpoint rather than a field on the settings save.** The pane it renders
+/// on manages its own data and carries no autosave savebar, so a value routed through the settings
+/// working copy would have been typed, appear accepted, and never be written. It is also the kind
+/// of value that deserves a single-purpose, individually-validated write: a whole-document replace
+/// that happens to carry it makes the 422 harder to attribute and puts an unrelated tab's state on
+/// the wire alongside a safety interlock.
+///
+/// Gated on `settings.manage` at Global — the same authority `put_settings` requires, so routing
+/// around the settings document does not route around its permission.
+pub(crate) async fn put_shared_object_root(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(body): Json<PutSharedObjectRootBody>,
+) -> Result<Json<ZkStorageStatus>, ApiError> {
+    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+
+    let declared = body
+        .shared_object_root
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    // Validate BEFORE storing. A wrong value here does not fail loudly later — it fails at the next
+    // restart, or on HA gives each node its own object root with no error anywhere — so refusing at
+    // the point it is typed is the only place the operator can still act on it.
+    if let Some(candidate) = declared {
+        let data_dir = state.data_dir().ok_or_else(|| {
+            ApiError::Unprocessable(
+                "declaring a shared object root requires CHANCELA_DATA_DIR persistence".to_owned(),
+            )
+        })?;
+        validate_shared_object_root(&data_dir, candidate)
+            .map_err(|reason| ApiError::Unprocessable(format!("shared object root: {reason}")))?;
+    }
+
+    let mut settings = state.settings.read().await.clone();
+    settings.data_management.zk_shared_object_root = declared.map(str::to_owned);
+    crate::sidecar_store::persist_settings(&state, &settings).await?;
+    *state.settings.write().await = settings;
+
+    // Report the LIVE interlock, which this write did not change: it is resolved at startup. The
+    // client compares the value it just saved against `declared_root` to say whether a restart is
+    // outstanding, so the response can never be mistaken for "the interlock is now open".
+    let status = state.zk_repositories.read().await.status();
+    Ok(Json(status))
 }
 
 pub(crate) async fn list_repositories(
@@ -2432,7 +2650,7 @@ mod tests {
     fn store_with_repository(temp: &TempDir) -> (ZkRepositoryStore, Uuid, RepositoryId) {
         let tenant = Uuid::new_v4();
         let repository_id = RepositoryId::new();
-        let mut store = ZkRepositoryStore::open(temp.path(), false);
+        let mut store = ZkRepositoryStore::open(temp.path(), false, None);
         let now = OffsetDateTime::now_utc();
         let record = StoredRepositoryPolicy {
             policy: explicit_policy(
@@ -2474,6 +2692,9 @@ mod tests {
                 password_hash: Some(crate::attestation::hash_secret("Zk-Teste-Forte7!").unwrap()),
                 attestation_key: None,
                 retired_attestation_keys: Vec::new(),
+                totp: None,
+                two_factor_required: false,
+                force_password_change: false,
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, scope)],
@@ -2547,7 +2768,7 @@ mod tests {
         let (committed, _) = store
             .commit_upload(tenant, repository_id, pending.upload_id, bytes)
             .unwrap();
-        let reopened = ZkRepositoryStore::open(temp.path(), false);
+        let reopened = ZkRepositoryStore::open(temp.path(), false, None);
         assert!(matches!(
             reopened.availability,
             RepositoryStoreAvailability::Ready
@@ -2560,7 +2781,7 @@ mod tests {
         )
         .unwrap();
         fs::write(blob, b"tampered same-ish bytes").unwrap();
-        let failed = ZkRepositoryStore::open(temp.path(), false);
+        let failed = ZkRepositoryStore::open(temp.path(), false, None);
         assert!(matches!(
             failed.availability,
             RepositoryStoreAvailability::FailClosed(_)
@@ -2684,7 +2905,7 @@ mod tests {
             .join("1.bin");
         fs::create_dir_all(orphan.parent().unwrap()).unwrap();
         fs::write(&orphan, b"crash orphan").unwrap();
-        let reopened = ZkRepositoryStore::open(temp.path(), false);
+        let reopened = ZkRepositoryStore::open(temp.path(), false, None);
         assert!(!orphan.exists());
         assert_eq!(reopened.read_ciphertext(&committed).unwrap(), bytes);
     }
@@ -2765,6 +2986,98 @@ mod tests {
             RepositoryStoreAvailability::FailClosed(_)
         ));
         assert!(matches!(store.ready_root(), Err(ApiError::Unavailable(_))));
+    }
+
+    /// The settings-declared root must open the interlock on HA exactly as the environment variable
+    /// does — otherwise "configurable in data management" would be a field that stores a value and
+    /// changes nothing.
+    #[test]
+    fn ha_with_settings_declared_shared_root_opens_the_interlock() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join(ZK_REPOSITORY_DIR);
+        fs::create_dir_all(&root).unwrap();
+        let store = ZkRepositoryStore::open_with_shared_root(temp.path(), true, Some(root));
+        assert!(matches!(
+            store.availability,
+            RepositoryStoreAvailability::Ready
+        ));
+    }
+
+    /// A declared root that is *not* the expected one must stay closed rather than quietly using
+    /// it: on HA that is precisely the split-object-storage failure this interlock exists for.
+    #[test]
+    fn ha_with_wrong_declared_shared_root_stays_fail_closed() {
+        let temp = TempDir::new().unwrap();
+        let elsewhere = temp.path().join("node-local-storage");
+        fs::create_dir_all(&elsewhere).unwrap();
+        let store = ZkRepositoryStore::open_with_shared_root(temp.path(), true, Some(elsewhere));
+        let RepositoryStoreAvailability::FailClosed(reason) = &store.availability else {
+            panic!("a mismatched declared root must fail closed");
+        };
+        assert!(reason.contains("must resolve exactly to the shared mounted"));
+        assert!(matches!(store.ready_root(), Err(ApiError::Unavailable(_))));
+    }
+
+    /// Save-time validation accepts only the one path the startup resolution will accept, so the UI
+    /// cannot store a value that is guaranteed to fail closed at the next restart.
+    #[test]
+    fn shared_object_root_validation_accepts_only_the_expected_existing_root() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join(ZK_REPOSITORY_DIR);
+
+        // Not yet created: the shape is right but the directory is not there.
+        let missing = validate_shared_object_root(temp.path(), &root.display().to_string())
+            .expect_err("a non-existent root must be refused");
+        assert!(missing.contains("does not exist as a directory"));
+
+        fs::create_dir_all(&root).unwrap();
+        validate_shared_object_root(temp.path(), &root.display().to_string()).unwrap();
+
+        // Blank, relative, and wrong-path values are each refused with their own reason, so the
+        // operator is told what is wrong rather than just that something is.
+        assert!(validate_shared_object_root(temp.path(), "   ").is_err());
+        let relative = validate_shared_object_root(temp.path(), "zk-repositories")
+            .expect_err("a relative path must be refused");
+        assert!(relative.contains("absolute"));
+        let wrong = validate_shared_object_root(
+            temp.path(),
+            &temp.path().join("somewhere-else").display().to_string(),
+        )
+        .expect_err("a path outside the expected root must be refused");
+        assert!(wrong.contains("must be exactly"));
+    }
+
+    /// The environment must win over the settings document: a deployment that pins the value in its
+    /// unit file cannot have it overridden from the web UI.
+    #[test]
+    fn declared_shared_root_prefers_the_environment_over_settings() {
+        // No env var is set in this process, so the settings value is what resolves.
+        let (resolved, source) = resolve_declared_shared_root(Some("/srv/shared/zk-repositories"));
+        assert_eq!(resolved, Some(PathBuf::from("/srv/shared/zk-repositories")));
+        assert_eq!(source, ZkSharedRootSource::Settings);
+
+        // Blank settings values are unset, not a half-open interlock.
+        assert_eq!(
+            resolve_declared_shared_root(Some("   ")),
+            (None, ZkSharedRootSource::Unset)
+        );
+        assert_eq!(
+            resolve_declared_shared_root(None),
+            (None, ZkSharedRootSource::Unset)
+        );
+    }
+
+    /// The status projection must never report `ready` while the store is fail-closed, and must
+    /// carry the reason so the UI can say *why* rather than just that it is unavailable.
+    #[test]
+    fn status_reports_the_closed_interlock_with_its_reason() {
+        let temp = TempDir::new().unwrap();
+        let store = ZkRepositoryStore::open(temp.path(), true, None);
+        let status = store.status();
+        assert!(!status.ready);
+        assert!(status.requires_shared_root);
+        assert_eq!(status.source, ZkSharedRootSource::Unset);
+        assert!(status.reason.unwrap().contains("is disabled on PostgreSQL/HA"));
     }
 
     #[test]

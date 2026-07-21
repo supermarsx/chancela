@@ -670,7 +670,15 @@ fn validate_role_name(raw: &str) -> Result<String, ApiError> {
     Ok(name.to_owned())
 }
 
-fn assignment_views(assignments: &[RoleAssignment]) -> Vec<RoleAssignmentView> {
+/// Render stored assignments for the wire: the **raw** `(role_id, scope)` pair, with no registry
+/// read and therefore no role *name*. `pub(crate)` so [`crate::users::UserView`] renders the same
+/// shape from the same code (t103) rather than growing a second, drift-prone copy of this mapping.
+///
+/// The enriched form — role name plus flattened permissions — is a different type
+/// ([`crate::privacy::RoleAssignmentExport`]) and needs an `async` roles-registry read, which is
+/// exactly why it does not belong here: `impl From<&User> for UserView` is sync and used in dozens
+/// of places.
+pub(crate) fn assignment_views(assignments: &[RoleAssignment]) -> Vec<RoleAssignmentView> {
     assignments
         .iter()
         .map(|a| RoleAssignmentView {
@@ -787,6 +795,8 @@ pub async fn apply_seeded_role_reconciliation(
     let authz = authorizer(&state, &actor).await?;
     authz.require(Permission::RoleManage, Scope::Global)?;
 
+    // Read before the roles write lock so the two are never nested.
+    let signup_default = crate::signup::configured_signup_default_role(&state).await;
     let (before, updated, applied_permissions) = {
         let mut roles = state.roles.write().await;
         let before = roles.get(role_id).cloned().ok_or(ApiError::NotFound)?;
@@ -806,6 +816,11 @@ pub async fn apply_seeded_role_reconciliation(
 
         let mut updated = before.clone();
         updated.permission_set = proposed;
+        // The same t95 §2.6 ceiling as `patch_role`, because this is the other way a role's
+        // permission-set grows. A role that drifted *below* its seeded defaults can pass the
+        // ceiling, be configured as `auth.signup.default_role`, and then be widened back to a
+        // seeded set holding `user.manage` by this endpoint — the bypass, one door along.
+        crate::signup::refuse_signup_default_role_edit(signup_default, &updated)?;
         roles.insert(updated.clone());
         (before, updated, missing)
     };
@@ -926,6 +941,12 @@ pub async fn patch_role(
         permission_set: new_perms,
         protected: false,
     };
+    // t95 §2.6, the ceiling's SECOND call site — without it the first one is advisory. Settings
+    // validation refuses configuring a privileged role as `auth.signup.default_role`, but nothing
+    // re-validates the settings document when a role changes: pick Guest as the default (legal),
+    // then widen Guest here, and the configured default silently becomes privileged. Checked
+    // against the **resulting** role, so it is the outcome that is judged and not the request.
+    crate::signup::refuse_editing_the_signup_default_role(&state, &updated).await?;
     {
         let mut roles = state.roles.write().await;
         // Re-check under the write lock (protection can only ever be the seeded Owner, but stay honest).
@@ -1134,6 +1155,9 @@ mod tests {
             password_hash: Some("test-password-hash".to_owned()),
             attestation_key: None,
             retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
             secret_source: SecretSource::Password,
             recovery_hash: None,
             role_assignments: assignments,

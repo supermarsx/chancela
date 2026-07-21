@@ -124,6 +124,29 @@ pub struct Role {
     pub protected: bool,
 }
 
+/// Why a role is refused as the self-signup default role. See [`Role::signup_default_refusal`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignupDefaultRefusal {
+    /// The protected Owner role. Self-signup into the super-role is never configurable.
+    Protected,
+    /// The role holds a permission on [`Permission::SELF_SIGNUP_FORBIDDEN`].
+    HoldsPrivilegedPermission(Permission),
+}
+
+impl std::fmt::Display for SignupDefaultRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SignupDefaultRefusal::Protected => f.write_str(
+                "it is the protected Owner role, which self-signup may never grant",
+            ),
+            SignupDefaultRefusal::HoldsPrivilegedPermission(p) => write!(
+                f,
+                "it holds {p}, which a self-signed-up account may never receive"
+            ),
+        }
+    }
+}
+
 impl Role {
     /// Whether this role may be **deleted**. Protected roles (Owner) may not.
     #[must_use]
@@ -137,6 +160,30 @@ impl Role {
     #[must_use]
     pub fn can_edit_permission_set(&self) -> bool {
         !self.protected
+    }
+
+    /// Why this role may **not** be the self-signup default role (t95 §2.6), or `None` if it may.
+    ///
+    /// Self-signup hands an unauthenticated stranger exactly one role. This is the single shared
+    /// predicate behind that ceiling, and it must be consulted from **both** ends:
+    ///
+    /// 1. when `auth.signup.default_role` is chosen (settings validation), and
+    /// 2. when **any** role's permission-set is edited — because the ceiling is otherwise trivially
+    ///    bypassable by picking an innocuous role as the signup default and then editing that role
+    ///    to hold `settings.manage`.
+    ///
+    /// Checking only (1) is the bug this function exists to make impossible to write twice.
+    #[must_use]
+    pub fn signup_default_refusal(&self) -> Option<SignupDefaultRefusal> {
+        if self.protected {
+            return Some(SignupDefaultRefusal::Protected);
+        }
+        // Iterate the ceiling rather than the role's set, so the reported verb is deterministic
+        // (the ceiling's declaration order) instead of the role's storage order.
+        Permission::SELF_SIGNUP_FORBIDDEN
+            .into_iter()
+            .find(|p| self.permission_set.contains(p))
+            .map(SignupDefaultRefusal::HoldsPrivilegedPermission)
     }
 
     /// The seeded **Owner** role: every permission, protected.
@@ -219,6 +266,7 @@ impl Role {
                 Permission::TrustManage,
                 Permission::UserRead,
                 Permission::UserManage,
+                Permission::UserInvite,
                 Permission::RoleManage,
                 Permission::RoleAssign,
                 Permission::DelegationGrant,
@@ -231,9 +279,9 @@ impl Role {
     }
 
     /// The seeded **Tenant Administrator** role: reads and administers its own tenant
-    /// (`tenant.read`/`tenant.admin`) plus entity/book/act administration and scoped
-    /// assignment/delegation, without global role-definition, user-management or platform settings
-    /// management. It deliberately lacks `tenant.create` — minting a tenant is a platform-level
+    /// (`tenant.read`/`tenant.admin`) plus entity/book/act administration, scoped
+    /// assignment/delegation and `user.invite` (t95), without global role-definition, the wider
+    /// `user.manage`, or platform settings management. It deliberately lacks `tenant.create` — minting a tenant is a platform-level
     /// provisioning act reserved for the Owner and Platform Administrator.
     #[must_use]
     pub fn tenant_administrator() -> Self {
@@ -265,6 +313,7 @@ impl Role {
                 Permission::CaeRead,
                 Permission::LawRead,
                 Permission::UserRead,
+                Permission::UserInvite,
                 Permission::RoleAssign,
                 Permission::DelegationGrant,
                 Permission::DelegationRevoke,
@@ -396,7 +445,8 @@ impl Role {
     }
 
     /// The seeded **Corporate Secretary** role: governance drafting and signing workflow support,
-    /// without entity, user, role, settings, recovery or data authority.
+    /// plus `user.invite` (t95), without entity, user-management, role, settings, recovery or data
+    /// authority.
     #[must_use]
     pub fn corporate_secretary() -> Self {
         Role {
@@ -417,6 +467,10 @@ impl Role {
                 Permission::CaeRead,
                 Permission::LawRead,
                 Permission::SettingsRead,
+                // t95: the secretary convenes the people who attend the acts, so inviting them is
+                // part of the job. Still no `user.manage` — this role cannot edit, re-role or
+                // deactivate an existing account.
+                Permission::UserInvite,
             ]
             .into_iter()
             .collect(),
@@ -849,6 +903,83 @@ mod tests {
     }
 
     #[test]
+    fn user_invite_is_seeded_to_exactly_its_four_intended_holders() {
+        // t95 §2.6. Pinned exhaustively and in catalog order: adding the verb to a further seeded
+        // role is a decision, and this test is where it has to be made deliberately.
+        let all = default_roles();
+        let holders: Vec<&str> = all
+            .iter()
+            .filter(|r| r.permission_set.contains(&Permission::UserInvite))
+            .map(|r| r.name.as_str())
+            .collect();
+        assert_eq!(
+            holders,
+            vec![
+                "Owner",
+                "Corporate Secretary",
+                "Platform Administrator",
+                "Tenant Administrator",
+            ]
+        );
+        // The point of a separate verb: two of the four holders cannot manage users at all.
+        for name in ["Corporate Secretary", "Tenant Administrator"] {
+            let role = default_roles()
+                .into_iter()
+                .find(|r| r.name == name)
+                .expect("seeded");
+            assert!(
+                !role.permission_set.contains(&Permission::UserManage),
+                "{name} must be able to invite WITHOUT holding user.manage — that separation is \
+                 the whole reason user.invite exists"
+            );
+        }
+    }
+
+    /// The §2.6 ceiling, from both ends. The seeded roles that may be the signup default are
+    /// pinned, and — the part that actually matters — a role that is legal today becomes illegal
+    /// the moment it is *edited* to hold a forbidden verb.
+    #[test]
+    fn signup_default_ceiling_refuses_owner_privileged_and_later_edited_roles() {
+        assert!(matches!(
+            Role::owner().signup_default_refusal(),
+            Some(SignupDefaultRefusal::Protected)
+        ));
+
+        for eligible in [Role::guest(), Role::reader(), Role::auditor()] {
+            assert_eq!(
+                eligible.signup_default_refusal(),
+                None,
+                "{} should be an allowed signup default",
+                eligible.name
+            );
+        }
+
+        for privileged in [Role::platform_administrator(), Role::tenant_administrator()] {
+            assert!(
+                privileged.signup_default_refusal().is_some(),
+                "{} must never be the signup default",
+                privileged.name
+            );
+        }
+
+        // The bypass the ceiling exists to close: pick Guest as the default, then edit Guest.
+        for forbidden in Permission::SELF_SIGNUP_FORBIDDEN {
+            let mut edited = Role::guest();
+            edited.permission_set.insert(forbidden);
+            assert_eq!(
+                edited.signup_default_refusal(),
+                Some(SignupDefaultRefusal::HoldsPrivilegedPermission(forbidden)),
+                "editing {forbidden} onto a role must make it ineligible as the signup default"
+            );
+        }
+
+        // `user.invite` is not a ceiling verb, so granting it does not make a role ineligible.
+        let mut inviting_guest = Role::guest();
+        inviting_guest.permission_set.insert(Permission::UserInvite);
+        assert_eq!(inviting_guest.signup_default_refusal(), None);
+    }
+
+    #[test]
     fn api_client_role_is_api_key_compatible() {
         let role = Role::api_client();
         assert!(!role.permission_set.is_empty());
@@ -992,6 +1123,8 @@ mod tests {
                 Permission::CaeRead,
                 Permission::LawRead,
                 Permission::SettingsRead,
+                // t95: invite only — still no user.manage.
+                Permission::UserInvite,
             ])
         );
         assert_eq!(

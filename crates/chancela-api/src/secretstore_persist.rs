@@ -97,6 +97,12 @@ pub const FIELD_PKCS12_PASSPHRASE: &str = "passphrase";
 /// Outbound-SMTP account password field (t23). The only secret the mail settings hold; the host,
 /// port, username, encryption mode and sender identity are non-secret and live in `settings.json`.
 pub const FIELD_SMTP_PASSWORD: &str = "smtp_password";
+/// TOTP shared-secret field (t95 P1-C). The base32 RFC 4648 secret an authenticator app provisions
+/// from. Rides this store for the same reason the SMTP password does: it gets the AEAD-at-rest,
+/// write-only, fail-closed treatment automatically, and never touches `users.json`. The
+/// per-user `provider_id` (the user id) is bound into the AEAD AAD, so one user's secret can never
+/// be relocated onto another's record.
+pub const FIELD_TOTP_SECRET: &str = "totp_secret";
 
 /// The entry id used by the legacy flat [`ProviderCredentialStore::put`]/[`read`](
 /// ProviderCredentialStore::read)/[`statuses`](ProviderCredentialStore::statuses) shims, which map
@@ -124,6 +130,13 @@ pub enum CredentialMode {
     /// and is deliberately excluded from the `/v1/signature/provider-credentials` surface; the mail
     /// password is written and cleared only through `PUT /v1/settings/email`.
     Smtp,
+    /// A user's TOTP shared secret (t95 P1-C). Not a signing provider — it rides this store so the
+    /// per-user second-factor secret gets the same AEAD-at-rest, write-only, fail-closed treatment,
+    /// instead of inventing a second secret path. The `provider_id` is the **user id**, so each
+    /// user's secret is its own record and is bound into the AEAD AAD; it is excluded from the
+    /// `/v1/signature/provider-credentials` surface and is written/cleared only through the
+    /// self-service TOTP enrolment endpoints.
+    TwoFactorTotp,
 }
 
 impl CredentialMode {
@@ -135,6 +148,7 @@ impl CredentialMode {
             Self::Scap => "scap",
             Self::LocalPkcs12 => "pkcs12",
             Self::Smtp => "smtp",
+            Self::TwoFactorTotp => "totp",
         }
     }
 
@@ -146,6 +160,7 @@ impl CredentialMode {
             "scap" => Some(Self::Scap),
             "pkcs12" => Some(Self::LocalPkcs12),
             "smtp" => Some(Self::Smtp),
+            "totp" => Some(Self::TwoFactorTotp),
             _ => None,
         }
     }
@@ -175,6 +190,7 @@ impl CredentialMode {
             ],
             Self::LocalPkcs12 => &[FIELD_PKCS12_PFX, FIELD_PKCS12_PASSPHRASE],
             Self::Smtp => &[FIELD_SMTP_PASSWORD],
+            Self::TwoFactorTotp => &[FIELD_TOTP_SECRET],
         }
     }
 
@@ -335,6 +351,23 @@ impl CredentialFieldSet for SmtpCredentialFields {
     fn into_set_pairs(self) -> Vec<(&'static str, Zeroizing<String>)> {
         let mut pairs = Vec::new();
         push_pair(&mut pairs, FIELD_SMTP_PASSWORD, self.password);
+        pairs
+    }
+}
+
+/// TOTP secret field (t95 P1-C): the base32 RFC 4648 shared secret.
+#[derive(Default)]
+pub struct TotpCredentialFields {
+    /// The base32 authenticator secret, or `None` to leave the stored value unchanged.
+    pub secret: Option<Zeroizing<String>>,
+}
+
+impl CredentialFieldSet for TotpCredentialFields {
+    const MODE: CredentialMode = CredentialMode::TwoFactorTotp;
+
+    fn into_set_pairs(self) -> Vec<(&'static str, Zeroizing<String>)> {
+        let mut pairs = Vec::new();
+        push_pair(&mut pairs, FIELD_TOTP_SECRET, self.secret);
         pairs
     }
 }

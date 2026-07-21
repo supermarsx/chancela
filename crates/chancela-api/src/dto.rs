@@ -147,6 +147,14 @@ pub fn parse_time(s: &str) -> Result<time::Time, ApiError> {
 
 /// Serde adapter that distinguishes an absent field from an explicit `null` (PATCH semantics).
 ///
+/// `skip_serializing_if` predicate for a `bool` that defaults `false`: keeps a field out of the
+/// stored/serialized form until it is actually set, so an additive boolean flag round-trips a
+/// pre-existing document byte-identically.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+pub(crate) fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// A plain `Option<T>` collapses "key omitted" and "key: null" both to `None`. For PATCH we
 /// need three states — leave unchanged (absent), clear (null), set (value) — so nullable
 /// fields use `Option<Option<T>>` with this deserializer: `#[serde(default)]` supplies the

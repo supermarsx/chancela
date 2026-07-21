@@ -555,9 +555,10 @@ pub async fn list_provider_credentials(
         .map_err(map_store_err)?;
     let mut providers = Vec::with_capacity(statuses.len());
     for record in &statuses {
-        // The SMTP relay account rides the same store but is not a signing provider; it belongs to
-        // the mail settings screen, so it must not appear in the Assinaturas list.
-        if record.mode == CredentialMode::Smtp {
+        // The SMTP relay account and the per-user TOTP secrets ride the same store but are not
+        // signing providers; they belong to the mail-settings and user-security screens, so they
+        // must not appear in the Assinaturas list.
+        if matches!(record.mode, CredentialMode::Smtp | CredentialMode::TwoFactorTotp) {
             continue;
         }
         let entries = state
@@ -598,7 +599,10 @@ fn parse_mode(raw: &str) -> Result<CredentialMode, ApiError> {
     // `smtp` shares the credential store but is NOT a signing provider: it is owned by the mail
     // settings (`PUT /v1/settings/email`), which enforces its own shape. Rejecting it here keeps the
     // two surfaces from writing the same record with different validation.
-    if mode == CredentialMode::Smtp {
+    // `smtp` and `totp` share the credential store but are NOT signing providers: SMTP is owned by
+    // the mail settings, TOTP by the self-service second-factor enrolment endpoints. Both enforce
+    // their own shape, so neither may be written through this generic signing-provider surface.
+    if matches!(mode, CredentialMode::Smtp | CredentialMode::TwoFactorTotp) {
         return Err(ApiError::Unprocessable(format!(
             "unknown credential mode {raw:?}"
         )));
@@ -618,7 +622,14 @@ fn resolve_provider(mode: CredentialMode, raw: &str) -> Result<String, ApiError>
         // `Smtp` is unreachable here — `parse_mode` refuses it before this point — but it is
         // single-instance, so it groups with the other single-instance modes rather than widening
         // the match to a catch-all that would silently absorb a future mode.
-        CredentialMode::Cmd | CredentialMode::Scap | CredentialMode::Smtp => {
+        // `Smtp` and `TwoFactorTotp` are unreachable here — `parse_mode` refuses both before this
+        // point — but they are listed so the match stays exhaustive without a catch-all that would
+        // silently absorb a future mode. `Smtp` is single-instance; `TwoFactorTotp` is per-user but
+        // never routed here.
+        CredentialMode::Cmd
+        | CredentialMode::Scap
+        | CredentialMode::Smtp
+        | CredentialMode::TwoFactorTotp => {
             if !provider_id.is_empty() {
                 return Err(ApiError::Unprocessable(format!(
                     "mode {} is single-instance; use \"_\" as the provider id",
@@ -881,6 +892,9 @@ mod tests {
             password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
             retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role, Scope::Global)],

@@ -94,6 +94,12 @@ mod arquivo;
 mod asic_signature_validation;
 mod asic_signing;
 mod attestation;
+// t95 P0-2. The issue/redeem primitive for emailed bearer credentials (invite / password recovery /
+// emailed second factor). It ships ahead of its callers on purpose: the P1 handlers are written
+// against a primitive that already enforces single-use, supersession, expiry and verifier-only
+// storage, rather than three handlers each re-deriving those rules. `pub` so the P4 adversarial
+// tests can drive it directly from an integration test.
+pub mod auth_token;
 mod authz;
 mod backup;
 mod backup_recovery;
@@ -177,12 +183,18 @@ mod settings;
 mod sidecar_store;
 mod signature;
 mod signature_pkcs12_stored;
+// t95 P1-A: self-signup, invitations, and the role-edit call site of the self-signup default-role
+// ceiling. `pub` so the adversarial suite can drive the invite grant table directly.
+pub mod signup;
 // t23: outbound SMTP. `smtp` is the protocol client; `smtp_settings` is the admin-facing
 // configuration + test-send surface over it.
 mod smtp;
 mod smtp_settings;
 mod sync_handoff;
 mod tenants;
+// t95 P1-C: TOTP second factor — enrolment, confirmation, backup codes, and the RFC 6238 verifier
+// the sign-in path (P2) consumes. `pub` so the adversarial suite can drive the verifier directly.
+pub mod totp;
 mod trust;
 mod users;
 mod xades_signature;
@@ -260,15 +272,15 @@ pub use secretstore_persist::{
 #[doc(hidden)]
 pub use session::DurableSessionRegistry;
 pub use settings::{
-    AiSettings, AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
+    AiSettings, AppearanceSettings, AuthSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
     DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS, DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES,
     DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES, DocumentSettings, Locale, OnboardingSettings,
     OrganizationSettings, PlatformAuditEvent, PlatformControlOutcomeKind, PlatformLogLevel,
     PlatformLoggingSettings, PlatformServiceAction, PlatformServiceControlSettings,
     PlatformServiceDesiredState, PlatformServiceLastAction, PlatformSettings,
     RegistryAutoUpdateCadence, RegistryAutoUpdateEntityDefaults, RegistryAutoUpdateSettings,
-    RegistryAutoUpdateWeekday, Settings, SignatureFamily, SigningCmdSettings, SigningSettings,
-    ThemeMode,
+    RegistryAutoUpdateWeekday, PasswordRecoverySettings, Settings, SignatureFamily, SignupMode,
+    SignupSettings, SigningCmdSettings, SigningSettings, ThemeMode, TwoFactorSettings,
 };
 #[cfg(debug_assertions)]
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
@@ -576,6 +588,24 @@ pub struct AppState {
     /// different key, never throttled). Mirrors `signin_backoff`: in-memory, resets on restart, not a
     /// hardened anti-brute-force. See `users::authorize_secret_op_throttled`.
     pub secret_backoff: Arc<RwLock<HashMap<users::SecretBackoffKey, session::Backoff>>>,
+    /// Live emailed bearer credentials — invitations today, password-recovery and emailed
+    /// second-factor confirmations as P1-B/P1-C land (t95 §2.2). Holds **verifiers only**, never a
+    /// token; see [`auth_token`] for the guarantees the store enforces on every caller.
+    ///
+    /// P0 deliberately shipped [`auth_token::AuthTokenStore`] with no state field because it had no
+    /// callers; [`signup`] is the first, so the field arrives here with them.
+    ///
+    /// **In-memory, like `sessions` and `pairing`.** The store serializes, but wiring it into
+    /// `sidecar_store` is a separate change; until then a restart invalidates every outstanding
+    /// invitation, which fails closed.
+    pub auth_tokens: Arc<RwLock<auth_token::AuthTokenStore>>,
+    /// The role and scope each live invitation grants, keyed by its token record's id (t95 P1-A).
+    ///
+    /// Deliberately *beside* the token store rather than on the token record: `AuthTokenRecord` is
+    /// the persisted, purpose-agnostic shape and must not grow per-purpose fields a later author
+    /// could fill with something sensitive. Kept in lockstep with `auth_tokens` — an invitation
+    /// whose grant is missing is refused, never resolved to a default.
+    pub invite_grants: Arc<RwLock<signup::InviteGrants>>,
     /// The law archive's directory (`<data_dir>/laws`), or `None` for in-memory (no persistence).
     /// Mirrors `users_path`; set only by [`AppState::with_data_dir`]/[`AppState::from_env`].
     pub laws_dir: Option<Arc<PathBuf>>,
@@ -901,6 +931,9 @@ impl AppState {
         // Law archive: the `laws/` subdir plus its state file (missing/malformed → empty archive).
         let laws_dir = dir.join(law::LAWS_DIR);
         let law_store = law::load_law_store(&laws_dir);
+        // Captured before `loaded` is moved into the lock; the fallback for the `try_read` sample
+        // taken after sidecar hydration (see the ZK object-store open below).
+        let declared_zk_root_from_file = loaded.data_management.zk_shared_object_root.clone();
         let mut state = AppState {
             settings: Arc::new(RwLock::new(loaded)),
             platform_logs: Arc::new(RwLock::new(loaded_platform_logs)),
@@ -985,10 +1018,6 @@ impl AppState {
         #[cfg(not(feature = "postgres"))]
         let sidecars_db_backed = false;
         state.sidecars_db_backed = sidecars_db_backed;
-        state.zk_repositories = Arc::new(RwLock::new(zk_repository::ZkRepositoryStore::open(
-            &dir,
-            sidecars_db_backed,
-        )));
         match Store::open_backend(resolved_backend.selection) {
             Ok(store) => match store.load() {
                 Ok(loaded) => {
@@ -1084,6 +1113,36 @@ impl AppState {
                     source,
                 }
             })?;
+        }
+
+        // The zero-knowledge object store opens HERE, deliberately after the hydration above, and
+        // not next to the other data-dir sidecars.
+        //
+        // Its shared-root declaration can now come from the settings document as well as from
+        // `CHANCELA_ZK_SHARED_OBJECT_ROOT`, and on Postgres the *authoritative* settings document is
+        // the DB row that `hydrate_from_store` just installed — the file-derived copy read at the
+        // top of this function is a placeholder on exactly the backend where this interlock applies.
+        // Opening before hydration would therefore have read a stale (usually absent) declaration
+        // and failed the store closed on a correctly-configured cluster. Nothing between the old
+        // call site and here touches `state.zk_repositories`.
+        //
+        // `try_from_env` is synchronous, so the lock is sampled with `try_read`. That cannot
+        // contend here — the `Arc` is local to this constructor and no task has been handed a clone
+        // — but rather than assert it with a boot-time panic, a failed sample falls back to the
+        // file-derived declaration captured before the document was moved into the lock. The
+        // fallback is a strictly older copy of the same field, never a silent `None`, so a
+        // correctly-configured instance can never be closed by a lock timing accident.
+        {
+            let declared = state
+                .settings
+                .try_read()
+                .map(|settings| settings.data_management.zk_shared_object_root.clone())
+                .unwrap_or(declared_zk_root_from_file);
+            state.zk_repositories = Arc::new(RwLock::new(zk_repository::ZkRepositoryStore::open(
+                &dir,
+                sidecars_db_backed,
+                declared.as_deref(),
+            )));
         }
 
         // Resolve the CC co-location signal (t58-e2 / CC-B) from the environment the desktop shell
@@ -1276,7 +1335,7 @@ impl AppState {
     /// The data directory backing on-disk persistence, or `None` for in-memory state. Derived
     /// from `persist_path` (the settings file's parent) so the CAE refresh writes its cache into
     /// the same directory `with_data_dir` seeded the catalog from.
-    fn data_dir(&self) -> Option<PathBuf> {
+    pub(crate) fn data_dir(&self) -> Option<PathBuf> {
         self.persist_path
             .as_ref()
             .and_then(|p| p.parent().map(PathBuf::from))
@@ -1791,6 +1850,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}/revisions/{revision}",
             get(groups::get_template_library_revision),
+        )
+        .route(
+            "/v1/zk-repositories/storage-status",
+            get(zk_repository::get_zk_storage_status),
+        )
+        .route(
+            "/v1/zk-repositories/shared-object-root",
+            put(zk_repository::put_shared_object_root),
         )
         .route(
             "/v1/tenants/{tenant_id}/repository-policy",
@@ -2335,6 +2402,16 @@ pub fn router(state: AppState) -> Router {
             put(smtp_settings::put_email_password).delete(smtp_settings::delete_email_password),
         )
         .route("/v1/settings/email/test", post(smtp_settings::post_email_test))
+        // t108: the delivery record — every outbound message's outcome, and an admin-triggered
+        // resend of the ones whose content is derivable from durable state. A record, not a queue.
+        .route(
+            "/v1/settings/email/deliveries",
+            get(smtp_settings::list_email_deliveries),
+        )
+        .route(
+            "/v1/settings/email/deliveries/{id}/resend",
+            post(smtp_settings::resend_email_delivery),
+        )
         .route("/v1/platform/services", get(platform_ops::list_services))
         .route("/v1/platform/logs", get(platform_logs::list_logs))
         .route(
@@ -2388,6 +2465,30 @@ pub fn router(state: AppState) -> Router {
             post(users::generate_attestation_key).delete(users::remove_attestation_key),
         )
         .route("/v1/users/{id}/recovery", post(users::issue_recovery))
+        // Second-factor (TOTP) self-enrolment (t95 P1-C). Enrol/confirm/disable/backup-codes are
+        // self-service — the secret has to reach the account holder's own authenticator — and the
+        // read is self-or-admin. Their handlers gate on `require_self` / `user.manage`, not a new
+        // permission verb, so they classify as `Session` (a valid session, self-scoped inside).
+        .route(
+            "/v1/users/{id}/two-factor",
+            get(totp::get_two_factor),
+        )
+        .route(
+            "/v1/users/{id}/two-factor/totp/enrol",
+            post(totp::enrol_totp),
+        )
+        .route(
+            "/v1/users/{id}/two-factor/totp/confirm",
+            post(totp::confirm_totp),
+        )
+        .route(
+            "/v1/users/{id}/two-factor/totp",
+            axum::routing::delete(totp::disable_totp),
+        )
+        .route(
+            "/v1/users/{id}/two-factor/backup-codes",
+            post(totp::regenerate_backup_codes),
+        )
         .route("/v1/privacy/users/{id}/export", get(privacy::export_user))
         .route(
             "/v1/privacy/users/{id}/dsr-requests",
@@ -2539,6 +2640,14 @@ pub fn router(state: AppState) -> Router {
                 .post(session::create_session)
                 .delete(session::delete_session),
         )
+        // Self-signup and invitations (t95 P1-A). `signup` and `invite/accept` are unauthenticated —
+        // an applicant has no session yet — and both refuse on an instance with zero users, so
+        // neither can ever stand in for the one unauthenticated `POST /v1/users` bootstrap that
+        // mints the first Owner@Global (§2.7). `invites` requires `user.invite` at the invitation's
+        // scope.
+        .route("/v1/auth/signup", post(signup::signup))
+        .route("/v1/auth/invites", post(signup::issue_invite))
+        .route("/v1/auth/invite/accept", post(signup::accept_invite))
         // Companion device pairing (wp27-e4). Mint (operator-authenticated) → exchange
         // (unauthenticated: the phone has no session yet) → list/revoke (operator-authenticated).
         .route("/v1/pairing/codes", post(pairing::create_pairing_code))
@@ -4334,6 +4443,9 @@ mod tests {
             password_hash: Some("direct-session-test-password-hash".to_owned()),
             attestation_key: None,
             retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
@@ -9590,6 +9702,10 @@ mod tests {
             },
             "ai": { "enabled": true },
             "platform": {
+                // t95 P0-3. Present in the round-trip fixture with a real value so the field is
+                // proven to survive a PUT/GET/restart cycle — it is the origin of every emailed
+                // link, and a value that quietly does not persist would be a broken recovery mail.
+                "public_base_url": "https://livros.encosto-estrategico.pt",
                 "logging": {
                     "global": "warn",
                     "app": "debug",
@@ -12153,6 +12269,9 @@ mod tests {
             password_hash: Some(crate::attestation::hash_secret(DEFAULT_TEST_PASSWORD).unwrap()),
             attestation_key: None,
             retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: assignments,
@@ -13289,6 +13408,9 @@ mod tests {
             password_hash: Some("direct-session-test-password-hash".to_owned()),
             attestation_key: None,
             retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![],
@@ -16185,6 +16307,9 @@ mod tests {
                 password_hash: Some(legacy_hash.clone()),
                 attestation_key: None,
                 retired_attestation_keys: Vec::new(),
+                totp: None,
+                two_factor_required: false,
+                force_password_change: false,
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: vec![crate::roles::bootstrap_assignment(true)],

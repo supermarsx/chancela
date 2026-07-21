@@ -119,6 +119,78 @@ pub struct User {
     /// pre-t71 `users.json` round-trips byte-identically.
     #[serde(default, skip_serializing_if = "UserLanguage::is_auto")]
     pub language: UserLanguage,
+    /// The user's TOTP second-factor enrolment (t95 P1-C), or `None` when they have never enrolled.
+    ///
+    /// The **secret itself is not here** — it is AEAD-encrypted in the credential store
+    /// ([`crate::secretstore_persist::CredentialMode::TwoFactorTotp`], keyed by the user id). This
+    /// holds only the non-secret enrolment envelope: whether it is confirmed, when, the replay
+    /// guard's `last_accepted_step`, and the backup-code verifiers. **Additive** —
+    /// `#[serde(default)]` reads an absent field as `None` and `skip_serializing_if` omits it, so
+    /// every pre-t95 `users.json` round-trips byte-identically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub totp: Option<TotpEnrolment>,
+    /// Whether this account must present a second factor (t95 §2.3, item 2). **Enforced as
+    /// enrol-on-next-sign-in, never a hard lockout** — an affected user signs in far enough to
+    /// enrol and no further. Additive; defaults `false`, and `skip_serializing_if` keeps it out of
+    /// the file until set.
+    #[serde(default, skip_serializing_if = "crate::dto::is_false")]
+    pub two_factor_required: bool,
+    /// Whether the next successful sign-in must force a password change before anything else (t95
+    /// §2.3, item 3). Set when an account is created with a welcome email — the admin chose the
+    /// initial password and can attest as the user until it changes — and cleared on the first
+    /// successful change. Additive; defaults `false`.
+    #[serde(default, skip_serializing_if = "crate::dto::is_false")]
+    pub force_password_change: bool,
+}
+
+/// A user's TOTP enrolment envelope (t95 P1-C) — everything about their second factor **except the
+/// secret**, which lives AEAD-encrypted in the credential store.
+///
+/// An enrolment exists in one of two states: **pending** (`confirmed == false`) the moment a secret
+/// is generated, and **confirmed** once the user proves the authenticator by entering a live code.
+/// A pending enrolment grants nothing — `has_totp` and every sign-in check read `confirmed` — so a
+/// user who scanned nothing is never locked out; they simply have no active factor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TotpEnrolment {
+    /// Whether the user has proved the authenticator works. Only a confirmed enrolment is a factor.
+    pub confirmed: bool,
+    /// RFC 3339 stamp of when confirmation happened, for the security screen. `None` while pending.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmed_at: Option<String>,
+    /// The last TOTP step this user successfully verified. The replay guard refuses any step at or
+    /// below it, so a code cannot be reused inside its own window. `None` until the first accept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_accepted_step: Option<i64>,
+    /// Single-use backup-code verifiers (argon2id PHC strings — the plaintext is shown once and
+    /// never stored). A code is consumed by clearing its slot, so the vector's live count is the
+    /// "codes remaining" the UI shows.
+    #[serde(default)]
+    pub backup_code_hashes: Vec<String>,
+}
+
+impl TotpEnrolment {
+    /// A pending enrolment: a secret has been generated and stored, but not yet confirmed.
+    #[must_use]
+    pub fn pending() -> Self {
+        TotpEnrolment {
+            confirmed: false,
+            confirmed_at: None,
+            last_accepted_step: None,
+            backup_code_hashes: Vec::new(),
+        }
+    }
+
+    /// Whether this is an active second factor (confirmed). A pending enrolment is not.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.confirmed
+    }
+
+    /// How many backup codes remain unspent.
+    #[must_use]
+    pub fn backup_codes_remaining(&self) -> usize {
+        self.backup_code_hashes.len()
+    }
 }
 
 impl User {
@@ -275,11 +347,49 @@ pub struct UserView {
     /// Whether a recovery credential is established (t51). A **boolean only** — the phrase and its
     /// verifier never leave the server (mirrors the "no secret material in views" discipline).
     pub has_recovery_phrase: bool,
+    /// Whether the user has a **confirmed** TOTP second factor (t95 P1-C). A boolean only — the
+    /// secret, the provisioning URI and the backup codes never leave the server, mirroring the
+    /// other `has_*` booleans. A pending (unconfirmed) enrolment reads `false`: it is not yet a
+    /// factor. This is the cross-user state the security screen shows for another account.
+    pub has_totp: bool,
+    /// Whether this account is required to hold a second factor (t95 §2.3). Surfaced so an admin can
+    /// see and toggle the per-account requirement; enforcement is enrol-on-next-sign-in, never a
+    /// lockout.
+    pub two_factor_required: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attestation_key_fingerprint: Option<String>,
     /// The user's language preference (t71). Always emitted so the client can render the control
     /// without a second read; `"auto"` for a user who has never chosen one.
     pub language: UserLanguage,
+    /// The user's scoped role assignments (t103) — the **raw** `(role_id, scope)` pairs, exactly
+    /// as [`crate::roles::assignment_views`] renders them everywhere else.
+    ///
+    /// ## Why raw, and not enriched
+    ///
+    /// No role *name* and no flattened permission set. Both would need an `async` read of the roles
+    /// registry, and this `From` is sync and called from dozens of handlers. The enriched shape
+    /// already exists for the one consumer that needs it —
+    /// [`crate::privacy::RoleAssignmentExport`], on the DSR export path — and must not be rebuilt
+    /// here. The client renders an id with `roleNameLabel(id, name)`.
+    ///
+    /// ## Why it is here at all
+    ///
+    /// `GET /v1/users` previously could not answer "which accounts hold this role", so the roster
+    /// had no função filter (t89 refused to fake one with a per-row fetch). The underlying `User`
+    /// has carried these assignments since t64; only the view omitted them.
+    ///
+    /// ## The consequence that had to be weighed: this struct is a ledger payload
+    ///
+    /// `UserView` is the `user.created` / `user.updated` payload (t88), and `Ledger::append`
+    /// hashes the payload into `Event::payload_digest`. So a new field changes the digest of
+    /// **future** user events. Past events are untouched and the hash chain stays intact — a
+    /// digest covers the payload as serialized at append time, and nothing recomputes an old one.
+    /// This is a deliberate, authorized change, not a side effect: it is recorded here because the
+    /// next person to diff a `user.created` digest across this commit needs to know why it moved.
+    ///
+    /// Filter on the **role id**, never the display name: names are translatable and retired ids
+    /// still resolve (t87).
+    pub role_assignments: Vec<crate::session::RoleAssignmentView>,
 }
 
 impl From<&User> for UserView {
@@ -294,8 +404,11 @@ impl From<&User> for UserView {
             has_secret: u.password_hash.is_some(),
             has_attestation_key: u.attestation_key.is_some(),
             has_recovery_phrase: u.recovery_hash.is_some(),
+            has_totp: u.totp.as_ref().is_some_and(TotpEnrolment::is_active),
+            two_factor_required: u.two_factor_required,
             attestation_key_fingerprint: u.attestation_key.as_ref().map(|k| k.fingerprint.clone()),
             language: u.language,
+            role_assignments: crate::roles::assignment_views(&u.role_assignments),
         }
     }
 }
@@ -337,6 +450,12 @@ pub struct PatchUser {
     /// that sets it back to "keep detecting", not a way to clear the field.
     #[serde(default)]
     pub language: Option<UserLanguage>,
+    /// t95 §2.3: set/clear the per-account second-factor requirement (an admin act). Absent leaves
+    /// it unchanged. Turning it **on** requires `auth.two_factor.totp_enabled` at the instance —
+    /// requiring a factor the instance does not support would be a lockout with no way to satisfy
+    /// it. Enforced as enrol-on-next-sign-in (the sign-in path, P2), never a hard lock here.
+    #[serde(default)]
+    pub two_factor_required: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -589,6 +708,14 @@ pub async fn create_user(
             password_hash: Some(password_hash),
             attestation_key: Some(attestation_key),
             retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            // t95 §2.3 item 3: an account created **with a welcome email** was given a password the
+            // administrator chose, and the admin can attest as that user until it changes (t88, and
+            // the create screen says so). Force a change at first sign-in so control passes to the
+            // user. Bootstrap (the first Owner sets their own password) and no-email creates are
+            // unaffected. Cleared on the first successful `set_secret` (enforced at sign-in, P2).
+            force_password_change: req.send_welcome_email && !is_bootstrap,
             secret_source: SecretSource::default(),
             recovery_hash: None,
             // t71: the authorized explicit grant when one was requested, else the historical
@@ -636,9 +763,15 @@ pub async fn create_user(
 
     // t71 + t70: the welcome mail is a COURTESY attached to the create, not part of it. It runs
     // only after the account is durably written and ledgered, carries no password/token/link (see
-    // `smtp_settings::send_welcome_email`), and a relay refusal is logged and swallowed — failing
-    // the request here would report "not created" for an account that certainly exists, which is
-    // the one outcome an operator must never be told. Skipped without an address to send to.
+    // `smtp_settings::send_and_record_welcome_email`), and a relay refusal is logged and swallowed
+    // — failing the request here would report "not created" for an account that certainly exists,
+    // which is the one outcome an operator must never be told. Skipped without an address.
+    //
+    // t108: swallowing the error is still right; swallowing the *fact* was not. The sender now
+    // appends `user.welcome_email_sent` / `user.welcome_email_failed` before returning, so the
+    // outcome survives this handler whatever is done with the `Result`. The log line is kept and
+    // is now the only place the relay's own refusal text appears — deliberately, since it can
+    // quote the recipient's address back and the ledger is not erasable.
     if req.send_welcome_email && !is_bootstrap {
         match user.email.as_deref() {
             Some(address) => {
@@ -646,12 +779,18 @@ pub async fn create_user(
                 // resolves to the platform default (`settings.documents.locale`) — deliberately
                 // not the creating operator's language, and never guessed from the name or the
                 // e-mail domain.
-                if let Err(error) = crate::smtp_settings::send_welcome_email(
+                let message = crate::smtp_settings::WelcomeMessage {
+                    user_id: user.id.0,
+                    recipient_email: address,
+                    recipient_name: Some(&user.display_name),
+                    created_by: Some(&request_actor),
+                    locale_override: user.language.fixed().map(Locale::as_str),
+                };
+                if let Err(error) = crate::smtp_settings::send_and_record_welcome_email(
                     &state,
-                    address,
-                    Some(&user.display_name),
-                    Some(&request_actor),
-                    user.language.fixed().map(Locale::as_str),
+                    &request_actor,
+                    &attestor,
+                    message,
                 )
                 .await
                 {
@@ -662,6 +801,8 @@ pub async fn create_user(
                     );
                 }
             }
+            // No address is not a send outcome, so it is not filed as one: nothing was attempted,
+            // no relay was involved, and an event claiming a failed send would misdescribe it.
             None => tracing::warn!(
                 user = %user.username,
                 "a welcome message was requested but the account has no e-mail address"
@@ -746,6 +887,9 @@ mod tests {
             password_hash: None,
             attestation_key: None,
             retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
             secret_source: SecretSource::default(),
             recovery_hash: None,
             role_assignments: vec![crate::roles::bootstrap_assignment(true)],
@@ -1188,6 +1332,11 @@ pub async fn set_secret(
         if matches!(proof, Some(ProofKind::Recovery)) {
             user.recovery_hash = None; // single-use: the phrase is consumed on a successful reset.
         }
+        // t95 §2.3 item 3: any successful secret change clears the forced-change flag. The admin's
+        // initial password is gone, so the account no longer needs to be walled off at sign-in. This
+        // fires for the self-service change the forced-change flow drives the user into, and for a
+        // legitimate cross-user reset alike — either way the initial password no longer stands.
+        user.force_password_change = false;
         user.clone()
     };
 
@@ -1519,6 +1668,17 @@ pub async fn patch_user(
 ) -> Result<Json<UserView>, ApiError> {
     // RBAC (t64-E3): editing a profile (rename / (de)activate) is `user.manage` at Global.
     require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    // t95 §2.3: requiring a second factor an instance cannot issue is a lockout with no cure. Refuse
+    // the toggle-on unless TOTP is enabled instance-wide, before any state is touched.
+    if req.two_factor_required == Some(true)
+        && !state.settings.read().await.auth.two_factor.totp_enabled
+    {
+        return Err(ApiError::Unprocessable(
+            "auth.two_factor.totp_enabled tem de estar ativo antes de exigir um segundo fator a uma \
+             conta; caso contrário a conta ficaria sem forma de o configurar"
+                .to_owned(),
+        ));
+    }
     let user = {
         let mut users = state.users.write().await;
         // Last-active-user guard: reject deactivating the final active user (checked under the
@@ -1570,6 +1730,9 @@ pub async fn patch_user(
         // rather than clearing the field, so a user can undo a fixed choice.
         if let Some(language) = req.language {
             user.language = language;
+        }
+        if let Some(required) = req.two_factor_required {
+            user.two_factor_required = required;
         }
         user.clone()
     };

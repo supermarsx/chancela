@@ -484,7 +484,7 @@ pub struct SessionView {
 /// A [`chancela_authz::Scope`] rendered for the web (t64-E3, FROZEN for E5). A tagged union so the
 /// client can switch on `kind` and read the id: `{"kind":"global"}` / `{"kind":"entity","id":..}` /
 /// `{"kind":"book","id":..}`.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ScopeView {
     Global,
@@ -546,7 +546,9 @@ pub struct PermissionGrantView {
 }
 
 /// One role assignment the user holds: the role id and the scope it is held at (t64-E3, FROZEN).
-#[derive(Serialize)]
+///
+/// `Debug` because [`crate::users::UserView`] embeds this (t103) and derives `Debug` itself.
+#[derive(Debug, Serialize)]
 pub struct RoleAssignmentView {
     pub role_id: String,
     pub scope: ScopeView,

@@ -506,6 +506,16 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/pairing/exchange", RouteClass::Exempt),
     ("/v1/pairing/devices", RouteClass::Session),
     ("/v1/pairing/devices/{device_id}", RouteClass::Session),
+    // --- Self-signup and invitations (t95 P1-A) -------------------------------------------------
+    // `signup` and `invite/accept` are unauthenticated because an applicant has no session yet —
+    // and both refuse on an instance with zero users, so neither can stand in for the one
+    // unauthenticated `POST /v1/users` bootstrap that mints the first Owner\@Global (§2.7). Every
+    // other gate they apply (mode, domain allow-list, invitation validity, the default-role
+    // ceiling) is evaluated in the handler from `state.settings`, which is why `Exempt` here does
+    // not mean "ungoverned".
+    ("/v1/auth/signup", RouteClass::Exempt),
+    ("/v1/auth/invite/accept", RouteClass::Exempt), // the invitation token IS the credential
+    ("/v1/auth/invites", RouteClass::Gated), // POST user.invite@scope (+ role.assign@scope for a named role)
     // --- Entities -------------------------------------------------------------------------------
     ("/v1/entities", RouteClass::Gated), // GET entity.read@Global · POST entity.create@Global
     ("/v1/entities/{id}", RouteClass::Gated), // GET entity.read@Entity · PATCH entity.update@Entity
@@ -552,6 +562,16 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ),
     // --- Opt-in zero-knowledge repositories ---------------------------------------------------
+    // Instance-level object-store interlock (t105): read status / declare the shared root. Both
+    // gated at Global — read on settings.read, the declaration on settings.manage.
+    (
+        "/v1/zk-repositories/storage-status",
+        RouteClass::Gated,
+    ), // settings.read@Global
+    (
+        "/v1/zk-repositories/shared-object-root",
+        RouteClass::Gated,
+    ), // settings.manage@Global
     (
         "/v1/tenants/{tenant_id}/repository-policy",
         RouteClass::Gated,
@@ -813,6 +833,11 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/settings/email/status", RouteClass::Gated), // GET settings.read@Global
     ("/v1/settings/email/password", RouteClass::Gated), // PUT/DELETE settings.manage@Global
     ("/v1/settings/email/test", RouteClass::Gated),   // POST settings.manage@Global
+    ("/v1/settings/email/deliveries", RouteClass::Gated), // GET settings.read@Global (t108)
+    (
+        "/v1/settings/email/deliveries/{id}/resend",
+        RouteClass::Gated,
+    ), // POST settings.manage@Global (t108); re-issue of token mail is refused here and routed to user.invite
     ("/v1/platform/services", RouteClass::Gated),     // GET settings.read@Global
     (
         "/v1/platform/services/{id}/actions/{action}",
@@ -847,6 +872,14 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/users/{id}/secret", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
     ("/v1/users/{id}/attestation-key", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
     ("/v1/users/{id}/recovery", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
+    // t95 P1-C second-factor (TOTP). Enrol/confirm/disable/backup-codes are self-service — a valid
+    // session that IS the target, enforced by `totp::require_self` — so `Session`, not a permission
+    // verb. The read is self OR `user.manage` (cross-user is an admin view), also handler-enforced.
+    ("/v1/users/{id}/two-factor", RouteClass::Session),
+    ("/v1/users/{id}/two-factor/totp/enrol", RouteClass::Session),
+    ("/v1/users/{id}/two-factor/totp/confirm", RouteClass::Session),
+    ("/v1/users/{id}/two-factor/totp", RouteClass::Session),
+    ("/v1/users/{id}/two-factor/backup-codes", RouteClass::Session),
     ("/v1/privacy/users/{id}/export", RouteClass::Gated), // GET user.manage@Global
     ("/v1/privacy/users/{id}/dsr-requests", RouteClass::Gated), // GET/POST user.manage@Global
     (

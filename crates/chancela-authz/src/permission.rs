@@ -145,6 +145,14 @@ pub enum Permission {
     UserRead,
     #[serde(rename = "user.manage")]
     UserManage,
+    /// Issue an **invitation** to create an account (t95 §2.6). Deliberately narrower than
+    /// `user.manage`: an inviter starts the account-creation flow and the invitee finishes it by
+    /// setting their own secret, so the inviter never edits, deactivates, re-roles or reads the
+    /// secrets of an existing user. That is why a Tenant Administrator — which has no `user.manage`
+    /// — can still invite, and why holding this verb is not a route to escalation: the created
+    /// account receives `auth.signup.default_role`, which is ceiling-checked separately.
+    #[serde(rename = "user.invite")]
+    UserInvite,
 
     // --- RBAC meta (NON-DELEGABLE) ---
     #[serde(rename = "role.manage")]
@@ -159,7 +167,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 44] = [
+    pub const ALL: [Permission; 45] = [
         Permission::TenantRead,
         Permission::TenantCreate,
         Permission::TenantAdmin,
@@ -200,6 +208,7 @@ impl Permission {
         Permission::TrustManage,
         Permission::UserRead,
         Permission::UserManage,
+        Permission::UserInvite,
         Permission::RoleManage,
         Permission::RoleAssign,
         Permission::DelegationGrant,
@@ -214,6 +223,33 @@ impl Permission {
         Permission::RoleAssign,
         Permission::DelegationGrant,
         Permission::DelegationRevoke,
+    ];
+
+    /// The permissions a **self-signup default role** may never hold (t95 §2.6).
+    ///
+    /// Self-signup hands a stranger an account with exactly one administrator-configured role. If
+    /// that role can manage users, edit or assign roles, change settings, grant delegations, or
+    /// destroy the record, then "signup is open" silently means "anyone can become an
+    /// administrator". These verbs are therefore a hard ceiling, not a warning.
+    ///
+    /// The ceiling has to be applied in **two** places to be a ceiling at all: when the default
+    /// role is chosen (settings validation) and when any role's permission-set is edited — a role
+    /// that is legal today can be edited to hold `settings.manage` tomorrow while remaining the
+    /// configured signup default. [`crate::Role::signup_default_refusal`] is the shared check both
+    /// call sites use, so neither can drift from the other.
+    ///
+    /// Owner is excluded by `protected`, not by this list — it holds every permission anyway, but
+    /// the refusal names protection so the message is honest about *why*.
+    pub const SELF_SIGNUP_FORBIDDEN: [Permission; 9] = [
+        Permission::UserManage,
+        Permission::RoleManage,
+        Permission::RoleAssign,
+        Permission::SettingsManage,
+        Permission::DelegationGrant,
+        Permission::DataWipe,
+        Permission::DataStartOver,
+        Permission::BookStartOver,
+        Permission::LegalHoldManage,
     ];
 
     /// The stable dotted id (matches the serde representation).
@@ -260,6 +296,7 @@ impl Permission {
             Permission::TrustManage => "trust.manage",
             Permission::UserRead => "user.read",
             Permission::UserManage => "user.manage",
+            Permission::UserInvite => "user.invite",
             Permission::RoleManage => "role.manage",
             Permission::RoleAssign => "role.assign",
             Permission::DelegationGrant => "delegation.grant",
@@ -348,6 +385,7 @@ mod tests {
                 | Permission::TrustManage
                 | Permission::UserRead
                 | Permission::UserManage
+                | Permission::UserInvite
                 | Permission::RoleManage
                 | Permission::RoleAssign
                 | Permission::DelegationGrant
@@ -397,6 +435,7 @@ mod tests {
             Permission::TrustManage,
             Permission::UserRead,
             Permission::UserManage,
+            Permission::UserInvite,
             Permission::RoleManage,
             Permission::RoleAssign,
             Permission::DelegationGrant,
@@ -434,6 +473,39 @@ mod tests {
              the first user of a fresh instance — no longer holds every permission",
             Permission::ALL.len()
         );
+    }
+
+    /// The signup ceiling is only as good as its list. Every entry must be a real catalog verb
+    /// (a typo'd or removed one would silently stop being forbidden), the list must not contain
+    /// duplicates, and the four RBAC meta verbs that actually mint authority — everything except
+    /// `delegation.revoke`, which only ever *removes* authority — must be on it.
+    #[test]
+    fn self_signup_forbidden_is_a_real_deduplicated_superset_of_the_escalating_meta_verbs() {
+        let set: std::collections::BTreeSet<_> =
+            Permission::SELF_SIGNUP_FORBIDDEN.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            Permission::SELF_SIGNUP_FORBIDDEN.len(),
+            "SELF_SIGNUP_FORBIDDEN has duplicates"
+        );
+        for p in Permission::SELF_SIGNUP_FORBIDDEN {
+            assert!(Permission::ALL.contains(&p), "{p} is not a catalog verb");
+        }
+        for escalating in [
+            Permission::RoleManage,
+            Permission::RoleAssign,
+            Permission::DelegationGrant,
+            Permission::UserManage,
+        ] {
+            assert!(
+                set.contains(&escalating),
+                "{escalating} can hand a self-signed-up stranger more authority and must be \
+                 forbidden to the signup default role"
+            );
+        }
+        // `user.invite` is deliberately NOT on the ceiling: an inviter cannot exceed its own
+        // authority, and the invitee still lands on the ceiling-checked default role.
+        assert!(!set.contains(&Permission::UserInvite));
     }
 
     #[test]
