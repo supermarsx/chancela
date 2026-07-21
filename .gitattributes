@@ -1,2 +1,39 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# --- Working-tree line endings, pinned (2026-07-21) -------------------------------------------
+#
+# `text=auto` alone normalises to LF **on commit only**. The checkout side stays platform
+# dependent, so on Windows (`core.autocrlf`) a `git checkout` can hand the working tree CRLF
+# while git still reports it clean — the difference is invisible to `git status` precisely
+# because normalisation happens at commit time.
+#
+# That split cost three separate agents on 2026-07-21, after a `git checkout -- apps/web`
+# rewrote that subtree as CRLF while the rest of the repo stayed LF:
+#   * two replay scripts whose exact-match anchors silently stopped matching, on files whose
+#     content was byte-identical to HEAD;
+#   * `apps/web/src/app/motion.test.ts`, whose regex ends `\n\}\n` and therefore cannot match
+#     a block closing `}\r\n`. Exactly 1 test out of 1655 noticed.
+#
+# Pinning `eol` makes checkout deterministic on every platform, so any assertion that reads a
+# file's raw bytes is correct by construction rather than by luck of the developer's OS.
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+*.json text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.md   text eol=lf
+*.rs   text eol=lf
+*.toml text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sql  text eol=lf
+*.sh   text eol=lf
+
+# Windows batch files are the one genuine exception: `cmd.exe` can mis-parse LF-terminated
+# scripts, so these stay CRLF deliberately rather than by platform accident.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
