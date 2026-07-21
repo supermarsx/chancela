@@ -211,6 +211,7 @@ export const keys = {
   settings: ['settings'] as const,
   emailStatus: ['settings', 'email', 'status'] as const,
   platformServices: ['platform', 'services'] as const,
+  zkStorageStatus: ['zk-repositories', 'storage-status'] as const,
   platformLogs: (params: PlatformLogsQueryParams = {}) =>
     [
       'platform',
@@ -2118,7 +2119,7 @@ export function useUsers() {
 
 /**
  * A single user by id (`GET /v1/users/{id}`, t50 W2) — the edit screen's cold-deep-link
- * fallback: when a `/utilizadores/:id` URL is opened directly the list cache may be empty,
+ * fallback: when a `/users/:id` URL is opened directly the list cache may be empty,
  * so the autonomous edit page resolves the user through this read. Sharing the `['users',
  * id]` key means a mutation that invalidates `keys.users` (create/toggle/secret/key) also
  * refetches an open detail view.
@@ -3049,6 +3050,34 @@ export function useTestEmail() {
 
 /** Platform services status (`GET /v1/platform/services`): desired state, observed runtime,
  * logging level and the backend's honest control limitations for API + MCP stdio. */
+/** The live zero-knowledge object-root interlock (`GET /v1/zk-repositories/storage-status`).
+ *
+ *  Resolved once at process start, so it is deliberately NOT invalidated when the settings document
+ *  is saved: the whole point of showing it is to reveal the gap between "what is saved" and "what
+ *  this process is running", which is what tells the operator a restart is still outstanding. */
+export function useZkStorageStatus() {
+  return useQuery({
+    queryKey: keys.zkStorageStatus,
+    queryFn: () => api.getZkStorageStatus(),
+    staleTime: 15_000,
+    retry: false,
+  });
+}
+
+/** Declare or clear the shared ZK object root. Invalidates the status query so the pane re-reads
+ *  the live interlock and can report that a restart is still outstanding. */
+export function usePutZkSharedObjectRoot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sharedObjectRoot: string | null) =>
+      api.putZkSharedObjectRoot(sharedObjectRoot),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.zkStorageStatus });
+      void qc.invalidateQueries({ queryKey: keys.settings });
+    },
+  });
+}
+
 export function usePlatformServices() {
   return useQuery({
     queryKey: keys.platformServices,

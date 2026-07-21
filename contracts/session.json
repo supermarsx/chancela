@@ -8,7 +8,13 @@
     "has_secret": true,
     "has_attestation_key": false,
     "has_recovery_phrase": false,
-    "language": "auto"
+    "language": "auto",
+    "role_assignments": [
+      {
+        "role_id": "6f776e65-7200-0000-0000-000000000001",
+        "scope": { "kind": "global" }
+      }
+    ]
   },
   "permissions": [
     {

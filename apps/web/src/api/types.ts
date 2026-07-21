@@ -3581,6 +3581,18 @@ export interface UserView {
   attestation_key_fingerprint?: string;
   /** The user's language preference (t71); `'auto'` for one who has never chosen. */
   language: UserLanguage;
+  /**
+   * The scoped role assignments this user holds (t103) — the **raw** `(role_id, scope)` pairs.
+   *
+   * No role name and no permission set: enriching would cost the server an async registry read on
+   * a conversion used by every user handler, and the enriched shape already exists on the DSR
+   * export path (`UserDsrExport.user.role_assignments`). Render an id with
+   * `roleNameLabel(id, name)` from `api/labels.ts`.
+   *
+   * Match on `role_id`, never on a display name: names are translatable, and a retired id still
+   * resolves to a label while matching no live role (t87).
+   */
+  role_assignments: RoleAssignmentView[];
 }
 
 export interface CreateUserBody {
@@ -5306,6 +5318,25 @@ export interface BackupRecoveryPolicySettings {
 export interface DataManagementSettings {
   retained_export_cleanup: RetainedExportCleanupSettings;
   backup_recovery: BackupRecoveryPolicySettings;
+  /** Operator declaration of the shared-mounted zero-knowledge object root. Optional and omitted
+   *  from the wire while unset, so an older document cannot open the interlock by omission.
+   *  `CHANCELA_ZK_SHARED_OBJECT_ROOT` wins when both are set. Resolved once at startup — writing it
+   *  takes effect at the next restart, which the UI states rather than implying it is live. */
+  zk_shared_object_root?: string | null;
+}
+
+/** Where the running process got its declared ZK object root. */
+export type ZkSharedRootSource = 'environment' | 'settings' | 'unset';
+
+/** `GET /v1/zk-repositories/storage-status` — the LIVE state of the fail-closed object-root
+ *  interlock, as resolved at process start. Compare `declared_root` against the saved setting to
+ *  tell whether a restart is still outstanding. */
+export interface ZkStorageStatus {
+  ready: boolean;
+  reason: string | null;
+  requires_shared_root: boolean;
+  declared_root: string | null;
+  source: ZkSharedRootSource;
 }
 
 export type RegistryAutoUpdateStatus =
@@ -5501,6 +5532,13 @@ export interface PlatformSettings {
   api_server: PlatformServiceControlSettings;
   mcp_stdio_server: PlatformServiceControlSettings;
   audit: PlatformAuditEvent[];
+  /**
+   * The absolute `https://` URL this instance is reached at (t95 P0-3). The origin of every
+   * emailed link — invitations, and later recovery — and **never** derived from a request's `Host`
+   * header. `null` until an operator configures it; while `null`, every link-issuing feature is
+   * unavailable and says so. Always present on the wire (serialized as `null` when unset).
+   */
+  public_base_url: string | null;
 }
 
 export type PlatformServiceKind = 'api' | 'mcp';
@@ -7027,6 +7065,7 @@ export const DEFAULT_SETTINGS: Settings = {
     api_server: { enabled: true, desired_state: 'running', last_action: null },
     mcp_stdio_server: { enabled: false, desired_state: 'stopped', last_action: null },
     audit: [],
+    public_base_url: null,
   },
   registry_auto_update: {
     enabled: false,
@@ -7061,6 +7100,7 @@ export const DEFAULT_SETTINGS: Settings = {
       target_rpo_minutes: 24 * 60,
       target_rto_minutes: 4 * 60,
     },
+    // Absent by default: the interlock stays closed until an operator declares the shared mount.
   },
   connectors: { allowed_hosts: [] },
   appearance: {

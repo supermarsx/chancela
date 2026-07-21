@@ -279,6 +279,7 @@ import type {
   TenantRepositoryPolicy,
   TenantRepositoryPolicyView,
   ZkObjectVersionView,
+  ZkStorageStatus,
 } from './types';
 import { clearSessionToken, getSessionToken } from './session';
 import { resolveApiUrl } from './baseUrl';
@@ -743,6 +744,18 @@ export const api = {
   /** Resolves with `ok: false` and a structured `failure` when the RELAY rejects; it rejects with
    *  an `ApiError` only when the request itself was bad (no permission, mail not configured). */
   testEmail: (to: string) => post<EmailTestResult>('/v1/settings/email/test', { to }),
+
+  /** The live zero-knowledge object-root interlock. Read-only: the value that governs it is
+   *  written through the settings document, not here. */
+  getZkStorageStatus: () => get<ZkStorageStatus>('/v1/zk-repositories/storage-status'),
+
+  /** Declare (or, with `null`, clear) the shared-mounted ZK object root. The server validates the
+   *  path before storing it and returns the LIVE interlock — which this write does not open, since
+   *  the root is resolved at process start. */
+  putZkSharedObjectRoot: (sharedObjectRoot: string | null) =>
+    put<ZkStorageStatus>('/v1/zk-repositories/shared-object-root', {
+      shared_object_root: sharedObjectRoot,
+    }),
 
   // Platform operations — desired-state controls plus honest runtime limitations.
   listPlatformServices: () => get<PlatformServicesResponse>('/v1/platform/services'),

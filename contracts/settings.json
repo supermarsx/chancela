@@ -182,6 +182,7 @@
     "enabled": false
   },
   "platform": {
+    "public_base_url": null,
     "logging": {
       "global": "info",
       "app": "info",

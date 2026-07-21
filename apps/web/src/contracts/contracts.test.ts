@@ -203,6 +203,7 @@ import {
   type PaperBookPageRange,
   type PermissionGrant,
   type PermissionScope,
+  type RoleAssignmentView,
   type PlatformActionCapability,
   type PlatformAuditEvent,
   type PlatformControlResponse,
@@ -439,6 +440,31 @@ function assertPermissionScope(scope: unknown, label: string): PermissionScope {
   expect(scoped.id, `${label}.id should be a string`).toBeTypeOf('string');
   expect(scoped.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
   return scoped;
+}
+
+/**
+ * `UserView.role_assignments` (t103) — the RAW `(role_id, scope)` pairs.
+ *
+ * `assertExactKeys` is the point of this helper, not decoration: it fails if the server ever
+ * starts enriching these with `role_name` or `permissions`. That enrichment needs an async
+ * registry read and already exists on the DSR export path
+ * (`UserDsrExport.user.role_assignments`), so a second, silently-diverging copy appearing on the
+ * hot user path is a regression the suite should catch rather than absorb.
+ *
+ * `role_id` is asserted to be a UUID because the client filters the roster on it. A display name
+ * or a client-side slug would both be strings and would both pass a bare `typeof` check, and both
+ * are wrong: names are translatable and slugs never cross the wire (t87).
+ */
+function assertUserRoleAssignments(assignments: unknown, label: string): void {
+  expect(Array.isArray(assignments), `${label}.role_assignments should be an array`).toBe(true);
+  for (const [index, assignment] of (assignments as unknown[]).entries()) {
+    const at = `${label}.role_assignments[${index}]`;
+    const a = assertExactKeys<RoleAssignmentView>(assignment, { role_id: true, scope: true }, at);
+    expect(a.role_id, `${at}.role_id should be the stable role UUID`).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    assertPermissionScope(a.scope, `${at}.scope`);
+  }
 }
 
 function assertApiKeyGrant(grant: unknown, label: string): ApiKeyGrantView {
@@ -5096,7 +5122,7 @@ describe('contract fixtures parse through the real client', () => {
     expect(Object.keys(settings.email)).not.toContain('password');
     const platform = assertExactKeys<PlatformSettings>(
       settings.platform,
-      { logging: true, api_server: true, mcp_stdio_server: true, audit: true },
+      { logging: true, api_server: true, mcp_stdio_server: true, audit: true, public_base_url: true },
       'Settings.platform',
     );
     assertPlatformLogging(platform.logging, 'Settings.platform.logging');
@@ -6989,6 +7015,7 @@ describe('contract fixtures parse through the real client', () => {
         has_attestation_key: true,
         has_recovery_phrase: true,
         language: true,
+        role_assignments: true,
       },
       'UserView',
       // Fingerprint is emitted only when an attestation key is set (t29).
@@ -7002,6 +7029,7 @@ describe('contract fixtures parse through the real client', () => {
     // Security invariant (§ contracts README): no password material on the wire.
     expect(user).not.toHaveProperty('password_hash');
     expect(user).not.toHaveProperty('password');
+    assertUserRoleAssignments(user.role_assignments, 'UserView');
   });
 
   it('user.dsr-export.json → UserDsrExport (GET /v1/privacy/users/{id}/export)', async () => {
@@ -7309,11 +7337,13 @@ describe('contract fixtures parse through the real client', () => {
         has_attestation_key: true,
         has_recovery_phrase: true,
         language: true,
+        role_assignments: true,
       },
       'SessionView.user',
       ['attestation_key_fingerprint'],
     );
     expect(user).not.toHaveProperty('password_hash');
+    assertUserRoleAssignments(user.role_assignments, 'SessionView.user');
 
     // The embedded effective grants (t64-E3, FROZEN for E5): each a `(permission, scope,
     // source)` triple; `scope` is a `kind`-tagged union; `source` ∈ {role, delegation}.
