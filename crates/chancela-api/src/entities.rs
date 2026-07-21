@@ -478,7 +478,7 @@ mod tests {
     use axum::body::{Body, to_bytes};
     use axum::http::Request;
     use chancela_authz::{
-        GUEST_ROLE_ID, LEITOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId, Scope,
+        GUEST_ROLE_ID, OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId, Scope,
     };
     use chancela_core::book::ClosingReason;
     use chancela_core::{BookKind, NumberingScheme, TermoDeAbertura, TermoDeEncerramento};
@@ -550,6 +550,7 @@ mod tests {
             active: true,
             password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role_id, Scope::Global)],
@@ -647,6 +648,7 @@ mod tests {
             active: true,
             password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role_id, scope)],
@@ -850,7 +852,7 @@ mod tests {
             "seat leaked: {redacted}"
         );
 
-        let leitor = token_for_role(&state, "leitor", LEITOR_ROLE_ID).await;
+        let leitor = token_for_role(&state, "leitor", READER_ROLE_ID).await;
         let (status, reader_detail) = send_raw(
             state,
             with_session(get(&format!("/v1/entities/{id}")), &leitor),

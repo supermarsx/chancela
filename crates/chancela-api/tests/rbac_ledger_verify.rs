@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chancela_api::{AppState, router};
-use chancela_authz::LEITOR_ROLE_ID;
+use chancela_authz::READER_ROLE_ID;
 use chancela_ledger::ChainId;
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -202,7 +202,7 @@ async fn rbac_mutations_via_api_keep_the_ledger_verify_healthy() {
             "POST",
             &format!("/v1/users/{member_id}/roles"),
             &owner,
-            json!({ "role_id": LEITOR_ROLE_ID.0.to_string(), "scope": { "kind": "global" } }),
+            json!({ "role_id": READER_ROLE_ID.0.to_string(), "scope": { "kind": "global" } }),
         ),
     )
     .await;
@@ -219,7 +219,7 @@ async fn rbac_mutations_via_api_keep_the_ledger_verify_healthy() {
             json!({
                 // A delegation hands over a FUNÇÃO (t44), not hand-picked verbs.
                 "to": member_id,
-                "roles": [chancela_authz::SIGNATARIO_ROLE_ID.0.to_string()],
+                "roles": [chancela_authz::SIGNATORY_ROLE_ID.0.to_string()],
                 "scope": { "kind": "global" },
                 "legal_basis": "Ata do conselho R-19 (evidência sintética de teste)",
             }),
@@ -255,7 +255,7 @@ async fn rbac_mutations_via_api_keep_the_ledger_verify_healthy() {
             "DELETE",
             &format!("/v1/users/{member_id}/roles"),
             &owner,
-            json!({ "role_id": LEITOR_ROLE_ID.0.to_string(), "scope": { "kind": "global" } }),
+            json!({ "role_id": READER_ROLE_ID.0.to_string(), "scope": { "kind": "global" } }),
         ),
     )
     .await;

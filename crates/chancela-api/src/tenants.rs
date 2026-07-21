@@ -256,6 +256,7 @@ mod tests {
                 active: true,
                 password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
                 attestation_key: None,
+                retired_attestation_keys: Vec::new(),
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: vec![RoleAssignment::new(role_id, scope)],
@@ -525,14 +526,15 @@ mod tests {
     /// cannot create, proving `tenant.create` is a distinct authority.
     #[tokio::test]
     async fn tenant_crud_requires_the_dedicated_tenant_permissions() {
-        use chancela_authz::{GESTOR_ROLE_ID, Permission, Role};
+        use chancela_authz::{COMPANY_OWNER_ROLE_ID, Permission, Role};
 
         let state = AppState::default();
         install_default_tenant(&state).await;
         let default_id = chancela_core::DEFAULT_TENANT_ID.to_string();
 
         // A Gestor at Global: has entity.create + entity.read, but NO tenant.* verb.
-        let gestor = token_for_role_at(&state, "gestor", GESTOR_ROLE_ID, Scope::Global).await;
+        let gestor =
+            token_for_role_at(&state, "gestor", COMPANY_OWNER_ROLE_ID, Scope::Global).await;
 
         // create → 403 (lacks tenant.create, even though it holds entity.create).
         let (status, _) = send_raw(

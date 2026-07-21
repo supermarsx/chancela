@@ -614,6 +614,43 @@ impl AttestationKeyBlob {
     pub fn public_key_bytes(&self) -> Option<Vec<u8>> {
         B64.decode(&self.public_key_sec1).ok()
     }
+
+    /// The public half of this key, kept so the attestations it signed keep verifying once it is
+    /// superseded (t92). See [`RetiredAttestationKey`].
+    pub fn retire(&self, retired_at: String) -> RetiredAttestationKey {
+        RetiredAttestationKey {
+            public_key_sec1: self.public_key_sec1.clone(),
+            fingerprint: self.fingerprint.clone(),
+            retired_at,
+        }
+    }
+}
+
+/// The **public half only** of a superseded attestation key, retained so a rotation or a removal
+/// stops destroying the account's attestation history (t92).
+///
+/// Verification needs exactly two things — the SEC1 public key and the fingerprint the attestation
+/// records — and both are already public: they are stored in the clear in `users.json` and
+/// published on the wire in `UserView`. The three fields of [`AttestationKeyBlob`] that constitute
+/// the secret (`kdf_salt`, `nonce`, `ciphertext`, which together wrap the P-256 scalar) are
+/// deliberately NOT carried over: a retired key can verify the past and can never sign again.
+/// `retire_attestation_key_retains_no_secret_material` in `crates/chancela-api/tests` asserts the
+/// stored shape rather than trusting this comment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetiredAttestationKey {
+    /// Base64 of the uncompressed SEC1 public key. No private component.
+    pub public_key_sec1: String,
+    /// The 32-hex fingerprint attestations signed by this key carry.
+    pub fingerprint: String,
+    /// RFC 3339 instant the key stopped being the user's current key.
+    pub retired_at: String,
+}
+
+impl RetiredAttestationKey {
+    /// The raw SEC1 public-key bytes, or `None` if the stored base64 is corrupt.
+    pub fn public_key_bytes(&self) -> Option<Vec<u8>> {
+        B64.decode(&self.public_key_sec1).ok()
+    }
 }
 
 /// Uncompressed SEC1 encoding of a P-256 public key.

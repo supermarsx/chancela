@@ -84,6 +84,19 @@ pub struct User {
     pub password_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation_key: Option<crate::attestation::AttestationKeyBlob>,
+    /// The **public halves** of this user's superseded attestation keys, newest last (t92).
+    ///
+    /// Rotating or removing a key used to strand every attestation it had signed: verification
+    /// resolves the signing key by fingerprint, and the fingerprint of a replaced key was stored
+    /// nowhere. Retiring the public half here keeps the past verifiable while the secret scalar
+    /// still goes away with the blob, so a retired key can never sign again.
+    ///
+    /// **Additive.** `#[serde(default)]` reads an absent field as an empty vec, so every existing
+    /// `users.json` loads untouched and `skip_serializing_if` keeps it out of the file until a
+    /// user actually retires a key. Retention starts here: nothing is backfilled, and an
+    /// attestation whose key was rotated *before* this shipped stays honestly unverifiable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retired_attestation_keys: Vec<crate::attestation::RetiredAttestationKey>,
     /// How the current secret was established (t51). Additive; defaults to `Password`.
     #[serde(default)]
     pub secret_source: SecretSource,
@@ -106,6 +119,38 @@ pub struct User {
     /// pre-t71 `users.json` round-trips byte-identically.
     #[serde(default, skip_serializing_if = "UserLanguage::is_auto")]
     pub language: UserLanguage,
+}
+
+impl User {
+    /// Clear the current attestation key, keeping its **public half** in
+    /// [`retired_attestation_keys`](Self::retired_attestation_keys) so the attestations it signed
+    /// keep verifying (t92).
+    ///
+    /// Every path that stops using a key goes through here — a rotation, an explicit removal, and
+    /// the recovery-phrase reset that cannot re-wrap the blob — because the damage was never
+    /// specific to rotation: it was that the fingerprint disappeared. Idempotent when the user has
+    /// no key, and a repeated retirement of an already-recorded fingerprint is not appended twice
+    /// (a removal followed by a fresh generation and another removal must not accumulate copies).
+    pub(crate) fn retire_attestation_key(&mut self, retired_at: String) {
+        let Some(blob) = self.attestation_key.take() else {
+            return;
+        };
+        if self
+            .retired_attestation_keys
+            .iter()
+            .any(|k| k.fingerprint == blob.fingerprint)
+        {
+            return;
+        }
+        self.retired_attestation_keys.push(blob.retire(retired_at));
+    }
+}
+
+/// Current UTC instant as RFC 3339, for the `retired_at` stamp on a superseded key.
+fn now_rfc3339() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default()
 }
 
 /// A user's preferred UI language (t71): follow the environment, or a fixed locale.
@@ -477,6 +522,20 @@ pub async fn create_user(
     let seed = state.verifier_seed.read().await.clone();
     let password_hash = attestation::hash_secret_with_seed(&req.password, &seed)?;
 
+    // t88: the audit (attestation) key is generated HERE, at creation, wrapped under the password
+    // being set in this same request. Account creation is the only moment the key's wrapping secret
+    // is legitimately in hand without asking the user for it again — `generate_attestation_key`
+    // needs the target's *current* password, so an account created without a key can only get one
+    // later by the user doing it themselves. Generating now is what makes the key the default
+    // rather than an opt-in nobody exercises.
+    //
+    // Both argon2 costs (the verifier hash above and this KEK derivation) run OUTSIDE the write
+    // lock, per t41 H2 — and, per t71, before it, so a failure here writes nothing at all. A crypto
+    // fault therefore fails the create loudly with no account left behind, rather than yielding an
+    // account that silently lacks a key. `AttestationKeyBlob::generate` fails only on an RNG or
+    // serialization fault (never on a bad password), so this is a genuine 500, not a user error.
+    let attestation_key = AttestationKeyBlob::generate(&req.password)?;
+
     let has_authenticated_actor = session_username.is_some();
     let request_actor = session_username.unwrap_or_else(|| "api".to_owned());
 
@@ -505,7 +564,8 @@ pub async fn create_user(
                 .unwrap_or_default(),
             active: true,
             password_hash: Some(password_hash),
-            attestation_key: None,
+            attestation_key: Some(attestation_key),
+            retired_attestation_keys: Vec::new(),
             secret_source: SecretSource::default(),
             recovery_hash: None,
             // t71: the authorized explicit grant when one was requested, else the historical
@@ -523,7 +583,19 @@ pub async fn create_user(
 
     persist(&state).await?;
 
-    let payload = serde_json::to_vec(&user)?;
+    // t88: the payload is the [`UserView`], never the full [`User`] — the discipline every other
+    // user handler already follows (see `record_user_event`, and the note on `patch_user`). This
+    // create was the one handler still feeding the whole struct in.
+    //
+    // To be precise about what this does and does not fix: `Ledger::append` only *hashes* the
+    // payload into `Event::payload_digest` and drops the bytes, and this call passes a static
+    // justification, so the argon2 verifier and the wrapped key blob were never actually stored.
+    // The change is about what the event *records* rather than a disclosure fix — the view states
+    // that creation produced a key (`has_attestation_key`) and names it by public fingerprint,
+    // which is the auditable fact, while keeping the KEK salt, nonce and ciphertext out of the
+    // hash preimage entirely. It also stops the digest from covering key material that the very
+    // next password change re-wraps, which would have made it describe a state no longer on disk.
+    let payload = serde_json::to_vec(&UserView::from(&user))?;
     {
         let mut ledger = state.ledger.write().await;
         ledger.append(
@@ -650,6 +722,7 @@ mod tests {
             active: true,
             password_hash: None,
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: SecretSource::default(),
             recovery_hash: None,
             role_assignments: vec![crate::roles::bootstrap_assignment(true)],
@@ -1083,7 +1156,9 @@ pub async fn set_secret(
             user.attestation_key = Some(r);
         }
         if drop_key {
-            user.attestation_key = None;
+            // t92: the blob cannot be re-wrapped without the old password, but its public half is
+            // retained so the attestations it signed before the reset still verify.
+            user.retire_attestation_key(now_rfc3339());
         }
         user.password_hash = Some(new_hash);
         user.secret_source = source;
@@ -1219,6 +1294,9 @@ pub async fn generate_attestation_key(
     let user = {
         let mut users = state.users.write().await;
         let user = users.get_mut(&uid).ok_or(ApiError::NotFound)?;
+        // t92: retire the outgoing key's public half BEFORE installing the new one, so a rotation
+        // mints a key for future events without stranding the ones the old key already signed.
+        user.retire_attestation_key(now_rfc3339());
         user.attestation_key = Some(new_key);
         user.clone()
     };
@@ -1279,7 +1357,7 @@ pub async fn remove_attestation_key(
     let user = {
         let mut users = state.users.write().await;
         let user = users.get_mut(&uid).ok_or(ApiError::NotFound)?;
-        user.attestation_key = None;
+        user.retire_attestation_key(now_rfc3339()); // t92: the past stays verifiable.
         if consume_recovery {
             user.recovery_hash = None; // single-use.
         }

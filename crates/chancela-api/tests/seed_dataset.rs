@@ -40,7 +40,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chancela_api::{AppState, DelegationId, StoredDelegation, UserId, router};
 use chancela_authz::{
-    Delegation, EntityId as AuthzEntityId, LEITOR_ROLE_ID, Permission, RoleAssignment, Scope,
+    Delegation, EntityId as AuthzEntityId, Permission, READER_ROLE_ID, RoleAssignment, Scope,
     UserId as AuthzUserId,
 };
 use serde_json::{Value, json};
@@ -660,7 +660,7 @@ pub async fn generate(state: &AppState, scale: SeedScale) -> Seeded {
         let user = users.get_mut(&UserId(reader_uuid)).expect("reader present");
         // A scoped Leitor role at the first entity (in addition to the default Gestor\@Global).
         user.role_assignments.push(RoleAssignment::new(
-            LEITOR_ROLE_ID,
+            READER_ROLE_ID,
             Scope::Entity(AuthzEntityId(scoped_entity_uuid)),
         ));
     }

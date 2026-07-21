@@ -202,7 +202,7 @@ fn scoped_set_from_pairs(pairs: &BTreeSet<(Permission, Scope)>) -> ScopedPermiss
 mod tests {
     use super::*;
     use chancela_authz::{
-        EntityId, GESTOR_ROLE_ID, LEITOR_ROLE_ID, NoBooks, OWNER_ROLE_ID, SIGNATARIO_ROLE_ID,
+        COMPANY_OWNER_ROLE_ID, EntityId, NoBooks, OWNER_ROLE_ID, READER_ROLE_ID, SIGNATORY_ROLE_ID,
     };
     use std::collections::HashMap;
     use time::Duration;
@@ -251,17 +251,17 @@ mod tests {
     fn owner_can_create_a_gestor_scoped_key() {
         let owner = eff_of(OWNER_ROLE_ID, Scope::Global);
         let cat = RoleCatalog::seeded_defaults();
-        let grant = ApiKeyGrant::role(GESTOR_ROLE_ID, Scope::Global);
+        let grant = ApiKeyGrant::role(COMPANY_OWNER_ROLE_ID, Scope::Global);
         assert!(can_create_key(&owner, &grant, &cat, &books()));
     }
 
     #[test]
     fn cannot_create_a_key_more_powerful_than_creator() {
         // A Leitor (read-only) cannot mint a key that can write.
-        let leitor = eff_of(LEITOR_ROLE_ID, Scope::Global);
+        let leitor = eff_of(READER_ROLE_ID, Scope::Global);
         let cat = RoleCatalog::seeded_defaults();
         // Via a fat role...
-        let via_role = ApiKeyGrant::role(GESTOR_ROLE_ID, Scope::Global);
+        let via_role = ApiKeyGrant::role(COMPANY_OWNER_ROLE_ID, Scope::Global);
         assert!(!can_create_key(&leitor, &via_role, &cat, &books()));
         // ...and via an explicit perm the creator lacks.
         let via_perms = ApiKeyGrant::perms([Permission::ActDraft], Scope::Global);
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn attenuation_holds_at_scope() {
         // Creator is Gestor of entity 1 ONLY.
-        let scoped = eff_of(GESTOR_ROLE_ID, Scope::Entity(ent(1)));
+        let scoped = eff_of(COMPANY_OWNER_ROLE_ID, Scope::Entity(ent(1)));
         let cat = RoleCatalog::seeded_defaults();
         // A key scoped to entity 1 with a perm the creator holds there: allowed.
         let within = ApiKeyGrant::perms([Permission::BookOpen], Scope::Entity(ent(1)));
@@ -315,7 +315,7 @@ mod tests {
         let empty_cat = RoleCatalog::new();
         assert!(!can_create_key(
             &owner,
-            &ApiKeyGrant::role(GESTOR_ROLE_ID, Scope::Global),
+            &ApiKeyGrant::role(COMPANY_OWNER_ROLE_ID, Scope::Global),
             &empty_cat,
             &books()
         ));
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn issue_refuses_over_powerful_and_meta_grants() {
-        let leitor = eff_of(LEITOR_ROLE_ID, Scope::Global);
+        let leitor = eff_of(READER_ROLE_ID, Scope::Global);
         let owner = eff_of(OWNER_ROLE_ID, Scope::Global);
         let cat = RoleCatalog::seeded_defaults();
 
@@ -376,7 +376,7 @@ mod tests {
             &books(),
             ks(
                 "Integração ERP Encosto Estratégico",
-                ApiKeyGrant::role(SIGNATARIO_ROLE_ID, Scope::Global),
+                ApiKeyGrant::role(SIGNATORY_ROLE_ID, Scope::Global),
             ),
         )
         .unwrap();
@@ -393,13 +393,13 @@ mod tests {
             &owner,
             &cat,
             &books(),
-            ks("erp", ApiKeyGrant::role(SIGNATARIO_ROLE_ID, Scope::Global)),
+            ks("erp", ApiKeyGrant::role(SIGNATORY_ROLE_ID, Scope::Global)),
         )
         .unwrap();
 
         let principal = resolve(&issued.api_key, &owner, &cat, t0(), &books());
         // Holds exactly the Signatário permissions the key was granted...
-        let signatario = cat.get(SIGNATARIO_ROLE_ID).unwrap();
+        let signatario = cat.get(SIGNATORY_ROLE_ID).unwrap();
         for &p in &signatario.permission_set {
             assert!(has_permission(
                 &principal.effective_permissions,
@@ -468,7 +468,7 @@ mod tests {
             &books(),
             KeySpec {
                 expires_at: Some(t0() + Duration::hours(1)),
-                ..ks("k", ApiKeyGrant::role(GESTOR_ROLE_ID, Scope::Global))
+                ..ks("k", ApiKeyGrant::role(COMPANY_OWNER_ROLE_ID, Scope::Global))
             },
         )
         .unwrap();
@@ -505,12 +505,12 @@ mod tests {
             &owner,
             &cat,
             &books(),
-            ks("k", ApiKeyGrant::role(GESTOR_ROLE_ID, Scope::Global)),
+            ks("k", ApiKeyGrant::role(COMPANY_OWNER_ROLE_ID, Scope::Global)),
         )
         .unwrap();
 
         // Creator now holds only Leitor.
-        let downgraded = eff_of(LEITOR_ROLE_ID, Scope::Global);
+        let downgraded = eff_of(READER_ROLE_ID, Scope::Global);
         let principal = resolve(&issued.api_key, &downgraded, &cat, t0(), &books());
         // Write perms the creator no longer has are gone...
         assert!(!has_permission(
@@ -536,7 +536,7 @@ mod tests {
             &owner,
             &cat,
             &books(),
-            ks("k", ApiKeyGrant::role(GESTOR_ROLE_ID, Scope::Global)),
+            ks("k", ApiKeyGrant::role(COMPANY_OWNER_ROLE_ID, Scope::Global)),
         )
         .unwrap();
         // The API passes an empty set when the creator is deactivated/deleted.
@@ -586,7 +586,7 @@ mod tests {
     fn escalation_battery_all_denied() {
         let cat = RoleCatalog::seeded_defaults();
         // Attacker: a Gestor (broad, not Owner) trying to mint a key beyond themselves.
-        let attacker = eff_of(GESTOR_ROLE_ID, Scope::Global);
+        let attacker = eff_of(COMPANY_OWNER_ROLE_ID, Scope::Global);
         let r = books();
 
         // 1. Mint a key holding a permission the attacker lacks (data.wipe / ledger.recover / user.manage).
@@ -624,7 +624,7 @@ mod tests {
 
         // 4. Scope-escape: a creator scoped to entity 1 mints a GLOBAL key of a perm they hold only
         //    within entity 1.
-        let scoped = eff_of(GESTOR_ROLE_ID, Scope::Entity(ent(1)));
+        let scoped = eff_of(COMPANY_OWNER_ROLE_ID, Scope::Entity(ent(1)));
         assert!(!can_create_key(
             &scoped,
             &ApiKeyGrant::perms([Permission::BookOpen], Scope::Global),
@@ -691,7 +691,7 @@ mod tests {
         // A session user with Signatário@Global and a key granted Signatário@Global resolve to
         // permission-sets that answer has_permission identically — the uniform-gate guarantee.
         let cat = RoleCatalog::seeded_defaults();
-        let session_eff = eff_of(SIGNATARIO_ROLE_ID, Scope::Global);
+        let session_eff = eff_of(SIGNATORY_ROLE_ID, Scope::Global);
         let session = RequestPrincipal::for_session(uid(5), "amelia.marques".into(), session_eff);
 
         let owner = eff_of(OWNER_ROLE_ID, Scope::Global);
@@ -699,7 +699,7 @@ mod tests {
             &owner,
             &cat,
             &NoBooks,
-            ks("k", ApiKeyGrant::role(SIGNATARIO_ROLE_ID, Scope::Global)),
+            ks("k", ApiKeyGrant::role(SIGNATORY_ROLE_ID, Scope::Global)),
         )
         .unwrap();
         let key_principal = resolve(&issued.api_key, &owner, &cat, t0(), &NoBooks);

@@ -414,8 +414,8 @@ fn user_create_bootstraps_owner_then_gestor() {
     let out = cli(&dir, &["user", "create", "joao.silva"]);
     assert!(out.status.success(), "{}", stdout(&out));
     assert!(
-        stdout(&out).contains("Gestor"),
-        "second user is Gestor: {}",
+        stdout(&out).contains("Company Owner"),
+        "second user is Company Owner: {}",
         stdout(&out)
     );
 
@@ -710,7 +710,7 @@ fn user_ls_json_reports_each_user_with_its_role_and_scope() {
             .iter()
             .find(|u| u["username"] == "joao.silva")
             .expect("joão is listed")["roles"][0]["role"],
-        "Gestor"
+        "Company Owner"
     );
 
     // No secret material is ever projected into the read surface.

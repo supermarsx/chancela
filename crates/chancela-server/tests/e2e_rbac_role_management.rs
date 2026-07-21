@@ -60,24 +60,27 @@ async fn owner_assigns_scoped_gestor_and_assignee_acts_within_scope() {
     assert_eq!(status, 201, "create assignee: {amelia_user}");
     let amelia = amelia_user["id"].as_str().expect("amelia id").to_owned();
 
-    // Resolve the seeded Gestor role id from the catalog (any valid session may read it).
+    // Resolve the seeded default operator role id from the catalog (any valid session may read
+    // it). This crate does not depend on chancela-authz, so the lookup is by name; the name is
+    // the canonical English one (t87), which is what the API stores.
     let (status, roles) = h.get_json("/v1/roles").await;
     assert_eq!(status, 200, "list roles: {roles}");
-    let gestor_id = roles
+    let default_role_id = roles
         .as_array()
         .expect("roles array")
         .iter()
-        .find(|r| r["name"] == "Gestor")
+        .find(|r| r["name"] == "Company Owner")
         .and_then(|r| r["id"].as_str())
-        .expect("seeded Gestor role present")
+        .expect("seeded default operator role present")
         .to_owned();
 
-    // A newly-created user defaults to Gestor@Global; the Owner first removes that broad default so
+    // A newly-created user defaults to Company Owner@Global; the Owner first removes that broad
+    // default so
     // the scoped grant is the assignee's ONLY authority (this also exercises the unassign endpoint).
     let (status, _) = h
         .delete_auth_json(
             &format!("/v1/users/{amelia}/roles"),
-            json!({ "role_id": gestor_id, "scope": { "kind": "global" } }),
+            json!({ "role_id": default_role_id, "scope": { "kind": "global" } }),
             &owner,
         )
         .await;
@@ -87,7 +90,7 @@ async fn owner_assigns_scoped_gestor_and_assignee_acts_within_scope() {
     let (status, assignments) = h
         .post_json_auth(
             &format!("/v1/users/{amelia}/roles"),
-            json!({ "role_id": gestor_id, "scope": { "kind": "entity", "id": e1 } }),
+            json!({ "role_id": default_role_id, "scope": { "kind": "entity", "id": e1 } }),
             &owner,
         )
         .await;
@@ -98,7 +101,7 @@ async fn owner_assigns_scoped_gestor_and_assignee_acts_within_scope() {
             .expect("assignments")
             .iter()
             .any(|a| {
-                a["role_id"] == json!(gestor_id)
+                a["role_id"] == json!(default_role_id)
                     && a["scope"]["kind"] == "entity"
                     && a["scope"]["id"] == json!(e1)
             }),

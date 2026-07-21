@@ -1834,21 +1834,25 @@ async fn cc_sign_403_for_role_without_signing_perm() {
     // Resolve the seeded Gestor role id (a newly-created user defaults to Gestor@Global, which HAS
     // signing.perform) and remove that default so the limited user holds no signing authority.
     let (_, roles) = send(&state, get_req("/v1/roles", &owner)).await;
-    let gestor_id = roles
-        .as_array()
-        .expect("roles")
-        .iter()
-        .find(|r| r["name"] == "Gestor")
-        .and_then(|r| r["id"].as_str())
-        .expect("seeded Gestor")
-        .to_owned();
+    // t87: key on the stable role **id**, never the display name — seeded names are English
+    // and are translated client-side, so a rename must not break this fixture. The catalog is
+    // still fetched and checked, because the point here is that the role really is seeded.
+    let default_role_id = chancela_authz::COMPANY_OWNER_ROLE_ID.0.to_string();
+    assert!(
+        roles
+            .as_array()
+            .expect("roles")
+            .iter()
+            .any(|r| r["id"] == serde_json::Value::from(default_role_id.as_str())),
+        "the seeded default operator role is offered by the catalog"
+    );
     let (status, _) = send(
         &state,
         json_req(
             "DELETE",
             &format!("/v1/users/{limited_id}/roles"),
             &owner,
-            json!({ "role_id": gestor_id, "scope": { "kind": "global" } }),
+            json!({ "role_id": default_role_id, "scope": { "kind": "global" } }),
         ),
     )
     .await;

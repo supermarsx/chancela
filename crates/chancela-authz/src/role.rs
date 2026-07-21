@@ -2,11 +2,30 @@
 //!
 //! A [`Role`] is a named, editable set of permissions — not a fixed enum. The *catalog* of verbs is
 //! code ([`crate::Permission`]); which verbs a role grants is stored data. A conservative catalog is
-//! seeded on a fresh install: **Owner** (protected — all permissions, locked, undeletable),
-//! **Gestor**, **Signatário**, **Leitor**, spec-required company archetypes, **Platform
-//! Administrator**, **Tenant Administrator**, **Auditor**, **Guest** and **API Client**. Each seeded
-//! role has a **deterministic** id so assignments, migration and the protected-Owner checks are
-//! stable across seeds and processes.
+//! seeded on a fresh install: **Owner** (protected — all permissions, locked, undeletable), the
+//! spec ROL-02 archetypes (**Company Owner**, **Corporate Secretary**, **Legal Counsel**, **Records
+//! Manager**, **Signatory**, **Reviewer**, **Platform Administrator**, **Tenant Administrator**,
+//! **Auditor**, **Guest**, **API Client**) and **Reader**. Each seeded role has a **deterministic**
+//! id so assignments, migration and the protected-Owner checks are stable across seeds and
+//! processes.
+//!
+//! ## Seeded names are English; the UI translates them (t87)
+//!
+//! Every seeded role's stored `name` is **English**, matching the workspace convention of English
+//! identifiers with Portuguese reserved for user-facing copy. The name is not what a pt-PT operator
+//! reads: the web client resolves a seeded role's **id** to a localised name through
+//! `enum.roleName.<slug>` in the message catalogs (`apps/web/src/i18n/roleNameLabels.ts`).
+//! Operator-authored role names are data and are never translated — the client only translates a
+//! seeded id whose stored name is still the canonical English one, so renaming a seeded role makes
+//! the operator's own words win.
+//!
+//! ## Retired ids ([`RETIRED_SEEDED_ROLES`])
+//!
+//! Two seeded roles were **Portuguese-named duplicates** of an English archetype with a
+//! byte-identical permission set, and were retired in favour of it. Their ids are never re-seeded
+//! and **never reused**, but they remain meaningful forever: they appear in append-only ledger
+//! events, which are never rewritten. Both the migration (which reassigns live holders) and the
+//! client label map (which still names them, marked retired) key off this table.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -25,15 +44,21 @@ impl std::fmt::Display for RoleId {
     }
 }
 
-/// Stable id of the seeded **Owner** (Proprietário) role — the protected super-role. The high bytes
+/// Stable id of the seeded **Owner** role — the protected super-role. The high bytes
 /// spell an ASCII mnemonic so the seeded ids are recognisable in a `roles.json` dump.
 pub const OWNER_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x6f776e6572000000_0000000000000001));
-/// Stable id of the seeded **Gestor** (Operador) role.
-pub const GESTOR_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x676573746f720000_0000000000000002));
-/// Stable id of the seeded **Signatário** role.
-pub const SIGNATARIO_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x7369676e61740000_0000000000000003));
-/// Stable id of the seeded **Leitor** role.
-pub const LEITOR_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x6c6569746f720000_0000000000000004));
+/// **Retired (t87)** id of the former **Gestor** role — a Portuguese-named duplicate of
+/// [`COMPANY_OWNER_ROLE_ID`] with a byte-identical permission set. Never re-seeded, never reused;
+/// kept because past ledger events name it. See [`RETIRED_SEEDED_ROLES`].
+pub const RETIRED_GESTOR_ROLE_ID: RoleId =
+    RoleId(Uuid::from_u128(0x676573746f720000_0000000000000002));
+/// **Retired (t87)** id of the former **Signatário** role — a Portuguese-named duplicate of
+/// [`SIGNATORY_ROLE_ID`] with a byte-identical permission set. Never re-seeded, never reused; kept
+/// because past ledger events name it. See [`RETIRED_SEEDED_ROLES`].
+pub const RETIRED_SIGNATARIO_ROLE_ID: RoleId =
+    RoleId(Uuid::from_u128(0x7369676e61740000_0000000000000003));
+/// Stable id of the seeded **Reader** role.
+pub const READER_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x6c6569746f720000_0000000000000004));
 /// Stable id of the seeded **Platform Administrator** role.
 pub const PLATFORM_ADMIN_ROLE_ID: RoleId =
     RoleId(Uuid::from_u128(0x706c617461646d00_0000000000000005));
@@ -62,6 +87,27 @@ pub const RECORDS_MANAGER_ROLE_ID: RoleId =
 pub const SIGNATORY_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x7369676e74727900_000000000000000e));
 /// Stable id of the seeded **Reviewer** role.
 pub const REVIEWER_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x7265766965777200_000000000000000f));
+
+/// Retired seeded roles and the surviving role each was merged into: `(retired, successor)`.
+///
+/// A pair is listed here **only** when the two permission sets were identical, so reassignment
+/// grants exactly the authority the holder already had — never more, never less. The retired id is
+/// removed from the seeded catalog and is never reused for anything new.
+pub const RETIRED_SEEDED_ROLES: &[(RoleId, RoleId)] = &[
+    (RETIRED_GESTOR_ROLE_ID, COMPANY_OWNER_ROLE_ID),
+    (RETIRED_SIGNATARIO_ROLE_ID, SIGNATORY_ROLE_ID),
+];
+
+/// The role a retired id was merged into, or `None` if `id` is not retired.
+///
+/// This is the whole migration rule: a holder of a retired role becomes a holder of its successor.
+#[must_use]
+pub fn retired_role_successor(id: RoleId) -> Option<RoleId> {
+    RETIRED_SEEDED_ROLES
+        .iter()
+        .find(|(retired, _)| *retired == id)
+        .map(|(_, successor)| *successor)
+}
 
 /// A role: a named, editable permission-set. `protected` marks the Owner super-role — its
 /// `permission_set` is locked and it is undeletable (see [`Role::can_be_deleted`] /
@@ -93,90 +139,23 @@ impl Role {
         !self.protected
     }
 
-    /// The seeded **Owner** (Proprietário) role: every permission, protected.
+    /// The seeded **Owner** role: every permission, protected.
     #[must_use]
     pub fn owner() -> Self {
         Role {
             id: OWNER_ROLE_ID,
-            name: "Proprietário".to_owned(),
+            name: "Owner".to_owned(),
             permission_set: Permission::ALL.into_iter().collect(),
             protected: true,
         }
     }
 
-    /// The seeded **Gestor** (Operador) role: full operational authority over entities, books, acts,
-    /// documents and reference data, plus signing, `settings.read`, `ledger.read` and
-    /// `data.backup`/`data.export`. Explicitly *not* user/role/delegation management,
-    /// `settings.manage`, `ledger.recover`, `data.wipe` or `data.start_over`.
+    /// The seeded **Reader** role: read-only.
     #[must_use]
-    pub fn gestor() -> Self {
+    pub fn reader() -> Self {
         Role {
-            id: GESTOR_ROLE_ID,
-            name: "Gestor".to_owned(),
-            permission_set: [
-                Permission::EntityRead,
-                Permission::EntityCreate,
-                Permission::EntityUpdate,
-                Permission::EntityRegistryImport,
-                Permission::EntityArchive,
-                Permission::BookRead,
-                Permission::BookOpen,
-                Permission::BookClose,
-                Permission::BookExport,
-                Permission::BookImport,
-                Permission::BookStartOver,
-                Permission::BookReopen,
-                Permission::ActRead,
-                Permission::ActDraft,
-                Permission::ActEdit,
-                Permission::ActAdvance,
-                Permission::ActArchive,
-                Permission::SigningPerform,
-                Permission::DocumentGenerate,
-                Permission::TemplateManage,
-                Permission::CaeRead,
-                Permission::CaeRefresh,
-                Permission::LawRead,
-                Permission::LawManage,
-                Permission::SettingsRead,
-                Permission::LedgerRead,
-                Permission::DataBackup,
-                Permission::DataExport,
-            ]
-            .into_iter()
-            .collect(),
-            protected: false,
-        }
-    }
-
-    /// The seeded **Signatário** role: read across entity/book/act/ledger plus `act.advance`,
-    /// `signing.perform` and `document.generate`.
-    #[must_use]
-    pub fn signatario() -> Self {
-        Role {
-            id: SIGNATARIO_ROLE_ID,
-            name: "Signatário".to_owned(),
-            permission_set: [
-                Permission::EntityRead,
-                Permission::BookRead,
-                Permission::ActRead,
-                Permission::LedgerRead,
-                Permission::ActAdvance,
-                Permission::SigningPerform,
-                Permission::DocumentGenerate,
-            ]
-            .into_iter()
-            .collect(),
-            protected: false,
-        }
-    }
-
-    /// The seeded **Leitor** role: read-only.
-    #[must_use]
-    pub fn leitor() -> Self {
-        Role {
-            id: LEITOR_ROLE_ID,
-            name: "Leitor".to_owned(),
+            id: READER_ROLE_ID,
+            name: "Reader".to_owned(),
             permission_set: [
                 Permission::EntityRead,
                 Permission::BookRead,
@@ -366,9 +345,15 @@ impl Role {
         }
     }
 
-    /// The seeded **Company Owner** role: an explicit company-level operational owner archetype.
-    /// It pins operational permissions directly without inheriting protected Owner or RBAC meta
-    /// authority.
+    /// The seeded **Company Owner** role (spec ROL-02): the company-level operational archetype and
+    /// the **default role a newly created user receives**. Full operational authority over entities,
+    /// books, acts, documents and reference data, plus signing, `settings.read`, `ledger.read` and
+    /// `data.backup`/`data.export`. Explicitly *not* user/role/delegation management,
+    /// `settings.manage`, `ledger.recover`, `data.wipe` or `data.start_over` — it pins operational
+    /// permissions directly without inheriting protected Owner or RBAC meta authority.
+    ///
+    /// t87 merged the former **Gestor** role into this one: the two permission sets were
+    /// byte-identical, so the merge changed nobody's authority. See [`RETIRED_SEEDED_ROLES`].
     #[must_use]
     pub fn company_owner() -> Self {
         Role {
@@ -493,8 +478,11 @@ impl Role {
         }
     }
 
-    /// The seeded **Signatory** role: an explicit English archetype for spec ROL-02 with a pinned
-    /// signing workflow permission set.
+    /// The seeded **Signatory** role (spec ROL-02): read across entity/book/act/ledger plus
+    /// `act.advance`, `signing.perform` and `document.generate`.
+    ///
+    /// t87 merged the former **Signatário** role into this one: the two permission sets were
+    /// byte-identical, so the merge changed nobody's authority. See [`RETIRED_SEEDED_ROLES`].
     #[must_use]
     pub fn signatory() -> Self {
         Role {
@@ -536,15 +524,14 @@ impl Role {
     }
 }
 
-/// The seeded default roles, in a stable order. The original four ids/order are preserved first for
-/// backwards compatibility.
+/// The seeded default roles, in a stable order. Owner and Reader keep their original ids and lead
+/// the list for backwards compatibility; the two retired ids that used to sit between them are
+/// absent by construction (see [`RETIRED_SEEDED_ROLES`]).
 #[must_use]
 pub fn default_roles() -> Vec<Role> {
     vec![
         Role::owner(),
-        Role::gestor(),
-        Role::signatario(),
-        Role::leitor(),
+        Role::reader(),
         Role::company_owner(),
         Role::corporate_secretary(),
         Role::legal_counsel(),
@@ -557,6 +544,13 @@ pub fn default_roles() -> Vec<Role> {
         Role::guest(),
         Role::api_client(),
     ]
+}
+
+/// Whether `id` names a role the current build seeds. Retired ids are **not** seeded and answer
+/// `false` — use [`retired_role_successor`] to recognise those.
+#[must_use]
+pub fn is_seeded_role(id: RoleId) -> bool {
+    default_roles().iter().any(|role| role.id == id)
 }
 
 /// An in-memory lookup of roles by id — the resolved role catalog the API loads from `roles.json`
@@ -582,6 +576,15 @@ impl RoleCatalog {
     /// Insert or replace a role.
     pub fn insert(&mut self, role: Role) {
         self.roles.insert(role.id, role);
+    }
+
+    /// Remove a role by id, returning it if it was present.
+    ///
+    /// Used by the t87 merge migration to drop a retired seeded role from a catalog loaded off
+    /// disk. Removing a role does **not** make its id available again — see
+    /// [`RETIRED_SEEDED_ROLES`].
+    pub fn remove(&mut self, id: RoleId) -> Option<Role> {
+        self.roles.remove(&id)
     }
 
     /// Look a role up by id.
@@ -628,9 +631,7 @@ mod tests {
 
     fn editable_seeded_roles() -> Vec<Role> {
         vec![
-            Role::gestor(),
-            Role::signatario(),
-            Role::leitor(),
+            Role::reader(),
             Role::company_owner(),
             Role::corporate_secretary(),
             Role::legal_counsel(),
@@ -647,9 +648,7 @@ mod tests {
 
     fn non_admin_seeded_roles() -> Vec<Role> {
         vec![
-            Role::gestor(),
-            Role::signatario(),
-            Role::leitor(),
+            Role::reader(),
             Role::company_owner(),
             Role::corporate_secretary(),
             Role::legal_counsel(),
@@ -749,18 +748,17 @@ mod tests {
 
         assert_eq!(
             holders(Permission::LegalHoldManage),
-            vec!["Proprietário", "Legal Counsel", "Platform Administrator"]
+            vec!["Owner", "Legal Counsel", "Platform Administrator"]
         );
         assert_eq!(
             holders(Permission::TrustManage),
-            vec!["Proprietário", "Platform Administrator"]
+            vec!["Owner", "Platform Administrator"]
         );
 
         // The point of the split: these roles keep the broad verb they are supposed to have and
         // lose the narrow one they were reaching it through. Auditor and API Client are the two the
         // t22 audit called out by name.
         for role in [
-            Role::gestor(),
             Role::company_owner(),
             Role::corporate_secretary(),
             Role::records_manager(),
@@ -781,7 +779,7 @@ mod tests {
         }
 
         // Likewise `cae.refresh` no longer carries a TSL import with it.
-        for role in [Role::gestor(), Role::company_owner()] {
+        for role in [Role::company_owner()] {
             assert!(
                 role.permission_set.contains(&Permission::CaeRefresh),
                 "{} unexpectedly lost cae.refresh",
@@ -813,7 +811,6 @@ mod tests {
                 .map(|r| r.name.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "Gestor",
                 "Company Owner",
                 "Corporate Secretary",
                 "Records Manager",
@@ -847,7 +844,7 @@ mod tests {
             .collect();
         assert_eq!(
             holders,
-            vec!["Proprietário", "Legal Counsel", "Platform Administrator"]
+            vec!["Owner", "Legal Counsel", "Platform Administrator"]
         );
     }
 
@@ -876,28 +873,14 @@ mod tests {
     #[test]
     fn seeded_catalog_includes_spec_roles_by_stable_id() {
         let cat = RoleCatalog::seeded_defaults();
-        assert_eq!(cat.len(), 15);
+        assert_eq!(cat.len(), 13);
 
         for (id, raw, name) in [
+            (OWNER_ROLE_ID, 0x6f776e6572000000_0000000000000001, "Owner"),
             (
-                OWNER_ROLE_ID,
-                0x6f776e6572000000_0000000000000001,
-                "Proprietário",
-            ),
-            (
-                GESTOR_ROLE_ID,
-                0x676573746f720000_0000000000000002,
-                "Gestor",
-            ),
-            (
-                SIGNATARIO_ROLE_ID,
-                0x7369676e61740000_0000000000000003,
-                "Signatário",
-            ),
-            (
-                LEITOR_ROLE_ID,
+                READER_ROLE_ID,
                 0x6c6569746f720000_0000000000000004,
-                "Leitor",
+                "Reader",
             ),
             (
                 PLATFORM_ADMIN_ROLE_ID,
@@ -1182,7 +1165,7 @@ mod tests {
         assert_eq!(fresh.len(), 0);
         assert!(fresh.owner().is_none());
 
-        fresh.insert(Role::leitor());
+        fresh.insert(Role::reader());
         assert!(!fresh.is_empty());
         assert_eq!(fresh.len(), 1);
         // Still no Owner: a non-empty catalog is not a seeded one.
@@ -1210,11 +1193,140 @@ mod tests {
         let mut edited = catalog.clone();
         edited.insert(Role {
             name: "Leitor (revisto)".to_owned(),
-            ..Role::leitor()
+            ..Role::reader()
         });
         assert_eq!(edited.len(), catalog.len());
-        assert_eq!(edited.get(LEITOR_ROLE_ID).unwrap().name, "Leitor (revisto)");
-        assert_eq!(edited.iter().filter(|r| r.id == LEITOR_ROLE_ID).count(), 1);
+        assert_eq!(edited.get(READER_ROLE_ID).unwrap().name, "Leitor (revisto)");
+        assert_eq!(edited.iter().filter(|r| r.id == READER_ROLE_ID).count(), 1);
+    }
+
+    /// t87. The defect that started this: `Signatário` and `Signatory` were two seeded roles with
+    /// **byte-identical** permission sets — the same authority under two names, so an operator
+    /// picking between them was choosing nothing. `Gestor` and `Company Owner` were a second,
+    /// unnoticed instance of exactly the same thing.
+    ///
+    /// State the invariant over the whole catalog rather than over the two pairs that happened to
+    /// exist, so a future seeded role cannot silently become a third duplicate. Roles that merely
+    /// *look* alike are fine and must stay: Corporate Secretary is API Client + `settings.read`,
+    /// Legal Counsel is Reader + `legal_hold.manage`, Reviewer is Signatory − `signing.perform`.
+    /// Each of those differs, so each is a real distinction and none is merged.
+    #[test]
+    fn no_two_seeded_roles_share_a_permission_set() {
+        let roles = default_roles();
+        for (i, a) in roles.iter().enumerate() {
+            for b in &roles[i + 1..] {
+                assert_ne!(
+                    a.permission_set, b.permission_set,
+                    "{} and {} grant identical authority under two names — merge them and retire \
+                     one id (see RETIRED_SEEDED_ROLES), or make the distinction real",
+                    a.name, b.name
+                );
+            }
+        }
+    }
+
+    /// A retired id must resolve to a successor that (a) is actually seeded and (b) grants *exactly*
+    /// what the retired role granted. Merging into a wider role would silently escalate every
+    /// holder the migration touches; merging into a narrower one would silently strip them.
+    #[test]
+    fn every_retired_role_merges_into_a_seeded_successor_with_identical_authority() {
+        // The permission sets the two retired roles carried when they were seeded, restated here
+        // because the constructors are gone. This is the only place they still exist, and it is
+        // what makes the "identical authority" claim checkable rather than asserted.
+        let retired_gestor = permissions([
+            Permission::EntityRead,
+            Permission::EntityCreate,
+            Permission::EntityUpdate,
+            Permission::EntityRegistryImport,
+            Permission::EntityArchive,
+            Permission::BookRead,
+            Permission::BookOpen,
+            Permission::BookClose,
+            Permission::BookExport,
+            Permission::BookImport,
+            Permission::BookStartOver,
+            Permission::BookReopen,
+            Permission::ActRead,
+            Permission::ActDraft,
+            Permission::ActEdit,
+            Permission::ActAdvance,
+            Permission::ActArchive,
+            Permission::SigningPerform,
+            Permission::DocumentGenerate,
+            Permission::TemplateManage,
+            Permission::CaeRead,
+            Permission::CaeRefresh,
+            Permission::LawRead,
+            Permission::LawManage,
+            Permission::SettingsRead,
+            Permission::LedgerRead,
+            Permission::DataBackup,
+            Permission::DataExport,
+        ]);
+        let retired_signatario = permissions([
+            Permission::EntityRead,
+            Permission::BookRead,
+            Permission::ActRead,
+            Permission::LedgerRead,
+            Permission::ActAdvance,
+            Permission::SigningPerform,
+            Permission::DocumentGenerate,
+        ]);
+
+        assert_eq!(Role::company_owner().permission_set, retired_gestor);
+        assert_eq!(Role::signatory().permission_set, retired_signatario);
+
+        let catalog = RoleCatalog::seeded_defaults();
+        for (retired, successor) in RETIRED_SEEDED_ROLES {
+            assert!(
+                !is_seeded_role(*retired),
+                "a retired id is still being seeded"
+            );
+            assert!(
+                catalog.get(*successor).is_some(),
+                "a retired role points at a successor that is not seeded"
+            );
+            assert_eq!(retired_role_successor(*retired), Some(*successor));
+        }
+        assert_eq!(retired_role_successor(OWNER_ROLE_ID), None);
+    }
+
+    /// A retired id must never come back as something else. Reusing one would make every past
+    /// ledger event that names it read as a grant of authority that was never given.
+    #[test]
+    fn retired_ids_are_never_reused_by_a_seeded_role() {
+        for (retired, _) in RETIRED_SEEDED_ROLES {
+            assert!(
+                default_roles().iter().all(|role| role.id != *retired),
+                "a seeded role reused retired id {retired}"
+            );
+        }
+        // And the ids are exactly the two the merge retired — pinned so a later edit that drops one
+        // from the table (and so stops migrating its holders) has to come through this test.
+        assert_eq!(
+            RETIRED_SEEDED_ROLES
+                .iter()
+                .map(|(retired, _)| *retired)
+                .collect::<Vec<_>>(),
+            vec![RETIRED_GESTOR_ROLE_ID, RETIRED_SIGNATARIO_ROLE_ID]
+        );
+    }
+
+    /// The seeded names are code-adjacent English (the workspace convention); pt-PT operators read a
+    /// translation the client resolves from the id. A Portuguese seeded name would put the wrong
+    /// language on the wire *and* leave the client's canonical-name check unable to tell a seeded
+    /// role from one an operator renamed.
+    #[test]
+    fn every_seeded_role_name_is_ascii_english() {
+        for role in default_roles() {
+            assert!(
+                role.name.is_ascii(),
+                "{} is not an English seeded name — seeded names stay English and are translated \
+                 client-side (see the module docs)",
+                role.name
+            );
+            assert!(!role.name.trim().is_empty());
+        }
     }
 
     #[test]

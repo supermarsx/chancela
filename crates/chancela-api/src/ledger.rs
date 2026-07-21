@@ -218,10 +218,11 @@ pub struct AttestationVerifyResponse {
 /// (plan t29 §4.6). `404` when no attestation exists for that seq.
 ///
 /// Two independent checks must both hold for `valid:true`: (1) the signature verifies over the
-/// stored `event_hash` using the signing key's public key (looked up by fingerprint across users);
-/// (2) that `event_hash` still equals the live ledger event's hash at `seq` (binding the
-/// attestation to the actual chain position). A rotated/removed key, a bad signature, or a
-/// tampered/rebuilt chain each yield `valid:false` with a `reason`.
+/// stored `event_hash` using the signing key's public key (looked up by fingerprint across users'
+/// current AND superseded keys — t92); (2) that `event_hash` still equals the live ledger event's
+/// hash at `seq` (binding the attestation to the actual chain position). A bad signature, a
+/// tampered/rebuilt chain, or a fingerprint no account retains each yield `valid:false` with a
+/// `reason`. Rotating or removing a key no longer invalidates what it already signed.
 pub async fn get_attestation(
     State(state): State<AppState>,
     Path(seq): Path<u64>,
@@ -243,14 +244,26 @@ pub async fn get_attestation(
             .map(|e| crate::hex::hex(&e.hash))
     };
 
-    // The signing key's public bytes, found by fingerprint across users' attestation keys.
+    // The signing key's public bytes, found by fingerprint across users' attestation keys —
+    // CURRENT and superseded alike (t92). Before retention this searched current keys only, so
+    // rotating or removing a key silently invalidated every attestation it had ever produced: the
+    // signature was still correct and the chain hash still matched, but the one thing that could
+    // verify it had been overwritten. Retired entries hold the public half only, so widening the
+    // search restores the past without letting a retired key sign anything new.
     let pubkey = {
         let users = state.users.read().await;
         users.values().find_map(|u| {
-            u.attestation_key
+            let current = u
+                .attestation_key
                 .as_ref()
                 .filter(|k| k.fingerprint == attestation.fingerprint)
-                .and_then(|k| k.public_key_bytes())
+                .and_then(|k| k.public_key_bytes());
+            current.or_else(|| {
+                u.retired_attestation_keys
+                    .iter()
+                    .find(|k| k.fingerprint == attestation.fingerprint)
+                    .and_then(|k| k.public_key_bytes())
+            })
         })
     };
 
@@ -269,9 +282,13 @@ fn evaluate(
     pubkey: Option<&[u8]>,
 ) -> (bool, Option<String>) {
     let Some(pubkey) = pubkey else {
+        // t92: rotation and removal now retain the public half, so this is no longer the ordinary
+        // outcome of either — it means no account holds this fingerprint at all: the signing
+        // account was deleted, or the key was retired BEFORE retention shipped and its public half
+        // was never kept. Neither is recoverable, and the verdict says so rather than guessing.
         return (
             false,
-            Some("signing key not found — it was rotated or removed".to_owned()),
+            Some("signing key not found — no account retains this fingerprint".to_owned()),
         );
     };
     if !attestation::verify_signature(att, pubkey) {

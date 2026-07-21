@@ -638,7 +638,7 @@ mod tests {
     use crate::actor::SESSION_TTL_SECS;
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
-    use chancela_authz::{LEITOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId};
+    use chancela_authz::{OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId};
     use serde_json::{Value, json};
     use std::path::{Path as StdPath, PathBuf};
     use std::sync::Arc;
@@ -706,6 +706,7 @@ mod tests {
             active: true,
             password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role, Scope::Global)],
@@ -1607,7 +1608,7 @@ mod tests {
     async fn non_admin_roles_cannot_read_or_change_the_mail_configuration() {
         let temp = TempDir::new();
         let state = state_with_store(&temp.dir);
-        let leitor = seed_token(&state, LEITOR_ROLE_ID).await;
+        let leitor = seed_token(&state, READER_ROLE_ID).await;
 
         for req in [
             body_req(

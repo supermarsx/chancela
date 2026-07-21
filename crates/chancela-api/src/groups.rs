@@ -1339,6 +1339,7 @@ mod tests {
                 active: true,
                 password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
                 attestation_key: None,
+                retired_attestation_keys: Vec::new(),
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: vec![RoleAssignment::new(role_id, scope)],

@@ -10,7 +10,7 @@ use chancela_api::{
     AppState, DB_KEY_ENV, DB_KEY_FILE_ENV, DB_KEY_SOURCE_ENV, DatabaseEncryptionConfig,
     DatabaseEncryptionConfigError, DatabaseEncryptionKeySource, User, UserId, router,
 };
-use chancela_authz::{LEITOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId, Scope};
+use chancela_authz::{OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId, Scope};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -79,6 +79,7 @@ async fn seed_user(state: &AppState, username: &str, role_id: RoleId) -> UserId 
         active: true,
         password_hash: Some(password_hash()),
         attestation_key: None,
+        retired_attestation_keys: Vec::new(),
         secret_source: Default::default(),
         recovery_hash: None,
         role_assignments: vec![RoleAssignment::new(role_id, Scope::Global)],
@@ -182,7 +183,7 @@ impl Drop for EnvRestore {
 async fn preflight_requires_settings_manage_permission() {
     let tmp = TempDir::new("permission-denied");
     let state = AppState::with_data_dir(tmp.dir.clone());
-    let uid = seed_user(&state, "reader", LEITOR_ROLE_ID).await;
+    let uid = seed_user(&state, "reader", READER_ROLE_ID).await;
     let token = open_session(&state, uid).await;
     let current_key = "current-key-denied";
     let new_key = "replacement-key-denied";
@@ -207,7 +208,7 @@ async fn preflight_requires_settings_manage_permission() {
 async fn execution_requires_settings_manage_permission_without_leaking_keys() {
     let tmp = TempDir::new("execute-permission-denied");
     let state = AppState::with_data_dir(tmp.dir.clone());
-    let uid = seed_user(&state, "reader", LEITOR_ROLE_ID).await;
+    let uid = seed_user(&state, "reader", READER_ROLE_ID).await;
     let token = open_session(&state, uid).await;
     let new_key = "replacement-key-execute-denied";
 

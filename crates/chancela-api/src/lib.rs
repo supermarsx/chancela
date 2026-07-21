@@ -824,12 +824,14 @@ impl AppState {
         // rewritten to disk exactly once, only when the load actually changed it.
         let roles_path = dir.join(roles::ROLES_FILE);
         let mut roles_catalog = roles::load_roles(&roles_path).unwrap_or_default();
-        if roles::ensure_seeded_defaults(&mut roles_catalog)
+        let retired_any = roles::retire_merged_roles(&mut roles_catalog);
+        if (roles::ensure_seeded_defaults(&mut roles_catalog) || retired_any)
             && let Err(e) = roles::write_roles_atomic(&roles_path, &roles_catalog)
         {
             eprintln!("warning: failed to seed {} ({e})", roles_path.display());
         }
-        if roles::migrate_roles(&mut loaded_users)
+        let retired_holders_moved = roles::migrate_retired_roles(&mut loaded_users);
+        if (roles::migrate_roles(&mut loaded_users) || retired_holders_moved)
             && let Err(e) = users::write_users_atomic(&users_path, &loaded_users)
         {
             eprintln!(
@@ -1387,6 +1389,7 @@ impl AppState {
 
             let mut role_catalog =
                 roles::load_roles(&dir.join(roles::ROLES_FILE)).unwrap_or_default();
+            roles::retire_merged_roles(&mut role_catalog);
             roles::ensure_seeded_defaults(&mut role_catalog);
             *self.roles.write().await = role_catalog;
             *self.delegations.write().await =
@@ -3686,7 +3689,7 @@ mod tests {
 
     #[tokio::test]
     async fn external_validator_raw_report_download_requires_settings_read() {
-        use chancela_authz::{GUEST_ROLE_ID, LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{GUEST_ROLE_ID, READER_ROLE_ID, RoleAssignment, Scope};
 
         let state = AppState::default();
         let document_sha256 = sha256_hex_test(b"document bytes");
@@ -3703,7 +3706,7 @@ mod tests {
         let reader_id = seed_user(
             &state,
             "reader.raw-external-validator",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let reader_token = seed_session(&state, &reader_id.to_string()).await;
@@ -3732,7 +3735,7 @@ mod tests {
 
     #[tokio::test]
     async fn provider_credential_status_requires_settings_read() {
-        use chancela_authz::{GUEST_ROLE_ID, LEITOR_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
+        use chancela_authz::{GUEST_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
 
         let state = AppState::default();
         *state.roles.write().await = RoleCatalog::seeded_defaults();
@@ -3757,7 +3760,7 @@ mod tests {
         let reader_id = seed_user(
             &state,
             "reader.provider-credential-status",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let reader_token = seed_session(&state, &reader_id.to_string()).await;
@@ -4156,7 +4159,7 @@ mod tests {
 
     #[tokio::test]
     async fn external_validator_report_metadata_download_allows_settings_read() {
-        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{READER_ROLE_ID, RoleAssignment, Scope};
 
         let state = AppState::default();
         let document_sha256 = sha256_hex_test(b"document bytes");
@@ -4173,7 +4176,7 @@ mod tests {
         let reader_id = seed_user(
             &state,
             "reader.external-validator",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let reader_token = seed_session(&state, &reader_id.to_string()).await;
@@ -4330,6 +4333,7 @@ mod tests {
             active: true,
             password_hash: Some("direct-session-test-password-hash".to_owned()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
@@ -6911,7 +6915,7 @@ mod tests {
     async fn document_import_fails_closed_on_auth_invalid_content_and_path_names() {
         use base64::Engine;
         use base64::engine::general_purpose::STANDARD as B64;
-        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{READER_ROLE_ID, RoleAssignment, Scope};
 
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
@@ -6933,7 +6937,7 @@ mod tests {
         let leitor = seed_user(
             &state,
             "document.reader",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let leitor_token = seed_session(&state, &leitor.to_string()).await;
@@ -9937,7 +9941,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed() {
-        use chancela_authz::{GUEST_ROLE_ID, LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{GUEST_ROLE_ID, READER_ROLE_ID, RoleAssignment, Scope};
 
         let state = fresh_state().await;
         let owner_token = auth_token(&state).await;
@@ -9974,7 +9978,7 @@ mod tests {
         let reader_id = seed_user(
             &state,
             "reader.dashboard-events",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let reader_token = seed_session(&state, &reader_id.to_string()).await;
@@ -10031,7 +10035,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_backup_recovery_freshness_advisory_is_recovery_authority_gated() {
-        use chancela_authz::{LEITOR_ROLE_ID, Permission, Role, RoleAssignment, RoleId, Scope};
+        use chancela_authz::{Permission, READER_ROLE_ID, Role, RoleAssignment, RoleId, Scope};
 
         let state = fresh_state().await;
         let backup_reviewer = RoleId(Uuid::from_u128(0xBACA));
@@ -10082,7 +10086,7 @@ mod tests {
         let reader = seed_user(
             &state,
             "dashboard.reader.no.backup",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let reader_token = seed_session(&state, &reader.to_string()).await;
@@ -12148,6 +12152,7 @@ mod tests {
             active: true,
             password_hash: Some(crate::attestation::hash_secret(DEFAULT_TEST_PASSWORD).unwrap()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: assignments,
@@ -12159,7 +12164,7 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_users_json_migrates_on_load_and_is_idempotent() {
-        use chancela_authz::{GESTOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{COMPANY_OWNER_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
         let tmp = TempDir::new();
         // A pre-t64 users.json: two users, with NO `role_assignments` field at all (back-compat).
         let legacy = json!([
@@ -12189,7 +12194,7 @@ mod tests {
             );
             assert_eq!(
                 bruno.role_assignments,
-                vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)]
+                vec![RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)]
             );
         }
         // Rewritten to disk (now carries role_assignments), and roles.json was seeded.
@@ -12206,7 +12211,7 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_first_user_owner_second_user_gestor() {
-        use chancela_authz::{GESTOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{COMPANY_OWNER_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
 
@@ -12264,7 +12269,7 @@ mod tests {
         );
         assert_eq!(
             bruno.role_assignments,
-            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
             "subsequent users are Gestor"
         );
     }
@@ -12272,7 +12277,7 @@ mod tests {
     #[tokio::test]
     async fn principal_resolution_yields_correct_effective_permissions() {
         use chancela_authz::{
-            GESTOR_ROLE_ID, NoBooks, OWNER_ROLE_ID, Permission, RoleAssignment, Scope,
+            COMPANY_OWNER_ROLE_ID, NoBooks, OWNER_ROLE_ID, Permission, RoleAssignment, Scope,
             has_permission,
         };
         let tmp = TempDir::new();
@@ -12288,7 +12293,7 @@ mod tests {
         let gestor_id = seed_user(
             &state,
             "bruno.dias",
-            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
         )
         .await;
 
@@ -12339,8 +12344,8 @@ mod tests {
     #[tokio::test]
     async fn delegation_contributes_to_effective_permissions() {
         use chancela_authz::{
-            Delegation, GESTOR_ROLE_ID, LEITOR_ROLE_ID, NoBooks, Permission, RoleAssignment, Scope,
-            has_permission,
+            COMPANY_OWNER_ROLE_ID, Delegation, NoBooks, Permission, READER_ROLE_ID, RoleAssignment,
+            Scope, has_permission,
         };
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
@@ -12349,14 +12354,14 @@ mod tests {
         let grantor_id = seed_user(
             &state,
             "bruno.dias",
-            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
         )
         .await;
         // A Leitor (read-only) who receives a delegated act.advance.
         let leitor_id = seed_user(
             &state,
             "amelia.marques",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let did = crate::delegations::DelegationId(Uuid::from_u128(1));
@@ -12402,7 +12407,7 @@ mod tests {
 
     #[tokio::test]
     async fn last_owner_guard_tracks_admin_owner_count() {
-        use chancela_authz::{GESTOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{COMPANY_OWNER_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
 
@@ -12415,7 +12420,7 @@ mod tests {
         seed_user(
             &state,
             "bruno.dias",
-            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
         )
         .await;
         // One Owner ⇒ removing it is unsafe (guard false).
@@ -13283,6 +13288,7 @@ mod tests {
             active: true,
             password_hash: Some("direct-session-test-password-hash".to_owned()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![],
@@ -15773,7 +15779,7 @@ mod tests {
 
     #[tokio::test]
     async fn data_cleanup_is_settings_manage_gated_and_rejects_unknown_targets() {
-        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{READER_ROLE_ID, RoleAssignment, Scope};
 
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
@@ -15787,7 +15793,7 @@ mod tests {
         let leitor = seed_user(
             &state,
             "leitor.storage",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let token = open_session(&state, &leitor.to_string()).await;
@@ -15939,8 +15945,17 @@ mod tests {
 
         let (_, view) = send(state.clone(), get(&format!("/v1/users/{id}"))).await;
         assert_eq!(view["has_secret"], true);
-        assert_eq!(view["has_attestation_key"], false);
-        assert!(view.get("attestation_key_fingerprint").is_none());
+        // t88: creation generates the attestation key from the password being set, so a freshly
+        // created account arrives with one and publishes its public fingerprint. (Was `false`/absent
+        // when the key was a separate opt-in step.)
+        assert_eq!(view["has_attestation_key"], true);
+        assert_eq!(
+            view["attestation_key_fingerprint"]
+                .as_str()
+                .expect("fingerprint published")
+                .len(),
+            32
+        );
 
         let status = send_status(
             state.clone(),
@@ -16169,6 +16184,7 @@ mod tests {
                 active: true,
                 password_hash: Some(legacy_hash.clone()),
                 attestation_key: None,
+                retired_attestation_keys: Vec::new(),
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: vec![crate::roles::bootstrap_assignment(true)],
@@ -16368,8 +16384,81 @@ mod tests {
         assert!(v["reason"].is_string());
     }
 
+    /// Rotation retains the outgoing key's public half (t92), so what it signed keeps verifying.
     #[tokio::test]
-    async fn removing_the_key_makes_prior_attestations_unverifiable() {
+    async fn rotating_the_key_keeps_prior_attestations_verifiable() {
+        let state = AppState::default();
+        let (id, token, seq) = attested_entity(&state, "nadia").await;
+        // Valid under the original key.
+        let (_, v) = send(
+            state.clone(),
+            get(&format!("/v1/ledger/attestations/{seq}")),
+        )
+        .await;
+        assert_eq!(v["valid"], true, "baseline attestation verifies: {v}");
+        let old_fingerprint = v["attestation"]["fingerprint"]
+            .as_str()
+            .expect("fingerprint")
+            .to_owned();
+
+        // Rotate: POST the same endpoint again, which replaces `attestation_key` outright.
+        let (status, view) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "Segur0-Chave7!" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "rotation succeeds: {view}");
+        assert_eq!(view["has_attestation_key"], true);
+        assert_ne!(
+            view["attestation_key_fingerprint"].as_str().expect("fp"),
+            old_fingerprint,
+            "rotation issues a genuinely new key"
+        );
+
+        // The prior attestation still carries the OLD fingerprint, and the verifier now resolves
+        // it from the retained public half.
+        let (status, v) = send(
+            state.clone(),
+            get(&format!("/v1/ledger/attestations/{seq}")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v["attestation"]["fingerprint"], old_fingerprint);
+        assert_eq!(
+            v["valid"], true,
+            "the past still verifies after a rotation: {v}"
+        );
+        assert!(v.get("reason").is_none_or(Value::is_null));
+
+        // The outgoing key is in the retained history. (The count is not pinned: since t88 an
+        // account is created WITH a key, so `attested_entity` has already rotated once.)
+        let stored = state
+            .users
+            .read()
+            .await
+            .get(&UserId(id.parse().expect("uuid")))
+            .expect("user stored")
+            .clone();
+        assert!(
+            stored
+                .retired_attestation_keys
+                .iter()
+                .any(|k| k.fingerprint == old_fingerprint),
+            "the superseded key was retained: {:?}",
+            stored.retired_attestation_keys
+        );
+    }
+
+    /// Removal retires the same way a rotation does (t92): the user can no longer sign, but the
+    /// attestations already produced stay verifiable.
+    #[tokio::test]
+    async fn removing_the_key_keeps_prior_attestations_verifiable() {
         let state = AppState::default();
         let (id, token, seq) = attested_entity(&state, "iris").await;
         // Valid while the key exists.
@@ -16394,17 +16483,64 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(view["has_attestation_key"], false);
-        // The attestation is still stored, but its key is gone → invalid with a key-not-found reason.
-        let (status, v) = send(state, get(&format!("/v1/ledger/attestations/{seq}"))).await;
+        // The user can no longer sign anything new, but the retained public half still verifies
+        // what they signed before.
+        let (status, v) = send(
+            state.clone(),
+            get(&format!("/v1/ledger/attestations/{seq}")),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(v["valid"], false);
-        assert!(v["reason"].as_str().expect("reason").contains("key"));
+        assert_eq!(v["valid"], true, "removal does not erase the past: {v}");
+        let stored = state
+            .users
+            .read()
+            .await
+            .get(&UserId(id.parse().expect("uuid")))
+            .expect("user stored")
+            .clone();
+        assert!(stored.attestation_key.is_none(), "the signing key is gone");
+        assert!(
+            stored
+                .retired_attestation_keys
+                .iter()
+                .any(|k| k.fingerprint == v["attestation"]["fingerprint"].as_str().expect("fp")),
+            "the removed key was retained: {:?}",
+            stored.retired_attestation_keys
+        );
     }
 
     #[tokio::test]
     async fn mutation_without_attestation_key_has_no_attestation() {
         let state = AppState::default();
         let id = make_user(&state, "eva").await;
+
+        // t88: creation now generates a key, so a keyless user has to be MADE one. The state is
+        // still perfectly reachable in production — a recovery-phrase reset drops the key, and
+        // accounts predating t88 never had one — so this journey is still worth pinning; only the
+        // setup changed. Remove the key self-service, proving the current password.
+        let setup_tok = open_session(&state, &id).await;
+        let (status, view) = send(
+            state.clone(),
+            with_session(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/v1/users/{id}/attestation-key"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({ "current_password": DEFAULT_TEST_PASSWORD }).to_string(),
+                    ))
+                    .expect("request builds"),
+                &setup_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "key removed: {view}");
+        assert_eq!(view["has_attestation_key"], false);
+
+        // A NEW session after the removal. The order matters: `create_session` unlocks the key into
+        // the session at sign-in, so a session opened *before* the removal would keep signing with
+        // the in-memory copy and this test would pass for the wrong reason.
         let (_, sess) = send(
             state.clone(),
             post_json(
@@ -17926,7 +18062,7 @@ mod tests {
 
     #[tokio::test]
     async fn rbac_non_owner_leitor_reads_but_cannot_write() {
-        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{READER_ROLE_ID, RoleAssignment, Scope};
         let state = fresh_state().await;
         // An Owner (auto-seeded session) creates one entity.
         let (status, _e) = send(
@@ -17948,7 +18084,7 @@ mod tests {
         let leitor = seed_user(
             &state,
             "amelia.marques",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let tok = seed_session(&state, &leitor.to_string()).await;
@@ -18108,9 +18244,12 @@ mod tests {
                     && r.permission_set.contains(&Permission::BookExport)
             })
             .collect();
+        // t87 merged the Gestor duplicate into Company Owner, so the population this split
+        // narrowed is seven rather than eight. Nobody lost `book.export` — the two roles held an
+        // identical permission set, so the merged role is one of the same holders under one name.
         assert_eq!(
             export_holders.len(),
-            8,
+            7,
             "the population this split narrowed changed size"
         );
 
@@ -18169,8 +18308,8 @@ mod tests {
             }
         }
         assert_eq!(
-            refused, 7,
-            "seven of the eight lost the authority; one is a seeded holder"
+            refused, 6,
+            "six of the seven lost the authority; one is a seeded holder"
         );
     }
 
@@ -18325,7 +18464,7 @@ mod tests {
     /// critical mutation in the product that appended NO ledger event.
     #[tokio::test]
     async fn tsl_import_needs_trust_manage_and_is_recorded_in_the_ledger() {
-        use chancela_authz::{GESTOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{COMPANY_OWNER_ROLE_ID, RoleAssignment, Scope};
         let state = persistent_state();
         let owner_token = seed_session(&state, &make_user(&state, "owner.operator").await).await;
 
@@ -18333,7 +18472,7 @@ mod tests {
         let gestor = seed_user(
             &state,
             "amelia.marques",
-            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
         )
         .await;
         let gestor_token = seed_session(&state, &gestor.0.to_string()).await;
@@ -18488,7 +18627,9 @@ mod tests {
 
     #[tokio::test]
     async fn rbac_scoped_gestor_acts_within_scope_but_not_outside() {
-        use chancela_authz::{EntityId as AuthzEntityId, GESTOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{
+            COMPANY_OWNER_ROLE_ID, EntityId as AuthzEntityId, RoleAssignment, Scope,
+        };
         let state = fresh_state().await;
         let mk = |name: &str| {
             json!({
@@ -18515,7 +18656,7 @@ mod tests {
             &state,
             "amelia.marques",
             vec![RoleAssignment::new(
-                GESTOR_ROLE_ID,
+                COMPANY_OWNER_ROLE_ID,
                 Scope::Entity(AuthzEntityId(e1_uuid)),
             )],
         )
@@ -18781,7 +18922,7 @@ mod tests {
             &state,
             "amelia.marques",
             vec![RoleAssignment::new(
-                chancela_authz::LEITOR_ROLE_ID,
+                chancela_authz::READER_ROLE_ID,
                 Scope::Global,
             )],
         )
@@ -18931,7 +19072,7 @@ mod tests {
     #[tokio::test]
     async fn e4_assign_subset_enforced_and_last_owner_guard() {
         use chancela_authz::{
-            GESTOR_ROLE_ID, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleId, Scope,
+            COMPANY_OWNER_ROLE_ID, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleId, Scope,
         };
         let state = fresh_state().await;
 
@@ -18981,7 +19122,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/roles"),
-                    json!({ "role_id": GESTOR_ROLE_ID.0.to_string(), "scope": { "kind": "global" } }),
+                    json!({ "role_id": COMPANY_OWNER_ROLE_ID.0.to_string(), "scope": { "kind": "global" } }),
                 ),
                 &tok,
             ),
@@ -19044,7 +19185,7 @@ mod tests {
     /// count used by the unassign guard.
     #[tokio::test]
     async fn e8_deactivating_the_last_active_owner_is_refused() {
-        use chancela_authz::{LEITOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, Scope};
         let state = fresh_state().await;
 
         let owner_a = seed_user(
@@ -19063,7 +19204,7 @@ mod tests {
         let _reader = seed_user(
             &state,
             "carla.nunes",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let tok_a = seed_session(&state, &owner_a.to_string()).await;
@@ -19139,7 +19280,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "roles": [chancela_authz::SIGNATARIO_ROLE_ID.0.to_string()],
+                        "roles": [chancela_authz::SIGNATORY_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "legal_basis": "operator-recorded board minute R-64"
                     }),
@@ -19149,8 +19290,9 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
-        // The row names the função and shows the authority it hands over.
-        assert_eq!(view["roles"][0]["name"], json!("Signatário"));
+        // The row names the função and shows the authority it hands over. The stored name is the
+        // canonical English one (t87); the client localizes it from the role id.
+        assert_eq!(view["roles"][0]["name"], json!("Signatory"));
         assert!(
             view["roles"][0]["permissions"]
                 .as_array()
@@ -19245,7 +19387,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": dora.to_string(),
-                        "roles": [chancela_authz::SIGNATARIO_ROLE_ID.0.to_string()],
+                        "roles": [chancela_authz::SIGNATORY_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "legal_basis": "operator-recorded board minute R-65"
                     }),
@@ -19268,7 +19410,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "roles": [chancela_authz::LEITOR_ROLE_ID.0.to_string()],
+                        "roles": [chancela_authz::READER_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "expires_at": past,
                         "legal_basis": "operator-recorded expiry test evidence"
@@ -19456,7 +19598,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "roles": [chancela_authz::SIGNATARIO_ROLE_ID.0.to_string()],
+                        "roles": [chancela_authz::SIGNATORY_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "legal_basis": "operator-recorded board minute R-70"
                     }),
@@ -19967,7 +20109,7 @@ mod tests {
         let valid_base = || {
             json!({
                 "to": grantee.to_string(),
-                "roles": [chancela_authz::LEITOR_ROLE_ID.0.to_string()],
+                "roles": [chancela_authz::READER_ROLE_ID.0.to_string()],
                 "scope": { "kind": "global" }
             })
         };
@@ -20053,7 +20195,7 @@ mod tests {
                     "/v1/delegations",
                     json!({
                         "to": grantee.to_string(),
-                        "roles": [chancela_authz::LEITOR_ROLE_ID.0.to_string()],
+                        "roles": [chancela_authz::READER_ROLE_ID.0.to_string()],
                         "scope": { "kind": "global" },
                         "starts_at": starts_at,
                         "legal_basis": legal_basis
@@ -21257,7 +21399,7 @@ mod tests {
 
     #[tokio::test]
     async fn follow_up_routes_allow_readers_to_list_but_not_mutate() {
-        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{READER_ROLE_ID, RoleAssignment, Scope};
 
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_one_act(&state, &book_id).await;
@@ -21275,7 +21417,7 @@ mod tests {
         let leitor = seed_user(
             &state,
             "leitor.followups",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let token = seed_session(&state, &leitor.to_string()).await;
@@ -21648,7 +21790,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_is_forbidden_for_a_read_only_leitor() {
-        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{READER_ROLE_ID, RoleAssignment, Scope};
         let (state, _e, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_one_act(&state, &book_id).await;
         send(
@@ -21664,7 +21806,7 @@ mod tests {
         let leitor = seed_user(
             &state,
             "amelia.marques",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let tok = seed_session(&state, &leitor.to_string()).await;
@@ -22612,12 +22754,12 @@ mod tests {
         // The relaxation is SELF-step-up ONLY; RBAC stays the primary gate. A legacy no-hash Leitor
         // (lacks ledger.recover / data.wipe) is refused with a PERMISSION 403 — never waved through
         // by the no-hash step-up carve-out. (`require_permission` runs before `require_step_up`.)
-        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        use chancela_authz::{READER_ROLE_ID, RoleAssignment, Scope};
         let state = persistent_state();
         let leitor = seed_user(
             &state,
             "amelia.marques",
-            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
         )
         .await;
         let token = seed_session(&state, &leitor.to_string()).await;

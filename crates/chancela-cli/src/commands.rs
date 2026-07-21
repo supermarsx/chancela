@@ -3,7 +3,7 @@
 
 use std::process::Command as ProcCommand;
 
-use chancela_authz::{GESTOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, RoleId, Scope};
+use chancela_authz::{COMPANY_OWNER_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, RoleId, Scope};
 use chancela_core::BookId;
 use chancela_ledger::{IntegrityReport, ReanchorError};
 use chancela_store::recovery::{CollisionPolicy, ImportVerdict, ResetScope};
@@ -479,11 +479,15 @@ pub fn ledger_reanchor(ctx: &Ctx, args: ReanchorArgs) -> Cmd {
 // ---------------------------------------------------------------------------------------------
 
 /// The human role label for a known seeded role id.
+///
+/// These are the canonical **English** seeded names (t87) and match what the API stores, so CLI
+/// output and `GET /v1/roles` agree. The CLI has no locale, so unlike the web client it does not
+/// translate them; an unknown id falls back to the raw id rather than guessing a name.
 fn role_label(role_id: RoleId) -> String {
     if role_id == OWNER_ROLE_ID {
         "Owner".to_owned()
-    } else if role_id == GESTOR_ROLE_ID {
-        "Gestor".to_owned()
+    } else if role_id == COMPANY_OWNER_ROLE_ID {
+        "Company Owner".to_owned()
     } else {
         role_id.0.to_string()
     }
@@ -519,7 +523,7 @@ pub fn user_create(ctx: &Ctx, args: UserCreateArgs) -> Cmd {
     let role_id = if bootstrap {
         OWNER_ROLE_ID
     } else {
-        GESTOR_ROLE_ID
+        COMPANY_OWNER_ROLE_ID
     };
     let assignment = RoleAssignment::new(role_id, Scope::Global);
     let created_at = now().format(&Rfc3339).unwrap_or_default();

@@ -16,7 +16,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_api::{AppState, router};
 use chancela_archive::{ArchiveError, PackageFileRole, PreservationLevel, validate_package};
-use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+use chancela_authz::{READER_ROLE_ID, RoleAssignment, Scope};
 use chancela_core::ActId;
 use chancela_signing::{
     DssEvidence, MockProvider, SignOptions, SignerProvider, SigningFamily, attach_pdf_dss,
@@ -1052,7 +1052,7 @@ async fn reader_token_without_book_export(state: &AppState, owner_token: &str) -
                 Uuid::parse_str(user_id).expect("reader uuid"),
             ))
             .expect("reader user exists");
-        user.role_assignments = vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)];
+        user.role_assignments = vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)];
     }
 
     let (status, session) = send(

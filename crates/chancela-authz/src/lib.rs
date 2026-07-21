@@ -41,9 +41,10 @@ pub use delegation::{Delegation, UserId};
 pub use permission::Permission;
 pub use role::{
     API_CLIENT_ROLE_ID, AUDITOR_ROLE_ID, COMPANY_OWNER_ROLE_ID, CORPORATE_SECRETARY_ROLE_ID,
-    GESTOR_ROLE_ID, GUEST_ROLE_ID, LEGAL_COUNSEL_ROLE_ID, LEITOR_ROLE_ID, OWNER_ROLE_ID,
-    PLATFORM_ADMIN_ROLE_ID, RECORDS_MANAGER_ROLE_ID, REVIEWER_ROLE_ID, Role, RoleCatalog, RoleId,
-    SIGNATARIO_ROLE_ID, SIGNATORY_ROLE_ID, TENANT_ADMIN_ROLE_ID, default_roles,
+    GUEST_ROLE_ID, LEGAL_COUNSEL_ROLE_ID, OWNER_ROLE_ID, PLATFORM_ADMIN_ROLE_ID, READER_ROLE_ID,
+    RECORDS_MANAGER_ROLE_ID, RETIRED_GESTOR_ROLE_ID, RETIRED_SEEDED_ROLES,
+    RETIRED_SIGNATARIO_ROLE_ID, REVIEWER_ROLE_ID, Role, RoleCatalog, RoleId, SIGNATORY_ROLE_ID,
+    TENANT_ADMIN_ROLE_ID, default_roles, is_seeded_role, retired_role_successor,
 };
 pub use scope::{
     ActId, ArchiveId, BookId, BookScope, CompanyId, EntityId, FolderId, IntegrationId, NoBooks,
@@ -402,8 +403,8 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let principal = uid(1);
         let assignments = [
-            RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
-            RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1))),
+            RoleAssignment::new(READER_ROLE_ID, Scope::Global),
+            RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Entity(ent(1))),
         ];
         let delegations = [
             Delegation::new(uid(9), principal, Permission::DataBackup, Scope::Global),
@@ -558,7 +559,7 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let actor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            &[RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
             &cat,
             &[],
             epoch(),
@@ -579,7 +580,10 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let actor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1)))],
+            &[RoleAssignment::new(
+                COMPANY_OWNER_ROLE_ID,
+                Scope::Entity(ent(1)),
+            )],
             &cat,
             &[],
             epoch(),
@@ -633,15 +637,15 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let actor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            &[RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
             &cat,
             &[],
             epoch(),
         );
-        let gestor = cat.get(GESTOR_ROLE_ID).unwrap();
+        let gestor = cat.get(COMPANY_OWNER_ROLE_ID).unwrap();
         assert!(!can_assign_role(&actor, gestor, Scope::Global, &books()));
         // But may assign Leitor (⊆ own authority).
-        let leitor = cat.get(LEITOR_ROLE_ID).unwrap();
+        let leitor = cat.get(READER_ROLE_ID).unwrap();
         assert!(can_assign_role(&actor, leitor, Scope::Global, &books()));
     }
 
@@ -652,12 +656,15 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let actor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1)))],
+            &[RoleAssignment::new(
+                COMPANY_OWNER_ROLE_ID,
+                Scope::Entity(ent(1)),
+            )],
             &cat,
             &[],
             epoch(),
         );
-        let gestor = cat.get(GESTOR_ROLE_ID).unwrap();
+        let gestor = cat.get(COMPANY_OWNER_ROLE_ID).unwrap();
         assert!(can_assign_role(
             &actor,
             gestor,
@@ -693,7 +700,7 @@ mod tests {
         // A Gestor cannot assign Owner (Owner contains meta + data.wipe the Gestor lacks).
         let gestor_actor = effective_permissions(
             uid(2),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            &[RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
             &cat,
             &[],
             epoch(),
@@ -740,7 +747,7 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let leitor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            &[RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
             &cat,
             &[],
             epoch(),
@@ -821,7 +828,10 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let gestor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1)))],
+            &[RoleAssignment::new(
+                COMPANY_OWNER_ROLE_ID,
+                Scope::Entity(ent(1)),
+            )],
             &cat,
             &[],
             epoch(),
@@ -843,7 +853,7 @@ mod tests {
         // The attacker holds Leitor via a role and DataWipe only by delegation.
         let attacker = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+            &[RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
             &cat,
             &[Delegation::new(
                 uid(9),
@@ -1028,7 +1038,7 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let gestor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            &[RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
             &cat,
             &[],
             epoch(),
@@ -1105,7 +1115,7 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let gestor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            &[RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
             &cat,
             &[],
             epoch(),
@@ -1208,7 +1218,10 @@ mod tests {
         // entity 2 — the per-permission check runs at the delegation's scope.
         let scoped = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1)))],
+            &[RoleAssignment::new(
+                COMPANY_OWNER_ROLE_ID,
+                Scope::Entity(ent(1)),
+            )],
             &cat,
             &[],
             epoch(),
@@ -1271,7 +1284,10 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let actor = effective_permissions(
             uid(1),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1)))],
+            &[RoleAssignment::new(
+                COMPANY_OWNER_ROLE_ID,
+                Scope::Entity(ent(1)),
+            )],
             &cat,
             &[],
             epoch(),
@@ -1345,7 +1361,7 @@ mod tests {
     fn count_owner_admin_holders_dedups_and_ignores_scoped_owner() {
         let a_owner = RoleAssignment::new(OWNER_ROLE_ID, Scope::Global);
         let a_scoped_owner = RoleAssignment::new(OWNER_ROLE_ID, Scope::Entity(ent(1)));
-        let a_gestor = RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global);
+        let a_gestor = RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global);
         let pairs = [
             (uid(1), &a_owner),
             (uid(1), &a_owner),        // same user twice → counts once
@@ -1363,7 +1379,7 @@ mod tests {
         let cat = RoleCatalog::seeded_defaults();
         let attacker = effective_permissions(
             uid(7),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            &[RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)],
             &cat,
             &[],
             epoch(),
@@ -1416,7 +1432,10 @@ mod tests {
         // 5. Use a scoped grant to satisfy a Global check (scope-escape upward).
         let scoped = effective_permissions(
             uid(8),
-            &[RoleAssignment::new(GESTOR_ROLE_ID, Scope::Entity(ent(1)))],
+            &[RoleAssignment::new(
+                COMPANY_OWNER_ROLE_ID,
+                Scope::Entity(ent(1)),
+            )],
             &cat,
             &[],
             epoch(),
@@ -1491,7 +1510,7 @@ mod tests {
         ));
         assert!(!can_assign_role(
             &assigner_actor,
-            cat2.get(GESTOR_ROLE_ID).unwrap(),
+            cat2.get(COMPANY_OWNER_ROLE_ID).unwrap(),
             Scope::Global,
             &r
         ));

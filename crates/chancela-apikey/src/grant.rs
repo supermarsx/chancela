@@ -74,16 +74,16 @@ impl ApiKeyGrant {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chancela_authz::{GESTOR_ROLE_ID, OWNER_ROLE_ID, RoleId};
+    use chancela_authz::{COMPANY_OWNER_ROLE_ID, OWNER_ROLE_ID, RoleId};
     use uuid::Uuid;
 
     #[test]
     fn role_grant_resolves_through_catalog() {
         let cat = RoleCatalog::seeded_defaults();
-        let g = ApiKeyGrant::role(GESTOR_ROLE_ID, Scope::Global);
+        let g = ApiKeyGrant::role(COMPANY_OWNER_ROLE_ID, Scope::Global);
         let pairs = g.grant_pairs(&cat);
         // Every pair is at Global and is a Gestor permission.
-        let gestor = cat.get(GESTOR_ROLE_ID).unwrap();
+        let gestor = cat.get(COMPANY_OWNER_ROLE_ID).unwrap();
         assert_eq!(pairs.len(), gestor.permission_set.len());
         assert!(pairs.iter().all(|&(_, s)| s == Scope::Global));
         assert!(

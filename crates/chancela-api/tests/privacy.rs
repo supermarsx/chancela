@@ -7,7 +7,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chancela_api::{AppState, User, UserId, provision_subject_dek, router};
 use chancela_authz::{
-    LEITOR_ROLE_ID, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleCatalog, RoleId, Scope,
+    OWNER_ROLE_ID, Permission, READER_ROLE_ID, Role, RoleAssignment, RoleCatalog, RoleId, Scope,
 };
 use chancela_core::book::ClosingReason;
 use chancela_core::{
@@ -155,6 +155,7 @@ async fn insert_user(state: &AppState, id: UserId, username: &str, role: RoleAss
         active: true,
         password_hash: Some(password_hash()),
         attestation_key: None,
+        retired_attestation_keys: Vec::new(),
         secret_source: Default::default(),
         recovery_hash: None,
         role_assignments: vec![role],
@@ -200,14 +201,14 @@ async fn fixture_state() -> (AppState, UserId, String, UserId, String) {
         &state,
         target,
         "bruno",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     insert_user(
         &state,
         reader,
         "reader",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
 
@@ -465,9 +466,14 @@ async fn privacy_export_returns_target_shape_and_ledger_refs() {
     assert_eq!(body["user"]["has_secret"], json!(true));
     assert_eq!(body["user"]["has_recovery_phrase"], json!(false));
     assert_eq!(body["user"]["has_attestation_key"], json!(false));
+    // t87: seeded role names are stored in English and localized by the *client* from the role id.
+    // This export is server-rendered and the request carries no locale, so it reports the stored
+    // name verbatim — "Reader", not "Leitor". That is deliberate: a DSR export is a record of what
+    // is stored, and inventing a translation here would make the export disagree with the database
+    // it is supposed to disclose. `role_id` below is the stable handle a reader can resolve.
     assert_eq!(
         body["user"]["role_assignments"][0]["role_name"],
-        json!("Leitor")
+        json!("Reader")
     );
     assert!(
         body["user"]["role_assignments"][0]["permissions"]
@@ -1369,14 +1375,14 @@ async fn dsr_request_load_tolerates_malformed_sidecar_and_preserves_authz() {
         &state,
         target,
         "target",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     insert_user(
         &state,
         reader,
         "reader",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let owner_token = open_session(&state, owner).await;
@@ -1474,7 +1480,7 @@ async fn dsr_request_load_skips_malformed_legacy_entries_and_defaults_execution_
         &state,
         target,
         "target",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let owner_token = open_session(&state, owner).await;
@@ -1545,7 +1551,7 @@ async fn dsr_request_legacy_sidecar_orders_by_created_at_and_preserves_long_reas
         &state,
         target,
         "target",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let owner_token = open_session(&state, owner).await;
@@ -6572,7 +6578,7 @@ async fn erasure_preflight_enumerates_targets_and_carveouts() {
         &state,
         subject,
         "amelia.marques",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
@@ -6625,7 +6631,7 @@ async fn erasure_approve_enforces_dual_control_and_confirmation() {
         &state,
         subject,
         "amelia.marques",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
@@ -6751,7 +6757,7 @@ async fn erasure_execute_rejects_unapproved_request() {
         &state,
         subject,
         "amelia.marques",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
@@ -6825,7 +6831,7 @@ async fn erasure_execute_rejects_last_owner_removal() {
     {
         let mut users = state.users.write().await;
         let requester = users.get_mut(&requester).expect("requester exists");
-        requester.role_assignments = vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)];
+        requester.role_assignments = vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)];
     }
 
     let (status, body) = send(
@@ -6867,7 +6873,7 @@ async fn merge_gate_erasure_preserves_ledger_integrity_and_destroys_dek() {
         &state,
         subject,
         "amelia.marques",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
 
@@ -7025,7 +7031,7 @@ async fn rectification_annotation_is_append_only_and_preserves_signed_events() {
         &state,
         subject,
         "amelia.marques",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
@@ -7115,7 +7121,7 @@ async fn restriction_annotation_records_append_only_marker() {
         &state,
         subject,
         "amelia.marques",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
@@ -7154,7 +7160,7 @@ async fn rectification_requires_a_note() {
         &state,
         subject,
         "amelia.marques",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
@@ -7182,7 +7188,7 @@ async fn preflight_marks_sealed_records_as_annotation_remedy() {
         &state,
         subject,
         "amelia.marques",
-        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
     )
     .await;
     let request_id = create_erasure_dsr(&state, subject, &owner_token).await;

@@ -95,6 +95,7 @@ async fn seed_owner(state: &AppState) -> UserId {
         active: true,
         password_hash: Some(password_hash()),
         attestation_key: None,
+        retired_attestation_keys: Vec::new(),
         secret_source: Default::default(),
         recovery_hash: None,
         role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],

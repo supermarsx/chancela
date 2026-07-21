@@ -345,7 +345,11 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
     // Seed the default role catalog (Owner forced canonical/locked) and bring legacy users forward
     // with the idempotent, anti-lockout role migration — persisting each back to the DB only when it
     // actually changed, mirroring the file path's write-once seeding.
-    if crate::roles::ensure_seeded_defaults(&mut roles) {
+    // t87: drop the two retired duplicate roles first, so the seeding pass below cannot re-add them
+    // and the reconcile deletes their rows. `retire_merged_roles` is idempotent, so a database that
+    // has already been migrated takes this branch only via `ensure_seeded_defaults`, as before.
+    let retired_any = crate::roles::retire_merged_roles(&mut roles);
+    if crate::roles::ensure_seeded_defaults(&mut roles) || retired_any {
         let rows = roles
             .iter()
             .filter_map(|role| {
@@ -356,7 +360,10 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
             .collect();
         persist_seed(store, DocumentTable::Roles, rows)?;
     }
-    if crate::roles::migrate_roles(&mut users) {
+    // t87 runs in the same pass and before the anti-lockout default, so a user whose only assignment
+    // named a retired role is moved onto the successor rather than looking unassigned.
+    let retired_holders_moved = crate::roles::migrate_retired_roles(&mut users);
+    if crate::roles::migrate_roles(&mut users) || retired_holders_moved {
         let rows = users
             .values()
             .filter_map(|user| {
@@ -441,6 +448,7 @@ mod tests {
             active: true,
             password_hash: None,
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: SecretSource::default(),
             recovery_hash: None,
             role_assignments: Vec::new(),

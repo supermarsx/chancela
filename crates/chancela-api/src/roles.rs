@@ -27,8 +27,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use chancela_authz::{
-    ActId as AuthzActId, ArchiveId as AuthzArchiveId, BookId as AuthzBookId, Delegation,
-    EntityId as AuthzEntityId, FolderId as AuthzFolderId, GESTOR_ROLE_ID,
+    ActId as AuthzActId, ArchiveId as AuthzArchiveId, BookId as AuthzBookId, COMPANY_OWNER_ROLE_ID,
+    Delegation, EntityId as AuthzEntityId, FolderId as AuthzFolderId,
     IntegrationId as AuthzIntegrationId, OWNER_ROLE_ID, Permission,
     RepositoryId as AuthzRepositoryId, Role, RoleAssignment, RoleCatalog, RoleId, Scope,
     ScopedPermissionSet, TemplateLibraryId as AuthzTemplateLibraryId, TenantId as AuthzTenantId,
@@ -91,6 +91,73 @@ pub(crate) fn ensure_seeded_defaults(catalog: &mut RoleCatalog) -> bool {
         }
     }
 
+    changed
+}
+
+/// **t87 role-merge migration, catalog half.** Drop the retired seeded roles
+/// ([`chancela_authz::RETIRED_SEEDED_ROLES`]) from a catalog loaded off disk, returning whether it
+/// changed.
+///
+/// A retired role is a Portuguese-named duplicate of an English archetype whose permission set was
+/// byte-identical, so removing it takes no authority away from anyone — [`migrate_retired_roles`]
+/// moves the holders onto the successor in the same load pass. Removal is what stops the duplicate
+/// from being *offered* again in the role picker; `ensure_seeded_defaults` will not re-add it,
+/// because retired ids are absent from `default_roles()`.
+///
+/// **Idempotent:** an already-migrated catalog has no retired role and this is a no-op.
+///
+/// A retired id that an operator has since *edited* is dropped too — the edit was a customisation of
+/// a duplicate, and keeping it would keep the duplicate. This is the one place the merge can lose an
+/// operator's change, and it is recorded here rather than being silent.
+pub(crate) fn retire_merged_roles(catalog: &mut RoleCatalog) -> bool {
+    let retired: Vec<RoleId> = chancela_authz::RETIRED_SEEDED_ROLES
+        .iter()
+        .map(|(retired, _)| *retired)
+        .filter(|id| catalog.get(*id).is_some())
+        .collect();
+    for id in &retired {
+        catalog.remove(*id);
+    }
+    !retired.is_empty()
+}
+
+/// **t87 role-merge migration, assignment half.** Move every holder of a retired seeded role onto
+/// the role it was merged into, returning whether any user changed.
+///
+/// The two roles had **identical** permission sets, so a reassigned holder ends the pass with
+/// exactly the authority they started it with. The scope of each assignment is preserved verbatim —
+/// only the role id moves.
+///
+/// **Idempotent and re-runnable:** after one pass no assignment names a retired id, so a second pass
+/// finds nothing. Safe on an already-migrated database and on one that never had the retired roles.
+/// If a user holds *both* the retired role and its successor at the same scope, the rewrite would
+/// produce a duplicate assignment, so duplicates are collapsed — a user must not end up holding one
+/// role twice.
+///
+/// **The ledger is not touched.** Past `role.assigned` events naming a retired id stay exactly as
+/// written; the chain is append-only and rewriting it to tidy a name would destroy the very
+/// tamper-evidence it exists for. Those ids stay readable because the client still names them (see
+/// `apps/web/src/i18n/roleNameLabels.ts`), not because history was edited.
+pub(crate) fn migrate_retired_roles(users: &mut HashMap<UserId, User>) -> bool {
+    let mut changed = false;
+    for user in users.values_mut() {
+        if !user
+            .role_assignments
+            .iter()
+            .any(|a| chancela_authz::retired_role_successor(a.role_id).is_some())
+        {
+            continue;
+        }
+        for assignment in &mut user.role_assignments {
+            if let Some(successor) = chancela_authz::retired_role_successor(assignment.role_id) {
+                assignment.role_id = successor;
+            }
+        }
+        // The rewrite can collide with an assignment the user already held; keep the first.
+        let mut seen = std::collections::HashSet::new();
+        user.role_assignments.retain(|a| seen.insert(*a));
+        changed = true;
+    }
     changed
 }
 
@@ -172,7 +239,7 @@ pub(crate) fn migrate_roles(users: &mut HashMap<UserId, User>) -> bool {
         let assignment = if !owner_exists && i == 0 {
             RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)
         } else {
-            RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)
+            RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)
         };
         if let Some(u) = users.get_mut(uid) {
             u.role_assignments = vec![assignment];
@@ -189,7 +256,7 @@ pub(crate) fn bootstrap_assignment(bootstrap: bool) -> RoleAssignment {
     if bootstrap {
         RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)
     } else {
-        RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)
+        RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)
     }
 }
 
@@ -1066,6 +1133,7 @@ mod tests {
             active: true,
             password_hash: Some("test-password-hash".to_owned()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: SecretSource::Password,
             recovery_hash: None,
             role_assignments: assignments,
@@ -1441,6 +1509,168 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // --- t87 role-merge migration ---------------------------------------------------------------
+
+    /// A `roles.json`/`roles` table written before the merge still carries the two duplicates.
+    /// Loading it must drop them, and the seeding pass that runs immediately afterwards must not
+    /// put them back — otherwise the merge undoes itself on every boot.
+    #[test]
+    fn loading_a_pre_merge_catalog_drops_the_duplicates_and_seeding_does_not_restore_them() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        // Reconstruct the pre-merge catalog: the duplicates, exactly as they were seeded.
+        for (retired, successor) in chancela_authz::RETIRED_SEEDED_ROLES {
+            let survivor = cat.get(*successor).expect("successor is seeded").clone();
+            cat.insert(Role {
+                id: *retired,
+                name: "legacy".to_owned(),
+                permission_set: survivor.permission_set.clone(),
+                protected: false,
+            });
+        }
+        let pre_merge = cat.len();
+
+        assert!(retire_merged_roles(&mut cat), "the duplicates were present");
+        assert_eq!(cat.len(), pre_merge - 2);
+        for (retired, successor) in chancela_authz::RETIRED_SEEDED_ROLES {
+            assert!(cat.get(*retired).is_none(), "a retired role survived");
+            assert!(cat.get(*successor).is_some(), "the successor was lost");
+        }
+
+        // The seeding pass runs next on every load and must leave the retired ids out.
+        ensure_seeded_defaults(&mut cat);
+        for (retired, _) in chancela_authz::RETIRED_SEEDED_ROLES {
+            assert!(
+                cat.get(*retired).is_none(),
+                "seeding re-added a retired role"
+            );
+        }
+        assert_eq!(cat.len(), chancela_authz::default_roles().len());
+
+        // Idempotent: a second pass over an already-migrated catalog changes nothing.
+        assert!(!retire_merged_roles(&mut cat));
+        assert_eq!(cat.len(), chancela_authz::default_roles().len());
+    }
+
+    /// The requirement the whole migration exists for: a user holding a retired role keeps their
+    /// authority. Because the permission sets were identical, "keeps their authority" is checkable
+    /// exactly — the resolved permission set before and after must be equal, not merely non-empty.
+    #[test]
+    fn holders_of_a_retired_role_are_moved_to_its_successor_at_the_same_scope() {
+        let ent = AuthzEntityId(Uuid::from_u128(0x1234));
+        let uid = UserId(Uuid::from_u128(1));
+        let mut users = map(vec![user(
+            1,
+            "2024-01-01T00:00:00Z",
+            vec![
+                RoleAssignment::new(chancela_authz::RETIRED_SIGNATARIO_ROLE_ID, Scope::Global),
+                RoleAssignment::new(chancela_authz::RETIRED_GESTOR_ROLE_ID, Scope::Entity(ent)),
+            ],
+        )]);
+
+        assert!(migrate_retired_roles(&mut users));
+        let moved = users[&uid].role_assignments.clone();
+        assert_eq!(
+            &moved,
+            &vec![
+                RoleAssignment::new(chancela_authz::SIGNATORY_ROLE_ID, Scope::Global),
+                RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Entity(ent)),
+            ],
+            "the scope must be preserved verbatim; only the role id moves"
+        );
+
+        // Idempotent: nothing names a retired id any more, so a re-run is a no-op.
+        assert!(!migrate_retired_roles(&mut users));
+        assert_eq!(users[&uid].role_assignments, moved);
+    }
+
+    /// A user who held *both* the retired role and the role it merges into would end the rewrite
+    /// holding the same assignment twice. Harmless to `effective_permissions` (it unions), but it
+    /// renders as a duplicated row in the assignments table and would be re-persisted forever.
+    #[test]
+    fn a_holder_of_both_the_retired_and_the_surviving_role_does_not_end_up_with_a_duplicate() {
+        let uid = UserId(Uuid::from_u128(2));
+        let mut users = map(vec![user(
+            2,
+            "2024-01-01T00:00:00Z",
+            vec![
+                RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global),
+                RoleAssignment::new(chancela_authz::RETIRED_GESTOR_ROLE_ID, Scope::Global),
+            ],
+        )]);
+
+        assert!(migrate_retired_roles(&mut users));
+        assert_eq!(
+            users[&uid].role_assignments,
+            vec![RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)]
+        );
+    }
+
+    /// A database that never held the retired roles (a fresh install) must not be rewritten — the
+    /// caller keys its one-time persist off the returned bool, so a spurious `true` would rewrite
+    /// `users.json` on every boot.
+    #[test]
+    fn an_already_migrated_or_fresh_directory_is_left_untouched() {
+        let uid = UserId(Uuid::from_u128(3));
+        let owner_only = vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)];
+        let mut users = map(vec![user(3, "2024-01-01T00:00:00Z", owner_only.clone())]);
+
+        assert!(!migrate_retired_roles(&mut users));
+        assert_eq!(users[&uid].role_assignments, owner_only);
+
+        let mut cat = RoleCatalog::seeded_defaults();
+        assert!(!retire_merged_roles(&mut cat));
+    }
+
+    /// The merge must never be reached by *deleting* authority. A holder of the retired role ends
+    /// with exactly the permissions they began with — the migration is a rename of the grant, not a
+    /// re-grant, and this is what makes it safe to run unattended at boot.
+    #[test]
+    fn the_migration_neither_widens_nor_narrows_a_holders_authority() {
+        let now = OffsetDateTime::now_utc();
+        let catalog = RoleCatalog::seeded_defaults();
+
+        for (retired, successor) in chancela_authz::RETIRED_SEEDED_ROLES {
+            let uid = UserId(Uuid::from_u128(9));
+            let mut users = map(vec![user(
+                9,
+                "2024-01-01T00:00:00Z",
+                vec![RoleAssignment::new(*retired, Scope::Global)],
+            )]);
+
+            // A pre-merge catalog still resolves the retired role, so "before" is measurable.
+            let survivor = catalog.get(*successor).expect("seeded").clone();
+            let mut pre_merge = catalog.clone();
+            pre_merge.insert(Role {
+                id: *retired,
+                name: "legacy".to_owned(),
+                permission_set: survivor.permission_set.clone(),
+                protected: false,
+            });
+            let before = effective_permissions(
+                chancela_authz::UserId(uid.0),
+                &users[&uid].role_assignments,
+                &pre_merge,
+                &[],
+                now,
+            );
+
+            migrate_retired_roles(&mut users);
+            let after = effective_permissions(
+                chancela_authz::UserId(uid.0),
+                &users[&uid].role_assignments,
+                &catalog,
+                &[],
+                now,
+            );
+
+            assert_eq!(
+                before.all_grants().collect::<BTreeSet<_>>(),
+                after.all_grants().collect::<BTreeSet<_>>(),
+                "the merge changed what a holder of {retired} can do"
+            );
+        }
+    }
+
     #[test]
     fn ensure_seeded_defaults_seeds_complete_catalog_when_empty() {
         let mut cat = RoleCatalog::new();
@@ -1467,7 +1697,7 @@ mod tests {
             protected: false,
         });
         let custom_gestor = Role {
-            id: GESTOR_ROLE_ID,
+            id: COMPANY_OWNER_ROLE_ID,
             name: "Gestor Personalizado".to_owned(),
             permission_set: [chancela_authz::Permission::EntityRead]
                 .into_iter()
@@ -1482,7 +1712,7 @@ mod tests {
         assert!(owner.protected);
         assert_eq!(owner, &Role::owner());
         // The customised Gestor was NOT clobbered.
-        assert_eq!(cat.get(GESTOR_ROLE_ID).unwrap(), &custom_gestor);
+        assert_eq!(cat.get(COMPANY_OWNER_ROLE_ID).unwrap(), &custom_gestor);
     }
 
     #[test]
@@ -1577,7 +1807,7 @@ mod tests {
         ]);
         assert!(migrate_roles(&mut users));
         let owner = RoleAssignment::new(OWNER_ROLE_ID, Scope::Global);
-        let gestor = RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global);
+        let gestor = RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global);
         // Earliest (id 1, 2026-01) is the sole Owner; the rest are Gestor.
         assert_eq!(
             users[&UserId(Uuid::from_u128(1))].role_assignments,
@@ -1607,7 +1837,7 @@ mod tests {
         // The new user becomes Gestor (no second Owner is minted).
         assert_eq!(
             users[&UserId(Uuid::from_u128(2))].role_assignments,
-            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)]
+            vec![RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)]
         );
         assert_eq!(count_owner_admin_holders(pairs(&users)), 1);
         assert!(!migrate_roles(&mut users));
@@ -1637,7 +1867,7 @@ mod tests {
         );
         assert_eq!(
             bootstrap_assignment(false),
-            RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)
+            RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)
         );
     }
 }

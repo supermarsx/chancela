@@ -1198,6 +1198,7 @@ mod tests {
             active: true,
             password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
@@ -1245,6 +1246,7 @@ mod tests {
             active: true,
             password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
+            retired_attestation_keys: Vec::new(),
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role_id, Scope::Global)],
@@ -1640,7 +1642,7 @@ mod tests {
             "bare access code leaked: {redacted}"
         );
 
-        let leitor = auth_token_for_role(&state, "leitor", chancela_authz::LEITOR_ROLE_ID).await;
+        let leitor = auth_token_for_role(&state, "leitor", chancela_authz::READER_ROLE_ID).await;
         let (status, reader_view) = send_raw(
             state,
             with_session(
@@ -1755,7 +1757,7 @@ mod tests {
         );
 
         let leitor =
-            auth_token_for_role(&state, "leitor.stored", chancela_authz::LEITOR_ROLE_ID).await;
+            auth_token_for_role(&state, "leitor.stored", chancela_authz::READER_ROLE_ID).await;
         let (status, reader_view) = send_raw(
             state,
             with_session(get(&format!("/v1/entities/{id}/registry")), &leitor),
