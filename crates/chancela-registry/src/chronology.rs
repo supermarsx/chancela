@@ -391,7 +391,23 @@ fn raw_label(insc: &RegistryEvent) -> String {
     {
         return ap.act_kinds.join(", ");
     }
-    insc.kind_hint.clone().unwrap_or_default()
+    match insc.kind_hint.as_deref().map(str::trim) {
+        Some(hint) if !hint.is_empty() && !is_address_fragment(hint) => hint.to_owned(),
+        _ => String::new(),
+    }
+}
+
+/// Is this line part of an address rather than an act label?
+///
+/// `kind_hint` is a *positional* guess — the first body line that does not look like an
+/// apresentação — so on a layout whose inscrição body the segmenter has not seen before it can land
+/// on an address line instead of the act. That is how a seat's postal line once became the printed
+/// description of a registry act. A postal line (`2705 - 839 TERRUGEM SNT`) or a
+/// `Distrito: … Concelho: … Freguesia: …` line is never an act, so it is dropped and the event
+/// falls back to the generic description rather than asserting an address as the act performed.
+fn is_address_fragment(hint: &str) -> bool {
+    crate::parse::parse_postal_line(hint).is_some()
+        || crate::parse::parse_admin_line(hint).is_some()
 }
 
 fn organ_member_names(orgaos: &[Organ]) -> Vec<String> {
@@ -1100,6 +1116,30 @@ mod tests {
         assert_eq!(chrono.events[0].date.as_deref(), Some("2023-01-10"));
         assert_eq!(chrono.events[1].kind, ChronologyKind::Dissolution);
         assert_eq!(chrono.events[1].source_inscription, "6");
+    }
+
+    /// An unseen layout can leave `kind_hint` pointing at an address line instead of the act. The
+    /// event must stay honest about knowing nothing rather than describing the act as a postal code
+    /// — the exact wrong description a real certidão produced before the segmenter was fixed.
+    #[test]
+    fn an_address_line_is_never_reported_as_the_act() {
+        for hint in [
+            "2705 - 839 TERRUGEM SNT",
+            "1250-096 ALDEIA NOVA XPT",
+            "Distrito: Lisboa Concelho: Sintra Freguesia: Terrugem",
+        ] {
+            let mut event = raw_event("1", hint, Some("2026-05-11"));
+            // No apresentação act kinds: the positional `kind_hint` is all the classifier has.
+            event.detail = None;
+            let chrono = Chronology::build(&extract_with(vec![event]));
+            assert_eq!(chrono.events.len(), 1);
+            let e = &chrono.events[0];
+            assert_eq!(e.kind, ChronologyKind::Other);
+            assert_eq!(e.description, "Acto registral", "hint was {hint:?}");
+            // Provenance survives — the entry is still traceable (DOC-32).
+            assert_eq!(e.source_inscription, "1");
+            assert_eq!(e.date.as_deref(), Some("2026-05-11"));
+        }
     }
 
     #[test]

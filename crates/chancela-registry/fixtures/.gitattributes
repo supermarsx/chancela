@@ -1,0 +1,11 @@
+# `live_spq_certidao.html` is a **captured wire artifact** — a real `consultaCertidao.aspx`
+# response with every identifying value substituted, byte structure otherwise untouched. Its value
+# is its fidelity: it is the only record of what the registry actually returns, tag soup, stray
+# `</font>` end tags, `</br>` closers, CRLF and all.
+#
+# The root `.gitattributes` says `*.html text eol=lf`, which silently rewrote this capture's line
+# endings on commit (the wire response is CRLF). `-text` opts it out of all normalisation so the
+# committed blob is the bytes that came off the wire, on every platform.
+live_spq_certidao.html -text
+
+# The other fixtures are hand-written, not captured, so they keep the repo-wide LF pin.
