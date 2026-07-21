@@ -11,55 +11,24 @@
  *
  * `law_references` are SERVER-DERIVED and therefore never authored here. A template is a reusable
  * skeleton — it carries no legal-validity guarantee (see `templates.editor.intro`).
+ *
+ * **Scope narrowed in t109.** In-place editing of an existing user template now happens on
+ * {@link ../templates/TemplateEditPage}, a full-width page, because a `BlockSpec[]` body does not
+ * fit a dialog. This form is reached for `create` and `fork` — where the operator is naming and
+ * classifying a template rather than writing its body. `mode: 'edit'` is still implemented and
+ * correct, but no caller currently uses it; `useTemplateEditor` routes edits to the page.
+ *
+ * The field set itself lives in {@link ./TemplateSpecFields} so the two surfaces cannot drift.
  */
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  LIFECYCLE_STAGES,
-  LOCALES,
-  MEETING_CHANNELS,
-  type EntityFamily,
-  type MeetingChannel,
-  type SignaturePolicyHint,
-  type TemplateBlockSpec,
-  type TemplateSpec,
-} from '../../api/types';
-import {
-  entityFamilyLabels,
-  lifecycleStageLabels,
-  localeLabels,
-  meetingChannelLabels,
-  signaturePolicyLabels,
-} from '../../api/labels';
+import type { TemplateBlockSpec, TemplateSpec } from '../../api/types';
 import { useCreateTemplate, useUpdateTemplate } from '../../api/hooks';
 import { ApiError } from '../../api/client';
 import { useT, type MessageKey } from '../../i18n';
-import {
-  Button,
-  Field,
-  FieldHelp,
-  Icon,
-  InlineWarning,
-  Input,
-  Select,
-  TextArea,
-  useToast,
-} from '../../ui';
+import { Button, Icon, InlineWarning, useToast } from '../../ui';
 import { useFocusTrap } from '../../ui/useFocusTrap';
-
-const ENTITY_FAMILIES: readonly EntityFamily[] = [
-  'CommercialCompany',
-  'Condominium',
-  'Association',
-  'Foundation',
-  'Cooperative',
-];
-
-const SIGNATURE_POLICIES: readonly SignaturePolicyHint[] = [
-  'QualifiedPreferred',
-  'QualifiedOrHandwritten',
-  'ManualAttested',
-];
+import { TemplateSpecFields } from './TemplateSpecFields';
 
 /**
  * The server's `422`/`409` error codes that carry a localized `templates.error.<code>` message.
@@ -177,15 +146,6 @@ export function TemplateEditorForm({
     spec.rule_pack_id.trim().length > 0 &&
     blocksText.trim().length > 0;
 
-  function toggleChannel(channel: MeetingChannel) {
-    setSpec((current) => ({
-      ...current,
-      channels: current.channels.includes(channel)
-        ? current.channels.filter((value) => value !== channel)
-        : [...current.channels, channel],
-    }));
-  }
-
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy || !canSubmit) return;
@@ -267,138 +227,13 @@ export function TemplateEditorForm({
           </>
         ) : null}
 
-        <Field
-          label={t('templates.editor.field.id.label')}
-          htmlFor="tpl-id"
-          help={t('templates.editor.field.id.help')}
-        >
-          <Input
-            id="tpl-id"
-            value={spec.id}
-            disabled={mode === 'edit'}
-            placeholder={t('templates.editor.field.id.placeholder')}
-            onChange={(event) => setSpec((current) => ({ ...current, id: event.target.value }))}
-          />
-        </Field>
-
-        <Field
-          label={t('templates.editor.field.family.label')}
-          htmlFor="tpl-family"
-          help={t('templates.editor.field.family.help')}
-        >
-          <Select
-            id="tpl-family"
-            value={spec.family}
-            options={ENTITY_FAMILIES.map((value) => ({ value, label: entityFamilyLabels[value] }))}
-            onChange={(event) =>
-              setSpec((current) => ({ ...current, family: event.target.value as EntityFamily }))
-            }
-          />
-        </Field>
-
-        <Field
-          label={t('templates.editor.field.stage.label')}
-          htmlFor="tpl-stage"
-          help={t('templates.editor.field.stage.help')}
-        >
-          <Select
-            id="tpl-stage"
-            value={spec.stage}
-            options={LIFECYCLE_STAGES.map((value) => ({
-              value,
-              label: lifecycleStageLabels[value],
-            }))}
-            onChange={(event) =>
-              setSpec((current) => ({
-                ...current,
-                stage: event.target.value as TemplateSpec['stage'],
-              }))
-            }
-          />
-        </Field>
-
-        <Field
-          label={t('templates.editor.field.channels.label')}
-          help={t('templates.editor.field.channels.help')}
-        >
-          <div className="row-wrap">
-            {MEETING_CHANNELS.map((channel) => (
-              <label key={channel} className="checkline">
-                <input
-                  type="checkbox"
-                  checked={spec.channels.includes(channel)}
-                  onChange={() => toggleChannel(channel)}
-                />
-                {meetingChannelLabels[channel]}
-              </label>
-            ))}
-          </div>
-        </Field>
-
-        <Field
-          label={t('templates.editor.field.signaturePolicy.label')}
-          htmlFor="tpl-signature"
-          help={t('templates.editor.field.signaturePolicy.help')}
-        >
-          <Select
-            id="tpl-signature"
-            value={spec.signature_policy}
-            options={SIGNATURE_POLICIES.map((value) => ({
-              value,
-              label: signaturePolicyLabels[value],
-            }))}
-            onChange={(event) =>
-              setSpec((current) => ({
-                ...current,
-                signature_policy: event.target.value as SignaturePolicyHint,
-              }))
-            }
-          />
-        </Field>
-
-        <Field
-          label={t('templates.editor.field.rulePackId.label')}
-          htmlFor="tpl-rule-pack"
-          help={t('templates.editor.field.rulePackId.help')}
-        >
-          <Input
-            id="tpl-rule-pack"
-            value={spec.rule_pack_id}
-            onChange={(event) =>
-              setSpec((current) => ({ ...current, rule_pack_id: event.target.value }))
-            }
-          />
-        </Field>
-
-        <Field
-          label={t('templates.editor.field.locale.label')}
-          htmlFor="tpl-locale"
-          help={t('templates.editor.field.locale.help')}
-        >
-          <Select
-            id="tpl-locale"
-            value={spec.locale}
-            options={LOCALES.map((value) => ({ value, label: localeLabels[value] }))}
-            onChange={(event) => setSpec((current) => ({ ...current, locale: event.target.value }))}
-          />
-        </Field>
-
-        <div className="field">
-          <span className="field__labelrow">
-            <label className="field__label" htmlFor="tpl-blocks">
-              {t('templates.editor.field.blocks.label')}
-            </label>
-            <FieldHelp text={t('templates.editor.field.blocks.help')} />
-          </span>
-          <TextArea
-            id="tpl-blocks"
-            className="mono"
-            rows={12}
-            value={blocksText}
-            spellCheck={false}
-            onChange={(event) => setBlocksText(event.target.value)}
-          />
-        </div>
+        <TemplateSpecFields
+          spec={spec}
+          onSpecChange={setSpec}
+          blocksText={blocksText}
+          onBlocksTextChange={setBlocksText}
+          idLocked={mode === 'edit'}
+        />
 
         {formError ? (
           <InlineWarning tone="error" title={t('templates.import.invalid')}>

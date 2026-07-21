@@ -262,7 +262,7 @@ export function TemplatesCatalogPage() {
             >
               {t('templates.actions.import')}
             </GateButton>
-            <ButtonLink to="/livros" variant="primary" icon={<Icon.ArrowRight />}>
+            <ButtonLink to="/books" variant="primary" icon={<Icon.ArrowRight />}>
               {t('templates.openAct')}
             </ButtonLink>
           </>

@@ -97,9 +97,9 @@ function stub(catalog: TemplateSummary[]) {
 function renderDetail(id: string) {
   return renderWithProviders(
     <Routes>
-      <Route path="/minutas/:id" element={<TemplateDetailPage />} />
+      <Route path="/templates/:id/:sec?" element={<TemplateDetailPage />} />
     </Routes>,
-    [`/minutas/${encodeURIComponent(id)}`],
+    [`/templates/${encodeURIComponent(id)}`],
   );
 }
 
@@ -182,7 +182,7 @@ describe('TemplateDetailPage', () => {
     expect(await screen.findByText('nao-existe/v9')).toBeTruthy();
     expect(screen.getByText('Modelo não encontrado')).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Minutas' })[0].getAttribute('href')).toBe(
-      '/minutas',
+      '/templates',
     );
   });
 });

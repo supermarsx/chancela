@@ -12,7 +12,9 @@
  * export endpoint — the only read that returns `blocks`.
  */
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useExportTemplate } from '../../api/hooks';
+import { templateEditPath } from './templateRoutes';
 import type { TemplateSpec, TemplateSummary } from '../../api/types';
 import { useToast } from '../../ui';
 import { forkTemplateSpec, forkedTemplateId } from './templateFork';
@@ -40,6 +42,7 @@ export interface TemplateEditorController {
  */
 export function useTemplateEditor(existingIds: readonly string[]): TemplateEditorController {
   const toast = useToast();
+  const navigate = useNavigate();
   const loadSpec = useExportTemplate();
   const [state, setState] = useState<TemplateEditorState | null>(null);
 
@@ -72,7 +75,11 @@ export function useTemplateEditor(existingIds: readonly string[]): TemplateEdito
         openFork(template);
         return;
       }
-      void withSpec(template.id, (spec) => setState({ mode: 'edit', spec }));
+      // A user template is edited on its OWN full-width page (t109), not in the dialog: its
+      // body is canonical BlockSpec JSON and needs the room. The fork path stays a dialog —
+      // there the operator is naming a copy, not writing one. The spec is not fetched here
+      // any more; the page loads it through the shared `useTemplateSpec` query.
+      void navigate(templateEditPath(template.id));
     },
     clone: openFork,
     close: () => setState(null),

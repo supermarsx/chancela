@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { TemplatesCatalogPage } from './TemplatesCatalogPage';
+import { useLocation } from 'react-router-dom';
 import { fetchTable, renderWithProviders } from '../../test/utils';
 import type { TemplateSummary } from '../../api/types';
+
+/** Reports the router's current path, so a navigation can be asserted under the memory router. */
+function LocationPathname() {
+  return <>{useLocation().pathname}</>;
+}
 
 interface RecordedRequest {
   url: string;
@@ -213,7 +219,7 @@ describe('TemplatesCatalogPage', () => {
       fetchTable([{ match: '/v1/templates', body: [...CATALOG, USER_TEMPLATE] }]),
     );
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     expect(await screen.findByText('Ata de assembleia geral')).toBeTruthy();
     expect(screen.getByText('Certidão de ata')).toBeTruthy();
@@ -237,7 +243,7 @@ describe('TemplatesCatalogPage', () => {
       fetchTable([{ match: '/v1/templates', body: [...CATALOG, USER_TEMPLATE] }]),
     );
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     const table = await screen.findByRole('table', { name: 'Catálogo de minutas' });
     const headers = within(table).getAllByRole('columnheader');
@@ -296,7 +302,7 @@ describe('TemplatesCatalogPage', () => {
   it('hides the legal source by default, restores it on demand, and remembers the choice', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 
-    const first = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    const first = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
     await screen.findByText('csc-ata-ag/v1');
     expect(screen.queryByRole('columnheader', { name: 'Fonte legal' })).toBeNull();
     // Hidden from the table, never deleted: the value has a home on the template's own page.
@@ -312,14 +318,14 @@ describe('TemplatesCatalogPage', () => {
 
     // The choice is per device, so a fresh mount reads it back rather than resetting.
     first.unmount();
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
     expect(await screen.findByRole('columnheader', { name: 'Fonte legal' })).toBeTruthy();
   });
 
   it('shows the table skeleton while the catalog loads', async () => {
     vi.stubGlobal('fetch', (() => new Promise<Response>(() => {})) as typeof fetch);
 
-    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     const loading = await screen.findByRole('status');
     expect(loading.getAttribute('aria-busy')).toBe('true');
@@ -331,7 +337,7 @@ describe('TemplatesCatalogPage', () => {
   it('browses the existing template catalog and points generation back to acts', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 
-    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar' });
     expect(filters.classList.contains('templates-filters')).toBe(true);
@@ -378,7 +384,7 @@ describe('TemplatesCatalogPage', () => {
     expect(within(ataRow as HTMLElement).getByText('Deliberação por escrito')).toBeTruthy();
     expect(screen.getByText('4 de 4 modelos')).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Escolher ata' })[0].getAttribute('href')).toBe(
-      '/livros',
+      '/books',
     );
     expect(screen.queryByRole('button', { name: /gerar/i })).toBeNull();
 
@@ -431,7 +437,7 @@ describe('TemplatesCatalogPage', () => {
   it('combines folded search, locale filters, empty state and clear without stale results', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: EDGE_CATALOG }]));
 
-    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
     const advanced = container.querySelector(
       'details.templates-advanced-filters',
     ) as HTMLDetailsElement;
@@ -516,7 +522,7 @@ describe('TemplatesCatalogPage', () => {
   it('opts the catalog out of the shell prose measure so nine columns get the room', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
     await screen.findByText('csc-ata-ag/v1');
     // The page root carries the opt-in; the width itself is a CSS concern jsdom cannot lay out.
     expect(document.querySelector('.wide-page')).toBeTruthy();
@@ -533,7 +539,7 @@ describe('TemplatesCatalogPage', () => {
   it('renders pending law references and searches by citation or article text', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     await screen.findByText('assoc-convocatoria-ga/v1');
     // The column is off by default, so this test asks for it before reading its cells.
@@ -571,7 +577,7 @@ describe('TemplatesCatalogPage', () => {
     const { fn } = templatesFetch([CATALOG[0], USER_TEMPLATE]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     expect(screen.getByRole('button', { name: 'Novo modelo' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Importar' })).toBeTruthy();
@@ -624,7 +630,7 @@ describe('TemplatesCatalogPage', () => {
     const { fn, calls } = specFetch([CATALOG[0]]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     const builtinRow = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
     fireEvent.click(within(builtinRow).getByRole('button', { name: 'Editar' }));
@@ -662,7 +668,7 @@ describe('TemplatesCatalogPage', () => {
     });
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     const builtinRow = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
     fireEvent.click(within(builtinRow).getByRole('button', { name: 'Duplicar' }));
@@ -679,8 +685,12 @@ describe('TemplatesCatalogPage', () => {
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
   });
 
-  it('still edits a user template in place, with no fork dialog', async () => {
-    const { fn } = templatesFetch([USER_TEMPLATE], (url, method) =>
+  // Behaviour CHANGED in t109: a user template is still edited in place (never forked), but the
+  // editing surface is now its own full-width page rather than the dialog — its body is canonical
+  // BlockSpec JSON and needs the room. The invariant under test is unchanged and is the one that
+  // matters: editing a `user-…` template does NOT open the fork dialog and does NOT copy it.
+  it('sends a user template to its own edit page, with no fork dialog', async () => {
+    const { fn, calls } = templatesFetch([USER_TEMPLATE], (url, method) =>
       url.includes('/export') && method === 'GET'
         ? new Response(JSON.stringify({ ...JSON.parse(BUILTIN_SPEC), id: USER_TEMPLATE.id }), {
             status: 200,
@@ -690,28 +700,37 @@ describe('TemplatesCatalogPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(
+      <>
+        <TemplatesCatalogPage />
+        <span data-testid="location">{<LocationPathname />}</span>
+      </>,
+      ['/templates'],
+    );
 
     const userRow = (await screen.findByText('user-encosto-ata/v1')).closest('tr') as HTMLElement;
     fireEvent.click(within(userRow).getByRole('button', { name: 'Editar' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Editar modelo' });
-    // The id is fixed on an edit, and nothing about forking is claimed.
-    expect((within(dialog).getByLabelText('Identificador') as HTMLInputElement).disabled).toBe(
-      true,
+    // The id carries a slash, so the path percent-encodes it or the route cannot match.
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/templates/user-encosto-ata%2Fv1/edit',
+      ),
     );
-    expect(within(dialog).queryByText('Os modelos incluídos não se editam')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // Nothing was created or written on the way to the editor.
+    expect(calls.some((c) => c.method === 'POST' || c.method === 'PUT')).toBe(false);
   });
 
   it('opens a template on its own page from the catalog row', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     const row = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
     // The id carries a slash, so the link percent-encodes it or the route cannot match.
     expect(within(row).getByRole('link', { name: 'Abrir modelo' }).getAttribute('href')).toBe(
-      '/minutas/csc-ata-ag%2Fv1',
+      '/templates/csc-ata-ag%2Fv1',
     );
   });
 
@@ -721,7 +740,7 @@ describe('TemplatesCatalogPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Novo modelo' }));
     const dialog = await screen.findByRole('dialog', { name: 'Novo modelo' });
@@ -750,7 +769,7 @@ describe('TemplatesCatalogPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
     const dialog = await screen.findByRole('dialog', { name: 'Importar modelo' });
@@ -781,7 +800,7 @@ describe('TemplatesCatalogPage', () => {
   async function openImport(handle?: (url: string, method: string) => Response | null) {
     const { fn, calls } = templatesFetch([CATALOG[0]], handle);
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
     fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
     const dialog = await screen.findByRole('dialog', { name: 'Importar modelo' });
     return {
@@ -959,7 +978,7 @@ describe('TemplatesCatalogPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     const userRow = (await screen.findByText('user-encosto-ata/v1')).closest('tr') as HTMLElement;
     fireEvent.click(within(userRow).getByRole('button', { name: 'Eliminar' }));

@@ -360,7 +360,7 @@ export function TemplatesTable({
                   <Tooltip label={openLabel} placement="left">
                     <Link
                       className="btn btn--ghost btn--icon btn--iconOnly"
-                      to="/livros"
+                      to="/books"
                       aria-label={openLabel}
                     >
                       <span className="btn__icon" aria-hidden="true">

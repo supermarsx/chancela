@@ -3,7 +3,7 @@
  *
  * The catalog used to be a dead end: a row could be sorted and filtered but never opened, so
  * the only way to see what a template actually IS was to export its JSON and read it. This is
- * the ninth surface on the shared `<SubNav>` + `?sec=` idiom (`ui/SubNav.tsx`), matching the
+ * the ninth surface on the shared `<SubNav>` + path-segment idiom (`ui/SubNav.tsx`), matching the
  * entity and book detail pages rather than inventing a second sub-tab convention.
  *
  * Four sections, in the order the questions get asked:
@@ -20,7 +20,7 @@
  * the export endpoint, so this page joins two reads that the API does not join for it.
  */
 import type { ReactNode } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useTemplateSpec, useTemplates } from '../../api/hooks';
 import {
   entityFamilyLabels,
@@ -44,24 +44,47 @@ import {
   SubNav,
   Table,
 } from '../../ui';
+import { useSectionNav } from '../../app/navPath';
 import { GateButton } from '../session/permissions';
 import { TemplateEditorForm } from './TemplateEditorForm';
+import { TemplateEditPage } from './TemplateEditPage';
 import { templateIdBase, templateIdVersion } from './templateFork';
 import { hasTemplateName, templateDisplayName } from './templateNames';
 import { templatePlaceholders } from './templatePlaceholders';
 import { useTemplateEditor } from './useTemplateEditor';
 
-type TemplateSection = 'identificacao' | 'fonte' | 'blocos' | 'campos';
+/**
+ * `edit` is a SECTION of the template route, not a segment reserved beside `:sec?` (t109, on the
+ * lead's ruling). A path names *where you are*; the editor is the same record in a different pane,
+ * which is exactly what a section is. The practical reason is stronger than the aesthetic one: a
+ * special-cased `/edit` sitting next to `/templates/:id/:sec?` would silently shadow any future
+ * section that happened to be spelled `edit`, and route-shadowing bugs of that shape are invisible
+ * in review. A closed set with one more member cannot shadow anything, and `edit` inherits the
+ * existing unknown-segment fallback and deep-link-on-first-paint behaviour for free.
+ */
+type TemplateSection = 'identification' | 'source' | 'blocks' | 'fields' | 'edit';
 
+/** The sections shown in the SubNav strip — the four READ views. See `EDIT_SECTION` below. */
 const TEMPLATE_SECTIONS: { id: TemplateSection; label: MessageKey; icon: ReactNode }[] = [
-  { id: 'identificacao', label: 'templates.detail.section.overview', icon: <Icon.Layers /> },
-  { id: 'fonte', label: 'documents.metadata.legalSource', icon: <Icon.Scale /> },
-  { id: 'blocos', label: 'templates.editor.field.blocks.label', icon: <Icon.Layers /> },
-  { id: 'campos', label: 'templates.detail.section.placeholders', icon: <Icon.Search /> },
+  { id: 'identification', label: 'templates.detail.section.overview', icon: <Icon.Layers /> },
+  { id: 'source', label: 'documents.metadata.legalSource', icon: <Icon.Scale /> },
+  { id: 'blocks', label: 'templates.editor.field.blocks.label', icon: <Icon.Layers /> },
+  { id: 'fields', label: 'templates.detail.section.placeholders', icon: <Icon.Search /> },
 ];
 
-const isTemplateSection = (value: string | null): value is TemplateSection =>
-  TEMPLATE_SECTIONS.some((section) => section.id === value);
+/**
+ * `edit` is a member of the validated section set but deliberately NOT of the SubNav strip.
+ *
+ * The strip is offered identically for every template, and a built-in must never be offered
+ * in-place editing — its spec digest is pinned and bound into past `document.generated` events,
+ * so rewriting it retroactively changes what a seal meant. Putting `edit` in the strip would
+ * advertise it on built-ins. It is reached by the Editar button (which diverts a built-in to the
+ * fork dialog) and by deep link (which is gated below, on the section rather than the button).
+ */
+const EDIT_SECTION = 'edit' as const;
+
+const isTemplateSection = (value: string | undefined): value is TemplateSection =>
+  value === EDIT_SECTION || TEMPLATE_SECTIONS.some((section) => section.id === value);
 
 /**
  * A one-line summary of a block, in the block's OWN terms.
@@ -104,28 +127,33 @@ function sourceLabel(template: TemplateSummary, t: TFunction): string {
 export function TemplateDetailPage() {
   const t = useT();
   const { id = '' } = useParams();
-  const [params, setParams] = useSearchParams();
-  const secParam = params.get('sec');
-  // Identificação is the default and carries no `sec` param, so `/minutas/:id` still lands on it.
-  const section: TemplateSection = isTemplateSection(secParam) ? secParam : 'identificacao';
-  const selectSection = (next: TemplateSection) =>
-    setParams((prev) => {
-      const p = new URLSearchParams(prev);
-      if (next === 'identificacao') p.delete('sec');
-      else p.set('sec', next);
-      return p;
-    });
+  // Identificação is the default and carries no segment, so `/templates/:id` still lands on it.
+  // The base is sliced off the RAW pathname, so the `%2F` inside an id like `csc-ata-ag/v1`
+  // is carried through untouched rather than re-encoded from the decoded `useParams` value.
+  const { section, select: selectSection } = useSectionNav<TemplateSection>({
+    depth: 2,
+    parse: (raw) => (isTemplateSection(raw) ? raw : 'identification'),
+    fallback: 'identification',
+  });
 
   const templates = useTemplates();
   const template = (templates.data ?? []).find((row) => row.id === id);
   const spec = useTemplateSpec(id, template !== undefined);
   const editor = useTemplateEditor((templates.data ?? []).map((row) => row.id));
 
+  // The edit section is a full-width page of its own rather than a panel inside this one: a
+  // template body is canonical BlockSpec JSON and needs the whole measure. It is a separate
+  // component, so it owns its own loading, draft and unsaved-changes state — and it re-checks
+  // that the template is user-authored itself, because a deep link reaches it without passing
+  // any button. Every hook above has already run, so this early return is unconditional in
+  // hook order.
+  if (section === EDIT_SECTION) return <TemplateEditPage />;
+
   if (templates.isLoading) {
     return (
       <div className="stack">
         <PageHeader
-          crumbs={<Link to="/minutas">{t('templates.title')}</Link>}
+          crumbs={<Link to="/templates">{t('templates.title')}</Link>}
           title={<Skeleton width="18rem" height="1.6rem" />}
         />
         <Card title={t('templates.detail.section.overview')}>
@@ -139,14 +167,14 @@ export function TemplateDetailPage() {
     return (
       <div className="stack">
         <PageHeader
-          crumbs={<Link to="/minutas">{t('templates.title')}</Link>}
+          crumbs={<Link to="/templates">{t('templates.title')}</Link>}
           // The id as typed, not the message: it is the one thing the operator can check.
           title={<code className="mono">{id}</code>}
         />
         <EmptyState title={t('templates.detail.notFound.title')}>
           <p>{t('templates.detail.notFound.body')}</p>
           <p>
-            <Link to="/minutas">{t('templates.title')}</Link>
+            <Link to="/templates">{t('templates.title')}</Link>
           </p>
         </EmptyState>
       </div>
@@ -163,7 +191,7 @@ export function TemplateDetailPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/minutas">{t('templates.title')}</Link> · {template.id}
+            <Link to="/templates">{t('templates.title')}</Link> · {template.id}
           </>
         }
         title={name}
@@ -189,7 +217,7 @@ export function TemplateDetailPage() {
             >
               {t('templates.actions.clone')}
             </GateButton>
-            <ButtonLink to="/livros" variant="primary" icon={<Icon.ArrowRight />}>
+            <ButtonLink to="/books" variant="primary" icon={<Icon.ArrowRight />}>
               {t('templates.openAct')}
             </ButtonLink>
           </>
@@ -213,7 +241,7 @@ export function TemplateDetailPage() {
       ) : null}
 
       <div className="route-transition stack" key={section}>
-        {section === 'identificacao' ? (
+        {section === 'identification' ? (
           <Card title={t('templates.detail.section.overview')}>
             <dl className="deflist">
               <DefRow label={t('templates.card.id')}>
@@ -255,7 +283,7 @@ export function TemplateDetailPage() {
           </Card>
         ) : null}
 
-        {section === 'fonte' ? (
+        {section === 'source' ? (
           <Card title={t('documents.metadata.legalSource')}>
             {lawReferences.length === 0 ? (
               <p className="muted">{t('templates.detail.lawSource.empty')}</p>
@@ -290,7 +318,7 @@ export function TemplateDetailPage() {
           </Card>
         ) : null}
 
-        {section === 'blocos' ? (
+        {section === 'blocks' ? (
           <Card title={t('templates.editor.field.blocks.label')}>
             {spec.isLoading ? (
               <SkeletonDeflist />
@@ -325,7 +353,7 @@ export function TemplateDetailPage() {
           </Card>
         ) : null}
 
-        {section === 'campos' ? (
+        {section === 'fields' ? (
           <Card title={t('templates.detail.section.placeholders')}>
             <p className="field__hint">{t('templates.detail.placeholders.intro')}</p>
             {spec.isLoading ? (
