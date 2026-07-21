@@ -16,11 +16,13 @@
  */
 import { operationsPtPT } from '../operationsFallback';
 import { ledgerEventLabelsPtPT } from '../ledgerEventLabels';
+import { dashboardSourceLabelsPtPT } from '../dashboardSourceLabels';
 import { attendeeQualityLabelsPtPT } from '../attendeeQualityLabels';
 
 export const ptPT = {
   ...operationsPtPT,
   ...ledgerEventLabelsPtPT,
+  ...dashboardSourceLabelsPtPT,
   ...attendeeQualityLabelsPtPT,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sem permissão para esta ação',
@@ -547,6 +549,8 @@ export const ptPT = {
   'entities.field.legalForm': 'Forma jurídica',
   'entities.field.family': 'Família',
   'entities.registrySection': 'Registo comercial',
+  'entities.subnav.aria': 'Secções da entidade',
+  'entities.subnav.inscricoes': 'Inscrições e averbamentos',
   'entities.booksCard': 'Livros',
   'entities.chronology.title': 'Cronologia e grafo',
   'entities.chronology.loading': 'A carregar cronologia...',
@@ -712,6 +716,7 @@ export const ptPT = {
   'registry.provenance.expired': 'Certidão expirada',
   'registry.provenance.valid': 'Certidão válida',
   'registry.anotacoes.title': 'Anotações',
+  'registry.anotacoes.empty': 'A certidão não continha anotações.',
   'registry.anotacoes.item': 'An. {number}',
   'registry.anotacoes.publication': 'Publicação',
   'registry.warnings.title': 'Avisos da importação',
@@ -1327,6 +1332,7 @@ export const ptPT = {
   'pdfValidator.action.pending': 'A validar…',
   'pdfValidator.report.copyJson': 'Copiar JSON',
   'pdfValidator.report.saveJson': 'Guardar JSON',
+  'pdfValidator.report.savePdf': 'Guardar relatório PDF/A',
   'pdfValidator.report.status':
     'Relatório JSON de evidência local disponível para copiar ou guardar.',
   'pdfValidator.report.copyFailed': 'Não foi possível copiar o relatório.',
@@ -1334,6 +1340,14 @@ export const ptPT = {
   'pdfValidator.failClosed.body':
     'O servidor recusou validar o ficheiro. Trate este resultado como recusa segura; se a mensagem indicar divergência de tamanho ou SHA-256, os bytes recebidos não correspondem ao que o navegador declarou.',
   'pdfValidator.result.title': 'Resultado',
+  'pdfValidator.print.titlePdf': 'Relatório de verificação de assinatura PDF',
+  'pdfValidator.print.titleAsic': 'Relatório de inspeção técnica de contentor ASiC',
+  'pdfValidator.print.document': 'Documento verificado',
+  'pdfValidator.print.verifiedAt': 'Verificação executada em',
+  'pdfValidator.print.appVersion': 'Versão da aplicação',
+  'pdfValidator.print.scope': 'Âmbito da verificação',
+  'pdfValidator.print.disclaimer':
+    'Relatório técnico gerado automaticamente a partir de uma verificação local. Esta folha não é um certificado, não está assinada nem selada e não atesta a validade legal da assinatura.',
   'pdfValidator.table.caption': 'Verificações técnicas de validação PDF/PAdES',
   'pdfValidator.table.check': 'Verificação',
   'pdfValidator.table.verdict': 'Resultado',
@@ -1532,6 +1546,7 @@ export const ptPT = {
   'legislacao.corpus.search.placeholder': 'Pesquisar em todo o texto da legislação…',
   'legislacao.corpus.search.aria': 'Pesquisar em toda a legislação',
   'legislacao.corpus.search.clear': 'Limpar',
+  'legislacao.corpus.search.active': 'A filtrar por «{term}»',
   'legislacao.corpus.search.count': '{count} resultados',
   'legislacao.corpus.search.emptyTitle': 'Sem resultados',
   'legislacao.corpus.search.empty': 'Nada corresponde a «{term}».',
@@ -1554,6 +1569,8 @@ export const ptPT = {
   'legislacao.corpus.back': 'Voltar aos diplomas',
   'legislacao.corpus.backToDiploma': 'Voltar a {title}',
   'legislacao.corpus.backToResults': 'Voltar aos resultados',
+  'legislacao.corpus.index.title': 'Artigos',
+  'legislacao.corpus.index.aria': 'Índice de artigos do diploma',
   'legislacao.corpus.diploma.notFound': 'Diploma não encontrado.',
   'legislacao.corpus.article.notFound': 'Artigo não encontrado.',
   'legislacao.corpus.article.source': 'Fonte',
@@ -2459,6 +2476,9 @@ export const ptPT = {
   'entities.nipcUnvalidated.aria': 'NIPC não validado',
   'entities.print.nipcUnvalidated': '(não validado)',
   'settings.subnav.aria': 'Secções de configuração',
+  'settings.subnav.platform': 'Plataforma',
+  'settings.subnav.operations.aria': 'Áreas de operações',
+  'settings.subnav.signing.aria': 'Áreas de assinaturas',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Passo {current} de {total}',
@@ -4583,6 +4603,78 @@ export const ptPT = {
   'settings.email.help.heloName':
     'Nome anunciado na apresentação SMTP. Alguns servidores recusam nomes genéricos.',
 
+  // --- Email (SMTP): grouped layout + configuration state (t69) ---
+  'settings.email.status.cardTitle': 'Estado da configuração',
+  'settings.email.status.caption': 'Resumo do estado da configuração de email',
+  'settings.email.status.col.setting': 'Definição',
+  'settings.email.status.col.value': 'Valor atual',
+  'settings.email.status.col.state': 'Estado',
+  'settings.email.status.row.relay': 'Servidor de envio',
+  'settings.email.status.row.encryption': 'Proteção da ligação',
+  'settings.email.status.row.authentication': 'Autenticação no servidor',
+  'settings.email.status.row.sender': 'Remetente',
+  'settings.email.status.row.lastTest': 'Último teste de envio',
+  'settings.email.status.set': 'Definido',
+  'settings.email.status.unset': 'Por configurar',
+  'settings.email.status.anonymous': 'Sem utilizador',
+  'settings.email.status.encrypted': 'Protegida',
+  'settings.email.status.cleartext': 'Em claro',
+  'settings.email.status.withPassword': 'Com palavra-passe',
+  'settings.email.status.withoutPassword': 'Sem palavra-passe',
+  'settings.email.status.neverTested': 'Sem teste nesta sessão',
+  'settings.email.status.testOk': 'Aceite',
+  'settings.email.status.testFailed': 'Recusado',
+  'settings.email.status.ready': 'Pronto a enviar',
+  'settings.email.status.notReady': 'Configuração incompleta',
+  'settings.email.status.off': 'Envio desativado',
+
+  // --- Email (SMTP): technical detail of the test session (t23) ---
+  'settings.email.trace.summary': 'Detalhe técnico da sessão SMTP',
+  'settings.email.trace.lede':
+    'O que aconteceu durante a ligação ao servidor, fase a fase. Útil para diagnosticar um servidor de envio sem acesso à consola.',
+  'settings.email.trace.connection': 'Ligação',
+  'settings.email.trace.relay': 'Servidor configurado',
+  'settings.email.trace.resolved': 'Endereço resolvido',
+  'settings.email.trace.helo': 'Nome anunciado (EHLO)',
+  'settings.email.trace.tlsEstablished': 'TLS estabelecido',
+  'settings.email.trace.tlsProtocol': 'Versão do protocolo',
+  'settings.email.trace.cipher': 'Cifra negociada',
+  'settings.email.trace.certSubject': 'Certificado (titular)',
+  'settings.email.trace.certIssuer': 'Certificado (emissor)',
+  'settings.email.trace.authMechanism': 'Mecanismo de autenticação',
+  'settings.email.trace.total': 'Duração total',
+  'settings.email.trace.capabilities': 'Extensões anunciadas pelo servidor',
+  'settings.email.trace.timeline': 'Fases da sessão',
+  'settings.email.trace.timelineCaption':
+    'Cada fase do protocolo SMTP, com o resultado, a duração e a resposta do servidor',
+  'settings.email.trace.col.stage': 'Fase',
+  'settings.email.trace.col.outcome': 'Resultado',
+  'settings.email.trace.col.duration': 'Duração',
+  'settings.email.trace.col.reply': 'Resposta do servidor',
+  'settings.email.trace.transcript': 'Transcrição',
+  'settings.email.trace.transcriptNote':
+    'A palavra-passe do servidor nunca consta desta transcrição: as linhas que a transportam são registadas como marcadores. Pode partilhar esta transcrição com quem administra o servidor.',
+  'settings.email.trace.copy': 'Copiar detalhe técnico',
+  'settings.email.trace.copied': 'Copiado',
+  'settings.email.trace.outcome.ok': 'Concluída',
+  'settings.email.trace.outcome.failed': 'Falhou',
+  'settings.email.trace.outcome.skipped': 'Não aplicável',
+  'settings.email.trace.outcome.refused': 'Recusada pelo cliente',
+
+  'settings.email.server.cardTitle': 'Servidor SMTP',
+  'settings.email.server.lede':
+    'Onde e como a aplicação se liga ao servidor de correio. A porta e a encriptação têm de corresponder ao que o servidor oferece.',
+  'settings.email.auth.cardTitle': 'Credenciais de acesso',
+  'settings.email.auth.lede':
+    'Como a aplicação se identifica perante o servidor. A palavra-passe é guardada cifrada e nunca é devolvida.',
+  'settings.email.identity.cardTitle': 'Identidade do remetente',
+  'settings.email.identity.lede':
+    'Quem o destinatário vê como remetente, e o nome com que a aplicação se apresenta ao servidor.',
+  'settings.email.insecure.consequence':
+    'Sem a confirmação abaixo o servidor recusa guardar esta configuração: enviar em claro tem de ser um ato deliberado.',
+  'settings.email.help.allowInsecure':
+    'Autoriza expressamente o envio sem TLS. Sem esta confirmação, a configuração sem encriptação é recusada.',
+
   'settings.providerCredentials.cardTitle': 'Fornecedores de assinatura',
   'settings.providerCredentials.lede':
     'Faça a gestão das credenciais dos fornecedores de assinatura, com várias chaves por fornecedor, prioridade e recurso alternativo.',
@@ -5415,4 +5507,30 @@ export const ptPT = {
   'unsaved.close.title': 'Fechar a aplicação?',
   'unsaved.close.body': 'Há alterações por guardar. Se fechar a aplicação agora, perde-as.',
   'unsaved.close.confirm': 'Fechar sem guardar',
+  "users.create.identityCard": "Identidade",
+  "users.create.identityLede": "Quem é a pessoa. O nome de utilizador identifica-a no registo de auditoria e não pode ser alterado depois.",
+  "users.create.emailHint": "Necessário para enviar a mensagem de boas-vindas.",
+  "users.create.accessCard": "Acesso",
+  "users.create.accessLede": "A função e o âmbito em que vigora, atribuídos no mesmo pedido que cria a conta.",
+  "users.create.scope.label": "Âmbito",
+  "users.create.scope.hint": "Onde a função vigora. Global abrange toda a instância.",
+  "users.create.role.label": "Função",
+  "users.create.role.hint": "Só são oferecidas as funções cuja autoridade já detém neste âmbito.",
+  "users.create.role.default": "Predefinição do servidor (Gestor, global)",
+  "users.create.role.optionBlocked": "{role} — acima da sua autoridade",
+  "users.create.role.carries": "Esta função confere",
+  "users.create.role.aboveCeiling": "Não pode atribuir {role}: inclui permissões que não detém neste âmbito ({permissions}).",
+  "users.create.role.defaultNote": "Sem função escolhida, a conta fica com a predefinição do servidor: Gestor, em âmbito global.",
+  "users.create.credentialsCard": "Credenciais",
+  "users.create.credentialsLede": "Defina a palavra-passe inicial e comunique-a por um meio seguro. Nunca é enviada por e-mail.",
+  "users.create.notifyCard": "Notificação",
+  "users.create.notifyLede": "Aviso opcional de que a conta existe. A mensagem não inclui palavra-passe, código nem ligação de acesso.",
+  "users.create.welcome.label": "Enviar mensagem de boas-vindas à nova conta",
+  "users.create.welcome.noSmtp": "O envio de e-mail não está configurado, por isso a mensagem não pode ser enviada.",
+  "users.create.welcome.noAddress": "Indique um endereço de e-mail acima para poder enviar a mensagem.",
+  "users.create.welcome.settingsLink": "Configurar e-mail",
+  "users.language.label": "Idioma",
+  "users.language.auto": "Detetar automaticamente",
+  "users.language.hint.auto": "Segue o idioma do dispositivo de quem inicia sessão. Mensagens enviadas pelo servidor usam o idioma predefinido da plataforma.",
+  "users.language.hint.fixed": "Fixa o idioma da interface e das mensagens enviadas a esta conta.",
 };

@@ -10,11 +10,13 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsDaDK } from '../ledgerEventLabels';
+import { dashboardSourceLabelsDaDK } from '../dashboardSourceLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const daDK: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsDaDK,
+  ...dashboardSourceLabelsDaDK,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har ikke tilladelse til denne handling',
@@ -537,6 +539,8 @@ export const daDK: Catalog = {
   'entities.field.legalForm': 'Juridisk form',
   'entities.field.family': 'Familie',
   'entities.registrySection': 'Handelsregister',
+  'entities.subnav.aria': 'Enhedens afsnit',
+  'entities.subnav.inscricoes': 'Indførsler og påtegninger',
   'entities.booksCard': 'Bøger',
   'entities.chronology.title': 'Kronologi og graf',
   'entities.chronology.loading': 'Indlæser kronologi...',
@@ -702,6 +706,7 @@ export const daDK: Catalog = {
   'registry.provenance.expired': 'Attest udløbet',
   'registry.provenance.valid': 'Attest gyldig',
   'registry.anotacoes.title': 'Anmærkninger',
+  'registry.anotacoes.empty': 'Attesten indeholdt ingen anmærkninger.',
   'registry.anotacoes.item': 'Anm. {number}',
   'registry.anotacoes.publication': 'Offentliggørelse',
   'registry.warnings.title': 'Importadvarsler',
@@ -1308,6 +1313,7 @@ export const daDK: Catalog = {
   'pdfValidator.action.pending': 'Validerer…',
   'pdfValidator.report.copyJson': 'Kopiér JSON',
   'pdfValidator.report.saveJson': 'Gem JSON',
+  'pdfValidator.report.savePdf': 'Gem PDF/A-rapport',
   'pdfValidator.report.status':
     'Lokal dokumentations-JSON-rapport tilgængelig til at kopiere eller gemme.',
   'pdfValidator.report.copyFailed': 'Rapporten kunne ikke kopieres.',
@@ -1315,6 +1321,14 @@ export const daDK: Catalog = {
   'pdfValidator.failClosed.body':
     'Serveren afviste at validere filen. Behandl dette som fail-closed; hvis meddelelsen nævner en afvigelse i størrelse eller SHA-256, svarer de modtagne bytes ikke til det, browseren deklarerede.',
   'pdfValidator.result.title': 'Resultat',
+  'pdfValidator.print.titlePdf': 'Rapport om verifikation af PDF-signatur',
+  'pdfValidator.print.titleAsic': 'Teknisk inspektionsrapport for ASiC-beholder',
+  'pdfValidator.print.document': 'Verificeret dokument',
+  'pdfValidator.print.verifiedAt': 'Verifikation udført',
+  'pdfValidator.print.appVersion': 'Programversion',
+  'pdfValidator.print.scope': 'Verifikationens omfang',
+  'pdfValidator.print.disclaimer':
+    'Teknisk rapport genereret automatisk ud fra en lokal verifikation. Dette ark er ikke et certifikat, er hverken signeret eller forseglet og attesterer ikke signaturens retlige gyldighed.',
   'pdfValidator.table.caption': 'Tekniske PDF/PAdES-kontroller',
   'pdfValidator.table.check': 'Kontrol',
   'pdfValidator.table.verdict': 'Resultat',
@@ -1511,6 +1525,7 @@ export const daDK: Catalog = {
   'legislacao.corpus.search.placeholder': 'Søg i hele lovgivningens tekst…',
   'legislacao.corpus.search.aria': 'Søg i al lovgivning',
   'legislacao.corpus.search.clear': 'Ryd',
+  'legislacao.corpus.search.active': 'Filtreret efter »{term}«',
   'legislacao.corpus.search.count': '{count} resultater',
   'legislacao.corpus.search.emptyTitle': 'Ingen resultater',
   'legislacao.corpus.search.empty': 'Intet svarer til »{term}«.',
@@ -1533,6 +1548,8 @@ export const daDK: Catalog = {
   'legislacao.corpus.back': 'Tilbage til retsakterne',
   'legislacao.corpus.backToDiploma': 'Tilbage til {title}',
   'legislacao.corpus.backToResults': 'Tilbage til resultaterne',
+  'legislacao.corpus.index.title': 'Artikler',
+  'legislacao.corpus.index.aria': 'Oversigt over retsaktens artikler',
   'legislacao.corpus.diploma.notFound': 'Retsakt ikke fundet.',
   'legislacao.corpus.article.notFound': 'Artikel ikke fundet.',
   'legislacao.corpus.article.source': 'Kilde',
@@ -2399,6 +2416,9 @@ export const daDK: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC ikke valideret',
   'entities.print.nipcUnvalidated': '(ikke valideret)',
   'settings.subnav.aria': 'Konfigurationsafsnit',
+  'settings.subnav.platform': 'Platform',
+  'settings.subnav.operations.aria': 'Driftsområder',
+  'settings.subnav.signing.aria': 'Signeringsområder',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Trin {current} af {total}',
@@ -4505,6 +4525,78 @@ export const daDK: Catalog = {
   'settings.email.help.heloName':
     'Navn, der oplyses ved SMTP-præsentationen. Nogle servere afviser generiske navne.',
 
+  // --- Email (SMTP): grouped layout + configuration state (t69) ---
+  'settings.email.status.cardTitle': 'Konfigurationens status',
+  'settings.email.status.caption': 'Oversigt over e-mailkonfigurationens status',
+  'settings.email.status.col.setting': 'Indstilling',
+  'settings.email.status.col.value': 'Aktuel værdi',
+  'settings.email.status.col.state': 'Status',
+  'settings.email.status.row.relay': 'Afsendelsesserver',
+  'settings.email.status.row.encryption': 'Beskyttelse af forbindelsen',
+  'settings.email.status.row.authentication': 'Godkendelse på serveren',
+  'settings.email.status.row.sender': 'Afsender',
+  'settings.email.status.row.lastTest': 'Seneste testafsendelse',
+  'settings.email.status.set': 'Angivet',
+  'settings.email.status.unset': 'Ikke konfigureret',
+  'settings.email.status.anonymous': 'Ingen bruger',
+  'settings.email.status.encrypted': 'Krypteret',
+  'settings.email.status.cleartext': 'Ukrypteret',
+  'settings.email.status.withPassword': 'Adgangskode gemt',
+  'settings.email.status.withoutPassword': 'Ingen adgangskode',
+  'settings.email.status.neverTested': 'Ingen test i denne session',
+  'settings.email.status.testOk': 'Accepteret',
+  'settings.email.status.testFailed': 'Afvist',
+  'settings.email.status.ready': 'Klar til at sende',
+  'settings.email.status.notReady': 'Konfigurationen er ufuldstændig',
+  'settings.email.status.off': 'Afsendelse deaktiveret',
+
+  // --- Email (SMTP): technical detail of the test session (t23) ---
+  'settings.email.trace.summary': 'Teknisk detalje for SMTP-sessionen',
+  'settings.email.trace.lede':
+    'Hvad der skete under forbindelsen til serveren, fase for fase. Nyttigt til at undersøge en afsendelsesserver uden adgang til konsollen.',
+  'settings.email.trace.connection': 'Forbindelse',
+  'settings.email.trace.relay': 'Konfigureret server',
+  'settings.email.trace.resolved': 'Opslået adresse',
+  'settings.email.trace.helo': 'Annonceret navn (EHLO)',
+  'settings.email.trace.tlsEstablished': 'TLS etableret',
+  'settings.email.trace.tlsProtocol': 'Protokolversion',
+  'settings.email.trace.cipher': 'Forhandlet kryptering',
+  'settings.email.trace.certSubject': 'Certifikat (subjekt)',
+  'settings.email.trace.certIssuer': 'Certifikat (udsteder)',
+  'settings.email.trace.authMechanism': 'Godkendelsesmekanisme',
+  'settings.email.trace.total': 'Samlet varighed',
+  'settings.email.trace.capabilities': 'Udvidelser annonceret af serveren',
+  'settings.email.trace.timeline': 'Sessionens faser',
+  'settings.email.trace.timelineCaption':
+    'Hver fase i SMTP-protokollen med resultat, varighed og serverens svar',
+  'settings.email.trace.col.stage': 'Fase',
+  'settings.email.trace.col.outcome': 'Resultat',
+  'settings.email.trace.col.duration': 'Varighed',
+  'settings.email.trace.col.reply': 'Serverens svar',
+  'settings.email.trace.transcript': 'Udskrift',
+  'settings.email.trace.transcriptNote':
+    'Serverens adgangskode optræder aldrig i denne udskrift: de linjer, der bærer den, registreres som pladsholdere. Du kan dele denne udskrift med den, der administrerer serveren.',
+  'settings.email.trace.copy': 'Kopiér teknisk detalje',
+  'settings.email.trace.copied': 'Kopieret',
+  'settings.email.trace.outcome.ok': 'Gennemført',
+  'settings.email.trace.outcome.failed': 'Mislykkedes',
+  'settings.email.trace.outcome.skipped': 'Ikke relevant',
+  'settings.email.trace.outcome.refused': 'Afvist af klienten',
+
+  'settings.email.server.cardTitle': 'SMTP-server',
+  'settings.email.server.lede':
+    'Hvor og hvordan programmet forbinder til mailserveren. Port og kryptering skal svare til det, serveren tilbyder.',
+  'settings.email.auth.cardTitle': 'Adgangsoplysninger',
+  'settings.email.auth.lede':
+    'Hvordan programmet identificerer sig over for serveren. Adgangskoden gemmes krypteret og returneres aldrig.',
+  'settings.email.identity.cardTitle': 'Afsenderens identitet',
+  'settings.email.identity.lede':
+    'Hvem modtageren ser som afsender, og det navn programmet præsenterer sig med over for serveren.',
+  'settings.email.insecure.consequence':
+    'Uden bekræftelsen nedenfor nægter serveren at gemme denne konfiguration: ukrypteret afsendelse skal være et bevidst valg.',
+  'settings.email.help.allowInsecure':
+    'Tillader udtrykkeligt afsendelse uden TLS. Uden denne bekræftelse afvises en ukrypteret konfiguration.',
+
   'settings.providerCredentials.cardTitle': 'Signeringsudbydere',
   'settings.providerCredentials.lede':
     'Administrer legitimationsoplysninger for signeringsudbydere med flere nøgler pr. udbyder, prioritet og failover.',
@@ -5400,4 +5492,30 @@ export const daDK: Catalog = {
   'unsaved.close.title': 'Luk programmet?',
   'unsaved.close.body': 'Der er ikke-gemte ændringer. Hvis du lukker programmet nu, går de tabt.',
   'unsaved.close.confirm': 'Luk uden at gemme',
+  "users.create.identityCard": "Identitet",
+  "users.create.identityLede": "Hvem personen er. Brugernavnet identificerer vedkommende i revisionsloggen og kan ikke ændres senere.",
+  "users.create.emailHint": "Kræves for at sende velkomstbeskeden.",
+  "users.create.accessCard": "Adgang",
+  "users.create.accessLede": "Rollen og det omfang, den gælder i — tildelt i samme anmodning, som opretter kontoen.",
+  "users.create.scope.label": "Omfang",
+  "users.create.scope.hint": "Hvor rollen gælder. Global dækker hele instansen.",
+  "users.create.role.label": "Rolle",
+  "users.create.role.hint": "Der tilbydes kun roller, hvis myndighed du allerede har i dette omfang.",
+  "users.create.role.default": "Serverens standard (Gestor, global)",
+  "users.create.role.optionBlocked": "{role} — over din myndighed",
+  "users.create.role.carries": "Denne rolle giver",
+  "users.create.role.aboveCeiling": "Du kan ikke tildele {role}: den indeholder tilladelser, du ikke har i dette omfang ({permissions}).",
+  "users.create.role.defaultNote": "Uden en valgt rolle får kontoen serverens standard: Gestor, i globalt omfang.",
+  "users.create.credentialsCard": "Legitimationsoplysninger",
+  "users.create.credentialsLede": "Angiv den første adgangskode, og videregiv den ad en sikker kanal. Den sendes aldrig med e-mail.",
+  "users.create.notifyCard": "Underretning",
+  "users.create.notifyLede": "Valgfri besked om, at kontoen findes. Beskeden indeholder hverken adgangskode, kode eller login-link.",
+  "users.create.welcome.label": "Send den nye konto en velkomstbesked",
+  "users.create.welcome.noSmtp": "Afsendelse af e-mail er ikke konfigureret, så beskeden kan ikke sendes.",
+  "users.create.welcome.noAddress": "Indtast en e-mailadresse ovenfor for at kunne sende beskeden.",
+  "users.create.welcome.settingsLink": "Konfigurer e-mail",
+  "users.language.label": "Sprog",
+  "users.language.auto": "Registrer automatisk",
+  "users.language.hint.auto": "Følger sproget på den enhed, personen logger ind fra. Beskeder sendt af serveren bruger platformens standardsprog.",
+  "users.language.hint.fixed": "Fastlåser sproget for grænsefladen og for beskeder sendt til denne konto.",
 };

@@ -20,3 +20,8 @@ export {
 } from './registry';
 export { i18nStore } from './store';
 export { LABELLED_LEDGER_EVENT_KINDS } from './ledgerEventLabels';
+export {
+  LABELLED_DASHBOARD_ALERT_SOURCES,
+  LABELLED_DASHBOARD_REMINDER_RULES,
+  normalizeAlertSource,
+} from './dashboardSourceLabels';

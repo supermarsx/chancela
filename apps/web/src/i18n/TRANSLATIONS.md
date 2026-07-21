@@ -84,6 +84,39 @@ versus _name of a legal instrument_ (do not).
 in `reviewedIdenticalValues.ts` as part of this key group. es-ES, fr-FR and it-IT contribute none,
 which is the check that those columns are genuinely translated rather than copied.
 
+### Dashboard actionable provenance labels (t65) — a translated key group pending native review
+
+`src/i18n/dashboardSourceLabels.ts` holds the display labels for the two provenance identifiers a
+dashboard actionable carries on its "Fonte" line — **23 keys**, structured exactly like the t17
+group above (one `DashboardSourceLabels` per locale in one file, each spread by its own catalog,
+a shared type making a missing or invented key a compile error):
+
+- `enum.dashboardAlertSource.*` (14) — `DashboardAlert.source`, the data scope a check ran over
+  (`entities.books` → "Livros da entidade") or the rule pack that raised the alert. Rule-pack keys
+  drop the `/vN` suffix so a new pack version inherits its name.
+- `enum.dashboardReminderRule.*` (9) — `DashboardReminder.source_rule`, the reminder generator.
+
+| Tier                                | Locales          | Status                                                            |
+| ----------------------------------- | ---------------- | ----------------------------------------------------------------- |
+| source                              | `pt-PT`          | Authoritative.                                                    |
+| human                               | `en-US`, `en-GB` | Human-authored; en-GB overrides the one key where usage diverges. |
+| **machine · pending native review** | the other 11     | **Translated but NOT natively reviewed.**                         |
+
+These are translated, not left verbatim: a source is a system label naming a data scope, the same
+side of the UX-21 boundary as an event kind. Reviewers should check the per-locale minutes term
+and registry-extract term first — the same two that dominate the t17 group. `sv-FI` again follows
+its documented rule, seeded from `sv-SE` with `registerutdrag` applied.
+
+The **diploma names inside** a label (CSC, DL 268/94, Código Civil, Código Cooperativo) stay
+verbatim in every locale; only the words around them translate. So does the authored
+`profile_calendar_plan.preset_label` the payload carries for profile-calendar reminders — it is
+the Portuguese name of a statutory meeting, so the five profile-calendar rules are deliberately
+absent from the map and render that field instead.
+
+10 pt-BR labels are byte-identical to pt-PT (shared Portuguese) and are recorded in
+`reviewedIdenticalValues.ts`. No other locale contributes any, which is the check that those
+columns are genuinely translated.
+
 ### For the translation executors (t19-e3b / t19-e3c)
 
 Each owns a disjoint set of `src/i18n/locales/<tag>.ts` files. In each: replace the
@@ -117,6 +150,13 @@ pt-PT is legally authoritative (UX-21). This is a deliberate boundary, not a gap
   label localized into all 14 locales, resolved through `ledgerEventKindLabel`
   (`src/api/labels.ts`). An unmapped kind falls back to the raw identifier, so a newer server
   never blanks a row. See the event-kind section above for the review tiers.
+- **Dashboard actionable provenance** — the alert `source` and the reminder `source_rule` are
+  the same exception as the event kind (t65): both are now labels localized into all 14 locales
+  through `dashboardAlertSourceLabel` / `dashboardReminderRuleLabel` (`src/api/labels.ts`), with
+  the raw identifier as the fallback. What stays verbatim is the reminder's
+  `profile_calendar_plan.preset_label` — the backend-authored Portuguese name of a statutory
+  meeting — and `source_profile`, which is data (it carries record ids) and is only ever shown
+  in the unlabelled-rule fallback line.
 - **Built-in template names** — `src/features/templates/templateNames.ts` (t17). Portuguese legal
   document types, extracted from the template assets' own authored headings and rendered verbatim
   in every locale, exactly like the diploma shelf below.

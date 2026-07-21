@@ -8,11 +8,13 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsNlNL } from '../ledgerEventLabels';
+import { dashboardSourceLabelsNlNL } from '../dashboardSourceLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const nlNL: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsNlNL,
+  ...dashboardSourceLabelsNlNL,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'U hebt geen toestemming voor deze actie',
@@ -538,6 +540,8 @@ export const nlNL: Catalog = {
   'entities.field.legalForm': 'Rechtsvorm',
   'entities.field.family': 'Familie',
   'entities.registrySection': 'Handelsregister',
+  'entities.subnav.aria': 'Secties van de entiteit',
+  'entities.subnav.inscricoes': 'Inschrijvingen en kanttekeningen',
   'entities.booksCard': 'Boeken',
   'entities.chronology.title': 'Chronologie en grafiek',
   'entities.chronology.loading': 'Chronologie laden...',
@@ -704,6 +708,7 @@ export const nlNL: Catalog = {
   'registry.provenance.expired': 'Certificaat verlopen',
   'registry.provenance.valid': 'Certificaat geldig',
   'registry.anotacoes.title': 'Aantekeningen',
+  'registry.anotacoes.empty': 'Het uittreksel bevatte geen aantekeningen.',
   'registry.anotacoes.item': 'Aant. {number}',
   'registry.anotacoes.publication': 'Publicatie',
   'registry.warnings.title': 'Importwaarschuwingen',
@@ -1313,6 +1318,7 @@ export const nlNL: Catalog = {
   'pdfValidator.action.pending': 'Valideren…',
   'pdfValidator.report.copyJson': 'JSON kopiëren',
   'pdfValidator.report.saveJson': 'JSON opslaan',
+  'pdfValidator.report.savePdf': 'PDF/A-rapport opslaan',
   'pdfValidator.report.status':
     'Lokaal bewijs-JSON-rapport beschikbaar om te kopiëren of op te slaan.',
   'pdfValidator.report.copyFailed': 'Kon het rapport niet kopiëren.',
@@ -1320,6 +1326,14 @@ export const nlNL: Catalog = {
   'pdfValidator.failClosed.body':
     'De server heeft geweigerd het bestand te valideren. Behandel dit als fail-closed; als het bericht een afwijking in grootte of SHA-256 noemt, komen de ontvangen bytes niet overeen met wat de browser heeft opgegeven.',
   'pdfValidator.result.title': 'Resultaat',
+  'pdfValidator.print.titlePdf': 'Verificatierapport PDF-handtekening',
+  'pdfValidator.print.titleAsic': 'Technisch inspectierapport ASiC-container',
+  'pdfValidator.print.document': 'Geverifieerd document',
+  'pdfValidator.print.verifiedAt': 'Verificatie uitgevoerd op',
+  'pdfValidator.print.appVersion': 'Applicatieversie',
+  'pdfValidator.print.scope': 'Reikwijdte van de verificatie',
+  'pdfValidator.print.disclaimer':
+    'Technisch rapport, automatisch gegenereerd op basis van een lokale verificatie. Dit blad is geen certificaat, is niet ondertekend of verzegeld en verklaart niets over de juridische geldigheid van de handtekening.',
   'pdfValidator.table.caption': 'Technische PDF/PAdES-controles',
   'pdfValidator.table.check': 'Controle',
   'pdfValidator.table.verdict': 'Resultaat',
@@ -1517,6 +1531,7 @@ export const nlNL: Catalog = {
   'legislacao.corpus.search.placeholder': 'Zoek in de volledige tekst van de wetgeving…',
   'legislacao.corpus.search.aria': 'Zoek in alle wetgeving',
   'legislacao.corpus.search.clear': 'Wissen',
+  'legislacao.corpus.search.active': 'Gefilterd op “{term}”',
   'legislacao.corpus.search.count': '{count} resultaten',
   'legislacao.corpus.search.emptyTitle': 'Geen resultaten',
   'legislacao.corpus.search.empty': 'Niets komt overeen met “{term}”.',
@@ -1539,6 +1554,8 @@ export const nlNL: Catalog = {
   'legislacao.corpus.back': 'Terug naar de regelingen',
   'legislacao.corpus.backToDiploma': 'Terug naar {title}',
   'legislacao.corpus.backToResults': 'Terug naar de resultaten',
+  'legislacao.corpus.index.title': 'Artikelen',
+  'legislacao.corpus.index.aria': 'Index van artikelen van de regeling',
   'legislacao.corpus.diploma.notFound': 'Regeling niet gevonden.',
   'legislacao.corpus.article.notFound': 'Artikel niet gevonden.',
   'legislacao.corpus.article.source': 'Bron',
@@ -2414,6 +2431,9 @@ export const nlNL: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC niet-gevalideerd',
   'entities.print.nipcUnvalidated': '(niet-gevalideerd)',
   'settings.subnav.aria': 'Configuratiesecties',
+  'settings.subnav.platform': 'Platform',
+  'settings.subnav.operations.aria': 'Bewerkingsgebieden',
+  'settings.subnav.signing.aria': 'Ondertekeningsgebieden',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Stap {current} van {total}',
@@ -4549,6 +4569,78 @@ export const nlNL: Catalog = {
   'settings.email.help.heloName':
     'Naam die bij de SMTP-aanmelding wordt aangekondigd. Sommige servers weigeren generieke namen.',
 
+  // --- Email (SMTP): grouped layout + configuration state (t69) ---
+  'settings.email.status.cardTitle': 'Status van de configuratie',
+  'settings.email.status.caption': 'Overzicht van de status van de e-mailconfiguratie',
+  'settings.email.status.col.setting': 'Instelling',
+  'settings.email.status.col.value': 'Huidige waarde',
+  'settings.email.status.col.state': 'Status',
+  'settings.email.status.row.relay': 'Verzendserver',
+  'settings.email.status.row.encryption': 'Beveiliging van de verbinding',
+  'settings.email.status.row.authentication': 'Aanmelding bij de server',
+  'settings.email.status.row.sender': 'Afzender',
+  'settings.email.status.row.lastTest': 'Laatste testverzending',
+  'settings.email.status.set': 'Ingesteld',
+  'settings.email.status.unset': 'Niet ingesteld',
+  'settings.email.status.anonymous': 'Geen gebruiker',
+  'settings.email.status.encrypted': 'Versleuteld',
+  'settings.email.status.cleartext': 'Onversleuteld',
+  'settings.email.status.withPassword': 'Wachtwoord opgeslagen',
+  'settings.email.status.withoutPassword': 'Geen wachtwoord',
+  'settings.email.status.neverTested': 'Geen test in deze sessie',
+  'settings.email.status.testOk': 'Geaccepteerd',
+  'settings.email.status.testFailed': 'Geweigerd',
+  'settings.email.status.ready': 'Klaar om te verzenden',
+  'settings.email.status.notReady': 'Configuratie onvolledig',
+  'settings.email.status.off': 'Verzenden uitgeschakeld',
+
+  // --- Email (SMTP): technical detail of the test session (t23) ---
+  'settings.email.trace.summary': 'Technische details van de SMTP-sessie',
+  'settings.email.trace.lede':
+    'Wat er tijdens de verbinding met de server is gebeurd, fase voor fase. Handig om een verzendserver te onderzoeken zonder toegang tot de console.',
+  'settings.email.trace.connection': 'Verbinding',
+  'settings.email.trace.relay': 'Geconfigureerde server',
+  'settings.email.trace.resolved': 'Omgezet adres',
+  'settings.email.trace.helo': 'Aangekondigde naam (EHLO)',
+  'settings.email.trace.tlsEstablished': 'TLS tot stand gebracht',
+  'settings.email.trace.tlsProtocol': 'Protocolversie',
+  'settings.email.trace.cipher': 'Onderhandelde versleuteling',
+  'settings.email.trace.certSubject': 'Certificaat (onderwerp)',
+  'settings.email.trace.certIssuer': 'Certificaat (uitgever)',
+  'settings.email.trace.authMechanism': 'Authenticatiemechanisme',
+  'settings.email.trace.total': 'Totale duur',
+  'settings.email.trace.capabilities': 'Door de server aangekondigde extensies',
+  'settings.email.trace.timeline': 'Fasen van de sessie',
+  'settings.email.trace.timelineCaption':
+    'Elke fase van het SMTP-protocol, met het resultaat, de duur en het antwoord van de server',
+  'settings.email.trace.col.stage': 'Fase',
+  'settings.email.trace.col.outcome': 'Resultaat',
+  'settings.email.trace.col.duration': 'Duur',
+  'settings.email.trace.col.reply': 'Antwoord van de server',
+  'settings.email.trace.transcript': 'Transcript',
+  'settings.email.trace.transcriptNote':
+    'Het wachtwoord van de server staat nooit in dit transcript: de regels die het meedragen worden als markering vastgelegd. U kunt dit transcript delen met wie de server beheert.',
+  'settings.email.trace.copy': 'Technische details kopiëren',
+  'settings.email.trace.copied': 'Gekopieerd',
+  'settings.email.trace.outcome.ok': 'Voltooid',
+  'settings.email.trace.outcome.failed': 'Mislukt',
+  'settings.email.trace.outcome.skipped': 'Niet van toepassing',
+  'settings.email.trace.outcome.refused': 'Geweigerd door de client',
+
+  'settings.email.server.cardTitle': 'SMTP-server',
+  'settings.email.server.lede':
+    'Waar en hoe de toepassing verbinding maakt met de mailserver. De poort en de versleuteling moeten overeenkomen met wat de server aanbiedt.',
+  'settings.email.auth.cardTitle': 'Toegangsgegevens',
+  'settings.email.auth.lede':
+    'Hoe de toepassing zich bij de server bekendmaakt. Het wachtwoord wordt versleuteld bewaard en wordt nooit teruggegeven.',
+  'settings.email.identity.cardTitle': 'Identiteit van de afzender',
+  'settings.email.identity.lede':
+    'Wie de ontvanger als afzender ziet, en de naam waarmee de toepassing zich bij de server meldt.',
+  'settings.email.insecure.consequence':
+    'Zonder de bevestiging hieronder weigert de server deze configuratie op te slaan: onversleuteld verzenden moet een bewuste keuze zijn.',
+  'settings.email.help.allowInsecure':
+    'Geeft uitdrukkelijk toestemming om zonder TLS te verzenden. Zonder deze bevestiging wordt een onversleutelde configuratie geweigerd.',
+
   'settings.providerCredentials.cardTitle': 'Ondertekeningsproviders',
   'settings.providerCredentials.lede':
     'Beheer de referenties van ondertekeningsproviders, met meerdere sleutels per provider, prioriteit en failover.',
@@ -5455,4 +5547,30 @@ export const nlNL: Catalog = {
   'unsaved.close.body':
     'Er zijn niet-opgeslagen wijzigingen. Als u de toepassing nu sluit, gaan ze verloren.',
   'unsaved.close.confirm': 'Sluiten zonder opslaan',
+  "users.create.identityCard": "Identiteit",
+  "users.create.identityLede": "Wie de persoon is. De gebruikersnaam identificeert hem of haar in het auditlogboek en kan later niet worden gewijzigd.",
+  "users.create.emailHint": "Vereist om het welkomstbericht te versturen.",
+  "users.create.accessCard": "Toegang",
+  "users.create.accessLede": "De rol en het bereik waarin die geldt, toegekend in hetzelfde verzoek dat het account aanmaakt.",
+  "users.create.scope.label": "Bereik",
+  "users.create.scope.hint": "Waar de rol geldt. Globaal omvat de hele instantie.",
+  "users.create.role.label": "Rol",
+  "users.create.role.hint": "Alleen rollen waarvan u het gezag in dit bereik al bezit, worden aangeboden.",
+  "users.create.role.default": "Standaard van de server (Gestor, globaal)",
+  "users.create.role.optionBlocked": "{role} — boven uw gezag",
+  "users.create.role.carries": "Deze rol verleent",
+  "users.create.role.aboveCeiling": "U kunt {role} niet toekennen: die bevat rechten die u in dit bereik niet bezit ({permissions}).",
+  "users.create.role.defaultNote": "Zonder gekozen rol krijgt het account de standaard van de server: Gestor, op globaal bereik.",
+  "users.create.credentialsCard": "Inloggegevens",
+  "users.create.credentialsLede": "Stel het eerste wachtwoord in en geef het via een veilig kanaal door. Het wordt nooit per e-mail verstuurd.",
+  "users.create.notifyCard": "Melding",
+  "users.create.notifyLede": "Optionele melding dat het account bestaat. Het bericht bevat geen wachtwoord, code of aanmeldlink.",
+  "users.create.welcome.label": "Het nieuwe account een welkomstbericht sturen",
+  "users.create.welcome.noSmtp": "E-mailverzending is niet geconfigureerd, dus het bericht kan niet worden verstuurd.",
+  "users.create.welcome.noAddress": "Voer hierboven een e-mailadres in om het bericht te kunnen versturen.",
+  "users.create.welcome.settingsLink": "E-mail instellen",
+  "users.language.label": "Taal",
+  "users.language.auto": "Automatisch detecteren",
+  "users.language.hint.auto": "Volgt de taal van het apparaat waarop wordt aangemeld. Door de server verzonden berichten gebruiken de standaardtaal van het platform.",
+  "users.language.hint.fixed": "Legt de taal van de interface en van berichten aan dit account vast.",
 };

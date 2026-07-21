@@ -10,11 +10,13 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsEnglish } from '../ledgerEventLabels';
+import { dashboardSourceLabelsEnglish } from '../dashboardSourceLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const enUS: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsEnglish,
+  ...dashboardSourceLabelsEnglish,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'You do not have permission for this action',
@@ -536,6 +538,8 @@ export const enUS: Catalog = {
   'entities.field.legalForm': 'Legal form',
   'entities.field.family': 'Family',
   'entities.registrySection': 'Commercial registry',
+  'entities.subnav.aria': 'Entity sections',
+  'entities.subnav.inscricoes': 'Entries and annotations',
   'entities.booksCard': 'Books',
   'entities.chronology.title': 'Chronology and graph',
   'entities.chronology.loading': 'Loading chronology...',
@@ -701,6 +705,7 @@ export const enUS: Catalog = {
   'registry.provenance.expired': 'Certificate expired',
   'registry.provenance.valid': 'Certificate valid',
   'registry.anotacoes.title': 'Annotations',
+  'registry.anotacoes.empty': 'The registry certificate contained no annotations.',
   'registry.anotacoes.item': 'An. {number}',
   'registry.anotacoes.publication': 'Publication',
   'registry.warnings.title': 'Import warnings',
@@ -1302,12 +1307,21 @@ export const enUS: Catalog = {
   'pdfValidator.action.pending': 'Validating…',
   'pdfValidator.report.copyJson': 'Copy JSON',
   'pdfValidator.report.saveJson': 'Save JSON',
+  'pdfValidator.report.savePdf': 'Save PDF/A report',
   'pdfValidator.report.status': 'Local evidence JSON report available to copy or save.',
   'pdfValidator.report.copyFailed': 'Could not copy the report.',
   'pdfValidator.failClosed.title': 'Validation refused',
   'pdfValidator.failClosed.body':
     'The server refused to validate the file. Treat this as fail-closed; if the message mentions a size or SHA-256 mismatch, the received bytes do not match what the browser declared.',
   'pdfValidator.result.title': 'Result',
+  'pdfValidator.print.titlePdf': 'PDF signature verification report',
+  'pdfValidator.print.titleAsic': 'ASiC container technical inspection report',
+  'pdfValidator.print.document': 'Document verified',
+  'pdfValidator.print.verifiedAt': 'Verification run at',
+  'pdfValidator.print.appVersion': 'App version',
+  'pdfValidator.print.scope': 'Verification scope',
+  'pdfValidator.print.disclaimer':
+    'Technical report generated automatically from a local verification. This sheet is not a certificate, is neither signed nor sealed, and does not attest to the legal validity of the signature.',
   'pdfValidator.table.caption': 'Technical PDF/PAdES validation checks',
   'pdfValidator.table.check': 'Check',
   'pdfValidator.table.verdict': 'Result',
@@ -1504,6 +1518,7 @@ export const enUS: Catalog = {
   'legislacao.corpus.search.placeholder': 'Search the full text of the legislation…',
   'legislacao.corpus.search.aria': 'Search all legislation',
   'legislacao.corpus.search.clear': 'Clear',
+  'legislacao.corpus.search.active': 'Filtered by “{term}”',
   'legislacao.corpus.search.count': '{count} results',
   'legislacao.corpus.search.emptyTitle': 'No results',
   'legislacao.corpus.search.empty': 'Nothing matches “{term}”.',
@@ -1526,6 +1541,8 @@ export const enUS: Catalog = {
   'legislacao.corpus.back': 'Back to instruments',
   'legislacao.corpus.backToDiploma': 'Back to {title}',
   'legislacao.corpus.backToResults': 'Back to results',
+  'legislacao.corpus.index.title': 'Articles',
+  'legislacao.corpus.index.aria': 'Articles in this instrument',
   'legislacao.corpus.diploma.notFound': 'Instrument not found.',
   'legislacao.corpus.article.notFound': 'Article not found.',
   'legislacao.corpus.article.source': 'Source',
@@ -2387,6 +2404,9 @@ export const enUS: Catalog = {
   'entities.nipcUnvalidated.aria': 'Unvalidated NIPC',
   'entities.print.nipcUnvalidated': '(unvalidated)',
   'settings.subnav.aria': 'Settings sections',
+  'settings.subnav.platform': 'Platform',
+  'settings.subnav.operations.aria': 'Operations areas',
+  'settings.subnav.signing.aria': 'Signing areas',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Step {current} of {total}',
@@ -4478,6 +4498,78 @@ export const enUS: Catalog = {
   'settings.email.help.heloName':
     'Name announced in the SMTP introduction. Some servers refuse generic names.',
 
+  // --- Email (SMTP): grouped layout + configuration state (t69) ---
+  'settings.email.status.cardTitle': 'Configuration state',
+  'settings.email.status.caption': 'Summary of the email configuration state',
+  'settings.email.status.col.setting': 'Setting',
+  'settings.email.status.col.value': 'Current value',
+  'settings.email.status.col.state': 'State',
+  'settings.email.status.row.relay': 'Sending server',
+  'settings.email.status.row.encryption': 'Connection protection',
+  'settings.email.status.row.authentication': 'Server authentication',
+  'settings.email.status.row.sender': 'Sender',
+  'settings.email.status.row.lastTest': 'Last test send',
+  'settings.email.status.set': 'Set',
+  'settings.email.status.unset': 'Not configured',
+  'settings.email.status.anonymous': 'No username',
+  'settings.email.status.encrypted': 'Protected',
+  'settings.email.status.cleartext': 'In the clear',
+  'settings.email.status.withPassword': 'Password stored',
+  'settings.email.status.withoutPassword': 'No password',
+  'settings.email.status.neverTested': 'Not tested in this session',
+  'settings.email.status.testOk': 'Accepted',
+  'settings.email.status.testFailed': 'Refused',
+  'settings.email.status.ready': 'Ready to send',
+  'settings.email.status.notReady': 'Configuration incomplete',
+  'settings.email.status.off': 'Sending disabled',
+
+  // --- Email (SMTP): technical detail of the test session (t23) ---
+  'settings.email.trace.summary': 'SMTP session technical detail',
+  'settings.email.trace.lede':
+    'What happened during the connection to the server, stage by stage. Useful for diagnosing a sending server without console access.',
+  'settings.email.trace.connection': 'Connection',
+  'settings.email.trace.relay': 'Configured server',
+  'settings.email.trace.resolved': 'Resolved address',
+  'settings.email.trace.helo': 'Announced name (EHLO)',
+  'settings.email.trace.tlsEstablished': 'TLS established',
+  'settings.email.trace.tlsProtocol': 'Protocol version',
+  'settings.email.trace.cipher': 'Negotiated cipher',
+  'settings.email.trace.certSubject': 'Certificate (subject)',
+  'settings.email.trace.certIssuer': 'Certificate (issuer)',
+  'settings.email.trace.authMechanism': 'Authentication mechanism',
+  'settings.email.trace.total': 'Total duration',
+  'settings.email.trace.capabilities': 'Extensions announced by the server',
+  'settings.email.trace.timeline': 'Session stages',
+  'settings.email.trace.timelineCaption':
+    'Each stage of the SMTP protocol, with the outcome, the duration and the server reply',
+  'settings.email.trace.col.stage': 'Stage',
+  'settings.email.trace.col.outcome': 'Outcome',
+  'settings.email.trace.col.duration': 'Duration',
+  'settings.email.trace.col.reply': 'Server reply',
+  'settings.email.trace.transcript': 'Transcript',
+  'settings.email.trace.transcriptNote':
+    'The server password never appears in this transcript: the lines that carry it are recorded as placeholders. You can share this transcript with whoever administers the server.',
+  'settings.email.trace.copy': 'Copy technical detail',
+  'settings.email.trace.copied': 'Copied',
+  'settings.email.trace.outcome.ok': 'Completed',
+  'settings.email.trace.outcome.failed': 'Failed',
+  'settings.email.trace.outcome.skipped': 'Not applicable',
+  'settings.email.trace.outcome.refused': 'Refused by the client',
+
+  'settings.email.server.cardTitle': 'SMTP server',
+  'settings.email.server.lede':
+    'Where and how the application connects to the mail server. The port and the encryption must match what the server offers.',
+  'settings.email.auth.cardTitle': 'Access credentials',
+  'settings.email.auth.lede':
+    'How the application identifies itself to the server. The password is stored encrypted and is never returned.',
+  'settings.email.identity.cardTitle': 'Sender identity',
+  'settings.email.identity.lede':
+    'Who the recipient sees as the sender, and the name the application announces to the server.',
+  'settings.email.insecure.consequence':
+    'Without the acknowledgement below the server refuses to save this configuration: sending in the clear has to be a deliberate act.',
+  'settings.email.help.allowInsecure':
+    'Explicitly authorizes sending without TLS. Without this acknowledgement, an unencrypted configuration is refused.',
+
   'settings.providerCredentials.cardTitle': 'Signing providers',
   'settings.providerCredentials.lede':
     'Manage signing-provider credentials, with multiple keys per provider, priority, and failover.',
@@ -5364,4 +5456,30 @@ export const enUS: Catalog = {
   'unsaved.close.title': 'Close the app?',
   'unsaved.close.body': 'There are unsaved changes. If you close the app now, they will be lost.',
   'unsaved.close.confirm': 'Close without saving',
+  "users.create.identityCard": "Identity",
+  "users.create.identityLede": "Who the person is. The username identifies them in the audit ledger and cannot be changed later.",
+  "users.create.emailHint": "Required to send the welcome message.",
+  "users.create.accessCard": "Access",
+  "users.create.accessLede": "The role and the scope it applies at, granted in the same request that creates the account.",
+  "users.create.scope.label": "Scope",
+  "users.create.scope.hint": "Where the role applies. Global covers the entire instance.",
+  "users.create.role.label": "Role",
+  "users.create.role.hint": "Only roles whose authority you already hold at this scope are offered.",
+  "users.create.role.default": "Server default (Gestor, global)",
+  "users.create.role.optionBlocked": "{role} — above your authority",
+  "users.create.role.carries": "This role carries",
+  "users.create.role.aboveCeiling": "You cannot grant {role}: it includes permissions you do not hold at this scope ({permissions}).",
+  "users.create.role.defaultNote": "With no role chosen, the account takes the server default: Gestor, at global scope.",
+  "users.create.credentialsCard": "Credentials",
+  "users.create.credentialsLede": "Set the initial password and pass it along through a secure channel. It is never sent by email.",
+  "users.create.notifyCard": "Notification",
+  "users.create.notifyLede": "An optional note that the account exists. The message carries no password, code, or sign-in link.",
+  "users.create.welcome.label": "Send the new account a welcome message",
+  "users.create.welcome.noSmtp": "Email sending is not configured, so the message cannot be sent.",
+  "users.create.welcome.noAddress": "Enter an email address above to be able to send the message.",
+  "users.create.welcome.settingsLink": "Configure email",
+  "users.language.label": "Language",
+  "users.language.auto": "Detect automatically",
+  "users.language.hint.auto": "Follows the language of the device the person signs in on. Messages sent by the server use the platform default.",
+  "users.language.hint.fixed": "Pins the language of the interface and of messages sent to this account.",
 };

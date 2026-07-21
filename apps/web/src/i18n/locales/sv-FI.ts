@@ -14,11 +14,13 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsSvFI } from '../ledgerEventLabels';
+import { dashboardSourceLabelsSvFI } from '../dashboardSourceLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const svFI: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsSvFI,
+  ...dashboardSourceLabelsSvFI,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har inte behörighet för den här åtgärden',
@@ -543,6 +545,8 @@ export const svFI: Catalog = {
   'entities.field.legalForm': 'Juridisk form',
   'entities.field.family': 'Familj',
   'entities.registrySection': 'Handelsregister',
+  'entities.subnav.aria': 'Avsnitt för enheten',
+  'entities.subnav.inscricoes': 'Införingar och anteckningar',
   'entities.booksCard': 'Böcker',
   'entities.chronology.title': 'Kronologi och graf',
   'entities.chronology.loading': 'Läser in kronologi…',
@@ -707,6 +711,7 @@ export const svFI: Catalog = {
   'registry.provenance.expired': 'Intyget har upphört',
   'registry.provenance.valid': 'Intyget giltigt',
   'registry.anotacoes.title': 'Anteckningar',
+  'registry.anotacoes.empty': 'Registerutdraget innehöll inga noteringar.',
   'registry.anotacoes.item': 'Ant. {number}',
   'registry.anotacoes.publication': 'Publicering',
   'registry.warnings.title': 'Importvarningar',
@@ -1312,12 +1317,21 @@ export const svFI: Catalog = {
   'pdfValidator.action.pending': 'Validerar…',
   'pdfValidator.report.copyJson': 'Kopiera JSON',
   'pdfValidator.report.saveJson': 'Spara JSON',
+  'pdfValidator.report.savePdf': 'Spara PDF/A-rapporten',
   'pdfValidator.report.status': 'Lokal JSON-rapport med bevis tillgänglig att kopiera eller spara.',
   'pdfValidator.report.copyFailed': 'Kunde inte kopiera rapporten.',
   'pdfValidator.failClosed.title': 'Validering nekades',
   'pdfValidator.failClosed.body':
     'Servern nekade att validera filen. Behandla detta som fail-closed; om meddelandet nämner en avvikelse i storlek eller SHA-256 stämmer de mottagna byten inte med vad webbläsaren deklarerade.',
   'pdfValidator.result.title': 'Resultat',
+  'pdfValidator.print.titlePdf': 'Rapport om verifiering av PDF-signatur',
+  'pdfValidator.print.titleAsic': 'Teknisk inspektionsrapport för ASiC-behållare',
+  'pdfValidator.print.document': 'Verifierat dokument',
+  'pdfValidator.print.verifiedAt': 'Verifiering utförd',
+  'pdfValidator.print.appVersion': 'Applikationsversion',
+  'pdfValidator.print.scope': 'Verifieringens omfattning',
+  'pdfValidator.print.disclaimer':
+    'Teknisk rapport som genererats automatiskt utifrån en lokal verifiering. Detta blad är inte ett intyg, är varken signerat eller förseglat och intygar inte signaturens rättsliga giltighet.',
   'pdfValidator.table.caption': 'Tekniska PDF/PAdES-kontroller',
   'pdfValidator.table.check': 'Kontroll',
   'pdfValidator.table.verdict': 'Resultat',
@@ -1515,6 +1529,7 @@ export const svFI: Catalog = {
   'legislacao.corpus.search.placeholder': 'Sök i hela lagstiftningens text…',
   'legislacao.corpus.search.aria': 'Sök i all lagstiftning',
   'legislacao.corpus.search.clear': 'Rensa',
+  'legislacao.corpus.search.active': 'Filtrerat på ”{term}”',
   'legislacao.corpus.search.count': '{count} resultat',
   'legislacao.corpus.search.emptyTitle': 'Inga resultat',
   'legislacao.corpus.search.empty': 'Inget matchar ”{term}”.',
@@ -1537,6 +1552,8 @@ export const svFI: Catalog = {
   'legislacao.corpus.back': 'Tillbaka till rättsakterna',
   'legislacao.corpus.backToDiploma': 'Tillbaka till {title}',
   'legislacao.corpus.backToResults': 'Tillbaka till resultaten',
+  'legislacao.corpus.index.title': 'Artiklar',
+  'legislacao.corpus.index.aria': 'Förteckning över rättsaktens artiklar',
   'legislacao.corpus.diploma.notFound': 'Rättsakt hittades inte.',
   'legislacao.corpus.article.notFound': 'Artikel hittades inte.',
   'legislacao.corpus.article.source': 'Källa',
@@ -2405,6 +2422,9 @@ export const svFI: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC ej validerad',
   'entities.print.nipcUnvalidated': '(ej validerad)',
   'settings.subnav.aria': 'Konfigurationsavsnitt',
+  'settings.subnav.platform': 'Plattform',
+  'settings.subnav.operations.aria': 'Driftområden',
+  'settings.subnav.signing.aria': 'Signeringsområden',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Steg {current} av {total}',
@@ -4518,6 +4538,78 @@ export const svFI: Catalog = {
   'settings.email.help.heloName':
     'Namn som anges vid SMTP-presentationen. Vissa servrar avvisar generiska namn.',
 
+  // --- Email (SMTP): grouped layout + configuration state (t69) ---
+  'settings.email.status.cardTitle': 'Status för konfigurationen',
+  'settings.email.status.caption': 'Sammandrag av e-postkonfigurationens status',
+  'settings.email.status.col.setting': 'Inställning',
+  'settings.email.status.col.value': 'Nuvarande värde',
+  'settings.email.status.col.state': 'Status',
+  'settings.email.status.row.relay': 'Avsändande server',
+  'settings.email.status.row.encryption': 'Skydd för anslutningen',
+  'settings.email.status.row.authentication': 'Autentisering mot servern',
+  'settings.email.status.row.sender': 'Avsändare',
+  'settings.email.status.row.lastTest': 'Senaste testmeddelandet',
+  'settings.email.status.set': 'Ifyllt',
+  'settings.email.status.unset': 'Inte konfigurerad',
+  'settings.email.status.anonymous': 'Ingen användare',
+  'settings.email.status.encrypted': 'Krypterad',
+  'settings.email.status.cleartext': 'Okrypterad',
+  'settings.email.status.withPassword': 'Lösenord sparat',
+  'settings.email.status.withoutPassword': 'Inget lösenord',
+  'settings.email.status.neverTested': 'Inget test under den här sessionen',
+  'settings.email.status.testOk': 'Godkänt',
+  'settings.email.status.testFailed': 'Avvisat',
+  'settings.email.status.ready': 'Redo att skicka',
+  'settings.email.status.notReady': 'Konfigurationen är ofullständig',
+  'settings.email.status.off': 'Utskick avstängt',
+
+  // --- Email (SMTP): technical detail of the test session (t23) ---
+  'settings.email.trace.summary': 'Teknisk detalj för SMTP-sessionen',
+  'settings.email.trace.lede':
+    'Vad som hände under uppkopplingen mot servern, fas för fas. Användbart för att felsöka en utskicksserver utan åtkomst till konsolen.',
+  'settings.email.trace.connection': 'Anslutning',
+  'settings.email.trace.relay': 'Konfigurerad server',
+  'settings.email.trace.resolved': 'Uppslagen adress',
+  'settings.email.trace.helo': 'Annonserat namn (EHLO)',
+  'settings.email.trace.tlsEstablished': 'TLS upprättat',
+  'settings.email.trace.tlsProtocol': 'Protokollversion',
+  'settings.email.trace.cipher': 'Förhandlad kryptering',
+  'settings.email.trace.certSubject': 'Certifikat (subjekt)',
+  'settings.email.trace.certIssuer': 'Certifikat (utfärdare)',
+  'settings.email.trace.authMechanism': 'Autentiseringsmekanism',
+  'settings.email.trace.total': 'Total varaktighet',
+  'settings.email.trace.capabilities': 'Tillägg som servern annonserar',
+  'settings.email.trace.timeline': 'Sessionens faser',
+  'settings.email.trace.timelineCaption':
+    'Varje fas i SMTP-protokollet, med resultat, varaktighet och serverns svar',
+  'settings.email.trace.col.stage': 'Fas',
+  'settings.email.trace.col.outcome': 'Resultat',
+  'settings.email.trace.col.duration': 'Varaktighet',
+  'settings.email.trace.col.reply': 'Serverns svar',
+  'settings.email.trace.transcript': 'Utskrift',
+  'settings.email.trace.transcriptNote':
+    'Serverns lösenord förekommer aldrig i denna utskrift: de rader som bär det registreras som platshållare. Du kan dela denna utskrift med den som administrerar servern.',
+  'settings.email.trace.copy': 'Kopiera teknisk detalj',
+  'settings.email.trace.copied': 'Kopierat',
+  'settings.email.trace.outcome.ok': 'Genomförd',
+  'settings.email.trace.outcome.failed': 'Misslyckades',
+  'settings.email.trace.outcome.skipped': 'Ej tillämpligt',
+  'settings.email.trace.outcome.refused': 'Avvisad av klienten',
+
+  'settings.email.server.cardTitle': 'SMTP-server',
+  'settings.email.server.lede':
+    'Var och hur programmet kopplar upp sig mot e-postservern. Porten och krypteringen måste motsvara det servern erbjuder.',
+  'settings.email.auth.cardTitle': 'Inloggningsuppgifter',
+  'settings.email.auth.lede':
+    'Hur programmet identifierar sig mot servern. Lösenordet sparas krypterat och returneras aldrig.',
+  'settings.email.identity.cardTitle': 'Avsändarens identitet',
+  'settings.email.identity.lede':
+    'Vem mottagaren ser som avsändare och namnet som programmet uppger för servern.',
+  'settings.email.insecure.consequence':
+    'Utan bekräftelsen nedan sparar servern inte den här konfigurationen: okrypterat utskick måste vara ett medvetet val.',
+  'settings.email.help.allowInsecure':
+    'Tillåter uttryckligen utskick utan TLS. Utan denna bekräftelse avvisas en okrypterad konfiguration.',
+
   'settings.providerCredentials.cardTitle': 'Signeringsleverantörer',
   'settings.providerCredentials.lede':
     'Hantera signeringsleverantörernas autentiseringsuppgifter, med flera nycklar per leverantör, prioritet och redundansväxling.',
@@ -5411,4 +5503,30 @@ export const svFI: Catalog = {
   'unsaved.close.body':
     'Det finns osparade ändringar. Om du stänger programmet nu går de förlorade.',
   'unsaved.close.confirm': 'Stäng utan att spara',
+  "users.create.identityCard": "Identitet",
+  "users.create.identityLede": "Vem personen är. Användarnamnet identifierar personen i granskningsloggen och kan inte ändras i efterhand.",
+  "users.create.emailHint": "Behövs för att skicka välkomstmeddelandet.",
+  "users.create.accessCard": "Åtkomsträttigheter",
+  "users.create.accessLede": "Rollen och den omfattning där den gäller, tilldelade i samma begäran som skapar kontot.",
+  "users.create.scope.label": "Omfattning",
+  "users.create.scope.hint": "Var rollen gäller. Global täcker hela instansen.",
+  "users.create.role.label": "Roll",
+  "users.create.role.hint": "Endast roller vars befogenhet du redan innehar i denna omfattning erbjuds.",
+  "users.create.role.default": "Serverns förval (Gestor, global)",
+  "users.create.role.optionBlocked": "{role} — över din befogenhet",
+  "users.create.role.carries": "Denna roll medför",
+  "users.create.role.aboveCeiling": "Du kan inte tilldela {role}: den omfattar rättigheter som du inte innehar i denna omfattning ({permissions}).",
+  "users.create.role.defaultNote": "Om ingen roll väljs får kontot serverns förval: Gestor, i global omfattning.",
+  "users.create.credentialsCard": "Inloggningsuppgifter",
+  "users.create.credentialsLede": "Ange det första lösenordet och förmedla det via en trygg kanal. Det skickas aldrig per e-post.",
+  "users.create.notifyCard": "Meddelande",
+  "users.create.notifyLede": "Frivilligt meddelande om att kontot finns. Meddelandet innehåller varken lösenord, kod eller inloggningslänk.",
+  "users.create.welcome.label": "Skicka ett välkomstmeddelande till det nya kontot",
+  "users.create.welcome.noSmtp": "E-postutskick har inte konfigurerats, så meddelandet kan inte skickas.",
+  "users.create.welcome.noAddress": "Ange en e-postadress ovan för att kunna skicka meddelandet.",
+  "users.create.welcome.settingsLink": "Konfigurera e-posten",
+  "users.language.label": "Språk",
+  "users.language.auto": "Upptäck automatiskt",
+  "users.language.hint.auto": "Följer språket på den enhet personen loggar in från. Meddelanden som servern skickar använder plattformens förvalda språk.",
+  "users.language.hint.fixed": "Fastställer språket för gränssnittet och för meddelanden till detta konto.",
 };

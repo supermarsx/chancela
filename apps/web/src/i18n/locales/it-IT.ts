@@ -10,11 +10,13 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsItIT } from '../ledgerEventLabels';
+import { dashboardSourceLabelsItIT } from '../dashboardSourceLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const itIT: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsItIT,
+  ...dashboardSourceLabelsItIT,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Non hai il permesso per questa azione',
@@ -543,6 +545,8 @@ export const itIT: Catalog = {
   'entities.field.legalForm': 'Forma giuridica',
   'entities.field.family': 'Famiglia',
   'entities.registrySection': 'Registro delle imprese',
+  'entities.subnav.aria': 'Sezioni dell’ente',
+  'entities.subnav.inscricoes': 'Iscrizioni e annotazioni',
   'entities.booksCard': 'Libri',
   'entities.chronology.title': 'Cronologia e grafico',
   'entities.chronology.loading': 'Caricamento cronologia...',
@@ -708,6 +712,7 @@ export const itIT: Catalog = {
   'registry.provenance.expired': 'Certificato scaduto',
   'registry.provenance.valid': 'Certificato valido',
   'registry.anotacoes.title': 'Annotazioni',
+  'registry.anotacoes.empty': 'La visura non conteneva note.',
   'registry.anotacoes.item': 'UN. {number}',
   'registry.anotacoes.publication': 'Pubblicazione',
   'registry.warnings.title': "Avvisi dell'importazione",
@@ -1315,12 +1320,21 @@ export const itIT: Catalog = {
   'pdfValidator.action.pending': 'Validazione…',
   'pdfValidator.report.copyJson': 'Copia JSON',
   'pdfValidator.report.saveJson': 'Salva JSON',
+  'pdfValidator.report.savePdf': 'Salva il rapporto PDF/A',
   'pdfValidator.report.status': 'Report JSON di evidenza locale disponibile da copiare o salvare.',
   'pdfValidator.report.copyFailed': 'Impossibile copiare il rapporto.',
   'pdfValidator.failClosed.title': 'Validazione rifiutata',
   'pdfValidator.failClosed.body':
     'Il server ha rifiutato di validare il file. Tratta questo esito come fail-closed; se il messaggio indica una discrepanza di dimensione o SHA-256, i byte ricevuti non corrispondono a quanto dichiarato dal browser.',
   'pdfValidator.result.title': 'Risultato',
+  'pdfValidator.print.titlePdf': 'Rapporto di verifica della firma PDF',
+  'pdfValidator.print.titleAsic': 'Rapporto di ispezione tecnica del contenitore ASiC',
+  'pdfValidator.print.document': 'Documento verificato',
+  'pdfValidator.print.verifiedAt': 'Verifica eseguita il',
+  'pdfValidator.print.appVersion': 'Versione dell’applicazione',
+  'pdfValidator.print.scope': 'Ambito della verifica',
+  'pdfValidator.print.disclaimer':
+    'Rapporto tecnico generato automaticamente da una verifica locale. Questo foglio non è un certificato, non è firmato né sigillato e non attesta la validità giuridica della firma.',
   'pdfValidator.table.caption': 'Controlli tecnici di validazione PDF/PAdES',
   'pdfValidator.table.check': 'Controllo',
   'pdfValidator.table.verdict': 'Esito',
@@ -1518,6 +1532,7 @@ export const itIT: Catalog = {
   'legislacao.corpus.search.placeholder': 'Cerca in tutto il testo della legislazione…',
   'legislacao.corpus.search.aria': 'Cerca in tutta la legislazione',
   'legislacao.corpus.search.clear': 'Cancella',
+  'legislacao.corpus.search.active': 'Filtrato per “{term}”',
   'legislacao.corpus.search.count': '{count} risultati',
   'legislacao.corpus.search.emptyTitle': 'Nessun risultato',
   'legislacao.corpus.search.empty': 'Nulla corrisponde a “{term}”.',
@@ -1540,6 +1555,8 @@ export const itIT: Catalog = {
   'legislacao.corpus.back': 'Torna agli atti',
   'legislacao.corpus.backToDiploma': 'Torna a {title}',
   'legislacao.corpus.backToResults': 'Torna ai risultati',
+  'legislacao.corpus.index.title': 'Articoli',
+  'legislacao.corpus.index.aria': 'Indice degli articoli dell’atto',
   'legislacao.corpus.diploma.notFound': 'Atto non trovato.',
   'legislacao.corpus.article.notFound': 'Articolo non trovato.',
   'legislacao.corpus.article.source': 'Fonte',
@@ -2412,6 +2429,9 @@ export const itIT: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC non validato',
   'entities.print.nipcUnvalidated': '(non validato)',
   'settings.subnav.aria': 'Sezioni di configurazione',
+  'settings.subnav.platform': 'Piattaforma',
+  'settings.subnav.operations.aria': 'Aree delle operazioni',
+  'settings.subnav.signing.aria': 'Aree delle firme',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Passo {current} di {total}',
@@ -4542,6 +4562,78 @@ export const itIT: Catalog = {
   'settings.email.help.heloName':
     'Nome annunciato nella presentazione SMTP. Alcuni server rifiutano i nomi generici.',
 
+  // --- Email (SMTP): grouped layout + configuration state (t69) ---
+  'settings.email.status.cardTitle': 'Stato della configurazione',
+  'settings.email.status.caption': 'Riepilogo dello stato della configurazione email',
+  'settings.email.status.col.setting': 'Impostazione',
+  'settings.email.status.col.value': 'Valore attuale',
+  'settings.email.status.col.state': 'Stato',
+  'settings.email.status.row.relay': 'Server di invio',
+  'settings.email.status.row.encryption': 'Protezione della connessione',
+  'settings.email.status.row.authentication': 'Autenticazione sul server',
+  'settings.email.status.row.sender': 'Mittente',
+  'settings.email.status.row.lastTest': 'Ultimo invio di prova',
+  'settings.email.status.set': 'Impostato',
+  'settings.email.status.unset': 'Da configurare',
+  'settings.email.status.anonymous': 'Nessun utente',
+  'settings.email.status.encrypted': 'Cifrata',
+  'settings.email.status.cleartext': 'In chiaro',
+  'settings.email.status.withPassword': 'Password impostata',
+  'settings.email.status.withoutPassword': 'Nessuna password',
+  'settings.email.status.neverTested': 'Nessuna prova in questa sessione',
+  'settings.email.status.testOk': 'Accettato',
+  'settings.email.status.testFailed': 'Rifiutato',
+  'settings.email.status.ready': 'Pronto all’invio',
+  'settings.email.status.notReady': 'Configurazione incompleta',
+  'settings.email.status.off': 'Invio disattivato',
+
+  // --- Email (SMTP): technical detail of the test session (t23) ---
+  'settings.email.trace.summary': 'Dettaglio tecnico della sessione SMTP',
+  'settings.email.trace.lede':
+    'Che cosa è successo durante la connessione al server, fase per fase. Utile per diagnosticare un server di invio senza accesso alla console.',
+  'settings.email.trace.connection': 'Connessione',
+  'settings.email.trace.relay': 'Server configurato',
+  'settings.email.trace.resolved': 'Indirizzo risolto',
+  'settings.email.trace.helo': 'Nome annunciato (EHLO)',
+  'settings.email.trace.tlsEstablished': 'TLS stabilito',
+  'settings.email.trace.tlsProtocol': 'Versione del protocollo',
+  'settings.email.trace.cipher': 'Cifratura negoziata',
+  'settings.email.trace.certSubject': 'Certificato (soggetto)',
+  'settings.email.trace.certIssuer': 'Certificato (emittente)',
+  'settings.email.trace.authMechanism': 'Meccanismo di autenticazione',
+  'settings.email.trace.total': 'Durata totale',
+  'settings.email.trace.capabilities': 'Estensioni annunciate dal server',
+  'settings.email.trace.timeline': 'Fasi della sessione',
+  'settings.email.trace.timelineCaption':
+    'Ogni fase del protocollo SMTP, con l’esito, la durata e la risposta del server',
+  'settings.email.trace.col.stage': 'Fase',
+  'settings.email.trace.col.outcome': 'Esito',
+  'settings.email.trace.col.duration': 'Durata',
+  'settings.email.trace.col.reply': 'Risposta del server',
+  'settings.email.trace.transcript': 'Trascrizione',
+  'settings.email.trace.transcriptNote':
+    'La password del server non compare mai in questa trascrizione: le righe che la trasportano sono registrate come segnaposto. Puoi condividere questa trascrizione con chi amministra il server.',
+  'settings.email.trace.copy': 'Copia dettaglio tecnico',
+  'settings.email.trace.copied': 'Copiato',
+  'settings.email.trace.outcome.ok': 'Completata',
+  'settings.email.trace.outcome.failed': 'Non riuscita',
+  'settings.email.trace.outcome.skipped': 'Non applicabile',
+  'settings.email.trace.outcome.refused': 'Rifiutata dal client',
+
+  'settings.email.server.cardTitle': 'Server SMTP',
+  'settings.email.server.lede':
+    'Dove e come l’applicazione si collega al server di posta. La porta e la cifratura devono corrispondere a ciò che il server offre.',
+  'settings.email.auth.cardTitle': 'Credenziali di accesso',
+  'settings.email.auth.lede':
+    'Come l’applicazione si identifica presso il server. La password è conservata cifrata e non viene mai restituita.',
+  'settings.email.identity.cardTitle': 'Identità del mittente',
+  'settings.email.identity.lede':
+    'Chi il destinatario vede come mittente e il nome con cui l’applicazione si presenta al server.',
+  'settings.email.insecure.consequence':
+    'Senza la conferma qui sotto il server rifiuta di salvare questa configurazione: inviare in chiaro deve essere un atto deliberato.',
+  'settings.email.help.allowInsecure':
+    'Autorizza esplicitamente l’invio senza TLS. Senza questa conferma la configurazione senza cifratura viene rifiutata.',
+
   'settings.providerCredentials.cardTitle': 'Provider di firma',
   'settings.providerCredentials.lede':
     'Gestisci le credenziali dei provider di firma, con più chiavi per provider, priorità e failover.',
@@ -5453,4 +5545,30 @@ export const itIT: Catalog = {
   'unsaved.close.body':
     'Ci sono modifiche non salvate. Se chiudi l’applicazione ora, andranno perse.',
   'unsaved.close.confirm': 'Chiudi senza salvare',
+  "users.create.identityCard": "Identità",
+  "users.create.identityLede": "Chi è la persona. Il nome utente la identifica nel registro di audit e non può essere modificato in seguito.",
+  "users.create.emailHint": "Necessario per inviare il messaggio di benvenuto.",
+  "users.create.accessCard": "Accesso",
+  "users.create.accessLede": "Il ruolo e l'ambito in cui si applica, assegnati nella stessa richiesta che crea l'account.",
+  "users.create.scope.label": "Ambito",
+  "users.create.scope.hint": "Dove si applica il ruolo. Globale copre l'intera istanza.",
+  "users.create.role.label": "Ruolo",
+  "users.create.role.hint": "Sono offerti solo i ruoli la cui autorità si possiede già in questo ambito.",
+  "users.create.role.default": "Predefinito del server (Gestor, globale)",
+  "users.create.role.optionBlocked": "{role} — oltre la propria autorità",
+  "users.create.role.carries": "Questo ruolo conferisce",
+  "users.create.role.aboveCeiling": "Non è possibile assegnare {role}: include permessi che non si possiedono in questo ambito ({permissions}).",
+  "users.create.role.defaultNote": "Senza un ruolo scelto, l'account assume il valore predefinito del server: Gestor, in ambito globale.",
+  "users.create.credentialsCard": "Credenziali",
+  "users.create.credentialsLede": "Imposta la password iniziale e comunicala per un canale sicuro. Non viene mai inviata per e-mail.",
+  "users.create.notifyCard": "Notifica",
+  "users.create.notifyLede": "Avviso facoltativo che l'account esiste. Il messaggio non contiene password, codici né link di accesso.",
+  "users.create.welcome.label": "Invia un messaggio di benvenuto al nuovo account",
+  "users.create.welcome.noSmtp": "L'invio di e-mail non è configurato, quindi il messaggio non può essere inviato.",
+  "users.create.welcome.noAddress": "Inserisci un indirizzo e-mail qui sopra per poter inviare il messaggio.",
+  "users.create.welcome.settingsLink": "Configura e-mail",
+  "users.language.label": "Lingua",
+  "users.language.auto": "Rileva automaticamente",
+  "users.language.hint.auto": "Segue la lingua del dispositivo da cui si accede. I messaggi inviati dal server usano la lingua predefinita della piattaforma.",
+  "users.language.hint.fixed": "Fissa la lingua dell'interfaccia e dei messaggi inviati a questo account.",
 };

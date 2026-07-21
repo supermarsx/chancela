@@ -10,11 +10,13 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsFiFI } from '../ledgerEventLabels';
+import { dashboardSourceLabelsFiFI } from '../dashboardSourceLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const fiFI: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsFiFI,
+  ...dashboardSourceLabelsFiFI,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sinulla ei ole oikeutta tähän toimintoon',
@@ -540,6 +542,8 @@ export const fiFI: Catalog = {
   'entities.field.legalForm': 'Oikeudellinen muoto',
   'entities.field.family': 'Perhe',
   'entities.registrySection': 'Kaupparekisteri',
+  'entities.subnav.aria': 'Yksikön osiot',
+  'entities.subnav.inscricoes': 'Merkinnät ja sivumerkinnät',
   'entities.booksCard': 'Kirjat',
   'entities.chronology.title': 'Aikajana ja kaavio',
   'entities.chronology.loading': 'Ladataan aikajanaa...',
@@ -702,6 +706,7 @@ export const fiFI: Catalog = {
   'registry.provenance.expired': 'Todistus vanhentunut',
   'registry.provenance.valid': 'Todistus voimassa',
   'registry.anotacoes.title': 'Merkinnät',
+  'registry.anotacoes.empty': 'Rekisteriote ei sisältänyt huomautuksia.',
   'registry.anotacoes.item': 'Huom. {number}',
   'registry.anotacoes.publication': 'Julkaisu',
   'registry.warnings.title': 'Tuonnin varoitukset',
@@ -1307,6 +1312,7 @@ export const fiFI: Catalog = {
   'pdfValidator.action.pending': 'Validoidaan…',
   'pdfValidator.report.copyJson': 'Kopioi JSON',
   'pdfValidator.report.saveJson': 'Tallenna JSON',
+  'pdfValidator.report.savePdf': 'Tallenna PDF/A-raportti',
   'pdfValidator.report.status':
     'Paikallinen näyttö-JSON-raportti on saatavilla kopioitavaksi tai tallennettavaksi.',
   'pdfValidator.report.copyFailed': 'Raporttia ei voitu kopioida.',
@@ -1314,6 +1320,14 @@ export const fiFI: Catalog = {
   'pdfValidator.failClosed.body':
     'Palvelin hylkäsi tiedoston validoinnin. Käsittele tämä fail-closed-tilanteena; jos viestissä mainitaan koon tai SHA-256:n poikkeama, vastaanotetut tavut eivät vastaa selaimen ilmoittamia tietoja.',
   'pdfValidator.result.title': 'Tulos',
+  'pdfValidator.print.titlePdf': 'PDF-allekirjoituksen todentamisraportti',
+  'pdfValidator.print.titleAsic': 'ASiC-säiliön tekninen tarkastusraportti',
+  'pdfValidator.print.document': 'Todennettu asiakirja',
+  'pdfValidator.print.verifiedAt': 'Todennus suoritettu',
+  'pdfValidator.print.appVersion': 'Sovelluksen versio',
+  'pdfValidator.print.scope': 'Todennuksen laajuus',
+  'pdfValidator.print.disclaimer':
+    'Tekninen raportti, joka on luotu automaattisesti paikallisesta todennuksesta. Tämä sivu ei ole varmenne, sitä ei ole allekirjoitettu eikä sinetöity, eikä se todista allekirjoituksen oikeudellista pätevyyttä.',
   'pdfValidator.table.caption': 'Tekniset PDF/PAdES-tarkistukset',
   'pdfValidator.table.check': 'Tarkistus',
   'pdfValidator.table.verdict': 'Tulos',
@@ -1510,6 +1524,7 @@ export const fiFI: Catalog = {
   'legislacao.corpus.search.placeholder': 'Hae lainsäädännön koko tekstistä…',
   'legislacao.corpus.search.aria': 'Hae kaikesta lainsäädännöstä',
   'legislacao.corpus.search.clear': 'Tyhjennä',
+  'legislacao.corpus.search.active': 'Suodatettu haulla ”{term}”',
   'legislacao.corpus.search.count': '{count} tulosta',
   'legislacao.corpus.search.emptyTitle': 'Ei tuloksia',
   'legislacao.corpus.search.empty': 'Mikään ei vastaa hakua ”{term}”.',
@@ -1532,6 +1547,8 @@ export const fiFI: Catalog = {
   'legislacao.corpus.back': 'Takaisin säädöksiin',
   'legislacao.corpus.backToDiploma': 'Takaisin: {title}',
   'legislacao.corpus.backToResults': 'Takaisin tuloksiin',
+  'legislacao.corpus.index.title': 'Artiklat',
+  'legislacao.corpus.index.aria': 'Säädöksen artiklaluettelo',
   'legislacao.corpus.diploma.notFound': 'Säädöstä ei löytynyt.',
   'legislacao.corpus.article.notFound': 'Artiklaa ei löytynyt.',
   'legislacao.corpus.article.source': 'Lähde',
@@ -2403,6 +2420,9 @@ export const fiFI: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC ei validoitu',
   'entities.print.nipcUnvalidated': '(ei validoitu)',
   'settings.subnav.aria': 'Asetusosiot',
+  'settings.subnav.platform': 'Alusta',
+  'settings.subnav.operations.aria': 'Käyttöalueet',
+  'settings.subnav.signing.aria': 'Allekirjoitusalueet',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Vaihe {current}/{total}',
@@ -4522,6 +4542,78 @@ export const fiFI: Catalog = {
   'settings.email.help.heloName':
     'SMTP-esittelyssä ilmoitettava nimi. Jotkin palvelimet hylkäävät yleisluontoiset nimet.',
 
+  // --- Email (SMTP): grouped layout + configuration state (t69) ---
+  'settings.email.status.cardTitle': 'Määritysten tila',
+  'settings.email.status.caption': 'Yhteenveto sähköpostimääritysten tilasta',
+  'settings.email.status.col.setting': 'Asetus',
+  'settings.email.status.col.value': 'Nykyinen arvo',
+  'settings.email.status.col.state': 'Tila',
+  'settings.email.status.row.relay': 'Lähettävä palvelin',
+  'settings.email.status.row.encryption': 'Yhteyden suojaus',
+  'settings.email.status.row.authentication': 'Tunnistautuminen palvelimelle',
+  'settings.email.status.row.sender': 'Lähettäjä',
+  'settings.email.status.row.lastTest': 'Viimeisin testilähetys',
+  'settings.email.status.set': 'Asetettu',
+  'settings.email.status.unset': 'Ei määritetty',
+  'settings.email.status.anonymous': 'Ei käyttäjätunnusta',
+  'settings.email.status.encrypted': 'Salattu',
+  'settings.email.status.cleartext': 'Salaamaton',
+  'settings.email.status.withPassword': 'Salasana tallennettu',
+  'settings.email.status.withoutPassword': 'Ei salasanaa',
+  'settings.email.status.neverTested': 'Ei testiä tässä istunnossa',
+  'settings.email.status.testOk': 'Hyväksytty',
+  'settings.email.status.testFailed': 'Hylätty',
+  'settings.email.status.ready': 'Valmis lähetettäväksi',
+  'settings.email.status.notReady': 'Määritykset puutteelliset',
+  'settings.email.status.off': 'Lähetys pois käytöstä',
+
+  // --- Email (SMTP): technical detail of the test session (t23) ---
+  'settings.email.trace.summary': 'SMTP-istunnon tekniset tiedot',
+  'settings.email.trace.lede':
+    'Mitä palvelinyhteyden aikana tapahtui, vaihe vaiheelta. Hyödyllinen lähetyspalvelimen vianmäärityksessä ilman pääsyä konsoliin.',
+  'settings.email.trace.connection': 'Yhteys',
+  'settings.email.trace.relay': 'Määritetty palvelin',
+  'settings.email.trace.resolved': 'Selvitetty osoite',
+  'settings.email.trace.helo': 'Ilmoitettu nimi (EHLO)',
+  'settings.email.trace.tlsEstablished': 'TLS muodostettu',
+  'settings.email.trace.tlsProtocol': 'Protokollan versio',
+  'settings.email.trace.cipher': 'Neuvoteltu salaus',
+  'settings.email.trace.certSubject': 'Varmenne (kohde)',
+  'settings.email.trace.certIssuer': 'Varmenne (myöntäjä)',
+  'settings.email.trace.authMechanism': 'Todennusmenetelmä',
+  'settings.email.trace.total': 'Kokonaiskesto',
+  'settings.email.trace.capabilities': 'Palvelimen ilmoittamat laajennukset',
+  'settings.email.trace.timeline': 'Istunnon vaiheet',
+  'settings.email.trace.timelineCaption':
+    'Jokainen SMTP-protokollan vaihe tuloksineen, kestoineen ja palvelimen vastauksineen',
+  'settings.email.trace.col.stage': 'Vaihe',
+  'settings.email.trace.col.outcome': 'Tulos',
+  'settings.email.trace.col.duration': 'Kesto',
+  'settings.email.trace.col.reply': 'Palvelimen vastaus',
+  'settings.email.trace.transcript': 'Istuntoloki',
+  'settings.email.trace.transcriptNote':
+    'Palvelimen salasana ei koskaan näy tässä lokissa: sen sisältävät rivit tallennetaan paikkamerkkeinä. Voit jakaa tämän lokin palvelinta ylläpitävän kanssa.',
+  'settings.email.trace.copy': 'Kopioi tekniset tiedot',
+  'settings.email.trace.copied': 'Kopioitu',
+  'settings.email.trace.outcome.ok': 'Suoritettu',
+  'settings.email.trace.outcome.failed': 'Epäonnistui',
+  'settings.email.trace.outcome.skipped': 'Ei sovellu',
+  'settings.email.trace.outcome.refused': 'Sovellus kieltäytyi',
+
+  'settings.email.server.cardTitle': 'SMTP-palvelin',
+  'settings.email.server.lede':
+    'Mihin ja miten sovellus yhdistää sähköpostipalvelimeen. Portin ja salauksen on vastattava sitä, mitä palvelin tarjoaa.',
+  'settings.email.auth.cardTitle': 'Kirjautumistiedot',
+  'settings.email.auth.lede':
+    'Miten sovellus tunnistautuu palvelimelle. Salasana säilytetään salattuna eikä sitä palauteta koskaan.',
+  'settings.email.identity.cardTitle': 'Lähettäjän tiedot',
+  'settings.email.identity.lede':
+    'Kenet vastaanottaja näkee lähettäjänä ja millä nimellä sovellus esittäytyy palvelimelle.',
+  'settings.email.insecure.consequence':
+    'Ilman alla olevaa vahvistusta palvelin ei tallenna näitä määrityksiä: salaamaton lähetys on tehtävä tietoisesti.',
+  'settings.email.help.allowInsecure':
+    'Sallii nimenomaisesti lähetyksen ilman TLS:ää. Ilman tätä vahvistusta salaamaton määritys hylätään.',
+
   'settings.providerCredentials.cardTitle': 'Allekirjoituspalveluntarjoajat',
   'settings.providerCredentials.lede':
     'Hallitse allekirjoituspalveluntarjoajien tunnistetietoja, joilla on useita avaimia palveluntarjoajaa kohti, prioriteetti ja vikasieto.',
@@ -5416,4 +5508,30 @@ export const fiFI: Catalog = {
   'unsaved.close.body':
     'Tallentamattomia muutoksia on olemassa. Jos suljet sovelluksen nyt, ne menetetään.',
   'unsaved.close.confirm': 'Sulje tallentamatta',
+  "users.create.identityCard": "Henkilöllisyys",
+  "users.create.identityLede": "Kuka henkilö on. Käyttäjätunnus yksilöi hänet valvontalokissa, eikä sitä voi myöhemmin muuttaa.",
+  "users.create.emailHint": "Tarvitaan tervetuloviestin lähettämiseen.",
+  "users.create.accessCard": "Käyttöoikeudet",
+  "users.create.accessLede": "Rooli ja laajuus, jossa se on voimassa — myönnetään samassa pyynnössä, joka luo tilin.",
+  "users.create.scope.label": "Laajuus",
+  "users.create.scope.hint": "Missä rooli on voimassa. Globaali kattaa koko instanssin.",
+  "users.create.role.label": "Rooli",
+  "users.create.role.hint": "Tarjolla ovat vain roolit, joiden valtuudet sinulla jo on tässä laajuudessa.",
+  "users.create.role.default": "Palvelimen oletus (Gestor, globaali)",
+  "users.create.role.optionBlocked": "{role} — valtuuksiesi yläpuolella",
+  "users.create.role.carries": "Tämä rooli antaa",
+  "users.create.role.aboveCeiling": "Et voi myöntää roolia {role}: se sisältää oikeuksia, joita sinulla ei ole tässä laajuudessa ({permissions}).",
+  "users.create.role.defaultNote": "Jos roolia ei valita, tili saa palvelimen oletuksen: Gestor, globaalissa laajuudessa.",
+  "users.create.credentialsCard": "Kirjautumistiedot",
+  "users.create.credentialsLede": "Aseta ensimmäinen salasana ja välitä se turvallista kanavaa pitkin. Sitä ei koskaan lähetetä sähköpostitse.",
+  "users.create.notifyCard": "Ilmoitus",
+  "users.create.notifyLede": "Valinnainen ilmoitus siitä, että tili on olemassa. Viesti ei sisällä salasanaa, koodia eikä kirjautumislinkkiä.",
+  "users.create.welcome.label": "Lähetä uudelle tilille tervetuloviesti",
+  "users.create.welcome.noSmtp": "Sähköpostin lähetystä ei ole määritetty, joten viestiä ei voi lähettää.",
+  "users.create.welcome.noAddress": "Anna yllä sähköpostiosoite, jotta viesti voidaan lähettää.",
+  "users.create.welcome.settingsLink": "Määritä sähköposti",
+  "users.language.label": "Kieli",
+  "users.language.auto": "Tunnista automaattisesti",
+  "users.language.hint.auto": "Seuraa sen laitteen kieltä, jolta käyttäjä kirjautuu. Palvelimen lähettämät viestit käyttävät alustan oletuskieltä.",
+  "users.language.hint.fixed": "Kiinnittää käyttöliittymän ja tälle tilille lähetettävien viestien kielen.",
 };
