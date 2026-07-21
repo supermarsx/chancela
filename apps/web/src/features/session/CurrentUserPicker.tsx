@@ -1,10 +1,28 @@
 /**
  * Current-user picker (plan t14 §2.8) — a compact control at the right of the fixed
  * tab bar. It shows the active user's display name, or the system actor "api" when no
- * one is signed in. Opening it lists the active users; picking one prompts for a password
- * and signs in (`POST /v1/session`), signing out clears the session (`DELETE /v1/session`).
- * While signed in, the API client sends `X-Chancela-Session` on every request so the ledger
- * attributes the actor to the chosen user.
+ * one is signed in. Opening it lists the accounts used on this device; picking one prompts
+ * for a password and signs in (`POST /v1/session`), signing out clears the session
+ * (`DELETE /v1/session`). While signed in, the API client sends `X-Chancela-Session` on every
+ * request so the ledger attributes the actor to the chosen user.
+ *
+ * ## The list is DEVICE-LOCAL, never the instance roster (t94)
+ * This menu used to render `GET /v1/users` — every account on the instance, to anyone signed
+ * in who holds `user.read@Global`. That is the same enumeration the sign-in screen shed in
+ * t33, just moved behind the login. It now reads the identical store the sign-in screen uses
+ * ({@link recentAccounts}: identifiers that have SUCCESSFULLY signed in in this browser), so
+ * the two surfaces cannot drift apart, plus the current user pinned at the top so a
+ * just-signed-in operator never faces an empty menu.
+ *
+ * Consequences worth keeping straight:
+ *  - Switching only ever targets an identifier already remembered here, so the picker adds no
+ *    NEW username to storage — it only refreshes the `lastUsedAt` of one already present.
+ *    The sign-in screen's "guardar neste dispositivo" opt-out therefore still means what it
+ *    says: opting out there keeps the identifier out of localStorage for good.
+ *  - The ✕ on a row is {@link forgetAccount} — a localStorage delete and nothing else. It
+ *    never touches the server; the account is untouched and can sign in again by typing.
+ *  - The current user's row has no ✕ (forgetting the identity you are using is nonsense) and
+ *    it is display-only: pinning it does not write it to storage.
  *
  * The token is held in tab-scoped `sessionStorage` (see `api/session`), so a page reload keeps
  * the same user signed in rather than dropping to the system actor. Signing out clears it on
@@ -12,23 +30,31 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useCreateSession, useDeleteSession, useSession, useUsers } from '../../api/hooks';
+import { useCreateSession, useDeleteSession, useSession } from '../../api/hooks';
 import { ApiError } from '../../api/client';
-import type { UserView } from '../../api/types';
 import { useT } from '../../i18n';
-import { Skeleton, SkeletonRegion, Tooltip, useToast } from '../../ui';
+import { Icon, Tooltip, useToast } from '../../ui';
 import { SignOut } from '../../ui/icons';
+import { forgetAccount, readRecentAccounts, rememberAccount } from './recentAccounts';
+
+/** One row of the menu: an identifier known on this device, or the pinned current user. */
+interface PickerEntry {
+  username: string;
+  displayName: string;
+  /** The signed-in identity — pinned, checked, and not removable. */
+  isCurrent: boolean;
+}
 
 export function CurrentUserPicker() {
   const t = useT();
   const toast = useToast();
   const [open, setOpen] = useState(false);
-  // The user being switched TO — reveals an inline password prompt.
-  const [pending, setPending] = useState<UserView | null>(null);
+  // The identity being switched TO — reveals an inline password prompt.
+  const [pending, setPending] = useState<PickerEntry | null>(null);
   const [password, setPassword] = useState('');
   const [wrongPassword, setWrongPassword] = useState(false);
+  const [recents, setRecents] = useState(() => readRecentAccounts());
   const session = useSession();
-  const users = useUsers();
   const signIn = useCreateSession();
   const signOut = useDeleteSession();
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -36,9 +62,35 @@ export function CurrentUserPicker() {
   const currentUser = session.data?.user ?? null;
   const label = currentUser ? currentUser.display_name : 'api';
   const initial = label.charAt(0).toUpperCase();
-  const activeUsers = (users.data ?? []).filter((u) => u.active);
   const busy = signIn.isPending || signOut.isPending;
   const actionError = signOut.error;
+
+  // The current user first (pinned, display-only), then the identifiers this browser
+  // remembers, most-recent first, minus a duplicate of the pinned one.
+  const entries: PickerEntry[] = [
+    ...(currentUser
+      ? [
+          {
+            username: currentUser.username,
+            displayName: currentUser.display_name,
+            isCurrent: true,
+          },
+        ]
+      : []),
+    ...recents
+      .filter((r) => r.username.toLowerCase() !== (currentUser?.username ?? '').toLowerCase())
+      .map((r) => ({
+        username: r.username,
+        displayName: r.displayName ?? r.username,
+        isCurrent: false,
+      })),
+  ];
+
+  // Another tab (or the sign-in screen before this one mounted) may have changed the stored
+  // list, so re-read it each time the menu opens rather than trusting mount-time state.
+  useEffect(() => {
+    if (open) setRecents(readRecentAccounts());
+  }, [open]);
 
   // Close on Escape while open.
   useEffect(() => {
@@ -58,15 +110,16 @@ export function CurrentUserPicker() {
   }
 
   // On open (list mode), move focus to the currently-checked item, or the first — matching the
-  // ARIA menu pattern's initial-focus intent. Re-runs once the user list finishes loading so the
-  // items exist. In password mode the form's own `autoFocus` owns focus, so we skip it there.
+  // ARIA menu pattern's initial-focus intent. Re-runs when the row count changes (the session
+  // read may still be in flight on open). In password mode the form's own `autoFocus` owns
+  // focus, so we skip it there.
   useEffect(() => {
     if (!open || pending) return;
     const items = menuItems();
     if (items.length === 0) return;
     const checked = items.find((el) => el.getAttribute('aria-checked') === 'true');
     (checked ?? items[0]).focus();
-  }, [open, pending, activeUsers.length, users.isLoading]);
+  }, [open, pending, entries.length]);
 
   // Roving focus for the ARIA menu: Arrow keys step between menuitems (wrapping at the ends),
   // Home/End jump to the first/last. Native button tabbing (and the trap-free Tab flow) is left
@@ -93,12 +146,22 @@ export function CurrentUserPicker() {
     setWrongPassword(false);
   }
 
-  function attempt(user: UserView, secret: string) {
+  function attempt(entry: PickerEntry, secret: string) {
     setWrongPassword(false);
+    // By identifier, exactly as the sign-in screen does — the id is not stored on this device
+    // and the server resolves the username itself (t33-e2).
     signIn.mutate(
-      { userId: user.id, password: secret },
+      { username: entry.username, password: secret },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          // Only on success, and only for an identifier already remembered here: this
+          // refreshes its ordering, it never introduces a new one.
+          setRecents(
+            rememberAccount({
+              username: result.user.username,
+              displayName: result.user.display_name,
+            }),
+          );
           toast.success(t('toast.signin.success'));
           reset();
           setOpen(false);
@@ -107,7 +170,7 @@ export function CurrentUserPicker() {
           // 401 → wrong/missing password (inline); everything else (429 backoff…) → toast.
           if (e instanceof ApiError && e.status === 401) {
             setWrongPassword(true);
-            setPending(user);
+            setPending(entry);
           } else {
             toast.error(e);
           }
@@ -116,12 +179,12 @@ export function CurrentUserPicker() {
     );
   }
 
-  function pick(user: UserView) {
-    if (user.id === currentUser?.id) {
+  function pick(entry: PickerEntry) {
+    if (entry.isCurrent) {
       setOpen(false);
       return;
     }
-    setPending(user);
+    setPending(entry);
     setPassword('');
     setWrongPassword(false);
   }
@@ -196,7 +259,7 @@ export function CurrentUserPicker() {
                 }}
               >
                 <label className="session-picker__pwlabel" htmlFor="picker-pw">
-                  {t('signin.requiresPassword')} — <strong>{pending.display_name}</strong>
+                  {t('signin.requiresPassword')} — <strong>{pending.displayName}</strong>
                 </label>
                 <input
                   id="picker-pw"
@@ -232,35 +295,38 @@ export function CurrentUserPicker() {
                 </div>
               </form>
             ) : (
+              // No fetch backs this list: it is the current identity plus what this browser
+              // remembers, so there is nothing to wait for and no skeleton to show.
               <div className="session-picker__list">
-                {users.isLoading ? (
-                  // What lands here is a short column of `.session-picker__item` buttons,
-                  // so the menu keeps its height instead of snapping open once they arrive.
-                  <SkeletonRegion>
-                    {[0, 1, 2].map((i) => (
-                      <Skeleton key={i} height="2.4rem" style={{ marginBottom: '0.25rem' }} />
-                    ))}
-                  </SkeletonRegion>
-                ) : activeUsers.length === 0 ? (
+                {entries.length === 0 ? (
                   <p className="muted session-picker__empty">{t('session.empty')}</p>
                 ) : (
-                  activeUsers.map((u) => {
-                    const isCurrent = currentUser?.id === u.id;
-                    return (
+                  entries.map((entry) => (
+                    <div key={entry.username} className="session-picker__row">
                       <button
-                        key={u.id}
                         type="button"
                         role="menuitemradio"
-                        aria-checked={isCurrent}
-                        className={`session-picker__item${isCurrent ? ' is-current' : ''}`}
+                        aria-checked={entry.isCurrent}
+                        className={`session-picker__item${entry.isCurrent ? ' is-current' : ''}`}
                         disabled={busy}
-                        onClick={() => pick(u)}
+                        onClick={() => pick(entry)}
                       >
-                        <span className="session-picker__item-name">{u.display_name}</span>
-                        <code className="mono session-picker__item-user">{u.username}</code>
+                        <span className="session-picker__item-name">{entry.displayName}</span>
+                        <code className="mono session-picker__item-user">{entry.username}</code>
                       </button>
-                    );
-                  })
+                      {entry.isCurrent ? null : (
+                        <button
+                          type="button"
+                          className="session-picker__forget"
+                          aria-label={t('signin.recent.remove', { username: entry.username })}
+                          disabled={busy}
+                          onClick={() => setRecents(forgetAccount(entry.username))}
+                        >
+                          <Icon.Close />
+                        </button>
+                      )}
+                    </div>
+                  ))
                 )}
               </div>
             )}

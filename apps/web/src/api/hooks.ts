@@ -2348,8 +2348,9 @@ export function usePasswordPolicy() {
  *
  * Pass `username` — the typed identifier — from the signed-out sign-in form; the server
  * resolves it (t33-e2), which is what let the unauthenticated user roster be removed.
- * `userId` remains for the callers that already hold an id: the onboarding wizard (it just
- * created the user) and the signed-in account switcher (it reads the auth-gated user list).
+ * `userId` remains for the callers that already hold an id: the onboarding wizard and the
+ * signed-out bootstrap handshake, both of which have just created the user. The in-session
+ * account switcher passes a `username` like the sign-in form (t94).
  */
 export type SignInArgs = { password: string } & (
   { username: string; userId?: never } | { userId: string; username?: never }
@@ -2378,7 +2379,8 @@ export function useCreateSession() {
       setSessionToken(result.token);
       qc.setQueryData(keys.session, await api.getSession());
       // Now signed in, the auth-gated user list becomes readable — refetch it so the
-      // management page / picker have the full UserView set.
+      // management page has the full UserView set. (The session picker no longer reads it:
+      // t94 moved it to the device-local recents, so this only fires where a list is mounted.)
       void qc.invalidateQueries({ queryKey: keys.users });
     },
   });

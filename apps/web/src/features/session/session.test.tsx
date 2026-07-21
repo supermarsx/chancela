@@ -526,10 +526,16 @@ describe('SignIn — recently used identifiers (device-local)', () => {
   });
 });
 
+/** Seed the device-local list the sign-in screen writes and the picker reads. */
+function seedRecents(entries: { username: string; displayName?: string; lastUsedAt: number }[]) {
+  window.localStorage.setItem('chancela.signin.recentAccounts', JSON.stringify(entries));
+}
+
 describe('CurrentUserPicker (signed in)', () => {
-  it('switches to a has_secret user by prompting for the password', async () => {
-    // Start signed in as Amélia; the roster/user list carries a password-protected Bruno.
+  it('switches to a remembered user by prompting for the password', async () => {
+    // Start signed in as Amélia, with Bruno remembered from an earlier sign-in on this device.
     setSessionToken('tok-0');
+    seedRecents([{ username: BRUNO.username, displayName: BRUNO.display_name, lastUsedAt: 20 }]);
     const { fn, calls } = serverStub({
       roster: { onboarding_required: false },
       users: [AMELIA, BRUNO],
@@ -552,15 +558,54 @@ describe('CurrentUserPicker (signed in)', () => {
 
     await waitFor(() => {
       const post = calls.find((c) => c.url.includes('/v1/session') && c.method === 'POST');
-      expect(post?.body).toMatchObject({ user_id: 'u2', password: 'hunter2' });
+      // By identifier, like the sign-in screen — no user id is kept on this device.
+      expect(post?.body).toMatchObject({ username: BRUNO.username, password: 'hunter2' });
     });
     // The picker reflects the newly signed-in user.
     expect(await screen.findByText('Bruno Dias')).toBeTruthy();
   });
 
-  it('roving focus: Arrow keys, Home and End move focus among the menu items', async () => {
-    // Signed in as Amélia, with a second active user (Bruno) to roam to.
+  it('lists only device-local identities — never the instance roster — and never fetches it', async () => {
+    // CAROLINA exists on the instance but has never signed in here: she must not appear, and
+    // `GET /v1/users` must not be called at all by this surface.
     setSessionToken('tok-0');
+    seedRecents([{ username: BRUNO.username, displayName: BRUNO.display_name, lastUsedAt: 20 }]);
+    const carolina: UserView = {
+      ...BRUNO,
+      id: 'u3',
+      username: 'carolina.reis',
+      display_name: 'Carolina Reis',
+    };
+    const { fn, calls } = serverStub({
+      roster: { onboarding_required: false },
+      users: [AMELIA, BRUNO, carolina],
+      startSignedIn: true,
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<CurrentUserPicker />);
+    fireEvent.click(await screen.findByTestId('session-trigger'));
+
+    // The signed-in user is always present, and so is the remembered one.
+    expect(await screen.findByRole('menuitemradio', { name: /Amélia/ })).toBeTruthy();
+    expect(screen.getByRole('menuitemradio', { name: /Bruno/ })).toBeTruthy();
+    expect(screen.queryByText('carolina.reis')).toBeNull();
+    expect(calls.some((c) => c.url.includes('/v1/users'))).toBe(false);
+
+    // The ✕ forgets the identifier locally — no request of any kind leaves the browser.
+    const before = calls.length;
+    fireEvent.click(screen.getByRole('button', { name: `Remover ${BRUNO.username} da lista` }));
+    await waitFor(() => expect(screen.queryByRole('menuitemradio', { name: /Bruno/ })).toBeNull());
+    expect(calls.length).toBe(before);
+    expect(window.localStorage.getItem('chancela.signin.recentAccounts')).toBe('[]');
+    // The user's own account is still there — never an empty menu.
+    expect(screen.getByRole('menuitemradio', { name: /Amélia/ })).toBeTruthy();
+  });
+
+  it('roving focus: Arrow keys, Home and End move focus among the menu items', async () => {
+    // Signed in as Amélia, with a second remembered identity (Bruno) to roam to.
+    setSessionToken('tok-0');
+    seedRecents([{ username: BRUNO.username, displayName: BRUNO.display_name, lastUsedAt: 20 }]);
     const { fn } = serverStub({
       roster: { onboarding_required: false },
       users: [AMELIA, BRUNO],

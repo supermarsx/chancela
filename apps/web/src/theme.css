@@ -6982,6 +6982,14 @@ a.btn--primary {
   font-size: 0.82rem;
 }
 
+/* One menu row: the switch button, plus the ✕ that forgets the identifier on this device
+   (t94). The current user's row has no ✕, so the button simply takes the whole width. */
+.session-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
 .session-picker__item {
   display: flex;
   align-items: baseline;
@@ -7022,6 +7030,37 @@ a.btn--primary {
 .session-picker__item-user {
   font-size: 0.74rem;
   color: var(--text-muted);
+}
+
+/* Mirrors `.signin__recent-remove`: local-only removal, never a server-side delete. */
+.session-picker__forget {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.session-picker__forget:hover:not(:disabled),
+.session-picker__forget:focus-visible {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--error-bg) 55%, transparent);
+  color: var(--error);
+}
+
+.session-picker__forget:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .session-picker__error {
