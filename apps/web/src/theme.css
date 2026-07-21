@@ -4292,6 +4292,12 @@ a,
   height: 1.4rem;
   background: transparent;
   cursor: pointer;
+  /* `.control` draws the input hairline (--field-border) around a field's fill. A range
+     control has no fill to bound: its edge is the track, drawn below by
+     ::-webkit-slider-runnable-track / ::-moz-range-track. Inheriting the border boxes the
+     slider in a rectangle that belongs to text inputs. The thumb keeps its own border —
+     that one bounds a real filled shape. */
+  border: none;
 }
 
 .control--range:disabled {
