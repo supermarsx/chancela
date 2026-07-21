@@ -107,6 +107,7 @@ async fn owner_session(state: &AppState) -> String {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            language: Default::default(),
         },
     );
     let (status, session) = send(

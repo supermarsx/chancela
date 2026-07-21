@@ -13,7 +13,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chancela_core::act::AiHumanVerificationStatus;
 use chancela_core::{
-    Act, ActError, ActId, ActState, Book, BookId, DEFAULT_TENANT_ID, Entity, EntityFamily,
+    Act, ActBody, ActError, ActId, ActState, Book, BookId, DEFAULT_TENANT_ID, Entity, EntityFamily,
     EntityKind, PresenceMode, SealEvidence, Severity, SupersededSigningSnapshot, rule_pack_for,
     seal_act_with_evidence,
 };
@@ -28,10 +28,10 @@ use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_act, scope_of_book};
 use crate::dto::{
-    ActView, AdvanceAct, ArchiveAct, ComplianceResponse, ConveningAdvisory, DispatchConvening,
-    DraftAct, HumanVerificationDecision, IssueView, PatchAct, ReopenAct, ReopenActResponse,
-    SealAct, SealResponse, SupersededSigningSnapshotView, VerifyAiHumanReview,
-    WrittenResolutionEvidenceStatusView, read_redaction_for_actor,
+    ActBodyPreviewResponse, ActView, AdvanceAct, ArchiveAct, ComplianceResponse, ConveningAdvisory,
+    DispatchConvening, DraftAct, HumanVerificationDecision, IssueView, PatchAct, PreviewActBody,
+    ReopenAct, ReopenActResponse, SealAct, SealResponse, SupersededSigningSnapshotView,
+    VerifyAiHumanReview, WrittenResolutionEvidenceStatusView, read_redaction_for_actor,
 };
 use crate::error::ApiError;
 use time::format_description::well_known::Rfc3339;
@@ -222,6 +222,30 @@ pub async fn patch_act(
     if let Some(deliberations) = req.deliberations {
         next.deliberations = deliberations;
     }
+    // The markup body (t74). Validated *here*, on save, so a malformed placeholder or a construct
+    // the frozen block set cannot represent is a 422 while the operator is still editing — not a
+    // surprise at the seal gate, by which point the act is no longer mutable and cannot be fixed.
+    //
+    // Never touches `deliberations`, in either direction: the two are separate stores and plain
+    // prose is never migrated into markup.
+    if let Some(body) = req.body {
+        next.body = match body {
+            Some(input) => {
+                chancela_templates::body_render::check_markdown_body(&input.source)?;
+                Some(ActBody {
+                    format: input.format,
+                    source: input.source,
+                    // Both are facts about what the server compiled at content freeze, which has not
+                    // happened yet. The digest is empty until then rather than a guess: the body is
+                    // still editable, so any value recorded now would be about text the operator can
+                    // still change.
+                    compiler_id: chancela_templates::markdown::COMPILER_ID.to_owned(),
+                    compiled_digest: String::new(),
+                })
+            }
+            None => None,
+        };
+    }
     if let Some(deliberation_items) = req.deliberation_items {
         next.deliberation_items = deliberation_items.into_iter().map(Into::into).collect();
     }
@@ -408,6 +432,21 @@ pub async fn advance_act(
                 issues: blocking,
             });
         }
+    }
+
+    // t74 §1 — CONTENT FREEZE. This is the moment the act stops being mutable, so it is the moment
+    // the markdown body compiles: exactly once, recording `compiler_id` and the `compiled_digest` of
+    // what it produced. The seal then binds source *and* output together, so a later compiler change
+    // cannot silently alter what a sealed act says — the two stop agreeing and the mismatch becomes
+    // detectable. Compiling later, per render, would leave nothing to compare against.
+    //
+    // Assigned directly rather than through `set_body`, which is correctly refused here: `next` has
+    // already advanced to `Signing` and is no longer mutable. This is not an edit to the operator's
+    // content — `source` is carried through verbatim — it only fills in what the server compiled.
+    if target_state == ActState::Signing
+        && let Some((frozen, _blocks)) = crate::documents::freeze_act_body(&next, entity)?
+    {
+        next.body = Some(frozen);
     }
 
     let signing_snapshot = if target_state == ActState::Signing {
@@ -682,6 +721,51 @@ pub async fn verify_ai_human_review(
     *act = next;
 
     Ok(Json(ActView::from(&*act)))
+}
+
+/// `POST /v1/acts/{id}/body/preview` — compile a markdown body source into `Block[]` (t74 §6).
+///
+/// **This exists so the editor never compiles document content.** The preview runs the same
+/// `render_markdown_body` that content freeze runs, against the same act context, so the operator
+/// previews exactly the blocks that will be sealed. A client-side markdown renderer would be a
+/// second implementation that could drift from the authoritative one, and the operator would be
+/// approving something other than what gets sealed.
+///
+/// `POST` rather than `GET` because the source is request *content* — a body being edited is far
+/// larger than a URL may safely carry, and it does not belong in access logs or browser history.
+///
+/// Deliberately usable on a sealed act: previewing is read-only and never writes the body back.
+/// A rejected construct is the same structured 422 the save path returns.
+pub async fn preview_act_body(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    Json(req): Json<PreviewActBody>,
+) -> Result<Json<ActBodyPreviewResponse>, ApiError> {
+    // Reading an act's body and its render context is `act.read`, the same scope the compliance
+    // report uses. No write permission: this endpoint mutates nothing.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
+    let entities = state.entities.read().await;
+    let books = state.books.read().await;
+    let acts = state.acts.read().await;
+
+    let act = acts.get(&ActId(id)).ok_or(ApiError::NotFound)?;
+    let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+    let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+
+    // The unsaved editor buffer when supplied, else whatever is stored. An act with neither has an
+    // empty preview rather than a 404: "nothing written yet" is a normal editing state.
+    let source = match req.source.as_deref() {
+        Some(source) => source,
+        None => act.body.as_ref().map(|b| b.source.as_str()).unwrap_or(""),
+    };
+
+    let blocks = crate::documents::preview_act_body(act, entity, source)?;
+    Ok(Json(ActBodyPreviewResponse {
+        compiler_id: chancela_templates::markdown::COMPILER_ID,
+        blocks,
+    }))
 }
 
 /// `GET /v1/acts/{id}/compliance` — run the CSC art. 63.º rule pack against the act.
@@ -1534,6 +1618,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         CurrentActor::from_session_username(Some(username))
@@ -1646,6 +1731,274 @@ mod tests {
             memberships.contains(&chancela_ledger::ChainId::Tenant(tenant.to_string())),
             "act.drafted must join its tenant chain, got {memberships:?}"
         );
+    }
+
+    // --- t74 markdown ata body -----------------------------------------------------------------
+
+    /// Seed a persisted draft act in an entity named `entity_name`, ready for PATCH/preview.
+    async fn seed_act_for_body(state: &AppState, entity_name: &str) -> (CurrentActor, Act) {
+        let actor = seed_owner(state).await;
+        let mut entity = entity_of(EntityKind::SociedadePorQuotas);
+        entity.name = entity_name.to_owned();
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(state, &entity, &book).await;
+        let act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| {
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)
+            })
+            .expect("seed persisted");
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act.clone());
+        (actor, act)
+    }
+
+    #[tokio::test]
+    async fn patch_act_accepts_a_markdown_body_and_leaves_deliberations_alone() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, act) = seed_act_for_body(&state, "Encosto Estratégico Lda").await;
+
+        let req: PatchAct = serde_json::from_value(json!({
+            "deliberations": "Prosa antiga com **asteriscos** literais.",
+            "body": { "format": "Markdown", "source": "# Ata\n\nTexto **relevante**." }
+        }))
+        .expect("patch body");
+        let Json(view) = patch_act(
+            State(state.clone()),
+            Path(act.id.0),
+            actor,
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+        .expect("patch succeeds");
+
+        let body = view.body.expect("body is returned");
+        assert_eq!(body.source, "# Ata\n\nTexto **relevante**.");
+        assert_eq!(body.compiler_id, "md-block/v1");
+        assert!(
+            body.compiled_digest.is_empty(),
+            "nothing is compiled until content freeze; a digest now would be about editable text"
+        );
+        // t74 §9.2, the subtlest hazard in the design: the two are separate stores and plain prose
+        // is never migrated into markup nor re-read as markup.
+        assert_eq!(
+            view.deliberations,
+            "Prosa antiga com **asteriscos** literais."
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_act_rejects_an_unsupported_construct_at_edit_time() {
+        // The whole point of validating on save: at the seal gate the act is no longer mutable, so
+        // a rejection there would strand it.
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, act) = seed_act_for_body(&state, "Encosto Estratégico Lda").await;
+
+        let req: PatchAct = serde_json::from_value(json!({
+            "body": { "format": "Markdown", "source": "- uma lista" }
+        }))
+        .expect("patch body");
+        // `ActView` is not `Debug`, so unwrap the Result by hand rather than via `expect_err`.
+        let err = match patch_act(
+            State(state.clone()),
+            Path(act.id.0),
+            actor,
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+        {
+            Ok(_) => panic!("a list must be rejected"),
+            Err(e) => e,
+        };
+
+        let ApiError::InvalidActBody { code, offset, .. } = err else {
+            panic!("expected a structured 422, got {err:?}");
+        };
+        assert_eq!(code, "unsupported_markdown");
+        assert!(offset.is_some());
+        // And the act is untouched — a rejected edit must not half-apply.
+        assert!(
+            state.acts.read().await[&act.id].body.is_none(),
+            "a rejected body must not be stored"
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_act_rejects_a_malformed_placeholder_at_edit_time() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, act) = seed_act_for_body(&state, "Encosto Estratégico Lda").await;
+
+        let req: PatchAct = serde_json::from_value(json!({
+            "body": { "format": "Markdown", "source": "Ata n.º {{ unclosed" }
+        }))
+        .expect("patch body");
+        let err = match patch_act(
+            State(state.clone()),
+            Path(act.id.0),
+            actor,
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+        {
+            Ok(_) => panic!("a malformed placeholder must be rejected"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(&err, ApiError::InvalidActBody { code, .. } if *code == "invalid_placeholder"),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_compiles_server_side_and_escapes_structure_from_a_company_name() {
+        // t74 §4 + §6 together: the operator previews exactly what will be sealed, and an entity
+        // name carrying `#`/`**` contributes text, never document structure.
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, act) = seed_act_for_body(&state, "# Encosto **Estratégico** Lda").await;
+
+        let req: PreviewActBody = serde_json::from_value(json!({
+            "source": "Presente a sociedade {{ entity.name }}."
+        }))
+        .expect("preview body");
+        let Json(preview) =
+            preview_act_body(State(state.clone()), Path(act.id.0), actor, Json(req))
+                .await
+                .expect("preview succeeds");
+
+        assert_eq!(preview.compiler_id, "md-block/v1");
+        assert_eq!(preview.blocks.len(), 1, "{:?}", preview.blocks);
+        let chancela_core::Block::Paragraph { runs } = &preview.blocks[0] else {
+            panic!("the `#` became structure: {:?}", preview.blocks[0]);
+        };
+        assert!(runs.iter().all(|r| !r.bold), "the `**` became emphasis");
+        let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(text, "Presente a sociedade # Encosto **Estratégico** Lda.");
+    }
+
+    #[tokio::test]
+    async fn preview_matches_what_freeze_produces() {
+        // The identity the endpoint exists to guarantee. If these could differ, the preview would be
+        // a second implementation and the operator would approve something other than what seals.
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, act) = seed_act_for_body(&state, "# Encosto **Lda**").await;
+        let source = "# Ata\n\nPresente: **{{ entity.name }}**.";
+
+        let req: PreviewActBody =
+            serde_json::from_value(json!({ "source": source })).expect("preview body");
+        let Json(preview) =
+            preview_act_body(State(state.clone()), Path(act.id.0), actor, Json(req))
+                .await
+                .expect("preview succeeds");
+
+        let mut frozen_act = act.clone();
+        frozen_act.body = Some(ActBody {
+            format: chancela_core::BodyFormat::Markdown,
+            source: source.to_owned(),
+            compiler_id: chancela_templates::markdown::COMPILER_ID.to_owned(),
+            compiled_digest: String::new(),
+        });
+        let entity = {
+            let books = state.books.read().await;
+            let entities = state.entities.read().await;
+            entities[&books[&act.book_id].entity_id].clone()
+        };
+        let (_body, frozen_blocks) = crate::documents::freeze_act_body(&frozen_act, &entity)
+            .expect("freeze")
+            .expect("has body");
+
+        assert_eq!(
+            preview.blocks, frozen_blocks,
+            "the preview must be byte-for-byte what content freeze compiles"
+        );
+    }
+
+    #[tokio::test]
+    async fn advancing_to_signing_with_a_body_is_refused_while_no_template_can_carry_one() {
+        // The fail-closed gate at the handler boundary (t74 §9.3 through the placement seam). Until
+        // an ata template carries a placement anchor, an act with a narrative body must not reach a
+        // sealed PDF/A that omits it. The operator is told; nothing is dropped quietly.
+        //
+        // Freeze mechanics themselves are covered by `documents::tests::
+        // freezing_records_the_compiler_and_a_digest_of_what_it_compiled`, which does not have to
+        // walk the lifecycle to assert them.
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, act) = seed_act_for_body(&state, "Encosto Estratégico Lda").await;
+
+        let patch: PatchAct = serde_json::from_value(json!({
+            "body": { "format": "Markdown", "source": "# Ata\n\nTexto." }
+        }))
+        .expect("patch body");
+        patch_act(
+            State(state.clone()),
+            Path(act.id.0),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Json(patch),
+        )
+        .await
+        .expect("body saved");
+
+        // Satisfy the art. 63.º baseline. Deliberately **no** `deliberations` and no
+        // `deliberation_items`: the markup body alone now satisfies the substance rule
+        // (`has_substance`), which is what lets this act reach the placement gate at all instead of
+        // being turned away earlier for recording no substance.
+        {
+            let mut acts = state.acts.write().await;
+            let seeded = acts.get_mut(&act.id).expect("seeded act");
+            seeded.meeting_date = Some(time::macros::date!(2026 - 07 - 19));
+            seeded.place = Some("Lisboa".to_owned());
+            seeded.attendance_reference = Some("Lista de presenças anexa".to_owned());
+            seeded.mesa.presidente = Some("Amélia Marques".to_owned());
+        }
+
+        for target in ["Review", "Convened", "Deliberated", "TextApproved"] {
+            let req: AdvanceAct =
+                serde_json::from_value(json!({ "to": target })).expect("advance body");
+            advance_act(
+                State(state.clone()),
+                Path(act.id.0),
+                actor.clone(),
+                CurrentAttestor::default(),
+                Json(req),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("advance to {target} failed: {e:?}"));
+        }
+
+        let req: AdvanceAct = serde_json::from_value(json!({ "to": "Signing" })).expect("body");
+        let err = match advance_act(
+            State(state.clone()),
+            Path(act.id.0),
+            actor,
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+        {
+            Ok(_) => panic!("advancing with an unplaceable body must be refused"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(&err, ApiError::Unprocessable(m) if m.contains("no place for this act's narrative body")),
+            "the refusal must say why: {err:?}"
+        );
+        // ...and the act is not left half-advanced.
+        assert_ne!(state.acts.read().await[&act.id].state, ActState::Signing);
     }
 
     #[tokio::test]

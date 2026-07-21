@@ -89,7 +89,9 @@ impl BodyRenderError {
 impl std::fmt::Display for BodyRenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BodyRenderError::Template { message, .. } => write!(f, "invalid placeholder: {message}"),
+            BodyRenderError::Template { message, .. } => {
+                write!(f, "invalid placeholder: {message}")
+            }
             BodyRenderError::Markdown(e) => write!(f, "{e}"),
         }
     }
@@ -251,9 +253,7 @@ pub fn render_markdown_body(src: &str, ctx: &Value) -> Result<Vec<Block>, BodyRe
             .map_err(|e| minijinja::Error::new(minijinja::ErrorKind::WriteFailure, e.to_string()))
     });
 
-    let template = env
-        .template_from_str(src)
-        .map_err(|e| template_error(&e))?;
+    let template = env.template_from_str(src).map_err(|e| template_error(&e))?;
     let rendered = template.render(ctx).map_err(|e| template_error(&e))?;
 
     // The cap is applied again to the *rendered* text: placeholders expand, so a body that fit
@@ -292,7 +292,10 @@ mod tests {
         // One paragraph, not a heading: the `#` did not become structure.
         assert_eq!(blocks.len(), 1, "expected exactly one block: {blocks:?}");
         let Block::Paragraph { runs } = &blocks[0] else {
-            panic!("value with a leading `#` produced {:?}, not a paragraph", blocks[0]);
+            panic!(
+                "value with a leading `#` produced {:?}, not a paragraph",
+                blocks[0]
+            );
         };
         // A single unstyled run: the `**` did not become emphasis.
         assert_eq!(runs.len(), 1, "expected one unstyled run, got {runs:?}");
@@ -318,7 +321,11 @@ mod tests {
             panic!("expected a paragraph, got {:?}", blocks[1]);
         };
         // The operator's `**` around the placeholder is real emphasis...
-        let bolded: String = runs.iter().filter(|r| r.bold).map(|r| r.text.as_str()).collect();
+        let bolded: String = runs
+            .iter()
+            .filter(|r| r.bold)
+            .map(|r| r.text.as_str())
+            .collect();
         // ...and the value's own `**` is inside it as literal characters.
         assert_eq!(bolded, "**Encosto** Lda");
     }
@@ -333,7 +340,10 @@ mod tests {
                 .unwrap_or_else(|e| panic!("value {injected:?} must not be structure, got {e}"));
             assert_eq!(blocks.len(), 1, "value {injected:?} produced {blocks:?}");
             let Block::Paragraph { runs } = &blocks[0] else {
-                panic!("value {injected:?} produced {:?}, not a paragraph", blocks[0]);
+                panic!(
+                    "value {injected:?} produced {:?}, not a paragraph",
+                    blocks[0]
+                );
             };
             assert_eq!(runs[0].text.trim(), injected.trim());
         }
@@ -387,8 +397,56 @@ mod tests {
         // The counterweight to the tests above: over-escaping would make every working copy
         // unreadable. A date must not become `2026\-07\-19`.
         assert_eq!(escape_markdown_text("2026-07-19"), "2026-07-19");
-        assert_eq!(escape_markdown_text("Encosto Estratégico Lda"), "Encosto Estratégico Lda");
+        assert_eq!(
+            escape_markdown_text("Encosto Estratégico Lda"),
+            "Encosto Estratégico Lda"
+        );
         assert_eq!(escape_markdown_text("a - b"), "a - b");
+    }
+
+    /// Which line-leading characters this compiler actually treats as **structure**.
+    ///
+    /// This pins the contract the web editor's own markdown serialiser escapes against (t69). That
+    /// serialiser is a separate function with a separate job — it turns an editor document model
+    /// into source, while [`escape_markdown_text`] protects interpolated values — and the two must
+    /// **not** be merged, or each inherits the other's bugs. But they have to agree on what
+    /// round-trips: if the editor leaves a character unescaped that this compiler reads as
+    /// structure, the operator gets a 422 for text that looked correct on screen.
+    ///
+    /// So the authority lives here, next to the compiler, rather than in a comment on the client.
+    #[test]
+    fn which_line_leading_characters_are_structure_to_this_compiler() {
+        use crate::markdown::compile_markdown;
+
+        // Ordered-list markers: BOTH delimiters. `1)` matters because "1) Deliberou-se…" is
+        // ordinary Portuguese legal prose, so an editor that escapes only `1.` produces a 422 on
+        // text the operator had every reason to think was fine.
+        for src in ["1. ponto", "1) parêntese", "- traço", "+ mais", "> maior"] {
+            assert!(
+                compile_markdown(src).is_err(),
+                "{src:?} is structure and must be escaped by any producer of body source"
+            );
+        }
+
+        // `|` is NOT structure: the parser runs with every extension off, so the table extension is
+        // not enabled and a pipe is ordinary punctuation. `escape_markdown_text` still escapes it
+        // unconditionally, because the *other* direction — emitting a working copy — does write
+        // real markdown tables. Producers of body source need not escape it.
+        assert!(compile_markdown("| cano").is_ok());
+        assert!(compile_markdown("| a | b |\n| --- | --- |").is_ok());
+
+        // `=` is conditional, and this is the subtle one. Alone it is a paragraph; directly under a
+        // paragraph line it makes a setext heading. A producer that separates every block with a
+        // blank line is therefore safe without escaping it — but that safety is a property of the
+        // producer's spacing, not of the character.
+        assert!(compile_markdown("= igual").is_ok());
+        assert!(
+            matches!(
+                compile_markdown("texto\n===").as_deref(),
+                Ok([Block::Heading { level: 1, .. }])
+            ),
+            "`===` under a paragraph is a setext heading — the reason `=` is escaped at line start"
+        );
     }
 
     #[test]
@@ -437,7 +495,10 @@ mod tests {
     fn an_unsupported_construct_is_rejected_at_save_time() {
         let err = check_markdown_body("- a list").expect_err("must reject");
         assert_eq!(err.code(), "unsupported_markdown");
-        assert!(err.offset().is_some(), "the editor needs an offset to underline");
+        assert!(
+            err.offset().is_some(),
+            "the editor needs an offset to underline"
+        );
     }
 
     #[test]

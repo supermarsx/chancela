@@ -27,9 +27,9 @@ use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_core::{
-    Act, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel, DocumentModel, Entity,
-    EntityFamily, LifecycleStage, MeetingChannel, NumberingScheme, PresenceMode, Run,
-    SignaturePolicyHint, TermoDeAbertura, TermoDeEncerramento,
+    Act, ActBody, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel,
+    DocumentModel, Entity, EntityFamily, LifecycleStage, MeetingChannel, NumberingScheme,
+    PresenceMode, Run, SignaturePolicyHint, TermoDeAbertura, TermoDeEncerramento,
 };
 use chancela_signing::{
     BaselineProfile, EvidentiaryLevel, SignatureArtifact, SignatureFormat, SigningFamily,
@@ -372,6 +372,97 @@ pub struct DispatchEvidenceStatusView {
     pub note: String,
 }
 
+/// SHA-256 of a template spec's canonical serialization, lowercase hex — the value bound into the
+/// `document.generated` ledger event as `template_spec_digest` (t74 §8).
+///
+/// Takes the already-canonical string rather than the spec so there is exactly one definition of
+/// "the bytes we hash": [`chancela_templates::canonical_spec_json`]. Verification recomputes this
+/// from the **stored** body, so the digest is always a pure function of what was persisted and the
+/// two can never disagree in a third, unexplainable way.
+pub fn template_spec_digest_of(canonical_spec_json: &str) -> String {
+    let digest: [u8; 32] = Sha256::digest(canonical_spec_json.as_bytes()).into();
+    crate::hex::hex(&digest)
+}
+
+/// What a stored document's template binding proves (t74 §8).
+///
+/// **`Unbound` is not a failure.** Documents generated before this binding existed carry no spec
+/// body and no `template_spec_digest`; that is a legitimate historical state, and reporting it as a
+/// mismatch would cry wolf on every pre-t74 document in every archive. Absence and wrongness are
+/// therefore distinct variants, and only [`SpecBinding::Mismatch`] and
+/// [`SpecBinding::CatalogDrifted`] are findings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpecBinding {
+    /// The document predates the binding: no stored spec body **and** no digest in the event.
+    /// Nothing is claimed about which template produced it, and nothing is alleged against it.
+    Unbound,
+    /// The stored spec body re-derives the digest recorded in the ledger, and matches the catalog
+    /// entry that bears the same `template_id`.
+    Verified,
+    /// The stored spec body does **not** re-derive the digest recorded in the ledger — the row or
+    /// the event has been altered since generation.
+    Mismatch {
+        /// The digest the ledger event recorded at generation time.
+        recorded: String,
+        /// The digest the stored spec body actually produces now.
+        actual: String,
+    },
+    /// The stored body verifies against the ledger, but the catalog entry now shipping under the
+    /// same `template_id` is a **different** template. This is the retroactive-edit detector: it
+    /// means someone edited a shipped `/vN` in place instead of publishing a new version.
+    /// The document itself is intact — what changed is the catalog.
+    CatalogDrifted {
+        /// The digest of the spec that actually produced the document.
+        produced_by: String,
+        /// The digest of what the catalog now serves under that id.
+        catalog_now: String,
+    },
+}
+
+/// Check a stored document's template binding against the digest its `document.generated` event
+/// recorded, and against the catalog entry currently shipping under the same id.
+///
+/// `recorded_digest` is the event's `template_spec_digest`, or `None` for an event that predates
+/// the field. See [`SpecBinding`] for why absent and wrong are different answers.
+pub fn verify_spec_binding(
+    stored_spec_json: Option<&str>,
+    recorded_digest: Option<&str>,
+    catalog_spec: Option<&TemplateSpec>,
+) -> SpecBinding {
+    let Some(body) = stored_spec_json else {
+        // No stored spec ⇒ the document predates the binding and nothing can be checked.
+        // Deliberately NOT a mismatch: accusing every pre-v24 row would cry wolf on legitimate
+        // history and train operators to ignore the finding.
+        return SpecBinding::Unbound;
+    };
+    let actual = template_spec_digest_of(body);
+    // The ledger half is optional so this same function serves two callers: an auditor holding the
+    // `document.generated` event (full three-way check), and the read path, which has the row but
+    // not the event and can still answer the question that matters most — has the catalog moved
+    // under this document since it was produced?
+    if let Some(recorded) = recorded_digest
+        && actual != recorded
+    {
+        return SpecBinding::Mismatch {
+            recorded: recorded.to_owned(),
+            actual,
+        };
+    }
+    // The row is internally consistent. Now: is the catalog still serving what produced it?
+    if let Some(current) = catalog_spec
+        && let Ok(current_json) = chancela_templates::canonical_spec_json(current)
+    {
+        let catalog_now = template_spec_digest_of(&current_json);
+        if catalog_now != actual {
+            return SpecBinding::CatalogDrifted {
+                produced_by: actual,
+                catalog_now,
+            };
+        }
+    }
+    SpecBinding::Verified
+}
+
 /// Render `spec` against `ctx`, write PDF/A-2u bytes, and assemble the [`Generated`] artifact
 /// owned by `owner_id`. `created_at` is the stored row's metadata timestamp (not part of the
 /// PDF bytes). Any render / write failure is an internal error that the caller turns into a
@@ -390,6 +481,13 @@ fn generate(
     let digest: [u8; 32] = Sha256::digest(&bytes).into();
     let pdf_digest = crate::hex::hex(&digest);
 
+    // t74 §8: bind the *identity of the producing template*, not just its id string. The id carries
+    // the version by convention only, so without this an in-place edit of a shipped `/vN` would
+    // retroactively change what a past seal meant and nothing would detect it.
+    let spec_json = chancela_templates::canonical_spec_json(spec)
+        .map_err(|e| ApiError::Internal(format!("template spec serialization failed: {e}")))?;
+    let template_spec_digest = template_spec_digest_of(&spec_json);
+
     let stored = StoredDocument {
         id: Uuid::new_v4().to_string(),
         act_id: owner_id,
@@ -398,12 +496,16 @@ fn generate(
         profile: PDFA_PROFILE.to_string(),
         created_at,
         pdf_bytes: bytes,
+        template_spec_json: Some(spec_json),
     };
     let event_payload = json!({
         "act_id": owner_id.to_string(),
         "template_id": spec.id,
         "pdf_digest": pdf_digest,
         "profile": PDFA_PROFILE,
+        // t74 §8. Additive: events recorded before this key existed simply do not carry it, and
+        // `SpecBinding::Unbound` reads that as "predates the binding", never as a mismatch.
+        "template_spec_digest": template_spec_digest,
     });
     Ok(Generated {
         stored,
@@ -556,6 +658,128 @@ fn numbering_label(scheme: NumberingScheme) -> &'static str {
     }
 }
 
+// --- the markdown ata body (t74) ---------------------------------------------------------------
+
+/// SHA-256 of the canonical serialization of compiled blocks, lowercase hex — the value stored as
+/// `ActBody::compiled_digest` and bound into the seal preimage.
+///
+/// Mirrors [`template_spec_digest_of`]: `chancela-templates` defines *which bytes are hashed*
+/// ([`body_render::canonical_blocks_json`]) and this crate takes the digest, so there is exactly one
+/// definition of the preimage and the two can never disagree.
+fn compiled_blocks_digest(blocks: &[Block]) -> Result<String, ApiError> {
+    let canonical = chancela_templates::body_render::canonical_blocks_json(blocks)
+        .map_err(|e| ApiError::Internal(format!("compiled body serialization failed: {e}")))?;
+    let digest: [u8; 32] = Sha256::digest(canonical.as_bytes()).into();
+    Ok(crate::hex::hex(&digest))
+}
+
+/// Compile `act`'s markdown body **once, at content freeze**, and return the blocks it produced
+/// together with the body record to store (t74 §1).
+///
+/// Compiling here rather than at render time is the whole safety property. `compiled_digest` records
+/// what the source compiled *to*, and the seal binds source and output together, so a later compiler
+/// change cannot silently alter what a sealed act says — the two stop agreeing and the mismatch is
+/// detectable. Compiling lazily on each render would leave nothing to compare against.
+///
+/// Returns `Ok(None)` for an act with no markup body, which is the overwhelmingly common case and
+/// must stay indistinguishable from an act written before the field existed.
+pub(crate) fn freeze_act_body(
+    act: &Act,
+    entity: &Entity,
+) -> Result<Option<(ActBody, Vec<Block>)>, ApiError> {
+    let Some(body) = act.body.as_ref() else {
+        return Ok(None);
+    };
+    let ctx = act_ctx(act, entity)?;
+    // The same function the preview endpoint calls, so what the operator previewed is what freezes.
+    let blocks = chancela_templates::body_render::render_markdown_body(&body.source, &ctx)?;
+    let compiled_digest = compiled_blocks_digest(&blocks)?;
+    let frozen = ActBody {
+        format: body.format,
+        source: body.source.clone(),
+        compiler_id: chancela_templates::markdown::COMPILER_ID.to_owned(),
+        compiled_digest,
+    };
+    Ok(Some((frozen, blocks)))
+}
+
+/// Compile a body source against `act`'s render context for the editor's live preview.
+///
+/// `source` overrides the stored body so the operator can preview unsaved edits. This calls the
+/// **same** [`body_render::render_markdown_body`] that [`freeze_act_body`] does — that identity is
+/// the point of the endpoint. The client never compiles document content.
+pub(crate) fn preview_act_body(
+    act: &Act,
+    entity: &Entity,
+    source: &str,
+) -> Result<Vec<Block>, ApiError> {
+    let ctx = act_ctx(act, entity)?;
+    Ok(chancela_templates::body_render::render_markdown_body(
+        source, &ctx,
+    )?)
+}
+
+/// Record *which compiler* turned the operator's markdown into blocks, alongside the template
+/// identity t71 records (t74 §2.4).
+///
+/// Written after `generate` rather than threaded through it so the shared `json!` payload literal
+/// stays a single-owner edit. Additive: an act with no markup body emits no key at all, so events
+/// recorded before this field existed are unchanged and a reader cannot tell them apart from a
+/// body-less act today.
+///
+/// Separated from [`generate_for_act`] so it stays directly testable: until the placement anchor
+/// lands (t74 follow-up (b)), [`ensure_template_can_carry_body`] refuses every body-carrying act, so
+/// this is not reachable through the generation path.
+fn attach_body_compiler_id(payload: &mut Value, act: &Act) {
+    if let Some(body) = act.body.as_ref()
+        && let Some(obj) = payload.as_object_mut()
+    {
+        obj.insert(
+            "body_compiler_id".to_owned(),
+            Value::String(body.compiler_id.clone()),
+        );
+    }
+}
+
+/// Whether `spec` has an anchor telling the renderer **where** an ata's narrative body belongs.
+///
+/// Always `false` today, deliberately. The anchor is a `BlockSpec` variant that does not exist yet
+/// (t74 follow-up (b)): the 45 shipped ata templates render their "Deliberações" section from the
+/// structured `deliberation_items`, and none of them has a slot for a markup body. Nothing here
+/// guesses a position — inserting by inferred index would bake a positional assumption into the
+/// seal path that no template test would catch when an asset is reordered.
+///
+/// When the anchor lands this becomes a real check over `spec.blocks`, and this function is the
+/// only thing that changes.
+fn template_can_place_body(spec: &TemplateSpec) -> bool {
+    let _ = spec;
+    false
+}
+
+/// Refuse to produce a document that would **silently omit** an operator's narrative body.
+///
+/// This is the placement seam's version of t74 §9.3, and it is the reason the gate exists before the
+/// placement does. Without it: an operator writes a body, previews it, seals the act — and the
+/// sealed PDF/A, the canonical evidentiary artifact, does not contain the text. No digest is wrong.
+/// Nothing alarms. The operator believes they sealed a document containing their narrative. A silent
+/// omission from an evidentiary record is strictly worse than a refusal, so this refuses.
+///
+/// An act with no body, or a whitespace-only one, is unaffected — which is every act today.
+fn ensure_template_can_carry_body(act: &Act, spec: &TemplateSpec) -> Result<(), ApiError> {
+    let has_body = act
+        .body
+        .as_ref()
+        .is_some_and(|body| !body.source.trim().is_empty());
+    if has_body && !template_can_place_body(spec) {
+        return Err(ApiError::Unprocessable(format!(
+            "template {:?} has no place for this act's narrative body, so sealing it would omit \
+             text the operator wrote; either clear the body or use a template that carries one",
+            spec.id
+        )));
+    }
+    Ok(())
+}
+
 // --- generation entry points (called by the seal / book-open handlers) -------------------------
 
 /// Generate the ata document for a freshly-sealed act, or `None` if the entity's family has no Ata
@@ -570,13 +794,11 @@ pub(crate) fn generate_for_act(
     let Some(spec) = resolve_ata_template(entity.family, template_override)? else {
         return Ok(None);
     };
+    ensure_template_can_carry_body(act, spec)?;
     let ctx = act_ctx(act, entity)?;
-    Ok(Some(generate(
-        spec,
-        &ctx,
-        act.id,
-        OffsetDateTime::now_utc(),
-    )?))
+    let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc())?;
+    attach_body_compiler_id(&mut made.event_payload, act);
+    Ok(Some(made))
 }
 
 /// Generate a specific catalog template against a sealed act without going through the HTTP
@@ -4554,6 +4776,16 @@ pub struct GeneratedDocumentView {
     pub download: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispatch_evidence_status: Option<DispatchEvidenceStatusView>,
+    /// The digest of the template spec that produced this document (t74 §8). Absent for documents
+    /// generated before the binding existed — absent means "unknown", never "wrong".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_spec_digest: Option<String>,
+    /// `true` when the catalog now ships a **different** template under this document's
+    /// `template_id` — i.e. a shipped `/vN` was edited in place rather than re-versioned. The
+    /// document is intact; the catalog moved. Omitted when the binding verifies or is unknown, so
+    /// the field's presence is itself the finding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_catalog_drifted: Option<bool>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -4870,6 +5102,26 @@ async fn generated_document_view(
     let dispatch_evidence_status =
         dispatch_evidence_status_for_generated_document(state, &doc).await?;
     let document_id = doc.id.clone();
+    // t74 §8: check the stored spec against the catalog on every read. This is the caller that
+    // makes the digest more than decoration — an in-place edit of a shipped `/vN` surfaces here
+    // as drift instead of passing silently.
+    let binding = verify_spec_binding(
+        doc.template_spec_json.as_deref(),
+        None,
+        registry().get(&doc.template_id),
+    );
+    let (template_spec_digest, template_catalog_drifted) = match &binding {
+        SpecBinding::Unbound => (None, None),
+        SpecBinding::Verified => (
+            doc.template_spec_json
+                .as_deref()
+                .map(template_spec_digest_of),
+            None,
+        ),
+        SpecBinding::CatalogDrifted { produced_by, .. } => (Some(produced_by.clone()), Some(true)),
+        // Unreachable with `recorded_digest: None`, but reported rather than silently dropped.
+        SpecBinding::Mismatch { actual, .. } => (Some(actual.clone()), Some(true)),
+    };
     Ok(GeneratedDocumentView {
         id: document_id.clone(),
         act_id: doc.act_id.to_string(),
@@ -4879,6 +5131,8 @@ async fn generated_document_view(
         created_at: doc.created_at.format(&Rfc3339).unwrap_or_default(),
         download: format!("/v1/documents/generated/{document_id}"),
         dispatch_evidence_status,
+        template_spec_digest,
+        template_catalog_drifted,
     })
 }
 
@@ -6523,20 +6777,17 @@ fn runs_markdown(runs: &[Run]) -> String {
         .collect()
 }
 
-fn escape_markdown_text(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('`', "\\`")
-        .replace('*', "\\*")
-        .replace('_', "\\_")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
-        .replace('#', "\\#")
-}
+/// Escaping lives in `chancela-templates` because it is needed on **both** sides of the markdown
+/// seam: here, emitting a structured `Block` back out as a working copy, and — the security-critical
+/// direction — interpolating a record value into an operator-authored ata body before the parser
+/// runs (t74 §4, `body_render::render_markdown_body`). Two escapers would drift, and the one at the
+/// security boundary is the one that would be missed, so there is deliberately only one.
+use chancela_templates::body_render::escape_markdown_text;
 
+/// `|` is escaped by [`escape_markdown_text`] itself, so this only adds the cell-specific handling:
+/// a table cell cannot contain a literal newline.
 fn escape_markdown_table_cell(value: &str) -> String {
     escape_markdown_text(value)
-        .replace('|', "\\|")
         .replace('\r', "")
         .replace('\n', "<br>")
 }
@@ -8166,6 +8417,599 @@ pub async fn import_template(
     persist_created_user_template(&state, &attestor, &actor_name, &body).await
 }
 
+/// t74 §8 — the template-identity binding.
+///
+/// The hazard these guard: template version lives only in the id string, so editing a shipped
+/// `/vN` in place retroactively changes what a past seal meant. The digest makes that detectable;
+/// these tests make sure it *is* detected, and that legitimate history is not accused.
+#[cfg(test)]
+mod spec_binding_tests {
+    use super::*;
+    use chancela_templates::{BlockSpec, canonical_spec_json};
+
+    /// A shipped spec to mutate, taken from the real catalog rather than hand-built, so the test
+    /// exercises the same shape production hashes.
+    fn shipped_spec() -> TemplateSpec {
+        registry()
+            .get("csc-ata-ag/v1")
+            .expect("the spine template ships")
+            .clone()
+    }
+
+    fn digest_of(spec: &TemplateSpec) -> String {
+        template_spec_digest_of(&canonical_spec_json(spec).expect("spec serializes"))
+    }
+
+    #[test]
+    fn editing_a_spec_changes_its_digest() {
+        let original = shipped_spec();
+        let mut edited = original.clone();
+        // The smallest edit that changes what a reader would see: one word of prose.
+        match edited.blocks.iter_mut().find_map(|b| match b {
+            BlockSpec::Heading { template, .. } => Some(template),
+            _ => None,
+        }) {
+            Some(template) => template.push('.'),
+            None => panic!("the spine template has a heading block to perturb"),
+        }
+        assert_ne!(
+            digest_of(&original),
+            digest_of(&edited),
+            "an edited template must not keep the digest of the one that was shipped"
+        );
+    }
+
+    #[test]
+    fn the_digest_is_stable_for_the_same_spec() {
+        // Two independent serializations of equal specs must agree, or every document would look
+        // tampered-with on the next read.
+        let a = shipped_spec();
+        let b = shipped_spec();
+        assert_eq!(digest_of(&a), digest_of(&b));
+    }
+
+    #[test]
+    fn a_document_produced_by_an_edited_template_is_detected_after_the_fact() {
+        let produced_by = shipped_spec();
+        let stored_json = canonical_spec_json(&produced_by).expect("serializes");
+        let recorded = template_spec_digest_of(&stored_json);
+
+        // The catalog is later edited in place — same id, different content.
+        let mut catalog_now = produced_by.clone();
+        catalog_now.locale = "en-GB".to_owned();
+
+        let binding = verify_spec_binding(Some(&stored_json), Some(&recorded), Some(&catalog_now));
+        match binding {
+            SpecBinding::CatalogDrifted {
+                produced_by: p,
+                catalog_now: c,
+            } => {
+                assert_eq!(p, recorded, "the document's own binding still verifies");
+                assert_ne!(c, recorded, "the catalog is serving something else now");
+            }
+            other => panic!("an in-place template edit must be detectable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_tampered_row_is_a_mismatch_not_drift() {
+        let spec = shipped_spec();
+        let stored_json = canonical_spec_json(&spec).expect("serializes");
+        // The ledger says one thing; the stored body says another.
+        let recorded = template_spec_digest_of("{\"something\":\"else\"}");
+
+        match verify_spec_binding(Some(&stored_json), Some(&recorded), Some(&spec)) {
+            SpecBinding::Mismatch {
+                recorded: r,
+                actual,
+            } => {
+                assert_eq!(r, recorded);
+                assert_eq!(actual, template_spec_digest_of(&stored_json));
+            }
+            other => panic!("a row disagreeing with its ledger event is a mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_pre_binding_document_is_unbound_never_a_mismatch() {
+        // The whole point of the distinction: a document generated before this existed has no
+        // stored spec and no recorded digest. It must not be reported as tampered-with, or every
+        // archive predating t74 would raise a false alarm and operators would learn to ignore it.
+        assert_eq!(verify_spec_binding(None, None, None), SpecBinding::Unbound);
+        assert_eq!(
+            verify_spec_binding(None, Some("deadbeef"), Some(&shipped_spec())),
+            SpecBinding::Unbound,
+            "a digest with no stored body is still 'nothing to check', not an accusation"
+        );
+    }
+
+    #[test]
+    fn an_intact_document_verifies_against_the_unchanged_catalog() {
+        let spec = shipped_spec();
+        let stored_json = canonical_spec_json(&spec).expect("serializes");
+        let recorded = template_spec_digest_of(&stored_json);
+        assert_eq!(
+            verify_spec_binding(Some(&stored_json), Some(&recorded), Some(&spec)),
+            SpecBinding::Verified
+        );
+    }
+
+    /// **The test that fails if someone edits a shipped template.**
+    ///
+    /// Every id below is a `/vN` that has shipped; its digest is pinned. Editing that asset in
+    /// place — the thing the "never edit a shipped `/vN`" convention asks for and could not
+    /// previously enforce — fails here, naming the template. Publishing a **new** version is
+    /// unaffected: a new id simply is not in this list, and adding templates never touches it.
+    ///
+    /// If this fails and the change was intended, the fix is to ship a new `/vN+1`, not to update
+    /// the constant — updating it is exactly the retroactive mutation this exists to prevent.
+    #[test]
+    fn shipped_template_specs_are_frozen() {
+        const PINNED: &[(&str, &str)] = &[
+            (
+                "assoc-ata-alteracao-estatutos/v1",
+                "c43a9d6e341ddf99b9764604f97cb466e50d72c34d19be896d4f1fa756e33fc4",
+            ),
+            (
+                "assoc-ata-conselho-fiscal/v1",
+                "1ceca113f67b2fe6323cc0ea062d58dbe2dab07cd031aa055be2becc6a146ec7",
+            ),
+            (
+                "assoc-ata-direcao/v1",
+                "5fb77f64d4d460fd81e3832aa48144b56d535a350435ff39c32343a36ed4405d",
+            ),
+            (
+                "assoc-ata-eleicao-orgaos/v1",
+                "1c63489b916d94b882c655f95bf0f3d1fa4dbd603265ba61ed38d0cac1ff4016",
+            ),
+            (
+                "assoc-ata-ga/v1",
+                "ff1739cc6961ba3583643f65623a55c31ef81fe57f12923294adf99039acd6de",
+            ),
+            (
+                "assoc-ata-tomada-posse/v1",
+                "afbc6a5ad3722a1613fd2a7ded6642aeef3de80e6864b7df39930d33c6ed1609",
+            ),
+            (
+                "assoc-certidao-ata/v1",
+                "7e1814be8d963464a77f05d20fae51f4e79332b6eefb713293e66e05fa1049a2",
+            ),
+            (
+                "assoc-convocatoria-ga/v1",
+                "e1c15f62473d40ff1d6f7947168276c2bfa6f7075e624ad5a689d819d07ce42b",
+            ),
+            (
+                "assoc-declaracao-deliberacao/v1",
+                "ff28055352983329a1b49cfed3ca178b35747fb7cd6dd17b4fb1740f2cc3f429",
+            ),
+            (
+                "assoc-declaracao-voto/v1",
+                "d0b47fddd97acad8b4d1bfb85694e10e1345b00c27e4b355be93b23e1d17a58d",
+            ),
+            (
+                "assoc-extrato-ata/v1",
+                "84d16eef93595689e6dd8682611ac6d4462331f5ef426d105f5d81797fe77625",
+            ),
+            (
+                "assoc-lista-presencas/v1",
+                "c7bd5cfa271023146957589e1a9ecbcea2bb686d75fef64d27d7b39787f9f57d",
+            ),
+            (
+                "assoc-ponto-ordem-trabalhos/v1",
+                "150ed2144cb2b2fb5d479b71890b482c2dbf72ab419fc922989b7fa35b78f501",
+            ),
+            (
+                "assoc-procuracao-representacao/v1",
+                "a41cdcf222f5867c3f4b94e5124e5d268aa0cc3d3cec496b0839348b60094005",
+            ),
+            (
+                "assoc-termo-abertura/v1",
+                "bacd3f9b7bd04ac5fc876f64e3d4cedf66891daf46b835ce500fc283483ac83a",
+            ),
+            (
+                "assoc-termo-encerramento/v1",
+                "c46b824b4392096b2c63447ef410b320f56c5c0049ceffd6ae9af0c20de61cdb",
+            ),
+            (
+                "assoc-termo-retificacao/v1",
+                "14d167cf3dd756e8372bfc386201ffdd9f7bbf054aa4fd3a55a61a865365bf37",
+            ),
+            (
+                "assoc-termo-transporte/v1",
+                "d93fd515b2d1249759d2dfeb67341a1e1e0b2258db93ebd1e056b820eb84e742",
+            ),
+            (
+                "condominio-anexo-acordo-email/v1",
+                "b2437f1d86f21a607482b71db8b5fe31f42ec2314ead4543ae56f918d32ee930",
+            ),
+            (
+                "condominio-ata-assembleia/v1",
+                "14e77017b0a7071319993263082ea44816e4b296db137000fc4b2992e11d709c",
+            ),
+            (
+                "condominio-aviso-convocatoria/v1",
+                "8d73fefabb9109ff17e1129121c11bf9853d727fe80840d97641048a63ac64c1",
+            ),
+            (
+                "condominio-certidao-ata/v1",
+                "58c5a5c8281408e0d71ce12194ebfaf67583ac651bc63eef59c14e462e6debc2",
+            ),
+            (
+                "condominio-comunicacao-ausentes/v1",
+                "873c864d605debdff9511b29c333c8020dfc1d605e6b6eed0ec5d4653109b3c2",
+            ),
+            (
+                "condominio-declaracao-voto/v1",
+                "c836085a568048658442f202d0907d86c911a5dcb03cbd43ca38f6c74b861b73",
+            ),
+            (
+                "condominio-extrato-ata/v1",
+                "66ab745c756ffcbbb7ec8e3b565d5110cf5edd274ea6d46cceb8f1ec9dc6607a",
+            ),
+            (
+                "condominio-lista-presencas/v1",
+                "706d2d165554a73f41b1e8255197e7d43e988d17363caaf9b9505b41cb0f0c0b",
+            ),
+            (
+                "condominio-ponto-ordem-trabalhos/v1",
+                "cacaba94cca0db3835951bff5214d1c3a054a7f66248b3d583d5aa61fdeae324",
+            ),
+            (
+                "condominio-procuracao-representacao/v1",
+                "cb1c053a1cbf6532c0f1954687abc6213918cdab74962804efbbdc88851d90e4",
+            ),
+            (
+                "condominio-termo-abertura/v1",
+                "0434177f86403d1eb25615db8f7c86f1090e62aad0d266d5f4513a614e5f7278",
+            ),
+            (
+                "condominio-termo-encerramento/v1",
+                "833949453d77677b7f654f2c41fbd9037bce240b5fe53b9997965d642fff1223",
+            ),
+            (
+                "condominio-termo-retificacao/v1",
+                "096e2fd42a0c82fdcbb05887a5c71c7b55763737de146ef26ae194445164e37f",
+            ),
+            (
+                "condominio-termo-transporte/v1",
+                "3c0692cae3d906207a172fbab87a337ce7e56fe8a05a325bf5585b2dcebedf12",
+            ),
+            (
+                "cooperativa-ata-ag/v1",
+                "44ddfb74e4cd56ee640189fcdf3f437c874de44df55b94b123735ae442069b34",
+            ),
+            (
+                "cooperativa-ata-direcao/v1",
+                "383ab13e7d138a1ffc41e0ec6ddc39c3d15d23bd1b23adcb411e681f1d0b5b28",
+            ),
+            (
+                "cooperativa-certidao-ata/v1",
+                "a54f714e00dcd5e00bc0664eb41c9c1da008e30b73d7209cbc492dbfa820ad46",
+            ),
+            (
+                "cooperativa-comunicacao-registo/v1",
+                "dd8d650254859ce89b710dc7d5b09b375d65eacc13ec2c1b7f6bc110a463b29c",
+            ),
+            (
+                "cooperativa-convocatoria-ag/v1",
+                "540de800f778166e7a26597e9470d8b1cb33a6bc383f3ade658d7d93b533281f",
+            ),
+            (
+                "cooperativa-declaracao-voto/v1",
+                "86d41a3401bc2fc1db34e1e8fb8317f471e085c100a19bc2c9b9c394b147f61e",
+            ),
+            (
+                "cooperativa-extrato-ata/v1",
+                "c1503d728af1e45d8031b2fc876aa2b9ec1be52f02422bf0cacba210fd63eb33",
+            ),
+            (
+                "cooperativa-lista-presencas/v1",
+                "3ece18d2880f61011346bde4a66e69a2dae876f03c06f16979398353e85fbcc3",
+            ),
+            (
+                "cooperativa-ponto-ordem-trabalhos/v1",
+                "5f5e7eb61c232ac1d9e321489c409c3bb3fbc4ac343d53b94683247c6ee5cd3e",
+            ),
+            (
+                "cooperativa-procuracao-representacao/v1",
+                "e4f403e9bca096ecc0dfc72956b6828de09c1d2fa3ca2e061f930bfe7596adb0",
+            ),
+            (
+                "cooperativa-termo-abertura/v1",
+                "757891a8580709acf4d4eb5aa538bec45b171765f9040ac998995d323e1a27da",
+            ),
+            (
+                "cooperativa-termo-encerramento/v1",
+                "3b9f0c36e041d74e256a6382f3627a241e2435925e32cdc3b5e8be2cfd31f106",
+            ),
+            (
+                "cooperativa-termo-retificacao/v1",
+                "9a029e87209e883cbe003f3c53ffa380a6a2b76debd1785a476318f807478cda",
+            ),
+            (
+                "cooperativa-termo-transporte/v1",
+                "2f73d885d2913d38b9c391fc8277278ab98c9d479c0022451e3e451f5a992eea",
+            ),
+            (
+                "csc-ata-ag/v1",
+                "65f34ff2ad327e7abb83e2826a207f433c3760dc8b9c654580c9c6c19962f6db",
+            ),
+            (
+                "csc-ata-alteracao-firma/v1",
+                "72af7397ef9a809e76ba38495e61055a01cc92a70081b18f0a6b89db748920c8",
+            ),
+            (
+                "csc-ata-alteracao-objeto/v1",
+                "840bdda219d2835dab62b594d7ab794efd9bfcf945ea17a85849af48d1732b7e",
+            ),
+            (
+                "csc-ata-alteracao-sede/v1",
+                "cd5210b0c0abfddaa3e120a586226748a479c69ba37fa6a099ca72b52cd8c859",
+            ),
+            (
+                "csc-ata-amortizacao-quotas/v1",
+                "3f7a5fb4f517bea5a99bcb351e45469080442b99c808a181effba303a2dd12ec",
+            ),
+            (
+                "csc-ata-aprovacao-contas/v1",
+                "60be8981e84a45314a9b543ede14e407f76ad4dee517b0288971ac3729a2bb9f",
+            ),
+            (
+                "csc-ata-aumento-capital/v1",
+                "9185046f51b9e692f947a0a3958f5ba2d269509957f747bdf166878e885dc206",
+            ),
+            (
+                "csc-ata-cessao-quotas/v1",
+                "519c8dbd0ce64992cfb8e094957bd670c34149457cca8bcae061be7285f953f6",
+            ),
+            (
+                "csc-ata-cisao/v1",
+                "0e31e6633d575c18f5cc3306032d2e5ec2f7c9f450c9214bc128637bddccb2fd",
+            ),
+            (
+                "csc-ata-delegacao-poderes/v1",
+                "537b02a311800c1c3dcdabedad4258e285474860d6d61ac963a624b69e96c97a",
+            ),
+            (
+                "csc-ata-designacao-gerencia/v1",
+                "de481a36ee1e586ada36db0e0e251ee83ee3bd45026f97142b82a12533054bda",
+            ),
+            (
+                "csc-ata-destituicao-gerencia/v1",
+                "e7626dd8b2c3067044a763c8b41bca4317ea95d5fb40b7e58e71ce7ff2af6cfa",
+            ),
+            (
+                "csc-ata-dissolucao/v1",
+                "d96f9323963c109a06326724ec26a808c1ae781cd1a7febc81cc83bac17a194f",
+            ),
+            (
+                "csc-ata-distribuicao-dividendos/v1",
+                "8eed07a4b019f7d660f12c110c4aae547290bd0dfba707404bb71cc52e2e907b",
+            ),
+            (
+                "csc-ata-divisao-quotas/v1",
+                "f1273768ef20e6974ca6add2007223886a0ca40ef923bf903c0539cf0c67bbba",
+            ),
+            (
+                "csc-ata-entrada-socio/v1",
+                "a1df49bf706e13388f4d59914cbd74c93269c6111f954c7c891a097f93d725f0",
+            ),
+            (
+                "csc-ata-fusao/v1",
+                "eb34e634cab61f3209b2c658985521a7c05c8c481b0cd645540248c28601fba5",
+            ),
+            (
+                "csc-ata-gerencia/v1",
+                "464b632475158e1d3c7db41b0c2ae3ca5ce80291865d3242bdbac3f05c6f9998",
+            ),
+            (
+                "csc-ata-liquidacao/v1",
+                "f55a06fab0399af157e1e91399646a06d23d4d3344da9e84f91c6989b5124536",
+            ),
+            (
+                "csc-ata-nao-remuneracao-gerencia/v1",
+                "397d8276ef029f3846b37db2384e87e1ecb2e324ba4792f5ca53a01612100320",
+            ),
+            (
+                "csc-ata-prestacoes-suplementares/v1",
+                "5cedce4d6e328915a790005edf1e301283072833721bb8b7826a2da871062a1e",
+            ),
+            (
+                "csc-ata-reducao-capital/v1",
+                "c3e0f6564ca11e89e5e4e56c5080a4390afb738997505abe83ad6d5dedfa6ee3",
+            ),
+            (
+                "csc-ata-remuneracao-gerencia/v1",
+                "d5df81c404fe3926cf6d0206eaedcf54c20c4b1750ad86bdf34ae9c9d871178f",
+            ),
+            (
+                "csc-ata-renuncia-gerente/v1",
+                "5783169191396e42a3de76baf5b652e5b73ffe57f699898b578a5174c26583ed",
+            ),
+            (
+                "csc-ata-revogacao-poderes/v1",
+                "8dee6b3b4c928713a0d6a4543bda01964295563ae43b6e7c9f483726e9f10b0f",
+            ),
+            (
+                "csc-ata-suprimentos/v1",
+                "125ec5dfa229ba16b35f18afa32cb66235ba441f256d86043a9feb331badb32b",
+            ),
+            (
+                "csc-ata-transformacao/v1",
+                "1a769c6c2e6d298f346cb182e81a889040c557b3aeda5b90862898efa03a06c6",
+            ),
+            (
+                "csc-ata-unificacao-quotas/v1",
+                "e70cb24ab419fc8879b56cd21564f4ebb2e9d503e4f9d4948afc1f4e9278913b",
+            ),
+            (
+                "csc-certidao-ata/v1",
+                "8fc9526da731ed929f0834fa989cec9766630beaa7da439a0afd2a538b075982",
+            ),
+            (
+                "csc-circular-deliberacao-escrito/v1",
+                "89d701eccfe58b0db8ba0ea853577dcd722190c65ce8eddbca6e46c7a6d2d180",
+            ),
+            (
+                "csc-comunicacao-registo/v1",
+                "dd234efd3d0fecf92d936cb8ead7f4a47b218e9c4dd347e7f7a9a4a012188c4d",
+            ),
+            (
+                "csc-convocatoria-ag/v1",
+                "fd92e4c266f4ad3feb928f537e4c80fb5a4c7b7e1b4125c44819f8a6a7d44584",
+            ),
+            (
+                "csc-convocatoria-gerencia/v1",
+                "940dd959e687080385ba6eed4c91bef44f7015d1c33eb96406144a4576dba245",
+            ),
+            (
+                "csc-declaracao-deliberacao/v1",
+                "b876cb27ebdc6270826c436fa065eb639883b885d68056b6f0d8014bd14c409a",
+            ),
+            (
+                "csc-declaracao-voto/v1",
+                "638486088208869cb347eae424671861f50148f6fa2519814f55e4be8265b0df",
+            ),
+            (
+                "csc-extrato-ata/v1",
+                "387214954ed0f545b16bc23d9951f0a9025aae82cf8b954136be95eb454cce03",
+            ),
+            (
+                "csc-lista-presencas/v1",
+                "e1a8527252cd1a2c7ac184f59df0339b3bbed577db10afc46365413f831b4191",
+            ),
+            (
+                "csc-ponto-ordem-trabalhos/v1",
+                "2b7ce6d1ab18ac5b922bba84fd6de50e69fefe55f811f4bc09fe2e5ddca41bee",
+            ),
+            (
+                "csc-procuracao-representacao/v1",
+                "1121412a09428c464703195eebac655734241a2d2da513673609843ad45568cc",
+            ),
+            (
+                "csc-registo-telematico/v1",
+                "cb662056e942929723aeff193976bfc717f50f88113992c02cf7fc057359825b",
+            ),
+            (
+                "csc-termo-abertura/v1",
+                "1a3816123757d219b9e859d5aac15da0d646cf089a58006afabdc54db12c1c5a",
+            ),
+            (
+                "csc-termo-encerramento/v1",
+                "bb8e63214a3dc46a7230310b9df8f7ce60bd6694635290ac3487d721caefdaf2",
+            ),
+            (
+                "csc-termo-retificacao/v1",
+                "a0bb13c06cfcc0554af33398642f4316e85aecb5a26bb62ee14d57a0c4ddfc96",
+            ),
+            (
+                "csc-termo-transporte/v1",
+                "b2a779fe1e2a61019632dab65e0aec330392502a32c87452c8cf66ede1bfac71",
+            ),
+            (
+                "fundacao-ata-ca/v1",
+                "bebb0652afd0a35df8c2b39618fd4fe06092f4ca438dc8470afe9b274c7c00cb",
+            ),
+            (
+                "fundacao-ata-orgao-fiscal/v1",
+                "be8e07d32ae656075c857cc39c0acf34242120747247301f643cd1eb0d86691d",
+            ),
+            (
+                "fundacao-certidao-ata/v1",
+                "4d9dd965a5d2fd393df9a67bf07c8b24343da22e9f75fb33f34d45e84336ee1f",
+            ),
+            (
+                "fundacao-comunicacao-registo/v1",
+                "4d2dc2e3072c952d5d9cd80e3d03c6cb2c8a27d4177f0ee89bcbab5b1f153b5c",
+            ),
+            (
+                "fundacao-convocatoria-orgao/v1",
+                "163ddacaeb8f6b4dc7146421f7f23eca65081600314f705f5aa038be05525eea",
+            ),
+            (
+                "fundacao-declaracao-voto/v1",
+                "36f003f8e1fdedc46fa4994dc7a99fe528967fa6654784c37791c0148540cc07",
+            ),
+            (
+                "fundacao-extrato-ata/v1",
+                "a778bfad18c34579a99d43b329ca2a469ad93063de55505d0c6a3239d8aed7d9",
+            ),
+            (
+                "fundacao-lista-presencas/v1",
+                "18568597b1232e2de81560f48c14e1ebf92497c6adb315d4535b8e5fb87f944d",
+            ),
+            (
+                "fundacao-ponto-ordem-trabalhos/v1",
+                "50e3a709d834d0d2225ee0d31c561340c6521dd1fe22fff35f1409dfe8c0ecad",
+            ),
+            (
+                "fundacao-procuracao-representacao/v1",
+                "39f75c5888b1b4ccb1c0d652bfc8691dfc4e74e9480c24ab09e475b838a9c082",
+            ),
+            (
+                "fundacao-termo-abertura/v1",
+                "9e8346afd497104aef117c2f6296cbb0cd4a10a6408838b919dd8adba31b263c",
+            ),
+            (
+                "fundacao-termo-encerramento/v1",
+                "f7deb95f2c68e75868051a383dccaef6fd548cc143d55fa2ccef5fb46aebe406",
+            ),
+            (
+                "fundacao-termo-retificacao/v1",
+                "206ffff86aadb2b9208ef6f276116ef6b5e2b123f0bb57a369d713c0c8559c96",
+            ),
+            (
+                "fundacao-termo-transporte/v1",
+                "5dad142ed934bf3c9e7f1853a30a08aaaead35b3534085b494b4dbeeb64c58af",
+            ),
+        ];
+        let reg = registry();
+        // Without this the check is vacuous: an empty (or truncated) pin list passes trivially,
+        // and the freeze would silently stop protecting anything. Every shipped template must be
+        // pinned, so deleting a pin is as loud as changing one.
+        assert!(!PINNED.is_empty(), "the freeze list must not be empty");
+        let pinned_ids: std::collections::BTreeSet<&str> =
+            PINNED.iter().map(|(id, _)| *id).collect();
+        let unpinned: Vec<&str> = reg
+            .specs()
+            .iter()
+            .map(|s| s.id.as_str())
+            .filter(|id| !pinned_ids.contains(id))
+            .collect();
+        assert!(
+            unpinned.is_empty(),
+            "these shipped templates are not pinned, so an edit to them would go undetected: {unpinned:?}\n\
+             run `cargo test -p chancela-api --lib print_shipped_template_digests -- --ignored --nocapture`"
+        );
+        let mut drifted = Vec::new();
+        for (id, expected) in PINNED {
+            let Some(spec) = reg.get(id) else {
+                drifted.push(format!("{id}: no longer in the catalog"));
+                continue;
+            };
+            let actual = digest_of(spec);
+            if actual != *expected {
+                drifted.push(format!("{id}: pinned {expected}, now {actual}"));
+            }
+        }
+        assert!(
+            drifted.is_empty(),
+            "shipped templates were edited in place instead of re-versioned:\n  {}",
+            drifted.join("\n  ")
+        );
+    }
+
+    /// Regenerate the [`shipped_template_specs_are_frozen`] pin list. Ignored by default; run
+    /// deliberately when **adding** templates, never to paper over a failing freeze check.
+    #[test]
+    #[ignore = "generator for the freeze list, not an assertion"]
+    fn print_shipped_template_digests() {
+        for spec in registry().specs() {
+            println!("            (\"{}\", \"{}\"),", spec.id, digest_of(spec));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8257,6 +9101,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         CurrentActor::from_session_username(Some(username))
@@ -8285,6 +9130,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         CurrentActor::from_session_username(Some(username))
@@ -8673,6 +9519,7 @@ mod tests {
             profile: PDFA_PROFILE.to_owned(),
             created_at: OffsetDateTime::UNIX_EPOCH,
             pdf_bytes: b"%PDF-1.7\nfixture\n%%EOF\n".to_vec(),
+            template_spec_json: None,
         };
         let model = DocumentModel {
             title: "Ata <Especial>".to_owned(),
@@ -11363,6 +12210,202 @@ mod tests {
             state.ledger.read().await.len(),
             ledger_before,
             "permission denial must not append ledger events"
+        );
+    }
+
+    // --- t74 markdown ata body -----------------------------------------------------------------
+
+    /// A draft act carrying `source` as its markup body, in an entity named `entity_name`.
+    fn act_with_body(entity_name: &str, source: &str) -> (Entity, Act) {
+        let mut entity = entity_of(EntityKind::Condominio);
+        entity.name = entity_name.to_owned();
+        let book = Book::new(entity.id, BookKind::Condominio);
+        let mut act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
+        act.body = Some(ActBody {
+            format: chancela_core::BodyFormat::Markdown,
+            source: source.to_owned(),
+            compiler_id: chancela_templates::markdown::COMPILER_ID.to_owned(),
+            compiled_digest: String::new(),
+        });
+        (entity, act)
+    }
+
+    #[test]
+    fn a_company_name_carrying_markdown_cannot_inject_structure_at_freeze() {
+        // t74 §4, the named hazard, proven at the API boundary rather than only in the compiler:
+        // minijinja interpolates before markdown parses, so without escaping this entity name would
+        // author a *heading* and *bold* in a sealed legal document from data.
+        let (entity, act) = act_with_body(
+            "# Encosto **Estratégico** Lda",
+            "Presente a sociedade {{ entity.name }}.",
+        );
+
+        let (_frozen, blocks) = freeze_act_body(&act, &entity)
+            .expect("freeze succeeds")
+            .expect("act has a body");
+
+        assert_eq!(blocks.len(), 1, "expected one paragraph, got {blocks:?}");
+        let Block::Paragraph { runs } = &blocks[0] else {
+            panic!("the `#` became structure: {:?}", blocks[0]);
+        };
+        assert!(
+            runs.iter().all(|r| !r.bold && !r.italic),
+            "the `**` became emphasis: {runs:?}"
+        );
+        let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(
+            text, "Presente a sociedade # Encosto **Estratégico** Lda.",
+            "the name must survive as literal text, punctuation intact"
+        );
+    }
+
+    #[test]
+    fn freezing_records_the_compiler_and_a_digest_of_what_it_compiled() {
+        // The seal binds source *and* output. Without the digest, a later compiler change could
+        // alter what a sealed act says with nothing to compare against.
+        let (entity, act) = act_with_body("Encosto Estratégico Lda", "# Ata\n\nTexto.");
+        let (frozen, blocks) = freeze_act_body(&act, &entity)
+            .expect("freeze succeeds")
+            .expect("act has a body");
+
+        assert_eq!(frozen.compiler_id, "md-block/v1");
+        assert_eq!(
+            frozen.source, "# Ata\n\nTexto.",
+            "source is carried verbatim"
+        );
+        assert_eq!(
+            frozen.compiled_digest,
+            compiled_blocks_digest(&blocks).expect("digest"),
+            "the stored digest must be the digest of the blocks actually produced"
+        );
+        assert_eq!(frozen.compiled_digest.len(), 64);
+    }
+
+    #[test]
+    fn freezing_is_deterministic() {
+        let (entity, act) = act_with_body("# Encosto Lda", "# Ata\n\n{{ entity.name }}");
+        let first = freeze_act_body(&act, &entity)
+            .expect("freeze")
+            .expect("body");
+        let second = freeze_act_body(&act, &entity)
+            .expect("freeze")
+            .expect("body");
+        assert_eq!(first.0.compiled_digest, second.0.compiled_digest);
+        assert_eq!(first.1, second.1);
+    }
+
+    #[test]
+    fn an_act_with_no_body_freezes_to_nothing() {
+        // The common case, and the one that must stay indistinguishable from an act written before
+        // the field existed.
+        let entity = entity_of(EntityKind::Condominio);
+        let book = Book::new(entity.id, BookKind::Condominio);
+        let act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
+        assert!(act.body.is_none());
+        assert!(
+            freeze_act_body(&act, &entity).expect("freeze").is_none(),
+            "a body-less act must produce no body record"
+        );
+    }
+
+    #[test]
+    fn an_unsupported_construct_is_a_structured_422_not_a_silent_drop() {
+        // Silently dropping would be the worst outcome: the operator approves text in the editor
+        // that the sealed PDF does not contain.
+        let (entity, act) = act_with_body("Encosto Estratégico Lda", "- a list item");
+        let err = freeze_act_body(&act, &entity).expect_err("must reject");
+        let ApiError::InvalidActBody { code, offset, .. } = err else {
+            panic!("expected a structured body error, got {err:?}");
+        };
+        assert_eq!(code, "unsupported_markdown");
+        assert!(offset.is_some(), "the editor needs an offset to underline");
+    }
+
+    #[test]
+    fn the_generated_event_carries_the_body_compiler_id_only_when_a_body_exists() {
+        // Additive: an act with no body emits no key, so every pre-t74 event is unchanged and a
+        // reader cannot tell those from a body-less act today.
+        let entity = entity_of(EntityKind::Condominio);
+        let book = Book::new(entity.id, BookKind::Condominio);
+        let mut act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
+
+        let without = generate_for_act(&act, &entity, None)
+            .expect("generates")
+            .expect("spine ata exists");
+        assert!(
+            without.event_payload.get("body_compiler_id").is_none(),
+            "a body-less act must not add the key: {}",
+            without.event_payload
+        );
+        // ...and it sits alongside t71's template identity rather than replacing it.
+        assert!(without.event_payload.get("template_spec_digest").is_some());
+
+        // The body-carrying half is asserted against `attach_body_compiler_id` directly: until the
+        // placement anchor lands, `ensure_template_can_carry_body` refuses this act outright, so the
+        // generation path cannot reach the insert.
+        act.body = Some(ActBody {
+            format: chancela_core::BodyFormat::Markdown,
+            source: "Texto.".to_owned(),
+            compiler_id: "md-block/v1".to_owned(),
+            compiled_digest: "a".repeat(64),
+        });
+        let mut payload = without.event_payload.clone();
+        attach_body_compiler_id(&mut payload, &act);
+        assert_eq!(
+            payload["body_compiler_id"], "md-block/v1",
+            "payload: {payload}"
+        );
+        assert!(
+            payload.get("template_spec_digest").is_some(),
+            "must sit alongside t71's template identity, not replace it"
+        );
+    }
+
+    #[test]
+    fn sealing_is_refused_rather_than_silently_omitting_a_narrative_body() {
+        // t74 §9.3 arriving through the placement seam. No shipped ata template has an anchor for a
+        // markup body yet, so generating one would produce a PDF/A that does not contain text the
+        // operator wrote and approved — with no digest wrong and nothing alarming. Refuse instead.
+        let entity = entity_of(EntityKind::Condominio);
+        let book = Book::new(entity.id, BookKind::Condominio);
+        let mut act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
+        act.body = Some(ActBody {
+            format: chancela_core::BodyFormat::Markdown,
+            source: "Narrativa que não pode ser silenciosamente omitida.".to_owned(),
+            compiler_id: "md-block/v1".to_owned(),
+            compiled_digest: "a".repeat(64),
+        });
+
+        // `Generated` is not `Debug`, so unwrap the Result by hand.
+        let err = match generate_for_act(&act, &entity, None) {
+            Ok(_) => panic!("generating a document that would omit the body must be refused"),
+            Err(e) => e,
+        };
+        let ApiError::Unprocessable(message) = err else {
+            panic!("expected a 422, got {err:?}");
+        };
+        assert!(
+            message.contains("no place for this act's narrative body"),
+            "the refusal must say why: {message}"
+        );
+    }
+
+    #[test]
+    fn a_whitespace_only_body_does_not_trip_the_placement_gate() {
+        // The gate guards against *losing content*. An empty body loses nothing, and refusing it
+        // would strand acts over a field the operator effectively did not use.
+        let entity = entity_of(EntityKind::Condominio);
+        let book = Book::new(entity.id, BookKind::Condominio);
+        let mut act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
+        act.body = Some(ActBody {
+            format: chancela_core::BodyFormat::Markdown,
+            source: "   \n\n  ".to_owned(),
+            compiler_id: "md-block/v1".to_owned(),
+            compiled_digest: String::new(),
+        });
+        assert!(
+            generate_for_act(&act, &entity, None).is_ok(),
+            "a whitespace-only body must not block generation"
         );
     }
 

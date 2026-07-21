@@ -457,6 +457,7 @@ mod clock_tests {
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: Vec::new(),
+                language: Default::default(),
             },
         );
         uid
@@ -640,6 +641,7 @@ mod clock_tests {
                     secret_source: Default::default(),
                     recovery_hash: None,
                     role_assignments: Vec::new(),
+                    language: Default::default(),
                 },
             );
             drop(users);

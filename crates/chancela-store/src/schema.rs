@@ -111,7 +111,17 @@
 ///   than inferred. `signed_documents` is unchanged and remains "the current signed artifact", so
 ///   every existing read path keeps working and pre-v23 rows stay readable forever. Forward-only,
 ///   additive: existing databases gain the table via [`ALL`] and advance their stamp on next open.
-pub const SCHEMA_VERSION: i64 = 23;
+/// - **v24** — adds `documents.template_spec_json`: the **canonical serialization of the template
+///   spec that produced the row**, stored beside the produced bytes (t74 §8). Before this, a
+///   document recorded only `template_id`, and template version lived solely in that id string —
+///   so editing a shipped `/vN` asset in place retroactively changed what a past seal had meant,
+///   and nothing could detect it. Persisting the spec body makes the producing template
+///   *recoverable* even after the catalog moves, and lets the digest bound into the
+///   `document.generated` ledger event be re-derived and checked after the fact.
+///   **Nullable on purpose:** rows written before v24 have no spec body, which is a legitimate
+///   historical state, not corruption — nothing backfills a fabricated value, and verification
+///   distinguishes "absent" from "wrong". Forward-only, additive.
+pub const SCHEMA_VERSION: i64 = 24;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -199,6 +209,9 @@ CREATE TABLE IF NOT EXISTS registry_extracts (
 /// - `created_at` — RFC 3339 text, the inscription-ordering field (mirrors `events.timestamp`);
 ///   the by-act read returns the most recent row.
 /// - `pdf_bytes` — the PDF/A-2u bytes themselves.
+/// - `template_spec_json` — (v24) the canonical serialization of the template spec that produced
+///   this row, so the producing template is recoverable even if the catalog is later edited.
+///   **NULL for rows written before v24** — a legitimate historical state, never backfilled.
 pub const CREATE_DOCUMENTS: &str = "\
 CREATE TABLE IF NOT EXISTS documents (
     id          TEXT PRIMARY KEY,
@@ -207,7 +220,8 @@ CREATE TABLE IF NOT EXISTS documents (
     pdf_digest  TEXT NOT NULL,
     profile     TEXT NOT NULL,
     created_at  TEXT NOT NULL,
-    pdf_bytes   BLOB NOT NULL
+    pdf_bytes   BLOB NOT NULL,
+    template_spec_json TEXT
 ) STRICT;";
 
 /// Index over `documents.act_id` — feeds the by-act document retrieval (one act → its documents).

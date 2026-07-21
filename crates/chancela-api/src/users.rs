@@ -39,6 +39,7 @@ use crate::attestation::{self, AttestationKeyBlob, MAX_SECRET_LEN, MIN_SECRET_LE
 use crate::authz::require_permission;
 use crate::error::ApiError;
 use crate::session::{Backoff, backoff_secs};
+use crate::settings::Locale;
 
 pub const USERS_FILE: &str = "users.json";
 
@@ -100,6 +101,96 @@ pub struct User {
     /// the rest ⇒ Gestor\@Global). A freshly bootstrapped user is assigned here at creation.
     #[serde(default)]
     pub role_assignments: Vec<chancela_authz::RoleAssignment>,
+    /// The user's preferred UI language (t71). **Additive** — `#[serde(default)]` reads an absent
+    /// value as [`UserLanguage::Auto`] and `skip_serializing_if` omits it again, so every
+    /// pre-t71 `users.json` round-trips byte-identically.
+    #[serde(default, skip_serializing_if = "UserLanguage::is_auto")]
+    pub language: UserLanguage,
+}
+
+/// A user's preferred UI language (t71): follow the environment, or a fixed locale.
+///
+/// ## Why `Auto` is stored as `Auto`
+///
+/// It is a *standing instruction to keep detecting*, not a locale. Resolving it once and writing
+/// the detected tag back would silently convert "follow my environment" into "pin me to whatever I
+/// happened to load the app with once" — the preference would still read as satisfied while having
+/// quietly stopped doing the thing that was asked for. So detection happens at render time in the
+/// client, every time, and nothing writes the result back here.
+///
+/// ## Server-side rendering
+///
+/// There is no browser to detect from when the server renders a document or an e-mail, so
+/// [`UserLanguage::fixed`] returns `None` for `Auto` and the caller falls back to the **platform
+/// default** (`settings.documents.locale`). Deliberately not the acting operator's language: an
+/// administrator working in `en-GB` must not send a Portuguese colleague an English welcome. A
+/// locale is NEVER guessed from a name or an e-mail domain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum UserLanguage {
+    /// Keep following the environment (the default, and what every pre-t71 user reads as).
+    #[default]
+    Auto,
+    /// A locale the user chose explicitly.
+    Fixed(Locale),
+}
+
+impl UserLanguage {
+    /// The wire tag: `"auto"`, or the locale's BCP-47 tag.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            UserLanguage::Auto => AUTO_LANGUAGE,
+            UserLanguage::Fixed(locale) => locale.as_str(),
+        }
+    }
+
+    /// The explicitly chosen locale, or `None` for `Auto` — i.e. "the caller should fall back to
+    /// the platform default". Server-side renderers use this; nothing else may interpret `Auto`.
+    pub fn fixed(self) -> Option<Locale> {
+        match self {
+            UserLanguage::Auto => None,
+            UserLanguage::Fixed(locale) => Some(locale),
+        }
+    }
+
+    /// Whether this is the default — drives `skip_serializing_if` so stored payloads stay identical.
+    pub fn is_auto(&self) -> bool {
+        matches!(self, UserLanguage::Auto)
+    }
+}
+
+/// The wire value meaning "keep detecting".
+pub const AUTO_LANGUAGE: &str = "auto";
+
+/// Parse a BCP-47 tag **through serde**, so the accepted set is by construction exactly the one
+/// [`Locale`]'s `#[serde(rename)]`s define. A second hand-written list here would be free to drift
+/// away from the enum the rest of the app uses.
+fn locale_from_tag(tag: &str) -> Option<Locale> {
+    serde_json::from_value::<Locale>(serde_json::Value::String(tag.to_owned())).ok()
+}
+
+impl From<UserLanguage> for String {
+    fn from(value: UserLanguage) -> Self {
+        value.as_str().to_owned()
+    }
+}
+
+impl TryFrom<String> for UserLanguage {
+    type Error = String;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        let tag = raw.trim();
+        if tag.eq_ignore_ascii_case(AUTO_LANGUAGE) {
+            return Ok(UserLanguage::Auto);
+        }
+        locale_from_tag(tag)
+            .map(UserLanguage::Fixed)
+            .ok_or_else(|| {
+                format!(
+                    "unknown language {raw:?}: expected \"{AUTO_LANGUAGE}\" or a supported locale"
+                )
+            })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -118,6 +209,9 @@ pub struct UserView {
     pub has_recovery_phrase: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attestation_key_fingerprint: Option<String>,
+    /// The user's language preference (t71). Always emitted so the client can render the control
+    /// without a second read; `"auto"` for a user who has never chosen one.
+    pub language: UserLanguage,
 }
 
 impl From<&User> for UserView {
@@ -133,6 +227,7 @@ impl From<&User> for UserView {
             has_attestation_key: u.attestation_key.is_some(),
             has_recovery_phrase: u.recovery_hash.is_some(),
             attestation_key_fingerprint: u.attestation_key.as_ref().map(|k| k.fingerprint.clone()),
+            language: u.language,
         }
     }
 }
@@ -144,6 +239,24 @@ pub struct CreateUser {
     #[serde(default)]
     pub email: Option<String>,
     pub password: String,
+    /// t71: the `(role, scope)` to grant the new user, assigned **in this same request** so the
+    /// operator never lands on a created-but-roleless account. Authorized with exactly the checks
+    /// [`crate::roles::assign_role`] applies (`role.assign` at the scope **plus** the subset
+    /// invariant), all of them *before* anything is written. Omitted ⇒ the historical default
+    /// (`Gestor@Global`, see [`crate::roles::bootstrap_assignment`]). Rejected on a bootstrap
+    /// create — the first user is always Owner\@Global.
+    #[serde(default)]
+    pub role: Option<crate::roles::RoleAssignmentInput>,
+    /// t71: send the new account a welcome e-mail. The mail carries **no** password, token or
+    /// link — no credential-delivery mechanism with expiry exists in this codebase — so it only
+    /// announces that the account exists. A send failure never fails the create.
+    #[serde(default)]
+    pub send_welcome_email: bool,
+    /// t71: the new account's language preference. Absent ⇒ [`UserLanguage::Auto`], so every
+    /// existing caller and the bootstrap path are unchanged. A concrete locale here is also the
+    /// language the welcome e-mail renders in.
+    #[serde(default)]
+    pub language: UserLanguage,
 }
 
 #[derive(Deserialize)]
@@ -152,6 +265,10 @@ pub struct PatchUser {
     #[serde(default, deserialize_with = "crate::dto::double_option")]
     pub email: Option<Option<String>>,
     pub active: Option<bool>,
+    /// t71: change the language preference. Absent leaves it unchanged; `"auto"` is a real value
+    /// that sets it back to "keep detecting", not a way to clear the field.
+    #[serde(default)]
+    pub language: Option<UserLanguage>,
 }
 
 #[derive(Deserialize)]
@@ -309,6 +426,41 @@ pub async fn create_user(
         require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
     }
 
+    // t71: resolve and AUTHORIZE the requested role before any validation that costs work and,
+    // crucially, before the write lock — so a refusal leaves no user behind. This is the same pair
+    // of checks `roles::assign_role` applies, in the same order, deliberately reusing
+    // `Authorizer::can_assign_role` rather than restating the subset rule: the meta gate at the
+    // assignment's scope, then the subset invariant (the role's permissions ⊆ the creator's
+    // authority covering that scope). So creation can never grant authority the creator lacks.
+    // The 403 is the uniform, non-enumerating `forbidden()` its sibling endpoint returns; the UI
+    // names the offending role, having only offered roles it knows are grantable.
+    let requested_assignment = match &req.role {
+        None => None,
+        Some(input) => {
+            if is_bootstrap {
+                return Err(ApiError::Unprocessable(
+                    "the first user is always Owner at global scope; omit `role`".to_owned(),
+                ));
+            }
+            let scope: Scope = input.scope.into();
+            let role_id = chancela_authz::RoleId(input.role_id);
+            let actor = CurrentActor::from_session_username(session_username.clone());
+            let authz = crate::authz::authorizer(&state, &actor).await?;
+            authz.require(Permission::RoleAssign, scope)?;
+            let role = state
+                .roles
+                .read()
+                .await
+                .get(role_id)
+                .cloned()
+                .ok_or(ApiError::NotFound)?;
+            if !authz.can_assign_role(&role, scope) {
+                return Err(crate::authz::forbidden());
+            }
+            Some(RoleAssignment::new(role_id, scope))
+        }
+    };
+
     let username = validate_username(&req.username)?;
     let display_name = req
         .display_name
@@ -356,7 +508,14 @@ pub async fn create_user(
             attestation_key: None,
             secret_source: SecretSource::default(),
             recovery_hash: None,
-            role_assignments: vec![crate::roles::bootstrap_assignment(bootstrap)],
+            // t71: the authorized explicit grant when one was requested, else the historical
+            // default. `requested_assignment` is `None` on every bootstrap create, so the
+            // first-user ⇒ Owner@Global invariant is reached by exactly the path it always was.
+            role_assignments: vec![
+                requested_assignment
+                    .unwrap_or_else(|| crate::roles::bootstrap_assignment(bootstrap)),
+            ],
+            language: req.language,
         };
         users.insert(user.id, user.clone());
         user
@@ -378,6 +537,41 @@ pub async fn create_user(
             .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
             .await?;
         state.attest_latest(&attestor, &ledger).await;
+    }
+
+    // t71 + t70: the welcome mail is a COURTESY attached to the create, not part of it. It runs
+    // only after the account is durably written and ledgered, carries no password/token/link (see
+    // `smtp_settings::send_welcome_email`), and a relay refusal is logged and swallowed — failing
+    // the request here would report "not created" for an account that certainly exists, which is
+    // the one outcome an operator must never be told. Skipped without an address to send to.
+    if req.send_welcome_email && !is_bootstrap {
+        match user.email.as_deref() {
+            Some(address) => {
+                // t71: render in the RECIPIENT's language. `Auto` yields `None`, which the sender
+                // resolves to the platform default (`settings.documents.locale`) — deliberately
+                // not the creating operator's language, and never guessed from the name or the
+                // e-mail domain.
+                if let Err(error) = crate::smtp_settings::send_welcome_email(
+                    &state,
+                    address,
+                    Some(&user.display_name),
+                    Some(&request_actor),
+                    user.language.fixed().map(Locale::as_str),
+                )
+                .await
+                {
+                    tracing::warn!(
+                        user = %user.username,
+                        ?error,
+                        "user created, but the welcome message could not be sent"
+                    );
+                }
+            }
+            None => tracing::warn!(
+                user = %user.username,
+                "a welcome message was requested but the account has no e-mail address"
+            ),
+        }
     }
 
     Ok((StatusCode::CREATED, Json(UserView::from(&user))))
@@ -459,6 +653,7 @@ mod tests {
             secret_source: SecretSource::default(),
             recovery_hash: None,
             role_assignments: vec![crate::roles::bootstrap_assignment(true)],
+            language: Default::default(),
         }
     }
 
@@ -1269,6 +1464,11 @@ pub async fn patch_user(
         }
         if let Some(active) = req.active {
             user.active = active;
+        }
+        // t71: `"auto"` is a real value here — it sets the preference back to "keep detecting"
+        // rather than clearing the field, so a user can undo a fixed choice.
+        if let Some(language) = req.language {
+            user.language = language;
         }
         user.clone()
     };

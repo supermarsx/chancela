@@ -85,6 +85,7 @@ fn sample_document(id: &str, act_id: ActId, bytes: &[u8]) -> StoredDocument {
         profile: "csc/sq".to_string(),
         created_at: OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap(),
         pdf_bytes: bytes.to_vec(),
+        template_spec_json: None,
     }
 }
 

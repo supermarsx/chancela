@@ -853,6 +853,7 @@ mod tests {
                 profile: "csc-sa-ag/v1".to_owned(),
                 created_at: OffsetDateTime::now_utc(),
                 pdf_bytes: b"%PDF-1.7\n".to_vec(),
+                template_spec_json: None,
             },
         );
     }

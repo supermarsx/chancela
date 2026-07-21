@@ -106,6 +106,12 @@ pub(crate) const ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN: &str = "ALTER TABL
      operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]';";
 pub(crate) const ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN: &str = "ALTER TABLE imported_documents ADD COLUMN IF NOT EXISTS \
      technical_validation_report_json TEXT NOT NULL DEFAULT '{}';";
+/// t74 §8: the producing template spec beside the produced bytes. **Deliberately nullable with no
+/// default** — unlike the two guards above, a pre-v24 document genuinely has no spec body, and a
+/// `DEFAULT` here would manufacture one and erase the distinction between "written before this
+/// existed" and "written wrong".
+pub(crate) const ADD_DOCUMENTS_TEMPLATE_SPEC_COLUMN: &str =
+    "ALTER TABLE documents ADD COLUMN IF NOT EXISTS template_spec_json TEXT;";
 
 /// wp16 P1 change-feed tail query. Kept as a named contract so tests can pin the ordering and
 /// strict `seq > after_seq` semantics the follower's fail-closed delta seam depends on.
@@ -228,6 +234,7 @@ impl PostgresBackend {
     fn ensure_additive_columns(writer: &mut Client) -> Result<(), StoreError> {
         writer.batch_execute(ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN)?;
         writer.batch_execute(ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN)?;
+        writer.batch_execute(ADD_DOCUMENTS_TEMPLATE_SPEC_COLUMN)?;
         Ok(())
     }
 
@@ -488,7 +495,7 @@ impl PostgresBackend {
     ) -> Result<Option<StoredDocument>, StoreError> {
         let mut client = self.read()?;
         let row = client.query_opt(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
              FROM documents WHERE act_id = $1 ORDER BY created_at DESC, ctid DESC LIMIT 1",
             &[&act_id.to_string()],
         )?;
@@ -501,7 +508,7 @@ impl PostgresBackend {
     ) -> Result<Vec<StoredDocument>, StoreError> {
         let mut client = self.read()?;
         let rows = client.query(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
              FROM documents WHERE act_id = $1 ORDER BY created_at ASC, ctid ASC",
             &[&act_id.to_string()],
         )?;
@@ -511,7 +518,7 @@ impl PostgresBackend {
     pub(crate) fn document_by_id(&self, id: &str) -> Result<Option<StoredDocument>, StoreError> {
         let mut client = self.read()?;
         let row = client.query_opt(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
              FROM documents WHERE id = $1",
             &[&id],
         )?;
@@ -1225,6 +1232,8 @@ pub(crate) fn row_to_document(row: &Row) -> Result<StoredDocument, StoreError> {
         profile: row.get(4),
         created_at: parse_rfc3339(&row.get::<_, String>(5))?,
         pdf_bytes: row.get(6),
+        // NULL for rows written before schema v24 — `None` means "no spec was recorded".
+        template_spec_json: row.get(7),
     })
 }
 

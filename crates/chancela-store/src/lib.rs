@@ -1115,6 +1115,13 @@ pub struct StoredDocument {
     pub created_at: OffsetDateTime,
     /// The PDF/A-2u bytes themselves.
     pub pdf_bytes: Vec<u8>,
+    /// The canonical serialization of the template spec that produced this document (t74 §8,
+    /// schema v24), so the producing template is recoverable even after the catalog is edited.
+    ///
+    /// **`None` means "written before this existed", never "wrong".** Rows predating v24 carry no
+    /// spec body; that is a legitimate historical state and nothing backfills a fabricated one.
+    /// Verification must therefore report *unbound*, not *mismatch*, for these.
+    pub template_spec_json: Option<String>,
 }
 
 /// Metadata-only dispatch evidence recorded by an operator for a generated document. This table is
@@ -2489,7 +2496,7 @@ impl Store {
         }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
              FROM documents WHERE act_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
         )?;
         stmt.query_row(params![act_id.to_string()], row_to_document)
@@ -2507,7 +2514,7 @@ impl Store {
         }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
              FROM documents WHERE act_id = ?1 ORDER BY created_at ASC, rowid ASC",
         )?;
         let rows = stmt.query_map(params![act_id.to_string()], row_to_document)?;
@@ -2526,7 +2533,7 @@ impl Store {
         }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
              FROM documents WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_document)
@@ -3935,8 +3942,9 @@ impl Tx<'_> {
             TxKind::Sqlite(_) => {
                 self.raw()?.execute(
                     "INSERT OR REPLACE INTO documents \
-                     (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                     (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, \
+                      template_spec_json) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     params![
                         doc.id,
                         doc.act_id.to_string(),
@@ -3945,6 +3953,7 @@ impl Tx<'_> {
                         doc.profile,
                         created_at,
                         doc.pdf_bytes,
+                        doc.template_spec_json,
                     ],
                 )?;
             }
@@ -3954,12 +3963,14 @@ impl Tx<'_> {
                 let pdf_bytes: &[u8] = &doc.pdf_bytes;
                 cell.borrow_mut().execute(
                     "INSERT INTO documents \
-                     (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes) \
-                     VALUES ($1, $2, $3, $4, $5, $6, $7) \
+                     (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, \
+                      template_spec_json) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
                      ON CONFLICT (id) DO UPDATE SET act_id = EXCLUDED.act_id, \
                      template_id = EXCLUDED.template_id, pdf_digest = EXCLUDED.pdf_digest, \
                      profile = EXCLUDED.profile, created_at = EXCLUDED.created_at, \
-                     pdf_bytes = EXCLUDED.pdf_bytes",
+                     pdf_bytes = EXCLUDED.pdf_bytes, \
+                     template_spec_json = EXCLUDED.template_spec_json",
                     &[
                         &doc.id,
                         &act_id,
@@ -3968,6 +3979,7 @@ impl Tx<'_> {
                         &doc.profile,
                         &created_at,
                         &pdf_bytes,
+                        &doc.template_spec_json,
                     ],
                 )?;
             }
@@ -6045,6 +6057,9 @@ fn row_to_document(
     let profile: String = row.get(4)?;
     let created_at_raw: String = row.get(5)?;
     let pdf_bytes: Vec<u8> = row.get(6)?;
+    // NULL for rows written before schema v24 — read as `None`, meaning "no spec was recorded",
+    // never as an empty or fabricated body.
+    let template_spec_json: Option<String> = row.get(7)?;
     Ok((|| {
         Ok(StoredDocument {
             id,
@@ -6054,6 +6069,7 @@ fn row_to_document(
             profile,
             created_at: parse_rfc3339(&created_at_raw)?,
             pdf_bytes,
+            template_spec_json,
         })
     })())
 }
@@ -7035,6 +7051,12 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
     // initial schema v1. `ALTER TABLE ... ADD COLUMN` is idempotent-safe via this guard.
     if !table_has_column(conn, "events", "links")? {
         conn.execute_batch("ALTER TABLE events ADD COLUMN links TEXT NOT NULL DEFAULT '[]';")?;
+    }
+
+    // t74 §8: the producing template spec, stored beside the produced bytes. Nullable — pre-v24
+    // rows legitimately have none, and nothing backfills a fabricated value.
+    if !table_has_column(conn, "documents", "template_spec_json")? {
+        conn.execute_batch("ALTER TABLE documents ADD COLUMN template_spec_json TEXT;")?;
     }
 
     if !table_has_column(conn, "signed_documents", "timestamp_trust_report_json")? {

@@ -177,14 +177,24 @@ pub trait RulePack {
     fn check_act(&self, act: &Act, entity: &Entity) -> Vec<ComplianceIssue>;
 }
 
-/// Whether an act carries substance — a resolution recorded on either the free-text or the
-/// structured path (R3). The substance Error fires only when **both** are empty.
+/// Whether an act carries substance — a resolution recorded on the free-text, the structured, or
+/// the tagged-markup path (R3, t74 §3). The substance Error fires only when **all** are empty.
+///
+/// The markup body is a third *store* for the same fact, not a third meaning: an operator who wrote
+/// the resolution as a narrative body has recorded the substance, and refusing that would make the
+/// markdown path unusable for the very thing it exists to carry. Note this reads only whether the
+/// body is non-empty — no legal fact is ever recovered by *parsing* the prose (t74 §9.4); attendees,
+/// votes, dates and counts stay structured and unparsed, exactly as before.
 fn has_substance(act: &Act) -> bool {
     !act.deliberations.trim().is_empty()
         || act
             .deliberation_items
             .iter()
             .any(|item| !item.text.trim().is_empty())
+        || act
+            .body
+            .as_ref()
+            .is_some_and(|body| !body.source.trim().is_empty())
 }
 
 /// The shared civil baseline every family requires: the ata must identify the entity and

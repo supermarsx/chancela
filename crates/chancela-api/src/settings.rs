@@ -2856,6 +2856,68 @@ pub async fn put_settings(
 mod tests {
     use super::*;
 
+    /// [`Locale::as_str`] and serde must agree, in both directions, for every variant.
+    ///
+    /// This is the trap `SmtpEncryption::StartTls` fell into during t23: `rename_all` rendered it
+    /// `start_tls` while `as_str` said `starttls`, and the two disagreed silently until a fixture
+    /// caught it downstream. `as_str` now picks the email copy catalog server-side while serde
+    /// writes the settings document and the TypeScript union, so a drift between them would send a
+    /// user mail in the wrong language — or fall back to Portuguese — with nothing failing.
+    ///
+    /// The round-trip half matters as much as the forward half: it is what catches a *duplicated*
+    /// tag, where two variants both claim `"pt-PT"` and `as_str` looks correct in isolation.
+    #[test]
+    fn locale_as_str_matches_serde() {
+        // Every variant, listed explicitly. A new locale added to the enum but not here is caught
+        // by the exhaustiveness assertion at the end rather than silently skipped.
+        let all = [
+            Locale::PtPt,
+            Locale::PtBr,
+            Locale::DaDk,
+            Locale::DeDe,
+            Locale::FrFr,
+            Locale::FiFi,
+            Locale::SvFi,
+            Locale::ItIt,
+            Locale::NlNl,
+            Locale::PlPl,
+            Locale::EnGb,
+            Locale::EnUs,
+            Locale::SvSe,
+            Locale::EsEs,
+        ];
+
+        for locale in all {
+            // Forward: serializing must produce exactly `as_str`.
+            assert_eq!(
+                serde_json::to_value(locale).expect("serialize"),
+                serde_json::Value::String(locale.as_str().to_owned()),
+                "{locale:?} serializes differently from its as_str form"
+            );
+            // Back: `as_str` must deserialize to the same variant, so no tag is a dead end.
+            let round_tripped: Locale =
+                serde_json::from_value(serde_json::Value::String(locale.as_str().to_owned()))
+                    .unwrap_or_else(|e| panic!("{:?} does not deserialize: {e}", locale.as_str()));
+            assert_eq!(round_tripped, locale, "{locale:?} did not round-trip");
+        }
+
+        // No two variants may claim the same tag — that would make `as_str` look right while the
+        // round-trip above silently resolved to whichever variant serde saw first.
+        let mut tags: Vec<&str> = all.iter().map(|l| l.as_str()).collect();
+        tags.sort_unstable();
+        let count = tags.len();
+        tags.dedup();
+        assert_eq!(tags.len(), count, "two locales share a BCP 47 tag");
+
+        // The list above is the whole enum. `Locale` is `#[serde(...)]`-tagged with no catch-all, so
+        // a variant missing here would still deserialize — this pins the count so adding one to the
+        // enum without adding it to the email catalogs fails here rather than at runtime.
+        assert_eq!(
+            count, 14,
+            "the shipped locale set changed; update the email catalogs too"
+        );
+    }
+
     #[test]
     fn settings_default_includes_retained_export_cleanup_policy() {
         let settings = Settings::default();

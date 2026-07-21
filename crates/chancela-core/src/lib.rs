@@ -42,12 +42,12 @@ pub mod tenant;
 pub mod termo;
 
 pub use act::{
-    Act, ActId, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
-    Convening, ConveningRecipient, ConveningWaiver, DeliberationItem, DispatchChannel,
-    DocumentReference, MeetingChannel, MemberStatement, Mesa, NoConveningBasis, PresenceMode,
-    SealMetadata, SecondCall, SignatoryCapacity, SignatorySlot, SupersededSigningSnapshot,
-    VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY, WrittenResolutionEvidence,
-    WrittenResolutionEvidenceItem, WrittenResolutionEvidenceStatus,
+    Act, ActBody, ActId, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight,
+    Attendee, BodyFormat, Convening, ConveningRecipient, ConveningWaiver, DeliberationItem,
+    DispatchChannel, DocumentReference, MeetingChannel, MemberStatement, Mesa, NoConveningBasis,
+    PresenceMode, SealMetadata, SecondCall, SignatoryCapacity, SignatorySlot,
+    SupersededSigningSnapshot, VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY,
+    WrittenResolutionEvidence, WrittenResolutionEvidenceItem, WrittenResolutionEvidenceStatus,
     WrittenResolutionEvidenceSummary, written_resolution_evidence_summary,
 };
 pub use book::{

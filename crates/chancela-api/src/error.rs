@@ -99,6 +99,32 @@ pub enum ApiError {
     /// consultation (network/HTTP failure, or a response that was not a recognisable
     /// certidão). Maps to `502 Bad Gateway` (contract §2.7).
     Upstream(String),
+    /// An ata's markdown body was rejected — a malformed placeholder, a construct the frozen block
+    /// set cannot represent, or an over-cap body (422, t74 §5).
+    ///
+    /// Structured rather than a plain [`Unprocessable`](ApiError::Unprocessable) because this is the
+    /// one validation an operator hits *while typing*: `code` lets the editor branch without parsing
+    /// prose, and `offset` lets it point at the character. Raised at edit time on purpose — the
+    /// alternative is discovering it at the seal gate, which is exactly the surprise the design
+    /// exists to prevent.
+    InvalidActBody {
+        /// Human-readable summary (mirrors the base `error` field).
+        message: String,
+        /// Stable machine-readable code (`unsupported_markdown`, `invalid_placeholder`, …).
+        code: &'static str,
+        /// Byte offset into the body source of the offending construct, when one applies.
+        offset: Option<usize>,
+    },
+}
+
+impl From<chancela_templates::body_render::BodyRenderError> for ApiError {
+    fn from(e: chancela_templates::body_render::BodyRenderError) -> Self {
+        ApiError::InvalidActBody {
+            message: e.to_string(),
+            code: e.code(),
+            offset: e.offset(),
+        }
+    }
 }
 
 /// The base JSON body every error renders to.
@@ -129,6 +155,18 @@ struct ErrorWithPasswordFailures<'a> {
     failed_rules: &'a [crate::password_policy::PasswordRuleFailure],
 }
 
+/// Error body for a rejected ata markdown body (t74). Additive: the base `error` field is preserved
+/// and machine-readable fields are added alongside it. `offset` is a **byte** offset into the body
+/// source, which is what lets the editor underline the offending construct in place rather than
+/// telling the operator only that something, somewhere, is wrong.
+#[derive(Serialize)]
+struct ErrorWithBodyDiagnostics<'a> {
+    error: &'a str,
+    code: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    offset: Option<usize>,
+}
+
 /// Error body for a rejected/blocked in-app Cartão de Cidadão PIN (t67-e8). Additive: the base
 /// `error` field is preserved and PIN-free machine-readable fields are added alongside it. **Never
 /// carries the PIN.**
@@ -147,6 +185,7 @@ impl ApiError {
             | ApiError::Unprocessable(_)
             | ApiError::PasswordPolicy { .. }
             | ApiError::PinRejected { .. }
+            | ApiError::InvalidActBody { .. }
             | ApiError::ComplianceBlocked { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
@@ -178,6 +217,7 @@ impl ApiError {
             ApiError::ComplianceBlocked { message, .. }
             | ApiError::WarningsNotAcknowledged { message, .. }
             | ApiError::PinRejected { message, .. }
+            | ApiError::InvalidActBody { message, .. }
             | ApiError::PasswordPolicy { message, .. } => message.clone(),
         }
     }
@@ -225,6 +265,19 @@ impl IntoResponse for ApiError {
                 Json(ErrorWithPasswordFailures {
                     error: message,
                     failed_rules: failures,
+                }),
+            )
+                .into_response(),
+            ApiError::InvalidActBody {
+                message,
+                code,
+                offset,
+            } => (
+                status,
+                Json(ErrorWithBodyDiagnostics {
+                    error: message,
+                    code,
+                    offset: *offset,
                 }),
             )
                 .into_response(),

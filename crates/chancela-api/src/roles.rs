@@ -1069,6 +1069,7 @@ mod tests {
             secret_source: SecretSource::Password,
             recovery_hash: None,
             role_assignments: assignments,
+            language: Default::default(),
         }
     }
 

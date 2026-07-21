@@ -123,6 +123,7 @@ fn sample_document(id: &str, act_id: ActId, bytes: &[u8]) -> StoredDocument {
         profile: "csc/sq".to_string(),
         created_at: OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap(),
         pdf_bytes: bytes.to_vec(),
+        template_spec_json: None,
     }
 }
 
@@ -1550,9 +1551,11 @@ fn schema_version_is_current() {
     // schema v20; persisted imported-document technical validation evidence landed as schema v21; the
     // durable companion-device pairing registry (pairing_devices — wp27 mobile companion) landed as
     // schema v22; the ordered multi-signature history (instrument_signatures — t9-S2, fixing the
-    // single-row `signed_documents` data-loss defect) landed as schema v23. A fresh DB is stamped
-    // with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 23);
+    // single-row `signed_documents` data-loss defect) landed as schema v23; the producing template
+    // spec beside each generated document (`documents.template_spec_json` — t74 §8, so an in-place
+    // edit of a shipped template cannot retroactively change what a past seal meant) landed as
+    // schema v24. A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 24);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();

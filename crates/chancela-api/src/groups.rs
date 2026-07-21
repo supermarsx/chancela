@@ -1342,6 +1342,7 @@ mod tests {
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: vec![RoleAssignment::new(role_id, scope)],
+                language: Default::default(),
             },
         );
         let token = Uuid::new_v4().to_string();

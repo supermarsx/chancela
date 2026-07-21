@@ -444,6 +444,7 @@ mod tests {
             secret_source: SecretSource::default(),
             recovery_hash: None,
             role_assignments: Vec::new(),
+            language: Default::default(),
         }
     }
 

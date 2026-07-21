@@ -29,15 +29,15 @@ use chancela_core::book::{ClosingReason, TermoSignatory};
 #[cfg(test)]
 use chancela_core::entity::EntityId;
 use chancela_core::{
-    Act, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee, Book,
-    BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient, ConveningWaiver,
-    DeliberationItem, DispatchChannel, DocumentReference, Entity, EntityFamily, EntityKind,
-    LegalBasis, LegalBasisVerification, MeetingChannel, MemberStatement, Mesa, NoConveningBasis,
-    NumberingScheme, PresenceMode, SealMetadata, SecondCall, Severity, SignatoryCapacity,
-    SignatorySlot, SignaturePolicyHint, StatuteOverrides, SupersededSigningSnapshot, VoteResult,
-    WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY, WrittenResolutionEvidence,
-    WrittenResolutionEvidenceItem, WrittenResolutionEvidenceSummary, profile_for,
-    written_resolution_evidence_summary,
+    Act, ActBody, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
+    Block, BodyFormat, Book, BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient,
+    ConveningWaiver, DeliberationItem, DispatchChannel, DocumentReference, Entity, EntityFamily,
+    EntityKind, LegalBasis, LegalBasisVerification, MeetingChannel, MemberStatement, Mesa,
+    NoConveningBasis, NumberingScheme, PresenceMode, SealMetadata, SecondCall, Severity,
+    SignatoryCapacity, SignatorySlot, SignaturePolicyHint, StatuteOverrides,
+    SupersededSigningSnapshot, VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY,
+    WrittenResolutionEvidence, WrittenResolutionEvidenceItem, WrittenResolutionEvidenceSummary,
+    profile_for, written_resolution_evidence_summary,
 };
 use chancela_ledger::Event;
 use chancela_registry::{
@@ -1708,6 +1708,11 @@ pub struct ActView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub written_resolution_evidence: Option<WrittenResolutionEvidenceView>,
     pub deliberations: String,
+    /// The tagged-markup narrative body (t74), when one was authored. **Skip-serialized when
+    /// absent** so a body-less act's response stays byte-identical to what it was before the field
+    /// existed and no existing fixture has to change.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<ActBodyView>,
     /// Structured deliberations (per-item text + vote + statements), additive to `deliberations`.
     pub deliberation_items: Vec<DeliberationItemView>,
     pub telematic_evidence: Option<String>,
@@ -1768,6 +1773,7 @@ impl From<&Act> for ActView {
                 )
             }),
             deliberations: a.deliberations.clone(),
+            body: a.body.as_ref().map(ActBodyView::from),
             deliberation_items: a
                 .deliberation_items
                 .iter()
@@ -1816,6 +1822,13 @@ impl ActView {
             evidence.redact_sensitive();
         }
         self.deliberations = redacted();
+        // The markup body is the same narrative prose as `deliberations` in a different store, so it
+        // carries the same personal data and gets the same treatment. Only `source` is redacted:
+        // the format tag and the compiler id name a code path, not a person, and the digest is over
+        // content the guest cannot reconstruct from it.
+        if let Some(body) = &mut self.body {
+            body.source = redacted();
+        }
         for item in &mut self.deliberation_items {
             item.redact_sensitive();
         }
@@ -2343,6 +2356,60 @@ fn reject_true_written_resolution_claim_flags(
     Ok(())
 }
 
+/// Body of `POST /v1/acts/{id}/body/preview`.
+#[derive(Deserialize)]
+pub struct PreviewActBody {
+    /// The editor's current (possibly unsaved) source. Absent ⇒ preview the stored body, which is
+    /// what a freshly-opened editor wants before the operator has typed anything.
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+/// Response of `POST /v1/acts/{id}/body/preview`: the compiled blocks, plus the identity of the
+/// compiler that produced them so a client can tell a `md-block/v1` preview from a later one.
+#[derive(Serialize)]
+pub struct ActBodyPreviewResponse {
+    pub compiler_id: &'static str,
+    pub blocks: Vec<Block>,
+}
+
+/// The read view of an [`ActBody`].
+///
+/// `compiled_digest` is empty until content freeze — before sealing there is no compiled output to
+/// bind, and reporting a digest that the seal would then replace would be a lie the operator could
+/// not detect. Emptiness is the honest representation of "not frozen yet".
+#[derive(Serialize)]
+pub struct ActBodyView {
+    pub format: BodyFormat,
+    pub source: String,
+    pub compiler_id: String,
+    pub compiled_digest: String,
+}
+
+impl From<&ActBody> for ActBodyView {
+    fn from(b: &ActBody) -> Self {
+        ActBodyView {
+            format: b.format,
+            source: b.source.clone(),
+            compiler_id: b.compiler_id.clone(),
+            compiled_digest: b.compiled_digest.clone(),
+        }
+    }
+}
+
+/// The client-supplied half of an [`ActBody`]: what the operator wrote, and how to read it.
+///
+/// `compiler_id` and `compiled_digest` are deliberately **not** accepted from the wire. They are
+/// facts about what the server compiled at content freeze, and a client that could assert them
+/// could claim a body compiled to something it did not. The server sets both.
+#[derive(Deserialize)]
+pub struct ActBodyInput {
+    /// How `source` is to be interpreted. Required — a body never carries an inferred format.
+    pub format: BodyFormat,
+    /// The markup the operator authored, verbatim.
+    pub source: String,
+}
+
 /// Body of `PATCH /v1/acts/{id}` (working-content edit; every field optional). Nullable
 /// domain fields use [`double_option`] so a present `null` clears them and an absent key
 /// leaves them untouched. `attachments`/`signatories`/`agenda`/`referenced_documents`/
@@ -2375,6 +2442,15 @@ pub struct PatchAct {
     #[serde(default, deserialize_with = "double_option")]
     pub written_resolution_evidence: Option<Option<WrittenResolutionEvidenceInput>>,
     pub deliberations: Option<String>,
+    /// The tagged-markup narrative body (t74). [`double_option`] semantics: absent ⇒ leave
+    /// untouched, explicit `null` ⇒ clear, a value ⇒ replace.
+    ///
+    /// **Additive to, never a reinterpretation of, `deliberations`.** The two are separate stores:
+    /// existing plain prose is not migrated into markup and is never re-read as markup, because
+    /// doing so would move nothing that any digest covers while quietly changing what a sealed
+    /// document says.
+    #[serde(default, deserialize_with = "double_option")]
+    pub body: Option<Option<ActBodyInput>>,
     /// Replace the structured deliberations list when present.
     pub deliberation_items: Option<Vec<DeliberationItemView>>,
     #[serde(default, deserialize_with = "double_option")]

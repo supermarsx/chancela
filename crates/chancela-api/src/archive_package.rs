@@ -2980,6 +2980,7 @@ mod tests {
             profile: crate::documents::PDFA_PROFILE.to_owned(),
             created_at: OffsetDateTime::now_utc(),
             pdf_bytes,
+            template_spec_json: None,
         };
         let policy_id = RetentionPolicyId(Uuid::new_v4());
         let policy = RetentionPolicyRecord {
@@ -3072,6 +3073,7 @@ mod tests {
             secret_source: SecretSource::Password,
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            language: Default::default(),
         };
         state.users.write().await.insert(user.id, user);
     }

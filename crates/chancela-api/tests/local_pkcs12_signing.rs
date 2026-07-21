@@ -272,6 +272,7 @@ async fn bootstrap(state: &AppState) -> (String, String) {
         secret_source: Default::default(),
         recovery_hash: None,
         role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        language: Default::default(),
     };
     state.users.write().await.insert(uid, user);
     let uid = uid.to_string();

@@ -555,6 +555,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         let token = uuid::Uuid::new_v4().to_string();

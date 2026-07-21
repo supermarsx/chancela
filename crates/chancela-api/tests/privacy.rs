@@ -158,6 +158,7 @@ async fn insert_user(state: &AppState, id: UserId, username: &str, role: RoleAss
         secret_source: Default::default(),
         recovery_hash: None,
         role_assignments: vec![role],
+        language: Default::default(),
     };
     state.users.write().await.insert(id, user);
 }

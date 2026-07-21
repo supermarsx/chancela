@@ -60,7 +60,7 @@
 
 use std::io;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -83,6 +83,10 @@ const MAX_REPLY_LINE: u64 = 8 * 1024;
 
 /// Guard against an unbounded multiline reply (a greeting/EHLO banner is a handful of lines).
 const MAX_REPLY_LINES: usize = 128;
+
+/// Guard against a chatty relay growing the diagnostic transcript without limit. A complete
+/// submission conversation is well under this; anything beyond it is noise, not diagnosis.
+const MAX_TRANSCRIPT_LINES: usize = 256;
 
 // --- Configuration ---------------------------------------------------------------------------
 
@@ -150,8 +154,14 @@ pub struct SmtpMessage {
     pub to_address: String,
     /// `Subject:` header (encoded per RFC 2047 when it is not pure ASCII).
     pub subject: String,
-    /// UTF-8 plain-text body.
+    /// UTF-8 plain-text body. **Always required, never a fallback afterthought**: many clients and
+    /// most security gateways strip or refuse HTML-only mail, and this is also the accessible
+    /// version. When `html_body` is set this becomes the first part of a `multipart/alternative`.
     pub body: String,
+    /// Optional UTF-8 HTML body. When present the message is rendered as `multipart/alternative`
+    /// with `body` first and this second, which is the order RFC 2046 §5.1.4 requires: least
+    /// faithful first, so a client that understands only `text/plain` shows the text part.
+    pub html_body: Option<String>,
     /// RFC 3339/2822 `Date:` value, supplied by the caller so this module stays clock-free.
     pub date: String,
     /// The `Message-ID:` value without angle brackets.
@@ -337,6 +347,341 @@ pub struct SmtpDelivery {
     pub accepted_detail: String,
 }
 
+// --- Diagnostic trace ---------------------------------------------------------------------------
+
+/// How a single protocol stage ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SmtpStepOutcome {
+    /// The stage completed and the server was happy.
+    Ok,
+    /// The stage was attempted and failed. This is the stage the operator should look at.
+    Failed,
+    /// The stage was not attempted at all, because the configuration does not use it (e.g.
+    /// `STARTTLS` on an implicit-TLS session, or `AUTH` with no username). Recorded rather than
+    /// omitted so the timeline shows the whole protocol, not just the parts that ran.
+    Skipped,
+    /// The *client* refused to proceed — an unimplemented AUTH mechanism, a non-ASCII envelope
+    /// address needing SMTPUTF8, or a STARTTLS downgrade. Distinct from `Failed` because nothing is
+    /// wrong with the relay: the fix is on this side.
+    Refused,
+}
+
+// Deliberately no `as_str` here, unlike the neighbouring enums. Theirs exist because something
+// server-side formats them into a message (`SmtpEncryption` into the test email, `SmtpStage` into a
+// send failure's text); nothing formats this one — its only consumer is the TypeScript union that
+// renders it. A second unused spelling of the wire form would be one more thing that can silently
+// disagree with serde, which is exactly the `start_tls`/`starttls` trap t23 fell into. The encoding
+// is pinned against literals in `step_outcome_serde_encoding_is_stable` instead.
+
+/// One protocol stage in the timeline, with its outcome, the server's own reply, and its duration.
+///
+/// Timing is per-stage on purpose: a relay that refuses in 3ms and a relay that swallows the
+/// connection for 20s are completely different problems, and a single "failed" hides that.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmtpTraceStep {
+    /// Which stage this is.
+    pub stage: SmtpStage,
+    /// How it ended.
+    pub outcome: SmtpStepOutcome,
+    /// The SMTP reply code the server gave for this stage, when it replied at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<u16>,
+    /// The RFC 3463 enhanced status code, when the reply carried one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enhanced_code: Option<String>,
+    /// The server's reply text **verbatim**, or — for `Skipped`/`Refused` — this client's own
+    /// explanation of why it did not proceed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// Milliseconds from the start of the session to the moment this stage began.
+    pub started_ms: u64,
+    /// How long the stage took, in milliseconds.
+    pub duration_ms: u64,
+}
+
+/// What the TLS handshake actually negotiated. Populated only when a handshake succeeded.
+///
+/// "Is it encrypted?" is a yes/no an operator can already see; *which* protocol version and *whose*
+/// certificate is what distinguishes a working relay from one that is quietly serving a self-signed
+/// certificate or a captive-portal interception box.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SmtpTlsDetail {
+    /// The negotiated protocol version, e.g. `TLSv1.3`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
+    /// The negotiated cipher suite, e.g. `TLS13_AES_256_GCM_SHA384`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cipher_suite: Option<String>,
+    /// The leaf certificate's subject distinguished name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer_subject: Option<String>,
+    /// The leaf certificate's issuer distinguished name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer_issuer: Option<String>,
+}
+
+/// Who said a transcript line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SmtpTranscriptDirection {
+    /// Sent by this client.
+    Client,
+    /// Received from the relay.
+    Server,
+}
+
+/// One line of the SMTP conversation, as it would appear in a `swaks`/`telnet` transcript.
+///
+/// **Client lines are never verbatim.** See [`Recorder`] for the two independent mechanisms that
+/// keep the password out of this.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmtpTranscriptLine {
+    /// Who said it.
+    pub direction: SmtpTranscriptDirection,
+    /// The line. Redacted where credentials would otherwise appear.
+    pub text: String,
+    /// Milliseconds from the start of the session.
+    pub at_ms: u64,
+}
+
+/// The full diagnostic record of one SMTP session — enough to debug a relay without server access.
+///
+/// This is produced on **both** success and failure. A send that works but takes 19 seconds at
+/// `RCPT TO`, or one that silently ran without TLS, is worth seeing too.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmtpTrace {
+    /// The relay hostname as configured.
+    pub host: String,
+    /// The relay port as configured.
+    pub port: u16,
+    /// The peer address the TCP connection actually landed on, e.g. `10.0.0.5:587`. This is the
+    /// resolution result: a hostname that resolves somewhere unexpected is invisible otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_address: Option<String>,
+    /// The configured transport-security mode.
+    pub encryption: SmtpEncryption,
+    /// The name announced in `EHLO`.
+    pub helo_name: String,
+    /// Whether TLS was **actually** established, as observed on the live session — not what the
+    /// configuration asked for.
+    pub tls_established: bool,
+    /// What the handshake negotiated, when one succeeded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls: Option<SmtpTlsDetail>,
+    /// The capabilities the relay advertised in its (last) `EHLO` response, verbatim.
+    pub advertised_capabilities: Vec<String>,
+    /// The AUTH mechanism this client chose, e.g. `PLAIN`. `None` when no authentication ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_mechanism: Option<String>,
+    /// The protocol timeline, in order.
+    pub steps: Vec<SmtpTraceStep>,
+    /// The conversation, redacted.
+    pub transcript: Vec<SmtpTranscriptLine>,
+    /// Total session duration in milliseconds.
+    pub total_ms: u64,
+}
+
+/// Builds an [`SmtpTrace`] as the session runs.
+///
+/// ## How the password is kept out — two independent mechanisms
+///
+/// 1. **Structural.** Credential-bearing lines never reach the recorder in the first place. They
+///    are written through [`Session::command_redacted`], which records a fixed `&'static str`
+///    placeholder and has **no parameter** through which the real line could be passed. The
+///    recorder therefore only ever receives either a literal, or a line built from non-secret
+///    configuration (the EHLO name, the envelope addresses).
+/// 2. **Scrubbing, as defence in depth.** The recorder additionally holds the password and its
+///    base64 encodings as needles and replaces them in *every* line it stores, in both directions.
+///    This layer exists for the pathological case mechanism 1 cannot cover: a broken or hostile
+///    relay echoing the credential back in its own reply text, which is otherwise recorded
+///    verbatim by design.
+///
+/// The needles live only in the recorder, in [`Zeroizing`] buffers, are never serialized (they are
+/// not part of [`SmtpTrace`]), and the hand-written [`std::fmt::Debug`] below keeps them out of
+/// panic messages and log lines.
+struct Recorder {
+    started: Instant,
+    /// Secret substrings to replace wherever they appear. Never serialized, never printed.
+    needles: Vec<Zeroizing<String>>,
+    steps: Vec<SmtpTraceStep>,
+    transcript: Vec<SmtpTranscriptLine>,
+    tls: Option<SmtpTlsDetail>,
+    resolved_address: Option<String>,
+    advertised_capabilities: Vec<String>,
+    auth_mechanism: Option<String>,
+}
+
+// Derived `Debug` would print the needles. Written by hand so the plaintext cannot reach a log line
+// or a panic message through the recorder.
+impl std::fmt::Debug for Recorder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Recorder")
+            .field(
+                "needles",
+                &format_args!("<{} redacted>", self.needles.len()),
+            )
+            .field("steps", &self.steps.len())
+            .field("transcript", &self.transcript.len())
+            .finish_non_exhaustive()
+    }
+}
+
+/// What a redacted secret is replaced with, in both the transcript and any scrubbed reply text.
+const REDACTED: &str = "<redacted>";
+
+impl Recorder {
+    /// Build a recorder, deriving the scrub needles from the credentials this session will use.
+    ///
+    /// The base64 forms matter as much as the plaintext: on the wire the password only ever appears
+    /// base64-encoded, so a relay echoing "what you sent me" echoes the encoding, not the password.
+    fn new(username: Option<&str>, password: Option<&Zeroizing<String>>) -> Self {
+        let mut needles: Vec<Zeroizing<String>> = Vec::new();
+        if let Some(password) = password.filter(|p| !p.is_empty()) {
+            // The plaintext.
+            needles.push(Zeroizing::new(password.to_string()));
+            // `AUTH LOGIN`'s second challenge response: base64 of the password alone.
+            needles.push(Zeroizing::new(BASE64.encode(password.as_bytes())));
+            // `AUTH PLAIN`'s single blob: base64 of NUL authcid NUL passwd.
+            if let Some(username) = username {
+                let mut raw = Zeroizing::new(Vec::new());
+                raw.push(0);
+                raw.extend_from_slice(username.as_bytes());
+                raw.push(0);
+                raw.extend_from_slice(password.as_bytes());
+                needles.push(Zeroizing::new(BASE64.encode(&*raw)));
+            }
+        }
+        Recorder {
+            started: Instant::now(),
+            needles,
+            steps: Vec::new(),
+            transcript: Vec::new(),
+            tls: None,
+            resolved_address: None,
+            advertised_capabilities: Vec::new(),
+            auth_mechanism: None,
+        }
+    }
+
+    /// Milliseconds since the session began.
+    fn elapsed_ms(&self) -> u64 {
+        self.started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+    }
+
+    /// Replace every secret needle in `text`. Applied to everything the recorder stores, in both
+    /// directions — see the mechanism-2 note on [`Recorder`].
+    fn scrub(&self, text: &str) -> String {
+        let mut out = text.to_owned();
+        for needle in &self.needles {
+            if !needle.is_empty() && out.contains(needle.as_str()) {
+                out = out.replace(needle.as_str(), REDACTED);
+            }
+        }
+        out
+    }
+
+    fn line(&mut self, direction: SmtpTranscriptDirection, text: &str) {
+        // Bound the transcript the same way replies are bounded, so a chatty relay cannot grow the
+        // response without limit.
+        if self.transcript.len() >= MAX_TRANSCRIPT_LINES {
+            return;
+        }
+        let at_ms = self.elapsed_ms();
+        self.transcript.push(SmtpTranscriptLine {
+            direction,
+            text: self.scrub(text),
+            at_ms,
+        });
+    }
+
+    /// Record a stage that succeeded.
+    fn ok(&mut self, stage: SmtpStage, since: Instant, reply: Option<&SmtpReply>) {
+        self.push_step(
+            stage,
+            SmtpStepOutcome::Ok,
+            since,
+            reply.map(|r| r.code),
+            reply.and_then(|r| r.enhanced_code.clone()),
+            reply.map(|r| r.text.clone()),
+        );
+    }
+
+    /// Record a stage that failed, carrying the server's own code and text through unchanged.
+    fn fail(&mut self, stage: SmtpStage, since: Instant, failure: &SmtpFailure) {
+        let outcome = match failure.kind {
+            // A `Configuration` failure is this client declining, not the relay erroring.
+            SmtpFailureKind::Configuration | SmtpFailureKind::TlsUnsupported => {
+                SmtpStepOutcome::Refused
+            }
+            _ => SmtpStepOutcome::Failed,
+        };
+        self.push_step(
+            stage,
+            outcome,
+            since,
+            failure.code,
+            failure.enhanced_code.clone(),
+            Some(failure.detail.clone()),
+        );
+    }
+
+    /// Record a stage that was never attempted, and why.
+    fn skipped(&mut self, stage: SmtpStage, why: &str) {
+        let started_ms = self.elapsed_ms();
+        self.steps.push(SmtpTraceStep {
+            stage,
+            outcome: SmtpStepOutcome::Skipped,
+            code: None,
+            enhanced_code: None,
+            detail: Some(why.to_owned()),
+            started_ms,
+            duration_ms: 0,
+        });
+    }
+
+    fn push_step(
+        &mut self,
+        stage: SmtpStage,
+        outcome: SmtpStepOutcome,
+        since: Instant,
+        code: Option<u16>,
+        enhanced_code: Option<String>,
+        detail: Option<String>,
+    ) {
+        let duration_ms = since.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        let started_ms = self.elapsed_ms().saturating_sub(duration_ms);
+        self.steps.push(SmtpTraceStep {
+            stage,
+            outcome,
+            code,
+            enhanced_code,
+            detail: detail.map(|d| self.scrub(&d)),
+            started_ms,
+            duration_ms,
+        });
+    }
+
+    /// Freeze into the serializable trace. Consumes the needles with it.
+    fn finish(self, client: &SmtpClient, tls_established: bool) -> SmtpTrace {
+        let total_ms = self.elapsed_ms();
+        SmtpTrace {
+            host: client.host.clone(),
+            port: client.port,
+            resolved_address: self.resolved_address,
+            encryption: client.encryption,
+            helo_name: client.helo_name.clone(),
+            tls_established,
+            tls: self.tls,
+            advertised_capabilities: self.advertised_capabilities,
+            auth_mechanism: self.auth_mechanism,
+            steps: self.steps,
+            transcript: self.transcript,
+            total_ms,
+        }
+    }
+}
+
 // --- Reply parsing ---------------------------------------------------------------------------
 
 /// One parsed SMTP reply (possibly multiline).
@@ -446,6 +791,10 @@ impl AsyncWrite for SmtpStream {
 struct Session {
     stream: BufReader<SmtpStream>,
     tls: bool,
+    /// The diagnostic recorder. It lives inside the session so the two I/O chokepoints
+    /// ([`Session::read_reply`] and [`Session::write_line`]) are the *only* places a transcript
+    /// line can be created — there is no third path that could append an unredacted one.
+    rec: Recorder,
 }
 
 impl Session {
@@ -486,6 +835,10 @@ impl Session {
                 ));
             }
             let line = line.trim_end_matches(['\r', '\n']);
+            // The sole place a server line enters the transcript, so the scrub in `Recorder::line`
+            // cannot be bypassed. Recorded before parsing: an unparseable reply is exactly the case
+            // where seeing the raw bytes matters most.
+            self.rec.line(SmtpTranscriptDirection::Server, line);
             if line.len() < 3 {
                 return Err(SmtpFailure::new(
                     stage,
@@ -549,13 +902,37 @@ impl Session {
         })
     }
 
-    /// Write a line and read the reply. `verb` is used only for error text; command *arguments* are
-    /// never echoed, so an `AUTH` line can never leak into a message.
+    /// Write a line and read the reply, recording the line in the transcript verbatim.
+    ///
+    /// **Only for lines built from non-secret data** — the EHLO name, the envelope addresses, and
+    /// bare verbs. Anything carrying a credential goes through [`command_redacted`] instead.
+    ///
+    /// [`command_redacted`]: Session::command_redacted
     async fn command(&mut self, stage: SmtpStage, line: &str) -> Result<SmtpReply, SmtpFailure> {
+        self.rec.line(SmtpTranscriptDirection::Client, line);
         self.write_line(stage, line).await?;
         self.read_reply(stage).await
     }
 
+    /// Write a credential-bearing line, recording `shown` in its place.
+    ///
+    /// `shown` is `&'static str`, and that is the point rather than an incidental choice: the
+    /// password reaches this process at runtime, out of the credential store, so it can never be a
+    /// `'static` string. The type therefore makes "record the real line" unexpressible here — the
+    /// only thing this method can put in the transcript is a literal written in this file.
+    async fn command_redacted(
+        &mut self,
+        stage: SmtpStage,
+        line: &str,
+        shown: &'static str,
+    ) -> Result<SmtpReply, SmtpFailure> {
+        self.rec.line(SmtpTranscriptDirection::Client, shown);
+        self.write_line(stage, line).await?;
+        self.read_reply(stage).await
+    }
+
+    /// Write a raw line **without** recording it. The transcript entry, if any, is the caller's
+    /// responsibility — used for the message body, which is bulk content rather than conversation.
     async fn write_line(&mut self, stage: SmtpStage, line: &str) -> Result<(), SmtpFailure> {
         let payload = format!("{line}\r\n");
         tokio::time::timeout(STEP_TIMEOUT, async {
@@ -630,7 +1007,19 @@ impl SmtpClient {
     /// before `AUTH` is ever sent. The only path that transmits credentials in the clear is the one
     /// where the operator explicitly chose [`SmtpEncryption::None`].
     pub async fn send(&self, message: &SmtpMessage) -> Result<SmtpDelivery, SmtpFailure> {
-        self.send_with_roots(message, &NativeRoots).await
+        self.send_traced(message).await.0
+    }
+
+    /// [`send`](Self::send), also returning the full diagnostic [`SmtpTrace`].
+    ///
+    /// The trace is produced on **both** outcomes, because a send that succeeds slowly, or succeeds
+    /// without TLS, is as worth seeing as one that fails. This is what the settings test-send calls;
+    /// `send` is the convenience wrapper for callers that only want the result.
+    pub async fn send_traced(
+        &self,
+        message: &SmtpMessage,
+    ) -> (Result<SmtpDelivery, SmtpFailure>, SmtpTrace) {
+        self.send_traced_with_roots(message, &NativeRoots).await
     }
 
     /// [`send`](Self::send) with the TLS trust anchors supplied explicitly — see [`TlsRoots`].
@@ -638,24 +1027,53 @@ impl SmtpClient {
     /// Private to this module, so `send` is the only way in from anywhere else in the crate. The
     /// ordering below is the property under test and is identical on both paths: nothing that
     /// identifies the account or the correspondents is written until the session is encrypted.
+    async fn send_traced_with_roots(
+        &self,
+        message: &SmtpMessage,
+        roots: &dyn TlsRoots,
+    ) -> (Result<SmtpDelivery, SmtpFailure>, SmtpTrace) {
+        let mut rec = Recorder::new(self.username.as_deref(), self.password.as_ref());
+
+        // Refuse before opening a socket, rather than negotiate something we did not implement.
+        let since = Instant::now();
+        if let Err(failure) = Self::reject_unimplemented(message) {
+            rec.fail(SmtpStage::Connect, since, &failure);
+            let trace = rec.finish(self, false);
+            return (Err(failure), trace);
+        }
+
+        // `connect` failing means we never had a session at all, so `tls: false` (already the
+        // constructors' default) is accurate — including for a failed implicit-TLS handshake.
+        let mut session = match self.connect(rec, roots).await {
+            Ok(session) => session,
+            Err((rec, failure)) => {
+                let trace = rec.finish(self, false);
+                return (Err(failure), trace);
+            }
+        };
+
+        // Everything after this point runs inside a live session, so the failure's `tls` flag is
+        // stamped from that session rather than defaulted. One place, so no path can forget.
+        let outcome = self
+            .deliver(&mut session, message, roots)
+            .await
+            .map_err(|mut e| {
+                e.tls = session.tls;
+                e
+            });
+        let trace = session.rec.finish(self, session.tls);
+        (outcome, trace)
+    }
+
+    /// [`send_traced_with_roots`](Self::send_traced_with_roots) discarding the trace — the shape the
+    /// pre-existing tests use.
+    #[cfg(test)]
     async fn send_with_roots(
         &self,
         message: &SmtpMessage,
         roots: &dyn TlsRoots,
     ) -> Result<SmtpDelivery, SmtpFailure> {
-        // Refuse before opening a socket, rather than negotiate something we did not implement.
-        Self::reject_unimplemented(message)?;
-        // `connect` failing means we never had a session at all, so `tls: false` (already the
-        // constructors' default) is accurate — including for a failed implicit-TLS handshake.
-        let mut session = self.connect(roots).await?;
-        // Everything after this point runs inside a live session, so the failure's `tls` flag is
-        // stamped from that session rather than defaulted. One place, so no path can forget.
-        self.deliver(&mut session, message, roots)
-            .await
-            .map_err(|mut e| {
-                e.tls = session.tls;
-                e
-            })
+        self.send_traced_with_roots(message, roots).await.0
     }
 
     /// Refuse, up front and by name, the parts of SMTP this client does **not** implement.
@@ -699,59 +1117,90 @@ impl SmtpClient {
         roots: &dyn TlsRoots,
     ) -> Result<SmtpDelivery, SmtpFailure> {
         // Opening banner.
-        let greeting = session.read_reply(SmtpStage::Greeting).await?;
-        Session::expect_positive(greeting, SmtpStage::Greeting)?;
+        let since = Instant::now();
+        let greeting = session
+            .read_reply(SmtpStage::Greeting)
+            .await
+            .and_then(|r| Session::expect_positive(r, SmtpStage::Greeting))
+            .inspect_err(|e| session.rec.fail(SmtpStage::Greeting, since, e))?;
+        session.rec.ok(SmtpStage::Greeting, since, Some(&greeting));
 
         let mut caps = self.ehlo(session).await?;
 
         if self.encryption == SmtpEncryption::StartTls {
+            let since = Instant::now();
             if !caps.starttls {
-                return Err(SmtpFailure::new(
+                let failure = SmtpFailure::new(
                     SmtpStage::StartTls,
                     SmtpFailureKind::TlsUnsupported,
                     "the server did not advertise STARTTLS, so the connection cannot be encrypted; \
                      fix the relay, use implicit TLS on port 465, or explicitly select no \
                      encryption",
-                ));
+                );
+                session.rec.fail(SmtpStage::StartTls, since, &failure);
+                return Err(failure);
             }
             self.start_tls(session, roots).await?;
             // Capabilities before and after the upgrade are independent; only the encrypted set counts.
             caps = self.ehlo(session).await?;
+        } else {
+            // Recorded rather than omitted: an operator looking at an implicit-TLS or plaintext
+            // session should see that STARTTLS was deliberately not part of the plan, not wonder
+            // whether it was tried and quietly dropped.
+            session.rec.skipped(
+                SmtpStage::StartTls,
+                match self.encryption {
+                    SmtpEncryption::ImplicitTls => {
+                        "not applicable: the session was already encrypted from the first byte \
+                         (implicit TLS)"
+                    }
+                    _ => "not attempted: encryption is set to none for this relay",
+                },
+            );
         }
 
         let authenticated = self.authenticate(session, &caps).await?;
 
         // Envelope. A rejection at MAIL FROM is a sender the relay will not accept; at RCPT TO it is
         // usually relay denial. Reporting them under distinct stages is the whole point.
+        let since = Instant::now();
         let mail_from = session
             .command(
                 SmtpStage::MailFrom,
                 &format!("MAIL FROM:<{}>", message.from_address),
             )
-            .await?;
-        Session::expect_positive(mail_from, SmtpStage::MailFrom)?;
+            .await
+            .and_then(|r| Session::expect_positive(r, SmtpStage::MailFrom))
+            .inspect_err(|e| session.rec.fail(SmtpStage::MailFrom, since, e))?;
+        session.rec.ok(SmtpStage::MailFrom, since, Some(&mail_from));
 
+        let since = Instant::now();
         let rcpt_to = session
             .command(
                 SmtpStage::RcptTo,
                 &format!("RCPT TO:<{}>", message.to_address),
             )
-            .await?;
-        Session::expect_positive(rcpt_to, SmtpStage::RcptTo)?;
+            .await
+            .and_then(|r| Session::expect_positive(r, SmtpStage::RcptTo))
+            .inspect_err(|e| session.rec.fail(SmtpStage::RcptTo, since, e))?;
+        session.rec.ok(SmtpStage::RcptTo, since, Some(&rcpt_to));
 
         // DATA: a 354 intermediate, then the body, then the terminating dot.
-        let data = session.command(SmtpStage::Data, "DATA").await?;
-        if data.code != 354 {
-            return Err(SmtpFailure::from_reply(SmtpStage::Data, &data));
-        }
-        let body = render_message(message);
-        session.write_line(SmtpStage::Data, &body).await?;
-        let accepted = session.command(SmtpStage::Data, ".").await?;
-        let accepted = Session::expect_positive(accepted, SmtpStage::Data)?;
+        let since = Instant::now();
+        let accepted = self
+            .send_body(session, message)
+            .await
+            .inspect_err(|e| session.rec.fail(SmtpStage::Data, since, e))?;
+        session.rec.ok(SmtpStage::Data, since, Some(&accepted));
 
         // QUIT is best-effort: the relay already accepted the message, so a failure to say goodbye
-        // must not be reported as a delivery failure.
-        let _ = session.command(SmtpStage::Quit, "QUIT").await;
+        // must not be reported as a delivery failure. It is still traced, because a relay that
+        // drops the connection instead of answering QUIT is a real (if harmless) oddity.
+        let since = Instant::now();
+        match session.command(SmtpStage::Quit, "QUIT").await {
+            Ok(reply) => session.rec.ok(SmtpStage::Quit, since, Some(&reply)),
+            Err(e) => session.rec.fail(SmtpStage::Quit, since, &e),
+        }
 
         Ok(SmtpDelivery {
             tls: session.tls,
@@ -760,9 +1209,19 @@ impl SmtpClient {
         })
     }
 
-    async fn connect(&self, roots: &dyn TlsRoots) -> Result<Session, SmtpFailure> {
+    /// Open the TCP connection (and, in implicit-TLS mode, the handshake).
+    ///
+    /// Takes the [`Recorder`] by value and hands it back on either arm, because a connect failure
+    /// still has a trace worth returning — the resolved address and the connect timing are exactly
+    /// what distinguishes a DNS typo from a blocked port.
+    async fn connect(
+        &self,
+        mut rec: Recorder,
+        roots: &dyn TlsRoots,
+    ) -> Result<Session, (Recorder, SmtpFailure)> {
         let address = format!("{}:{}", self.host, self.port);
-        let tcp = tokio::time::timeout(STEP_TIMEOUT, TcpStream::connect(&address))
+        let since = Instant::now();
+        let connected = tokio::time::timeout(STEP_TIMEOUT, TcpStream::connect(&address))
             .await
             .map_err(|_| {
                 SmtpFailure::new(
@@ -773,27 +1232,52 @@ impl SmtpClient {
                         STEP_TIMEOUT.as_secs()
                     ),
                 )
-            })?
-            .map_err(|e| {
-                let mut failure = SmtpFailure::from_io(SmtpStage::Connect, &e);
-                // `connect` on an unresolvable name has no dedicated stable `ErrorKind`, so it
-                // arrives as a generic error whose text names the resolver. Sniffing that text is
-                // inexact, but the alternative is telling an operator with a typo'd hostname to
-                // check their firewall.
-                let text = e.to_string().to_ascii_lowercase();
-                if text.contains("resolve")
-                    || text.contains("not known")
-                    || text.contains("no such host")
-                    || text.contains("nodename")
-                {
-                    failure.kind = SmtpFailureKind::Dns;
-                }
-                failure.detail = format!("{address}: {}", failure.detail);
-                failure
-            })?;
+            })
+            .and_then(|r| {
+                r.map_err(|e| {
+                    let mut failure = SmtpFailure::from_io(SmtpStage::Connect, &e);
+                    // `connect` on an unresolvable name has no dedicated stable `ErrorKind`, so it
+                    // arrives as a generic error whose text names the resolver. Sniffing that text is
+                    // inexact, but the alternative is telling an operator with a typo'd hostname to
+                    // check their firewall.
+                    let text = e.to_string().to_ascii_lowercase();
+                    if text.contains("resolve")
+                        || text.contains("not known")
+                        || text.contains("no such host")
+                        || text.contains("nodename")
+                    {
+                        failure.kind = SmtpFailureKind::Dns;
+                    }
+                    failure.detail = format!("{address}: {}", failure.detail);
+                    failure
+                })
+            });
+
+        let tcp = match connected {
+            Ok(tcp) => tcp,
+            Err(failure) => {
+                rec.fail(SmtpStage::Connect, since, &failure);
+                return Err((rec, failure));
+            }
+        };
+        // Where the name actually resolved to. A hostname pointing at an unexpected address — an
+        // stale /etc/hosts entry, a split-horizon DNS answer — is invisible without this.
+        rec.resolved_address = tcp.peer_addr().ok().map(|a| a.to_string());
+        rec.ok(SmtpStage::Connect, since, None);
 
         let stream = if self.encryption == SmtpEncryption::ImplicitTls {
-            SmtpStream::Tls(Box::new(self.handshake(tcp, roots).await?))
+            let since = Instant::now();
+            match self.handshake(tcp, roots).await {
+                Ok(tls) => {
+                    rec.tls = Some(tls_detail(tls.get_ref().1));
+                    rec.ok(SmtpStage::Tls, since, None);
+                    SmtpStream::Tls(Box::new(tls))
+                }
+                Err(failure) => {
+                    rec.fail(SmtpStage::Tls, since, &failure);
+                    return Err((rec, failure));
+                }
+            }
         } else {
             SmtpStream::Plain(tcp)
         };
@@ -801,6 +1285,7 @@ impl SmtpClient {
         Ok(Session {
             stream: BufReader::new(stream),
             tls,
+            rec,
         })
     }
 
@@ -839,11 +1324,42 @@ impl SmtpClient {
     }
 
     async fn ehlo(&self, session: &mut Session) -> Result<Capabilities, SmtpFailure> {
+        let since = Instant::now();
         let reply = session
             .command(SmtpStage::Ehlo, &format!("EHLO {}", self.helo_name))
-            .await?;
-        let reply = Session::expect_positive(reply, SmtpStage::Ehlo)?;
+            .await
+            .and_then(|r| Session::expect_positive(r, SmtpStage::Ehlo))
+            .inspect_err(|e| session.rec.fail(SmtpStage::Ehlo, since, e))?;
+        session.rec.ok(SmtpStage::Ehlo, since, Some(&reply));
+        // The advertised extension list, verbatim. "The relay never offered AUTH" and "the relay
+        // offered only CRAM-MD5" are different problems with the same symptom, and this is the only
+        // place the difference is visible. Overwritten by the post-STARTTLS EHLO, which is the set
+        // that actually governed the session.
+        session.rec.advertised_capabilities = reply.lines.iter().skip(1).cloned().collect();
         Ok(Capabilities::parse(&reply.lines))
+    }
+
+    /// `DATA`, the body, and the terminating dot — split out so the whole exchange is one traced
+    /// stage with one duration, which is what an operator debugging a size or content rejection
+    /// wants to see.
+    async fn send_body(
+        &self,
+        session: &mut Session,
+        message: &SmtpMessage,
+    ) -> Result<SmtpReply, SmtpFailure> {
+        let data = session.command(SmtpStage::Data, "DATA").await?;
+        if data.code != 354 {
+            return Err(SmtpFailure::from_reply(SmtpStage::Data, &data));
+        }
+        let body = render_message(message);
+        // The body is bulk content, not conversation: a summary line keeps the transcript readable
+        // and keeps the recipient's message text out of a payload an operator may paste into a
+        // support ticket.
+        let summary = format!("<message body: {} bytes>", body.len());
+        session.rec.line(SmtpTranscriptDirection::Client, &summary);
+        session.write_line(SmtpStage::Data, &body).await?;
+        let accepted = session.command(SmtpStage::Data, ".").await?;
+        Session::expect_positive(accepted, SmtpStage::Data)
     }
 
     async fn start_tls(
@@ -851,33 +1367,57 @@ impl SmtpClient {
         session: &mut Session,
         roots: &dyn TlsRoots,
     ) -> Result<(), SmtpFailure> {
-        let reply = session.command(SmtpStage::StartTls, "STARTTLS").await?;
-        Session::expect_positive(reply, SmtpStage::StartTls)?;
+        let since = Instant::now();
+        let reply = session
+            .command(SmtpStage::StartTls, "STARTTLS")
+            .await
+            .and_then(|r| Session::expect_positive(r, SmtpStage::StartTls));
+        let reply = match reply {
+            Ok(reply) => reply,
+            Err(e) => {
+                session.rec.fail(SmtpStage::StartTls, since, &e);
+                return Err(e);
+            }
+        };
 
         // STARTTLS response injection (CVE-2011-0411): anything already buffered was sent before the
         // handshake and must not be trusted as part of the encrypted session.
         if !session.stream.buffer().is_empty() {
-            return Err(SmtpFailure::new(
+            let failure = SmtpFailure::new(
                 SmtpStage::StartTls,
                 SmtpFailureKind::Protocol,
                 "the server pipelined data after its STARTTLS reply; refusing the upgrade because \
                  that plaintext could be injected into the encrypted session",
-            ));
+            );
+            session.rec.fail(SmtpStage::StartTls, since, &failure);
+            return Err(failure);
         }
 
         let SmtpStream::Plain(tcp) =
             std::mem::replace(session.stream.get_mut(), SmtpStream::Upgrading)
         else {
-            return Err(SmtpFailure::new(
+            let failure = SmtpFailure::new(
                 SmtpStage::StartTls,
                 SmtpFailureKind::Protocol,
                 "the connection was already encrypted when STARTTLS was attempted",
-            ));
+            );
+            session.rec.fail(SmtpStage::StartTls, since, &failure);
+            return Err(failure);
         };
+        session.rec.ok(SmtpStage::StartTls, since, Some(&reply));
 
         // On handshake failure the session is dropped by the caller, so the `Upgrading` placeholder
         // is never read from.
-        let tls = self.handshake(tcp, roots).await?;
+        let since = Instant::now();
+        let tls = match self.handshake(tcp, roots).await {
+            Ok(tls) => tls,
+            Err(e) => {
+                session.rec.fail(SmtpStage::Tls, since, &e);
+                return Err(e);
+            }
+        };
+        session.rec.tls = Some(tls_detail(tls.get_ref().1));
+        session.rec.ok(SmtpStage::Tls, since, None);
         *session.stream.get_mut() = SmtpStream::Tls(Box::new(tls));
         session.tls = true;
         Ok(())
@@ -890,19 +1430,32 @@ impl SmtpClient {
         caps: &Capabilities,
     ) -> Result<bool, SmtpFailure> {
         let (Some(username), Some(password)) = (&self.username, &self.password) else {
+            session
+                .rec
+                .skipped(SmtpStage::Auth, "no relay username is configured");
             return Ok(false);
         };
         if username.is_empty() {
+            session
+                .rec
+                .skipped(SmtpStage::Auth, "no relay username is configured");
             return Ok(false);
         }
+        let since = Instant::now();
         if !caps.auth_plain && !caps.auth_login {
-            return Err(SmtpFailure::new(
+            let failure = SmtpFailure::new(
                 SmtpStage::Auth,
                 SmtpFailureKind::Configuration,
                 "a username is configured but the server advertised no AUTH mechanism this client \
                  supports (PLAIN or LOGIN); if the relay needs no credentials, clear the username",
-            ));
+            );
+            session.rec.fail(SmtpStage::Auth, since, &failure);
+            return Err(failure);
         }
+
+        // Which mechanism was chosen is recorded; what was sent with it is not.
+        session.rec.auth_mechanism =
+            Some(if caps.auth_plain { "PLAIN" } else { "LOGIN" }.to_owned());
 
         let reply = if caps.auth_plain {
             // RFC 4616: authzid NUL authcid NUL passwd, base64. Zeroized after encoding.
@@ -913,27 +1466,52 @@ impl SmtpClient {
             raw.extend_from_slice(password.as_bytes());
             let encoded = Zeroizing::new(BASE64.encode(&*raw));
             session
-                .command(SmtpStage::Auth, &format!("AUTH PLAIN {}", *encoded))
-                .await?
+                .command_redacted(
+                    SmtpStage::Auth,
+                    &format!("AUTH PLAIN {}", *encoded),
+                    "AUTH PLAIN <redacted>",
+                )
+                .await
+                .inspect_err(|e| session.rec.fail(SmtpStage::Auth, since, e))?
         } else {
-            let start = session.command(SmtpStage::Auth, "AUTH LOGIN").await?;
+            let start = session
+                .command(SmtpStage::Auth, "AUTH LOGIN")
+                .await
+                .inspect_err(|e| session.rec.fail(SmtpStage::Auth, since, e))?;
             if start.code != 334 {
-                return Err(SmtpFailure::from_reply(SmtpStage::Auth, &start));
+                let failure = SmtpFailure::from_reply(SmtpStage::Auth, &start);
+                session.rec.fail(SmtpStage::Auth, since, &failure);
+                return Err(failure);
             }
+            // The username is not a secret, but it is still shown redacted: the challenge responses
+            // of AUTH LOGIN are positional, and a transcript showing one base64 blob and hiding the
+            // next invites the reader to decode the one that is there.
             let user_reply = session
-                .command(SmtpStage::Auth, &BASE64.encode(username.as_bytes()))
-                .await?;
+                .command_redacted(
+                    SmtpStage::Auth,
+                    &BASE64.encode(username.as_bytes()),
+                    "<username, base64>",
+                )
+                .await
+                .inspect_err(|e| session.rec.fail(SmtpStage::Auth, since, e))?;
             if user_reply.code != 334 {
-                return Err(SmtpFailure::from_reply(SmtpStage::Auth, &user_reply));
+                let failure = SmtpFailure::from_reply(SmtpStage::Auth, &user_reply);
+                session.rec.fail(SmtpStage::Auth, since, &failure);
+                return Err(failure);
             }
             let encoded = Zeroizing::new(BASE64.encode(password.as_bytes()));
-            session.command(SmtpStage::Auth, &encoded).await?
+            session
+                .command_redacted(SmtpStage::Auth, &encoded, "<redacted>")
+                .await
+                .inspect_err(|e| session.rec.fail(SmtpStage::Auth, since, e))?
         };
 
         // A 535 here is the single most common real-world mail misconfiguration. The server's own
         // text ("authentication failed", "Username and Password not accepted", …) is what the
         // operator needs, so it is reported verbatim.
-        Session::expect_positive(reply, SmtpStage::Auth)?;
+        let reply = Session::expect_positive(reply, SmtpStage::Auth)
+            .inspect_err(|e| session.rec.fail(SmtpStage::Auth, since, e))?;
+        session.rec.ok(SmtpStage::Auth, since, Some(&reply));
         Ok(true)
     }
 }
@@ -960,6 +1538,34 @@ struct NativeRoots;
 impl TlsRoots for NativeRoots {
     fn client_config(&self) -> Result<Arc<ClientConfig>, SmtpFailure> {
         tls_config()
+    }
+}
+
+/// Read what the completed handshake negotiated, for the diagnostic trace.
+///
+/// Everything here is already-verified public information: the protocol version, the cipher suite,
+/// and the two distinguished names on the leaf certificate the relay presented. No private material
+/// and nothing about this client's own configuration passes through.
+///
+/// The DN rendering follows the same idiom as the rest of the crate's certificate handling
+/// (`x509_cert::Certificate::from_der(…).tbs_certificate.subject`), so a name is formatted the same
+/// way here as in signature validation. `x509-cert` is already a direct dependency, so this costs
+/// no new crate.
+fn tls_detail(conn: &tokio_rustls::rustls::CommonState) -> SmtpTlsDetail {
+    use x509_cert::der::Decode as _;
+
+    let leaf = conn
+        .peer_certificates()
+        .and_then(|chain| chain.first())
+        .and_then(|der| x509_cert::Certificate::from_der(der.as_ref()).ok());
+
+    SmtpTlsDetail {
+        protocol: conn.protocol_version().map(|v| format!("{v:?}")),
+        cipher_suite: conn
+            .negotiated_cipher_suite()
+            .and_then(|s| s.suite().as_str().map(str::to_owned)),
+        peer_subject: leaf.as_ref().map(|c| c.tbs_certificate.subject.to_string()),
+        peer_issuer: leaf.as_ref().map(|c| c.tbs_certificate.issuer.to_string()),
     }
 }
 
@@ -1015,18 +1621,71 @@ fn render_message(message: &SmtpMessage) -> String {
     out.push_str(&format!("Date: {}\r\n", message.date));
     out.push_str(&format!("Message-ID: <{}>\r\n", message.message_id));
     out.push_str("MIME-Version: 1.0\r\n");
-    out.push_str("Content-Type: text/plain; charset=utf-8\r\n");
-    out.push_str("Content-Transfer-Encoding: base64\r\n");
     out.push_str("Auto-Submitted: auto-generated\r\n");
-    out.push_str("\r\n");
-    let encoded = BASE64.encode(message.body.as_bytes());
+
+    match &message.html_body {
+        None => {
+            out.push_str("Content-Type: text/plain; charset=utf-8\r\n");
+            out.push_str("Content-Transfer-Encoding: base64\r\n");
+            out.push_str("\r\n");
+            push_base64_body(&mut out, &message.body);
+        }
+        Some(html) => {
+            // A boundary that cannot occur inside either part: both parts are base64, whose alphabet
+            // excludes '=' except as terminal padding and excludes '_' entirely, so no generated
+            // line can collide with it. Derived from the Message-ID rather than random so the same
+            // message renders byte-identically twice — which is what makes the structure testable.
+            let boundary = multipart_boundary(&message.message_id);
+            out.push_str(&format!(
+                "Content-Type: multipart/alternative; boundary=\"{boundary}\"\r\n"
+            ));
+            out.push_str("\r\n");
+            // Read by nothing that matters, but a client too old to understand multipart shows it
+            // instead of nothing at all.
+            out.push_str("This is a message in MIME multipart/alternative format.\r\n");
+
+            // Part 1 — text/plain. First, per RFC 2046 §5.1.4: a client picks the *last* part it
+            // understands, so the plain-text part must precede the HTML one.
+            out.push_str(&format!("\r\n--{boundary}\r\n"));
+            out.push_str("Content-Type: text/plain; charset=utf-8\r\n");
+            out.push_str("Content-Transfer-Encoding: base64\r\n");
+            out.push_str("\r\n");
+            push_base64_body(&mut out, &message.body);
+
+            // Part 2 — text/html.
+            out.push_str(&format!("\r\n--{boundary}\r\n"));
+            out.push_str("Content-Type: text/html; charset=utf-8\r\n");
+            out.push_str("Content-Transfer-Encoding: base64\r\n");
+            out.push_str("\r\n");
+            push_base64_body(&mut out, html);
+
+            out.push_str(&format!("\r\n--{boundary}--\r\n"));
+        }
+    }
+
+    // Base64 output can never begin a line with '.', and neither can a boundary line ("--…"), so no
+    // dot-stuffing pass is needed; the terminating "." is written by the caller as its own command.
+    out.trim_end_matches("\r\n").to_owned()
+}
+
+/// Append a body as base64, wrapped at 76 columns so no line approaches the 998-octet limit.
+fn push_base64_body(out: &mut String, body: &str) {
+    let encoded = BASE64.encode(body.as_bytes());
     for chunk in encoded.as_bytes().chunks(76) {
         out.push_str(std::str::from_utf8(chunk).unwrap_or_default());
         out.push_str("\r\n");
     }
-    // Base64 output can never begin a line with '.', so no dot-stuffing pass is needed; the
-    // terminating "." is written by the caller as its own command.
-    out.trim_end_matches("\r\n").to_owned()
+}
+
+/// A MIME boundary derived from the Message-ID, restricted to characters that cannot appear in
+/// base64 output so it can never collide with a body line.
+fn multipart_boundary(message_id: &str) -> String {
+    let tail: String = message_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(32)
+        .collect();
+    format!("=_chancela_{tail}_=")
 }
 
 /// RFC 2047 `=?UTF-8?B?…?=` encoding, applied only when the value is not plain printable ASCII.
@@ -1486,8 +2145,19 @@ mod tests {
             to_address: "amelia.marques@encosto-estrategico.pt".to_owned(),
             subject: "Teste de configuração".to_owned(),
             body: "Olá — configuração validada.".to_owned(),
+            html_body: None,
             date: "Mon, 20 Jul 2026 09:00:00 +0100".to_owned(),
             message_id: "abc@encosto-estrategico.pt".to_owned(),
+        }
+    }
+
+    /// The same message with both parts, for the `multipart/alternative` tests.
+    fn multipart_message() -> SmtpMessage {
+        SmtpMessage {
+            html_body: Some(
+                "<p style=\"color:#10241b\">Olá — configuração validada.</p>".to_owned(),
+            ),
+            ..message()
         }
     }
 
@@ -2112,6 +2782,7 @@ mod tests {
             to_address: "amelia.marques@encosto-estrategico.pt".to_owned(),
             subject: "Teste de configuração".to_owned(),
             body: "Olá — configuração validada.".to_owned(),
+            html_body: None,
             date: "Mon, 20 Jul 2026 09:00:00 +0100".to_owned(),
             message_id: "abc@encosto-estrategico.pt".to_owned(),
         });
@@ -2149,6 +2820,7 @@ mod tests {
             to_address: "amélia@encosto-estrategico.pt".to_owned(),
             subject: "Teste".to_owned(),
             body: "Olá".to_owned(),
+            html_body: None,
             date: "Mon, 20 Jul 2026 09:00:00 +0100".to_owned(),
             message_id: "abc@chancela.invalid".to_owned(),
         };
@@ -2230,5 +2902,510 @@ mod tests {
         assert!(SmtpEncryption::StartTls.is_encrypted());
         assert!(SmtpEncryption::ImplicitTls.is_encrypted());
         assert!(!SmtpEncryption::None.is_encrypted());
+    }
+
+    // --- Multipart rendering (t70) ---------------------------------------------------------------
+
+    #[test]
+    fn a_message_with_an_html_body_is_multipart_alternative_with_both_parts_present() {
+        let rendered = render_message(&multipart_message());
+
+        assert!(
+            rendered.contains("Content-Type: multipart/alternative; boundary=\""),
+            "not multipart: {rendered}"
+        );
+        assert!(
+            rendered.contains("Content-Type: text/plain; charset=utf-8"),
+            "the text/plain part is missing — HTML-only mail is refused by gateways: {rendered}"
+        );
+        assert!(
+            rendered.contains("Content-Type: text/html; charset=utf-8"),
+            "the text/html part is missing: {rendered}"
+        );
+
+        // Both parts decode back to what went in.
+        let boundary = multipart_boundary(&multipart_message().message_id);
+        let parts: Vec<&str> = rendered.split(&format!("--{boundary}")).collect();
+        assert_eq!(
+            parts.len(),
+            4,
+            "expected preamble + 2 parts + closing delimiter, got {}: {rendered}",
+            parts.len()
+        );
+        let decoded: Vec<String> = parts[1..3]
+            .iter()
+            .map(|part| {
+                let body = part.split("\r\n\r\n").nth(1).expect("part body");
+                let joined: String = body.split("\r\n").collect();
+                String::from_utf8(BASE64.decode(joined.trim()).expect("base64")).expect("utf8")
+            })
+            .collect();
+        assert_eq!(decoded[0], multipart_message().body);
+        assert_eq!(decoded[1], multipart_message().html_body.unwrap());
+    }
+
+    /// RFC 2046 §5.1.4: a client displays the **last** part it understands, so the plain-text part
+    /// has to come first or a text-only client picks nothing. Getting this backwards is the classic
+    /// multipart bug and it is invisible in any client that does understand HTML.
+    #[test]
+    fn the_plain_text_part_precedes_the_html_part() {
+        let rendered = render_message(&multipart_message());
+        let text_at = rendered
+            .find("Content-Type: text/plain")
+            .expect("text part present");
+        let html_at = rendered
+            .find("Content-Type: text/html")
+            .expect("html part present");
+        assert!(
+            text_at < html_at,
+            "the HTML part precedes the text part, so a text-only client would show nothing"
+        );
+    }
+
+    /// A message with no HTML stays a simple `text/plain` message rather than growing a pointless
+    /// one-part multipart wrapper.
+    #[test]
+    fn a_message_without_an_html_body_stays_single_part() {
+        let rendered = render_message(&message());
+        assert!(!rendered.contains("multipart"), "{rendered}");
+        assert!(rendered.contains("Content-Type: text/plain; charset=utf-8"));
+    }
+
+    /// The boundary must not be able to appear inside a part, or the message truncates at whatever
+    /// line collided. Both parts are base64, whose alphabet excludes `_` entirely.
+    #[test]
+    fn the_multipart_boundary_cannot_collide_with_base64_body_lines() {
+        let boundary = multipart_boundary(&multipart_message().message_id);
+        assert!(boundary.contains('_'), "{boundary}");
+        // `_` and `=` are outside the base64 alphabet (bar terminal padding), so no encoded body
+        // line can begin with the delimiter.
+        assert!(!boundary.chars().all(|c| c.is_ascii_alphanumeric()));
+        let rendered = render_message(&multipart_message());
+        // Exactly three delimiter occurrences: two opening, one closing.
+        assert_eq!(rendered.matches(&format!("--{boundary}")).count(), 3);
+    }
+
+    /// The accented-subject path is unchanged by multipart. Pinned because `Subject:` moved relative
+    /// to the `Content-Type` header when the multipart branch was added.
+    #[test]
+    fn an_accented_subject_is_still_rfc_2047_encoded_in_a_multipart_message() {
+        let rendered = render_message(&multipart_message());
+        let expected = format!(
+            "Subject: =?UTF-8?B?{}?=",
+            BASE64.encode("Teste de configuração".as_bytes())
+        );
+        assert!(
+            rendered.contains(&expected),
+            "the accented subject was not RFC 2047 encoded: {rendered}"
+        );
+        // And the display name in `From:`, which is the other header that carries free text.
+        assert!(
+            rendered.contains(&format!(
+                "=?UTF-8?B?{}?=",
+                BASE64.encode("Encosto Estratégico Lda".as_bytes())
+            )),
+            "the accented display name was not RFC 2047 encoded: {rendered}"
+        );
+    }
+
+    // --- The diagnostic trace (t70) ---------------------------------------------------------------
+
+    #[tokio::test]
+    async fn the_trace_records_the_whole_protocol_timeline_on_success() {
+        let relay = FakeRelay::spawn(accepting_reply).await;
+        let client = client(relay.port, SmtpEncryption::None, true);
+        let (outcome, trace) = client
+            .send_traced_with_roots(&multipart_message(), &TestRoots)
+            .await;
+        assert!(outcome.is_ok(), "{outcome:?}");
+
+        let stages: Vec<SmtpStage> = trace.steps.iter().map(|s| s.stage).collect();
+        assert_eq!(
+            stages,
+            vec![
+                SmtpStage::Connect,
+                SmtpStage::Greeting,
+                SmtpStage::Ehlo,
+                SmtpStage::StartTls, // skipped, but recorded
+                SmtpStage::Auth,
+                SmtpStage::MailFrom,
+                SmtpStage::RcptTo,
+                SmtpStage::Data,
+                SmtpStage::Quit,
+            ],
+            "the timeline should show every stage, including the ones not attempted"
+        );
+
+        // A stage that was not attempted is `Skipped` and says why, rather than being absent.
+        let starttls = trace
+            .steps
+            .iter()
+            .find(|s| s.stage == SmtpStage::StartTls)
+            .expect("starttls step");
+        assert_eq!(starttls.outcome, SmtpStepOutcome::Skipped);
+        assert!(
+            starttls
+                .detail
+                .as_deref()
+                .is_some_and(|d| d.contains("none")),
+            "a skipped stage should explain itself: {starttls:?}"
+        );
+
+        // The resolved address, so a hostname pointing somewhere unexpected is visible.
+        assert_eq!(
+            trace.resolved_address.as_deref(),
+            Some(format!("127.0.0.1:{}", relay.port).as_str())
+        );
+        assert_eq!(trace.port, relay.port);
+        assert!(!trace.tls_established);
+        assert_eq!(trace.auth_mechanism.as_deref(), Some("PLAIN"));
+        // The relay's advertised extensions, verbatim — "offered no AUTH" and "offered only
+        // CRAM-MD5" are different problems with the same symptom.
+        assert!(
+            trace
+                .advertised_capabilities
+                .iter()
+                .any(|c| c == "AUTH PLAIN LOGIN"),
+            "{:?}",
+            trace.advertised_capabilities
+        );
+        // The relay's own accepting reply reached the timeline.
+        let data = trace
+            .steps
+            .iter()
+            .find(|s| s.stage == SmtpStage::Data)
+            .expect("data step");
+        assert_eq!(data.code, Some(250));
+        assert!(
+            data.detail.as_deref().is_some_and(|d| d.contains("8F2A1")),
+            "the relay's queue id should survive into the trace: {data:?}"
+        );
+    }
+
+    /// The single most useful thing in the payload: the server's real code and text at the stage
+    /// that failed. This is the reason a generic "could not send" is useless.
+    #[tokio::test]
+    async fn the_trace_carries_the_servers_verbatim_reply_at_the_failing_stage() {
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                EHLO_FULL.to_owned()
+            } else if upper.starts_with("AUTH") {
+                "535 5.7.8 Error: authentication failed: bad credentials\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+        let client = client(relay.port, SmtpEncryption::None, true);
+        let (outcome, trace) = client
+            .send_traced_with_roots(&multipart_message(), &TestRoots)
+            .await;
+        assert!(outcome.is_err());
+
+        let auth = trace
+            .steps
+            .iter()
+            .find(|s| s.stage == SmtpStage::Auth)
+            .expect("auth step");
+        assert_eq!(auth.outcome, SmtpStepOutcome::Failed);
+        assert_eq!(auth.code, Some(535));
+        assert_eq!(auth.enhanced_code.as_deref(), Some("5.7.8"));
+        assert_eq!(
+            auth.detail.as_deref(),
+            Some("Error: authentication failed: bad credentials"),
+            "the server's text must survive verbatim"
+        );
+
+        // Stages after the failure are simply absent — the timeline stops where the session did.
+        assert!(
+            !trace.steps.iter().any(|s| s.stage == SmtpStage::MailFrom),
+            "the timeline should stop at the failure, not invent later stages"
+        );
+
+        // And the raw server line is in the transcript too.
+        assert!(
+            trace.transcript.iter().any(|l| {
+                l.direction == SmtpTranscriptDirection::Server
+                    && l.text.contains("535 5.7.8 Error: authentication failed")
+            }),
+            "{:?}",
+            trace.transcript
+        );
+    }
+
+    /// A refusal by *this client* is not the relay's fault, and is reported as a distinct outcome so
+    /// the operator looks in the right place.
+    #[tokio::test]
+    async fn a_client_side_refusal_is_recorded_as_refused_not_failed() {
+        // A relay that offers no AUTH mechanism we implement, while a username is configured.
+        let relay = FakeRelay::spawn(|line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                "250-relay.example.pt\r\n250 AUTH CRAM-MD5 XOAUTH2\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+        let client = client(relay.port, SmtpEncryption::None, true);
+        let (outcome, trace) = client
+            .send_traced_with_roots(&multipart_message(), &TestRoots)
+            .await;
+        assert!(outcome.is_err());
+
+        let auth = trace
+            .steps
+            .iter()
+            .find(|s| s.stage == SmtpStage::Auth)
+            .expect("auth step");
+        assert_eq!(
+            auth.outcome,
+            SmtpStepOutcome::Refused,
+            "an unimplemented AUTH mechanism is this client declining, not the relay erroring"
+        );
+        assert!(
+            auth.detail
+                .as_deref()
+                .is_some_and(|d| d.contains("PLAIN or LOGIN")),
+            "the refusal should name what is supported: {auth:?}"
+        );
+        // What the relay *did* offer is in the trace, which is how the operator sees the mismatch.
+        assert!(
+            trace
+                .advertised_capabilities
+                .iter()
+                .any(|c| c.contains("CRAM-MD5")),
+            "{:?}",
+            trace.advertised_capabilities
+        );
+    }
+
+    /// Timing is per stage so a hang is distinguishable from a refusal.
+    #[tokio::test]
+    async fn every_step_carries_its_own_timing() {
+        let relay = FakeRelay::spawn(accepting_reply).await;
+        let client = client(relay.port, SmtpEncryption::None, true);
+        let (_, trace) = client
+            .send_traced_with_roots(&multipart_message(), &TestRoots)
+            .await;
+
+        for step in &trace.steps {
+            assert!(
+                step.started_ms <= trace.total_ms,
+                "{step:?} starts after the session ended (total {}ms)",
+                trace.total_ms
+            );
+        }
+        // The timeline is ordered, which is what makes it readable as a timeline.
+        let mut previous = 0;
+        for step in &trace.steps {
+            assert!(step.started_ms >= previous, "out of order: {step:?}");
+            previous = step.started_ms;
+        }
+        assert!(trace.transcript.iter().all(|l| l.at_ms <= trace.total_ms));
+    }
+
+    // --- Password redaction (t70) -----------------------------------------------------------------
+
+    /// **The load-bearing security test.** A relay that echoes the credential back — pathological,
+    /// but the only case the structural redaction cannot cover, because server replies are recorded
+    /// verbatim by design — must still not put the password in the payload.
+    ///
+    /// Asserts against the *serialized* trace, which is what actually reaches the browser, and
+    /// checks the plaintext and both base64 forms, since on the wire the password only ever appears
+    /// encoded.
+    #[tokio::test]
+    async fn the_password_appears_nowhere_in_the_trace_even_when_the_relay_echoes_it() {
+        let password = "Palavra-Passe-Do-Relay-9!";
+        let plain_blob = {
+            let mut raw = Vec::new();
+            raw.push(0);
+            raw.extend_from_slice(b"sistema");
+            raw.push(0);
+            raw.extend_from_slice(password.as_bytes());
+            BASE64.encode(&raw)
+        };
+        let login_blob = BASE64.encode(password.as_bytes());
+
+        // This relay is hostile: it quotes the client's AUTH line straight back in its reply text.
+        let relay = FakeRelay::spawn(move |line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                EHLO_FULL.to_owned()
+            } else if upper.starts_with("AUTH") {
+                format!("535 5.7.8 rejected credentials: you sent {line}\r\n")
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+        let client = client(relay.port, SmtpEncryption::None, true);
+        let (outcome, trace) = client
+            .send_traced_with_roots(&multipart_message(), &TestRoots)
+            .await;
+        assert!(outcome.is_err());
+
+        let serialized = serde_json::to_string(&trace).expect("serialize trace");
+        for (needle, what) in [
+            (password, "the plaintext password"),
+            (plain_blob.as_str(), "the AUTH PLAIN base64 blob"),
+            (login_blob.as_str(), "the AUTH LOGIN base64 password"),
+        ] {
+            assert!(
+                !serialized.contains(needle),
+                "{what} leaked into the serialized trace: {serialized}"
+            );
+        }
+        // It was genuinely exercised: the relay did echo something, and it came back redacted.
+        assert!(
+            serialized.contains(REDACTED),
+            "the echo path was not exercised, so this test proved nothing: {serialized}"
+        );
+        // The diagnostic value survives the redaction — the code and the rest of the text remain.
+        let auth = trace
+            .steps
+            .iter()
+            .find(|s| s.stage == SmtpStage::Auth)
+            .expect("auth step");
+        assert_eq!(auth.code, Some(535));
+        assert!(
+            auth.detail
+                .as_deref()
+                .is_some_and(|d| d.contains("rejected credentials")),
+            "{auth:?}"
+        );
+    }
+
+    /// The structural half: the client's own AUTH lines are recorded as fixed placeholders, so the
+    /// credential never reaches the recorder at all — the scrub above is the second line of defence,
+    /// not the first.
+    #[tokio::test]
+    async fn the_transcript_shows_auth_as_a_placeholder_rather_than_a_base64_blob() {
+        let relay = FakeRelay::spawn(accepting_reply).await;
+        let client = client(relay.port, SmtpEncryption::None, true);
+        let (outcome, trace) = client
+            .send_traced_with_roots(&multipart_message(), &TestRoots)
+            .await;
+        assert!(outcome.is_ok(), "{outcome:?}");
+
+        let client_lines: Vec<&str> = trace
+            .transcript
+            .iter()
+            .filter(|l| l.direction == SmtpTranscriptDirection::Client)
+            .map(|l| l.text.as_str())
+            .collect();
+        assert!(
+            client_lines.contains(&"AUTH PLAIN <redacted>"),
+            "{client_lines:?}"
+        );
+        // The non-secret conversation is still there verbatim — that is the point of a transcript.
+        assert!(
+            client_lines
+                .iter()
+                .any(|l| l.starts_with("MAIL FROM:<sistema@")),
+            "{client_lines:?}"
+        );
+        assert!(
+            client_lines.iter().any(|l| l.starts_with("EHLO ")),
+            "{client_lines:?}"
+        );
+        // The message body is summarized rather than reproduced, so a trace pasted into a support
+        // ticket does not carry the recipient's message text with it.
+        assert!(
+            client_lines.iter().any(|l| l.starts_with("<message body:")),
+            "{client_lines:?}"
+        );
+        assert!(
+            !client_lines
+                .iter()
+                .any(|l| l.contains("configuração validada")),
+            "the message body leaked into the transcript: {client_lines:?}"
+        );
+    }
+
+    /// `AUTH LOGIN` sends the credential as a bare continuation line with no verb to key off, so it
+    /// is the easiest of the two mechanisms to leak. Covered separately for that reason.
+    #[tokio::test]
+    async fn the_auth_login_mechanism_redacts_both_challenge_responses() {
+        // AUTH LOGIN is a three-legged exchange: `AUTH LOGIN` → 334, username → 334, password →
+        // 235. The relay has to count its own legs, since the two credential lines are bare base64
+        // with no verb to match on — which is precisely why they are the easy ones to leak.
+        let mut auth_leg = 0;
+        let relay = FakeRelay::spawn(move |line| {
+            let upper = line.to_ascii_uppercase();
+            Some(if upper.starts_with("EHLO") {
+                // LOGIN only, so the client cannot choose PLAIN.
+                "250-relay.example.pt\r\n250 AUTH LOGIN\r\n".to_owned()
+            } else if upper.starts_with("AUTH LOGIN") {
+                auth_leg = 1;
+                "334 VXNlcm5hbWU6\r\n".to_owned()
+            } else if auth_leg == 1 {
+                auth_leg = 2;
+                "334 UGFzc3dvcmQ6\r\n".to_owned()
+            } else if auth_leg == 2 {
+                auth_leg = 3;
+                "235 2.7.0 Authentication successful\r\n".to_owned()
+            } else if upper.starts_with("DATA") {
+                "354 End data\r\n".to_owned()
+            } else if line == "." {
+                "250 2.0.0 Ok: queued\r\n".to_owned()
+            } else {
+                "250 Ok\r\n".to_owned()
+            })
+        })
+        .await;
+        let client = client(relay.port, SmtpEncryption::None, true);
+        let (_, trace) = client
+            .send_traced_with_roots(&multipart_message(), &TestRoots)
+            .await;
+
+        assert_eq!(trace.auth_mechanism.as_deref(), Some("LOGIN"));
+        let serialized = serde_json::to_string(&trace).expect("serialize");
+        assert!(
+            !serialized.contains(&BASE64.encode("Palavra-Passe-Do-Relay-9!".as_bytes())),
+            "the AUTH LOGIN password blob leaked: {serialized}"
+        );
+        let client_lines: Vec<&str> = trace
+            .transcript
+            .iter()
+            .filter(|l| l.direction == SmtpTranscriptDirection::Client)
+            .map(|l| l.text.as_str())
+            .collect();
+        assert!(client_lines.contains(&"<redacted>"), "{client_lines:?}");
+        assert!(
+            client_lines.contains(&"<username, base64>"),
+            "{client_lines:?}"
+        );
+    }
+
+    /// The recorder holds the password as scrub needles, so its `Debug` is the one place it could
+    /// reach a log line or a panic message. Written by hand; pinned here.
+    #[test]
+    fn the_recorders_debug_output_does_not_contain_the_needles() {
+        let password = Zeroizing::new("Palavra-Passe-Do-Relay-9!".to_owned());
+        let rec = Recorder::new(Some("sistema"), Some(&password));
+        let debug = format!("{rec:?}");
+        assert!(!debug.contains("Palavra-Passe"), "{debug}");
+        assert!(debug.contains("redacted"), "{debug}");
+    }
+
+    /// The wire form is a contract with `SMTP_STEP_OUTCOMES` in `apps/web/src/api/types.ts`, and
+    /// `rename_all = "snake_case"` is exactly what turned `StartTls` into `start_tls` behind t23's
+    /// back. Pinned against literals so a variant rename cannot quietly change the JSON.
+    #[test]
+    fn step_outcome_serde_encoding_is_stable() {
+        for (outcome, expected) in [
+            (SmtpStepOutcome::Ok, "ok"),
+            (SmtpStepOutcome::Failed, "failed"),
+            (SmtpStepOutcome::Skipped, "skipped"),
+            (SmtpStepOutcome::Refused, "refused"),
+        ] {
+            assert_eq!(
+                serde_json::to_value(outcome).expect("serialize"),
+                serde_json::Value::String(expected.to_owned()),
+                "{outcome:?} no longer serializes as {expected:?}, which the web union expects"
+            );
+        }
     }
 }

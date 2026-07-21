@@ -6,9 +6,11 @@
 //! claim legal/qualified-signature validity.
 
 use axum::Json;
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use axum::extract::State;
+use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::http::{HeaderMap, header};
+use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
@@ -25,7 +27,11 @@ use x509_cert::der::Decode;
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::require_permission;
+use crate::documents::PDFA_PROFILE;
 use crate::error::ApiError;
+use crate::pdf_validation_report_document::{
+    ValidationReportContext, build_pdf_validation_report_document,
+};
 use crate::trust::{LiveTrustStore, load_live_trust_store};
 
 pub(crate) const PDF_SIGNATURE_VALIDATION_MAX_BYTES: usize =
@@ -384,8 +390,24 @@ pub async fn validate_pdf_signature(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<PdfSignatureValidationResponse>, ApiError> {
-    require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
-    let candidate = pdf_validation_candidate_from_request(&headers, &body)?;
+    Ok(Json(
+        run_pdf_signature_validation(&state, &actor, &headers, &body).await?,
+    ))
+}
+
+/// Run one validation, exactly as `POST /v1/signature/pdf/validate` does.
+///
+/// Shared by the JSON endpoint and the PDF/A report endpoint so the two renderings of a
+/// verification can never disagree: the report is not a re-interpretation of a result, it is
+/// the same computation. Read-only throughout — nothing is persisted on either path.
+pub(crate) async fn run_pdf_signature_validation(
+    state: &AppState,
+    actor: &CurrentActor,
+    headers: &HeaderMap,
+    body: &Bytes,
+) -> Result<PdfSignatureValidationResponse, ApiError> {
+    require_permission(state, actor, Permission::ActRead, Scope::Global).await?;
+    let candidate = pdf_validation_candidate_from_request(headers, body)?;
     let want_live = candidate.live_signer_trust;
     let intermediates = candidate.intermediate_certificates.clone();
     let validation_time = candidate.validation_time;
@@ -417,7 +439,82 @@ pub async fn validate_pdf_signature(
         response.live_signer_trust = Some(report);
     }
 
-    Ok(Json(response))
+    Ok(response)
+}
+
+/// `POST /v1/signature/pdf/validate/report` — the same validation, rendered as PDF/A-2u.
+///
+/// **Takes the PDF, not a report.** The server re-runs the validator on the submitted bytes
+/// and renders only what it computed itself. Rendering a client-supplied report body was
+/// rejected deliberately: a PDF/A carrying Chancela's name and layout reads to a third party
+/// as Chancela's own assertion, so accepting findings from the caller would let anyone
+/// produce a document stating "Conforme" over a file that never validated.
+///
+/// Like the JSON endpoint this is read-only: the PDF is rendered in memory and streamed back,
+/// and neither the uploaded artifact nor the report is persisted.
+pub async fn validate_pdf_signature_report(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let report = run_pdf_signature_validation(&state, &actor, &headers, &body).await?;
+
+    let generated_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default();
+    let instance_name = state
+        .settings
+        .read()
+        .await
+        .organization
+        .name
+        .clone()
+        .unwrap_or_else(|| "Chancela".to_owned());
+
+    let model = build_pdf_validation_report_document(
+        &report,
+        &ValidationReportContext {
+            generated_at: &generated_at,
+            instance_name: &instance_name,
+            app_version: env!("CARGO_PKG_VERSION"),
+        },
+    );
+    let bytes = chancela_doc::pdfa::write(&model)
+        .map_err(|e| ApiError::Internal(format!("PDF/A generation failed: {e}")))?;
+
+    let filename = pdf_validation_report_filename(report.filename.as_deref());
+    Response::builder()
+        .header(CONTENT_TYPE, PDFA_PROFILE)
+        .header(
+            CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        )
+        .body(Body::from(bytes))
+        .map_err(|e| ApiError::Internal(format!("failed to build report response: {e}")))
+}
+
+/// `acta-assinada.pdf` → `acta-assinada-relatorio-validacao.pdf`.
+///
+/// The caller's filename is not echoed into a header verbatim: it arrives from a client and a
+/// quote or newline in it would break out of the `Content-Disposition` value. Only ASCII
+/// alphanumerics and dashes survive.
+fn pdf_validation_report_filename(filename: Option<&str>) -> String {
+    let stem = filename
+        .unwrap_or("pdf")
+        .trim_end_matches(".pdf")
+        .trim_end_matches(".PDF");
+    let mut slug = String::new();
+    for ch in stem.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.extend(ch.to_lowercase());
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug = slug.trim_matches('-');
+    let slug = if slug.is_empty() { "pdf" } else { slug };
+    format!("{slug}-relatorio-validacao.pdf")
 }
 
 /// Compute the live end-to-end signer-trust report (wp26 §2.2), fail-closed.
@@ -1582,6 +1679,7 @@ startxref
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: vec![RoleAssignment::new(role_id, Scope::Global)],
+                language: Default::default(),
             },
         );
         let (status, session) = send(
@@ -2049,6 +2147,303 @@ startxref
         assert_eq!(plan["next_action"], "record_dss_validation_time");
         assert_eq!(plan["has_local_evidence_gap"], true);
         assert_eq!(plan["all_local_planning_inputs_present"], false);
+    }
+
+    // --- The PDF/A validation report -----------------------------------------------------
+
+    /// A real signed PDF, so the report is built from a genuine validation rather than a
+    /// hand-written result that could drift from what the validator actually produces.
+    const SIGNED_FIXTURE: &[u8] = include_bytes!(
+        "../../../docs/fixtures/validator-corpus/cases/bt-dss-local/input/bt-dss-local.pdf"
+    );
+
+    fn validate_fixture(bytes: &[u8], filename: &str) -> PdfSignatureValidationResponse {
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", "application/pdf".parse().unwrap());
+        let mut candidate =
+            pdf_validation_candidate_from_request(&headers, bytes).expect("candidate parses");
+        candidate.filename = Some(filename.to_owned());
+        validate_pdf_signature_candidate(candidate).expect("validation runs")
+    }
+
+    fn report_context() -> ValidationReportContext<'static> {
+        ValidationReportContext {
+            generated_at: "2026-07-20T14:30:00Z",
+            instance_name: "Encosto Estratégico Lda",
+            app_version: "26.1.0",
+        }
+    }
+
+    /// Flatten the document tree to text so content assertions do not depend on which block
+    /// a value ended up in.
+    fn model_text(model: &chancela_core::DocumentModel) -> String {
+        let mut out = format!(
+            "{}\n{}\n{}\n",
+            model.title, model.entity_name, model.subject
+        );
+        for block in &model.blocks {
+            match block {
+                chancela_core::Block::Heading { text, .. } => {
+                    out.push_str(text);
+                    out.push('\n');
+                }
+                chancela_core::Block::Paragraph { runs } => {
+                    for run in runs {
+                        out.push_str(&run.text);
+                    }
+                    out.push('\n');
+                }
+                chancela_core::Block::KeyValue { rows } => {
+                    for row in rows {
+                        out.push_str(&format!("{}: {}\n", row.key, row.value));
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn report_document_carries_the_provenance_a_printed_sheet_needs() {
+        let report = validate_fixture(SIGNED_FIXTURE, "acta-assinada.pdf");
+        let model = build_pdf_validation_report_document(&report, &report_context());
+        let text = model_text(&model);
+
+        // Which document, which bytes, when, which build. On screen all four are implicit;
+        // on paper a verdict list with no subject proves nothing.
+        assert!(text.contains("acta-assinada.pdf"), "{text}");
+        assert!(
+            text.contains(&report.sha256),
+            "full digest, not abbreviated: {text}"
+        );
+        assert!(
+            text.contains(&format!("{} bytes", report.size_bytes)),
+            "{text}"
+        );
+        assert!(text.contains("2026-07-20T14:30:00Z"), "{text}");
+        assert!(text.contains("26.1.0"), "{text}");
+        assert!(text.contains(report.scope), "{text}");
+        assert_eq!(model.created_at.as_deref(), Some("2026-07-20T14:30:00Z"));
+    }
+
+    #[test]
+    fn report_document_states_verdicts_as_words() {
+        let report = validate_fixture(SIGNED_FIXTURE, "acta-assinada.pdf");
+        let model = build_pdf_validation_report_document(&report, &report_context());
+        let text = model_text(&model);
+
+        // A PDF/A is printed and photocopied; the verdict may never depend on colour or on
+        // column position, so it is a word at the front of every check value.
+        assert!(text.contains("Conforme"), "{text}");
+        assert!(text.contains("Informativo"), "{text}");
+        assert!(
+            text.contains("Estado da validação: Conforme · Válido"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn report_document_never_marks_unclaimed_legal_conclusions_as_failures() {
+        let report = validate_fixture(SIGNED_FIXTURE, "acta-assinada.pdf");
+        let model = build_pdf_validation_report_document(&report, &report_context());
+        let text = model_text(&model);
+
+        // This tool reports local technical evidence only: `false` on a claim field is the
+        // intended answer, and painting it as a failure would misread the whole report.
+        for label in [
+            "LTV legal reivindicado",
+            "Validade legal reivindicada",
+            "Estado qualificado reivindicado",
+            "Validação em Trusted List em direto",
+            "Integração AMA",
+        ] {
+            let line = text
+                .lines()
+                .find(|l| l.starts_with(label))
+                .unwrap_or_else(|| panic!("missing {label} in {text}"));
+            assert!(
+                line.contains("Informativo"),
+                "{label} must be informational: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn report_document_claims_no_more_than_the_validator_does() {
+        let report = validate_fixture(SIGNED_FIXTURE, "acta-assinada.pdf");
+        let model = build_pdf_validation_report_document(&report, &report_context());
+        let text = model_text(&model);
+
+        // The validator's own caveat, verbatim.
+        assert!(text.contains(report.legal_notice), "{text}");
+        // And the statement that this sheet is not itself an act of authority.
+        assert!(text.contains("Não é um certificado"), "{text}");
+        assert!(text.contains("não está assinado nem selado"), "{text}");
+        assert!(text.contains("não atesta a validade legal"), "{text}");
+        assert!(!text.contains("certificamos"), "{text}");
+    }
+
+    #[test]
+    fn report_document_carries_no_signature_block() {
+        let report = validate_fixture(SIGNED_FIXTURE, "acta-assinada.pdf");
+        let model = build_pdf_validation_report_document(&report, &report_context());
+        // `DocumentModel` is act-shaped and offers a signature block. A verification report
+        // must never render one: a place to sign implies somebody vouches for the result.
+        assert!(
+            !model
+                .blocks
+                .iter()
+                .any(|b| matches!(b, chancela_core::Block::SignatureBlock { .. })),
+            "a verification report must not render a signature block"
+        );
+        assert!(model.entity_nipc.is_none());
+    }
+
+    #[test]
+    fn report_document_keeps_a_failure_reason_beside_its_check() {
+        // An unsigned, structurally minimal PDF: the interesting half of the report is the
+        // absent evidence, which must read as inconclusive rather than as conformity.
+        let report = validate_fixture(MINIMAL_PDF, "sem-assinatura.pdf");
+        let model = build_pdf_validation_report_document(&report, &report_context());
+        let text = model_text(&model);
+
+        assert!(text.contains("Inconclusivo"), "{text}");
+        // Absent evidence is never a pass.
+        let line = text
+            .lines()
+            .find(|l| l.starts_with("Selo temporal da assinatura"))
+            .expect("timestamp row");
+        assert!(line.contains("Inconclusivo"), "{line}");
+    }
+
+    #[test]
+    fn report_filenames_cannot_break_out_of_the_content_disposition_header() {
+        // The filename arrives from a client; a quote or newline in it would terminate the
+        // header value early.
+        assert_eq!(
+            pdf_validation_report_filename(Some("acta-assinada.pdf")),
+            "acta-assinada-relatorio-validacao.pdf"
+        );
+        assert_eq!(
+            pdf_validation_report_filename(Some("evil\";\r\nX-Injected: 1.pdf")),
+            "evil-x-injected-1-relatorio-validacao.pdf"
+        );
+        assert_eq!(
+            pdf_validation_report_filename(Some("Acta Ünïcode.pdf")),
+            "acta-n-code-relatorio-validacao.pdf"
+        );
+        assert_eq!(
+            pdf_validation_report_filename(None),
+            "pdf-relatorio-validacao.pdf"
+        );
+        assert_eq!(
+            pdf_validation_report_filename(Some("...")),
+            "pdf-relatorio-validacao.pdf"
+        );
+    }
+
+    fn post_report(token: &str, bytes: &[u8]) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/signature/pdf/validate/report")
+            .header("content-type", "application/pdf")
+            .header("x-chancela-session", token)
+            .body(Body::from(bytes.to_vec()))
+            .expect("request builds")
+    }
+
+    #[tokio::test]
+    async fn report_endpoint_returns_a_pdfa_attachment() {
+        let state = AppState::default();
+        let token = owner_session(&state).await;
+
+        let resp = router(state.clone())
+            .oneshot(post_report(&token, SIGNED_FIXTURE))
+            .await
+            .expect("router responds");
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()[CONTENT_TYPE],
+            "application/pdf; profile=PDF/A-2u"
+        );
+        assert_eq!(
+            resp.headers()[CONTENT_DISPOSITION],
+            "attachment; filename=\"pdf-relatorio-validacao.pdf\""
+        );
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.expect("body");
+        // `chancela_doc::pdfa::write` runs its own PDF/A-2u self-check (fonts, ICC, tagging,
+        // glyph mapping) and errors rather than emitting a non-conforming file, so reaching
+        // 200 with PDF bytes is the conformance assertion.
+        assert!(bytes.starts_with(b"%PDF-"), "not a PDF");
+        assert!(
+            bytes.len() > 1000,
+            "suspiciously small report: {}",
+            bytes.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn report_endpoint_persists_nothing() {
+        let state = AppState::default();
+        let token = owner_session(&state).await;
+        let before_ledger_len = state.ledger.read().await.events().len();
+
+        let resp = router(state.clone())
+            .oneshot(post_report(&token, SIGNED_FIXTURE))
+            .await
+            .expect("router responds");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // The no-persistence invariant of the validator extends to the report path: it
+        // renders in memory and streams back, storing neither the artifact nor the report.
+        assert_eq!(state.ledger.read().await.events().len(), before_ledger_len);
+        assert!(state.documents.read().await.is_empty());
+        assert!(state.signed_documents.read().await.is_empty());
+        assert!(state.pending_signatures.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn report_endpoint_requires_act_read() {
+        let state = AppState::default();
+        let token = no_act_read_session(&state).await;
+
+        let resp = router(state.clone())
+            .oneshot(post_report(&token, SIGNED_FIXTURE))
+            .await
+            .expect("router responds");
+
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn report_endpoint_rejects_a_client_supplied_report_body() {
+        let state = AppState::default();
+        let token = owner_session(&state).await;
+
+        // The endpoint takes a PDF, never findings. A JSON body claiming a clean result is
+        // not a report to render — it fails to parse as a validation candidate — which is
+        // the property that stops anyone minting a Chancela-branded "Conforme".
+        let forged = json!({
+            "status": "valid",
+            "legal_notice": "assinatura válida",
+            "findings": [],
+        });
+        let resp = router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/signature/pdf/validate/report")
+                    .header("content-type", "application/json")
+                    .header("x-chancela-session", &token)
+                    .body(Body::from(forged.to_string()))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 }
 

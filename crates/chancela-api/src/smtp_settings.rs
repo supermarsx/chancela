@@ -40,11 +40,12 @@ use zeroize::Zeroizing;
 
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::require_permission;
+use crate::email_template::{self, TestEmail, WelcomeEmail};
 use crate::error::ApiError;
 use crate::provider_credentials_write::map_store_err_for;
 use crate::secretstore_persist::{FIELD_SMTP_PASSWORD, SmtpCredentialFields};
 use crate::settings::EmailSettings;
-use crate::smtp::{SmtpClient, SmtpEncryption, SmtpFailure, SmtpMessage};
+use crate::smtp::{SmtpClient, SmtpEncryption, SmtpFailure, SmtpMessage, SmtpTrace};
 use crate::{AppState, CredentialMode};
 
 /// The ledger scope every mail-configuration change is recorded under.
@@ -101,6 +102,12 @@ pub struct EmailStatusView {
 }
 
 /// `POST /v1/settings/email/test` response.
+///
+/// The `trace` is the substantial half. An operator diagnosing a relay usually does not have a
+/// shell on the box this runs on — self-hosted deployments are exactly the case where "check the
+/// server logs" is not an available instruction — so the response has to carry the whole
+/// conversation, not a verdict. See [`SmtpTrace`] for what is in it and, importantly, for the two
+/// mechanisms that keep the relay password out of it.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct EmailTestResult {
     /// Whether the relay accepted the message.
@@ -115,6 +122,11 @@ pub struct EmailTestResult {
     /// The structured failure on rejection: stage, kind, real SMTP code, enhanced code, server text.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure: Option<SmtpFailure>,
+    /// The full protocol trace — stage timeline with per-stage timings and verbatim server replies,
+    /// the resolved address, the negotiated TLS version and peer certificate, and the redacted
+    /// conversation transcript. Present on success as well as failure: a send that works but runs
+    /// unencrypted, or takes 19 seconds, is worth seeing.
+    pub trace: SmtpTrace,
 }
 
 // --- Handlers -----------------------------------------------------------------------------------
@@ -211,77 +223,57 @@ pub async fn post_email_test(
     let recipient = crate::email::normalize_optional_email(Some(request.to), "to")?
         .ok_or_else(|| ApiError::Unprocessable("to is required".to_owned()))?;
 
-    let settings = state.settings.read().await.email.clone();
-    let host = settings
-        .host
-        .as_deref()
-        .map(str::trim)
-        .filter(|h| !h.is_empty())
-        .ok_or_else(|| {
-            ApiError::Unprocessable(
-                "email.host is not configured; save the SMTP settings before sending a test"
-                    .to_owned(),
-            )
-        })?
-        .to_owned();
-    let from_address = settings
-        .from_address
-        .as_deref()
-        .map(str::trim)
-        .filter(|a| !a.is_empty())
-        .ok_or_else(|| {
-            ApiError::Unprocessable(
-                "email.from_address is not configured; save the SMTP settings before sending a test"
-                    .to_owned(),
-            )
-        })?
-        .to_owned();
-
-    let username = settings
-        .username
-        .as_deref()
-        .map(str::trim)
-        .filter(|u| !u.is_empty())
-        .map(str::to_owned);
-    // The one place the password is decrypted, and only when a username makes it relevant.
-    let password = match &username {
-        Some(_) => read_password(&state).await?,
-        None => None,
-    };
-    if username.is_some() && password.is_none() {
-        return Err(ApiError::Unprocessable(
-            "email.username is set but no relay password is stored; save the password before \
-             sending a test"
-                .to_owned(),
-        ));
-    }
-
-    let client = SmtpClient {
-        host,
-        port: settings.port,
-        encryption: settings.encryption,
-        username,
-        password,
-        helo_name: settings.resolved_helo_name(),
-    };
+    let Relay {
+        client,
+        from_address,
+        from_name,
+    } = build_relay(&state, "sending a test").await?;
     let now = OffsetDateTime::now_utc();
+    let sent_at = now.format(&Rfc2822).unwrap_or_default();
+    let (instance_name, locale) = {
+        let all = state.settings.read().await;
+        (
+            all.organization
+                .name
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .unwrap_or(email_template::PRODUCT_NAME)
+                .to_owned(),
+            all.documents.locale.as_str(),
+        )
+    };
+    let rendered = email_template::test_email(&TestEmail {
+        instance_name: &instance_name,
+        host: &client.host,
+        port: client.port,
+        encryption: client.encryption.as_str(),
+        authenticated: client.username.is_some(),
+        from_address: &from_address,
+        to_address: &recipient,
+        sent_at: &sent_at,
+        locale,
+    });
     let message = SmtpMessage {
         from_address: from_address.clone(),
-        from_name: settings.from_name.clone(),
+        from_name,
         to_address: recipient.clone(),
-        subject: "Chancela — teste de configuração de email".to_owned(),
-        body: test_body(&client, &from_address, now),
-        date: now.format(&Rfc2822).unwrap_or_default(),
+        subject: rendered.subject,
+        body: rendered.text_body,
+        html_body: Some(rendered.html_body),
+        date: sent_at.clone(),
         message_id: format!("{}@chancela.invalid", uuid::Uuid::new_v4()),
     };
 
-    let result = match client.send(&message).await {
+    let (outcome, trace) = client.send_traced(&message).await;
+    let result = match outcome {
         Ok(delivery) => EmailTestResult {
             ok: true,
             tls: delivery.tls,
             authenticated: delivery.authenticated,
             accepted_detail: Some(delivery.accepted_detail),
             failure: None,
+            trace,
         },
         Err(failure) => EmailTestResult {
             ok: false,
@@ -294,6 +286,7 @@ pub async fn post_email_test(
             authenticated: false,
             accepted_detail: None,
             failure: Some(failure),
+            trace,
         },
     };
 
@@ -302,6 +295,176 @@ pub async fn post_email_test(
     audit_test(&state, &actor, &attestor, &recipient, &result).await?;
 
     Ok(Json(result))
+}
+
+// --- Sending -------------------------------------------------------------------------------------
+
+/// A relay ready to send, assembled from the settings document plus the stored password.
+struct Relay {
+    client: SmtpClient,
+    from_address: String,
+    from_name: Option<String>,
+}
+
+/// Build the configured relay, or explain what is missing.
+///
+/// Shared by the test-send and by [`send_welcome_email`] so there is exactly one place that decides
+/// what "mail is configured" means and exactly one place the password is decrypted. `purpose` is
+/// spliced into the refusals ("… before sending a test") so the message names the caller's action.
+async fn build_relay(state: &AppState, purpose: &str) -> Result<Relay, ApiError> {
+    let settings = state.settings.read().await.email.clone();
+    let host = settings
+        .host
+        .as_deref()
+        .map(str::trim)
+        .filter(|h| !h.is_empty())
+        .ok_or_else(|| {
+            ApiError::Unprocessable(format!(
+                "email.host is not configured; save the SMTP settings before {purpose}"
+            ))
+        })?
+        .to_owned();
+    let from_address = settings
+        .from_address
+        .as_deref()
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .ok_or_else(|| {
+            ApiError::Unprocessable(format!(
+                "email.from_address is not configured; save the SMTP settings before {purpose}"
+            ))
+        })?
+        .to_owned();
+
+    let username = settings
+        .username
+        .as_deref()
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(str::to_owned);
+    // The one place the password is decrypted, and only when a username makes it relevant.
+    let password = match &username {
+        Some(_) => read_password(state).await?,
+        None => None,
+    };
+    if username.is_some() && password.is_none() {
+        return Err(ApiError::Unprocessable(format!(
+            "email.username is set but no relay password is stored; save the password before \
+             {purpose}"
+        )));
+    }
+
+    Ok(Relay {
+        client: SmtpClient {
+            host,
+            port: settings.port,
+            encryption: settings.encryption,
+            username,
+            password,
+            helo_name: settings.resolved_helo_name(),
+        },
+        from_address,
+        from_name: settings.from_name.clone(),
+    })
+}
+
+/// Send the welcome message for a newly created account (t70, for t71's `send_welcome_email` flag).
+///
+/// ## What it does not send
+///
+/// No password, no token, no sign-in link. [`WelcomeEmail`] has no field that could carry one, so
+/// that is a property of the type rather than a rule someone has to remember here — see
+/// [`crate::email_template::welcome_email`] for why mail is the wrong channel for a credential.
+/// This signature deliberately takes no secret material either.
+///
+/// ## Why it returns the error instead of raising it
+///
+/// A welcome mail is a courtesy attached to a user creation, not part of it. The account is already
+/// written by the time this runs, so a relay refusal must not fail the create and must not roll
+/// anything back — the caller logs it and carries on. Returning `Result` rather than swallowing the
+/// error keeps the caller free to surface "the account was created but the mail did not go out",
+/// which is the honest thing to tell an administrator.
+///
+/// ## Which language it renders in (t71)
+///
+/// `locale_override` first, then `settings.documents.locale`. The override is **the recipient's**
+/// stored preference and deliberately never the creating administrator's: an admin working in en-GB
+/// must not send a Portuguese colleague an English welcome. Mail is the one surface where "the
+/// language of whoever is at the keyboard" is straightforwardly wrong, because nobody is at the
+/// keyboard when it is read.
+///
+/// A user whose preference is `auto` resolves to `None` **at the call site**, so this function never
+/// learns that the preference type has an `Auto` case — it only ever sees "a locale, or use the
+/// default". That is the right split: "auto" means *detect from the browser*, and there is no
+/// browser here, so the platform default is the only honest answer and the caller is the one that
+/// knows it.
+///
+/// An unrecognised tag is not an error: [`crate::email_template::copy_for`] falls back to the source
+/// locale, so a stale stored preference sends Portuguese mail rather than no mail.
+pub(crate) async fn send_welcome_email(
+    state: &AppState,
+    recipient_email: &str,
+    recipient_name: Option<&str>,
+    created_by: Option<&str>,
+    // t71: render in the recipient's chosen locale. `None` ⇒ the platform default
+    // (`settings.documents.locale`), which is also what an `"auto"` preference resolves to —
+    // there is no browser to detect from when the server renders a message.
+    locale_override: Option<&str>,
+) -> Result<(), ApiError> {
+    let Relay {
+        client,
+        from_address,
+        from_name,
+    } = build_relay(state, "sending a welcome message").await?;
+
+    let (instance_name, locale, sign_in_url) = {
+        let all = state.settings.read().await;
+        (
+            all.organization
+                .name
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .unwrap_or(email_template::PRODUCT_NAME)
+                .to_owned(),
+            locale_override.unwrap_or_else(|| all.documents.locale.as_str()),
+            // The instance's own base URL is not recorded in settings, and guessing one would put a
+            // wrong link in front of a new user. Omitted until there is a configured value to use.
+            None,
+        )
+    };
+
+    let rendered = email_template::welcome_email(&WelcomeEmail {
+        recipient_name,
+        recipient_email,
+        created_by,
+        instance_name: &instance_name,
+        sign_in_url,
+        locale,
+    });
+
+    let now = OffsetDateTime::now_utc();
+    let message = SmtpMessage {
+        from_address,
+        from_name,
+        to_address: recipient_email.to_owned(),
+        subject: rendered.subject,
+        body: rendered.text_body,
+        html_body: Some(rendered.html_body),
+        date: now.format(&Rfc2822).unwrap_or_default(),
+        message_id: format!("{}@chancela.invalid", uuid::Uuid::new_v4()),
+    };
+
+    client.send(&message).await.map_err(|failure| {
+        // The relay's own code and text, not a generic "could not send" — the same fidelity the
+        // test-send gives, because this is the same class of problem.
+        ApiError::Unprocessable(format!(
+            "the welcome message was not accepted by the relay at stage {}: {}",
+            failure.stage.as_str(),
+            failure.summary()
+        ))
+    })?;
+    Ok(())
 }
 
 // --- Helpers ------------------------------------------------------------------------------------
@@ -353,33 +516,6 @@ fn status_view(settings: &EmailSettings, password_configured: bool) -> EmailStat
         password_configured,
         warnings,
     }
-}
-
-/// The test message body. States plainly what the message proves and what it does not — an operator
-/// who receives it should not conclude that the application now sends mail for any feature.
-fn test_body(client: &SmtpClient, from_address: &str, now: OffsetDateTime) -> String {
-    format!(
-        "Esta é uma mensagem de teste enviada pela Chancela para confirmar a configuração SMTP.\r\n\
-         \r\n\
-         Servidor: {host}:{port}\r\n\
-         Encriptação: {encryption}\r\n\
-         Autenticação: {auth}\r\n\
-         Remetente: {from}\r\n\
-         Enviada em: {when}\r\n\
-         \r\n\
-         Receber esta mensagem confirma que o servidor SMTP aceita mensagens com esta \
-         configuração. Não confirma entrega na caixa de entrada do destinatário.\r\n",
-        host = client.host,
-        port = client.port,
-        encryption = client.encryption.as_str(),
-        auth = if client.username.is_some() {
-            "sim"
-        } else {
-            "não"
-        },
-        from = from_address,
-        when = now.format(&Rfc2822).unwrap_or_default(),
-    )
 }
 
 /// Whether a password is stored, without decrypting anything.
@@ -573,6 +709,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role, Scope::Global)],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         let token = Uuid::new_v4().to_string();
@@ -705,6 +842,341 @@ mod tests {
             }
         });
         port
+    }
+
+    /// A relay that accepts everything and **hands back the message it received** (t70).
+    ///
+    /// [`fake_relay`] answers the conversation but discards the body, which is all the test-send
+    /// tests need. The welcome-mail tests need the opposite: what actually went over the wire, so
+    /// they can assert the MIME structure, the language, and — the point — that no credential is in
+    /// it. Asserting on the rendered template alone would prove nothing about what was *sent*.
+    async fn capturing_relay() -> (u16, Arc<tokio::sync::Mutex<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let captured = Arc::new(tokio::sync::Mutex::new(String::new()));
+        let sink = Arc::clone(&captured);
+        tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.expect("accept");
+            let mut stream = BufReader::new(socket);
+            stream
+                .get_mut()
+                .write_all(b"220 relay.example.pt ESMTP ready\r\n")
+                .await
+                .expect("greeting");
+            let mut in_data = false;
+            loop {
+                let mut line = String::new();
+                if stream.read_line(&mut line).await.unwrap_or(0) == 0 {
+                    return;
+                }
+                let trimmed = line.trim_end_matches(['\r', '\n']).to_owned();
+                if in_data {
+                    if trimmed != "." {
+                        sink.lock().await.push_str(&line);
+                        continue;
+                    }
+                    in_data = false;
+                    let _ = stream
+                        .get_mut()
+                        .write_all(b"250 2.0.0 Ok: queued as 8F2A1\r\n")
+                        .await;
+                    continue;
+                }
+                let upper = trimmed.to_ascii_uppercase();
+                let reply = if upper.starts_with("EHLO") {
+                    "250-relay.example.pt\r\n250-PIPELINING\r\n250 AUTH PLAIN LOGIN\r\n".to_owned()
+                } else if upper.starts_with("AUTH") {
+                    "235 2.7.0 Authentication successful\r\n".to_owned()
+                } else if upper.starts_with("DATA") {
+                    in_data = true;
+                    "354 End data with <CR><LF>.<CR><LF>\r\n".to_owned()
+                } else if upper.starts_with("QUIT") {
+                    let _ = stream.get_mut().write_all(b"221 Bye\r\n").await;
+                    return;
+                } else {
+                    "250 Ok\r\n".to_owned()
+                };
+                if stream.get_mut().write_all(reply.as_bytes()).await.is_err() {
+                    return;
+                }
+            }
+        });
+        (port, captured)
+    }
+
+    /// Point `state` at a relay on `port`, in `locale`, with a stored password.
+    async fn configure_relay(state: &AppState, port: u16, locale: crate::settings::Locale) {
+        {
+            let mut settings = state.settings.write().await;
+            settings.email = EmailSettings {
+                enabled: true,
+                host: Some("127.0.0.1".to_owned()),
+                port,
+                // The loopback fake relay speaks no TLS; the encryption paths are covered against a
+                // real handshake in `smtp.rs`.
+                encryption: SmtpEncryption::None,
+                username: Some("sistema".to_owned()),
+                from_address: Some("sistema@encosto-estrategico.pt".to_owned()),
+                from_name: Some("Encosto Estratégico Lda".to_owned()),
+                helo_name: None,
+                allow_insecure: true,
+            };
+            settings.documents.locale = locale;
+            settings.organization.name = Some("Encosto Estratégico Lda".to_owned());
+        }
+        write_smtp_fields(
+            state,
+            SmtpCredentialFields {
+                password: Some(Zeroizing::new(RELAY_PASSWORD.to_owned())),
+            },
+            &[],
+        )
+        .await
+        .expect("store the relay password");
+    }
+
+    /// The relay password used by the welcome-mail tests, so the leak assertion has one needle.
+    const RELAY_PASSWORD: &str = "Palavra-Passe-Do-Relay-9!";
+
+    /// Decode the base64 parts of a captured message back to text, so assertions read against the
+    /// prose a recipient sees rather than against an encoding.
+    fn decode_parts(raw: &str) -> String {
+        use base64::Engine as _;
+        let mut out = String::new();
+        for block in raw.split("\r\n\r\n").skip(1) {
+            let joined: String = block
+                .lines()
+                .take_while(|l| !l.starts_with("--"))
+                .collect::<Vec<_>>()
+                .join("");
+            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(joined.trim())
+                && let Ok(text) = String::from_utf8(bytes)
+            {
+                out.push_str(&text);
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    // --- The welcome message, end to end over a real socket (t70) --------------------------------
+
+    /// The seam between t71's `send_welcome_email` flag and this sender: given configured SMTP, a
+    /// real multipart message with both parts actually reaches the relay.
+    #[tokio::test]
+    async fn the_welcome_message_is_delivered_as_multipart_with_both_parts() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        let (port, captured) = capturing_relay().await;
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+
+        send_welcome_email(
+            &state,
+            "amelia.marques@encosto-estrategico.pt",
+            Some("Amélia Marques"),
+            Some("Rui Bastos"),
+            None,
+        )
+        .await
+        .expect("the relay accepted the welcome message");
+
+        let raw = captured.lock().await.clone();
+        assert!(!raw.is_empty(), "no message reached the relay");
+        assert!(
+            raw.contains("Content-Type: multipart/alternative;"),
+            "the delivered message is not multipart: {raw}"
+        );
+        // Both parts, and the text one first — a client shows the last part it understands.
+        let text_at = raw.find("Content-Type: text/plain").expect("text part");
+        let html_at = raw.find("Content-Type: text/html").expect("html part");
+        assert!(text_at < html_at, "the HTML part preceded the text part");
+
+        let decoded = decode_parts(&raw);
+        assert!(decoded.contains("Amélia Marques"), "{decoded}");
+        assert!(decoded.contains("Rui Bastos"), "{decoded}");
+        assert!(
+            decoded.contains("amelia.marques@encosto-estrategico.pt"),
+            "{decoded}"
+        );
+        // The accented subject survived as RFC 2047 rather than raw UTF-8 in a header.
+        assert!(raw.contains("Subject: =?UTF-8?B?"), "{raw}");
+    }
+
+    /// t71's `locale_override`: the message renders in the **recipient's** language, not the
+    /// instance default. An admin working in one language must not send a colleague a welcome in it.
+    #[tokio::test]
+    async fn the_welcome_message_renders_in_the_recipients_locale_not_the_instance_default() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        let (port, captured) = capturing_relay().await;
+        // The instance default is Portuguese...
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+
+        // ...but this recipient chose German.
+        send_welcome_email(
+            &state,
+            "amelia.marques@encosto-estrategico.pt",
+            Some("Amélia Marques"),
+            None,
+            Some("de-DE"),
+        )
+        .await
+        .expect("the relay accepted the welcome message");
+
+        let decoded = decode_parts(&captured.lock().await.clone());
+        let german = crate::email_template::copy_for("de-DE");
+        assert!(
+            decoded.contains(german.welcome_never_sends),
+            "the message did not render in the recipient's locale: {decoded}"
+        );
+        assert!(
+            !decoded.contains(crate::email_template::copy_for("pt-PT").welcome_never_sends),
+            "the instance default locale leaked into the message: {decoded}"
+        );
+    }
+
+    /// `None` keeps the pre-t71 behaviour exactly: the platform default.
+    #[tokio::test]
+    async fn no_locale_override_falls_back_to_the_platform_default() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        let (port, captured) = capturing_relay().await;
+        configure_relay(&state, port, crate::settings::Locale::DeDe).await;
+
+        send_welcome_email(
+            &state,
+            "amelia.marques@encosto-estrategico.pt",
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("the relay accepted the welcome message");
+
+        let decoded = decode_parts(&captured.lock().await.clone());
+        assert!(
+            decoded.contains(crate::email_template::copy_for("de-DE").welcome_never_sends),
+            "the platform default locale was not used: {decoded}"
+        );
+    }
+
+    /// **The cross-seam test.** Everything above drives [`send_welcome_email`] directly, which
+    /// proves the *sender* honours `locale_override` — but not that `create_user` actually reads the
+    /// new account's preference and passes it. A refactor that dropped `locale_override` on the
+    /// floor at the call site, or passed the acting administrator's language instead, would leave
+    /// every test above green.
+    ///
+    /// So this one goes through `POST /v1/users` with t71's `send_welcome_email` flag: the instance
+    /// default is Portuguese, the *created user* chose German, and the message that reaches the
+    /// relay must be German. Suggested by t71, and they were right that nothing covered it.
+    #[tokio::test]
+    async fn a_user_created_with_a_language_preference_is_welcomed_in_that_language() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        let (port, captured) = capturing_relay().await;
+        // The instance speaks Portuguese...
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+
+        // ...the new account speaks German, and asks to be told it exists.
+        let (status, body) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                "/v1/users",
+                json!({
+                    "username": "amelia.marques",
+                    "display_name": "Amélia Marques",
+                    "email": "amelia.marques@encosto-estrategico.pt",
+                    "password": "Teste-Forte7!X",
+                    "language": "de-DE",
+                    "send_welcome_email": true,
+                }),
+            ),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+
+        // The send is fire-and-forget relative to the response, so wait for the body to land rather
+        // than racing it.
+        let mut raw = String::new();
+        for _ in 0..100 {
+            raw = captured.lock().await.clone();
+            if !raw.is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(!raw.is_empty(), "no welcome message reached the relay");
+
+        let decoded = decode_parts(&raw);
+        assert!(
+            decoded.contains(crate::email_template::copy_for("de-DE").welcome_never_sends),
+            "the created user's language did not reach the message: {decoded}"
+        );
+        assert!(
+            !decoded.contains(crate::email_template::copy_for("pt-PT").welcome_never_sends),
+            "the instance default was used instead of the recipient's preference: {decoded}"
+        );
+        // And still no credential, on the path a real account actually takes.
+        assert!(
+            !decoded.contains("Teste-Forte7!X"),
+            "the new account's password was emailed"
+        );
+        assert!(
+            !decoded.contains(RELAY_PASSWORD),
+            "the relay password was emailed"
+        );
+    }
+
+    /// **The load-bearing one.** Whatever the template says, what matters is what crossed the wire:
+    /// the delivered message must carry no password, token or link. Asserted against the raw octets
+    /// *and* the decoded parts, because a credential hidden in a base64 body would pass a naive
+    /// scan of the former.
+    #[tokio::test]
+    async fn the_delivered_welcome_message_carries_no_credential() {
+        let temp = TempDir::new();
+        let state = state_with_store(&temp.dir);
+        let (port, captured) = capturing_relay().await;
+        configure_relay(&state, port, crate::settings::Locale::PtPt).await;
+
+        send_welcome_email(
+            &state,
+            "amelia.marques@encosto-estrategico.pt",
+            Some("Amélia Marques"),
+            Some("Rui Bastos"),
+            None,
+        )
+        .await
+        .expect("the relay accepted the welcome message");
+
+        let raw = captured.lock().await.clone();
+        let decoded = decode_parts(&raw);
+        assert!(
+            !decoded.is_empty(),
+            "nothing decoded, so this proved nothing"
+        );
+
+        for haystack in [&raw, &decoded] {
+            assert!(
+                !haystack.contains(RELAY_PASSWORD),
+                "the relay password reached the message body"
+            );
+            // No link of any kind: no sign-in URL is configured, and a token would need one.
+            assert!(!haystack.contains("http://"), "a link reached the message");
+            assert!(!haystack.contains("https://"), "a link reached the message");
+            assert!(
+                !haystack.to_lowercase().contains("token"),
+                "the word 'token' reached the message"
+            );
+        }
+        // And it says so, which is what lets a recipient recognise a later message that does as a
+        // forgery.
+        assert!(
+            decoded.contains(crate::email_template::copy_for("pt-PT").welcome_never_sends),
+            "{decoded}"
+        );
     }
 
     // --- Settings round-trip, password write-only ------------------------------------------------
@@ -1421,25 +1893,41 @@ mod tests {
         assert!(rendered.contains("***"));
     }
 
+    /// The test message must identify the session it is proving — this instance, this relay, this
+    /// recipient, this time — or it proves nothing an operator can act on. Carried over from the
+    /// pre-t70 inline body, now asserted against the themed template.
     #[test]
-    fn test_body_states_what_it_does_and_does_not_prove() {
-        let client = SmtpClient {
-            host: "smtp.encosto-estrategico.pt".to_owned(),
+    fn the_test_message_names_the_session_it_proves_and_never_the_password() {
+        let rendered = email_template::test_email(&TestEmail {
+            instance_name: "Encosto Estratégico Lda",
+            host: "smtp.encosto-estrategico.pt",
             port: 587,
-            encryption: SmtpEncryption::StartTls,
-            username: Some("sistema".to_owned()),
-            password: Some(Zeroizing::new("s3cr3t".to_owned())),
-            helo_name: "encosto-estrategico.pt".to_owned(),
-        };
-        let body = test_body(
-            &client,
-            "sistema@encosto-estrategico.pt",
-            OffsetDateTime::UNIX_EPOCH,
-        );
-        assert!(body.contains("smtp.encosto-estrategico.pt:587"));
-        assert!(body.contains("starttls"));
-        // The body describes the session; it must never contain the password.
-        assert!(!body.contains("s3cr3t"));
-        assert!(body.contains("Não confirma entrega"));
+            encryption: SmtpEncryption::StartTls.as_str(),
+            authenticated: true,
+            from_address: "sistema@encosto-estrategico.pt",
+            to_address: "amelia.marques@encosto-estrategico.pt",
+            sent_at: "Mon, 20 Jul 2026 09:00:00 +0100",
+            locale: "pt-PT",
+        });
+
+        for body in [&rendered.text_body, &rendered.html_body] {
+            assert!(body.contains("smtp.encosto-estrategico.pt:587"), "{body}");
+            assert!(body.contains("starttls"), "{body}");
+            assert!(body.contains("Encosto Estratégico Lda"), "{body}");
+            assert!(
+                body.contains("amelia.marques@encosto-estrategico.pt"),
+                "{body}"
+            );
+            assert!(body.contains("Mon, 20 Jul 2026 09:00:00 +0100"), "{body}");
+            // What it does *not* prove, which is the honesty half.
+            assert!(
+                body.contains("Não prova a entrega na caixa de entrada"),
+                "{body}"
+            );
+        }
+        // The relay password is never an input to the template, so there is nothing to leak — but
+        // the test-send is exactly where a future edit might casually add it "for debugging".
+        assert!(!rendered.text_body.contains("Palavra-Passe"));
+        assert!(!rendered.html_body.contains("Palavra-Passe"));
     }
 }

@@ -553,6 +553,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role_id, Scope::Global)],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
 
@@ -649,6 +650,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role_id, scope)],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
 

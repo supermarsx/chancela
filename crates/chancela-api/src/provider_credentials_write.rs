@@ -883,6 +883,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(role, Scope::Global)],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         let token = Uuid::new_v4().to_string();

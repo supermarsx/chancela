@@ -82,6 +82,7 @@ async fn seed_user(state: &AppState, username: &str, role_id: RoleId) -> UserId 
         secret_source: Default::default(),
         recovery_hash: None,
         role_assignments: vec![RoleAssignment::new(role_id, Scope::Global)],
+        language: Default::default(),
     };
     state.users.write().await.insert(uid, user);
     uid

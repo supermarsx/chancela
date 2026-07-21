@@ -635,11 +635,12 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/advance", RouteClass::Gated), // POST act.advance@Book
     ("/v1/acts/{id}/reopen", RouteClass::Gated), // POST signing.perform@Book + act.edit@Book
     ("/v1/acts/{id}/human-verification", RouteClass::Gated), // POST act.advance@Book
-    ("/v1/acts/{id}/compliance", RouteClass::Gated), // GET act.read@Book
-    ("/v1/acts/{id}/seal", RouteClass::Gated), // POST signing.perform@Book
-    ("/v1/acts/{id}/archive", RouteClass::Gated), // POST act.archive@Book
-    ("/v1/acts/{id}/follow-ups", RouteClass::Gated), // GET act.read@Book · POST act.edit@Book
-    ("/v1/follow-ups/{id}", RouteClass::Gated), // PATCH act.edit@Book(follow_up.act_id)
+    ("/v1/acts/{id}/body/preview", RouteClass::Gated), // POST act.read@Book (compiles, never writes)
+    ("/v1/acts/{id}/compliance", RouteClass::Gated),   // GET act.read@Book
+    ("/v1/acts/{id}/seal", RouteClass::Gated),         // POST signing.perform@Book
+    ("/v1/acts/{id}/archive", RouteClass::Gated),      // POST act.archive@Book
+    ("/v1/acts/{id}/follow-ups", RouteClass::Gated),   // GET act.read@Book · POST act.edit@Book
+    ("/v1/follow-ups/{id}", RouteClass::Gated),        // PATCH act.edit@Book(follow_up.act_id)
     ("/v1/follow-ups/{id}/complete", RouteClass::Gated), // POST act.edit@Book(follow_up.act_id)
     ("/v1/acts/{id}/convening/dispatch", RouteClass::Gated), // POST act.edit@Book (t61-E1)
     ("/v1/acts/{id}/document/preview", RouteClass::Gated), // GET act.read@Book
@@ -670,6 +671,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // GET settings.read@Global
     ("/v1/signature/pdf/validate", RouteClass::Gated), // POST act.read@Global (read-only technical PDF/PAdES validation)
+    ("/v1/signature/pdf/validate/report", RouteClass::Gated), // POST act.read@Global (same validation, rendered PDF/A)
     ("/v1/signature/asic/inspect", RouteClass::Gated), // POST act.read@Global (read-only technical ASiC signature inspection)
     ("/v1/signature/xades/sign", RouteClass::Gated), // POST signing.perform@Global (local technical XAdES)
     ("/v1/signature/xades/validate", RouteClass::Gated), // POST act.read@Global (read-only technical XAdES/XMLDSig validation)

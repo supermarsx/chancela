@@ -145,6 +145,8 @@ const ADDITIVE_COLUMNS: &[(&str, &str)] = &[
     ("paper_book_imports", "page_to"),
     ("paper_book_imports", "original_number_from"),
     ("paper_book_imports", "original_number_to"),
+    // t74 §8 (schema v24): the producing template spec beside each generated document.
+    ("documents", "template_spec_json"),
 ];
 
 // --- fixtures -----------------------------------------------------------------------------------
@@ -403,10 +405,19 @@ fn the_declared_ladder_covers_every_table_in_the_schema() {
         .map(|(version, _)| *version)
         .max()
         .expect("the ladder is non-empty");
-    assert_eq!(
-        newest, SCHEMA_VERSION,
-        "the newest table in the ladder is from v{newest} but SCHEMA_VERSION is {SCHEMA_VERSION} \
-         — either a version bumped without a table, or a table landed without a ladder entry"
+    // A version may legitimately introduce **no new table** — v21 added a column to
+    // `imported_documents`, and v24 adds `documents.template_spec_json` (t74 §8). So the ladder's
+    // newest rung may lag `SCHEMA_VERSION`; what it may never do is *exceed* it, which would mean
+    // a table claiming a version that does not exist.
+    //
+    // This does not weaken the real guarantee. "A table landed without a ladder entry" is caught
+    // by the `ladder == expected` assertion above, which compares the ladder against the schema's
+    // own table list — that check is exact and unchanged. The only case this relaxation admits is
+    // the one it names: a column-only migration.
+    assert!(
+        newest <= SCHEMA_VERSION,
+        "the ladder's newest rung is v{newest} but SCHEMA_VERSION is {SCHEMA_VERSION} — a table \
+         cannot be introduced by a version that does not exist yet"
     );
 }
 

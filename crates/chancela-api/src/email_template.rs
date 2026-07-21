@@ -468,7 +468,11 @@ pub fn welcome_email(input: &WelcomeEmail<'_>) -> RenderedEmail {
 
     let mut lede: Vec<&str> = Vec::new();
     let greeting;
-    if let Some(name) = input.recipient_name.map(str::trim).filter(|n| !n.is_empty()) {
+    if let Some(name) = input
+        .recipient_name
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+    {
         greeting = copy.welcome_greeting.replace("{name}", name);
         lede.push(&greeting);
     }
@@ -584,9 +588,11 @@ pub fn copy_for(locale: &str) -> &'static EmailCopy {
     }
     let language = tag.split(['-', '_']).next().unwrap_or_default();
     if !language.is_empty()
-        && let Some((_, copy)) = LOCALES
-            .iter()
-            .find(|(t, _)| t.split('-').next().is_some_and(|l| l.eq_ignore_ascii_case(language)))
+        && let Some((_, copy)) = LOCALES.iter().find(|(t, _)| {
+            t.split('-')
+                .next()
+                .is_some_and(|l| l.eq_ignore_ascii_case(language))
+        })
     {
         return copy;
     }
@@ -595,8 +601,7 @@ pub fn copy_for(locale: &str) -> &'static EmailCopy {
 
 /// **Source locale.** Authoritative; every other catalog below is a translation of this one.
 static PT_PT: EmailCopy = EmailCopy {
-    footer_automated:
-        "Mensagem automática enviada pela Chancela. Não responda a este endereço.",
+    footer_automated: "Mensagem automática enviada pela Chancela. Não responda a este endereço.",
     yes: "Sim",
     no: "Não",
     label_instance: "Instância",
@@ -609,15 +614,12 @@ static PT_PT: EmailCopy = EmailCopy {
     test_subject: "Chancela — mensagem de teste da configuração de email",
     test_badge: "Mensagem de teste",
     test_heading: "A configuração de email está a funcionar",
-    test_lede:
-        "Esta mensagem confirma que esta instância da Chancela conseguiu contactar este \
+    test_lede: "Esta mensagem confirma que esta instância da Chancela conseguiu contactar este \
          destinatário através do servidor SMTP configurado.",
-    test_proves:
-        "Receber esta mensagem prova que o servidor SMTP aceitou a mensagem com esta configuração. \
+    test_proves: "Receber esta mensagem prova que o servidor SMTP aceitou a mensagem com esta configuração. \
          Não prova a entrega na caixa de entrada, que depende do destinatário e dos filtros pelo \
          caminho.",
-    test_not_notification:
-        "Isto é um teste de configuração pedido por um administrador. Não é um aviso sobre nenhum \
+    test_not_notification: "Isto é um teste de configuração pedido por um administrador. Não é um aviso sobre nenhum \
          documento, processo ou prazo, e não deve ser reencaminhado como se fosse.",
     welcome_subject: "Chancela — a sua conta foi criada",
     welcome_heading: "A sua conta foi criada",
@@ -626,11 +628,9 @@ static PT_PT: EmailCopy = EmailCopy {
     welcome_label_account: "Conta",
     welcome_label_created_by: "Criada por",
     welcome_label_sign_in: "Endereço de acesso",
-    welcome_credentials:
-        "Esta mensagem não contém palavra-passe. Um administrador irá fornecer-lhe as credenciais \
+    welcome_credentials: "Esta mensagem não contém palavra-passe. Um administrador irá fornecer-lhe as credenciais \
          de acesso separadamente.",
-    welcome_never_sends:
-        "A Chancela nunca envia palavras-passe nem ligações de acesso por email. Se receber uma \
+    welcome_never_sends: "A Chancela nunca envia palavras-passe nem ligações de acesso por email. Se receber uma \
          mensagem que o faça, comunique-a a um administrador.",
 };
 
@@ -649,15 +649,12 @@ static EN_US: EmailCopy = EmailCopy {
     test_subject: "Chancela — email configuration test message",
     test_badge: "Test message",
     test_heading: "Email configuration is working",
-    test_lede:
-        "This message confirms that this Chancela instance was able to reach this recipient \
+    test_lede: "This message confirms that this Chancela instance was able to reach this recipient \
          through the configured SMTP server.",
-    test_proves:
-        "Receiving this message proves that the SMTP server accepted mail with this configuration. \
+    test_proves: "Receiving this message proves that the SMTP server accepted mail with this configuration. \
          It does not prove inbox delivery, which depends on the recipient and on filters along the \
          way.",
-    test_not_notification:
-        "This is a configuration test requested by an administrator. It is not a notice about any \
+    test_not_notification: "This is a configuration test requested by an administrator. It is not a notice about any \
          document, process or deadline, and should not be forwarded as though it were.",
     welcome_subject: "Chancela — your account has been created",
     welcome_heading: "Your account has been created",
@@ -666,11 +663,9 @@ static EN_US: EmailCopy = EmailCopy {
     welcome_label_account: "Account",
     welcome_label_created_by: "Created by",
     welcome_label_sign_in: "Sign-in address",
-    welcome_credentials:
-        "This message contains no password. An administrator will provide your sign-in credentials \
+    welcome_credentials: "This message contains no password. An administrator will provide your sign-in credentials \
          separately.",
-    welcome_never_sends:
-        "Chancela never sends passwords or sign-in links by email. If you receive a message that \
+    welcome_never_sends: "Chancela never sends passwords or sign-in links by email. If you receive a message that \
          does, report it to an administrator.",
 };
 
@@ -691,15 +686,12 @@ static EN_GB: EmailCopy = EmailCopy {
     test_subject: "Chancela — email configuration test message",
     test_badge: "Test message",
     test_heading: "Email configuration is working",
-    test_lede:
-        "This message confirms that this Chancela instance was able to reach this recipient \
+    test_lede: "This message confirms that this Chancela instance was able to reach this recipient \
          through the configured SMTP server.",
-    test_proves:
-        "Receiving this message proves that the SMTP server accepted mail with this configuration. \
+    test_proves: "Receiving this message proves that the SMTP server accepted mail with this configuration. \
          It does not prove inbox delivery, which depends on the recipient and on filters along the \
          way.",
-    test_not_notification:
-        "This is a configuration test requested by an administrator. It is not a notice about any \
+    test_not_notification: "This is a configuration test requested by an administrator. It is not a notice about any \
          document, process or deadline, and should not be forwarded as though it were.",
     welcome_subject: "Chancela — your account has been created",
     welcome_heading: "Your account has been created",
@@ -708,11 +700,9 @@ static EN_GB: EmailCopy = EmailCopy {
     welcome_label_account: "Account",
     welcome_label_created_by: "Created by",
     welcome_label_sign_in: "Sign-in address",
-    welcome_credentials:
-        "This message contains no password. An administrator will provide your sign-in credentials \
+    welcome_credentials: "This message contains no password. An administrator will provide your sign-in credentials \
          separately.",
-    welcome_never_sends:
-        "Chancela never sends passwords or sign-in links by email. If you receive a message that \
+    welcome_never_sends: "Chancela never sends passwords or sign-in links by email. If you receive a message that \
          does, report it to an administrator.",
 };
 
@@ -849,8 +839,18 @@ mod tests {
         for rendered in [sample_test_email(), sample_welcome_email()] {
             let html = &rendered.html_body;
             for forbidden in [
-                "<img", "src=", "background=", "url(", "@import", "<link", "<script", "<iframe",
-                "http://", "//fonts.", "cid:", "data:image",
+                "<img",
+                "src=",
+                "background=",
+                "url(",
+                "@import",
+                "<link",
+                "<script",
+                "<iframe",
+                "http://",
+                "//fonts.",
+                "cid:",
+                "data:image",
             ] {
                 assert!(
                     !html.contains(forbidden),
@@ -941,7 +941,10 @@ mod tests {
             for body in [&rendered.text_body, &rendered.html_body] {
                 // Nothing that looks like a token: no query string carrying one, and no path beyond
                 // the configured base URL.
-                assert!(!body.contains('?'), "{tag}: a query string appeared: {body}");
+                assert!(
+                    !body.contains('?'),
+                    "{tag}: a query string appeared: {body}"
+                );
                 assert!(
                     !body.to_lowercase().contains("token"),
                     "{tag}: the word 'token' appeared: {body}"
@@ -975,7 +978,10 @@ mod tests {
                 locale: tag,
             });
             for sentence in [copy.welcome_credentials, copy.welcome_never_sends] {
-                assert!(!sentence.trim().is_empty(), "{tag}: empty anti-phishing copy");
+                assert!(
+                    !sentence.trim().is_empty(),
+                    "{tag}: empty anti-phishing copy"
+                );
                 assert!(
                     rendered.text_body.contains(sentence),
                     "{tag}: the text part is missing the anti-phishing copy"

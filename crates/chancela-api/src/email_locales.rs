@@ -42,15 +42,12 @@ pub static PT_BR: EmailCopy = EmailCopy {
     test_subject: "Chancela — mensagem de teste da configuração de e-mail",
     test_badge: "Mensagem de teste",
     test_heading: "A configuração de e-mail está funcionando",
-    test_lede:
-        "Esta mensagem confirma que esta instância da Chancela conseguiu contatar este \
+    test_lede: "Esta mensagem confirma que esta instância da Chancela conseguiu contatar este \
          destinatário por meio do servidor SMTP configurado.",
-    test_proves:
-        "Receber esta mensagem prova que o servidor SMTP aceitou a mensagem com esta configuração. \
+    test_proves: "Receber esta mensagem prova que o servidor SMTP aceitou a mensagem com esta configuração. \
          Não prova a entrega na caixa de entrada, que depende do destinatário e dos filtros pelo \
          caminho.",
-    test_not_notification:
-        "Isto é um teste de configuração solicitado por um administrador. Não é um aviso sobre \
+    test_not_notification: "Isto é um teste de configuração solicitado por um administrador. Não é um aviso sobre \
          nenhum documento, processo ou prazo, e não deve ser encaminhado como se fosse.",
     welcome_subject: "Chancela — sua conta foi criada",
     welcome_heading: "Sua conta foi criada",
@@ -59,11 +56,9 @@ pub static PT_BR: EmailCopy = EmailCopy {
     welcome_label_account: "Conta",
     welcome_label_created_by: "Criada por",
     welcome_label_sign_in: "Endereço de acesso",
-    welcome_credentials:
-        "Esta mensagem não contém senha. Um administrador fornecerá suas credenciais de acesso \
+    welcome_credentials: "Esta mensagem não contém senha. Um administrador fornecerá suas credenciais de acesso \
          separadamente.",
-    welcome_never_sends:
-        "A Chancela nunca envia senhas nem links de acesso por e-mail. Se você receber uma \
+    welcome_never_sends: "A Chancela nunca envia senhas nem links de acesso por e-mail. Se você receber uma \
          mensagem que faça isso, comunique-a a um administrador.",
 };
 
@@ -82,15 +77,12 @@ pub static ES_ES: EmailCopy = EmailCopy {
     test_subject: "Chancela — mensaje de prueba de la configuración de correo",
     test_badge: "Mensaje de prueba",
     test_heading: "La configuración de correo funciona",
-    test_lede:
-        "Este mensaje confirma que esta instancia de Chancela ha podido contactar con este \
+    test_lede: "Este mensaje confirma que esta instancia de Chancela ha podido contactar con este \
          destinatario a través del servidor SMTP configurado.",
-    test_proves:
-        "Recibir este mensaje demuestra que el servidor SMTP aceptó el mensaje con esta \
+    test_proves: "Recibir este mensaje demuestra que el servidor SMTP aceptó el mensaje con esta \
          configuración. No demuestra la entrega en la bandeja de entrada, que depende del \
          destinatario y de los filtros que haya por el camino.",
-    test_not_notification:
-        "Esta es una prueba de configuración solicitada por un administrador. No es un aviso \
+    test_not_notification: "Esta es una prueba de configuración solicitada por un administrador. No es un aviso \
          sobre ningún documento, procedimiento o plazo, y no debe reenviarse como si lo fuera.",
     welcome_subject: "Chancela — su cuenta ha sido creada",
     welcome_heading: "Su cuenta ha sido creada",
@@ -99,11 +91,9 @@ pub static ES_ES: EmailCopy = EmailCopy {
     welcome_label_account: "Cuenta",
     welcome_label_created_by: "Creada por",
     welcome_label_sign_in: "Dirección de acceso",
-    welcome_credentials:
-        "Este mensaje no contiene ninguna contraseña. Un administrador le facilitará sus \
+    welcome_credentials: "Este mensaje no contiene ninguna contraseña. Un administrador le facilitará sus \
          credenciales de acceso por separado.",
-    welcome_never_sends:
-        "Chancela nunca envía contraseñas ni enlaces de acceso por correo electrónico. Si recibe \
+    welcome_never_sends: "Chancela nunca envía contraseñas ni enlaces de acceso por correo electrónico. Si recibe \
          un mensaje que lo haga, comuníquelo a un administrador.",
 };
 
@@ -122,15 +112,12 @@ pub static FR_FR: EmailCopy = EmailCopy {
     test_subject: "Chancela — message de test de la configuration de messagerie",
     test_badge: "Message de test",
     test_heading: "La configuration de messagerie fonctionne",
-    test_lede:
-        "Ce message confirme que cette instance de Chancela a pu joindre ce destinataire via le \
+    test_lede: "Ce message confirme que cette instance de Chancela a pu joindre ce destinataire via le \
          serveur SMTP configuré.",
-    test_proves:
-        "La réception de ce message prouve que le serveur SMTP a accepté le message avec cette \
+    test_proves: "La réception de ce message prouve que le serveur SMTP a accepté le message avec cette \
          configuration. Elle ne prouve pas la remise en boîte de réception, qui dépend du \
          destinataire et des filtres rencontrés en chemin.",
-    test_not_notification:
-        "Il s'agit d'un test de configuration demandé par un administrateur. Ce n'est pas un avis \
+    test_not_notification: "Il s'agit d'un test de configuration demandé par un administrateur. Ce n'est pas un avis \
          concernant un document, une procédure ou un délai, et il ne doit pas être transféré \
          comme s'il en était un.",
     welcome_subject: "Chancela — votre compte a été créé",
@@ -140,19 +127,16 @@ pub static FR_FR: EmailCopy = EmailCopy {
     welcome_label_account: "Compte",
     welcome_label_created_by: "Créé par",
     welcome_label_sign_in: "Adresse de connexion",
-    welcome_credentials:
-        "Ce message ne contient aucun mot de passe. Un administrateur vous communiquera vos \
+    welcome_credentials: "Ce message ne contient aucun mot de passe. Un administrateur vous communiquera vos \
          identifiants de connexion séparément.",
-    welcome_never_sends:
-        "Chancela n'envoie jamais de mots de passe ni de liens de connexion par courrier \
+    welcome_never_sends: "Chancela n'envoie jamais de mots de passe ni de liens de connexion par courrier \
          électronique. Si vous recevez un message qui en contient, signalez-le à un \
          administrateur.",
 };
 
 /// Machine translation, pending native review.
 pub static DE_DE: EmailCopy = EmailCopy {
-    footer_automated:
-        "Automatische Nachricht von Chancela. Bitte antworten Sie nicht an diese Adresse.",
+    footer_automated: "Automatische Nachricht von Chancela. Bitte antworten Sie nicht an diese Adresse.",
     yes: "Ja",
     no: "Nein",
     label_instance: "Instanz",
@@ -165,15 +149,12 @@ pub static DE_DE: EmailCopy = EmailCopy {
     test_subject: "Chancela — Testnachricht zur E-Mail-Konfiguration",
     test_badge: "Testnachricht",
     test_heading: "Die E-Mail-Konfiguration funktioniert",
-    test_lede:
-        "Diese Nachricht bestätigt, dass diese Chancela-Instanz diesen Empfänger über den \
+    test_lede: "Diese Nachricht bestätigt, dass diese Chancela-Instanz diesen Empfänger über den \
          konfigurierten SMTP-Server erreichen konnte.",
-    test_proves:
-        "Der Empfang dieser Nachricht beweist, dass der SMTP-Server die Nachricht mit dieser \
+    test_proves: "Der Empfang dieser Nachricht beweist, dass der SMTP-Server die Nachricht mit dieser \
          Konfiguration angenommen hat. Er beweist nicht die Zustellung im Posteingang, die vom \
          Empfänger und von den Filtern auf dem Weg abhängt.",
-    test_not_notification:
-        "Dies ist ein von einem Administrator angeforderter Konfigurationstest. Es ist kein \
+    test_not_notification: "Dies ist ein von einem Administrator angeforderter Konfigurationstest. Es ist kein \
          Hinweis zu einem Dokument, einem Verfahren oder einer Frist und darf nicht so \
          weitergeleitet werden, als wäre es einer.",
     welcome_subject: "Chancela — Ihr Konto wurde erstellt",
@@ -183,11 +164,9 @@ pub static DE_DE: EmailCopy = EmailCopy {
     welcome_label_account: "Konto",
     welcome_label_created_by: "Erstellt von",
     welcome_label_sign_in: "Anmeldeadresse",
-    welcome_credentials:
-        "Diese Nachricht enthält kein Passwort. Ein Administrator stellt Ihnen Ihre Anmeldedaten \
+    welcome_credentials: "Diese Nachricht enthält kein Passwort. Ein Administrator stellt Ihnen Ihre Anmeldedaten \
          gesondert zur Verfügung.",
-    welcome_never_sends:
-        "Chancela versendet niemals Passwörter oder Anmeldelinks per E-Mail. Wenn Sie eine \
+    welcome_never_sends: "Chancela versendet niemals Passwörter oder Anmeldelinks per E-Mail. Wenn Sie eine \
          Nachricht erhalten, die das tut, melden Sie sie einem Administrator.",
 };
 
@@ -206,15 +185,12 @@ pub static IT_IT: EmailCopy = EmailCopy {
     test_subject: "Chancela — messaggio di prova della configurazione email",
     test_badge: "Messaggio di prova",
     test_heading: "La configurazione email funziona",
-    test_lede:
-        "Questo messaggio conferma che questa istanza di Chancela è riuscita a raggiungere questo \
+    test_lede: "Questo messaggio conferma che questa istanza di Chancela è riuscita a raggiungere questo \
          destinatario tramite il server SMTP configurato.",
-    test_proves:
-        "Ricevere questo messaggio dimostra che il server SMTP ha accettato il messaggio con \
+    test_proves: "Ricevere questo messaggio dimostra che il server SMTP ha accettato il messaggio con \
          questa configurazione. Non dimostra la consegna nella casella di posta, che dipende dal \
          destinatario e dai filtri lungo il percorso.",
-    test_not_notification:
-        "Questa è una prova di configurazione richiesta da un amministratore. Non è un avviso \
+    test_not_notification: "Questa è una prova di configurazione richiesta da un amministratore. Non è un avviso \
          relativo ad alcun documento, procedimento o scadenza e non deve essere inoltrato come se \
          lo fosse.",
     welcome_subject: "Chancela — il suo account è stato creato",
@@ -224,11 +200,9 @@ pub static IT_IT: EmailCopy = EmailCopy {
     welcome_label_account: "Account",
     welcome_label_created_by: "Creato da",
     welcome_label_sign_in: "Indirizzo di accesso",
-    welcome_credentials:
-        "Questo messaggio non contiene alcuna password. Un amministratore le fornirà le \
+    welcome_credentials: "Questo messaggio non contiene alcuna password. Un amministratore le fornirà le \
          credenziali di accesso separatamente.",
-    welcome_never_sends:
-        "Chancela non invia mai password né link di accesso per email. Se riceve un messaggio che \
+    welcome_never_sends: "Chancela non invia mai password né link di accesso per email. Se riceve un messaggio che \
          lo fa, lo segnali a un amministratore.",
 };
 
@@ -247,15 +221,12 @@ pub static NL_NL: EmailCopy = EmailCopy {
     test_subject: "Chancela — testbericht van de e-mailconfiguratie",
     test_badge: "Testbericht",
     test_heading: "De e-mailconfiguratie werkt",
-    test_lede:
-        "Dit bericht bevestigt dat deze Chancela-instantie deze ontvanger heeft kunnen bereiken \
+    test_lede: "Dit bericht bevestigt dat deze Chancela-instantie deze ontvanger heeft kunnen bereiken \
          via de geconfigureerde SMTP-server.",
-    test_proves:
-        "De ontvangst van dit bericht bewijst dat de SMTP-server het bericht met deze \
+    test_proves: "De ontvangst van dit bericht bewijst dat de SMTP-server het bericht met deze \
          configuratie heeft geaccepteerd. Het bewijst geen aflevering in de inbox, die afhangt \
          van de ontvanger en van de filters onderweg.",
-    test_not_notification:
-        "Dit is een configuratietest die door een beheerder is aangevraagd. Het is geen \
+    test_not_notification: "Dit is een configuratietest die door een beheerder is aangevraagd. Het is geen \
          kennisgeving over enig document, enige procedure of enige termijn, en het mag niet \
          worden doorgestuurd alsof dat wel zo is.",
     welcome_subject: "Chancela — uw account is aangemaakt",
@@ -265,10 +236,8 @@ pub static NL_NL: EmailCopy = EmailCopy {
     welcome_label_account: "Account",
     welcome_label_created_by: "Aangemaakt door",
     welcome_label_sign_in: "Aanmeldadres",
-    welcome_credentials:
-        "Dit bericht bevat geen wachtwoord. Een beheerder verstrekt uw aanmeldgegevens apart.",
-    welcome_never_sends:
-        "Chancela verstuurt nooit wachtwoorden of aanmeldlinks per e-mail. Als u een bericht \
+    welcome_credentials: "Dit bericht bevat geen wachtwoord. Een beheerder verstrekt uw aanmeldgegevens apart.",
+    welcome_never_sends: "Chancela verstuurt nooit wachtwoorden of aanmeldlinks per e-mail. Als u een bericht \
          ontvangt dat dat wel doet, meld het dan bij een beheerder.",
 };
 
@@ -287,15 +256,12 @@ pub static DA_DK: EmailCopy = EmailCopy {
     test_subject: "Chancela — testbesked for e-mailkonfigurationen",
     test_badge: "Testbesked",
     test_heading: "E-mailkonfigurationen virker",
-    test_lede:
-        "Denne besked bekræfter, at denne Chancela-instans kunne nå denne modtager via den \
+    test_lede: "Denne besked bekræfter, at denne Chancela-instans kunne nå denne modtager via den \
          konfigurerede SMTP-server.",
-    test_proves:
-        "At modtage denne besked beviser, at SMTP-serveren accepterede beskeden med denne \
+    test_proves: "At modtage denne besked beviser, at SMTP-serveren accepterede beskeden med denne \
          konfiguration. Det beviser ikke levering i indbakken, som afhænger af modtageren og af \
          filtrene undervejs.",
-    test_not_notification:
-        "Dette er en konfigurationstest, som en administrator har anmodet om. Det er ikke en \
+    test_not_notification: "Dette er en konfigurationstest, som en administrator har anmodet om. Det er ikke en \
          meddelelse om noget dokument, nogen sag eller nogen frist, og den må ikke videresendes, \
          som om den var det.",
     welcome_subject: "Chancela — din konto er oprettet",
@@ -305,18 +271,15 @@ pub static DA_DK: EmailCopy = EmailCopy {
     welcome_label_account: "Konto",
     welcome_label_created_by: "Oprettet af",
     welcome_label_sign_in: "Loginadresse",
-    welcome_credentials:
-        "Denne besked indeholder ingen adgangskode. En administrator udleverer dine \
+    welcome_credentials: "Denne besked indeholder ingen adgangskode. En administrator udleverer dine \
          loginoplysninger separat.",
-    welcome_never_sends:
-        "Chancela sender aldrig adgangskoder eller loginlinks med e-mail. Hvis du modtager en \
+    welcome_never_sends: "Chancela sender aldrig adgangskoder eller loginlinks med e-mail. Hvis du modtager en \
          besked, der gør det, skal du melde det til en administrator.",
 };
 
 /// Machine translation, pending native review.
 pub static FI_FI: EmailCopy = EmailCopy {
-    footer_automated:
-        "Chancela lähetti tämän automaattisen viestin. Älä vastaa tähän osoitteeseen.",
+    footer_automated: "Chancela lähetti tämän automaattisen viestin. Älä vastaa tähän osoitteeseen.",
     yes: "Kyllä",
     no: "Ei",
     label_instance: "Instanssi",
@@ -329,15 +292,12 @@ pub static FI_FI: EmailCopy = EmailCopy {
     test_subject: "Chancela — sähköpostiasetusten testiviesti",
     test_badge: "Testiviesti",
     test_heading: "Sähköpostiasetukset toimivat",
-    test_lede:
-        "Tämä viesti vahvistaa, että tämä Chancela-instanssi tavoitti tämän vastaanottajan \
+    test_lede: "Tämä viesti vahvistaa, että tämä Chancela-instanssi tavoitti tämän vastaanottajan \
          määritetyn SMTP-palvelimen kautta.",
-    test_proves:
-        "Tämän viestin vastaanottaminen todistaa, että SMTP-palvelin hyväksyi viestin näillä \
+    test_proves: "Tämän viestin vastaanottaminen todistaa, että SMTP-palvelin hyväksyi viestin näillä \
          asetuksilla. Se ei todista perilletuloa saapuneet-kansioon, joka riippuu \
          vastaanottajasta ja matkan varrella olevista suodattimista.",
-    test_not_notification:
-        "Tämä on ylläpitäjän pyytämä asetusten testi. Se ei ole ilmoitus mistään asiakirjasta, \
+    test_not_notification: "Tämä on ylläpitäjän pyytämä asetusten testi. Se ei ole ilmoitus mistään asiakirjasta, \
          menettelystä tai määräajasta, eikä sitä saa välittää eteenpäin ikään kuin se olisi \
          sellainen.",
     welcome_subject: "Chancela — tilisi on luotu",
@@ -347,17 +307,14 @@ pub static FI_FI: EmailCopy = EmailCopy {
     welcome_label_account: "Tili",
     welcome_label_created_by: "Luonut",
     welcome_label_sign_in: "Kirjautumisosoite",
-    welcome_credentials:
-        "Tämä viesti ei sisällä salasanaa. Ylläpitäjä toimittaa kirjautumistietosi erikseen.",
-    welcome_never_sends:
-        "Chancela ei koskaan lähetä salasanoja eikä kirjautumislinkkejä sähköpostitse. Jos saat \
+    welcome_credentials: "Tämä viesti ei sisällä salasanaa. Ylläpitäjä toimittaa kirjautumistietosi erikseen.",
+    welcome_never_sends: "Chancela ei koskaan lähetä salasanoja eikä kirjautumislinkkejä sähköpostitse. Jos saat \
          viestin, joka sisältää niitä, ilmoita siitä ylläpitäjälle.",
 };
 
 /// Machine translation, pending native review.
 pub static SV_SE: EmailCopy = EmailCopy {
-    footer_automated:
-        "Automatiskt meddelande skickat av Chancela. Svara inte till den här adressen.",
+    footer_automated: "Automatiskt meddelande skickat av Chancela. Svara inte till den här adressen.",
     yes: "Ja",
     no: "Nej",
     label_instance: "Instans",
@@ -370,15 +327,12 @@ pub static SV_SE: EmailCopy = EmailCopy {
     test_subject: "Chancela — testmeddelande för e-postkonfigurationen",
     test_badge: "Testmeddelande",
     test_heading: "E-postkonfigurationen fungerar",
-    test_lede:
-        "Det här meddelandet bekräftar att den här Chancela-instansen kunde nå den här mottagaren \
+    test_lede: "Det här meddelandet bekräftar att den här Chancela-instansen kunde nå den här mottagaren \
          via den konfigurerade SMTP-servern.",
-    test_proves:
-        "Att ta emot det här meddelandet bevisar att SMTP-servern accepterade meddelandet med den \
+    test_proves: "Att ta emot det här meddelandet bevisar att SMTP-servern accepterade meddelandet med den \
          här konfigurationen. Det bevisar inte leverans till inkorgen, som beror på mottagaren \
          och på filtren längs vägen.",
-    test_not_notification:
-        "Det här är ett konfigurationstest som begärts av en administratör. Det är inte ett \
+    test_not_notification: "Det här är ett konfigurationstest som begärts av en administratör. Det är inte ett \
          meddelande om något dokument, något ärende eller någon tidsfrist, och det får inte \
          vidarebefordras som om det vore det.",
     welcome_subject: "Chancela — ditt konto har skapats",
@@ -388,11 +342,9 @@ pub static SV_SE: EmailCopy = EmailCopy {
     welcome_label_account: "Konto",
     welcome_label_created_by: "Skapat av",
     welcome_label_sign_in: "Inloggningsadress",
-    welcome_credentials:
-        "Det här meddelandet innehåller inget lösenord. En administratör lämnar dina \
+    welcome_credentials: "Det här meddelandet innehåller inget lösenord. En administratör lämnar dina \
          inloggningsuppgifter separat.",
-    welcome_never_sends:
-        "Chancela skickar aldrig lösenord eller inloggningslänkar via e-post. Om du får ett \
+    welcome_never_sends: "Chancela skickar aldrig lösenord eller inloggningslänkar via e-post. Om du får ett \
          meddelande som gör det ska du anmäla det till en administratör.",
 };
 
@@ -402,8 +354,7 @@ pub static SV_SE: EmailCopy = EmailCopy {
 /// `föredragningslista`) where Finland-Swedish actually differs, so the columns are identical by
 /// design rather than by omission. A Finland-Swedish reviewer should confirm that.
 pub static SV_FI: EmailCopy = EmailCopy {
-    footer_automated:
-        "Automatiskt meddelande skickat av Chancela. Svara inte till den här adressen.",
+    footer_automated: "Automatiskt meddelande skickat av Chancela. Svara inte till den här adressen.",
     yes: "Ja",
     no: "Nej",
     label_instance: "Instans",
@@ -416,15 +367,12 @@ pub static SV_FI: EmailCopy = EmailCopy {
     test_subject: "Chancela — testmeddelande för e-postkonfigurationen",
     test_badge: "Testmeddelande",
     test_heading: "E-postkonfigurationen fungerar",
-    test_lede:
-        "Det här meddelandet bekräftar att den här Chancela-instansen kunde nå den här mottagaren \
+    test_lede: "Det här meddelandet bekräftar att den här Chancela-instansen kunde nå den här mottagaren \
          via den konfigurerade SMTP-servern.",
-    test_proves:
-        "Att ta emot det här meddelandet bevisar att SMTP-servern accepterade meddelandet med den \
+    test_proves: "Att ta emot det här meddelandet bevisar att SMTP-servern accepterade meddelandet med den \
          här konfigurationen. Det bevisar inte leverans till inkorgen, som beror på mottagaren \
          och på filtren längs vägen.",
-    test_not_notification:
-        "Det här är ett konfigurationstest som begärts av en administratör. Det är inte ett \
+    test_not_notification: "Det här är ett konfigurationstest som begärts av en administratör. Det är inte ett \
          meddelande om något dokument, något ärende eller någon tidsfrist, och det får inte \
          vidarebefordras som om det vore det.",
     welcome_subject: "Chancela — ditt konto har skapats",
@@ -434,18 +382,15 @@ pub static SV_FI: EmailCopy = EmailCopy {
     welcome_label_account: "Konto",
     welcome_label_created_by: "Skapat av",
     welcome_label_sign_in: "Inloggningsadress",
-    welcome_credentials:
-        "Det här meddelandet innehåller inget lösenord. En administratör lämnar dina \
+    welcome_credentials: "Det här meddelandet innehåller inget lösenord. En administratör lämnar dina \
          inloggningsuppgifter separat.",
-    welcome_never_sends:
-        "Chancela skickar aldrig lösenord eller inloggningslänkar via e-post. Om du får ett \
+    welcome_never_sends: "Chancela skickar aldrig lösenord eller inloggningslänkar via e-post. Om du får ett \
          meddelande som gör det ska du anmäla det till en administratör.",
 };
 
 /// Machine translation, pending native review.
 pub static PL_PL: EmailCopy = EmailCopy {
-    footer_automated:
-        "Wiadomość automatyczna wysłana przez Chancela. Nie odpowiadaj na ten adres.",
+    footer_automated: "Wiadomość automatyczna wysłana przez Chancela. Nie odpowiadaj na ten adres.",
     yes: "Tak",
     no: "Nie",
     label_instance: "Instancja",
@@ -458,15 +403,12 @@ pub static PL_PL: EmailCopy = EmailCopy {
     test_subject: "Chancela — wiadomość testowa konfiguracji poczty",
     test_badge: "Wiadomość testowa",
     test_heading: "Konfiguracja poczty działa",
-    test_lede:
-        "Ta wiadomość potwierdza, że ta instancja Chancela zdołała skontaktować się z tym \
+    test_lede: "Ta wiadomość potwierdza, że ta instancja Chancela zdołała skontaktować się z tym \
          odbiorcą za pośrednictwem skonfigurowanego serwera SMTP.",
-    test_proves:
-        "Otrzymanie tej wiadomości dowodzi, że serwer SMTP przyjął wiadomość z tą konfiguracją. \
+    test_proves: "Otrzymanie tej wiadomości dowodzi, że serwer SMTP przyjął wiadomość z tą konfiguracją. \
          Nie dowodzi dostarczenia do skrzynki odbiorczej, które zależy od odbiorcy i od filtrów \
          po drodze.",
-    test_not_notification:
-        "To jest test konfiguracji zlecony przez administratora. Nie jest to powiadomienie o \
+    test_not_notification: "To jest test konfiguracji zlecony przez administratora. Nie jest to powiadomienie o \
          żadnym dokumencie, postępowaniu ani terminie i nie należy go przekazywać dalej, jak \
          gdyby nim było.",
     welcome_subject: "Chancela — Twoje konto zostało utworzone",
@@ -476,9 +418,7 @@ pub static PL_PL: EmailCopy = EmailCopy {
     welcome_label_account: "Konto",
     welcome_label_created_by: "Utworzone przez",
     welcome_label_sign_in: "Adres logowania",
-    welcome_credentials:
-        "Ta wiadomość nie zawiera hasła. Administrator przekaże Ci dane logowania osobno.",
-    welcome_never_sends:
-        "Chancela nigdy nie wysyła haseł ani linków do logowania pocztą elektroniczną. Jeśli \
+    welcome_credentials: "Ta wiadomość nie zawiera hasła. Administrator przekaże Ci dane logowania osobno.",
+    welcome_never_sends: "Chancela nigdy nie wysyła haseł ani linków do logowania pocztą elektroniczną. Jeśli \
          otrzymasz wiadomość, która to robi, zgłoś ją administratorowi.",
 };

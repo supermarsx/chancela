@@ -31,6 +31,9 @@
 //! - `POST|GET /v1/documents/generated/{id}/dispatch-evidence` — operator-recorded,
 //!   metadata-only dispatch evidence for generated absent-owner communications.
 //! - `POST /v1/signature/pdf/validate` — read-only local technical PDF/PAdES evidence validation.
+//! - `POST /v1/signature/pdf/validate/report` — the same validation, rendered as a PDF/A-2u
+//!   report. Takes the document, never a report body: the server renders only findings it
+//!   computed itself, so a Chancela-branded verdict cannot be minted by a caller.
 //! - `POST /v1/signature/asic/inspect` — read-only local technical ASiC/CAdES profile inspection.
 //! - `GET /v1/signature/provider-credentials/status` — read-only provider credential storage
 //!   metadata; secrets, ciphertext, raw keys, and live provider calls are never returned.
@@ -134,6 +137,8 @@ mod delegations;
 mod documents;
 mod dto;
 mod email;
+pub(crate) mod email_locales;
+pub(crate) mod email_template;
 mod entities;
 mod error;
 mod external_signing;
@@ -152,6 +157,7 @@ mod pairing;
 mod paper_import;
 mod password_policy;
 mod pdf_signature_validation;
+mod pdf_validation_report_document;
 mod platform_logs;
 mod platform_ops;
 mod privacy;
@@ -1918,6 +1924,7 @@ pub fn router(state: AppState) -> Router {
             "/v1/acts/{id}/human-verification",
             post(acts::verify_ai_human_review),
         )
+        .route("/v1/acts/{id}/body/preview", post(acts::preview_act_body))
         .route("/v1/acts/{id}/compliance", get(acts::get_compliance))
         .route("/v1/acts/{id}/seal", post(acts::seal_act_handler))
         .route("/v1/acts/{id}/archive", post(acts::archive_act))
@@ -2019,6 +2026,16 @@ pub fn router(state: AppState) -> Router {
             post(pdf_signature_validation::validate_pdf_signature).layer(DefaultBodyLimit::max(
                 pdf_signature_validation::PDF_SIGNATURE_VALIDATION_ENVELOPE_BYTES,
             )),
+        )
+        // Same validation, rendered as PDF/A-2u. Takes the PDF rather than a report body:
+        // the server renders only what it computed itself (see the handler's doc comment).
+        .route(
+            "/v1/signature/pdf/validate/report",
+            post(pdf_signature_validation::validate_pdf_signature_report).layer(
+                DefaultBodyLimit::max(
+                    pdf_signature_validation::PDF_SIGNATURE_VALIDATION_ENVELOPE_BYTES,
+                ),
+            ),
         )
         .route(
             "/v1/signature/asic/inspect",
@@ -4316,6 +4333,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         let token = Uuid::new_v4().to_string();
@@ -6687,6 +6705,7 @@ mod tests {
                 profile: crate::documents::PDFA_PROFILE.to_owned(),
                 created_at: time::OffsetDateTime::UNIX_EPOCH,
                 pdf_bytes: b"%PDF-1.7\n".to_vec(),
+                template_spec_json: None,
             },
         );
 
@@ -12132,6 +12151,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: assignments,
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         uid
@@ -13266,6 +13286,7 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![],
+            language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
         let token = Uuid::new_v4().to_string();
@@ -16151,6 +16172,7 @@ mod tests {
                 secret_source: Default::default(),
                 recovery_hash: None,
                 role_assignments: vec![crate::roles::bootstrap_assignment(true)],
+                language: Default::default(),
             },
         );
 

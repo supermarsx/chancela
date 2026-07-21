@@ -205,8 +205,7 @@ pub fn build_pdf_validation_report_document(
         && report
             .declared_size_bytes
             .is_none_or(|d| d == report.size_bytes);
-    let declared_present =
-        report.declared_sha256.is_some() || report.declared_size_bytes.is_some();
+    let declared_present = report.declared_sha256.is_some() || report.declared_size_bytes.is_some();
     blocks.push(Block::KeyValue {
         rows: vec![
             kv("Documento verificado", filename),
@@ -284,11 +283,7 @@ pub fn build_pdf_validation_report_document(
         "Estrutura",
         vec![
             check("É um PDF", conformance(s.is_pdf), yes_no(s.is_pdf)),
-            check(
-                "Versão",
-                Verdict::Info,
-                s.version.as_deref().unwrap_or("—"),
-            ),
+            check("Versão", Verdict::Info, s.version.as_deref().unwrap_or("—")),
             check(
                 "Deslocamento do cabeçalho",
                 Verdict::Info,
@@ -443,7 +438,11 @@ pub fn build_pdf_validation_report_document(
         vec![
             check("DSS presente", presence(dss.present), yes_no(dss.present)),
             check("Entradas VRI", Verdict::Info, dss.vri_count.to_string()),
-            check("Certificados", Verdict::Info, dss.certificate_count.to_string()),
+            check(
+                "Certificados",
+                Verdict::Info,
+                dss.certificate_count.to_string(),
+            ),
             check("Respostas OCSP", Verdict::Info, dss.ocsp_count.to_string()),
             check("CRL", Verdict::Info, dss.crl_count.to_string()),
             check(
@@ -482,7 +481,10 @@ pub fn build_pdf_validation_report_document(
     for validation in &dts.validations {
         group(
             &mut blocks,
-            &format!("DocTimeStamp {} · {}", validation.index, validation.object_id),
+            &format!(
+                "DocTimeStamp {} · {}",
+                validation.index, validation.object_id
+            ),
             doc_timestamp_rows(validation),
         );
         blocks.push(Block::Rule);
@@ -490,7 +492,11 @@ pub fn build_pdf_validation_report_document(
 
     // --- Renewal plan -----------------------------------------------------------------
     let plan = &sig.local_technical_renewal_plan;
-    let mut plan_rows = vec![check("Estado do plano", status_verdict(plan.status), plan.status)];
+    let mut plan_rows = vec![check(
+        "Estado do plano",
+        status_verdict(plan.status),
+        plan.status,
+    )];
     plan_rows.extend(renewal_plan_rows(plan));
     group(&mut blocks, "Plano técnico local de renovação", plan_rows);
     blocks.push(plain(plan.notice));
@@ -502,7 +508,11 @@ pub fn build_pdf_validation_report_document(
         &mut blocks,
         "Assinaturas do documento",
         vec![
-            check("Estado do plano", status_verdict(multi.status), multi.status),
+            check(
+                "Estado do plano",
+                status_verdict(multi.status),
+                multi.status,
+            ),
             check(
                 "Número de assinaturas",
                 Verdict::Info,
@@ -556,7 +566,11 @@ pub fn build_pdf_validation_report_document(
                     Verdict::Info,
                     signature.signed_revision_len.to_string(),
                 ),
-                check("Chave VRI (SHA-256)", Verdict::Info, &signature.vri_key_sha256),
+                check(
+                    "Chave VRI (SHA-256)",
+                    Verdict::Info,
+                    &signature.vri_key_sha256,
+                ),
                 check(
                     "VRI no DSS",
                     presence(signature.dss_vri_present),

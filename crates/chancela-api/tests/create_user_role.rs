@@ -227,7 +227,11 @@ async fn a_role_above_the_creators_ceiling_is_refused_and_no_user_is_written() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "escalation refused: {refusal}");
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "escalation refused: {refusal}"
+    );
 
     // ATOMICITY: the refusal happened before any write, so there is no created-but-roleless user.
     assert!(
