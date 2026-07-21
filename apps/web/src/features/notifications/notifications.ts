@@ -1,4 +1,8 @@
-import { ledgerEventKindLabel } from '../../api/labels';
+import {
+  dashboardAlertSourceLabel,
+  dashboardReminderRuleLabel,
+  ledgerEventKindLabel,
+} from '../../api/labels';
 import type {
   Dashboard,
   DashboardAlert,
@@ -234,6 +238,22 @@ function reminderDateMeta(dueDate: string, t: TFunction): string {
   const invalid = t('dashboard.workQueue.date.invalid');
   if (label === missing || label === invalid) return label;
   return t('dashboard.workQueue.date.value', { date: label });
+}
+
+/**
+ * The "Fonte" line for a reminder. Named generators read as copy; an unnamed one keeps the raw
+ * `rule / profile` pair the server sent, so it still identifies itself rather than going blank.
+ */
+function reminderSourceMeta(reminder: DashboardReminder, t: TFunction): string {
+  const label = dashboardReminderRuleLabel(
+    reminder.source_rule,
+    reminder.profile_calendar_plan?.preset_label,
+  );
+  if (label) return t('notifications.alert.source', { source: label });
+  return t('dashboard.workQueue.source', {
+    rule: reminder.source_rule.trim() || t('dashboard.workQueue.rule.missing'),
+    profile: reminder.source_profile.trim() || t('dashboard.workQueue.profile.missing'),
+  });
 }
 
 function reminderPriority(status: DashboardReminder['status']): number {
@@ -578,7 +598,9 @@ function buildAlertNotification(
       : copy
         ? t(copy.body, params)
         : t('notifications.alert.unknown.body', unknownParams),
-    meta: source ? [t('notifications.alert.source', { source })] : [],
+    meta: source
+      ? [t('notifications.alert.source', { source: dashboardAlertSourceLabel(source) })]
+      : [],
     action: alertAction(alert, t, i18nAction ?? copy?.action, params),
   };
 }
@@ -688,10 +710,7 @@ export function buildDashboardNotifications(
         : copy
           ? t(copy.body, params)
           : t('notifications.reminder.unknown.body', params),
-      meta: [
-        reminderDateMeta(reminder.due_date, t),
-        t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
-      ],
+      meta: [reminderDateMeta(reminder.due_date, t), reminderSourceMeta(reminder, t)],
       action: actionFromMetadata(reminder.action, t, params) ??
         actionFromReminderTarget(reminder, t, i18nAction ?? copy?.action, params) ?? {
           href: SETTINGS_ROUTE,

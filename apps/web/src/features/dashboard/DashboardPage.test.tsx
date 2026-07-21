@@ -271,10 +271,7 @@ describe('DashboardPage', () => {
   it('shows the current-work skeleton shape while the landing panel loads', async () => {
     // The first paint must reserve the two current-work cards, not the metric grid the
     // stats tab used to claim while it was the default.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch,
-    );
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch);
     renderDashboard();
 
     const region = await screen.findByRole('status');
@@ -647,7 +644,7 @@ describe('DashboardPage', () => {
         'Não há ato anual selado ou arquivado para Encosto Estratégico, S.A. em 2026-03-31. O lembrete é consultivo e deriva de csc-art376-annual.',
       ),
     ).toBeTruthy();
-    expect(within(queue).getByText('Fonte csc-art376-annual / csc-commercial')).toBeTruthy();
+    expect(within(queue).getByText('Fonte Assembleia geral anual (CSC art. 376.º)')).toBeTruthy();
     expect(
       within(queue).getByText(
         'Calendário do perfil: regra local consultiva disponível; fonte por rever',
@@ -668,6 +665,7 @@ describe('DashboardPage', () => {
       {
         rule: 'csc-art376-annual',
         profile: 'csc-commercial',
+        presetLabel: 'Assembleia geral anual (CSC art. 376.º)',
         entityId: 'entity-csc',
         entityName: 'Sociedade Azul, S.A.',
         dueDate: '2026-03-31',
@@ -676,6 +674,7 @@ describe('DashboardPage', () => {
       {
         rule: 'assoc-annual',
         profile: 'association-annual',
+        presetLabel: 'Assembleia geral ordinária anual (Código Civil)',
         entityId: 'entity-assoc',
         entityName: 'Associação Norte',
         dueDate: '2026-04-30',
@@ -684,6 +683,7 @@ describe('DashboardPage', () => {
       {
         rule: 'fundacao-annual',
         profile: 'foundation-annual',
+        presetLabel: 'Reunião anual do conselho de administração (Lei 24/2012)',
         entityId: 'entity-fundacao',
         entityName: 'Fundação Delta',
         dueDate: '2026-05-31',
@@ -692,6 +692,7 @@ describe('DashboardPage', () => {
       {
         rule: 'cooperativa-annual',
         profile: 'cooperative-annual',
+        presetLabel: 'Assembleia geral anual (Código Cooperativo)',
         entityId: 'entity-coop',
         entityName: 'Cooperativa Sul',
         dueDate: '2026-06-30',
@@ -709,7 +710,11 @@ describe('DashboardPage', () => {
         entity_name: annualCase.entityName,
         source_rule: annualCase.rule,
         source_profile: annualCase.profile,
-        profile_calendar_plan: profileCalendarPlan('supported'),
+        profile_calendar_plan: {
+          ...profileCalendarPlan('supported'),
+          preset_id: annualCase.rule,
+          preset_label: annualCase.presetLabel,
+        },
       })),
     };
 
@@ -721,7 +726,7 @@ describe('DashboardPage', () => {
     expect(within(queue).getAllByRole('listitem')).toHaveLength(4);
 
     for (const annualCase of annualCases) {
-      const source = within(queue).getByText(`Fonte ${annualCase.rule} / ${annualCase.profile}`);
+      const source = within(queue).getByText(`Fonte ${annualCase.presetLabel}`);
       const item = source.closest('li');
       expect(item).toBeTruthy();
       if (!item) throw new Error(`Missing work-queue item for ${annualCase.rule}`);
@@ -801,7 +806,9 @@ describe('DashboardPage', () => {
         'Não há ato anual selado ou arquivado para Condomínio Horizonte em 2026-01-15. O lembrete é consultivo e deriva de condominio-annual.',
       ),
     ).toBeTruthy();
-    expect(within(item).getByText('Fonte condominio-annual / condominio-dl268')).toBeTruthy();
+    expect(
+      within(item).getByText('Fonte Assembleia ordinária anual de condóminos (DL 268/94)'),
+    ).toBeTruthy();
     expect(
       within(item).getByText(
         'Calendário do perfil: regra local consultiva disponível; fonte por rever',
@@ -868,7 +875,7 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
     expect(within(item).queryByText('Raw backend follow-up fallback.')).toBeNull();
     expect(within(item).getByText('Data 2026-07-01')).toBeTruthy();
-    expect(within(item).getByText('Fonte act-follow-up / follow-up:fu-1')).toBeTruthy();
+    expect(within(item).getByText('Fonte Seguimento de deliberação')).toBeTruthy();
   });
 
   it('renders missing-attendance act reminders with localized params and act routing', async () => {
@@ -927,7 +934,7 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
     expect(within(item).queryByText('Raw backend attendance fallback.')).toBeNull();
     expect(within(item).getByText('Data 2026-07-20')).toBeTruthy();
-    expect(within(item).getByText('Fonte act-attendance-missing / csc-commercial')).toBeTruthy();
+    expect(within(item).getByText('Fonte Presenças em falta na ata')).toBeTruthy();
   });
 
   it('renders convocation-notice act reminders with local advisory copy and act routing', async () => {
@@ -987,7 +994,7 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
     expect(within(item).queryByText('Raw backend convocation notice fallback.')).toBeNull();
     expect(within(item).getByText('Data 2026-03-20')).toBeTruthy();
-    expect(within(item).getByText('Fonte act-convening-notice / csc-commercial')).toBeTruthy();
+    expect(within(item).getByText('Fonte Convocatória da reunião')).toBeTruthy();
   });
 
   it('renders convocation-notice reminders without meeting dates as non-computed local advisory work', async () => {
@@ -1053,7 +1060,7 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
     expect(within(item).queryByText('Raw backend convocation notice fallback.')).toBeNull();
     expect(within(item).getByText('Sem data')).toBeTruthy();
-    expect(within(item).getByText('Fonte act-convening-notice / csc-commercial')).toBeTruthy();
+    expect(within(item).getByText('Fonte Convocatória da reunião')).toBeTruthy();
     expect(within(item).queryByText(/data local de aviso é/i)).toBeNull();
     expect(within(item).queryByText('2026-03-20')).toBeNull();
   });
@@ -1118,11 +1125,7 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
     expect(within(item).queryByText('Raw backend dispatch fallback.')).toBeNull();
     expect(within(item).getByText('Sem data')).toBeTruthy();
-    expect(
-      within(item).getByText(
-        'Fonte absent-owner-dispatch-evidence / condominium-generated-communication',
-      ),
-    ).toBeTruthy();
+    expect(within(item).getByText('Fonte Evidência de expedição a condómino ausente')).toBeTruthy();
   });
 
   it('routes generated-convening dispatch evidence reminders to the generated document workflow', async () => {
@@ -1179,11 +1182,7 @@ describe('DashboardPage', () => {
         'Generated convening notice metadata is partial; no sending, delivery, legal notice completion, or legal sufficiency is claimed.',
       ),
     ).toBeTruthy();
-    expect(
-      within(item).getByText(
-        'Fonte generated-convening-dispatch-evidence / generated-convening-notice',
-      ),
-    ).toBeTruthy();
+    expect(within(item).getByText('Fonte Evidência de expedição da convocatória')).toBeTruthy();
     expect(within(item).queryByText('Entrega confirmada')).toBeNull();
     expect(within(item).queryByText('Workflow concluído')).toBeNull();
     expect(within(item).getByRole('link').getAttribute('href')).toBe(
@@ -1248,11 +1247,7 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
     expect(within(item).queryByText('Raw backend imported-review fallback.')).toBeNull();
     expect(within(item).getByText('Sem data')).toBeTruthy();
-    expect(
-      within(item).getByText(
-        'Fonte imported-document-review-required / imported-document-review:import-1',
-      ),
-    ).toBeTruthy();
+    expect(within(item).getByText('Fonte Documento importado por rever')).toBeTruthy();
   });
 
   it('renders privacy control review reminders with settings routing and source markers', async () => {
@@ -1323,7 +1318,9 @@ describe('DashboardPage', () => {
     const dpia = within(queue).getByText('Biometric access DPIA').closest('li');
     expect(dpia).toBeTruthy();
     expect(within(dpia!).getByText('Próximo')).toBeTruthy();
-    expect(within(dpia!).getByText('Fonte privacy-dpia-review / privacy-dpia')).toBeTruthy();
+    expect(
+      within(dpia!).getByText('Fonte Revisão da avaliação de impacto sobre a proteção de dados'),
+    ).toBeTruthy();
     expect(
       within(dpia!).getByRole('link', { name: 'Biometric access DPIA' }).getAttribute('href'),
     ).toBe('/configuracoes?sec=privacidade');
@@ -1332,7 +1329,7 @@ describe('DashboardPage', () => {
     expect(breach).toBeTruthy();
     expect(within(breach!).getByText('Atrasado')).toBeTruthy();
     expect(
-      within(breach!).getByText('Fonte privacy-breach-playbook-review / breach:breach-review-1'),
+      within(breach!).getByText('Fonte Revisão do plano de resposta a violações de dados'),
     ).toBeTruthy();
     expect(
       within(breach!)
@@ -1345,9 +1342,7 @@ describe('DashboardPage', () => {
     expect(within(transfer!).getByText('Pendente')).toBeTruthy();
     expect(within(transfer!).getByText('Sem data')).toBeTruthy();
     expect(
-      within(transfer!).getByText(
-        'Fonte privacy-transfer-control-review / transfer:transfer-review-1',
-      ),
+      within(transfer!).getByText('Fonte Revisão do controlo de transferências internacionais'),
     ).toBeTruthy();
     expect(
       within(transfer!)
@@ -1599,7 +1594,7 @@ describe('DashboardPage', () => {
         'O livro book-held tem retenção legal ativa: litígio pendente. Reveja a retenção antes de decisões de descarte de arquivo.',
       ),
     ).toBeTruthy();
-    expect(within(queue).getByText('Fonte books.legal_hold')).toBeTruthy();
+    expect(within(queue).getByText('Fonte Retenção legal do livro')).toBeTruthy();
 
     expect(
       within(queue).getByRole('link', { name: 'Ata selada por arquivar' }).getAttribute('href'),
@@ -1609,7 +1604,43 @@ describe('DashboardPage', () => {
         'A ata act-sealed está selada e ainda não foi arquivada. Arquive-a quando a evidência de preservação estiver pronta.',
       ),
     ).toBeTruthy();
-    expect(within(queue).getByText('Fonte acts.state')).toBeTruthy();
+    expect(within(queue).getByText('Fonte Estado das atas')).toBeTruthy();
+  });
+
+  it('shows the raw source of an alert a newer server introduces rather than nothing', async () => {
+    // New sources land server-side over time; an unlabelled one must still name itself on the
+    // Fonte line, so the panel degrades to the identifier instead of dropping the provenance.
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      alerts: [
+        {
+          code: 'book.quantum.entangled',
+          label: 'Advisory',
+          severity: 'Info',
+          category: 'BookLifecycle',
+          message: 'Something a future release checks.',
+          params: {},
+          target: {
+            entity_id: null,
+            book_id: null,
+            act_id: null,
+            links: { entity: null, book: null, act: null, ledger: null },
+          },
+          source: 'quantum.entanglement',
+          law_refs: [],
+          action: null,
+          recommended_next_steps: [],
+          i18n: null,
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    expect(within(queue).getByText('Fonte quantum.entanglement')).toBeTruthy();
   });
 
   it('renders backup recovery freshness alerts as bounded data-management advisories', async () => {
@@ -1670,7 +1701,7 @@ describe('DashboardPage', () => {
         'O estado local do ensaio de recuperação está failed. Política: máximo 90 dias; último recibo 2026-07-10T10:40:00Z; idade 4 dias; pré-validação pronta false; verificação isolada false. É apenas um aviso local com recibos guardados.',
       ),
     ).toBeTruthy();
-    expect(within(queue).getByText('Fonte backup_recovery.freshness')).toBeTruthy();
+    expect(within(queue).getByText('Fonte Atualidade das cópias de segurança')).toBeTruthy();
     const rendered = queue.textContent ?? '';
     expect(rendered).not.toContain('backups/secret.zip');
     expect(rendered).not.toContain('secret-receipt-id');

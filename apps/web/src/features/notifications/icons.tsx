@@ -64,6 +64,36 @@ export function ActivityGlyph(props: SVGProps<SVGSVGElement>) {
 }
 
 /**
+ * "Marcar como lida" — an opened envelope. The row is **seen but still open**: `read` is the
+ * only non-terminal triage status, so the row stays in the list (merely de-emphasised) and the
+ * glyph has to say *opened*, not *finished*. An envelope carries that on its own; a tick does
+ * not, which is why this and `ShieldCheckGlyph` deliberately share no geometry.
+ */
+export function MailOpenGlyph(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Glyph {...props}>
+      <path d="M3.5 10.5 12 4.5l8.5 6v8a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" />
+      <path d="M3.5 10.5 12 16l8.5-5.5" />
+    </Glyph>
+  );
+}
+
+/**
+ * "Reconhecer" — a shield with a check. Acknowledging is terminal and is offered only on rows
+ * that represent work (never on the operation log): the operator is taking the item on, not
+ * just noting it. The shield is the **same outline as `ShieldAlertGlyph`**, on purpose — the
+ * row raising a warning and the control that resolves it read as one pair.
+ */
+export function ShieldCheckGlyph(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Glyph {...props}>
+      <path d="M12 3.5 19 6v5c0 4.4-3 7.6-7 9.5-4-1.9-7-5.1-7-9.5V6z" />
+      <path d="m9 11.5 2.2 2.2 4-4.2" />
+    </Glyph>
+  );
+}
+
+/**
  * The distinct type of a row's leading chip, keyed by kind + tone. The chip's colour is
  * driven by `item.tone` (see `notifications-list__icon--*` in theme.css); this only picks
  * the glyph and a stable `name` used both as the chip's `data-notification-icon`

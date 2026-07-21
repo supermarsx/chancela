@@ -8,7 +8,13 @@
  * catalog's non-React `t()` for the active locale. Legal-basis strings for compliance
  * issues stay on the API side (UX-21) — these are UI labels only.
  */
-import { t, LABELLED_LEDGER_EVENT_KINDS } from '../i18n';
+import {
+  t,
+  LABELLED_LEDGER_EVENT_KINDS,
+  LABELLED_DASHBOARD_ALERT_SOURCES,
+  LABELLED_DASHBOARD_REMINDER_RULES,
+  normalizeAlertSource,
+} from '../i18n';
 import type { MessageKey } from '../i18n';
 import type {
   ActState,
@@ -122,6 +128,45 @@ export function ledgerEventKindLabel(kind: string): string {
   return LABELLED_LEDGER_EVENT_KINDS.has(trimmed)
     ? t(`enum.ledgerEventKind.${trimmed}` as MessageKey)
     : trimmed;
+}
+
+// --- Dashboard actionable provenance ---------------------------------------------
+
+/**
+ * Render a `DashboardAlert.source` as readable copy. The wire value names the data scope the
+ * check ran over (`entities.books` → the entity's books) or the rule pack that raised the
+ * alert (`csc-art63/v2`); the version suffix is dropped before the lookup so a newer pack
+ * inherits the name.
+ *
+ * An unmapped source degrades to its raw identifier — never blank, never `undefined`.
+ */
+export function dashboardAlertSourceLabel(source: string): string {
+  const trimmed = source.trim();
+  if (!trimmed) return source;
+  const normalized = normalizeAlertSource(trimmed);
+  return LABELLED_DASHBOARD_ALERT_SOURCES.has(normalized)
+    ? t(`enum.dashboardAlertSource.${normalized}` as MessageKey)
+    : trimmed;
+}
+
+/**
+ * Render a `DashboardReminder.source_rule` as readable copy, or `undefined` when the rule has
+ * no name and the caller should keep its raw `rule / profile` rendering.
+ *
+ * Profile-calendar reminders carry an authored `preset_label` on the payload — that is the
+ * reminder's own name, so it wins over the map rather than being duplicated into it.
+ */
+export function dashboardReminderRuleLabel(
+  rule: string,
+  presetLabel?: string | null,
+): string | undefined {
+  const authored = presetLabel?.trim();
+  if (authored) return authored;
+  const trimmed = rule.trim();
+  if (!trimmed) return undefined;
+  return LABELLED_DASHBOARD_REMINDER_RULES.has(trimmed)
+    ? t(`enum.dashboardReminderRule.${trimmed}` as MessageKey)
+    : undefined;
 }
 
 // --- CAE — Classificação das Atividades Económicas (§2.7, plan t14) --------------

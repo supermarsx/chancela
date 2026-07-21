@@ -32,7 +32,6 @@ import {
   dashboardTabFromParam,
   dedupeDashboardReminders,
   firstChainId,
-  formatDashboardDateTime,
   generatedDispatchDocumentIdFromApi,
   generatedDispatchEvidenceRoute,
   idFromScopedValue,
@@ -113,10 +112,8 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
     ).toEqual(['stats', 'activity', 'current', 'dates', 'queue', 'events']);
     expect(dashboardTabFromParam('unknown')).toBe('current');
     expect(dashboardTabFromParam(null)).toBe('current');
-    expect(formatDashboardDateTime('not-a-date', 'pt-PT')).toBe('not-a-date');
-    expect(formatDashboardDateTime('2026-07-16T10:00:00Z', 'pt-PT')).not.toBe(
-      '2026-07-16T10:00:00Z',
-    );
+    // Timestamp rendering moved to the shared `format.ts` family (t66); the old local helper
+    // echoed an unparseable value back to the page, which is precisely what it now refuses to do.
     expect(shortDashboardId('1234567890')).toBe('12345678');
     expect(idFromScopedValue('book:B1', 'book')).toBe('B1');
     expect(idFromScopedValue('book:   ', 'book')).toBeUndefined();

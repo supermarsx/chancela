@@ -6,7 +6,13 @@
  */
 import { Link, useSearchParams } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
-import { actStateLabels, bookKindLabels, ledgerEventKindLabel } from '../../api/labels';
+import {
+  actStateLabels,
+  bookKindLabels,
+  dashboardAlertSourceLabel,
+  dashboardReminderRuleLabel,
+  ledgerEventKindLabel,
+} from '../../api/labels';
 import type {
   Dashboard,
   DashboardAlert,
@@ -17,7 +23,7 @@ import type {
   DashboardReminder,
   LedgerEventView,
 } from '../../api/types';
-import { useLocale, useT, type MessageKey, type TFunction, type TParams } from '../../i18n';
+import { useT, type MessageKey, type TFunction, type TParams } from '../../i18n';
 import {
   Badge,
   Card,
@@ -26,6 +32,7 @@ import {
   Icon,
   InlineWarning,
   PageHeader,
+  RelativeDateTime,
   SkeletonCards,
   SkeletonTable,
   SkeletonDeflist,
@@ -150,11 +157,6 @@ export function dashboardTabFromParam(value: string | null): DashboardTab {
     return value;
   }
   return 'current';
-}
-
-export function formatDashboardDateTime(value: string, locale: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale);
 }
 
 export function shortDashboardId(value: string): string {
@@ -328,6 +330,22 @@ export function dashboardReminderDateMeta(dueDate: string, t: TFunction): string
   const invalid = t('dashboard.workQueue.date.invalid');
   if (label === missing || label === invalid) return label;
   return t('dashboard.workQueue.date.value', { date: label });
+}
+
+/**
+ * The "Fonte" line for a reminder. Named generators read as copy; an unnamed one keeps the raw
+ * `rule / profile` pair the server sent, so it still identifies itself rather than going blank.
+ */
+export function dashboardReminderSourceMeta(reminder: DashboardReminder, t: TFunction): string {
+  const label = dashboardReminderRuleLabel(
+    reminder.source_rule,
+    reminder.profile_calendar_plan?.preset_label,
+  );
+  if (label) return t('notifications.alert.source', { source: label });
+  return t('dashboard.workQueue.source', {
+    rule: reminder.source_rule.trim() || t('dashboard.workQueue.rule.missing'),
+    profile: reminder.source_profile.trim() || t('dashboard.workQueue.profile.missing'),
+  });
 }
 
 export function dashboardReminderPriority(status: DashboardReminder['status']): number {
@@ -662,7 +680,9 @@ export function dashboardAlertWorkQueueItem(
       ? t(bodyKey, params)
       : alert.message.trim() || t('notifications.alert.fallbackDetail'),
     meta: [
-      ...(alert.source ? [t('notifications.alert.source', { source: alert.source })] : []),
+      ...(alert.source
+        ? [t('notifications.alert.source', { source: dashboardAlertSourceLabel(alert.source) })]
+        : []),
       ...lawRefs,
     ],
     href: routeFromDashboardAlert(alert),
@@ -750,7 +770,7 @@ export function buildDashboardWorkQueue({
       detail: effectiveBodyKey ? t(effectiveBodyKey, params) : reason,
       meta: [
         dashboardReminderDateMeta(reminder.due_date, t),
-        t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
+        dashboardReminderSourceMeta(reminder, t),
         ...(planMeta ? [planMeta] : []),
       ],
       href: routeFromDashboardReminder(reminder),
@@ -832,7 +852,6 @@ function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
 
 function RecentActivity({ data }: { data: Dashboard }) {
   const t = useT();
-  const locale = useLocale();
   const items = recentActivityItems(data.recent_events);
   const scopeNames = dashboardScopeNames(data);
 
@@ -868,7 +887,9 @@ function RecentActivity({ data }: { data: Dashboard }) {
                   )}
                 </div>
                 <div className="dashboard-list__meta">
-                  <span>{formatDashboardDateTime(event.timestamp, locale)}</span>
+                  {/* Recent activity is scanned for recency, so the relative form leads here;
+                      the exact instant stays on hover and focus for anyone who needs it. */}
+                  <RelativeDateTime value={event.timestamp} />
                   <span>{t('dashboard.activity.actor', { actor: event.actor })}</span>
                   {/* The name is what an operator recognises; the full scope id stays in the
                       bubble. `TooltipText` drops the bubble when the two are the same string,
@@ -1170,13 +1191,7 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
                   </div>
                   <div className="dashboard-list__meta">
                     <span>{t('dashboard.dates.due', { date: dateLabel })}</span>
-                    <span>
-                      {t('dashboard.workQueue.source', {
-                        rule: reminder.source_rule || t('dashboard.workQueue.rule.missing'),
-                        profile:
-                          reminder.source_profile || t('dashboard.workQueue.profile.missing'),
-                      })}
-                    </span>
+                    <span>{dashboardReminderSourceMeta(reminder, t)}</span>
                     {planMeta ? <span>{planMeta}</span> : null}
                   </div>
                 </li>

@@ -610,7 +610,7 @@ describe('buildDashboardNotifications', () => {
       title: 'Rever convocatória: Ata de aprovação de contas',
       detail:
         'Os metadados estatutários locais registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A., mas a data da reunião ainda não está registada. A data local de aviso não pode ser calculada até a data da reunião ser registada. Registe a data da reunião e reveja a evidência de expedição. Aviso consultivo local; não afirma suficiência legal, cálculo de prazo legal, entrega externa, conclusão do workflow nem aceitação por registo, DRE ou fornecedor.',
-      meta: ['Sem data', 'Fonte act-convening-notice / csc-commercial'],
+      meta: ['Sem data', 'Fonte Convocatória da reunião'],
       action: { href: '/atas/act-notice-1#convening-guidance', label: 'Rever convocatória' },
     });
     expect(items[0]?.detail).not.toContain('Raw backend');

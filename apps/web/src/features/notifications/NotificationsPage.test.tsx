@@ -262,6 +262,40 @@ describe('NotificationsPage', () => {
     expectIconOnlyControl(screen.getByRole('button', { name: 'Dispensar' }), 'Dispensar');
   });
 
+  it('gives every icon-only triage control a distinct glyph', async () => {
+    // These controls carry no visible text, so a shared glyph makes two different acts
+    // indistinguishable — which is exactly how "Marcar como lida" and "Reconhecer" once both
+    // rendered a plain tick. Compare the drawn paths, not the names, so a future edit that
+    // points two of them at the same icon fails here.
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/dashboard', body: dashboard({ alerts: [actionableActAlert()] }) },
+        {
+          match: '/v1/notifications/triage',
+          body: { durable: true, max_entries_per_owner: 500, entries: [] },
+        },
+      ]),
+    );
+
+    renderWithProviders(<NotificationsPage />, ['/notificacoes']);
+    expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
+
+    const read = await screen.findByRole('button', { name: 'Marcar como lida' });
+    const acknowledge = screen.getByRole('button', { name: 'Reconhecer' });
+    const dismiss = screen.getByRole('button', { name: 'Dispensar' });
+
+    expect(read.getAttribute('data-triage-icon')).toBe('read');
+    expect(acknowledge.getAttribute('data-triage-icon')).toBe('acknowledge');
+    expect(dismiss.getAttribute('data-triage-icon')).toBe('dismiss');
+
+    const geometry = (button: HTMLElement) =>
+      [...button.querySelectorAll('path')].map((path) => path.getAttribute('d')).join('|');
+    const drawn = [geometry(read), geometry(acknowledge), geometry(dismiss)];
+    expect(drawn.every((d) => d.length > 0)).toBe(true);
+    expect(new Set(drawn).size).toBe(drawn.length);
+  });
+
   it('re-keys the panel wrapper on a sub-tab change without gating the content', async () => {
     vi.stubGlobal(
       'fetch',
