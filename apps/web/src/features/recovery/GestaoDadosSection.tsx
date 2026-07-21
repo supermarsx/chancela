@@ -62,6 +62,7 @@ import {
   type SyncHandoffPreflightReport,
 } from '../../api/types';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
+import { formatTimestamp } from '../../format';
 import { t as translateNow, useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
@@ -191,11 +192,6 @@ const PERMISSION_ROWS: {
   { key: 'delete_probe_file', label: 'data.status.permission.delete_probe_file' },
   { key: 'durable_store_open', label: 'Loja durável' },
 ];
-
-function formatTimestamp(value: string, locale: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale);
-}
 
 function formatBytes(value: number, locale: string): string {
   if (!Number.isFinite(value) || value < 0) return '—';
@@ -771,7 +767,7 @@ function RecoveryDrillReceiptReport({
               </div>
               <div>
                 <dt>{translateNow('uiLiteral.gestaoDadosSection.registadoEm')}</dt>
-                <dd>{formatTimestamp(receipt.created_at, locale)}</dd>
+                <dd>{formatTimestamp(receipt.created_at)}</dd>
               </div>
               <div>
                 <dt>{translateNow('uiLiteral.gestaoDadosSection.preValidacaoOk')}</dt>
@@ -885,10 +881,8 @@ function recoveryFreshnessLabel(status: BackupRecoveryFreshnessReview['status'])
 
 function RecoveryFreshnessReviewReport({
   freshness,
-  locale,
 }: {
   freshness: BackupRecoveryFreshnessReview;
-  locale: string;
 }) {
   const warning = freshness.status !== 'fresh';
   return (
@@ -931,7 +925,7 @@ function RecoveryFreshnessReviewReport({
             <dt>{translateNow('uiLiteral.gestaoDadosSection.ultimoRecibo')}</dt>
             <dd>
               {freshness.latest_receipt_at
-                ? formatTimestamp(freshness.latest_receipt_at, locale)
+                ? formatTimestamp(freshness.latest_receipt_at)
                 : 'Sem recibo local'}
             </dd>
           </div>
@@ -1081,7 +1075,7 @@ function SyncHandoffPreflightReportCard({
             </div>
             <div>
               <dt>{translateNow('uiLiteral.gestaoDadosSection.geradoEm')}</dt>
-              <dd>{formatTimestamp(report.generated_at, locale)}</dd>
+              <dd>{formatTimestamp(report.generated_at)}</dd>
             </div>
             <div>
               <dt>{translateNow('uiLiteral.gestaoDadosSection.candidatosNaoValidados')}</dt>
@@ -1309,7 +1303,7 @@ function BackupManifestReport({
         </div>
         <div>
           <dt>{t('data.status.backup.createdAt')}</dt>
-          <dd>{formatTimestamp(manifest.created_at, locale)}</dd>
+          <dd>{formatTimestamp(manifest.created_at)}</dd>
         </div>
         <div>
           <dt>{t('data.status.backup.size')}</dt>
@@ -1454,7 +1448,7 @@ function DataKeyRotationReceiptSummary({
             <dl className="deflist data-status-summary">
               <div>
                 <dt>{translateNow('uiLiteral.gestaoDadosSection.ultimaRotacao')}</dt>
-                <dd>{formatTimestamp(latest.rotated_at, locale)}</dd>
+                <dd>{formatTimestamp(latest.rotated_at)}</dd>
               </div>
               <div>
                 <dt>{t('data.status.keyRotation.status')}</dt>
@@ -1534,7 +1528,7 @@ function DataKeyRotationReceiptSummary({
             <ul className="data-status-list">
               {history.map((receipt: DataKeyRotationReceipt) => (
                 <li key={receipt.receipt_id}>
-                  <span>{formatTimestamp(receipt.rotated_at, locale)}</span>
+                  <span>{formatTimestamp(receipt.rotated_at)}</span>
                   <Badge tone={receipt.rekey_executed ? 'ok' : 'warn'}>{receipt.status}</Badge>
                   <span className="mono">{receipt.backend_family ?? '—'}</span>
                 </li>
@@ -1915,7 +1909,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                   </div>
                   <div>
                     <dt>{t('data.status.generatedAt')}</dt>
-                    <dd>{formatTimestamp(data.generated_at, locale)}</dd>
+                    <dd>{formatTimestamp(data.generated_at)}</dd>
                   </div>
                   <div>
                     <dt>{t('data.status.usage.title')}</dt>
@@ -2269,12 +2263,9 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                   ) : null}
                   {recoveryDrills.error ? <ErrorNote error={recoveryDrills.error} /> : null}
                   {recoveryDrills.data ? (
-                    <RecoveryFreshnessReviewReport
-                      freshness={recoveryDrills.data.freshness}
-                      locale={locale}
-                    />
+                    <RecoveryFreshnessReviewReport freshness={recoveryDrills.data.freshness} />
                   ) : null}
-                  <form className="form" onSubmit={(event) => void submitRecoveryDrill(event)}>
+                  <form className="form settings-rows" onSubmit={(event) => void submitRecoveryDrill(event)}>
                     <div className="data-status-usage-groups">
                       <Field
                         label={t('uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio')}
@@ -2461,7 +2452,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                       t={t}
                     />
                     <form
-                      className="form"
+                      className="form settings-rows"
                       onSubmit={(event) => void submitKeyRotationPreflight(event)}
                     >
                       <div className="data-status-usage-groups">
@@ -2526,7 +2517,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                     ) : null}
                     {lastPreflight?.ready ? (
                       <form
-                        className="form"
+                        className="form settings-rows"
                         aria-label={t('uiLiteral.gestaoDadosSection.execucaoDaRotacaoSqlcipher')}
                         onSubmit={(event) => void submitKeyRotationExecution(event)}
                       >

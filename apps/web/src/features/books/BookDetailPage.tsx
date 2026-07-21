@@ -75,6 +75,8 @@ import {
   Badge,
   Button,
   Card,
+  DateOnly,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -459,7 +461,10 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
               {hold.data?.set_at ? (
                 <div>
                   <dt>{t('uiLiteral.bookDetailPage.definidaEm')}</dt>
-                  <dd>{hold.data.set_at}</dd>
+                  {/* When the hold was placed is part of the retention audit trail — evidentiary. */}
+                  <dd>
+                    <DateTime value={hold.data.set_at} evidentiary />
+                  </dd>
                 </div>
               ) : null}
               {workflow ? (
@@ -605,7 +610,11 @@ function BookRetentionPanel({ bookId }: { bookId: string }) {
                   <div className="stack--tight">
                     <span>
                       {t('settings.privacy.dueCandidates.due')}:{' '}
-                      {candidate.due_date ?? t('settings.privacy.dueCandidates.noDueDate')}
+                      {candidate.due_date ? (
+                        <DateOnly value={candidate.due_date} />
+                      ) : (
+                        t('settings.privacy.dueCandidates.noDueDate')
+                      )}
                     </span>
                     <Badge tone={candidate.overdue ? 'warn' : 'neutral'}>
                       {candidate.overdue
@@ -815,9 +824,7 @@ function PaperBookOcrConversionExecutionArtifactPanel({
               <>
                 {' '}
                 {t('uiLiteral.bookDetailPage.em')}{' '}
-                <time className="mono" dateTime={artifact.source_reviewed_at}>
-                  {artifact.source_reviewed_at}
-                </time>{' '}
+                <DateTime value={artifact.source_reviewed_at} evidentiary className="mono" />{' '}
                 {t('uiLiteral.bookDetailPage.por')} {artifact.source_reviewed_by ?? '—'}
               </>
             ) : null}
@@ -826,9 +833,8 @@ function PaperBookOcrConversionExecutionArtifactPanel({
         <div>
           <dt>{t('uiLiteral.bookDetailPage.criado')}</dt>
           <dd>
-            <time className="mono" dateTime={artifact.created_at}>
-              {artifact.created_at}
-            </time>{' '}
+            {/* Conversion-evidence artefacts are audit records: seconds + zone. */}
+            <DateTime value={artifact.created_at} evidentiary className="mono" />{' '}
             {t('uiLiteral.bookDetailPage.por')} {artifact.created_by}
           </dd>
         </div>
@@ -935,9 +941,7 @@ function PaperBookOcrConversionDossierPanel({
                 <>
                   {' '}
                   {t('uiLiteral.bookDetailPage.em')}{' '}
-                  <time className="mono" dateTime={dossier.source_reviewed_at}>
-                    {dossier.source_reviewed_at}
-                  </time>{' '}
+                  <DateTime value={dossier.source_reviewed_at} evidentiary className="mono" />{' '}
                   {t('uiLiteral.bookDetailPage.por')} {dossier.source_reviewed_by ?? '—'}
                 </>
               ) : null}
@@ -946,9 +950,7 @@ function PaperBookOcrConversionDossierPanel({
           <div>
             <dt>{t('uiLiteral.bookDetailPage.criado')}</dt>
             <dd>
-              <time className="mono" dateTime={dossier.created_at}>
-                {dossier.created_at}
-              </time>{' '}
+              <DateTime value={dossier.created_at} evidentiary className="mono" />{' '}
               {t('uiLiteral.bookDetailPage.por')} {dossier.created_by}
             </dd>
           </div>
@@ -1539,9 +1541,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                   <div>
                     <dt>{translateNow('uiLiteral.bookDetailPage.criado')}</dt>
                     <dd>
-                      <time className="mono" dateTime={draft.created_at}>
-                        {draft.created_at}
-                      </time>{' '}
+                      <DateTime value={draft.created_at} evidentiary className="mono" />{' '}
                       {translateNow('uiLiteral.bookDetailPage.por')} {draft.created_by}
                     </dd>
                   </div>
@@ -1550,9 +1550,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                     <dd>
                       {draft.reviewed_at ? (
                         <>
-                          <time className="mono" dateTime={draft.reviewed_at}>
-                            {draft.reviewed_at}
-                          </time>{' '}
+                          <DateTime value={draft.reviewed_at} evidentiary className="mono" />{' '}
                           {translateNow('uiLiteral.bookDetailPage.por')} {draft.reviewed_by ?? '—'}
                         </>
                       ) : (
@@ -1980,7 +1978,9 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                   <td>
                     <div className="stack--tight">
                       <span>
-                        {row.date_from} {translateNow('uiLiteral.bookDetailPage.a')} {row.date_to}
+                        <DateOnly value={row.date_from} />{' '}
+                        {translateNow('uiLiteral.bookDetailPage.a')}{' '}
+                        <DateOnly value={row.date_to} />
                       </span>
                       <span className="muted">
                         {translateNow('uiLiteral.bookDetailPage.intervalo')}{' '}
@@ -2239,7 +2239,11 @@ export function BookDetailPage() {
                 </div>
                 <div>
                   <dt>{t('books.openingDate')}</dt>
-                  <dd>{b.opening_date ?? '—'}</dd>
+                  {/* A book opens on a DAY, not at an instant — date-only, and `<DateOnly>`
+                      already renders the em dash when the book carries no date. */}
+                  <dd>
+                    <DateOnly value={b.opening_date} />
+                  </dd>
                 </div>
                 <div>
                   <dt>{t('books.signatories')}</dt>
@@ -2266,7 +2270,9 @@ export function BookDetailPage() {
                     </div>
                     <div>
                       <dt>{t('books.closingDate')}</dt>
-                      <dd>{b.closing_date ?? '—'}</dd>
+                      <dd>
+                        <DateOnly value={b.closing_date} />
+                      </dd>
                     </div>
                     <div>
                       <dt>{t('books.close.signatories')}</dt>

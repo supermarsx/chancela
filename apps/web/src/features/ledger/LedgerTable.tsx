@@ -6,13 +6,8 @@
  */
 import { ledgerEventKindLabel } from '../../api/labels';
 import type { LedgerEventView } from '../../api/types';
-import { useT, useLocale } from '../../i18n';
-import { Badge, Digest, EmptyState, Table, TooltipText } from '../../ui';
-
-function formatTimestamp(rfc3339: string, locale: string): string {
-  const d = new Date(rfc3339);
-  return Number.isNaN(d.getTime()) ? rfc3339 : d.toLocaleString(locale);
-}
+import { useT } from '../../i18n';
+import { Badge, DateTime, Digest, EmptyState, Table, TooltipText } from '../../ui';
 
 function shortChain(chain: string): string {
   const [kind, id] = chain.split(':', 2);
@@ -28,7 +23,6 @@ export function LedgerTable({
   showChains?: boolean;
 }) {
   const t = useT();
-  const locale = useLocale();
   // Shared by the dashboard and the Arquivo page, so a single malformed row from either
   // payload must not take the surrounding page down with the error boundary: drop it and
   // render the rest of the chain.
@@ -85,7 +79,11 @@ export function LedgerTable({
               e.actor
             )}
           </td>
-          <td>{formatTimestamp(e.timestamp, locale)}</td>
+          {/* The ledger is the evidentiary record: seconds and the zone abbreviation, with
+              the core's unrounded instant kept in the `datetime` attribute for a verifier. */}
+          <td>
+            <DateTime value={e.timestamp} evidentiary />
+          </td>
           <td>
             <Digest value={e.hash} />
           </td>

@@ -14,11 +14,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PairingCodeMinted, PairingDeviceView } from '../../api/types';
 import { useCreatePairingCode, usePairingDevices, useRevokePairingDevice } from '../../api/hooks';
 import { resolveApiBaseUrl } from '../../api/baseUrl';
-import { useLocale, useT } from '../../i18n';
+import { useT } from '../../i18n';
 import {
   Badge,
   Button,
   Card,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -59,13 +60,6 @@ function formatCountdown(totalSeconds: number): string {
   const minutes = Math.floor(clamped / 60);
   const seconds = clamped % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function formatDateTime(value: string, locale: string, fallback: string): string {
-  if (!value) return fallback;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
 interface PairingSession {
@@ -165,7 +159,6 @@ function ActiveCodePanel({
 function DeviceRow({ device }: { device: PairingDeviceView }) {
   const t = useT();
   const toast = useToast();
-  const locale = useLocale();
   const revoke = useRevokePairingDevice();
   const [confirming, setConfirming] = useState(false);
 
@@ -185,7 +178,11 @@ function DeviceRow({ device }: { device: PairingDeviceView }) {
   return (
     <tr>
       <td>{device.label}</td>
-      <td>{formatDateTime(device.created_at, locale, '—')}</td>
+      {/* Enrolling a device is a credential event; the exact instant is what an operator
+          checks against when a device is later disputed or revoked. */}
+      <td>
+        <DateTime value={device.created_at} evidentiary />
+      </td>
       <td>
         {device.revoked ? (
           <Badge tone="warn">{t('pairing.status.revoked')}</Badge>
@@ -351,7 +348,7 @@ export function PairingPanel() {
         </Card>
       ) : !enrolled ? (
         <Card title={t('pairing.connect.title')}>
-          <div className="form">
+          <div className="form settings-rows">
             <p className="field__hint">{t('pairing.lede')}</p>
             <Field
               label={t('pairing.label.label')}

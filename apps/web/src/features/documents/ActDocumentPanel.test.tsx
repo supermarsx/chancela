@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ActDocumentPanel } from './ActDocumentPanel';
 import { keys } from '../../api/hooks';
 import { renderWithProviders, revealedValue } from '../../test/utils';
+import { formatTimestamp } from '../../format';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import type {
   ActView,
@@ -1432,8 +1433,8 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
       name: 'Linhas de evidência registadas',
     });
     expect(within(evidenceRows).getByText('amelia.marques')).toBeTruthy();
-    expect(within(evidenceRows).getByText('2026-07-11T10:05:00Z')).toBeTruthy();
-    expect(within(evidenceRows).getByText('2026-07-11T10:00:00Z')).toBeTruthy();
+    expect(within(evidenceRows).getByText(formatTimestamp('2026-07-11T10:05:00Z'))).toBeTruthy();
+    expect(within(evidenceRows).getByText(formatTimestamp('2026-07-11T10:00:00Z'))).toBeTruthy();
     expect(within(evidenceRows).getByText('Carta registada')).toBeTruthy();
     expect(within(evidenceRows).getByText('RL-123')).toBeTruthy();
     expect(within(evidenceRows).getByText('scan-page-4')).toBeTruthy();
@@ -2372,7 +2373,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
       expect(within(receipt).getByText('Rejeitado como evidência não canónica')).toBeTruthy(),
     );
     expect(within(receipt).getByText('Revisto em')).toBeTruthy();
-    expect(within(receipt).getByText('2026-07-10T09:30:00Z')).toBeTruthy();
+    expect(within(receipt).getByText(formatTimestamp('2026-07-10T09:30:00Z'))).toBeTruthy();
     expect(within(receipt).getByText('Revisto por')).toBeTruthy();
     expect(within(receipt).getByText('amelia.operator')).toBeTruthy();
     expect(within(receipt).getByText('Nota registada')).toBeTruthy();
@@ -2392,7 +2393,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(receipt).getByText('Não substituído por este documento.')).toBeTruthy();
     expect(within(receipt).getByText('Não criado nem validado por esta revisão.')).toBeTruthy();
     expect(within(receipt).getByText('Não declarada por esta revisão.')).toBeTruthy();
-    expect(await screen.findAllByText('2026-07-10T09:30:00Z')).toHaveLength(3);
+    expect(await screen.findAllByText(formatTimestamp('2026-07-10T09:30:00Z'))).toHaveLength(3);
     expect(await screen.findAllByText('amelia.operator')).toHaveLength(3);
     expect(within(history).getByText('Histórico técnico de revisão')).toBeTruthy();
     expect(

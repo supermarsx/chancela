@@ -106,11 +106,12 @@ import {
 } from '../../api/hooks';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { GateButton, scopeBook, useCan, type CanScope } from '../session/permissions';
-import { useLocale, useT, type TFunction } from '../../i18n';
+import { useT, type TFunction } from '../../i18n';
 import {
   Badge,
   Button,
   Card,
+  DateTime,
   Digest,
   EmptyState,
   ErrorNote,
@@ -147,16 +148,6 @@ export function signingDownloadSlug(value: string): string {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'documento'
   );
-}
-
-/** Localised date+time for the signing timestamps (falls back to the raw ISO on a parse miss). */
-function useDateTime(): (iso: string) => string {
-  const locale = useLocale();
-  return (iso: string) => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
-  };
 }
 
 export function evidenceLevelLabel(level: string, t: TFunction): string {
@@ -997,14 +988,12 @@ function TechnicalComparisonPanel({
   bundle,
   bundleLoading,
   bundleError,
-  formatDateTime,
 }: {
   act: ActView;
   signed: SignedSignatureInfo;
   bundle?: DocumentBundle;
   bundleLoading: boolean;
   bundleError: unknown;
-  formatDateTime: (iso: string) => string;
 }) {
   const t = useT();
   const bundleReady = !!bundle && !bundleError;
@@ -1242,18 +1231,23 @@ function TechnicalComparisonPanel({
       label: t('signing.signed.signingTime'),
       kind: signingTimeKind,
       details: [
+        // Signing times are the evidence being compared here, so they carry seconds and zone.
         <Detail key="signature" label={t('signing.technicalComparison.detail.signature')}>
-          {formatDateTime(signed.signing_time)}
+          <DateTime value={signed.signing_time} evidentiary />
         </Detail>,
         <Detail key="report" label={t('signing.technicalComparison.detail.report')}>
-          {hasMetadata(signedDocument?.signing_time)
-            ? formatDateTime(signedDocument.signing_time)
-            : t('signing.technicalComparison.detail.notSupplied')}
+          {hasMetadata(signedDocument?.signing_time) ? (
+            <DateTime value={signedDocument.signing_time} evidentiary />
+          ) : (
+            t('signing.technicalComparison.detail.notSupplied')
+          )}
         </Detail>,
         <Detail key="signed-at" label={t('signing.technicalComparison.detail.signedAt')}>
-          {hasMetadata(signedDocument?.signed_at)
-            ? formatDateTime(signedDocument.signed_at)
-            : t('signing.technicalComparison.detail.notSupplied')}
+          {hasMetadata(signedDocument?.signed_at) ? (
+            <DateTime value={signedDocument.signed_at} evidentiary />
+          ) : (
+            t('signing.technicalComparison.detail.notSupplied')
+          )}
         </Detail>,
       ],
     },
@@ -2159,12 +2153,10 @@ function ExternalInviteRow({
   actId,
   invite,
   bookScope,
-  formatDateTime,
 }: {
   actId: string;
   invite: ExternalSignerInviteView;
   bookScope: CanScope;
-  formatDateTime: (iso: string) => string;
 }) {
   const t = useT();
   const toast = useToast();
@@ -2210,7 +2202,10 @@ function ExternalInviteRow({
       <td>
         <code className="mono">{invite.token_hint}</code>
       </td>
-      <td>{formatDateTime(invite.expires_at)}</td>
+      {/* An expiry is scheduling metadata, not a record of an event: to the minute. */}
+      <td>
+        <DateTime value={invite.expires_at} />
+      </td>
       <td className="users-actions">
         {invite.status !== 'pending' ? (
           <span className="muted">—</span>
@@ -2256,13 +2251,7 @@ function ExternalInviteRow({
   );
 }
 
-function ExternalSignerInvitesSection({
-  act,
-  formatDateTime,
-}: {
-  act: ActView;
-  formatDateTime: (iso: string) => string;
-}) {
+function ExternalSignerInvitesSection({ act }: { act: ActView }) {
   const t = useT();
   const toast = useToast();
   const can = useCan();
@@ -2506,7 +2495,6 @@ function ExternalSignerInvitesSection({
               actId={act.id}
               invite={invite}
               bookScope={bookScope}
-              formatDateTime={formatDateTime}
             />
           ))}
         </Table>
@@ -2518,7 +2506,6 @@ function ExternalSignerInvitesSection({
 export function SigningPanel({ act, entityName }: { act: ActView; entityName?: string }) {
   const t = useT();
   const toast = useToast();
-  const formatDateTime = useDateTime();
 
   const signingOpen = act.state === 'Signing';
   const signatureAvailable = signingOpen || act.state === 'Sealed' || act.state === 'Archived';
@@ -2916,7 +2903,10 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               </div>
               <div>
                 <dt>{t('signing.signed.signingTime')}</dt>
-                <dd>{formatDateTime(data.signed.signing_time)}</dd>
+                {/* The signature time is the evidentiary fact of this panel. */}
+                <dd>
+                  <DateTime value={data.signed.signing_time} evidentiary />
+                </dd>
               </div>
               {data.signed.trusted_list_status ? (
                 <div>
@@ -2964,7 +2954,6 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               bundle={documentBundle.data}
               bundleLoading={documentBundle.isLoading}
               bundleError={documentBundle.error}
-              formatDateTime={formatDateTime}
             />
           </div>
         ) : !signingOpen ? (
@@ -3626,7 +3615,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         {data?.evidence ? <SignatureEvidenceSummary evidence={data.evidence} /> : null}
         {signingOpen ? <ExternalSigningEnvelopesSection act={act} /> : null}
         {signingOpen ? (
-          <ExternalSignerInvitesSection act={act} formatDateTime={formatDateTime} />
+          <ExternalSignerInvitesSection act={act} />
         ) : null}
       </div>
     </Card>

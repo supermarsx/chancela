@@ -97,6 +97,7 @@ import {
   Badge,
   Button,
   Card,
+  DateTime,
   Digest,
   ErrorNote,
   Field,
@@ -1428,9 +1429,8 @@ function WrittenResolutionReceiptEditor({
                     {writtenResolutionReviewStatusLabel(t, receipt.status)}
                   </Badge>
                   <span className="mono">{receipt.reviewer}</span>
-                  <time className="mono" dateTime={receipt.reviewed_at}>
-                    {receipt.reviewed_at}
-                  </time>
+                  {/* A written-resolution receipt is evidence of who reviewed and when. */}
+                  <DateTime value={receipt.reviewed_at} evidentiary className="mono" />
                 </div>
                 <dl className="deflist deflist--tight">
                   <div>
@@ -2238,9 +2238,7 @@ function AiHumanReviewPanel({
           <div>
             <dt>{t('acts.aiReview.reviewedAt')}</dt>
             <dd>
-              <time className="mono" dateTime={reviewedAt}>
-                {reviewedAt}
-              </time>
+              <DateTime value={reviewedAt} evidentiary className="mono" />
             </dd>
           </div>
         ) : null}

@@ -64,6 +64,7 @@ import {
   Badge,
   Button,
   Card,
+  DateTime,
   Digest,
   EmptyState,
   ErrorNote,
@@ -716,10 +717,9 @@ function ImportedDocumentReviewReceipt({
             <div>
               <dt>{t('documents.import.review.reviewedAt')}</dt>
               <dd>
+                {/* Part of the review receipt — evidentiary rendering. */}
                 {reviewedAt ? (
-                  <time className="mono" dateTime={reviewedAt}>
-                    {reviewedAt}
-                  </time>
+                  <DateTime className="mono" value={reviewedAt} evidentiary />
                 ) : (
                   <span className="muted">{t('documents.import.receipt.notInReceipt')}</span>
                 )}
@@ -842,9 +842,7 @@ function ImportedDocumentReviewHistory({
                     <dt>{t('documents.import.history.recordedAt')}</dt>
                     <dd>
                       {reviewedAt ? (
-                        <time className="mono" dateTime={reviewedAt}>
-                          {reviewedAt}
-                        </time>
+                        <DateTime className="mono" value={reviewedAt} evidentiary />
                       ) : (
                         <span className="muted">{t('documents.import.notIndicated')}</span>
                       )}
@@ -1155,10 +1153,9 @@ function ActDocumentMetadata({
         <div>
           <dt>{t('documents.metadata.generatedAt')}</dt>
           <dd>
+            {/* When the canonical PDF/A was produced — evidentiary. */}
             {createdAt ? (
-              <time className="mono" dateTime={createdAt}>
-                {createdAt}
-              </time>
+              <DateTime className="mono" value={createdAt} evidentiary />
             ) : (
               <span className="muted">{t('documents.metadata.missing')}</span>
             )}
@@ -1289,18 +1286,15 @@ function GeneratedDispatchEvidenceRow({
         </div>
         <div>
           <dt>{t('documents.generated.evidence.recordedAt')}</dt>
+          {/* Both halves of a dispatch receipt: when it was sent, and when we recorded it. */}
           <dd>
-            <time className="mono" dateTime={row.recorded_at}>
-              {row.recorded_at}
-            </time>
+            <DateTime className="mono" value={row.recorded_at} evidentiary />
           </dd>
         </div>
         <div>
           <dt>{t('documents.generated.form.dispatchedAt')}</dt>
           <dd>
-            <time className="mono" dateTime={row.dispatched_at}>
-              {row.dispatched_at}
-            </time>
+            <DateTime className="mono" value={row.dispatched_at} evidentiary />
           </dd>
         </div>
         <div>
@@ -1641,10 +1635,9 @@ function ImportedDocumentDetails({
           <div>
             <dt>{t('documents.import.importedAt')}</dt>
             <dd>
+              {/* Import receipt: the moment the file entered the archive — evidentiary. */}
               {importedAt ? (
-                <time className="mono" dateTime={importedAt}>
-                  {importedAt}
-                </time>
+                <DateTime className="mono" value={importedAt} evidentiary />
               ) : (
                 <span className="muted">{t('documents.import.notIndicated')}</span>
               )}
@@ -1672,9 +1665,7 @@ function ImportedDocumentDetails({
             <dt>{t('documents.import.review.reviewedAt')}</dt>
             <dd>
               {reviewedAt ? (
-                <time className="mono" dateTime={reviewedAt}>
-                  {reviewedAt}
-                </time>
+                <DateTime className="mono" value={reviewedAt} evidentiary />
               ) : (
                 <span className="muted">{t('documents.import.notIndicated')}</span>
               )}
@@ -2587,9 +2578,11 @@ export function ActDocumentPanel({
                             <div>
                               <dt>{t('documents.metadata.generatedAt')}</dt>
                               <dd>
-                                <time className="mono" dateTime={document.created_at}>
-                                  {document.created_at}
-                                </time>
+                                <DateTime
+                                  className="mono"
+                                  value={document.created_at}
+                                  evidentiary
+                                />
                               </dd>
                             </div>
                             <div>
@@ -2751,7 +2744,7 @@ export function ActDocumentPanel({
                           {importedAt ? (
                             <>
                               {' · '}
-                              <time dateTime={importedAt}>{importedAt}</time>
+                              <DateTime value={importedAt} evidentiary />
                             </>
                           ) : null}
                         </p>

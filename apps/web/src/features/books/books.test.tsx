@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { renderWithProviders, fetchTable, makeClient } from '../../test/utils';
+import { formatDate } from '../../format';
 import { ToastProvider } from '../../ui/toast';
 import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
 
@@ -1072,7 +1073,12 @@ describe('BookDetailPage — paper-book preserved imports', () => {
 
     expect(await screen.findByText('Importações de livro em papel preservadas')).toBeTruthy();
     expect(await screen.findByText('ag-1968-1971.pdf')).toBeTruthy();
-    expect(screen.getByText('1968-01-01 a 1971-12-31')).toBeTruthy();
+    expect(
+      screen.getByText(
+        (_, el) =>
+          el?.textContent === `${formatDate('1968-01-01')} a ${formatDate('1971-12-31')}`,
+      ),
+    ).toBeTruthy();
     expect(screen.getByText('Intervalo: 12 a 251')).toBeTruthy();
     expect(screen.getByText('Revisão manual pendente')).toBeTruthy();
     expect(screen.getByText(/Âmbito de arquivo: paper-book-import:11111111/i)).toBeTruthy();
@@ -2315,6 +2321,40 @@ describe('OpenBookForm — structured termo signatories', () => {
     expect(post?.body?.required_signatories).toEqual([
       { name: 'Amélia Marques', capacity: 'Chair', email: 'amelia@example.pt' },
     ]);
+  });
+
+  it('renders each signatory row as labelled fields around single-line controls', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/v1/settings') return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<OpenBookForm entityId="ent-1" />);
+
+    const name = await screen.findByLabelText('Nome do signatário');
+    const capacity = screen.getByLabelText('Qualidade');
+    const email = screen.getByLabelText('E-mail (opcional)');
+    // A textarea here is what made the row read as "tall inputs"; keep them inputs.
+    expect(name.tagName).toBe('INPUT');
+    expect(email.tagName).toBe('INPUT');
+    // The qualidade picker stays a native select (keyboard/screen-reader affordance).
+    expect(capacity.tagName).toBe('SELECT');
+    for (const control of [name, capacity, email]) {
+      expect(control.className).toContain('control');
+      expect(control.parentElement?.className).toContain('field');
+      expect(control.closest('.rowline')).not.toBeNull();
+    }
+  });
+
+  it('sizes row fields on the row axis, never through a nested control', async () => {
+    const css = await themeCss();
+    // `.rowline .control` (descendant) also matched controls inside a `.field`, a
+    // *column* flex container, where `flex: 1 1 8rem` becomes an 8rem tall control.
+    expect(css).not.toMatch(/^\.rowline \.control\s*\{/m);
+    expectCssRule(css, /\.rowline > \.control\s*\{([^}]*)\}/, ['flex: 1 1 8rem']);
+    expectCssRule(css, /\.rowline > \.field\s*\{([^}]*)\}/, ['flex: 1 1 8rem', 'min-width: 0']);
+    expectCssRule(css, /\.rowline:has\(> \.field\)\s*\{([^}]*)\}/, ['align-items: flex-end']);
   });
 });
 

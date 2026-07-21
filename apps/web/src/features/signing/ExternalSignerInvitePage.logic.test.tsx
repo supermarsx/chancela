@@ -13,7 +13,6 @@ import {
   externalInviteStatusBadge,
   externalInviteUnavailableMessage,
   formatExternalInviteBytes,
-  formatExternalInviteDateTime,
 } from './ExternalSignerInvitePage';
 
 const t = ((key: string, params?: Record<string, unknown>) =>
@@ -25,11 +24,9 @@ afterEach(() => {
 });
 
 describe('external signer invite presentation and file helpers', () => {
-  it('formats dates and byte sizes defensively', () => {
-    expect(formatExternalInviteDateTime()).toBe('-');
-    expect(formatExternalInviteDateTime('not-a-date')).toBe('not-a-date');
-    expect(formatExternalInviteDateTime('2026-07-16T10:30:00Z')).not.toBe('2026-07-16T10:30:00Z');
-
+  // Dates are no longer formatted here: the page renders them through the shared
+  // <DateTime>/<DateOnly> components (t66), which own the null/invalid behaviour.
+  it('formats byte sizes defensively', () => {
     expect(formatExternalInviteBytes(-1)).toBe('unknown');
     expect(formatExternalInviteBytes(Number.NaN)).toBe('unknown');
     expect(formatExternalInviteBytes(512)).toBe('512 bytes');

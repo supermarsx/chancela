@@ -10,6 +10,8 @@ import type {
 import {
   Badge,
   Button,
+  DateOnly,
+  DateTime,
   Digest,
   ErrorNote,
   Field,
@@ -37,16 +39,6 @@ type ArtifactState =
 
 // Raw PDF bytes; the backend route has a larger JSON/base64 envelope limit for this cap.
 export const EXTERNAL_INVITE_SIGNED_PDF_RAW_MAX_BYTES = 16 * 1024 * 1024;
-
-export function formatExternalInviteDateTime(value?: string): string {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
-}
 
 export function externalInviteStatusBadge(status: ExternalSignerInviteStatus, t: TFunction) {
   if (status === 'pending')
@@ -144,7 +136,6 @@ export function canUploadExternalInviteSignedPdf(
   return envelope.workflow === 'external_envelope' && Boolean(envelope.external_envelope);
 }
 
-const formatDateTime = formatExternalInviteDateTime;
 const statusBadge = externalInviteStatusBadge;
 const slotStatusLabel = externalInviteSlotStatusLabel;
 const slotStatusBadge = externalInviteSlotStatusBadge;
@@ -302,7 +293,10 @@ export function ExternalSignerInvitePage() {
                   </div>
                   <div>
                     <dt>{t('externalInvite.field.meeting')}</dt>
-                    <dd>{envelope.act.meeting_date ?? '-'}</dd>
+                    {/* A calendar day, not an instant: no time component to show. */}
+                    <dd>
+                      <DateOnly value={envelope.act.meeting_date} />
+                    </dd>
                   </div>
                   <div>
                     <dt>{t('externalInvite.field.recipient')}</dt>
@@ -320,12 +314,17 @@ export function ExternalSignerInvitePage() {
                   ) : null}
                   <div>
                     <dt>{t('externalInvite.field.expiresAt')}</dt>
-                    <dd>{formatDateTime(envelope.expires_at)}</dd>
+                    <dd>
+                      <DateTime value={envelope.expires_at} />
+                    </dd>
                   </div>
                   {envelope.responded_at ? (
                     <div>
                       <dt>{t('externalInvite.field.response')}</dt>
-                      <dd>{formatDateTime(envelope.responded_at)}</dd>
+                      {/* The signer's decision is a record of an event — evidentiary. */}
+                      <dd>
+                        <DateTime value={envelope.responded_at} evidentiary />
+                      </dd>
                     </div>
                   ) : null}
                 </dl>

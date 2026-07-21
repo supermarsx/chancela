@@ -21,11 +21,12 @@ import {
   useRevokeApiKey,
   useRotateApiKey,
 } from '../../api/hooks';
-import { useLocale, useT, type TFunction } from '../../i18n';
+import { useT, type TFunction } from '../../i18n';
 import {
   Badge,
   Button,
   Card,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -67,13 +68,6 @@ function scheduleClipboardClear(
       }
     })();
   }, CLIPBOARD_CLEAR_MS);
-}
-
-function formatDateTime(value: string | undefined, locale: string, fallback: string): string {
-  if (!value) return fallback;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
 function scopeText(t: TFunction, scope: PermissionScope): string {
@@ -269,7 +263,7 @@ function CreateApiKeyForm({
   return (
     <Card title={t('settings.apiKeys.new')}>
       <form
-        className="form"
+        className="form settings-rows"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -429,7 +423,6 @@ function ApiKeyRow({
 }) {
   const t = useT();
   const toast = useToast();
-  const locale = useLocale();
   const revoke = useRevokeApiKey();
   const rotate = useRotateApiKey();
   const [confirming, setConfirming] = useState(false);
@@ -475,8 +468,18 @@ function ApiKeyRow({
         <code className="mono">{keyView.prefix}</code>
       </td>
       <td>{grantText(t, keyView.grant)}</td>
-      <td>{formatDateTime(keyView.created_at, locale, '—')}</td>
-      <td>{formatDateTime(keyView.expires_at, locale, t('settings.apiKeys.expires.never'))}</td>
+      <td>
+        <DateTime value={keyView.created_at} />
+      </td>
+      {/* A key with no expiry is not a missing date — it never expires — so it keeps its own
+          wording instead of falling through to the em-dash placeholder. */}
+      <td>
+        {keyView.expires_at ? (
+          <DateTime value={keyView.expires_at} />
+        ) : (
+          t('settings.apiKeys.expires.never')
+        )}
+      </td>
       <td>{statusBadge}</td>
       <td>{rateLimitText(t, keyView.rate_limit)}</td>
       <td className="users-actions">

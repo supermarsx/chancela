@@ -11,12 +11,14 @@ import type {
 import { api } from '../../api/client';
 import { keys, useBooks, useEntities } from '../../api/hooks';
 import { openExternal } from '../../desktop/openExternal';
-import { useLocale, useT, type TFunction } from '../../i18n';
+import { useT, type TFunction } from '../../i18n';
+import { formatTimestamp } from '../../format';
 import {
   Badge,
   Button,
   ButtonLink,
   Card,
+  DateTime,
   Digest,
   EmptyState,
   ErrorNote,
@@ -66,13 +68,6 @@ export function externalSignerInviteLink(token: string, origin?: string): string
   }
 }
 
-function formatDateTime(value: string | undefined, locale: string): string {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
-
 function statusBadge(status: ExternalSignerInviteStatus, t: TFunction) {
   if (status === 'pending')
     return <Badge tone="accent">{t('signing.invites.status.pending')}</Badge>;
@@ -118,13 +113,7 @@ function rowContext(row: InviteRow, t: TFunction): string {
   return `${entity} · ${row.book.kind}`;
 }
 
-function EnvelopeDetails({
-  envelope,
-  locale,
-}: {
-  envelope: ExternalSignerInvitePublicView;
-  locale: string;
-}) {
+function EnvelopeDetails({ envelope }: { envelope: ExternalSignerInvitePublicView }) {
   const t = useT();
   return (
     <div className="external-signing-envelope stack--tight">
@@ -153,12 +142,17 @@ function EnvelopeDetails({
         </div>
         <div>
           <dt>{t('externalSigning.envelope.expires')}</dt>
-          <dd>{formatDateTime(envelope.expires_at, locale)}</dd>
+          <dd>
+            <DateTime value={envelope.expires_at} />
+          </dd>
         </div>
         {envelope.responded_at ? (
           <div>
             <dt>{t('externalSigning.envelope.responded')}</dt>
-            <dd>{formatDateTime(envelope.responded_at, locale)}</dd>
+            {/* The response is a record of something that happened — evidentiary rendering. */}
+            <dd>
+              <DateTime value={envelope.responded_at} evidentiary />
+            </dd>
           </div>
         ) : null}
         <div className="deflist__wide">
@@ -183,7 +177,6 @@ function EnvelopeDetails({
 
 export function ExternalSigningWorkflowsPage() {
   const t = useT();
-  const locale = useLocale();
   const toast = useToast();
   const can = useCan();
   const entities = useEntities();
@@ -381,13 +374,13 @@ export function ExternalSigningWorkflowsPage() {
                     <span className="muted">{t('externalSigning.link.redacted')}</span>
                   </td>
                   <td>
-                    <time dateTime={row.invite.expires_at}>
-                      {formatDateTime(row.invite.expires_at, locale)}
-                    </time>
+                    <DateTime value={row.invite.expires_at} />
                     {row.invite.responded_at ? (
                       <p className="chainrow__meta">
+                        {/* Interpolated into a sentence, so the string helper rather than the
+                            component; the response time is evidentiary. */}
                         {t('externalSigning.respondedAt', {
-                          date: formatDateTime(row.invite.responded_at, locale),
+                          date: formatTimestamp(row.invite.responded_at),
                         })}
                       </p>
                     ) : null}
@@ -447,7 +440,7 @@ export function ExternalSigningWorkflowsPage() {
             </Button>
           </div>
           {lookup.error ? <ErrorNote error={lookup.error} /> : null}
-          {lookup.data ? <EnvelopeDetails envelope={lookup.data} locale={locale} /> : null}
+          {lookup.data ? <EnvelopeDetails envelope={lookup.data} /> : null}
         </form>
       </Card>
     </div>

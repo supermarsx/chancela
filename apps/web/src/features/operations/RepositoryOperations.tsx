@@ -24,11 +24,12 @@ import type {
   ZkObjectVersionView,
 } from '../../api/types';
 import { saveBlobAs } from '../../desktop/saveFile';
-import { useLocale, useT } from '../../i18n';
+import { useT } from '../../i18n';
 import {
   Badge,
   Button,
   Card,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -706,7 +707,6 @@ function ZkObjects({
   entities: Entity[];
 }) {
   const t = useT();
-  const locale = useLocale();
   const [params, setParams] = useSearchParams();
   const objects = useZkObjectVersions(tenantId, repository.repository_id);
   const upload = useUploadZkObject();
@@ -865,7 +865,11 @@ function ZkObjects({
                   <td>{itemAd.object_id}</td>
                   <td>{itemAd.version}</td>
                   <td>{item.manifest.ciphertext_len}</td>
-                  <td>{new Date(item.committed_at).toLocaleString(locale)}</td>
+                  {/* The commit time of a ciphertext version is provenance for the object's
+                      integrity chain, so it carries seconds and the zone. */}
+                  <td>
+                    <DateTime value={item.committed_at} evidentiary />
+                  </td>
                   <td>
                     <Button
                       type="button"

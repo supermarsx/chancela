@@ -21,6 +21,7 @@ import {
   Badge,
   Button,
   Card,
+  DateTime,
   ErrorNote,
   Field,
   FieldHelp,
@@ -211,7 +212,10 @@ function LastAction({ service }: { service: PlatformServiceStatus }) {
       </div>
       <div>
         <dt>{t('settings.platform.requestedAt')}</dt>
-        <dd className="mono">{last.requested_at}</dd>
+        {/* A platform control action is an audited operator act: seconds and zone. */}
+        <dd className="mono">
+          <DateTime value={last.requested_at} evidentiary />
+        </dd>
       </div>
       <div className="platform-action-summary__message">
         <dt>{t('settings.platform.message')}</dt>
@@ -412,7 +416,7 @@ function AuditTail({ audit }: { audit: PlatformAuditEvent[] }) {
           {tail.map((event) => (
             <li key={`${event.service_id}:${event.requested_at}:${event.action}`}>
               <div className="platform-audit-list__head">
-                <span className="mono">{event.requested_at}</span>
+                <DateTime className="mono" value={event.requested_at} evidentiary />
                 <Badge tone={outcomeTone(event.outcome)}>
                   {t(`settings.platform.outcome.${event.outcome}` as MessageKey)}
                 </Badge>
@@ -495,7 +499,7 @@ export function PlatformOperationsSection({
         {tab === 'servicos' ? (
           <>
             <Card title={t('settings.platform.cardTitle')}>
-              <div className="form">
+              <div className="form settings-rows">
                 <p className="field__hint">
                   {t('settings.platform.intro')}{' '}
                   <FieldHelp text={t('settings.platform.help.services')} />
@@ -528,7 +532,7 @@ export function PlatformOperationsSection({
         ) : (
           <>
             <Card title={t('settings.platform.logging.cardTitle')}>
-              <div className="form">
+              <div className="form settings-rows">
                 <p className="field__hint">{t('settings.platform.logging.hint')}</p>
                 <div className="platform-logging-grid">
                   {LOG_BASE_FIELDS.map((field) => (

@@ -19,11 +19,12 @@ import type {
   ConnectorKind,
   ConnectorTargetView,
 } from '../../api/types';
-import { useLocale, useT } from '../../i18n';
+import { useT } from '../../i18n';
 import {
   Badge,
   Button,
   Card,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -429,7 +430,6 @@ function TargetEditor({ tenantId, target }: { tenantId: string; target: Connecto
 
 function JobDetail({ tenantId, jobId }: { tenantId: string; jobId: string }) {
   const t = useT();
-  const locale = useLocale();
   const job = useConnectorJob(tenantId, jobId);
   const cancel = useCancelConnectorJob();
   const retry = useRetryConnectorJob();
@@ -455,7 +455,9 @@ function JobDetail({ tenantId, jobId }: { tenantId: string; jobId: string }) {
         </div>
         <div>
           <dt>{t('operations.connectors.jobs.created')}</dt>
-          <dd>{new Date(data.created_unix_millis).toLocaleString(locale)}</dd>
+          <dd>
+            <DateTime value={data.created_unix_millis} />
+          </dd>
         </div>
         <div>
           <dt>{t('operations.connectors.jobs.attempt')}</dt>
@@ -510,7 +512,6 @@ function JobDetail({ tenantId, jobId }: { tenantId: string; jobId: string }) {
 
 function ConnectorJobs({ tenantId }: { tenantId: string }) {
   const t = useT();
-  const locale = useLocale();
   const [params, setParams] = useSearchParams();
   const [cursor, setCursor] = useState<number | undefined>();
   const jobs = useConnectorJobs(tenantId, { limit: 50, before_created_unix_millis: cursor });
@@ -545,7 +546,9 @@ function ConnectorJobs({ tenantId }: { tenantId: string }) {
                 </td>
                 <td>{t(`operations.connectors.purpose.${job.purpose}`)}</td>
                 <td>{job.destination}</td>
-                <td>{new Date(job.created_unix_millis).toLocaleString(locale)}</td>
+                <td>
+                  <DateTime value={job.created_unix_millis} />
+                </td>
                 <td>
                   <Button
                     type="button"

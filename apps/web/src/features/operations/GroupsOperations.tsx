@@ -22,11 +22,12 @@ import type {
   GroupTemplateLibraryView,
   TemplateSummary,
 } from '../../api/types';
-import { useLocale, useT } from '../../i18n';
+import { useT } from '../../i18n';
 import {
   Badge,
   Button,
   Card,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -308,7 +309,6 @@ function LibraryDetail({
   templates: TemplateSummary[];
 }) {
   const t = useT();
-  const locale = useLocale();
   const patch = usePatchGroupTemplateLibrary();
   const archive = useArchiveGroupTemplateLibrary();
   const append = useAppendGroupTemplateLibraryRevision();
@@ -439,7 +439,11 @@ function LibraryDetail({
                 <td>{revision.revision}</td>
                 <td>{revision.template_ids.map(templateOptionLabel).join(', ')}</td>
                 <td>{revision.created_by}</td>
-                <td>{new Date(revision.created_at).toLocaleString(locale)}</td>
+                {/* Revision history is an append-only audit trail — who changed the library and
+                    exactly when — so it renders with seconds and the zone, not to the minute. */}
+                <td>
+                  <DateTime value={revision.created_at} evidentiary />
+                </td>
               </tr>
             ))}
           </Table>

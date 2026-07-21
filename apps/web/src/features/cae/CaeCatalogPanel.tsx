@@ -15,7 +15,7 @@ import { Link } from 'react-router-dom';
 import { useCaeCatalog, useRefreshCae } from '../../api/hooks';
 import { ApiError } from '../../api/client';
 import { useT } from '../../i18n';
-import { Badge, Button, Card, ErrorNote, Icon, SkeletonDeflist, useToast } from '../../ui';
+import { Badge, Button, Card, DateTime, ErrorNote, Icon, SkeletonDeflist, useToast } from '../../ui';
 import type { CaeLevelCounts } from '../../api/types';
 
 /** Total nodes across all five levels of a revision. */
@@ -123,7 +123,11 @@ export function CaeCatalogPanel() {
             </div>
             <div>
               <dt>{t('cae.catalog.generatedAt.label')}</dt>
-              <dd className="mono">{catalog.data.generated_at}</dd>
+              {/* The catalog's generation stamp is provenance for the codes below it —
+                  evidentiary, with the exact instant kept in the `datetime` attribute. */}
+              <dd>
+                <DateTime value={catalog.data.generated_at} evidentiary className="mono" />
+              </dd>
             </div>
             <div>
               <dt>{t('cae.catalog.rev4Total.label')}</dt>

@@ -23,6 +23,7 @@ import {
   Badge,
   Button,
   Card,
+  DateTime,
   Digest,
   EmptyState,
   ErrorNote,
@@ -633,7 +634,10 @@ function TsaToolingPanel() {
                 </div>
                 <div>
                   <dt>{t('trust.status.checkedAt')}</dt>
-                  <dd className="mono">{tsa.data.summary.last_probe.checked_at}</dd>
+                  {/* A probe is a record of something having happened: evidentiary. */}
+                  <dd>
+                    <DateTime className="mono" value={tsa.data.summary.last_probe.checked_at} evidentiary />
+                  </dd>
                 </div>
               </TrustKeyValueGrid>
             </TrustDetailSection>
@@ -890,7 +894,8 @@ function TrustStatusPanel() {
             </div>
             <div className="trust-statusline__item trust-statusline__item--wide">
               <span className="trust-statusline__label">{t('trust.status.checkedAt')}</span>
-              <span className="mono">{status.data.validation.checked_at}</span>
+              {/* When the trust list was last validated — an evidentiary check time. */}
+              <DateTime className="mono" value={status.data.validation.checked_at} evidentiary />
             </div>
           </div>
 
@@ -907,7 +912,9 @@ function TrustStatusPanel() {
                 </div>
                 <div>
                   <dt>{t('trust.refresh.attemptedAt')}</dt>
-                  <dd className="mono">{status.data.last_refresh.attempted_at}</dd>
+                  <dd>
+                    <DateTime className="mono" value={status.data.last_refresh.attempted_at} evidentiary />
+                  </dd>
                 </div>
                 <div>
                   <dt>{t('trust.status.source')}</dt>
@@ -975,11 +982,17 @@ function TrustStatusPanel() {
               <TrustKeyValueGrid>
                 <div>
                   <dt>{t('trust.status.issueDate')}</dt>
-                  <dd className="mono">{status.data.issue_date_time ?? '—'}</dd>
+                  {/* When the scheme operator issued this list — evidentiary. */}
+                  <dd>
+                    <DateTime className="mono" value={status.data.issue_date_time} evidentiary />
+                  </dd>
                 </div>
                 <div>
                   <dt>{t('trust.status.nextUpdate')}</dt>
-                  <dd className="mono">{status.data.next_update ?? '—'}</dd>
+                  {/* A scheduled future update, not a record of an event. */}
+                  <dd>
+                    <DateTime className="mono" value={status.data.next_update} />
+                  </dd>
                 </div>
               </TrustKeyValueGrid>
             </TrustDetailSection>

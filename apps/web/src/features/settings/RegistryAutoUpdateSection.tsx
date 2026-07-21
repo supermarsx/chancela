@@ -14,6 +14,7 @@ import {
   Badge,
   Button,
   Card,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -274,7 +275,7 @@ export function RegistryAutoUpdateSection({
       }
     >
       <div className="stack">
-        <div className="form">
+        <div className="form settings-rows">
           <Toggle
             label={t('settings.registryAutoUpdate.enabled.label')}
             checked={value.enabled}
@@ -435,7 +436,10 @@ export function RegistryAutoUpdateSection({
             <dl className="deflist deflist--tight">
               <div>
                 <dt>{t('settings.registryAutoUpdate.plan.generatedAt')}</dt>
-                <dd className="mono">{plan.data.generated_at}</dd>
+                {/* When the plan was computed is provenance for every row below it. */}
+                <dd className="mono">
+                  <DateTime value={plan.data.generated_at} evidentiary />
+                </dd>
               </div>
               <div>
                 <dt>{t('settings.registryAutoUpdate.plan.mode')}</dt>
@@ -512,7 +516,9 @@ export function RegistryAutoUpdateSection({
                       {entityKindLabels[item.entity_profile as EntityKind] ?? item.entity_profile}
                     </td>
                     <td>
-                      <span className="mono">{item.retrieved_at}</span>
+                      {/* Retrieval time is the provenance of the registry snapshot being
+                          judged stale, so it renders with seconds and the zone. */}
+                      <DateTime className="mono" value={item.retrieved_at} evidentiary />
                       <p className="field__hint">{dueReason(item, t)}</p>
                     </td>
                     <td>
@@ -566,7 +572,9 @@ export function RegistryAutoUpdateSection({
               </div>
               <div>
                 <dt>{t('settings.registryAutoUpdate.attempt.nextAllowed')}</dt>
-                <dd className="mono">{attempt.data.next_allowed_at ?? '—'}</dd>
+                <dd className="mono">
+                  <DateTime value={attempt.data.next_allowed_at} />
+                </dd>
               </div>
               <div>
                 <dt>{t('settings.registryAutoUpdate.attempt.failures')}</dt>
