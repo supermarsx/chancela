@@ -26,6 +26,7 @@ const AMELIA: UserView = {
   has_attestation_key: false,
   has_recovery_phrase: false,
   language: 'auto',
+  role_assignments: [],
 };
 
 const WRONG_PASSWORD = 'palavra-passe atual incorreta';

@@ -18,6 +18,34 @@
  *
  * The recovery phrase is generated server-side and returned exactly once; we show it once,
  * with a copy affordance and honest "cannot be retrieved later" copy, and never persist it.
+ *
+ * ## Layout (restyled t103) — the house primitives, not a private design language
+ *
+ * The three credentials are three **grouped `Card`s** in a `.stack`, each with its state badge
+ * in the card's `actions` slot and `form settings-rows` for its label/control pairs. Previously
+ * this was one outer Card containing a private **two-column grid** (`.access-manager`), with a
+ * hand-rolled stand-in for each shared primitive it needed — `__head`/`__label` where a card
+ * heading belonged, `__form` where the row grid belonged, `__actions` where `.form__actions`
+ * belonged, `__note` where `.field__hint` belonged, and `__fingerprint`/`__fplabel` where a
+ * `Field` row belonged. That is why this section did not look like the rest of the app: it was
+ * not using the group styling because it had reimplemented a worse version of it.
+ *
+ * **Nothing about behaviour moved.** The cross-user proof rules and the copy that explains them
+ * are byte-identical and still sit inside the control they gate; the uniform non-enumerating
+ * refusals are untouched; `users.key.rotateNote` (t92 — rotation makes a new key for future
+ * attestations and past ones stay verifiable, because superseded public halves are retained) is
+ * unchanged and still wired through `aria-describedby`; no key or password material reaches the
+ * DOM, a URL, a log or an error. Only element structure and class names changed.
+ *
+ * ## No table here, and that is not an omission
+ *
+ * There is **no tabular content on this surface** — three credentials, each a state plus a form,
+ * is a form, and forcing the `Table` primitive onto it would be worse than not using it. The one
+ * thing here that genuinely *is* a list of audit records is the set of **superseded attestation
+ * keys** (`User.retired_attestation_keys`, t92: fingerprint + `retired_at`, the retention that
+ * keeps past attestations verifiable). `UserView` does not expose it — only
+ * `attestation_key_fingerprint`, the current one — so it cannot be rendered. Reported as an API
+ * gap rather than faked: an operator currently has no way to see which keys still verify history.
  */
 import { useEffect, useRef, useState } from 'react';
 import type {
@@ -35,7 +63,7 @@ import {
   useSetUserSecret,
 } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Badge, Button, Field, Icon, InlineWarning, Input, Select, useToast } from '../../ui';
+import { Badge, Button, Card, Field, Icon, InlineWarning, Input, Select, useToast } from '../../ui';
 
 type PwMode = null | 'set' | 'change';
 type ProofKind = 'password' | 'recovery';
@@ -299,7 +327,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
   }
 
   return (
-    <div className="access-manager">
+    <div className="stack">
       {isCrossUser ? (
         <InlineWarning tone="info">{t('users.access.crossUserNote')}</InlineWarning>
       ) : null}
@@ -309,18 +337,19 @@ export function UserAccessManager({ user }: { user: UserView }) {
           change/set controls collect the target's current password OR a recovery
           phrase (ProofFields) and send it on the secret mutation; a 403 refusal renders
           inline (retryable) and toasts. Self-service keeps the current-password flow. */}
-      <div className="access-manager__block">
-        <div className="access-manager__head">
-          <span className="access-manager__label">{t('users.secret.label')}</span>
-          {user.has_secret ? (
+      <Card
+        className="access-manager__block"
+        title={t('users.secret.label')}
+        actions={
+          user.has_secret ? (
             <Badge tone="ok">{t('users.secret.has')}</Badge>
           ) : (
             <Badge tone="neutral">{t('users.secret.none')}</Badge>
-          )}
-        </div>
-
+          )
+        }
+      >
         {pwMode === null ? (
-          <div className="access-manager__actions">
+          <div className="form__actions">
             {user.has_secret ? (
               <Button variant="secondary" onClick={() => setPwMode('change')}>
                 {t('users.secret.change')}
@@ -333,7 +362,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
           </div>
         ) : (
           <form
-            className="access-manager__form"
+            className="form settings-rows"
             onSubmit={(e) => {
               e.preventDefault();
               submitSecret();
@@ -390,7 +419,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
                 autoComplete="new-password"
               />
             </Field>
-            <div className="access-manager__actions">
+            <div className="form__actions">
               <Button type="button" variant="ghost" disabled={pwBusy} onClick={resetPw}>
                 {t('common.cancel')}
               </Button>
@@ -400,19 +429,21 @@ export function UserAccessManager({ user }: { user: UserView }) {
             </div>
           </form>
         )}
-      </div>
+      </Card>
 
       {/* --- Recovery phrase (t51) -------------------------------------------- */}
-      <div className="access-manager__block">
-        <div className="access-manager__head">
-          <span className="access-manager__label">{t('users.recovery.label')}</span>
-          {user.has_recovery_phrase ? (
+      <Card
+        className="access-manager__block"
+        title={t('users.recovery.label')}
+        actions={
+          user.has_recovery_phrase ? (
             <Badge tone="accent">{t('users.recovery.has')}</Badge>
           ) : (
             <Badge tone="neutral">{t('users.recovery.none')}</Badge>
-          )}
-        </div>
-        <p className="access-manager__note">{t('users.recovery.description')}</p>
+          )
+        }
+      >
+        <p className="field__hint">{t('users.recovery.description')}</p>
 
         {recPhrase ? (
           <InlineWarning tone="warn" title={t('users.recovery.shownOnceTitle')}>
@@ -420,7 +451,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
             <p className="access-manager__recovery-phrase">
               <code className="mono">{recPhrase}</code>
             </p>
-            <div className="access-manager__actions">
+            <div className="form__actions">
               <Button type="button" variant="secondary" icon={<Icon.Copy />} onClick={copyPhrase}>
                 {t('users.recovery.copy')}
               </Button>
@@ -431,7 +462,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
           </InlineWarning>
         ) : recOpen ? (
           <form
-            className="access-manager__form"
+            className="form settings-rows"
             onSubmit={(e) => {
               e.preventDefault();
               submitRecovery();
@@ -462,7 +493,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
                 />
               </Field>
             ) : null}
-            <div className="access-manager__actions">
+            <div className="form__actions">
               <Button
                 type="button"
                 variant="ghost"
@@ -477,37 +508,42 @@ export function UserAccessManager({ user }: { user: UserView }) {
             </div>
           </form>
         ) : (
-          <div className="access-manager__actions">
+          <div className="form__actions">
             <Button variant="secondary" icon={<Icon.Seal />} onClick={() => setRecOpen(true)}>
               {user.has_recovery_phrase ? t('users.recovery.rotate') : t('users.recovery.generate')}
             </Button>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* --- Attestation key -------------------------------------------------- */}
-      <div className="access-manager__block">
-        <div className="access-manager__head">
-          <span className="access-manager__label">{t('users.key.label')}</span>
-          {user.has_attestation_key ? (
+      <Card
+        className="access-manager__block"
+        title={t('users.key.label')}
+        actions={
+          user.has_attestation_key ? (
             <Badge tone="ok">{t('users.key.has')}</Badge>
           ) : (
             <Badge tone="neutral">{t('users.key.none')}</Badge>
-          )}
-        </div>
-
+          )
+        }
+      >
+        {/* The fingerprint is a single labelled value, so it is a `.settings-rows` row like
+            every other label/value pair on the screen — not a table, and not a bare paragraph
+            with a hand-rolled label span. */}
         {user.has_attestation_key && user.attestation_key_fingerprint ? (
-          <p className="access-manager__fingerprint">
-            <span className="access-manager__fplabel">{t('users.key.fingerprint')}:</span>{' '}
-            <code className="mono">{user.attestation_key_fingerprint}</code>
-          </p>
+          <div className="form settings-rows">
+            <Field label={t('users.key.fingerprint')}>
+              <code className="mono">{user.attestation_key_fingerprint}</code>
+            </Field>
+          </div>
         ) : null}
 
         {!user.has_secret ? (
           <InlineWarning tone="info">{t('users.key.requiresSecret')}</InlineWarning>
         ) : (
           <form
-            className="access-manager__form"
+            className="form settings-rows"
             onSubmit={(e) => {
               e.preventDefault();
               generateKey();
@@ -526,7 +562,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
                 autoComplete="current-password"
               />
             </Field>
-            <div className="access-manager__actions">
+            <div className="form__actions">
               <Button
                 type="submit"
                 variant="secondary"
@@ -557,15 +593,14 @@ export function UserAccessManager({ user }: { user: UserView }) {
               ) : null}
             </div>
             {user.has_attestation_key ? (
-              <p className="access-manager__note" id={`key-note-${user.id}`}>
+              <p className="field__hint" id={`key-note-${user.id}`}>
                 {t('users.key.rotateNote')}
               </p>
             ) : null}
           </form>
         )}
-      </div>
-
-      <p className="access-manager__note">{t('users.access.note')}</p>
+        <p className="field__hint">{t('users.access.note')}</p>
+      </Card>
     </div>
   );
 }

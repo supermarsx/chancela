@@ -12,11 +12,24 @@
  */
 
 /** The roster — a Configurações sub-tab. Lists and filters; grants nothing. */
-export const USERS_LIST_PATH = '/configuracoes?sec=utilizadores';
+export const USERS_LIST_PATH = '/settings/users';
 
 /** The create screen (t71). */
-export const NEW_USER_PATH = '/utilizadores/novo';
+export const NEW_USER_PATH = '/users/new';
 
-/** The edit screen (t89). `hash` carries a section anchor such as `#acesso`. */
-export const editUserPath = (id: string, hash = '') =>
-  `/utilizadores/${encodeURIComponent(id)}${hash}`;
+/**
+ * The edit screen (t89). `hash` carries a fragment; since t103 the screen's sections are path
+ * segments rather than anchors, so prefer {@link editUserSectionPath} over a `#…` here.
+ */
+export const editUserPath = (id: string, hash = '') => `/users/${encodeURIComponent(id)}${hash}`;
+
+/**
+ * One section of the edit screen (t103) — `/users/:id/access`.
+ *
+ * Here rather than assembled at each call site for the reason this whole module exists: the tab
+ * segment is now part of an address, and an address spelled in two places is how the duplicate
+ * entry points t71 and t89 removed appeared. The default section (`general`) deliberately has no
+ * spelling of its own — it *is* {@link editUserPath}.
+ */
+export const editUserSectionPath = (id: string, section: string) =>
+  `${editUserPath(id)}/${section}`;

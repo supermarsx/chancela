@@ -1,15 +1,15 @@
 /**
- * Create a user — a dedicated screen at `/utilizadores/novo` (t71).
+ * Create a user — a dedicated screen at `/users/new` (t71).
  *
  * ## Why a screen and not the old inline panel — this REVERSES plan t50
- * t50 deliberately collapsed `/utilizadores/novo` into a `Card` inside Configurações
+ * t50 deliberately collapsed `/users/new` into a `Card` inside Configurações
  * (`?sec=utilizadores&user=novo`), and this file used to document that decision. It is reversed
  * here, on purpose: a create that also grants authority is not a two-field afterthought — it needs
  * room for the role, the scope, and the consequences of both. So creation gets its own editorial
- * route again, following the `/entidades/nova` precedent, while the roster STAYS in Configurações.
+ * route again, following the `/entities/new` precedent, while the roster STAYS in Configurações.
  * The old `?user=novo` state now redirects out to this route, and `NewUserPanel` is gone rather
- * than left alive, so there is exactly one place a user is created. `/utilizadores` and
- * `/utilizadores/:id` still redirect into Settings — that part of t50 stands.
+ * than left alive, so there is exactly one place a user is created. `/users` and
+ * `/users/:id` still redirect into Settings — that part of t50 stands.
  *
  * ## Layout
  * Grouped cards, each an ordinary `form settings-rows` of `Field` rows — label / control / help
@@ -190,7 +190,7 @@ export function NewUserPage() {
       {
         onSuccess: (user: UserView) => {
           toast.success(t('toast.user.created'));
-          navigate(`/configuracoes?sec=utilizadores&user=${user.id}`);
+          navigate(`/settings/users?user=${user.id}`);
         },
         onError: (e) => toast.error(e),
       },
@@ -202,7 +202,7 @@ export function NewUserPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/configuracoes?sec=utilizadores">{t('users.breadcrumb.self')}</Link> ·{' '}
+            <Link to="/settings/users">{t('users.breadcrumb.self')}</Link> ·{' '}
             {t('users.new.crumb')}
           </>
         }
@@ -381,7 +381,7 @@ export function NewUserPage() {
             {/* The one row on this screen that is NOT a label/control `Field`, deliberately: the
                 control is a single boolean whose own text is already the whole sentence, so a
                 label column could only repeat it. Kept as one `stack--tight` block — the same
-                shape `/entidades/nova` uses for its tickbox — so the reason it is unavailable
+                shape `/entities/new` uses for its tickbox — so the reason it is unavailable
                 stays directly under the switch instead of being cut off from it by the row
                 grid's hairline, which is what made this card read as loose parts. */}
             <div className="stack--tight">
@@ -395,7 +395,9 @@ export function NewUserPage() {
               {welcomeBlockedReason ? (
                 <InlineWarning tone="info">
                   {welcomeBlockedReason}{' '}
-                  <Link to="/configuracoes?sec=email">{t('users.create.welcome.settingsLink')}</Link>
+                  <Link to="/settings/operations/email">
+                    {t('users.create.welcome.settingsLink')}
+                  </Link>
                 </InlineWarning>
               ) : null}
             </div>
@@ -408,7 +410,7 @@ export function NewUserPage() {
           <Button type="submit" variant="primary" icon={<Icon.Plus />} disabled={!canSubmit}>
             {create.isPending ? t('users.create.submitting') : t('users.create.submit')}
           </Button>
-          <ButtonLink to="/configuracoes?sec=utilizadores" variant="ghost" icon={<Icon.Close />}>
+          <ButtonLink to="/settings/users" variant="ghost" icon={<Icon.Close />}>
             {t('common.cancel')}
           </ButtonLink>
         </div>
