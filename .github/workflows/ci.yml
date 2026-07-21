@@ -216,6 +216,79 @@ jobs:
         run: cargo test --workspace --locked
 
   # ---------------------------------------------------------------------------
+  # Rust coverage gate. Until this job existed the repo measured NO Rust coverage
+  # in CI at all — `llvm-cov` and `tarpaulin` appeared nowhere in .github/,
+  # scripts/ or package.json — so the hard-90% crates and the no-regression
+  # ratchet were policy in documents and nothing else.
+  #
+  # Linux only, and that is deliberate rather than incidental: the workspace has
+  # 25 cfg(windows)/cfg(unix)/cfg(target_os) sites, so a Windows or macOS run
+  # compiles different code and produces a number that is not comparable. The
+  # authoritative figure is ubuntu-latest. The gate script refuses to write the
+  # ratchet baseline from any other platform.
+  #
+  # Feature sets match what CI actually tests, not `--no-default-features`:
+  # `chancela-server/e2e` (its entire test surface is gated behind it) and
+  # `chancela-store/sqlcipher`. `chancela-store/postgres` is deliberately NOT
+  # enabled — those tests are `#[ignore]`d without the Postgres service
+  # container that only the `postgres` job provides, so turning the feature on
+  # here would add several hundred never-executed lines to the denominator and
+  # depress the figure without measuring anything. Measuring it properly needs
+  # the service container; see .orchestration/logs/t75-coverage.md.
+  #
+  # Cost: a full instrumented workspace build plus the whole test suite, on the
+  # order of an hour. It therefore follows the `browser-full` pattern — main,
+  # workflow_dispatch, or a PR labeled `run-coverage` — rather than running on
+  # every push.
+  # ---------------------------------------------------------------------------
+  rust-coverage:
+    name: Rust coverage gate (Linux, authoritative)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-coverage'))
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      # Installed from crates.io at a pinned version rather than via
+      # taiki-e/install-action: every `uses:` in this repo must carry a 40-hex
+      # SHA (scripts/check-supply-chain-pins.mjs), and a version pin here is
+      # verifiable where a guessed action SHA would not be.
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --version 0.6.11 --locked
+
+      # --no-fail-fast so a single failing test still yields a report: a broken
+      # test should fail the `rust` job, not silently blank the coverage figure.
+      - name: Measure
+        run: >-
+          cargo llvm-cov --workspace --locked --no-fail-fast
+          --features chancela-server/e2e,chancela-store/sqlcipher
+          --json --output-path llvm-cov.json
+
+      - name: Enforce thresholds
+        run: node scripts/rust-coverage-gate.mjs --report llvm-cov.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-coverage-report
+          path: llvm-cov.json
+
+  # ---------------------------------------------------------------------------
   # PDF accessibility: run an independent, current veraPDF machine-validation
   # gate for both claims over TWO corpora, which prove different things:
   #
