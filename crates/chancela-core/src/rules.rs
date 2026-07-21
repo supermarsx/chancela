@@ -1414,15 +1414,15 @@ mod tests {
                 "condominio",
                 CondominioRulePack.check_act(&legacy, &condominio_entity()),
             ),
-            (
-                "assoc",
-                AssociacaoRulePack.check_act(&legacy, &sa_entity()),
-            ),
+            ("assoc", AssociacaoRulePack.check_act(&legacy, &sa_entity())),
             (
                 "cooperativa",
                 CooperativaRulePack.check_act(&legacy, &sa_entity()),
             ),
-            ("fundacao", FundacaoRulePack.check_act(&legacy, &sa_entity())),
+            (
+                "fundacao",
+                FundacaoRulePack.check_act(&legacy, &sa_entity()),
+            ),
         ] {
             assert!(
                 !issues
@@ -1551,7 +1551,9 @@ mod tests {
             let issue = issues
                 .iter()
                 .find(|i| i.rule_id == "CSC-54/universal-assembly-agreement")
-                .unwrap_or_else(|| panic!("missing agreement finding for {meet}/{agenda}: {issues:?}"));
+                .unwrap_or_else(|| {
+                    panic!("missing agreement finding for {meet}/{agenda}: {issues:?}")
+                });
             assert_eq!(issue.severity, Severity::Error);
         }
     }

@@ -944,6 +944,55 @@ pub struct SupersededSigningSnapshot {
     pub reason: String,
 }
 
+/// How the source text of an [`ActBody`] is to be interpreted.
+///
+/// The tag is **required** on every body: there is no default and no inference. A body that
+/// carries no format cannot exist, and text that carries no body is plain text. That asymmetry is
+/// the whole point — see [`ActBody`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BodyFormat {
+    /// The constrained CommonMark subset compiled by `md-block/vN`.
+    Markdown,
+}
+
+/// The narrative body of an ata, authored in a tagged markup format (t74 §1).
+///
+/// Additive to — never a reinterpretation of — the free-text [`Act::deliberations`]. **The
+/// `deliberations` field is plain text, permanently.** A sealed act whose prose happens to contain
+/// `*`, `#`, `_` or `1.` renders those as literal characters, and no migration, default, or later
+/// version may change that: re-reading old prose as markup would move nothing that any digest
+/// covers, so the document would quietly come to mean something other than the one that was signed.
+/// Markup lives here, behind [`ActBody::format`], and nowhere else.
+///
+/// The record binds three facts, not one:
+///
+/// - `source` — what the operator wrote and approved.
+/// - `compiler_id` — which compiler version turned it into blocks (for example `"md-block/v1"`).
+/// - `compiled_digest` — what it compiled *to* at content freeze.
+///
+/// Binding the last two is what makes a later compiler change detectable rather than silent: the
+/// source alone would still parse, just possibly into different blocks.
+///
+/// **The field declaration order below is frozen byte order.** This struct serializes into the
+/// seal preimage ([`crate::seal`]'s `ActPayload` holds it as an appended `Option<&ActBody>`), and a
+/// `#[derive(Serialize)]` struct emits its fields in declaration order. Reordering or renaming any
+/// of `format`, `source`, `compiler_id`, `compiled_digest` therefore moves the preimage — and so
+/// the frozen digest — of every act that carries a body. Fields may only be *appended*, as
+/// `Option` with `skip_serializing_if`, exactly as they are on [`Act`] itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActBody {
+    /// How `source` is to be interpreted. Explicit, always.
+    pub format: BodyFormat,
+    /// The markup the operator authored, verbatim.
+    pub source: String,
+    /// Stable id of the compiler that produced the blocks, including its version segment
+    /// (for example `"md-block/v1"`). A deliberate compiler change ships as a new id.
+    pub compiler_id: String,
+    /// Lowercase SHA-256 over the canonical serialization of the blocks `source` compiled to at
+    /// content freeze.
+    pub compiled_digest: String,
+}
+
 /// An **ata**. Mutable through the pre-seal states; frozen at sealing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Act {
@@ -1058,6 +1107,16 @@ pub struct Act {
     /// that was never reopened, so it emits no bytes and no existing seal preimage moves.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub superseded_signing_snapshots: Vec<SupersededSigningSnapshot>,
+    /// The tagged-markup narrative body (t74), when the act was authored through one.
+    ///
+    /// Additive and appended **last**: `None` emits no bytes, so a pre-existing act's payload —
+    /// and therefore its frozen digest — is byte-identical to what it was, and an act with no body
+    /// is indistinguishable on the wire from one written before the field existed.
+    ///
+    /// `None` does **not** mean "plain-text body". It means no markup body was authored;
+    /// [`Act::deliberations`] is, and always was, plain text either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<ActBody>,
 }
 
 impl Act {
@@ -1095,6 +1154,7 @@ impl Act {
             ai_provenance: None,
             page_count: None,
             superseded_signing_snapshots: Vec::new(),
+            body: None,
         }
     }
 
@@ -1139,6 +1199,23 @@ impl Act {
     pub fn set_deliberations(&mut self, text: impl Into<String>) -> Result<(), ActError> {
         self.ensure_mutable()?;
         self.deliberations = text.into();
+        Ok(())
+    }
+
+    /// Set the tagged-markup narrative body (rejected once sealed).
+    ///
+    /// This never touches [`Act::deliberations`], in either direction: the two fields are separate
+    /// stores and existing plain prose is never migrated into markup.
+    pub fn set_body(&mut self, body: ActBody) -> Result<(), ActError> {
+        self.ensure_mutable()?;
+        self.body = Some(body);
+        Ok(())
+    }
+
+    /// Drop the markup body (rejected once sealed), returning the act to having none.
+    pub fn clear_body(&mut self) -> Result<(), ActError> {
+        self.ensure_mutable()?;
+        self.body = None;
         Ok(())
     }
 
@@ -1656,6 +1733,139 @@ mod tests {
         let restored: Act = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.convening_waiver, None);
         assert_eq!(restored, act);
+    }
+
+    fn markdown_body() -> ActBody {
+        ActBody {
+            format: BodyFormat::Markdown,
+            source: "## Ponto um\n\nAprovadas as contas por **unanimidade**.\n".into(),
+            compiler_id: "md-block/v1".into(),
+            compiled_digest: "9f2c".repeat(16),
+        }
+    }
+
+    #[test]
+    fn an_act_without_a_body_emits_no_bytes_for_it() {
+        // Same obligation the convening waiver carries: a field that serialized even as `null`
+        // would move the preimage of every act sealed before it existed. An act with no body must
+        // be indistinguishable on the wire from one written before the field was declared.
+        let act = draft();
+        let json = serde_json::to_string(&act).unwrap();
+        assert!(
+            !json.contains("\"body\""),
+            "an absent body must not appear in the canonical payload: {json}"
+        );
+
+        let restored: Act = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.body, None);
+        assert_eq!(restored, act);
+        // Re-serializing the value read back from the pre-field wire shape produces the same
+        // bytes, so a stored payload survives a read/write cycle untouched.
+        assert_eq!(serde_json::to_string(&restored).unwrap(), json);
+    }
+
+    #[test]
+    fn a_stored_payload_predating_the_body_field_deserializes_unchanged() {
+        // Simulate a row written before `body` existed by stripping the key outright, the same way
+        // `old_shape_act_without_convening_or_attendees_deserializes_to_defaults` does.
+        let bodyless = draft();
+        let mut act = bodyless.clone();
+        act.set_body(markdown_body()).unwrap();
+        let mut value = serde_json::to_value(&act).unwrap();
+        assert!(value.as_object().unwrap().contains_key("body"));
+        value.as_object_mut().unwrap().remove("body");
+
+        let restored: Act = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.body, None);
+        assert_eq!(restored, bodyless);
+        assert_eq!(
+            serde_json::to_string(&restored).unwrap(),
+            serde_json::to_string(&bodyless).unwrap()
+        );
+    }
+
+    #[test]
+    fn legacy_deliberations_prose_is_never_reinterpreted_as_markdown() {
+        // t74 §9.2 — the subtlest available catastrophe. A sealed act whose prose happens to
+        // contain markup characters must keep rendering them as the literal characters that were
+        // signed. Nothing infers a format from the text, and `deliberations` acquires no body.
+        const PROSE: &str = "Deliberou-se **por unanimidade** o seguinte:\n\
+             # Nota interna sobre o ponto 1\n\
+             1. Contas de 2025 (o item _um_ da ordem de trabalhos)\n\
+             O montante *bruto* é de 1.000,00 EUR.";
+
+        let mut legacy = draft();
+        legacy.deliberations = PROSE.into();
+        let mut value = serde_json::to_value(&legacy).unwrap();
+        value.as_object_mut().unwrap().remove("body");
+
+        let restored: Act = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            restored.body, None,
+            "no format tag may be invented for legacy prose"
+        );
+        // Byte-for-byte the same characters, markup punctuation included: `**` is two asterisks,
+        // `#` is a hash, `1.` is a digit and a full stop, `_` is an underscore.
+        assert_eq!(restored.deliberations, PROSE);
+        assert!(restored.deliberations.contains("**por unanimidade**"));
+        assert!(restored.deliberations.contains("# Nota interna"));
+        assert!(restored.deliberations.contains("_um_"));
+        assert!(restored.deliberations.contains("*bruto*"));
+        assert_eq!(
+            restored.deliberations.matches('*').count(),
+            PROSE.matches('*').count()
+        );
+        assert_eq!(restored, legacy);
+
+        // Authoring a markup body later does not retroactively re-read the prose either: the two
+        // stores stay separate and `deliberations` is untouched.
+        let mut with_body = restored;
+        with_body.set_body(markdown_body()).unwrap();
+        assert_eq!(with_body.deliberations, PROSE);
+    }
+
+    #[test]
+    fn act_with_a_body_round_trips() {
+        let mut act = draft();
+        act.set_body(markdown_body()).unwrap();
+
+        let json = serde_json::to_string(&act).unwrap();
+        let restored: Act = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, act);
+        let body = restored.body.expect("body");
+        assert_eq!(body.format, BodyFormat::Markdown);
+        assert_eq!(body.compiler_id, "md-block/v1");
+        assert!(body.source.contains("**unanimidade**"));
+        assert_eq!(body.compiled_digest.len(), 64);
+    }
+
+    #[test]
+    fn set_body_is_rejected_on_a_sealed_act() {
+        let mut act = draft();
+        act.set_body(markdown_body()).unwrap();
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+            ActState::Signing,
+        ] {
+            act.advance_to(state).unwrap();
+        }
+        // Frozen from the content freeze onwards, exactly as `set_deliberations` is.
+        assert!(matches!(
+            act.set_body(markdown_body()),
+            Err(ActError::Sealed)
+        ));
+        assert!(matches!(act.clear_body(), Err(ActError::Sealed)));
+
+        act.mark_sealed(1, [0u8; 32], 0, seal_metadata()).unwrap();
+        assert!(matches!(
+            act.set_body(markdown_body()),
+            Err(ActError::Sealed)
+        ));
+        assert!(matches!(act.clear_body(), Err(ActError::Sealed)));
+        assert!(act.body.is_some(), "the sealed body is left untouched");
     }
 
     #[test]

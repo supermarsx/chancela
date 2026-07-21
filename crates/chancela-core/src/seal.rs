@@ -15,9 +15,9 @@ use serde::Serialize;
 use chancela_ledger::Ledger;
 
 use crate::act::{
-    Act, ActState, AgendaItem, Attachment, Attendee, Convening, ConveningWaiver, DeliberationItem,
-    DocumentReference, ManualSignatureOriginalReference, MeetingChannel, Mesa, SealMetadata,
-    SignatorySlot, SupersededSigningSnapshot, WrittenResolutionEvidence,
+    Act, ActBody, ActState, AgendaItem, Attachment, Attendee, Convening, ConveningWaiver,
+    DeliberationItem, DocumentReference, ManualSignatureOriginalReference, MeetingChannel, Mesa,
+    SealMetadata, SignatorySlot, SupersededSigningSnapshot, WrittenResolutionEvidence,
 };
 use crate::book::{Book, TermoDeAbertura};
 use crate::entity::Entity;
@@ -183,6 +183,23 @@ struct ActPayload<'a> {
     // An act without a waiver emits no bytes, so every already-frozen digest is byte-identical.
     #[serde(skip_serializing_if = "Option::is_none")]
     convening_waiver: Option<&'a ConveningWaiver>,
+    // The markup narrative body (append-only, t74 §1). Appended **last**, after
+    // `convening_waiver`; an act without a body emits no bytes, so every already-frozen digest is
+    // byte-identical to what it was before this field existed.
+    //
+    // What binds is deliberately more than the operator's source text. `ActBody` carries
+    // `compiler_id` and `compiled_digest` alongside `source`, and all three enter the preimage, so
+    // the seal covers not merely what was written but **what it compiled to** at the content
+    // freeze. Source alone would still parse under a later compiler — just possibly into different
+    // blocks — and the document would come to say something else with nothing to detect it. With
+    // the compiled digest bound, that drift is a mismatch against the seal rather than a silent
+    // reinterpretation.
+    //
+    // Note that `deliberations` above is untouched and stays plain text permanently: markup lives
+    // only here, behind `ActBody::format`. Reinterpreting old prose as markup would move nothing
+    // any digest covers, which is precisely what would make it undetectable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<&'a ActBody>,
 }
 
 impl<'a> ActPayload<'a> {
@@ -214,6 +231,7 @@ impl<'a> ActPayload<'a> {
             superseded_signing_snapshots: (!act.superseded_signing_snapshots.is_empty())
                 .then_some(act.superseded_signing_snapshots.as_slice()),
             convening_waiver: act.convening_waiver.as_ref(),
+            body: act.body.as_ref(),
         }
     }
 }
@@ -1266,6 +1284,170 @@ mod tests {
         );
     }
 
+    #[test]
+    fn digest_of_pre_existing_act_is_unchanged_by_the_t74_markup_body() {
+        // The same guarantee for the markup body, and the one that matters most here: an ata whose
+        // prose lives in the plain-text `deliberations` field — which is every ata authored before
+        // t74, i.e. every ata sealed to date — must produce a preimage byte-identical to what it
+        // produced before `body` was appended. Anything else invalidates every book's hash chain
+        // at once, with no recovery.
+        use sha2::{Digest, Sha256};
+
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let act = ready_act(&book);
+        assert!(act.body.is_none());
+
+        // Faithful reconstruction of the ActPayload shape *before* the body was appended: the same
+        // fields, same declaration order, up to `convening_waiver`.
+        #[derive(Serialize)]
+        struct OldActPayload<'a> {
+            act_id: String,
+            book_id: String,
+            title: &'a str,
+            channel: MeetingChannel,
+            meeting_date: Option<time::Date>,
+            place: Option<&'a str>,
+            attendance_reference: Option<&'a str>,
+            deliberations: &'a str,
+            telematic_evidence: Option<&'a str>,
+            attachments: &'a [Attachment],
+            signatories: &'a [SignatorySlot],
+            retifies: Option<String>,
+            meeting_time: Option<time::Time>,
+            mesa: &'a Mesa,
+            agenda: &'a [AgendaItem],
+            referenced_documents: &'a [DocumentReference],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            written_resolution_evidence: Option<&'a WrittenResolutionEvidence>,
+            deliberation_items: &'a [DeliberationItem],
+            members_present: Option<u32>,
+            members_represented: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            convening: Option<&'a Convening>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            attendees: Option<&'a [Attendee]>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            page_count: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            superseded_signing_snapshots: Option<&'a [SupersededSigningSnapshot]>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            convening_waiver: Option<&'a ConveningWaiver>,
+        }
+        let old = OldActPayload {
+            act_id: act.id.to_string(),
+            book_id: act.book_id.to_string(),
+            title: &act.title,
+            channel: act.channel,
+            meeting_date: act.meeting_date,
+            place: act.place.as_deref(),
+            attendance_reference: act.attendance_reference.as_deref(),
+            deliberations: &act.deliberations,
+            telematic_evidence: act.telematic_evidence.as_deref(),
+            attachments: &act.attachments,
+            signatories: &act.signatories,
+            retifies: act.retifies.map(|id| id.to_string()),
+            meeting_time: act.meeting_time,
+            mesa: &act.mesa,
+            agenda: &act.agenda,
+            referenced_documents: &act.referenced_documents,
+            written_resolution_evidence: act.written_resolution_evidence.as_ref(),
+            deliberation_items: &act.deliberation_items,
+            members_present: act.members_present,
+            members_represented: act.members_represented,
+            convening: act.convening.as_ref(),
+            attendees: (!act.attendees.is_empty()).then_some(act.attendees.as_slice()),
+            page_count: act.page_count,
+            superseded_signing_snapshots: (!act.superseded_signing_snapshots.is_empty())
+                .then_some(act.superseded_signing_snapshots.as_slice()),
+            convening_waiver: act.convening_waiver.as_ref(),
+        };
+
+        let new_bytes = serde_json::to_vec(&ActPayload::of(&act)).unwrap();
+        let old_bytes = serde_json::to_vec(&old).unwrap();
+
+        assert_eq!(new_bytes, old_bytes);
+        let json = String::from_utf8(new_bytes.clone()).unwrap();
+        assert!(
+            !json.contains("body"),
+            "an absent markup body must not serialize"
+        );
+        assert_eq!(
+            Sha256::digest(&new_bytes).as_slice(),
+            Sha256::digest(&old_bytes).as_slice(),
+        );
+    }
+
+    #[test]
+    fn the_markup_body_binds_source_compiler_and_compiled_output_into_the_seal() {
+        // The companion proof: the body is not silently dropped, and — the point of the design —
+        // all three of its facts bind. `compiled_digest` in particular means a later compiler
+        // producing different blocks from the same source is *detectable*, because the seal
+        // covers what the markup compiled to and not merely the markup.
+        use crate::act::{ActBody, BodyFormat};
+
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let base = ready_act(&book);
+        let bytes = |a: &Act| serde_json::to_vec(&ActPayload::of(a)).unwrap();
+
+        let authored = ActBody {
+            format: BodyFormat::Markdown,
+            source: "Foi aprovado o **relatório de gestão**.".to_owned(),
+            compiler_id: "md-block/v1".to_owned(),
+            compiled_digest: "aa".repeat(32),
+        };
+        let mut with_body = base.clone();
+        with_body.body = Some(authored.clone());
+        assert_ne!(bytes(&base), bytes(&with_body), "a markup body must bind");
+
+        // Each fact binds independently, so none of them can be swapped under a frozen digest.
+        for (label, mutated) in [
+            (
+                "the authored source",
+                ActBody {
+                    source: "Foi rejeitado o **relatório de gestão**.".to_owned(),
+                    ..authored.clone()
+                },
+            ),
+            (
+                "the compiler version",
+                ActBody {
+                    compiler_id: "md-block/v2".to_owned(),
+                    ..authored.clone()
+                },
+            ),
+            (
+                "what the source compiled to",
+                ActBody {
+                    compiled_digest: "bb".repeat(32),
+                    ..authored.clone()
+                },
+            ),
+        ] {
+            let mut variant = base.clone();
+            variant.body = Some(mutated);
+            assert_ne!(
+                bytes(&with_body),
+                bytes(&variant),
+                "{label} must bind into the seal"
+            );
+        }
+
+        // And the hard prohibition, asserted rather than assumed: the plain-text `deliberations`
+        // field is never reinterpreted as markup. An act whose legacy prose contains markup
+        // characters carries them verbatim into the preimage, with no body implied.
+        let mut legacy = base.clone();
+        legacy.deliberations = "Aprovado o **relatório** com 1. ressalva.".to_owned();
+        let json = String::from_utf8(bytes(&legacy)).unwrap();
+        assert!(
+            json.contains("Aprovado o **relatório** com 1. ressalva."),
+            "legacy prose must serialize verbatim, not as markup: {json}"
+        );
+        assert!(
+            legacy.body.is_none(),
+            "plain-text deliberations must never imply a body"
+        );
+    }
+
     /// The seal preimage of an act carrying **none** of the optional append-only fields, written
     /// out as a literal.
     ///
@@ -1276,8 +1458,8 @@ mod tests {
     /// sides together and is invisible. Only a literal catches that.
     ///
     /// The literal is the shape every act sealed before `convening` / `attendees` / `page_count` /
-    /// `superseded_signing_snapshots` / `convening_waiver` existed was digested from, and those
-    /// acts' digests are frozen in their books' hash chains.
+    /// `superseded_signing_snapshots` / `convening_waiver` / `body` existed was digested from, and
+    /// those acts' digests are frozen in their books' hash chains.
     ///
     /// **A failure here is a chain-compatibility break, not a stale fixture.** Re-derive it only
     /// after deciding the preimage change is intended and that every already-sealed act's digest
@@ -1303,6 +1485,7 @@ mod tests {
         assert!(act.page_count.is_none());
         assert!(act.superseded_signing_snapshots.is_empty());
         assert!(act.convening_waiver.is_none());
+        assert!(act.body.is_none());
 
         let actual = serde_json::to_string(&ActPayload::of(&act)).unwrap();
         assert_eq!(
@@ -1326,6 +1509,7 @@ mod tests {
             "superseded_signing_snapshots",
             "convening_waiver",
             "written_resolution_evidence",
+            "body",
         ] {
             assert!(
                 !json.contains(absent),
