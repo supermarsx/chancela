@@ -18,7 +18,9 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
+  Skeleton,
+  SkeletonDeflist,
+  SkeletonRegion,
   useToast,
 } from '../../ui';
 import { TitleBar } from '../../desktop/TitleBar';
@@ -260,7 +262,17 @@ export function ExternalSignerInvitePage() {
             </InlineWarning>
           ) : null}
 
-          {load.kind === 'loading' ? <Loading label={t('externalInvite.loading')} /> : null}
+          {/* The envelope arrives as a titled panel over a deflist of act fields. */}
+          {load.kind === 'loading' ? (
+            <SkeletonRegion className="panel" label={t('externalInvite.loading')}>
+              <header className="panel__head">
+                <Skeleton height="1.4rem" width="45%" />
+              </header>
+              <div className="panel__body stack--tight">
+                <SkeletonDeflist rows={5} className="deflist external-signature-deflist" />
+              </div>
+            </SkeletonRegion>
+          ) : null}
           {load.kind === 'error' ? unavailableMessage(load.error, t) : null}
 
           {envelope ? (

@@ -188,6 +188,49 @@ describe('ImportFromRegistryForm', () => {
     ).toBe(false);
   });
 
+  it('reveals and re-masks the código de acesso from the eye toggle', () => {
+    renderWithProviders(<ImportFromRegistryForm />, ['/entidades/importar']);
+
+    const codeInput = screen.getByLabelText('Código da certidão permanente') as HTMLInputElement;
+    fireEvent.change(codeInput, { target: { value: FULL_CODE } });
+
+    // Masked is the resting state: the toggle is un-pressed and offers to show.
+    const reveal = screen.getByRole('button', { name: 'Mostrar código' });
+    expect(reveal.getAttribute('aria-pressed')).toBe('false');
+    expect(codeInput.type).toBe('password');
+    const maskedIcon = reveal.innerHTML;
+
+    // Revealing flips the type, the pressed state and the accessible name together —
+    // the name change is what tells a screen-reader user the value is now exposed.
+    fireEvent.click(reveal);
+    expect(codeInput.type).toBe('text');
+    expect(codeInput.value).toBe(FULL_CODE);
+    const hide = screen.getByRole('button', { name: 'Ocultar código' });
+    expect(hide.getAttribute('aria-pressed')).toBe('true');
+    // The two states must be visually distinguishable, not the same glyph twice.
+    expect(hide.innerHTML).not.toBe(maskedIcon);
+
+    // And it is reversible.
+    fireEvent.click(hide);
+    expect(codeInput.type).toBe('password');
+    expect(screen.getByRole('button', { name: 'Mostrar código' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+  });
+
+  it('does not carry the reveal state across a remount', () => {
+    const first = renderWithProviders(<ImportFromRegistryForm />, ['/entidades/importar']);
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar código' }));
+    expect(screen.getByRole('button', { name: 'Ocultar código' })).toBeTruthy();
+    first.unmount();
+
+    // Remounting is the navigate-away-and-back case: the code must be masked again.
+    renderWithProviders(<ImportFromRegistryForm />, ['/entidades/importar']);
+    const codeInput = screen.getByLabelText('Código da certidão permanente') as HTMLInputElement;
+    expect(codeInput.type).toBe('password');
+    expect(screen.getByRole('button', { name: 'Mostrar código' })).toBeTruthy();
+  });
+
   it('imports by code and navigates to the newly created entity', async () => {
     const report: RegistryImportReport = {
       entity: ENTITY,

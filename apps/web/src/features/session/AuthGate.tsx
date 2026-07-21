@@ -18,7 +18,7 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useSession, useSessionRoster } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Button, Loading } from '../../ui';
+import { Button, Skeleton } from '../../ui';
 import { SignIn } from './SignIn';
 
 export function AuthGate({ children }: { children: ReactNode }) {
@@ -32,12 +32,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (session.data?.user) return <>{children}</>;
 
   // Still resolving who we are — hold a quiet boot screen rather than flashing sign-in.
-  // `region={false}`: GateBoot is already the `role="status"` element, and nesting a
-  // second live region would announce the same wait twice.
+  // Even at boot the shape is known: this panel resolves into either the retry message or
+  // the sign-in card, both a short centred stack. So it skeletons that stack. `GateBoot` is
+  // itself the `role="status"` element and the announcement rides in it as visually-hidden
+  // text — no visible caption, and no silence for a screen reader either.
   if (session.isLoading || roster.isLoading) {
     return (
-      <GateBoot>
-        <Loading region={false} />
+      <GateBoot busy>
+        <span className="sr-only">{t('common.loading')}</span>
+        <Skeleton height="1.4rem" width="11rem" />
+        <Skeleton height="0.85rem" width="16rem" />
+        <Skeleton height="2.4rem" width="13rem" />
       </GateBoot>
     );
   }
@@ -62,10 +67,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
   return <SignIn />;
 }
 
-/** A minimal, centred boot panel used while the gate resolves or when it needs a retry. */
-function GateBoot({ children }: { children: ReactNode }) {
+/**
+ * A minimal, centred boot panel used while the gate resolves or when it needs a retry.
+ *
+ * `busy` marks the subtree as in-flux; it is deliberately NOT set on the retry branch,
+ * which is a settled error, not a wait. A failed gate must read as an error, never as a
+ * permanent shimmer.
+ */
+function GateBoot({ children, busy = false }: { children: ReactNode; busy?: boolean }) {
   return (
-    <div className="gate-boot" role="status">
+    <div className="gate-boot" role="status" aria-busy={busy || undefined}>
       <div className="gate-boot__inner">{children}</div>
     </div>
   );

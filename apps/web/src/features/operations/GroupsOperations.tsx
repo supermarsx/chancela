@@ -34,6 +34,10 @@ import {
   Icon,
   InlineWarning,
   Input,
+  SkeletonChips,
+  SkeletonDeflist,
+  SkeletonRegion,
+  SkeletonTable,
   Table,
   TextArea,
 } from '../../ui';
@@ -160,7 +164,14 @@ function CreateGroupForm({ tenantId }: { tenantId: string }) {
 function GroupDashboard({ tenantId, groupId }: { tenantId: string; groupId: string }) {
   const t = useT();
   const dashboard = useGroupDashboard(tenantId, groupId);
-  if (dashboard.isLoading) return <p className="muted">{t('common.loading')}</p>;
+  // Four metrics — members, books, acts, overdue — on the real `.operations-metrics` grid,
+  // so the strip holds its width and the numbers drop in without reflowing the card.
+  if (dashboard.isLoading)
+    return (
+      <SkeletonRegion className="stack--tight">
+        <SkeletonDeflist rows={4} className="operations-metrics" />
+      </SkeletonRegion>
+    );
   if (dashboard.error) return <ErrorNote error={dashboard.error} />;
   if (!dashboard.data) return null;
 
@@ -258,7 +269,12 @@ function GroupMembers({
       </form>
       {assign.error ? <ErrorNote error={assign.error} /> : null}
       {remove.error ? <ErrorNote error={remove.error} /> : null}
-      {dashboard.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+      {/* Three columns: entity, NIPC, actions. */}
+      {dashboard.isLoading ? (
+        <SkeletonRegion>
+          <SkeletonTable cols={3} />
+        </SkeletonRegion>
+      ) : null}
       {dashboard.error ? <ErrorNote error={dashboard.error} /> : null}
       {dashboard.data?.member_entities.length === 0 ? (
         <EmptyState title={t('operations.groups.members.empty')} />
@@ -418,7 +434,12 @@ function LibraryDetail({
         <h4 id="operations-library-history-title">
           {t('operations.groups.libraries.history.title')}
         </h4>
-        {history.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+        {/* Four columns: revision, templates, actor, created. */}
+        {history.isLoading ? (
+          <SkeletonRegion>
+            <SkeletonTable cols={4} />
+          </SkeletonRegion>
+        ) : null}
         {history.error ? <ErrorNote error={history.error} /> : null}
         {history.data?.length === 0 ? (
           <EmptyState title={t('operations.groups.libraries.history.empty')} />
@@ -539,7 +560,12 @@ function GroupLibraries({ tenantId, groupId }: { tenantId: string; groupId: stri
         </div>
       </form>
 
-      {libraries.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+      {/* What loads here is a row of selector buttons, not a table — pills, not rows. */}
+      {libraries.isLoading ? (
+        <SkeletonRegion>
+          <SkeletonChips count={3} />
+        </SkeletonRegion>
+      ) : null}
       {libraries.error ? <ErrorNote error={libraries.error} /> : null}
       {libraries.data?.length === 0 ? (
         <EmptyState title={t('operations.groups.libraries.empty')} />
@@ -685,7 +711,12 @@ export function GroupsOperations({ tenantId, entities }: GroupsOperationsProps) 
       </InlineWarning>
       <CreateGroupForm tenantId={tenantId} />
       <Card title={t('operations.groups.list.title')}>
-        {groups.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+        {/* Four columns: name, members, libraries, actions. */}
+        {groups.isLoading ? (
+          <SkeletonRegion>
+            <SkeletonTable cols={4} />
+          </SkeletonRegion>
+        ) : null}
         {groups.error ? <ErrorNote error={groups.error} /> : null}
         {groups.data?.length === 0 ? <EmptyState title={t('operations.groups.empty')} /> : null}
         {groups.data && groups.data.length > 0 ? (

@@ -32,7 +32,7 @@ export function NewBookPage() {
         <OpenBookForm entityId={fixedEntity} />
       ) : entities.isLoading ? (
         // Mirror the open-book form's shape while the entity list loads (CONVENTIONS: a
-        // content-shaped surface uses Skeleton*, not a bare <Loading>).
+        // content-shaped surface reserves its real box).
         <Card title={t('books.openBook')}>
           <div className="form">
             <Skeleton height="2.4rem" />

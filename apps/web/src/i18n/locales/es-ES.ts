@@ -9,13 +9,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsEsES } from '../ledgerEventLabels';
+import { ledgerScopeLabelsEsES } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsEsES } from '../dashboardSourceLabels';
+import { roleNameLabelsEsES } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const esES: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsEsES,
+  ...ledgerScopeLabelsEsES,
   ...dashboardSourceLabelsEsES,
+  ...roleNameLabelsEsES,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'No tiene permiso para esta acción',
@@ -1596,6 +1600,23 @@ export const esES: Catalog = {
   'users.action.edit': 'Editar',
   'users.new.crumb': 'Nuevo',
   'users.new.title': 'Nuevo usuario',
+  'users.edit.title': 'Editar usuario',
+  'users.filters.aria': 'Buscar y filtrar usuarios',
+  'users.filters.search.label': 'Buscar',
+  'users.filters.search.placeholder': 'Nombre de usuario, nombre o correo electrónico',
+  'users.filters.status.label': 'Estado',
+  'users.filters.status.all': 'Todos los estados',
+  'users.filters.access.label': 'Acceso',
+  'users.filters.access.all': 'Cualquier acceso',
+  'users.filters.access.key': 'Con clave de auditoría',
+  'users.filters.access.noKey': 'Sin clave de auditoría',
+  'users.filters.access.noPassword': 'Sin contraseña',
+  'users.filters.access.recovery': 'Con frase de recuperación',
+  'users.filters.clear.aria': 'Limpiar filtros de usuarios',
+  'users.filters.count': '{shown} de {total}',
+  'users.filters.count.aria': 'Mostrando {shown} de {total} usuarios',
+  'users.filters.empty.title': 'Sin resultados',
+  'users.filters.empty.body': 'Cambie la búsqueda o los filtros para volver a ver usuarios.',
   'users.edit.identityCard': 'Identidad',
   'users.edit.usernameHint':
     'El nombre de usuario es el identificador de auditoría y no se puede cambiar.',
@@ -1753,7 +1774,7 @@ export const esES: Catalog = {
     'Use solo cuando un servicio necesite un nivel distinto del de su área.',
   'settings.platform.logging.override.none': 'Sin anulación',
   'settings.platform.logging.override.app': 'Aplicación',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'Servidor de la API',
   'settings.platform.logging.override.mcp_stdio': 'estudio mcp',
   'settings.platform.logLevel.trace': 'Rastro',
   'settings.platform.logLevel.debug': 'Depurar',
@@ -1802,10 +1823,74 @@ export const esES: Catalog = {
   'settings.platform.subnav.aria': 'Secciones de operaciones',
   'settings.platform.tab.services': 'Servicios',
   'settings.platform.tab.services.desc':
-    'Control del estado deseado de los servidores API y MCP, con resultados honestos del backend y una auditoría de operaciones.',
+    'Control del estado deseado del servidor API, con resultados honestos del backend y una auditoría de operaciones.',
   'settings.platform.tab.logs': 'Registros',
   'settings.platform.tab.logs.desc':
     'Configuración de los niveles de registro y cola estructurada de registros de la API (solo lectura).',
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Servidor',
+  'settings.api.subnav.aria': 'Áreas de la API',
+  'settings.api.cardTitle': 'Servidor de la API',
+  'settings.api.intro':
+    'El estado deseado, los registros y la configuración de arranque del servidor de la API en un solo sitio. Las claves API están en el panel contiguo.',
+  'settings.api.logging.title': 'Registros de la API',
+  'settings.api.logging.hint':
+    'Estos dos campos escriben en el mismo documento de configuración que los demás niveles de registro.',
+  'settings.api.env.hint':
+    'Se resuelven desde el entorno del proceso al arrancar el servidor. No son editables aquí ni mediante ningún endpoint; cambiarlas exige reiniciar el servidor.',
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    'El servidor habla HTTP simple. El TLS se termina en el proxy inverso situado delante, y la cabecera HSTS de abajo solo surte efecto en esa configuración.',
+  'settings.api.env.addr': 'Dirección host:puerto en la que escucha el servidor.',
+  'settings.api.env.cors':
+    'Orígenes exactos autorizados a llamar a la API entre orígenes. Vacío significa solo el mismo origen.',
+  'settings.api.env.rateLimit':
+    'Limitador de peticiones por IP. Activado por defecto en el servidor.',
+  'settings.api.env.ratePerSecond': 'Ritmo sostenido de peticiones por segundo y por IP.',
+  'settings.api.env.rateBurst': 'Capacidad de ráfaga por IP.',
+  'settings.api.env.trustForwarded':
+    'Confiar en X-Forwarded-For para identificar al cliente. Solo tras un proxy inverso de confianza.',
+  'settings.api.env.hstsMaxAge': 'Duración, en segundos, de la política HSTS anunciada.',
+  'settings.api.env.hstsSubdomains': 'Extender la política HSTS a los subdominios.',
+  'settings.api.env.hstsPreload':
+    'Anunciar la directiva preload. Actívela solo tras enviar el dominio.',
+  'settings.api.env.sessionLifetime':
+    'Límite absoluto de vida de la sesión, en segundos. Cero o negativo desactiva el límite.',
+  'settings.api.related.title': 'Configuración relacionada',
+  'settings.api.related.egress':
+    'Esa es la lista de salida de los conectores, no la superficie de entrada de la API: acota adónde puede enviar bytes un conector. Sigue en Plataforma.',
+  'settings.api.related.logTail':
+    'La cola de registros abarca la aplicación, la API y el MCP, por lo que sigue en Plataforma › Registros.',
+  'settings.mcp.cardTitle': 'Servidor MCP',
+  'settings.mcp.intro':
+    'Toda la configuración específica del MCP en un solo sitio: el estado deseado del proceso stdio, los niveles de registro y las variables de entorno leídas al arrancar.',
+  'settings.platform.services.hub':
+    'Cada servicio tiene su propia pestaña, con su estado deseado, sus niveles de registro y su configuración de arranque.',
+  'settings.mcp.logging.title': 'Registros del MCP',
+  'settings.mcp.logging.hint':
+    'Estos dos campos escriben en el mismo documento de configuración que los demás niveles de registro.',
+  'settings.env.title': 'Configuración de arranque (entorno)',
+  'settings.mcp.env.hint':
+    'Se leen del entorno del proceso cuando arranca el servidor MCP. No son editables aquí ni mediante ningún endpoint; cambiarlas exige relanzar el proceso. El valor de la clave API nunca llega a esta interfaz.',
+  'settings.env.col.variable': 'Variable',
+  'settings.env.col.meaning': 'Significado',
+  'settings.env.col.default': 'Valor por defecto',
+  'settings.mcp.env.enabled': 'Interruptor principal del servidor MCP.',
+  'settings.mcp.env.aiGate':
+    'Espejo de la puerta IA/MCP del inquilino. El proceso solo sirve con ambos activos.',
+  'settings.mcp.env.transport': 'Transporte de conexión. Esta versión solo sirve stdio.',
+  'settings.mcp.env.baseUrl': 'URL base de la API de integración a la que llaman las herramientas.',
+  'settings.mcp.env.basePath': 'Ruta base versionada donde está montada la API.',
+  'settings.mcp.env.apiKey':
+    'Clave API con la que se autentica el servidor MCP. Obligatoria cuando está activo.',
+  'settings.mcp.env.tools': 'Herramientas expuestas: todas, o una lista separada por comas.',
+  'settings.mcp.env.bind':
+    'Dirección de escucha, reservada para un transporte remoto. Sin efecto en esta versión.',
+  'settings.mcp.related.title': 'Configuración relacionada',
+  'settings.mcp.related.gate':
+    'La puerta IA/MCP del inquilino gobierna también las funciones de IA, por lo que se sigue editando en Gestión. Sin ella el MCP queda inactivo.',
+  'settings.mcp.related.apiKeys':
+    'Las claves API no son exclusivas del MCP: autentican a todos los clientes de integración. Mantienen su propia pestaña.',
   'settings.platform.serviceDetails': 'Detalles de control y limitaciones',
   'settings.platform.help.services':
     'Estas acciones registran el estado deseado del servicio; la interfaz no presupone control directo del proceso (por ejemplo, el reinicio automático de la API o el arranque stdio del MCP).',
@@ -2138,6 +2223,10 @@ export const esES: Catalog = {
   'settings.about.ledger.valid': 'Cadena íntegra · {count} eventos',
   'settings.about.ledger.compromised': 'Cadena comprometida',
   'settings.about.schemaVersion': 'Versión del esquema de configuración',
+  'settings.about.interfaceLocale': 'Idioma de la interfaz',
+  'settings.about.tableCaption': 'Información de la instancia',
+  'settings.about.column.item': 'Información',
+  'settings.about.column.value': 'Valor',
   'settings.save': 'Guardar configuración',
   'settings.saved': 'Configuración guardada.',
   'toast.settings.saved': 'Configuración guardada.',
@@ -2429,6 +2518,7 @@ export const esES: Catalog = {
   'entities.print.nipcUnvalidated': '(no validado)',
   'settings.subnav.aria': 'Secciones de configuración',
   'settings.subnav.platform': 'Plataforma',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Áreas de operaciones',
   'settings.subnav.signing.aria': 'Áreas de firma',
 
@@ -2537,6 +2627,8 @@ export const esES: Catalog = {
   'users.key.rotate': 'Rotar clave',
   'users.key.remove': 'Quitar clave',
   'users.key.requiresSecret': 'Defina una contraseña antes de generar una clave de auditoría.',
+  'users.key.rotateNote':
+    'Al rotar la clave se genera un nuevo par de claves para las atestaciones futuras. Las atestaciones ya producidas siguen verificándose: se conserva la parte pública de la clave anterior, y esa parte no permite firmar.',
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'Está editando las credenciales de otro usuario. Cada cambio requiere la contraseña actual del usuario o una frase de recuperación válida.',
@@ -2664,6 +2756,33 @@ export const esES: Catalog = {
   'templates.channels.none': 'Sin canal específico',
   'templates.table.source': 'Fuente',
   'templates.table.actions': 'Acciones',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Columnas',
+  'templates.columns.hint':
+    'Elija qué columnas muestra la tabla. La fuente legal siempre aparece completa en la página de la plantilla.',
+  'templates.detail.open': 'Abrir plantilla',
+  'templates.detail.subnav.aria': 'Secciones de la plantilla',
+  'templates.detail.section.overview': 'Identificación',
+  'templates.detail.section.placeholders': 'Campos esperados',
+  'templates.detail.version': 'Versión',
+  'templates.detail.notFound.title': 'Plantilla no encontrada',
+  'templates.detail.notFound.body':
+    'En el catálogo no hay ninguna plantilla con este identificador.',
+  'templates.detail.spec.error': 'No se ha podido cargar el contenido de esta plantilla.',
+  'templates.detail.lawSource.empty': 'Esta plantilla no indica ninguna fuente legal.',
+  'templates.detail.blocks.empty': 'Esta plantilla no declara bloques.',
+  'templates.detail.placeholders.intro':
+    'Campos que los bloques de esta plantilla leen del registro del acta.',
+  'templates.detail.placeholders.empty': 'Esta plantilla no lee campos del registro.',
+  'templates.actions.clone': 'Duplicar',
+  'templates.editor.title.fork': 'Duplicar plantilla',
+  'templates.fork.source': 'Plantilla de origen: {id}',
+  'templates.fork.builtin.title': 'Las plantillas incluidas no se editan',
+  'templates.fork.builtin.body':
+    'Una plantilla incluida es de solo lectura, para que un acta ya sellada siga significando exactamente lo mismo. Al editar se crea una copia con un identificador nuevo; esa copia ya se puede modificar libremente.',
+  'templates.fork.limit.title': 'Una copia todavía no genera documentos',
+  'templates.fork.limit.body':
+    'Una copia se puede guardar, editar, exportar y eliminar, pero la generación y el sellado de un acta solo reconocen las plantillas incluidas: al sellar, la solicitud se rechaza. Use la copia para preparar el texto y elija una plantilla incluida para sellar.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Nueva plantilla',
   'templates.actions.edit': 'Editar',
@@ -3311,10 +3430,30 @@ export const esES: Catalog = {
   'data.status.permission.create_file': 'Crear archivo',
   'data.status.permission.write_file': 'Escribir archivo',
   'data.status.permission.delete_probe_file': 'Eliminar archivo de sondeo',
-  'data.status.permission.sqlite_store_open': 'Abrir SQLite',
+  'data.status.permission.sqlite_store_open': 'SQLite abierto',
   'data.status.permission.ok': 'DE ACUERDO',
   'data.status.permission.warn': 'Aviso',
   'data.status.permission.unchecked': 'Sin comprobar',
+  'data.status.permission.durable_store_open': 'Almacenamiento duradero',
+  'data.status.probe.read_dir.ok': 'La carpeta se puede leer.',
+  'data.status.probe.read_dir.failed': 'La carpeta no se puede leer.',
+  'data.status.probe.create_file.ok': 'Se pueden crear archivos en la carpeta.',
+  'data.status.probe.create_file.failed': 'No se pueden crear archivos en la carpeta.',
+  'data.status.probe.write_file.ok': 'Se puede escribir en la carpeta.',
+  'data.status.probe.write_file.failed': 'No se puede escribir en la carpeta.',
+  'data.status.probe.delete_probe_file.ok': 'Se pueden eliminar archivos de la carpeta.',
+  'data.status.probe.delete_probe_file.failed': 'No se pueden eliminar archivos de la carpeta.',
+  'data.status.probe.durable_store_open.ok': 'El almacenamiento duradero está abierto.',
+  'data.status.probe.durable_store_open.failed': 'El almacenamiento duradero no está abierto.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'El almacenamiento duradero no está abierto porque no hay ninguna carpeta de datos configurada.',
+  'data.status.probe.unchecked.noDataDir':
+    'Sin comprobar: no hay ninguna carpeta de datos configurada.',
+  'data.status.probe.unchecked.probeSkipped':
+    'Sin comprobar: no se pudo crear el archivo de prueba.',
+  'data.status.probe.detail': 'Detalle del sistema: {detail}',
+  'data.status.basis.logical_payload': 'carga útil lógica duradera',
+  'data.status.basis.sidecar_logical_payload': 'carga útil lógica sidecar',
   'data.status.usage.title': 'Uso',
   'data.status.usage.total': 'Total',
   'data.status.usage.filesystem': 'Sistema de archivos',
@@ -5590,30 +5729,42 @@ export const esES: Catalog = {
   'unsaved.close.title': '¿Cerrar la aplicación?',
   'unsaved.close.body': 'Hay cambios sin guardar. Si cierra la aplicación ahora, los perderá.',
   'unsaved.close.confirm': 'Cerrar sin guardar',
-  "users.create.identityCard": "Identidad",
-  "users.create.identityLede": "Quién es la persona. El nombre de usuario la identifica en el registro de auditoría y no puede cambiarse después.",
-  "users.create.emailHint": "Necesario para enviar el mensaje de bienvenida.",
-  "users.create.accessCard": "Acceso",
-  "users.create.accessLede": "La función y el ámbito en que se aplica, concedidos en la misma solicitud que crea la cuenta.",
-  "users.create.scope.label": "Ámbito",
-  "users.create.scope.hint": "Dónde se aplica la función. Global abarca toda la instancia.",
-  "users.create.role.label": "Función",
-  "users.create.role.hint": "Solo se ofrecen las funciones cuya autoridad ya posee en este ámbito.",
-  "users.create.role.default": "Predeterminado del servidor (Gestor, global)",
-  "users.create.role.optionBlocked": "{role} — por encima de su autoridad",
-  "users.create.role.carries": "Esta función confiere",
-  "users.create.role.aboveCeiling": "No puede conceder {role}: incluye permisos que no posee en este ámbito ({permissions}).",
-  "users.create.role.defaultNote": "Sin función elegida, la cuenta toma el valor predeterminado del servidor: Gestor, en ámbito global.",
-  "users.create.credentialsCard": "Credenciales",
-  "users.create.credentialsLede": "Defina la contraseña inicial y comuníquela por un medio seguro. Nunca se envía por correo electrónico.",
-  "users.create.notifyCard": "Notificación",
-  "users.create.notifyLede": "Aviso opcional de que la cuenta existe. El mensaje no incluye contraseña, código ni enlace de acceso.",
-  "users.create.welcome.label": "Enviar un mensaje de bienvenida a la nueva cuenta",
-  "users.create.welcome.noSmtp": "El envío de correo no está configurado, por lo que el mensaje no puede enviarse.",
-  "users.create.welcome.noAddress": "Introduzca una dirección de correo arriba para poder enviar el mensaje.",
-  "users.create.welcome.settingsLink": "Configurar el correo",
-  "users.language.label": "Idioma",
-  "users.language.auto": "Detectar automáticamente",
-  "users.language.hint.auto": "Sigue el idioma del dispositivo desde el que se inicia sesión. Los mensajes enviados por el servidor usan el idioma predeterminado de la plataforma.",
-  "users.language.hint.fixed": "Fija el idioma de la interfaz y de los mensajes enviados a esta cuenta.",
+  'users.create.identityCard': 'Identidad',
+  'users.create.identityLede':
+    'Quién es la persona. El nombre de usuario la identifica en el registro de auditoría y no puede cambiarse después.',
+  'users.create.emailHint': 'Necesario para enviar el mensaje de bienvenida.',
+  'users.create.accessCard': 'Acceso',
+  'users.create.accessLede':
+    'La función y el ámbito en que se aplica, concedidos en la misma solicitud que crea la cuenta.',
+  'users.create.scope.label': 'Ámbito',
+  'users.create.scope.hint': 'Dónde se aplica la función. Global abarca toda la instancia.',
+  'users.create.role.label': 'Función',
+  'users.create.role.hint': 'Solo se ofrecen las funciones cuya autoridad ya posee en este ámbito.',
+  'users.create.role.default': 'Predeterminado del servidor (Gestor, global)',
+  'users.create.role.optionBlocked': '{role} — por encima de su autoridad',
+  'users.create.role.carries': 'Esta función confiere',
+  'users.create.role.aboveCeiling':
+    'No puede conceder {role}: incluye permisos que no posee en este ámbito ({permissions}).',
+  'users.create.role.defaultNote':
+    'Sin función elegida, la cuenta toma el valor predeterminado del servidor: Gestor, en ámbito global.',
+  'users.create.credentialsCard': 'Credenciales',
+  'users.create.credentialsLede':
+    'Defina la contraseña inicial y comuníquela por un medio seguro. Nunca se envía por correo electrónico.',
+  'users.create.keyNote':
+    'Se genera una clave de auditoría a partir de esta contraseña, de modo que las acciones del usuario quedan atestiguadas desde su primer inicio de sesión. Quien conozca esta contraseña inicial puede producir atestaciones en nombre de este usuario: pídale que la cambie en el primer inicio de sesión.',
+  'users.create.notifyCard': 'Notificación',
+  'users.create.notifyLede':
+    'Aviso opcional de que la cuenta existe. El mensaje no incluye contraseña, código ni enlace de acceso.',
+  'users.create.welcome.label': 'Enviar un mensaje de bienvenida a la nueva cuenta',
+  'users.create.welcome.noSmtp':
+    'El envío de correo no está configurado, por lo que el mensaje no puede enviarse.',
+  'users.create.welcome.noAddress':
+    'Introduzca una dirección de correo arriba para poder enviar el mensaje.',
+  'users.create.welcome.settingsLink': 'Configurar el correo',
+  'users.language.label': 'Idioma',
+  'users.language.auto': 'Detectar automáticamente',
+  'users.language.hint.auto':
+    'Sigue el idioma del dispositivo desde el que se inicia sesión. Los mensajes enviados por el servidor usan el idioma predeterminado de la plataforma.',
+  'users.language.hint.fixed':
+    'Fija el idioma de la interfaz y de los mensajes enviados a esta cuenta.',
 };

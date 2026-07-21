@@ -195,7 +195,16 @@ function rowNames(): string[] {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  // The column set is persisted per device; a test that toggles it must not leak into the next.
+  window.localStorage.clear();
 });
+
+/** Open the column-visibility disclosure and return it. */
+function openColumns(): HTMLDetailsElement {
+  const columns = document.querySelector('details.templates-columns') as HTMLDetailsElement;
+  fireEvent.click(columns.querySelector('summary') as HTMLElement);
+  return columns;
+}
 
 describe('TemplatesCatalogPage', () => {
   it('leads each row with the document name and keeps the versioned id searchable', async () => {
@@ -222,7 +231,7 @@ describe('TemplatesCatalogPage', () => {
     expect(screen.getByText('Certidão de ata')).toBeTruthy();
   });
 
-  it('renders the catalog as a named, sortable table without losing a column', async () => {
+  it('renders the catalog as a named, sortable table over the operator column set', async () => {
     vi.stubGlobal(
       'fetch',
       fetchTable([{ match: '/v1/templates', body: [...CATALOG, USER_TEMPLATE] }]),
@@ -232,7 +241,8 @@ describe('TemplatesCatalogPage', () => {
 
     const table = await screen.findByRole('table', { name: 'Catálogo de minutas' });
     const headers = within(table).getAllByRole('columnheader');
-    expect(headers.map((header) => header.getAttribute('scope'))).toEqual(Array(9).fill('col'));
+    // Eight by default: "Fonte legal" is hidden until the operator asks for it.
+    expect(headers.map((header) => header.getAttribute('scope'))).toEqual(Array(8).fill('col'));
     expect(headers.map((header) => header.textContent?.trim())).toEqual([
       'Modelo',
       'Família',
@@ -240,7 +250,6 @@ describe('TemplatesCatalogPage', () => {
       'Canais',
       'Assinatura',
       'Pacote de regras',
-      'Fonte legal',
       'Origem',
       'Ações',
     ]);
@@ -272,6 +281,39 @@ describe('TemplatesCatalogPage', () => {
     expect(nameHeader.getAttribute('aria-sort')).toBe('none');
     expect(familyHeader.getAttribute('aria-sort')).toBe('ascending');
     expect(rowNames()[0]).toBe('Convocatória — Assembleia Geral');
+
+    // Hiding the sorted column releases the sort rather than leaving the rows ordered by
+    // something the reader can no longer see.
+    const columns = openColumns();
+    fireEvent.click(within(columns).getByLabelText('Família'));
+    const afterHide = within(
+      screen.getByRole('table', { name: 'Catálogo de minutas' }),
+    ).getAllByRole('columnheader');
+    expect(afterHide.map((header) => header.textContent?.trim())).not.toContain('Família');
+    expect(afterHide[0].getAttribute('aria-sort')).toBe('none');
+  });
+
+  it('hides the legal source by default, restores it on demand, and remembers the choice', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
+
+    const first = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    await screen.findByText('csc-ata-ag/v1');
+    expect(screen.queryByRole('columnheader', { name: 'Fonte legal' })).toBeNull();
+    // Hidden from the table, never deleted: the value has a home on the template's own page.
+    expect(screen.queryByText('CC arts. 173.º e 175.º')).toBeNull();
+
+    const columns = openColumns();
+    const toggle = within(columns).getByLabelText('Fonte legal') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole('columnheader', { name: 'Fonte legal' })).toBeTruthy();
+    expect(screen.getByText('CC arts. 173.º e 175.º')).toBeTruthy();
+
+    // The choice is per device, so a fresh mount reads it back rather than resetting.
+    first.unmount();
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    expect(await screen.findByRole('columnheader', { name: 'Fonte legal' })).toBeTruthy();
   });
 
   it('shows the table skeleton while the catalog loads', async () => {
@@ -407,7 +449,7 @@ describe('TemplatesCatalogPage', () => {
     expect(screen.getByText('assoc-convocatoria-ga/en')).toBeTruthy();
     expect(screen.queryByText('fundacao-reuniao/v1')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Pacote de regras'), {
+    fireEvent.change(within(advanced).getByLabelText('Pacote de regras'), {
       target: { value: 'assoc-cc/v1' },
     });
     expect(screen.getByText('2 de 3 modelos')).toBeTruthy();
@@ -493,7 +535,11 @@ describe('TemplatesCatalogPage', () => {
 
     renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
 
-    const associationId = await screen.findByText('assoc-convocatoria-ga/v1');
+    await screen.findByText('assoc-convocatoria-ga/v1');
+    // The column is off by default, so this test asks for it before reading its cells.
+    fireEvent.click(within(openColumns()).getByLabelText('Fonte legal'));
+
+    const associationId = screen.getByText('assoc-convocatoria-ga/v1');
     const associationRow = associationId.closest('tr');
     expect(associationRow).toBeTruthy();
     // The "Fonte legal" label is now the column header the cell answers to.
@@ -538,8 +584,135 @@ describe('TemplatesCatalogPage', () => {
 
     const builtinRow = screen.getByText('csc-ata-ag/v1').closest('tr') as HTMLElement;
     expect(within(builtinRow).getByText('Incluído (só leitura)')).toBeTruthy();
-    expect(within(builtinRow).queryByRole('button', { name: 'Editar' })).toBeNull();
+    // A built-in is still never DELETED or exported from the row, but it is no longer a dead
+    // end: "Editar" and "Duplicar" both lead to a fork (see the fork test below).
+    expect(within(builtinRow).getByRole('button', { name: 'Editar' })).toBeTruthy();
+    expect(within(builtinRow).getByRole('button', { name: 'Duplicar' })).toBeTruthy();
     expect(within(builtinRow).queryByRole('button', { name: 'Eliminar' })).toBeNull();
+  });
+
+  // --- Editing a built-in forks it, and says what the fork cannot do (t79) --------------
+  //
+  // Built-in specs are frozen because a sealed document records the digest of the spec it was
+  // generated from. The UI must therefore never offer an in-place edit of one — and, because a
+  // `user-…` template is offered by the pickers but refused at the seal, it must say so BEFORE
+  // the operator invests any work in the copy.
+
+  const BUILTIN_SPEC = JSON.stringify({
+    id: 'csc-ata-ag/v1',
+    family: 'CommercialCompany',
+    stage: 'Ata',
+    channels: ['Physical'],
+    signature_policy: 'QualifiedPreferred',
+    rule_pack_id: 'csc-art63/v2',
+    locale: 'pt-PT',
+    blocks: [{ kind: 'Paragraph', template: 'Ata de {{ entity.name }}.' }],
+  });
+
+  function specFetch(catalog: TemplateSummary[]) {
+    return templatesFetch(catalog, (url, method) =>
+      url.includes('/export') && method === 'GET'
+        ? new Response(BUILTIN_SPEC, {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        : null,
+    );
+  }
+
+  it('turns "editar" on a built-in into a fork, and states the limit before any work is done', async () => {
+    const { fn, calls } = specFetch([CATALOG[0]]);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    const builtinRow = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
+    fireEvent.click(within(builtinRow).getByRole('button', { name: 'Editar' }));
+
+    // Not the edit dialog: a duplicate dialog, pre-filled with a free `user-…/v1` id.
+    const dialog = await screen.findByRole('dialog', { name: 'Duplicar modelo' });
+    expect(screen.queryByRole('dialog', { name: 'Editar modelo' })).toBeNull();
+    expect((within(dialog).getByLabelText('Identificador') as HTMLInputElement).value).toBe(
+      'user-csc-ata-ag/v1',
+    );
+    expect(within(dialog).getByText('Modelo de origem: csc-ata-ag/v1')).toBeTruthy();
+    expect(within(dialog).getByText('Os modelos incluídos não se editam')).toBeTruthy();
+    // The honest part: the copy cannot yet seal, and it says so here rather than at the seal.
+    expect(within(dialog).getByText('Uma cópia ainda não produz documentos')).toBeTruthy();
+    expect(
+      within(dialog).getByText(/a geração e o selo de uma ata só reconhecem os modelos incluídos/),
+    ).toBeTruthy();
+
+    // Nothing was written to the built-in: the only request was the read of its spec.
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  it('saves a fork as a new user template rather than replacing its source', async () => {
+    const { fn, calls } = templatesFetch([CATALOG[0]], (url, method) => {
+      if (url.includes('/export') && method === 'GET') {
+        return new Response(BUILTIN_SPEC, {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return url.endsWith('/v1/templates') && method === 'POST'
+        ? jsonResponse(USER_TEMPLATE, 201)
+        : null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    const builtinRow = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
+    fireEvent.click(within(builtinRow).getByRole('button', { name: 'Duplicar' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Duplicar modelo' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'))).toBe(true),
+    );
+    const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'));
+    // A CREATE under the new id, carrying the source's body — never a PUT over the built-in.
+    expect(String(post?.body)).toContain('user-csc-ata-ag/v1');
+    expect(String(post?.body)).toContain('Ata de {{ entity.name }}.');
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+  });
+
+  it('still edits a user template in place, with no fork dialog', async () => {
+    const { fn } = templatesFetch([USER_TEMPLATE], (url, method) =>
+      url.includes('/export') && method === 'GET'
+        ? new Response(JSON.stringify({ ...JSON.parse(BUILTIN_SPEC), id: USER_TEMPLATE.id }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        : null,
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    const userRow = (await screen.findByText('user-encosto-ata/v1')).closest('tr') as HTMLElement;
+    fireEvent.click(within(userRow).getByRole('button', { name: 'Editar' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Editar modelo' });
+    // The id is fixed on an edit, and nothing about forking is claimed.
+    expect((within(dialog).getByLabelText('Identificador') as HTMLInputElement).disabled).toBe(
+      true,
+    );
+    expect(within(dialog).queryByText('Os modelos incluídos não se editam')).toBeNull();
+  });
+
+  it('opens a template on its own page from the catalog row', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    const row = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
+    // The id carries a slash, so the link percent-encodes it or the route cannot match.
+    expect(within(row).getByRole('link', { name: 'Abrir modelo' }).getAttribute('href')).toBe(
+      '/minutas/csc-ata-ag%2Fv1',
+    );
   });
 
   it('creates a user template through the editor form', async () => {
@@ -611,7 +784,11 @@ describe('TemplatesCatalogPage', () => {
     renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
     fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
     const dialog = await screen.findByRole('dialog', { name: 'Importar modelo' });
-    return { dialog, calls, fileInput: dialog.querySelector('input[type="file"]') as HTMLInputElement };
+    return {
+      dialog,
+      calls,
+      fileInput: dialog.querySelector('input[type="file"]') as HTMLInputElement,
+    };
   }
 
   const importCalls = (calls: RecordedRequest[]) =>
@@ -717,7 +894,9 @@ describe('TemplatesCatalogPage', () => {
     fireEvent.change(fileInput, { target: { files: [jsonFile(VALID_JSON)] } });
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Confirmar importação' }));
 
-    expect(await within(dialog).findByText('Já existe um modelo com este identificador.')).toBeTruthy();
+    expect(
+      await within(dialog).findByText('Já existe um modelo com este identificador.'),
+    ).toBeTruthy();
     expect(committed).toBe(true);
     expect(screen.getByRole('dialog', { name: 'Importar modelo' })).toBeTruthy();
     // And the failed verdict disarms Confirm, so a second click cannot retry blindly.

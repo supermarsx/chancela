@@ -61,20 +61,27 @@ function lazyRoute<TModule, TName extends keyof TModule & string>(
   );
 }
 
-const usersSettingsPath = (user?: string, hash = '') => {
-  const query = user ? `?sec=utilizadores&user=${encodeURIComponent(user)}` : '?sec=utilizadores';
-  return `/configuracoes${query}${hash}`;
-};
+const usersSettingsPath = (hash = '') => `/configuracoes?sec=utilizadores${hash}`;
 
-export function LegacyUserRedirect() {
+/**
+ * `/utilizadores/:id/editar` → `/utilizadores/:id` (t89). The edit screen IS the route now, so
+ * this only normalises the older `/editar` spelling; the fragment is carried so a bookmarked
+ * `#acesso` still lands on the access section.
+ */
+export function LegacyUserEditRedirect() {
   const { id } = useParams();
   const { hash } = useLocation();
-  return <Navigate to={usersSettingsPath(id ?? undefined, hash)} replace />;
+  return (
+    <Navigate
+      to={id ? `/utilizadores/${encodeURIComponent(id)}${hash}` : usersSettingsPath(hash)}
+      replace
+    />
+  );
 }
 
 export function LegacyUsersRedirect() {
   const { hash } = useLocation();
-  return <Navigate to={usersSettingsPath(undefined, hash)} replace />;
+  return <Navigate to={usersSettingsPath(hash)} replace />;
 }
 
 export const routeModuleLoaders = {
@@ -84,6 +91,7 @@ export const routeModuleLoaders = {
   entities: () => import('../features/entities/EntitiesPage'),
   newEntity: () => import('../features/entities/NewEntityPage'),
   newUser: () => import('../features/users/NewUserPage'),
+  editUser: () => import('../features/users/EditUserPage'),
   importEntity: () => import('../features/entities/ImportEntityPage'),
   entityDetail: () => import('../features/entities/EntityDetailPage'),
   entityRegistryImport: () => import('../features/entities/EntityRegistryImportPage'),
@@ -94,6 +102,7 @@ export const routeModuleLoaders = {
   closeBook: () => import('../features/books/CloseBookPage'),
   ataEditor: () => import('../features/acts/AtaEditorPage'),
   templates: () => import('../features/templates/TemplatesCatalogPage'),
+  templateDetail: () => import('../features/templates/TemplateDetailPage'),
   ledger: () => import('../features/ledger/LedgerPage'),
   notifications: () => import('../features/notifications/NotificationsPage'),
   operations: () => import('../features/operations/OperationsPage'),
@@ -181,6 +190,12 @@ export const router = createBrowserRouter([
         path: 'minutas',
         element: lazyRoute(routeModuleLoaders.templates, 'TemplatesCatalogPage'),
       },
+      // The id carries a slash (`csc-ata-ag/v1`) and is therefore URL-encoded by the links
+      // that lead here; React Router decodes the param back for `useParams`.
+      {
+        path: 'minutas/:id',
+        element: lazyRoute(routeModuleLoaders.templateDetail, 'TemplateDetailPage'),
+      },
       { path: 'templates', element: <Navigate to="/minutas" replace /> },
       {
         path: 'arquivo',
@@ -217,8 +232,14 @@ export const router = createBrowserRouter([
         path: 'utilizadores/novo',
         element: lazyRoute(routeModuleLoaders.newUser, 'NewUserPage'),
       },
-      { path: 'utilizadores/:id/editar', element: <LegacyUserRedirect /> },
-      { path: 'utilizadores/:id', element: <LegacyUserRedirect /> },
+      // t89: editing is a real screen too, and the ONLY one — the inline panel that used to
+      // render below the roster at `?sec=utilizadores&user=:id` is deleted, and that settings
+      // state now redirects HERE so old bookmarks resolve instead of 404-ing.
+      { path: 'utilizadores/:id/editar', element: <LegacyUserEditRedirect /> },
+      {
+        path: 'utilizadores/:id',
+        element: lazyRoute(routeModuleLoaders.editUser, 'EditUserPage'),
+      },
       {
         path: '*',
         element: lazyRoute(routeModuleLoaders.notFound, 'NotFoundPage'),

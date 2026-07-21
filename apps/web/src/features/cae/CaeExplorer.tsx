@@ -37,7 +37,9 @@ import {
   EmptyState,
   ErrorNote,
   Input,
-  Loading,
+  Skeleton,
+  SkeletonDeflist,
+  SkeletonRegion,
   Tooltip,
   TooltipText,
 } from '../../ui';
@@ -81,7 +83,15 @@ function Subniveis({
     // Secção: divisões aren't prefix-derivable — see the file header note.
     return <p className="muted">{t('cae.explorer.sectionNotDrillable')}</p>;
   }
-  if (children.isLoading) return <Loading label={t('cae.explorer.subniveis.loading')} />;
+  // The subníveis land as `.cae-tree` rows, so the placeholder is that list on that class.
+  if (children.isLoading)
+    return (
+      <SkeletonRegion className="cae-tree" label={t('cae.explorer.subniveis.loading')}>
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} height="2.2rem" />
+        ))}
+      </SkeletonRegion>
+    );
   if (children.error) return <ErrorNote error={children.error} />;
 
   const hits = children.data ?? [];
@@ -135,7 +145,15 @@ function CaeDetail({
   const t = useT();
   const entry = useCae(code, revision);
 
-  if (entry.isLoading) return <Loading label={t('cae.explorer.resolvingCode')} />;
+  // Breadcrumb strip, then the code/designation head, then the detail pairs.
+  if (entry.isLoading)
+    return (
+      <SkeletonRegion className="stack--tight" label={t('cae.explorer.resolvingCode')}>
+        <Skeleton height="1rem" width="45%" />
+        <Skeleton height="1.6rem" width="70%" />
+        <SkeletonDeflist rows={3} />
+      </SkeletonRegion>
+    );
   if (entry.error) {
     const status = entry.error instanceof ApiError ? entry.error.status : 0;
     if (status === 404) {
@@ -271,7 +289,12 @@ export function CaeExplorer() {
           {!active ? (
             <p className="muted cae-search-hint">{t('cae.explorer.searchHint')}</p>
           ) : search.isLoading ? (
-            <Loading label={t('cae.explorer.searching')} />
+            // Results arrive as `.cae-picklist` rows; the placeholder occupies that list.
+            <SkeletonRegion className="cae-picklist" label={t('cae.explorer.searching')}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} height="2.6rem" />
+              ))}
+            </SkeletonRegion>
           ) : search.error ? (
             <ErrorNote error={search.error} />
           ) : results.length === 0 ? (

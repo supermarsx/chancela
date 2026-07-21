@@ -2223,7 +2223,15 @@ export function BookDetailPage() {
       </InlineWarning>
 
       {/* One section at a time; the panel replays the route-enter fade on each switch, as
-          the Configurações sub-nav does. */}
+          the Configurações sub-nav does.
+
+          No sub-tab here takes `wide-page` (the shell opt-out the Livros list and Arquivo
+          use), and that is measured rather than an omission. `atas` is the only tabular
+          panel, but its Título cell WRAPS: at the 1080px measure it is 72ch, already at
+          this design system's `--measure: 68ch`, and it never scrolls at any viewport.
+          Widening pushes it to 114ch — a worse read, not a better one. `termo` is a
+          definition list, `retenção` and `importações` are three-column tables of stacked
+          prose. The book LIST is where the columns are, and that page is wide. */}
       <div className="route-transition stack" key={section}>
         {section === 'termo' ? (
           <>

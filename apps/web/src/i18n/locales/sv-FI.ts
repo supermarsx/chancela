@@ -14,13 +14,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsSvFI } from '../ledgerEventLabels';
+import { ledgerScopeLabelsSvFI } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsSvFI } from '../dashboardSourceLabels';
+import { roleNameLabelsSvFI } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const svFI: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsSvFI,
+  ...ledgerScopeLabelsSvFI,
   ...dashboardSourceLabelsSvFI,
+  ...roleNameLabelsSvFI,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har inte behörighet för den här åtgärden',
@@ -1595,6 +1599,23 @@ export const svFI: Catalog = {
   'users.action.edit': 'Redigera',
   'users.new.crumb': 'Ny',
   'users.new.title': 'Ny användare',
+  'users.edit.title': 'Redigera användare',
+  'users.filters.aria': 'Sök och filtrera användare',
+  'users.filters.search.label': 'Sök',
+  'users.filters.search.placeholder': 'Användarnamn, namn eller e-post',
+  'users.filters.status.label': 'Tillstånd',
+  'users.filters.status.all': 'Alla tillstånd',
+  'users.filters.access.label': 'Åtkomst',
+  'users.filters.access.all': 'Valfri åtkomst',
+  'users.filters.access.key': 'Med granskningsnyckel',
+  'users.filters.access.noKey': 'Utan granskningsnyckel',
+  'users.filters.access.noPassword': 'Utan lösenord',
+  'users.filters.access.recovery': 'Med återställningsfras',
+  'users.filters.clear.aria': 'Rensa användarfiltren',
+  'users.filters.count': '{shown} av {total}',
+  'users.filters.count.aria': 'Visar {shown} av {total} användare',
+  'users.filters.empty.title': 'Inga resultat',
+  'users.filters.empty.body': 'Ändra sökningen eller filtren för att se användare igen.',
   'users.edit.identityCard': 'Identitet',
   'users.edit.usernameHint': 'Användarnamnet är granskningsidentifieraren och kan inte ändras.',
   'users.edit.displayNameLabel': 'Visningsnamn',
@@ -1750,7 +1771,7 @@ export const svFI: Catalog = {
     'Använd endast när en tjänst behöver en annan nivå än sitt områdes nivå.',
   'settings.platform.logging.override.none': 'Ingen åsidosättning',
   'settings.platform.logging.override.app': 'Applikation',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'API-server',
   'settings.platform.logging.override.mcp_stdio': 'MCP studio',
   'settings.platform.logLevel.trace': 'Spårning',
   'settings.platform.logLevel.debug': 'Felsökning',
@@ -1799,10 +1820,73 @@ export const svFI: Catalog = {
   'settings.platform.subnav.aria': 'Driftsektioner',
   'settings.platform.tab.services': 'Tjänster',
   'settings.platform.tab.services.desc':
-    'Styrning av önskat tillstånd för API- och MCP-servrarna, med ärliga backend-utfall och ett driftgranskningsspår.',
+    'Styrning av önskat tillstånd för API-servern, med ärliga backend-utfall och ett driftgranskningsspår.',
   'settings.platform.tab.logs': 'Loggar',
   'settings.platform.tab.logs.desc':
     'Konfiguration av loggnivåer och strukturerad API-loggsvans (skrivskyddad).',
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Server',
+  'settings.api.subnav.aria': 'API-områden',
+  'settings.api.cardTitle': 'API-server',
+  'settings.api.intro':
+    'API-serverns önskade tillstånd, loggar och startkonfiguration på ett ställe. API-nycklarna finns i panelen bredvid.',
+  'settings.api.logging.title': 'API-loggar',
+  'settings.api.logging.hint':
+    'Dessa två fält skriver till samma inställningsdokument som övriga loggnivåer.',
+  'settings.api.env.hint':
+    'Läses från processmiljön när servern startar. De går varken att redigera här eller via något endpoint; en ändring kräver omstart av servern.',
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    'Servern talar vanlig HTTP. TLS avslutas i den omvända proxyn framför den, och HSTS-huvudet nedan får effekt bara i den uppsättningen.',
+  'settings.api.env.addr': 'Den värd:port som servern lyssnar på.',
+  'settings.api.env.cors':
+    'Exakta ursprung som får anropa API:et över ursprungsgränser. Tomt betyder endast samma ursprung.',
+  'settings.api.env.rateLimit': 'Begäransbegränsare per IP. Påslagen som standard för servern.',
+  'settings.api.env.ratePerSecond': 'Uthålligt antal begäranden per sekund och IP.',
+  'settings.api.env.rateBurst': 'Burstutrymme per IP.',
+  'settings.api.env.trustForwarded':
+    'Lita på X-Forwarded-For för klientadressen. Endast bakom en betrodd omvänd proxy.',
+  'settings.api.env.hstsMaxAge': 'Hur länge, i sekunder, den annonserade HSTS-policyn gäller.',
+  'settings.api.env.hstsSubdomains': 'Utöka HSTS-policyn till underdomäner.',
+  'settings.api.env.hstsPreload':
+    'Annonsera preload-direktivet. Slå på först när domänen har skickats in.',
+  'settings.api.env.sessionLifetime':
+    'Absolut tak för sessionens livslängd, i sekunder. Noll eller negativt stänger av taket.',
+  'settings.api.related.title': 'Relaterade inställningar',
+  'settings.api.related.egress':
+    'Det är konnektorernas utgående lista, inte API:ets ingående yta: den avgränsar vart en konnektor får skicka byte. Den ligger kvar under Plattform.',
+  'settings.api.related.logTail':
+    'Loggsvansen omfattar appen, API:et och MCP och ligger därför kvar under Plattform › Loggar.',
+  'settings.mcp.cardTitle': 'MCP-server',
+  'settings.mcp.intro':
+    'All MCP-specifik konfiguration på ett ställe: stdio-processens önskade tillstånd, loggnivåer och de miljövariabler som läses vid start.',
+  'settings.platform.services.hub':
+    'Varje tjänst har en egen underflik med önskat tillstånd, loggnivåer och startkonfiguration.',
+  'settings.mcp.logging.title': 'MCP-loggar',
+  'settings.mcp.logging.hint':
+    'Dessa två fält skriver till samma inställningsdokument som övriga loggnivåer.',
+  'settings.env.title': 'Startkonfiguration (miljö)',
+  'settings.mcp.env.hint':
+    'Läses från processmiljön när MCP-servern startar. De går varken att redigera här eller via något endpoint; en ändring kräver att processen startas om. API-nyckelns värde når aldrig detta gränssnitt.',
+  'settings.env.col.variable': 'Variabel',
+  'settings.env.col.meaning': 'Betydelse',
+  'settings.env.col.default': 'Standardvärde',
+  'settings.mcp.env.enabled': 'Huvudströmbrytare för MCP-servern.',
+  'settings.mcp.env.aiGate':
+    'Spegel av tenantens AI/MCP-spärr. Processen betjänar bara när båda är på.',
+  'settings.mcp.env.transport': 'Anslutningstransport. Denna version betjänar endast stdio.',
+  'settings.mcp.env.baseUrl': 'Bas-URL för det integrations-API som verktygen anropar.',
+  'settings.mcp.env.basePath': 'Versionerad bassökväg där API:et är monterat.',
+  'settings.mcp.env.apiKey':
+    'API-nyckeln som MCP-servern autentiserar sig med. Krävs när den är på.',
+  'settings.mcp.env.tools': 'Exponerade verktyg: alla, eller en kommaseparerad lista.',
+  'settings.mcp.env.bind':
+    'Lyssnaradress, reserverad för en fjärrtransport. Utan verkan i denna version.',
+  'settings.mcp.related.title': 'Relaterade inställningar',
+  'settings.mcp.related.gate':
+    'Tenantens AI/MCP-spärr styr även AI-funktionerna och redigeras därför fortfarande under Förvaltning. Utan den förblir MCP overksam.',
+  'settings.mcp.related.apiKeys':
+    'API-nycklar gäller inte bara MCP: de autentiserar varje integrationsklient. De behåller sin egen underflik.',
   'settings.platform.serviceDetails': 'Styrningsdetaljer och begränsningar',
   'settings.platform.help.services':
     'Dessa åtgärder registrerar tjänstens önskade tillstånd; gränssnittet förutsätter inte direkt processtyrning (till exempel API-självomstart eller MCP-stdio-start).',
@@ -2132,6 +2216,10 @@ export const svFI: Catalog = {
   'settings.about.ledger.valid': 'Kedjan är intakt · {count} händelser',
   'settings.about.ledger.compromised': 'Kedjan är komprometterad',
   'settings.about.schemaVersion': 'Version av konfigurationsschema',
+  'settings.about.interfaceLocale': 'Gränssnittsspråk',
+  'settings.about.tableCaption': 'Instansinformation',
+  'settings.about.column.item': 'Information',
+  'settings.about.column.value': 'Värde',
   'settings.save': 'Spara inställningar',
   'settings.saved': 'Inställningarna är sparade.',
   'toast.settings.saved': 'Inställningarna är sparade.',
@@ -2423,6 +2511,7 @@ export const svFI: Catalog = {
   'entities.print.nipcUnvalidated': '(ej validerad)',
   'settings.subnav.aria': 'Konfigurationsavsnitt',
   'settings.subnav.platform': 'Plattform',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Driftområden',
   'settings.subnav.signing.aria': 'Signeringsområden',
 
@@ -2532,6 +2621,8 @@ export const svFI: Catalog = {
   'users.key.rotate': 'Rotera nyckel',
   'users.key.remove': 'Ta bort nyckel',
   'users.key.requiresSecret': 'Ange ett lösenord innan du skapar en revisionsnyckel.',
+  'users.key.rotateNote':
+    'Rotationen skapar ett nytt nyckelpar för framtida attesteringar. Attesteringar som redan gjorts går fortfarande att verifiera: den offentliga delen av den tidigare nyckeln sparas, och med den går det inte att signera.',
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'Du redigerar en annan användares inloggningsuppgifter. Varje ändring kräver den användarens nuvarande lösenord eller en giltig återställningsfras.',
@@ -2657,6 +2748,32 @@ export const svFI: Catalog = {
   'templates.channels.none': 'Ingen särskild kanal',
   'templates.table.source': 'Källa',
   'templates.table.actions': 'Åtgärder',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Kolumner',
+  'templates.columns.hint':
+    'Välj vilka kolumner tabellen visar. Rättskällan visas alltid i sin helhet på mallens sida.',
+  'templates.detail.open': 'Öppna mall',
+  'templates.detail.subnav.aria': 'Avsnitt i mallen',
+  'templates.detail.section.overview': 'Identifikation',
+  'templates.detail.section.placeholders': 'Förväntade fält',
+  'templates.detail.version': 'Version',
+  'templates.detail.notFound.title': 'Mallen hittades inte',
+  'templates.detail.notFound.body': 'Katalogen innehåller ingen mall med denna identifierare.',
+  'templates.detail.spec.error': 'Innehållet i denna mall kunde inte läsas in.',
+  'templates.detail.lawSource.empty': 'Denna mall anger ingen rättskälla.',
+  'templates.detail.blocks.empty': 'Denna mall deklarerar inga block.',
+  'templates.detail.placeholders.intro':
+    'Fält som mallens block läser från protokollets registrering.',
+  'templates.detail.placeholders.empty': 'Denna mall läser inga fält från registreringen.',
+  'templates.actions.clone': 'Duplicera',
+  'templates.editor.title.fork': 'Duplicera mall',
+  'templates.fork.source': 'Ursprunglig mall: {id}',
+  'templates.fork.builtin.title': 'Inbyggda mallar går inte att redigera',
+  'templates.fork.builtin.body':
+    'En inbyggd mall är skrivskyddad, så att ett redan förseglat protokoll fortsätter att betyda exakt detsamma. Redigering skapar en kopia under en ny identifierare; den kopian går sedan att ändra fritt.',
+  'templates.fork.limit.title': 'En kopia framställer ännu inga dokument',
+  'templates.fork.limit.body':
+    'En kopia kan sparas, redigeras, exporteras och raderas, men framställning och försegling av ett protokoll känner endast igen inbyggda mallar: vid förseglingen avvisas begäran. Använd kopian för att förbereda texten och välj en inbyggd mall för förseglingen.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Ny mall',
   'templates.actions.edit': 'Redigera',
@@ -3301,10 +3418,28 @@ export const svFI: Catalog = {
   'data.status.permission.create_file': 'Skapa fil',
   'data.status.permission.write_file': 'Skriv fil',
   'data.status.permission.delete_probe_file': 'Ta bort testfil',
-  'data.status.permission.sqlite_store_open': 'Öppna SQLite',
+  'data.status.permission.sqlite_store_open': 'SQLite öppen',
   'data.status.permission.ok': 'OK',
   'data.status.permission.warn': 'Varning',
   'data.status.permission.unchecked': 'Ej kontrollerad',
+  'data.status.permission.durable_store_open': 'Beständig lagring',
+  'data.status.probe.read_dir.ok': 'Mappen kan läsas.',
+  'data.status.probe.read_dir.failed': 'Mappen kan inte läsas.',
+  'data.status.probe.create_file.ok': 'Det går att skapa filer i mappen.',
+  'data.status.probe.create_file.failed': 'Det går inte att skapa filer i mappen.',
+  'data.status.probe.write_file.ok': 'Det går att skriva till mappen.',
+  'data.status.probe.write_file.failed': 'Det går inte att skriva till mappen.',
+  'data.status.probe.delete_probe_file.ok': 'Det går att radera filer från mappen.',
+  'data.status.probe.delete_probe_file.failed': 'Det går inte att radera filer från mappen.',
+  'data.status.probe.durable_store_open.ok': 'Den beständiga lagringen är öppen.',
+  'data.status.probe.durable_store_open.failed': 'Den beständiga lagringen är inte öppen.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'Den beständiga lagringen är inte öppen eftersom ingen datamapp är konfigurerad.',
+  'data.status.probe.unchecked.noDataDir': 'Ej kontrollerad: ingen datamapp är konfigurerad.',
+  'data.status.probe.unchecked.probeSkipped': 'Ej kontrollerad: testfilen kunde inte skapas.',
+  'data.status.probe.detail': 'Systemdetalj: {detail}',
+  'data.status.basis.logical_payload': 'beständig logisk nyttolast',
+  'data.status.basis.sidecar_logical_payload': 'logisk sidecar-nyttolast',
   'data.status.usage.title': 'Användning',
   'data.status.usage.total': 'Totalt',
   'data.status.usage.filesystem': 'Filsystem',
@@ -5558,30 +5693,42 @@ export const svFI: Catalog = {
   'unsaved.close.body':
     'Det finns osparade ändringar. Om du stänger programmet nu går de förlorade.',
   'unsaved.close.confirm': 'Stäng utan att spara',
-  "users.create.identityCard": "Identitet",
-  "users.create.identityLede": "Vem personen är. Användarnamnet identifierar personen i granskningsloggen och kan inte ändras i efterhand.",
-  "users.create.emailHint": "Behövs för att skicka välkomstmeddelandet.",
-  "users.create.accessCard": "Åtkomsträttigheter",
-  "users.create.accessLede": "Rollen och den omfattning där den gäller, tilldelade i samma begäran som skapar kontot.",
-  "users.create.scope.label": "Omfattning",
-  "users.create.scope.hint": "Var rollen gäller. Global täcker hela instansen.",
-  "users.create.role.label": "Roll",
-  "users.create.role.hint": "Endast roller vars befogenhet du redan innehar i denna omfattning erbjuds.",
-  "users.create.role.default": "Serverns förval (Gestor, global)",
-  "users.create.role.optionBlocked": "{role} — över din befogenhet",
-  "users.create.role.carries": "Denna roll medför",
-  "users.create.role.aboveCeiling": "Du kan inte tilldela {role}: den omfattar rättigheter som du inte innehar i denna omfattning ({permissions}).",
-  "users.create.role.defaultNote": "Om ingen roll väljs får kontot serverns förval: Gestor, i global omfattning.",
-  "users.create.credentialsCard": "Inloggningsuppgifter",
-  "users.create.credentialsLede": "Ange det första lösenordet och förmedla det via en trygg kanal. Det skickas aldrig per e-post.",
-  "users.create.notifyCard": "Meddelande",
-  "users.create.notifyLede": "Frivilligt meddelande om att kontot finns. Meddelandet innehåller varken lösenord, kod eller inloggningslänk.",
-  "users.create.welcome.label": "Skicka ett välkomstmeddelande till det nya kontot",
-  "users.create.welcome.noSmtp": "E-postutskick har inte konfigurerats, så meddelandet kan inte skickas.",
-  "users.create.welcome.noAddress": "Ange en e-postadress ovan för att kunna skicka meddelandet.",
-  "users.create.welcome.settingsLink": "Konfigurera e-posten",
-  "users.language.label": "Språk",
-  "users.language.auto": "Upptäck automatiskt",
-  "users.language.hint.auto": "Följer språket på den enhet personen loggar in från. Meddelanden som servern skickar använder plattformens förvalda språk.",
-  "users.language.hint.fixed": "Fastställer språket för gränssnittet och för meddelanden till detta konto.",
+  'users.create.identityCard': 'Identitet',
+  'users.create.identityLede':
+    'Vem personen är. Användarnamnet identifierar personen i granskningsloggen och kan inte ändras i efterhand.',
+  'users.create.emailHint': 'Behövs för att skicka välkomstmeddelandet.',
+  'users.create.accessCard': 'Åtkomsträttigheter',
+  'users.create.accessLede':
+    'Rollen och den omfattning där den gäller, tilldelade i samma begäran som skapar kontot.',
+  'users.create.scope.label': 'Omfattning',
+  'users.create.scope.hint': 'Var rollen gäller. Global täcker hela instansen.',
+  'users.create.role.label': 'Roll',
+  'users.create.role.hint':
+    'Endast roller vars befogenhet du redan innehar i denna omfattning erbjuds.',
+  'users.create.role.default': 'Serverns förval (Gestor, global)',
+  'users.create.role.optionBlocked': '{role} — över din befogenhet',
+  'users.create.role.carries': 'Denna roll medför',
+  'users.create.role.aboveCeiling':
+    'Du kan inte tilldela {role}: den omfattar rättigheter som du inte innehar i denna omfattning ({permissions}).',
+  'users.create.role.defaultNote':
+    'Om ingen roll väljs får kontot serverns förval: Gestor, i global omfattning.',
+  'users.create.credentialsCard': 'Inloggningsuppgifter',
+  'users.create.credentialsLede':
+    'Ange det första lösenordet och förmedla det via en trygg kanal. Det skickas aldrig per e-post.',
+  'users.create.keyNote':
+    'En granskningsnyckel genereras utifrån detta lösenord, så att användarens åtgärder attesteras från första inloggningen. Den som känner till detta initiala lösenord kan skapa attesteringar i användarens namn — be användaren att byta det vid första inloggningen.',
+  'users.create.notifyCard': 'Meddelande',
+  'users.create.notifyLede':
+    'Frivilligt meddelande om att kontot finns. Meddelandet innehåller varken lösenord, kod eller inloggningslänk.',
+  'users.create.welcome.label': 'Skicka ett välkomstmeddelande till det nya kontot',
+  'users.create.welcome.noSmtp':
+    'E-postutskick har inte konfigurerats, så meddelandet kan inte skickas.',
+  'users.create.welcome.noAddress': 'Ange en e-postadress ovan för att kunna skicka meddelandet.',
+  'users.create.welcome.settingsLink': 'Konfigurera e-posten',
+  'users.language.label': 'Språk',
+  'users.language.auto': 'Upptäck automatiskt',
+  'users.language.hint.auto':
+    'Följer språket på den enhet personen loggar in från. Meddelanden som servern skickar använder plattformens förvalda språk.',
+  'users.language.hint.fixed':
+    'Fastställer språket för gränssnittet och för meddelanden till detta konto.',
 };

@@ -1015,7 +1015,12 @@ export function EntitiesPage() {
   }
 
   return (
-    <div className="stack">
+    /* `wide-page` widens the shell measure (t64's shared opt-out, see theme.css). This page
+       is one selectable-column table: the shell's 1080px leaves 934px of table, which the
+       five default columns already outgrow — Entidade is the sole `auto` column and it
+       absorbs the whole gain (444px → 836px at 1920). The full 14-column set still scrolls
+       inside `.table-wrap`, but 392px more of it is visible before it has to. */
+    <div className="stack wide-page">
       <PageHeader
         title={t('entities.title')}
         lede={t('entities.lede')}

@@ -75,7 +75,8 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
+  SkeletonDeflist,
+  SkeletonRegion,
   SubNav,
   TextArea,
   TooltipText,
@@ -173,8 +174,12 @@ const MODE_LABEL: Record<DataPersistenceMode, MessageKey> = {
   fallback_in_memory: 'data.status.mode.fallback_in_memory',
 };
 
-const BASIS_LABEL: Partial<Record<DataUsageBasis, MessageKey>> = {
+/** Total over `DataUsageBasis`: a basis added to the API is a compile error here, never a raw
+ *  `sidecar_logical_payload` token rendered at an operator. */
+const BASIS_LABEL: Record<DataUsageBasis, MessageKey> = {
   filesystem: 'data.status.basis.filesystem',
+  logical_payload: 'data.status.basis.logical_payload',
+  sidecar_logical_payload: 'data.status.basis.sidecar_logical_payload',
   sqlite_file: 'data.status.basis.sqlite_file',
   sqlite_logical_payload: 'data.status.basis.sqlite_logical_payload',
 };
@@ -182,15 +187,54 @@ const BASIS_LABEL: Partial<Record<DataUsageBasis, MessageKey>> = {
 const SQLITE_LOGICAL_TABLE_KIND = 'sqlite_logical_table';
 const SQLITE_TABLE_ID_PREFIX = 'sqlite_table_';
 
+/**
+ * The folder/store probes, each with the copy for its own outcome.
+ *
+ * The probe `message` on the wire is untranslated English prose assembled by the API
+ * (`data_status.rs::probe_permissions`) — "durable store is open", "probe file cannot be
+ * created: {os error}". Rendering it verbatim leaked English into a pt-PT UI, so the sentence
+ * is re-derived here from the probe's own outcome and only the OS error detail, which no
+ * catalog could translate, is carried through (redacted, see {@link probeMessage}).
+ */
 const PERMISSION_ROWS: {
   key: keyof DataPermissionStatus;
-  label: MessageKey | string;
+  label: MessageKey;
+  okMessage: MessageKey;
+  failedMessage: MessageKey;
+  /** Some probes report a distinct failure when there is no data folder configured at all. */
+  noDataDirMessage?: MessageKey;
 }[] = [
-  { key: 'read_dir', label: 'data.status.permission.read_dir' },
-  { key: 'create_file', label: 'data.status.permission.create_file' },
-  { key: 'write_file', label: 'data.status.permission.write_file' },
-  { key: 'delete_probe_file', label: 'data.status.permission.delete_probe_file' },
-  { key: 'durable_store_open', label: 'Loja durável' },
+  {
+    key: 'read_dir',
+    label: 'data.status.permission.read_dir',
+    okMessage: 'data.status.probe.read_dir.ok',
+    failedMessage: 'data.status.probe.read_dir.failed',
+  },
+  {
+    key: 'create_file',
+    label: 'data.status.permission.create_file',
+    okMessage: 'data.status.probe.create_file.ok',
+    failedMessage: 'data.status.probe.create_file.failed',
+  },
+  {
+    key: 'write_file',
+    label: 'data.status.permission.write_file',
+    okMessage: 'data.status.probe.write_file.ok',
+    failedMessage: 'data.status.probe.write_file.failed',
+  },
+  {
+    key: 'delete_probe_file',
+    label: 'data.status.permission.delete_probe_file',
+    okMessage: 'data.status.probe.delete_probe_file.ok',
+    failedMessage: 'data.status.probe.delete_probe_file.failed',
+  },
+  {
+    key: 'durable_store_open',
+    label: 'data.status.permission.durable_store_open',
+    okMessage: 'data.status.probe.durable_store_open.ok',
+    failedMessage: 'data.status.probe.durable_store_open.failed',
+    noDataDirMessage: 'data.status.probe.durable_store_open.noDataDir',
+  },
 ];
 
 function formatBytes(value: number, locale: string): string {
@@ -262,15 +306,39 @@ function permissionLabel(check: DataPermissionCheck | undefined, t: TFunction): 
   return check.ok ? t('data.status.permission.ok') : t('data.status.permission.warn');
 }
 
-function messageOrText(label: MessageKey | string, t: TFunction): string {
-  return label.startsWith('data.') || label.startsWith('common.') ? t(label as MessageKey) : label;
+/**
+ * The translated sentence for one probe outcome, plus the untranslatable OS detail the API
+ * appends after a colon on a failure ("probe file cannot be written: {os error}"). The detail
+ * goes through the same redaction as receipt evidence, so a path or hash in an OS error never
+ * reaches the panel verbatim.
+ */
+function probeMessage(
+  row: (typeof PERMISSION_ROWS)[number],
+  check: DataPermissionCheck | undefined,
+  dataDirConfigured: boolean,
+  t: TFunction,
+): { text: string; detail: string | null } {
+  if (!check?.checked) {
+    return {
+      text: t(
+        dataDirConfigured
+          ? 'data.status.probe.unchecked.probeSkipped'
+          : 'data.status.probe.unchecked.noDataDir',
+      ),
+      detail: null,
+    };
+  }
+  if (check.ok) return { text: t(row.okMessage), detail: null };
+  const failed =
+    !dataDirConfigured && row.noDataDirMessage ? row.noDataDirMessage : row.failedMessage;
+  const separator = check.message.indexOf(': ');
+  const detail =
+    separator >= 0 ? redactReceiptEvidenceText(check.message.slice(separator + 2)) : '';
+  return { text: t(failed), detail: detail.trim() || null };
 }
 
 function basisLabel(basis: DataUsageBasis, t: TFunction): string {
-  if (basis === 'logical_payload') return 'payload lógico durável';
-  if (basis === 'sidecar_logical_payload') return 'payload lógico sidecar';
-  const key = BASIS_LABEL[basis];
-  return key ? t(key) : basis.replaceAll('_', ' ');
+  return t(BASIS_LABEL[basis]);
 }
 
 function permissionSummary(
@@ -1894,7 +1962,13 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
               </Button>
             }
           >
-            {status.isLoading ? <Loading label={t('data.status.loading')} /> : null}
+            {/* What arrives is `.data-status` — a deflist summary over sectioned blocks — so
+                the placeholder reserves that instead of a line of text. */}
+            {status.isLoading ? (
+              <SkeletonRegion className="data-status" label={t('data.status.loading')}>
+                <SkeletonDeflist rows={4} className="deflist data-status-summary" />
+              </SkeletonRegion>
+            ) : null}
             {status.isError ? <ErrorNote error={status.error} /> : null}
             {data ? (
               <div className="data-status">
@@ -2029,17 +2103,24 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                       // Typed as possibly absent on purpose: a response missing this probe
                       // renders as "unchecked" instead of taking the page down.
                       const check: DataPermissionCheck | undefined = data.permissions[row.key];
+                      const message = probeMessage(
+                        row,
+                        check,
+                        data.persistence.data_dir_configured,
+                        t,
+                      );
                       return (
                         <li
                           key={row.key}
                           className={`data-status-probe data-status-probe--${permissionTone(check)}`}
                         >
-                          <span className="data-status-probe__label">
-                            {messageOrText(row.label, t)}
-                          </span>
+                          <span className="data-status-probe__label">{t(row.label)}</span>
                           <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
-                          {check?.message ? (
-                            <span className="data-status-probe__message">{check.message}</span>
+                          <span className="data-status-probe__message">{message.text}</span>
+                          {message.detail ? (
+                            <span className="data-status-probe__message mono">
+                              {t('data.status.probe.detail', { detail: message.detail })}
+                            </span>
                           ) : null}
                         </li>
                       );
@@ -2206,7 +2287,13 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
 
         {tab === 'copias' ? (
           <Card title={t('data.status.tab.backup')}>
-            {status.isLoading ? <Loading label={t('data.status.loading')} /> : null}
+            {/* What arrives is `.data-status` — a deflist summary over sectioned blocks — so
+                the placeholder reserves that instead of a line of text. */}
+            {status.isLoading ? (
+              <SkeletonRegion className="data-status" label={t('data.status.loading')}>
+                <SkeletonDeflist rows={4} className="deflist data-status-summary" />
+              </SkeletonRegion>
+            ) : null}
             {status.isError ? <ErrorNote error={status.error} /> : null}
             {data ? (
               <div className="data-status">
@@ -2257,15 +2344,20 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                     </div>
                   </div>
                   {recoveryDrills.isLoading ? (
-                    <Loading
+                    <SkeletonRegion
                       label={t('uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao')}
-                    />
+                    >
+                      <SkeletonDeflist rows={3} />
+                    </SkeletonRegion>
                   ) : null}
                   {recoveryDrills.error ? <ErrorNote error={recoveryDrills.error} /> : null}
                   {recoveryDrills.data ? (
                     <RecoveryFreshnessReviewReport freshness={recoveryDrills.data.freshness} />
                   ) : null}
-                  <form className="form settings-rows" onSubmit={(event) => void submitRecoveryDrill(event)}>
+                  <form
+                    className="form settings-rows"
+                    onSubmit={(event) => void submitRecoveryDrill(event)}
+                  >
                     <div className="data-status-usage-groups">
                       <Field
                         label={t('uiLiteral.gestaoDadosSection.arquivoDoBackupParaEnsaio')}
@@ -2377,9 +2469,11 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                     </div>
                   </div>
                   {syncHandoffPreflight.isLoading ? (
-                    <Loading
+                    <SkeletonRegion
                       label={t('uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff')}
-                    />
+                    >
+                      <SkeletonDeflist rows={4} />
+                    </SkeletonRegion>
                   ) : null}
                   {syncHandoffPreflight.error ? (
                     <ErrorNote error={syncHandoffPreflight.error} />
@@ -2404,7 +2498,13 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
         {tab === 'chaves' ? (
           <>
             <Card title={t('data.status.tab.keys')}>
-              {status.isLoading ? <Loading label={t('data.status.loading')} /> : null}
+              {/* What arrives is `.data-status` — a deflist summary over sectioned blocks — so
+                the placeholder reserves that instead of a line of text. */}
+              {status.isLoading ? (
+                <SkeletonRegion className="data-status" label={t('data.status.loading')}>
+                  <SkeletonDeflist rows={4} className="deflist data-status-summary" />
+                </SkeletonRegion>
+              ) : null}
               {status.isError ? <ErrorNote error={status.error} /> : null}
               {data ? (
                 <div className="data-status">

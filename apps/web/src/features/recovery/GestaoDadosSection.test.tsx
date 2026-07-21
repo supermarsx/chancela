@@ -804,7 +804,7 @@ describe('GestaoDadosSection', () => {
     expect(screen.getAllByText('Não verificado').length).toBeGreaterThanOrEqual(4);
   });
 
-  it('shows ok, warning and unchecked permission probes with backend messages', async () => {
+  it('renders every probe outcome in pt-PT, never the English wire message', async () => {
     installFetch([permissionStatus]);
     renderWithProviders(<GestaoDadosSection />);
 
@@ -819,13 +819,19 @@ describe('GestaoDadosSection', () => {
       expect.stringContaining('Criar ficheiro'),
       expect.stringContaining('Escrever ficheiro'),
       expect.stringContaining('Apagar ficheiro de teste'),
-      expect.stringContaining('Loja durável'),
+      expect.stringContaining('Armazenamento durável'),
     ]);
-    expect(screen.getByText('directory can be read')).toBeTruthy();
-    expect(screen.getByText('probe file cannot be created: denied')).toBeTruthy();
+    expect(screen.getByText('A pasta pode ser lida.')).toBeTruthy();
+    expect(screen.getByText('Não é possível criar ficheiros na pasta.')).toBeTruthy();
+    // Only the OS detail after the colon survives, and it survives inside a translated shell.
+    expect(screen.getByText('Detalhe do sistema: denied')).toBeTruthy();
     expect(
-      screen.getByText('write probe skipped because the probe file could not be created'),
-    ).toBeTruthy();
+      screen.getAllByText('Não verificado: o ficheiro de teste não pôde ser criado.'),
+    ).toHaveLength(2);
+    expect(screen.getByText('O armazenamento durável não está aberto.')).toBeTruthy();
+    // The English wire prose must not reach the panel anywhere.
+    expect(permissionsSection.textContent).not.toContain('probe file');
+    expect(permissionsSection.textContent).not.toContain('durable store');
     expect(screen.getAllByText('OK').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Aviso').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('Não verificado').length).toBeGreaterThanOrEqual(2);
@@ -845,7 +851,7 @@ describe('GestaoDadosSection', () => {
       .closest('section')!;
     const durableRow = within(permissionsSection)
       .getAllByRole('listitem')
-      .find((item) => item.textContent?.includes('Loja durável'))!;
+      .find((item) => item.textContent?.includes('Armazenamento durável'))!;
     expect(durableRow.textContent).toContain('Não verificado');
     expect(durableRow.className).toContain('data-status-probe--neutral');
   });

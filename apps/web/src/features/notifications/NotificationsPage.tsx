@@ -6,12 +6,12 @@ import {
   ErrorNote,
   Icon,
   PageHeader,
-  SkeletonCards,
   SkeletonRegion,
   SubNav,
   type SubNavItem,
 } from '../../ui';
 import { NotificationList } from './NotificationList';
+import { NotificationsSkeleton } from './NotificationsSkeleton';
 import { buildDashboardNotifications } from './notifications';
 import {
   activeNotifications,
@@ -110,8 +110,10 @@ export function NotificationsPage() {
       <div className="route-transition" key={filter} data-subanim-key={filter}>
         <Card>
           {isLoading || triage.isLoading ? (
+            /* Was `SkeletonCards` — a metric-card grid that then became a notification
+               list, i.e. the exact layout jump a skeleton exists to prevent. */
             <SkeletonRegion>
-              <SkeletonCards count={4} />
+              <NotificationsSkeleton items={4} compact />
             </SkeletonRegion>
           ) : error || triage.error ? (
             <ErrorNote error={error ?? triage.error} />

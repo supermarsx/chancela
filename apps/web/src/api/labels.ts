@@ -13,6 +13,7 @@ import {
   LABELLED_LEDGER_EVENT_KINDS,
   LABELLED_DASHBOARD_ALERT_SOURCES,
   LABELLED_DASHBOARD_REMINDER_RULES,
+  SEEDED_ROLE_NAMES,
   normalizeAlertSource,
 } from '../i18n';
 import type { MessageKey } from '../i18n';
@@ -167,6 +168,43 @@ export function dashboardReminderRuleLabel(
   return LABELLED_DASHBOARD_REMINDER_RULES.has(trimmed)
     ? t(`enum.dashboardReminderRule.${trimmed}` as MessageKey)
     : undefined;
+}
+
+// --- Role names (t87) ------------------------------------------------------------
+
+/**
+ * Render a role's display name in the active locale.
+ *
+ * **Seeded** roles carry a stable id and a canonical English `name` (the server stores English —
+ * see `crates/chancela-authz/src/role.rs`), so their name is UI chrome and is localized through
+ * `enum.roleName.*`. **Custom** roles are operator-authored data and are returned verbatim in every
+ * locale — a translation layer that mangled someone's "Gerente da filial" would be a real defect.
+ *
+ * Two things separate the cases:
+ *
+ * - the id must be a seeded one (`SEEDED_ROLE_NAMES`); a custom role's id is a random UUID; and
+ * - the stored name must still be the canonical English one. An operator who renames a seeded role
+ *   has authored a name, so theirs wins — otherwise the rename would silently appear to do nothing.
+ *
+ * A **retired** id (a merged-away duplicate that only past ledger events still name) has no stored
+ * name to compare against and always resolves to its label, so history stays readable.
+ *
+ * `name` is optional because some call sites hold only an id (a `RoleAssignmentView`, or a role that
+ * has left the catalog). An unknown id with no name degrades to the raw id — never blank, never
+ * `undefined`.
+ */
+export function roleNameLabel(id: string, name?: string | null): string {
+  const authored = name?.trim();
+  const entry = SEEDED_ROLE_NAMES[id.trim()];
+  if (entry && (entry.retired || !authored || authored === entry.canonicalName)) {
+    return t(`enum.roleName.${entry.slug}` as MessageKey);
+  }
+  return authored || id;
+}
+
+/** Whether `id` is a seeded role whose id has been retired (kept only so old events stay readable). */
+export function isRetiredRoleId(id: string): boolean {
+  return SEEDED_ROLE_NAMES[id.trim()]?.retired === true;
 }
 
 // --- CAE — Classificação das Atividades Económicas (§2.7, plan t14) --------------

@@ -30,7 +30,8 @@ import {
   EmptyState,
   ErrorNote,
   FieldHelp,
-  Loading,
+  SkeletonDeflist,
+  SkeletonRegion,
   Truncate,
 } from '../../ui';
 import { CaeRefList } from '../cae/CaeRefList';
@@ -337,7 +338,19 @@ export function RegistryProvenance({
   const id = entityId || routeId;
   const registry = useEntityRegistry(id);
 
-  if (registry.isLoading) return <Loading label={t('registry.loading')} />;
+  // What arrives is a stack of cards of label/value pairs (the commercial extract, then
+  // the inscriptions), so the placeholder is that: two deflist-shaped cards.
+  if (registry.isLoading)
+    return (
+      <SkeletonRegion className="stack" label={t('registry.loading')}>
+        <Card>
+          <SkeletonDeflist rows={6} />
+        </Card>
+        <Card>
+          <SkeletonDeflist rows={4} />
+        </Card>
+      </SkeletonRegion>
+    );
 
   // A 404 means "nothing imported yet" — an empty state, not an error.
   if (registry.error) {

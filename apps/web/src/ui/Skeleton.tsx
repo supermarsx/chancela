@@ -135,15 +135,61 @@ export function SkeletonList({ items = 4 }: { items?: number }) {
   );
 }
 
-/** A definition-list skeleton (label + value pairs) matching `.deflist`. */
-export function SkeletonDeflist({ rows = 4 }: { rows?: number }) {
+/**
+ * A definition-list skeleton (label + value pairs) matching `.deflist`.
+ *
+ * `className` swaps in a different label/value grid class so the skeleton inherits that
+ * grid's own columns and gaps — the operations metric strips (`.operations-metrics`) and
+ * detail grids (`.operations-detail-grid`) are the same dt/dd shape under another name,
+ * and a `.deflist` placeholder in front of them would lay out at the wrong width.
+ */
+export function SkeletonDeflist({
+  rows = 4,
+  className = 'deflist',
+}: {
+  rows?: number;
+  className?: string;
+}) {
   return (
-    <div className="deflist" aria-hidden="true">
+    <div className={className} aria-hidden="true">
       {Array.from({ length: rows }, (_, i) => (
         <div key={i}>
           <Skeleton height="0.7rem" width="40%" />
           <Skeleton height="1rem" width="75%" style={{ marginTop: '0.35rem' }} />
         </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A form skeleton: label + control pairs on the real `.form` / `.field` boxes, so a form
+ * that is waiting on the data it will be seeded with reserves the height of the fields
+ * rather than collapsing to one line and then shoving the page down.
+ */
+export function SkeletonForm({ fields = 3, className }: { fields?: number; className?: string }) {
+  return (
+    <div className={`form ${className ?? ''}`.trim()} aria-hidden="true">
+      {Array.from({ length: fields }, (_, i) => (
+        <div className="field" key={i}>
+          <Skeleton height="0.7rem" width="30%" />
+          <Skeleton height="2.4rem" style={{ marginTop: '0.4rem' }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A row of pill-shaped placeholders matching a `.operations-selector-list` / chip row —
+ * a horizontal band of buttons whose count is unknown but whose height is not.
+ */
+export function SkeletonChips({ count = 4 }: { count?: number }) {
+  const widths = ['9rem', '7.5rem', '11rem', '8rem', '10rem', '6.5rem'];
+  return (
+    <div className="skeleton-chips" aria-hidden="true">
+      {Array.from({ length: count }, (_, i) => (
+        <Skeleton key={i} height="2.1rem" width={widths[i % widths.length]} />
       ))}
     </div>
   );

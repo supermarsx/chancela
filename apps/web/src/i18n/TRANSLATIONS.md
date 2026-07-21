@@ -50,7 +50,7 @@ still apply, so a missing safety label fails CI instead of disappearing at runti
 ### Ledger event-kind labels (t17) — a translated key group pending native review
 
 `src/i18n/ledgerEventLabels.ts` holds the display labels for the ledger's event kinds
-(`enum.ledgerEventKind.*`, 126 kinds) plus `dashboard.activity.sequence.title` — **127 keys**.
+(`enum.ledgerEventKind.*`, 133 kinds) plus `dashboard.activity.sequence.title` — **134 keys**.
 Unlike `operationsFallback.ts` this slice is **fully translated into all 14 locales**, one
 `LedgerEventLabels` per locale in that single file, each spread by its own catalog. Keeping the
 14 columns in one file is deliberate: a reviewer can diff a language against pt-PT without
@@ -83,6 +83,39 @@ versus _name of a legal instrument_ (do not).
 61 pt-BR labels are byte-identical to pt-PT — legitimately shared Portuguese — and are recorded
 in `reviewedIdenticalValues.ts` as part of this key group. es-ES, fr-FR and it-IT contribute none,
 which is the check that those columns are genuinely translated rather than copied.
+
+#### The seven kinds t77 added, and why two of them are not past-tense
+
+An audit of every emit site in `crates/` found **133** kinds against 126 labels. The seven missing
+ones (`act.reopened`, `delegation.suspended`, `delegation.resumed`, `email.password.updated`,
+`email.password.cleared`, `email.test_sent`, `trust.tsl.imported`) were rendering their dotted wire
+identifier in the Arquivo table, the Vista geral activity feed, the entity activity feed and the
+notification centre. `src/api/labels.test.ts` now **parses the crate sources** and fails the web
+suite when a kind has no label, so the next one cannot leak the same way.
+
+Two kinds **assert an outcome the server does not guarantee**, and the labels deliberately do not
+repeat the lie:
+
+- `email.test_sent` is appended for a **failed** test send as well (the payload carries
+  `ok: false` and the relay's own refusal), so the label reads "Teste de envio de email
+  **efetuado**", not "enviado".
+- `trust.tsl.imported` is appended for a **refused** import too — that is the whole point of the
+  event (`crates/chancela-api/src/trust.rs`) — so the label reads "Importação da lista de confiança
+  TSL **tentada**", following the `registry.auto_update.attempted` precedent already in the catalog
+  and the `tentada`/`versucht`/`yritetty`/`Podjęto próbę` idiom each locale established there.
+
+The `email.` prefix is doing two different jobs server-side (SMTP relay _settings_ vs an outbound
+_test action_); the labels disambiguate by naming the server — "Palavra-passe do servidor de email",
+reusing the wording `settings.email.password.*` already ships — rather than by renaming the kinds,
+which are the on-disk append-only format.
+
+No kind carries a `/vN` suffix, so the rule-pack version-stripping the t65 group needed does not
+apply here; `ledgerEventKindLabel` looks the kind up whole.
+
+2 further pt-BR labels are byte-identical to pt-PT ("Ata reaberta para correção", "Importação da
+lista de confiança TSL tentada") and are registered by name in `reviewedIdenticalValues.ts`. The
+pt-BR email labels are _not_ identical ("Senha", "e-mail"), which is the check that the column was
+translated rather than copied.
 
 ### Dashboard actionable provenance labels (t65) — a translated key group pending native review
 
@@ -117,6 +150,44 @@ absent from the map and render that field instead.
 `reviewedIdenticalValues.ts`. No other locale contributes any, which is the check that those
 columns are genuinely translated.
 
+### Seeded role names (t87) — a translated key group pending native review
+
+`src/i18n/roleNameLabels.ts` holds the display names of the **seeded** roles — **15 keys** under
+`enum.roleName.*`, structured exactly like the t17 and t65 groups above (one `RoleNameLabels` per
+locale in one file, each spread by its own catalog, a shared type making a missing or invented key a
+compile error).
+
+The server now stores an **English** name for every seeded role (`crates/chancela-authz/src/role.rs`
+— the workspace convention is English identifiers with Portuguese reserved for user-facing copy).
+What a pt-PT operator reads is resolved client-side from the role's **id**, which is the stable,
+language-neutral key, through `roleNameLabel` (`src/api/labels.ts`).
+
+| Tier                                | Locales          | Status                                                                |
+| ----------------------------------- | ---------------- | --------------------------------------------------------------------- |
+| source                              | `pt-PT`          | Authoritative.                                                        |
+| human                               | `en-US`, `en-GB` | Human-authored; en-GB overrides nothing (see the note in the file).   |
+| **machine · pending native review** | the other 11     | **Translated but NOT natively reviewed.**                             |
+
+A role name is a **job title** — a short system label, the same side of the UX-21 boundary as an
+event kind — so it is translated. What is emphatically *not* translated is an **operator-authored**
+role name: someone who names a role "Gerente da filial" sees exactly that in every locale. Two guards
+keep the split (both asserted in `src/api/labels.test.ts`): the id must be one of the seeded ids, and
+the stored name must still be the canonical English one, so renaming a seeded role makes the
+operator's words win.
+
+**Two keys name retired ids** (`retiredGestor`, `retiredSignatario`). Those roles were
+Portuguese-named duplicates with byte-identical permission sets and were merged into `Company Owner`
+and `Signatory`; their ids are never reused, but they survive in **append-only ledger events**, which
+are never rewritten. Keeping them named — with an explicit "retired role" marker in every locale — is
+what stops the merge from trading a duplicate role for unreadable history. Do not delete these keys.
+
+`src/api/labels.test.ts` parses `role.rs` and fails when the crate's seeded ids and this map drift, so
+a role added or retired server-side cannot silently render as a bare UUID.
+
+11 pt-BR labels, 3 es-ES and 1 en-US/en-GB (`Auditor`) are byte-identical to pt-PT — shared
+Portuguese and ordinary cognates, not untranslated gaps — and are recorded by name in
+`reviewedIdenticalValues.ts`.
+
 ### For the translation executors (t19-e3b / t19-e3c)
 
 Each owns a disjoint set of `src/i18n/locales/<tag>.ts` files. In each: replace the
@@ -125,6 +196,76 @@ Do **not** add, rename or remove keys — the `Catalog` type and the completenes
 the frozen contract (a drift fails `tsc` and `vitest`). Keep the `{name}` placeholders
 intact and in a natural position for the target language. When a locale is fully authored
 and reviewed, move its row to a "human" tier here.
+
+## Reviewing translated copy: render it, do not read it
+
+Three rules, all learned from real defects rather than proposed in the abstract.
+
+**1. Never interpolate a noun into a sentence containing an inflected word.** In the Romance
+locales a participle or adjective must agree in gender (and often number) with the noun that lands
+in the hole, and a template can only carry one ending. Write the sentence so the substituted value
+is not the subject of anything inflected — an impersonal or passive form, an active first person,
+or a reflexive passive — all of which are invariant.
+
+**2. Review translated copy by rendering it with real substitutions, not by reading the catalog.**
+A defect of this class is **invisible in the template**: the string reads as perfectly good
+Portuguese, and only becomes wrong once a value is substituted. No amount of proofreading the
+catalog surfaces it.
+
+**3. Point later words at a locale-constant noun, never at the substituted value.** Rule 1 says the
+value must not be the subject of an inflected word; this is the positive form, and it is stronger.
+Give the sentence its own noun — _a função_, _die Rolle_, _roolia_ — and let every pronoun,
+possessive and participle downstream agree with **that**. The noun is fixed per locale, so a
+translator can inflect against it correctly without knowing what will be substituted.
+
+This covers a failure rule 1 does not: a word that agrees with nothing can still **point** at the
+wrong thing. Rule 1 catches gender; rule 3 also catches reference.
+
+### The case that produced these rules (t69, `acts.body.paste.*`)
+
+The markdown editor's paste report renders `{construct} ({count}) — removido.` Five of the six
+construct names are feminine (`Tabela`, `Imagem`, `Lista`, `Citação`, `Ligação`; only
+`Bloco de código` is masculine), so most of the report was ungrammatical in **pt-PT, pt-BR, es-ES,
+fr-FR and it-IT** — `Tabela (1) — convertido`, `Image (1) — supprimé`, `Tabella (1) — convertito`.
+
+Fixing it by adding a feminine ending would have held only until the next masculine construct, and
+the next person would have hit an identical bug with no sign it had happened before. The sentences
+were restructured instead (`convertemos`, `se convirtió`, `abbiamo convertito`).
+
+### The case that produced rule 3 (t71, `users.create.role.*`)
+
+The create-user screen interpolates a **role name** into two strings. Rendered across all 14
+locales, both turned out to be immune to rule 1 — not by luck, but because every referring word
+already agreed with the locale's own word for "role" (`die Rolle`, _autoridade_, _roolia_) rather
+than with the substituted value. That is what rule 3 names.
+
+Rendering still found a defect, which is the argument for rule 2 even when the verdict is "fine".
+de-DE read:
+
+> `Sie können {role} nicht vergeben: Sie enthält Berechtigungen, die Sie … nicht besitzen.`
+
+Three `Sie` in one sentence with two referents — polite _you_ twice, _die Rolle_ once. Grammatical,
+since `enthält` (3sg) and `besitzen` (2pl polite) disambiguate, but it parses on first read as
+"**you** contain permissions" — in a message whose whole job is to explain why a grant was refused,
+i.e. exactly when a reader is least willing to parse carefully. Fixed by naming the referent:
+`Diese Rolle enthält`.
+
+Note the class: **not** gender agreement. A pronoun that inflects for nothing can still resolve to
+the wrong antecedent, and reusing a pronoun that the surrounding sentence already uses for the
+reader is how it happens. Languages with a polite second person spelled like a third person (de
+`Sie`, es/it _usted_/_Lei_) are where to look.
+
+### Which locale families are structurally safe, and where to look first
+
+| family                                          | why                                                                                                                                        | check                                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| **Polish, Finnish**                             | impersonal / passive forms (`usunięto`, `zamieniono`, `poistettu`, `muutettu`) do not inflect for the subject at all                       | lowest risk — these were correct by construction                      |
+| **Germanic** (de, nl, da)                       | invariant predicative participles (`entfernt`, `verwijderd`, `fjernet`)                                                                    | low risk                                                              |
+| **Swedish** (sv-SE, sv-FI)                      | participles inflect for common vs neuter gender; `omgjort`/`borttaget` are neuter forms standing against common-gender nouns (`en tabell`) | **open — flagged for a native reviewer**, deliberately not guessed at |
+| **Romance** (pt-PT, pt-BR, es-ES, fr-FR, it-IT) | gender _and_ number agreement on every participle and adjective                                                                            | **look here first**                                                   |
+
+The same instrument found the other user-facing defect of that day (a calendar-day off-by-one):
+**follow the value, do not read the pattern.**
 
 ## UX-21 boundary — what is NOT translated (by design, v1)
 

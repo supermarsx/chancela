@@ -25,4 +25,23 @@ describe('Toggle', () => {
     // The label carries the disabled affordance for styling.
     expect(sw.closest('.toggle')?.className).toContain('toggle--disabled');
   });
+
+  /**
+   * t90 puts a settings-row toggle's text in the grid's label column and its switch in the
+   * control column. That is done entirely with grid tracks precisely so this stays true: the
+   * `<label>` still WRAPS the input, so the accessible name survives without an `htmlFor`.
+   * Splitting the text out into a sibling element would render identically and silently leave
+   * an unnamed switch, so the association is asserted rather than eyeballed.
+   */
+  it('keeps its accessible name when laid out as a settings row', () => {
+    render(
+      <div className="form settings-rows">
+        <Toggle label="Textura de couro no fundo" checked={false} onChange={() => {}} />
+      </div>,
+    );
+    const sw = screen.getByRole('switch', { name: 'Textura de couro no fundo' });
+    // The wrapping label — not a detached sibling — is what names it.
+    expect(sw.closest('label')?.className).toContain('toggle');
+    expect(screen.getByLabelText('Textura de couro no fundo')).toBe(sw);
+  });
 });

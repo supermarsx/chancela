@@ -30,9 +30,10 @@ import {
   Field,
   Icon,
   Input,
-  Loading,
   Select,
+  Skeleton,
   SkeletonDeflist,
+  SkeletonRegion,
   Toggle,
 } from '../../ui';
 import type {
@@ -636,7 +637,11 @@ function TsaToolingPanel() {
                   <dt>{t('trust.status.checkedAt')}</dt>
                   {/* A probe is a record of something having happened: evidentiary. */}
                   <dd>
-                    <DateTime className="mono" value={tsa.data.summary.last_probe.checked_at} evidentiary />
+                    <DateTime
+                      className="mono"
+                      value={tsa.data.summary.last_probe.checked_at}
+                      evidentiary
+                    />
                   </dd>
                 </div>
               </TrustKeyValueGrid>
@@ -769,7 +774,7 @@ function TsaToolingPanel() {
                 />
               </div>
               {tsaSearchPending ? (
-                <Loading label={t('trust.tsa.search.loading')} />
+                <TrustResultsSkeleton label={t('trust.tsa.search.loading')} />
               ) : tsaSearchEnabled && tsaSearch.error ? (
                 <ErrorNote error={tsaSearch.error} />
               ) : (
@@ -913,7 +918,11 @@ function TrustStatusPanel() {
                 <div>
                   <dt>{t('trust.refresh.attemptedAt')}</dt>
                   <dd>
-                    <DateTime className="mono" value={status.data.last_refresh.attempted_at} evidentiary />
+                    <DateTime
+                      className="mono"
+                      value={status.data.last_refresh.attempted_at}
+                      evidentiary
+                    />
                   </dd>
                 </div>
                 <div>
@@ -1205,6 +1214,31 @@ function ServicePick({
   );
 }
 
+/**
+ * The two shapes this page waits on. A trust detail is a heading over label/value pairs;
+ * a search is a `.trust-results` column of pick rows. Both are known before the query
+ * lands, so both reserve their real box rather than showing a line of text.
+ */
+function TrustDetailSkeleton({ label }: { label: string }) {
+  return (
+    <SkeletonRegion className="trust-detail stack--tight" label={label}>
+      <Skeleton height="1.5rem" width="55%" />
+      <SkeletonDeflist rows={6} />
+    </SkeletonRegion>
+  );
+}
+
+function TrustResultsSkeleton({ label, rows = 6 }: { label: string; rows?: number }) {
+  return (
+    <SkeletonRegion className="trust-results" label={label}>
+      <Skeleton height="0.85rem" width="12rem" />
+      {Array.from({ length: rows }, (_, i) => (
+        <Skeleton key={i} height="2.8rem" />
+      ))}
+    </SkeletonRegion>
+  );
+}
+
 function ProviderDetail({
   id,
   onSelectService,
@@ -1215,7 +1249,7 @@ function ProviderDetail({
   const t = useT();
   const detail = useTrustProvider(id);
 
-  if (detail.isLoading) return <Loading label={t('trust.detail.loading')} />;
+  if (detail.isLoading) return <TrustDetailSkeleton label={t('trust.detail.loading')} />;
   if (detail.error) return <ErrorNote error={detail.error} />;
   if (!detail.data) return null;
 
@@ -1298,7 +1332,7 @@ function ServiceDetail({
   const t = useT();
   const detail = useTrustService(id);
 
-  if (detail.isLoading) return <Loading label={t('trust.detail.loading')} />;
+  if (detail.isLoading) return <TrustDetailSkeleton label={t('trust.detail.loading')} />;
   if (detail.error) return <ErrorNote error={detail.error} />;
   if (!detail.data) return null;
 
@@ -1631,11 +1665,11 @@ function TrustCatalogExplorer() {
           </div>
 
           {catalog.isLoading ? (
-            <Loading label={t('trust.catalog.loading')} />
+            <TrustResultsSkeleton label={t('trust.catalog.loading')} />
           ) : catalog.error ? (
             <ErrorNote error={catalog.error} />
           ) : trustSearchPending ? (
-            <Loading label={t('trust.catalog.loading')} />
+            <TrustResultsSkeleton label={t('trust.catalog.loading')} />
           ) : trustSearchEnabled && trustSearch.error ? (
             <ErrorNote error={trustSearch.error} />
           ) : results.providers.length === 0 && results.services.length === 0 ? (

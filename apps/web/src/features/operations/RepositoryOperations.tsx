@@ -37,6 +37,9 @@ import {
   InlineWarning,
   Input,
   Select,
+  SkeletonForm,
+  SkeletonRegion,
+  SkeletonTable,
   Table,
   TextArea,
   Toggle,
@@ -251,7 +254,12 @@ function TenantPolicy({ tenantId }: { tenantId: string }) {
       <InlineWarning tone="warn" title={t('operations.repositories.policy.optIn.title')}>
         {t('operations.repositories.policy.optIn.body')}
       </InlineWarning>
-      {query.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+      {/* What replaces this is the policy editor's own form, so the placeholder is a form. */}
+      {query.isLoading ? (
+        <SkeletonRegion>
+          <SkeletonForm fields={3} />
+        </SkeletonRegion>
+      ) : null}
       {query.error ? <ErrorNote error={query.error} /> : null}
       {!query.isLoading && !query.error ? (
         <TenantPolicyEditor
@@ -840,7 +848,12 @@ function ZkObjects({
       </Card>
 
       <Card title={t('operations.repositories.objects.title')}>
-        {objects.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+        {/* Five columns: object, version, bytes, committed, actions. */}
+        {objects.isLoading ? (
+          <SkeletonRegion>
+            <SkeletonTable cols={5} />
+          </SkeletonRegion>
+        ) : null}
         {objects.error ? <ErrorNote error={objects.error} /> : null}
         {objects.data?.length === 0 ? (
           <EmptyState title={t('operations.repositories.objects.empty')} />
@@ -1058,7 +1071,12 @@ export function RepositoryOperations({ tenantId, entities }: RepositoryOperation
       <TenantPolicy tenantId={tenantId} />
       <CreateRepository tenantId={tenantId} />
       <Card title={t('operations.repositories.list.title')}>
-        {repositories.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+        {/* Four columns: name, mode, source, actions. */}
+        {repositories.isLoading ? (
+          <SkeletonRegion>
+            <SkeletonTable cols={4} />
+          </SkeletonRegion>
+        ) : null}
         {repositories.error ? <ErrorNote error={repositories.error} /> : null}
         {repositories.data?.length === 0 ? (
           <EmptyState title={t('operations.repositories.empty')} />

@@ -279,6 +279,36 @@ describe('EntitiesPage', () => {
     );
   });
 
+  it('opts the entity list out of the shell prose measure so the columns get the room', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [ENTITY] },
+      ]),
+    );
+    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    await screen.findByRole('table');
+    // The page root carries the opt-in; the width itself is a CSS concern jsdom cannot lay out.
+    expect(document.querySelector('.wide-page')).toBeTruthy();
+
+    const css = await themeCss();
+    // The shell measure still applies by default — the opt-out is a separate rule, not a
+    // relaxation of `.app` that every prose page would inherit.
+    const appRule = css.match(/\.app\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    expect(appRule).toContain('max-width: 1080px;');
+    // The gutters are the shell's own padding, so widening must not have dropped it.
+    expect(appRule).toContain('padding: clamp(1.25rem, 4vw, 3rem);');
+    const wideRule = css.match(/\.app:has\(\.wide-page\)\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    expect(wideRule).toContain('max-width: 92rem;');
+
+    // The wider measure must reach the table as slack for `Name`, not as a new floor: the
+    // composed floor stays the sum of the visible columns so a wide set still scrolls.
+    const tableRule = css.match(/\.entities-table \.table\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    expect(tableRule).toContain('min-width: var(--entities-table-floor, 0);');
+    expect(css).not.toMatch(/\.table th\[data-entity-column='Name'\]\s*{[^}]*width:/s);
+  });
+
   it('pins entity table and filter CSS to single-line no-overflow rules', async () => {
     const css = await themeCss();
     const filterRule = css.match(/\.entities-filters\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
@@ -1156,6 +1186,48 @@ describe('EntityDetailPage — sub-tabs', () => {
     // answer. No invented timeline, no placeholder graph.
     expect(await screen.findByText('Sem cronologia')).toBeTruthy();
     expect(document.querySelector('.chronology-rail__item')).toBeNull();
+  });
+
+  it('widens the Livros panel only, on a tab switch as well as a deep link', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    renderAtEntity();
+
+    // Arquivo's pattern: `wide-page` rides on the PANEL, so the measure follows the mounted
+    // sub-tab. Livros is a six-column table; the other five are prose-shaped.
+    const panel = () => document.querySelector('.route-transition');
+    await screen.findByRole('link', { name: /abrir livro/i });
+    expect(panel()?.classList.contains('wide-page')).toBe(true);
+
+    const tab = async (label: string) =>
+      within(await screen.findByRole('group', { name: SUBNAV })).getByRole('button', {
+        name: label,
+      });
+
+    fireEvent.click(await tab('Identificação'));
+    await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(false));
+
+    fireEvent.click(await tab('Cronologia e grafo'));
+    await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(false));
+
+    fireEvent.click(await tab('Livros'));
+    await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(true));
+  });
+
+  it('gets the panel width right on a deep link, not only after a tab switch', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    const { unmount } = renderAtEntity('/entidades/new-ent-1?sec=identificacao');
+    // The loading skeleton also renders an "Identificação" card, so wait on the sub-nav —
+    // it only exists once the entity has resolved and the real panel is mounted.
+    await screen.findByRole('group', { name: SUBNAV });
+    expect(document.querySelector('.route-transition')?.classList.contains('wide-page')).toBe(
+      false,
+    );
+    unmount();
+
+    vi.stubGlobal('fetch', detailFetch().fn);
+    renderAtEntity('/entidades/new-ent-1?sec=livros');
+    await screen.findByRole('link', { name: /abrir livro/i });
+    expect(document.querySelector('.route-transition')?.classList.contains('wide-page')).toBe(true);
   });
 
   it('falls back to Livros for an unknown sec value rather than rendering nothing', async () => {

@@ -20,6 +20,7 @@ import type { MessageKey } from '../../i18n';
 import {
   Badge,
   Button,
+  ButtonLink,
   Card,
   DateTime,
   ErrorNote,
@@ -27,7 +28,6 @@ import {
   FieldHelp,
   Icon,
   InlineWarning,
-  Loading,
   Select,
   SubNav,
   useToast,
@@ -39,8 +39,26 @@ import {
  *  holds the log-level configuration and the structured API log tail/viewer. */
 type OperationsTab = 'servicos' | 'registos';
 
-const LOG_BASE_FIELDS = ['global', 'app', 'api', 'mcp'] as const;
-const LOG_OVERRIDE_IDS: readonly PlatformServiceId[] = ['app', 'api', 'mcp_stdio'];
+/** Stable id of the external stdio MCP process, matching `PLATFORM_MCP_STDIO_SERVICE_ID`. */
+export const MCP_SERVICE_ID = 'mcp_stdio' satisfies PlatformServiceId;
+/** Stable id of the API process, matching `PLATFORM_API_SERVICE_ID`. */
+export const API_SERVICE_ID = 'api' satisfies PlatformServiceId;
+
+/** Deep links between the three sibling tabs, so the cross-references cannot drift from the real
+ *  addresses. */
+export const MCP_TAB_PATH = '/configuracoes?sec=operacoes&sub=mcp';
+export const API_TAB_PATH = '/configuracoes?sec=operacoes&sub=api';
+export const PLATFORM_TAB_PATH = '/configuracoes?sec=operacoes';
+
+/** Every log AREA the settings document carries. `logAreaField` maps a service onto one of these;
+ *  it is NOT the list this tab edits (see `LOG_BASE_FIELDS`). */
+type LogAreaField = 'global' | 'app' | 'api' | 'mcp';
+/** The log areas and overrides edited HERE. Both per-service areas moved to the tab that owns the
+ *  service — `api` to the API sub-tab (t82b), `mcp`/`mcp_stdio` to the MCP sub-tab (t82) — and are
+ *  edited there against the same `platform.logging` object in the same working copy. What is left
+ *  is what belongs to no single service: the global floor and the desktop app's own area. */
+const LOG_BASE_FIELDS: readonly Exclude<LogAreaField, 'api' | 'mcp'>[] = ['global', 'app'];
+const LOG_OVERRIDE_IDS: readonly PlatformServiceId[] = ['app'];
 const LOG_LEVEL_RANK: Record<PlatformLogLevel, number> = {
   trace: 0,
   debug: 1,
@@ -56,14 +74,14 @@ const AI_MCP_ASSURANCE_KEYS = [
   'settings.platform.assurance.signature',
 ] as const satisfies readonly MessageKey[];
 
-function logLevelOptions(t: ReturnType<typeof useT>) {
+export function logLevelOptions(t: ReturnType<typeof useT>) {
   return PLATFORM_LOG_LEVELS.map((level) => ({
     value: level,
     label: t(`settings.platform.logLevel.${level}` as MessageKey),
   }));
 }
 
-function overrideOptions(t: ReturnType<typeof useT>) {
+export function overrideOptions(t: ReturnType<typeof useT>) {
   return [
     { value: '', label: t('settings.platform.logging.override.none') },
     ...logLevelOptions(t),
@@ -96,10 +114,8 @@ function isMeaningfulDesiredStateAction(
   return service.desired_state !== desiredStateForAction(capability.action);
 }
 
-function logAreaField(
-  serviceId: PlatformServiceId,
-): Exclude<(typeof LOG_BASE_FIELDS)[number], 'global'> {
-  if (serviceId === 'mcp_stdio') return 'mcp';
+function logAreaField(serviceId: PlatformServiceId): Exclude<LogAreaField, 'global'> {
+  if (serviceId === MCP_SERVICE_ID) return 'mcp';
   return serviceId;
 }
 
@@ -107,7 +123,7 @@ function stricterLogLevel(left: PlatformLogLevel, right: PlatformLogLevel): Plat
   return LOG_LEVEL_RANK[left] >= LOG_LEVEL_RANK[right] ? left : right;
 }
 
-function effectiveLogLevel(
+export function effectiveLogLevel(
   logging: PlatformLoggingSettings,
   serviceId: PlatformServiceId,
 ): PlatformLogLevel {
@@ -117,7 +133,7 @@ function effectiveLogLevel(
   return stricterLogLevel(logging.global, logging[logAreaField(serviceId)]);
 }
 
-function loggingSourceText(
+export function loggingSourceText(
   logging: PlatformLoggingSettings,
   serviceId: PlatformServiceId,
   t: ReturnType<typeof useT>,
@@ -173,7 +189,34 @@ function ServiceBadges({ service }: { service: PlatformServiceStatus }) {
   );
 }
 
-function AiMcpAssurancePanel() {
+/**
+ * The service hub, left where the per-service rows and log levels used to be.
+ *
+ * `GET /v1/platform/services` returns exactly two services — the API process and the stdio MCP
+ * process — and both now have a tab of their own. Rather than render an "no services" empty state
+ * over a list that is empty by design, this says where each service is configured. An operator who
+ * arrives here looking for the controls is routed, not left to conclude they were removed.
+ */
+function ServiceLinks() {
+  const t = useT();
+  return (
+    <div className="stack--tight">
+      <p className="field__hint">{t('settings.platform.services.hub')}</p>
+      <div className="row-wrap">
+        <ButtonLink to={API_TAB_PATH} icon={<Icon.Power />}>
+          {t('settings.api.cardTitle')}
+        </ButtonLink>
+        <ButtonLink to={MCP_TAB_PATH} icon={<Icon.Sliders />}>
+          {t('settings.mcp.cardTitle')}
+        </ButtonLink>
+      </div>
+    </div>
+  );
+}
+
+/** Rendered by the MCP sub-tab (t82), which is what it is about; exported rather than duplicated
+ *  so there is still exactly one copy of this text. */
+export function AiMcpAssurancePanel() {
   const t = useT();
   return (
     <InlineWarning tone="info" title={t('settings.platform.assurance.title')}>
@@ -250,7 +293,7 @@ function ActionCapabilities({ service }: { service: PlatformServiceStatus }) {
   );
 }
 
-function ServiceRow({
+export function ServiceRow({
   service,
   canManage,
   onControlError,
@@ -440,25 +483,24 @@ function AuditTail({ audit }: { audit: PlatformAuditEvent[] }) {
 export function PlatformOperationsSection({
   value,
   audit,
-  canManage,
   onChange,
   logsPanel,
 }: {
   value: PlatformSettings;
   audit: PlatformAuditEvent[];
-  canManage: boolean;
   onChange: (value: PlatformSettings) => void;
   /** The structured API log tail/viewer, hosted by the settings page and rendered inside
    *  the "Registos" sub-sub-tab so the log-level config and the log evidence sit together. */
   logsPanel?: ReactNode;
 }) {
+  // No `canManage`: the per-service action buttons that needed it moved to the API and MCP tabs
+  // with their gate. What is left here is working-copy form state, inerted by the settings page's
+  // `settings.manage` fieldset exactly as before.
   const t = useT();
-  const toast = useToast();
   const services = usePlatformServices();
   const levels = useMemo(() => logLevelOptions(t), [t]);
   const overrides = useMemo(() => overrideOptions(t), [t]);
   const [tab, setTab] = useState<OperationsTab>('servicos');
-
   const setLogging = (logging: PlatformLoggingSettings) => onChange({ ...value, logging });
   const setBaseLevel = (field: (typeof LOG_BASE_FIELDS)[number], level: PlatformLogLevel) =>
     setLogging({ ...value.logging, [field]: level });
@@ -504,26 +546,12 @@ export function PlatformOperationsSection({
                   {t('settings.platform.intro')}{' '}
                   <FieldHelp text={t('settings.platform.help.services')} />
                 </p>
-                <AiMcpAssurancePanel />
-                {services.isLoading ? <Loading label={t('settings.platform.loading')} /> : null}
+                {/* No service list and no loading placeholder: every service this endpoint
+                    returns is configured on its own tab now, so there is nothing here that a
+                    fetch could fill in. `usePlatformServices` is still what the two per-service
+                    tabs read; this pane only routes. */}
                 {services.error ? <ErrorNote error={services.error} /> : null}
-                {services.data && services.data.services.length === 0 ? (
-                  <InlineWarning tone="info" title={t('settings.platform.empty.title')}>
-                    {t('settings.platform.empty.body')}
-                  </InlineWarning>
-                ) : null}
-                {services.data ? (
-                  <div className="platform-service-list">
-                    {services.data.services.map((service) => (
-                      <ServiceRow
-                        key={service.id}
-                        service={service}
-                        canManage={canManage}
-                        onControlError={(error) => toast.error(error)}
-                      />
-                    ))}
-                  </div>
-                ) : null}
+                <ServiceLinks />
               </div>
             </Card>
 
@@ -577,6 +605,7 @@ export function PlatformOperationsSection({
                     ))}
                   </div>
                 </div>
+                <ServiceLinks />
               </div>
             </Card>
 

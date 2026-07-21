@@ -13,6 +13,7 @@
  */
 import { Suspense, lazy } from 'react';
 import { useT } from '../../i18n';
+import { Skeleton, SkeletonRegion } from '../../ui';
 import type { MarkdownBodyEditorProps } from './markdownBodyTypes';
 
 export type { MarkdownBodyEditorProps, MarkdownDiagnostic, PasteReport } from './markdownBodyTypes';
@@ -23,7 +24,18 @@ const Inner = lazy(() => import('./MarkdownBodyEditorInner'));
 export function MarkdownBodyEditor(props: MarkdownBodyEditorProps) {
   const t = useT();
   return (
-    <Suspense fallback={<p className="field__hint">{t('acts.body.editor.loading')}</p>}>
+    // The chunk boundary is a *known* shape — a toolbar strip over a tall editing surface
+    // — so this is the one lazy boundary in the app that gets a skeleton rather than the
+    // route bar: it reserves the editor's height, and the body below does not jump down
+    // when ProseMirror lands.
+    <Suspense
+      fallback={
+        <SkeletonRegion className="stack--tight" label={t('acts.body.editor.loading')}>
+          <Skeleton height="2.2rem" />
+          <Skeleton height="16rem" />
+        </SkeletonRegion>
+      }
+    >
       <Inner {...props} />
     </Suspense>
   );

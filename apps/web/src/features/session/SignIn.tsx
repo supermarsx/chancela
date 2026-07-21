@@ -41,7 +41,16 @@ import type { UserView } from '../../api/types';
 import { keys, useCreateSession, useSessionRoster } from '../../api/hooks';
 import { setSessionToken } from '../../api/session';
 import { useT } from '../../i18n';
-import { Button, Field, Icon, Input, InlineWarning, Loading, Toggle } from '../../ui';
+import {
+  Button,
+  Field,
+  Icon,
+  Input,
+  InlineWarning,
+  Skeleton,
+  SkeletonRegion,
+  Toggle,
+} from '../../ui';
 import { useToast } from '../../ui';
 import { UserCreateForm } from '../users/UserCreateForm';
 import { forgetAccount, readRecentAccounts, rememberAccount } from './recentAccounts';
@@ -166,7 +175,17 @@ export function SignIn() {
         <p className="signin__subtitle">{subtitle}</p>
 
         {roster.isLoading ? (
-          <Loading />
+          // The roster decides WHICH form renders — bootstrap-create or the picker — but
+          // both are the same box: a stack of fields under a primary action. So the card
+          // reserves that instead of showing a bar, and the brand/title above it are
+          // already real content.
+          <SkeletonRegion className="signin__form">
+            <Skeleton height="0.7rem" width="30%" />
+            <Skeleton height="2.4rem" style={{ marginTop: '0.4rem' }} />
+            <Skeleton height="0.7rem" width="30%" style={{ marginTop: '0.9rem' }} />
+            <Skeleton height="2.4rem" style={{ marginTop: '0.4rem' }} />
+            <Skeleton height="2.4rem" style={{ marginTop: '1.1rem' }} />
+          </SkeletonRegion>
         ) : mode === 'create' ? (
           // Bootstrap create (empty roster). The form owns validation + the inline 409; the
           // host owns success → `bootstrapSignIn`. `POST /v1/users` is genuinely

@@ -1,20 +1,39 @@
 /**
- * Edit one user inside Configurações → Utilizadores (`?sec=utilizadores&user=:id`). The
- * legacy `/utilizadores/:id` route redirects there. This file keeps only the reusable panel.
- * The panel has three sections:
+ * Edit one user — a dedicated screen at `/utilizadores/:id` (t89).
  *
- *  1. **Identidade** — the immutable audit username (read-only `code`) and the editable
- *     display name (`PATCH /v1/users/{id}`).
- *  2. **Activation** — the active/inactive state with an icon-only toggle (the same `PATCH`;
- *     users are never deleted, so attribution history stays intact).
- *  3. **Acesso e auditoria** — the existing {@link UserAccessManager} (sign-in password +
- *     PKI audit-attestation key), moved here wholesale and unchanged.
+ * ## Why a screen, and why there is now exactly ONE of them
+ * Editing used to happen inline, as a panel appended below the roster inside
+ * Configurações → Utilizadores (`?sec=utilizadores&user=:id`), while `/utilizadores/:id`
+ * redirected *into* that state. That is the same defect t71 removed at creation time: two
+ * addresses for one action, one of which buries a credential-editing surface under a list.
+ * It is resolved the same way — the screen is the route, `EditUserPanel` is **deleted**
+ * rather than left as a second entry point, and `?sec=utilizadores&user=:id` now redirects
+ * **out** to here so old bookmarks resolve instead of 404-ing. The roster stays in
+ * Configurações; the `#acesso` fragment still lands on the access section.
+ *
+ * ## Layout
+ * Grouped cards, each an ordinary `form settings-rows` of `Field` rows — the same shape as
+ * the create screen, so the two halves of one job read alike. `.settings-rows`, NOT
+ * `.settings-grid`: the latter tiles whole cards into columns and silently breaks a form.
+ *
+ * ## Sections
+ *  1. **Identidade** — the immutable audit username (read-only `code`), the display name and
+ *     the contact e-mail (`PATCH /v1/users/{id}`).
+ *  2. **Estado** — active/inactive (the same `PATCH`; users are never deleted, so attribution
+ *     history stays intact).
+ *  3. **Privacidade** — the DSR lifecycle, gated `user.manage`.
+ *  4. **Funções** — scoped role assignment, gated `role.assign` at each scope.
+ *  5. **Acesso e auditoria** — {@link UserAccessManager}: the sign-in password, the PKI
+ *     audit-attestation key and the recovery phrase. Its cross-user credential-proof rules and
+ *     the copy that explains them move with it **unchanged**, and stay adjacent to the controls
+ *     they gate: editing another user's credentials proves that user's current password OR a
+ *     valid recovery phrase, and generating an audit key requires the password specifically.
  *
  * The user is resolved from the `useUsers()` list cache for an instant paint; a cold deep
  * link (empty cache) falls back to `GET /v1/users/{id}` via {@link useUser}.
  */
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   useCompleteUserDsrRequest,
@@ -46,6 +65,7 @@ import {
   useToast,
 } from '../../ui';
 import { UserAccessManager } from './UserAccessManager';
+import { USERS_LIST_PATH } from './paths';
 import { RoleAssignmentManager } from '../rbac/RoleAssignmentManager';
 import {
   GateButton,
@@ -117,7 +137,7 @@ function IdentitySection({ user }: { user: UserView }) {
 
   return (
     <Card title={t('users.edit.identityCard')}>
-      <form className="form" onSubmit={save}>
+      <form className="form settings-rows" onSubmit={save}>
         <Field
           label={t('users.table.username')}
           htmlFor="edit-username"
@@ -277,7 +297,7 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
           {translateNow('uiLiteral.editUserPage.registaOCicloDeVidaDosPedidosDsr')}{' '}
         </p>
 
-        <form className="form" onSubmit={create}>
+        <form className="form settings-rows" onSubmit={create}>
           <Field
             label={translateNow('uiLiteral.editUserPage.tipoDePedido')}
             htmlFor="dsr-request-type"
@@ -371,8 +391,19 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
   );
 }
 
-export function EditUserPanel({ id, showHeader = false }: { id: string; showHeader?: boolean }) {
+function Crumbs({ trailing }: { trailing?: string }) {
   const t = useT();
+  return (
+    <>
+      <Link to={USERS_LIST_PATH}>{t('users.breadcrumb.self')}</Link>
+      {trailing ? ` · ${trailing}` : null}
+    </>
+  );
+}
+
+export function EditUserPage() {
+  const t = useT();
+  const { id = '' } = useParams();
   const users = useUsers();
   const cached = users.data?.find((u) => u.id === id);
   // Cold deep link (empty list cache) → fetch the single user directly.
@@ -380,53 +411,37 @@ export function EditUserPanel({ id, showHeader = false }: { id: string; showHead
   const user = cached ?? single.data;
 
   if (!user) {
-    if (single.isLoading || users.isLoading) {
+    if (id && (single.isLoading || users.isLoading)) {
       return (
         <div className="stack">
-          {showHeader ? (
-            <PageHeader
-              crumbs={
-                <Link to="/configuracoes?sec=utilizadores">{t('users.breadcrumb.self')}</Link>
-              }
-              title={<Skeleton width="16rem" height="1.6rem" />}
-            />
-          ) : null}
+          <PageHeader crumbs={<Crumbs />} title={<Skeleton width="16rem" height="1.6rem" />} />
           <Card title={t('users.edit.identityCard')}>
             <SkeletonDeflist />
           </Card>
         </div>
       );
     }
-    if (single.error) return <ErrorNote error={single.error} />;
+    if (single.error) {
+      return (
+        <div className="stack">
+          <PageHeader crumbs={<Crumbs />} title={t('users.edit.title')} />
+          <ErrorNote error={single.error} />
+        </div>
+      );
+    }
     return (
       <div className="stack">
-        {showHeader ? (
-          <PageHeader
-            crumbs={<Link to="/configuracoes?sec=utilizadores">{t('users.breadcrumb.self')}</Link>}
-            title={t('users.edit.notFound')}
-          />
-        ) : (
-          <Card title={t('users.edit.notFound')}>
-            <p className="field__hint">{t('users.edit.notFound')}</p>
-          </Card>
-        )}
+        <PageHeader crumbs={<Crumbs />} title={t('users.edit.notFound')} />
+        <Card>
+          <p className="field__hint">{t('users.edit.notFound')}</p>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="stack">
-      {showHeader ? (
-        <PageHeader
-          crumbs={
-            <>
-              <Link to="/configuracoes?sec=utilizadores">{t('users.breadcrumb.self')}</Link> ·{' '}
-              {user.display_name}
-            </>
-          }
-          title={user.display_name}
-        />
-      ) : null}
+    <div className="stack form-page">
+      <PageHeader crumbs={<Crumbs trailing={user.display_name} />} title={user.display_name} />
 
       <IdentitySection user={user} />
       <ActivationSection user={user} />

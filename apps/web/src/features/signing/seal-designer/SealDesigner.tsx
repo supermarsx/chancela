@@ -10,7 +10,7 @@
  * builds the backend {@link SealAppearanceBody} the sign request carries.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Field, Input, Select } from '../../../ui';
+import { Button, Field, Input, Select, Skeleton, SkeletonRegion } from '../../../ui';
 import { useT } from '../../../i18n';
 import type { SealAppearanceBody } from '../../../api/types';
 import {
@@ -417,8 +417,17 @@ export function SealDesigner({
             aria-label={t('signing.seal.designer.surface.aria')}
           >
             <canvas ref={canvasRef} className="seal-designer__canvas" />
+            {/* The surface already reserves the page's exact box (width/height/aspect are
+                set above), so there is no layout shift to fix here — what the shimmer buys
+                is that the wait reads as a page rendering rather than as a line of prose
+                floating over an empty rectangle. The overlay rule is unchanged. */}
             {status === 'loading' ? (
-              <p className="seal-designer__hint">{t('signing.seal.designer.loading')}</p>
+              <SkeletonRegion
+                className="seal-designer__hint"
+                label={t('signing.seal.designer.loading')}
+              >
+                <Skeleton height="100%" />
+              </SkeletonRegion>
             ) : null}
             {overlayBox ? (
               <div

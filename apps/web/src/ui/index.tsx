@@ -24,13 +24,7 @@ export { ButtonLink } from './ButtonLink';
 export { PageHeader } from './PageHeader';
 export { SubNav, type SubNavItem } from './SubNav';
 export { Stepper, type StepperStep } from './Stepper';
-export {
-  Tooltip,
-  IconButton,
-  TooltipText,
-  useIsClipped,
-  type TooltipPlacement,
-} from './Tooltip';
+export { Tooltip, IconButton, TooltipText, useIsClipped, type TooltipPlacement } from './Tooltip';
 export { FieldHelp } from './FieldHelp';
 export * as Icon from './icons';
 export {
@@ -38,7 +32,9 @@ export {
   SkeletonText,
   SkeletonTable,
   SkeletonCards,
+  SkeletonChips,
   SkeletonDeflist,
+  SkeletonForm,
   SkeletonList,
   SkeletonRegion,
 } from './Skeleton';
@@ -276,41 +272,6 @@ export function InlineWarning({
 }
 
 // --- Query state helpers --------------------------------------------------------
-
-/**
- * The shared indeterminate wait: a themed sweeping bar over its label.
- *
- * Use this only where the shape of what is coming is UNKNOWN (an unresolved route, a
- * search whose result count is not yet known). Where the shape IS known, a
- * {@link ./Skeleton} composite is the better instrument — it reserves the final layout
- * so the content swaps in without shifting, which a centred bar cannot do.
- *
- * The bar is deliberately **indeterminate**: it sweeps, it does not fill. This product
- * makes people wait on signing, sealing and validation, so a bar that crept to 90% on a
- * timer would be lying about progress we do not have — and would teach operators to
- * distrust the determinate bars that report real numerators.
- *
- * Accessibility: the region is a polite `role="status"` and the label stays as real text,
- * so the wait is announced rather than being a purely visual event. The track itself is
- * `aria-hidden` — it is decoration over the label, not a second announcement. Pass
- * `region={false}` when the CALLER is already a live region (the auth gate's boot panel
- * is): nesting two `role="status"` elements announces the same wait twice.
- *
- * Timing and motion live in `theme.css`: the whole region holds at opacity 0 for ~180ms
- * before fading in, so a fast response never flashes a bar in and out, and under
- * `prefers-reduced-motion` the sweep is replaced by a static filled track.
- */
-export function Loading({ label, region = true }: { label?: string; region?: boolean }) {
-  const t = useT();
-  return (
-    <div className="loading" role={region ? 'status' : undefined} aria-busy={region || undefined}>
-      <span className="loading__track" aria-hidden="true">
-        <span className="loading__indicator" />
-      </span>
-      <span className="loading__label muted">{label ?? t('common.loading')}</span>
-    </div>
-  );
-}
 
 export function ErrorNote({ error }: { error: unknown }) {
   const t = useT();

@@ -2,14 +2,48 @@ import { describe, expect, it } from 'vitest';
 import {
   dashboardAlertSourceLabel,
   dashboardReminderRuleLabel,
+  isRetiredRoleId,
   ledgerEventKindLabel,
+  roleNameLabel,
 } from './labels';
 import {
   LABELLED_DASHBOARD_ALERT_SOURCES,
   LABELLED_DASHBOARD_REMINDER_RULES,
   LABELLED_LEDGER_EVENT_KINDS,
+  SEEDED_ROLE_NAMES,
 } from '../i18n';
 import { ptPT } from '../i18n/locales/pt-PT';
+import { daDK } from '../i18n/locales/da-DK';
+import { deDE } from '../i18n/locales/de-DE';
+import { enGB } from '../i18n/locales/en-GB';
+import { enUS } from '../i18n/locales/en-US';
+import { esES } from '../i18n/locales/es-ES';
+import { fiFI } from '../i18n/locales/fi-FI';
+import { frFR } from '../i18n/locales/fr-FR';
+import { itIT } from '../i18n/locales/it-IT';
+import { nlNL } from '../i18n/locales/nl-NL';
+import { plPL } from '../i18n/locales/pl-PL';
+import { ptBR } from '../i18n/locales/pt-BR';
+import { svFI } from '../i18n/locales/sv-FI';
+import { svSE } from '../i18n/locales/sv-SE';
+
+/** Every shipped catalog: the pt-PT source plus the 13 code-split locales. */
+const ALL_CATALOGS = {
+  'pt-PT': ptPT,
+  'en-US': enUS,
+  'en-GB': enGB,
+  'pt-BR': ptBR,
+  'da-DK': daDK,
+  'de-DE': deDE,
+  'es-ES': esES,
+  'fi-FI': fiFI,
+  'fr-FR': frFR,
+  'it-IT': itIT,
+  'nl-NL': nlNL,
+  'pl-PL': plPL,
+  'sv-FI': svFI,
+  'sv-SE': svSE,
+};
 
 describe('ledgerEventKindLabel', () => {
   it('renders a known kind as source-locale copy, not the wire identifier', () => {
@@ -48,10 +82,144 @@ describe('ledgerEventKindLabel', () => {
 
     expect(missing).toEqual([]);
     expect(orphaned).toEqual([]);
-    // The catalog was seeded from the 125 kinds `crates/` emits; a shrink is a regression.
-    expect(LABELLED_LEDGER_EVENT_KINDS.size).toBeGreaterThanOrEqual(125);
+    // The catalog was seeded from the kinds `crates/` emits; a shrink is a regression.
+    expect(LABELLED_LEDGER_EVENT_KINDS.size).toBeGreaterThanOrEqual(133);
+  });
+
+  it('labels every event kind the Rust crates can append to the ledger', async () => {
+    // Parity against the source of truth, not the UI: a kind added server-side must fail here
+    // rather than leak a dotted wire identifier into the Arquivo table months later.
+    const emitted = await ledgerEventKindsEmittedByCrates();
+
+    // Non-vacuity, per rule: a regex that stops matching must fail loudly instead of passing on
+    // an empty set. Each of the four emit shapes below really exists in the tree today.
+    for (const [rule, kinds] of Object.entries(emitted.byRule)) {
+      expect(kinds.size, `extraction rule "${rule}" matched nothing`).toBeGreaterThan(0);
+    }
+    // A floor just under the current count, so a partially broken sweep is caught too.
+    expect(emitted.kinds.size).toBeGreaterThanOrEqual(130);
+
+    const unlabelled = [...emitted.kinds].filter((kind) => !LABELLED_LEDGER_EVENT_KINDS.has(kind));
+    expect(unlabelled.sort()).toEqual([]);
   });
 });
+
+/**
+ * Every ledger event kind the Rust crates can append, read out of the crate sources.
+ *
+ * There is no single `kind` literal position to grep: a kind reaches `Ledger::append` through
+ * `try_append_event`, a per-module `record_*`/`audit`/`persist_*` helper, a `*_KIND` constant, a
+ * `fn *kind()` match, or a `let kind = …` binding. All five shapes are swept; a literal is taken
+ * as a kind only if it looks like one (`a.b`, lowercase dotted). Test code is excluded, so a
+ * fixture kind never becomes a label obligation.
+ */
+async function ledgerEventKindsEmittedByCrates(): Promise<{
+  kinds: Set<string>;
+  byRule: Record<string, Set<string>>;
+}> {
+  const nodeFs = 'node:fs';
+  const { readFileSync, readdirSync, statSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+    readdirSync(path: string): string[];
+    statSync(path: string): { isDirectory(): boolean };
+  };
+
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const path = `${dir}/${name}`;
+      if (statSync(path).isDirectory()) {
+        if (name !== 'target' && name !== 'tests') walk(path);
+      } else if (name.endsWith('.rs') && !name.endsWith('_tests.rs')) {
+        files.push(path);
+      }
+    }
+  };
+  walk('../../crates');
+
+  const KIND = /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/u;
+  const LITERAL = /"([^"\n]+)"/gu;
+  const byRule: Record<string, Set<string>> = {
+    emitCall: new Set(),
+    kindFn: new Set(),
+    kindLet: new Set(),
+    kindConst: new Set(),
+  };
+  const take = (rule: keyof typeof byRule, text: string): void => {
+    for (const match of text.matchAll(LITERAL)) {
+      if (KIND.test(match[1])) byRule[rule].add(match[1]);
+    }
+  };
+
+  for (const file of files) {
+    const source = stripRustTestModules(readFileSync(file, 'utf8'));
+
+    // 1. Any call whose name carries append/record/audit/persist — the emit funnels. The
+    //    structured-logging helper is excluded by name: its `target` field is a log channel
+    //    (`platform.services`), not a ledger kind, and it never reaches `Ledger::append`.
+    for (const match of source.matchAll(
+      /(?<![a-z_0-9])([a-z_0-9]*(?:append|record|audit|persist)[a-z_0-9]*)\s*\(/gu,
+    )) {
+      if (match[1] === 'record_platform_log') continue;
+      take('emitCall', balancedBlock(source, match.index + match[0].length));
+    }
+    // 2. `fn event_kind(self) -> &'static str { match … }`.
+    for (const match of source.matchAll(/fn\s+[a-z_0-9]*kind[a-z_0-9]*\s*\([^)]*\)[^{]*\{/gu)) {
+      take('kindFn', balancedBlock(source, match.index + match[0].length));
+    }
+    // 3. `let kind = match …` / `let (kind, why) = if …` — the branch picks the kind.
+    for (const match of source.matchAll(/let\s+[^=;\n]*\bkind\b[^=;\n]*=\s*/gu)) {
+      const start = match.index;
+      const end = source.indexOf(';', start + match[0].length);
+      take('kindLet', source.slice(start, end < 0 ? start + 400 : end));
+    }
+    // 4. `const SUBJECT_ERASED_KIND: &str = "subject.erased";`.
+    for (const match of source.matchAll(
+      /(?:const|static)\s+[A-Z_0-9]*KIND\b\s*:\s*&(?:'static\s+)?str\s*=\s*("[^"]+")\s*;/gu,
+    )) {
+      take('kindConst', match[1]);
+    }
+  }
+
+  const kinds = new Set<string>();
+  for (const rule of Object.values(byRule)) for (const kind of rule) kinds.add(kind);
+  return { kinds, byRule };
+}
+
+/** Drop `#[cfg(test)] mod … { … }` bodies, brace-balanced, so fixtures are not swept as kinds. */
+function stripRustTestModules(source: string): string {
+  const opener = /#\[cfg\(test\)\]\s*(?:pub\s+)?mod\s+[a-z_0-9]+\s*\{/gu;
+  let kept = '';
+  let cursor = 0;
+  for (;;) {
+    opener.lastIndex = cursor;
+    const hit = opener.exec(source);
+    if (!hit) return kept + source.slice(cursor);
+    kept += source.slice(cursor, hit.index);
+    let depth = 1;
+    let index = opener.lastIndex;
+    while (index < source.length && depth > 0) {
+      if (source[index] === '{') depth += 1;
+      else if (source[index] === '}') depth -= 1;
+      index += 1;
+    }
+    cursor = index;
+  }
+}
+
+/** The text between `open` and the bracket that closes the group it opened. */
+function balancedBlock(source: string, open: number): string {
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '(' || char === '[' || char === '{') depth += 1;
+    else if (char === ')' || char === ']' || char === '}') {
+      if (depth === 0) return source.slice(open, index);
+      depth -= 1;
+    }
+  }
+  return source.slice(open);
+}
 
 /**
  * Read a crate source file. The web tsconfig has no `@types/node`, so `node:fs` is reached
@@ -167,5 +335,127 @@ describe('dashboardReminderRuleLabel', () => {
       .sort();
     // `source_rule: preset.id` is deliberately absent: those reminders ship `preset_label`.
     expect(unlabelled).toEqual([]);
+  });
+});
+
+describe('roleNameLabel', () => {
+  /** The u128 literals in `role.rs` rendered as the UUIDs the API puts on the wire. */
+  function uuidOf(hex: string): string {
+    const h = BigInt(`0x${hex.replace(/_/gu, '')}`)
+      .toString(16)
+      .padStart(32, '0');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+
+  async function seededRoleIdsFromCrate(): Promise<Map<string, string>> {
+    const source = await readCrateSource('crates/chancela-authz/src/role.rs');
+    const found = new Map<string, string>();
+    for (const match of source.matchAll(
+      /pub const (\w+_ROLE_ID): RoleId =\s*RoleId\(Uuid::from_u128\(0x([0-9a-f_]+)\)\)/gu,
+    )) {
+      found.set(match[1], uuidOf(match[2]));
+    }
+    return found;
+  }
+
+  it('names every seeded role the Rust catalog defines, and invents none', async () => {
+    // The claim the module docs make: `SEEDED_ROLE_NAMES` mirrors `role.rs`. Assert it against the
+    // crate rather than against a copy, so adding or retiring a role server-side fails here instead
+    // of silently rendering a bare UUID in the roles table.
+    const fromCrate = await seededRoleIdsFromCrate();
+    expect(fromCrate.size).toBeGreaterThan(0);
+
+    const crateIds = [...fromCrate.values()].sort();
+    const clientIds = Object.keys(SEEDED_ROLE_NAMES).sort();
+    expect(clientIds).toEqual(crateIds);
+  });
+
+  it('marks exactly the retired ids as retired', async () => {
+    const fromCrate = await seededRoleIdsFromCrate();
+    const retiredInCrate = [...fromCrate]
+      .filter(([name]) => name.startsWith('RETIRED_'))
+      .map(([, id]) => id)
+      .sort();
+    const retiredInClient = Object.entries(SEEDED_ROLE_NAMES)
+      .filter(([, entry]) => entry.retired)
+      .map(([id]) => id)
+      .sort();
+    expect(retiredInClient).toEqual(retiredInCrate);
+    expect(retiredInClient.length).toBe(2);
+  });
+
+  it('has a catalog entry for every seeded role, in every shipped locale', () => {
+    // "Resolves to a name in all 14 locales" is the requirement, so assert it over the real
+    // catalogs rather than over pt-PT alone — a missing slice would otherwise only surface for that
+    // locale's users.
+    //
+    // The catalogs are imported statically, the same way `i18n/catalogLeakGate.test.ts` does it,
+    // NOT awaited through `LOCALE_LOADERS`. An earlier version of this test resolved the 13
+    // code-split loaders at runtime; it passed in isolation and timed out at 5s under the full
+    // suite, which made a correctness gate into a load-dependent flake. Static imports make it
+    // synchronous and deterministic.
+    const slugs = Object.values(SEEDED_ROLE_NAMES).map((entry) => entry.slug);
+    expect(slugs.length).toBe(Object.keys(SEEDED_ROLE_NAMES).length);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    // All 14, counted rather than assumed: pt-PT is the eager source catalog and the other 13 are
+    // the shipped locales, so a locale added without a role-name slice fails here.
+    expect(Object.keys(ALL_CATALOGS).length).toBe(14);
+
+    for (const [locale, catalog] of Object.entries(ALL_CATALOGS)) {
+      for (const slug of slugs) {
+        const key = `enum.roleName.${slug}`;
+        expect((catalog as Record<string, string>)[key], `${locale} is missing ${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('renders a seeded role in the active locale, not the English name the server stores', () => {
+    const owner = '6f776e65-7200-0000-0000-000000000001';
+    expect(roleNameLabel(owner, 'Owner')).toBe('Proprietário');
+    expect(roleNameLabel('7369676e-7472-7900-0000-00000000000e', 'Signatory')).toBe('Signatário');
+    expect(roleNameLabel('636f6f77-6e72-0000-0000-00000000000a', 'Company Owner')).toBe(
+      'Proprietário da empresa',
+    );
+  });
+
+  it('leaves an operator-authored role name exactly as authored', () => {
+    // A custom role's id is a random UUID and is never in the map, so its name is data. This is the
+    // defect the seeded/custom split exists to prevent: translating someone else's words.
+    const custom = '9f1d4c7a-2b3e-4f56-8a90-1c2d3e4f5a6b';
+    expect(roleNameLabel(custom, 'Gerente da filial')).toBe('Gerente da filial');
+    expect(roleNameLabel(custom, 'Owner')).toBe('Owner');
+    expect(roleNameLabel(custom, '  Signatory  ')).toBe('Signatory');
+  });
+
+  it('lets an operator rename a seeded role and shows their name, not the translation', () => {
+    // Otherwise editing a seeded role's name would silently appear to do nothing.
+    const signatory = '7369676e-7472-7900-0000-00000000000e';
+    expect(roleNameLabel(signatory, 'Assinante-chefe')).toBe('Assinante-chefe');
+    expect(roleNameLabel(signatory, 'Signatory')).toBe('Signatário');
+  });
+
+  it('still names a retired id, so past ledger events stay readable', () => {
+    // The requirement the merge must not break: these ids are gone from the catalog but remain in
+    // append-only history, which is never rewritten. Both must render a name, marked retired.
+    const gestor = '67657374-6f72-0000-0000-000000000002';
+    const signatario = '7369676e-6174-0000-0000-000000000003';
+    expect(isRetiredRoleId(gestor)).toBe(true);
+    expect(isRetiredRoleId(signatario)).toBe(true);
+    expect(roleNameLabel(gestor)).toBe('Gestor (função descontinuada)');
+    expect(roleNameLabel(signatario)).toBe('Signatário (função descontinuada)');
+
+    // A retired id resolves even when a stale record still carries its old stored name.
+    expect(roleNameLabel(gestor, 'Gestor')).toBe('Gestor (função descontinuada)');
+    expect(isRetiredRoleId('6f776e65-7200-0000-0000-000000000001')).toBe(false);
+  });
+
+  it('degrades to the raw id for a role it knows nothing about', () => {
+    // Never blank, never "undefined" — the id is still a usable handle in a table cell.
+    expect(roleNameLabel('7e57r0le-0000-0000-0000-000000000000')).toBe(
+      '7e57r0le-0000-0000-0000-000000000000',
+    );
+    expect(roleNameLabel('  9f1d4c7a-2b3e-4f56-8a90-1c2d3e4f5a6b  ')).toBe(
+      '  9f1d4c7a-2b3e-4f56-8a90-1c2d3e4f5a6b  ',
+    );
   });
 });

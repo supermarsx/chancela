@@ -9,13 +9,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsFrFR } from '../ledgerEventLabels';
+import { ledgerScopeLabelsFrFR } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsFrFR } from '../dashboardSourceLabels';
+import { roleNameLabelsFrFR } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const frFR: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsFrFR,
+  ...ledgerScopeLabelsFrFR,
   ...dashboardSourceLabelsFrFR,
+  ...roleNameLabelsFrFR,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Vous n’avez pas la permission pour cette action',
@@ -1606,6 +1610,23 @@ export const frFR: Catalog = {
   'users.action.edit': 'Modifier',
   'users.new.crumb': 'Nouveau',
   'users.new.title': 'Nouvel utilisateur',
+  'users.edit.title': "Modifier l'utilisateur",
+  'users.filters.aria': 'Rechercher et filtrer les utilisateurs',
+  'users.filters.search.label': 'Rechercher',
+  'users.filters.search.placeholder': "Nom d'utilisateur, nom ou e-mail",
+  'users.filters.status.label': 'État',
+  'users.filters.status.all': 'Tous les états',
+  'users.filters.access.label': 'Accès',
+  'users.filters.access.all': 'Tout accès',
+  'users.filters.access.key': "Avec clé d'audit",
+  'users.filters.access.noKey': "Sans clé d'audit",
+  'users.filters.access.noPassword': 'Sans mot de passe',
+  'users.filters.access.recovery': 'Avec phrase de récupération',
+  'users.filters.clear.aria': "Effacer les filtres d'utilisateurs",
+  'users.filters.count': '{shown} sur {total}',
+  'users.filters.count.aria': 'Affichage de {shown} sur {total} utilisateurs',
+  'users.filters.empty.title': 'Aucun résultat',
+  'users.filters.empty.body': 'Modifiez la recherche ou les filtres pour revoir des utilisateurs.',
   'users.edit.identityCard': 'Identité',
   'users.edit.usernameHint':
     "Le nom d'utilisateur est l'identifiant d'audit et ne peut pas être modifié.",
@@ -1763,7 +1784,7 @@ export const frFR: Catalog = {
     'À utiliser uniquement lorsqu’un service nécessite un niveau différent de celui de son domaine.',
   'settings.platform.logging.override.none': 'Aucun remplacement',
   'settings.platform.logging.override.app': 'Application',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'Serveur API',
   'settings.platform.logging.override.mcp_stdio': 'Studio MCP',
   'settings.platform.logLevel.trace': 'Tracer',
   'settings.platform.logLevel.debug': 'Débogage',
@@ -1812,10 +1833,73 @@ export const frFR: Catalog = {
   'settings.platform.subnav.aria': 'Sections des opérations',
   'settings.platform.tab.services': 'Services',
   'settings.platform.tab.services.desc':
-    "Contrôle de l'état souhaité des serveurs API et MCP, avec des résultats honnêtes du backend et un journal d'audit des opérations.",
+    "Contrôle de l'état souhaité du serveur API, avec des résultats honnêtes du backend et un journal d'audit des opérations.",
   'settings.platform.tab.logs': 'Journaux',
   'settings.platform.tab.logs.desc':
     "Configuration des niveaux de journalisation et file structurée des journaux de l'API (lecture seule).",
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Serveur',
+  'settings.api.subnav.aria': 'Zones API',
+  'settings.api.cardTitle': 'Serveur API',
+  'settings.api.intro':
+    "L'état souhaité, les journaux et la configuration de démarrage du serveur API au même endroit. Les clés API sont dans le volet voisin.",
+  'settings.api.logging.title': 'Journaux API',
+  'settings.api.logging.hint':
+    'Ces deux champs écrivent dans le même document de configuration que les autres niveaux de journalisation.',
+  'settings.api.env.hint':
+    "Résolues depuis l'environnement du processus au démarrage du serveur. Elles ne sont modifiables ni ici ni par aucun endpoint ; les changer exige de redémarrer le serveur.",
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    "Le serveur parle du HTTP simple. Le TLS est terminé par le proxy inverse placé devant, et l'en-tête HSTS ci-dessous ne prend effet que dans cette configuration.",
+  'settings.api.env.addr': 'Adresse hôte:port sur laquelle le serveur écoute.',
+  'settings.api.env.cors':
+    "Origines exactes autorisées à appeler l'API en cross-origin. Vide signifie même origine uniquement.",
+  'settings.api.env.rateLimit': 'Limiteur de requêtes par IP. Activé par défaut sur le serveur.',
+  'settings.api.env.ratePerSecond': 'Débit soutenu de requêtes par seconde et par IP.',
+  'settings.api.env.rateBurst': 'Capacité de rafale par IP.',
+  'settings.api.env.trustForwarded':
+    'Faire confiance à X-Forwarded-For pour identifier le client. Uniquement derrière un proxy inverse de confiance.',
+  'settings.api.env.hstsMaxAge': 'Durée, en secondes, de la politique HSTS annoncée.',
+  'settings.api.env.hstsSubdomains': 'Étendre la politique HSTS aux sous-domaines.',
+  'settings.api.env.hstsPreload':
+    'Annoncer la directive preload. À activer seulement après soumission du domaine.',
+  'settings.api.env.sessionLifetime':
+    'Plafond absolu de durée de session, en secondes. Zéro ou négatif désactive le plafond.',
+  'settings.api.related.title': 'Réglages liés',
+  'settings.api.related.egress':
+    "C'est la liste de sortie des connecteurs, pas la surface entrante de l'API : elle borne où un connecteur peut envoyer des octets. Elle reste dans Plateforme.",
+  'settings.api.related.logTail':
+    'Le flux de journaux couvre l’application, l’API et le MCP : il reste dans Plateforme › Journaux.',
+  'settings.mcp.cardTitle': 'Serveur MCP',
+  'settings.mcp.intro':
+    "Toute la configuration propre au MCP au même endroit : l'état souhaité du processus stdio, les niveaux de journalisation et les variables d'environnement lues au démarrage.",
+  'settings.platform.services.hub':
+    'Chaque service a son propre onglet, avec son état souhaité, ses niveaux de journalisation et sa configuration de démarrage.',
+  'settings.mcp.logging.title': 'Journaux du MCP',
+  'settings.mcp.logging.hint':
+    'Ces deux champs écrivent dans le même document de configuration que les autres niveaux de journalisation.',
+  'settings.env.title': 'Configuration de démarrage (environnement)',
+  'settings.mcp.env.hint':
+    "Lues dans l'environnement du processus au démarrage du serveur MCP. Elles ne sont modifiables ni ici ni par aucun endpoint ; les changer exige de relancer le processus. La valeur de la clé API n'atteint jamais cette interface.",
+  'settings.env.col.variable': 'Variable',
+  'settings.env.col.meaning': 'Signification',
+  'settings.env.col.default': 'Valeur par défaut',
+  'settings.mcp.env.enabled': 'Interrupteur principal du serveur MCP.',
+  'settings.mcp.env.aiGate':
+    'Miroir du verrou IA/MCP du locataire. Le processus ne sert que si les deux sont actifs.',
+  'settings.mcp.env.transport': 'Transport de connexion. Cette version ne sert que stdio.',
+  'settings.mcp.env.baseUrl': "URL de base de l'API d'intégration appelée par les outils.",
+  'settings.mcp.env.basePath': "Chemin de base versionné où l'API est montée.",
+  'settings.mcp.env.apiKey':
+    "Clé API avec laquelle le serveur MCP s'authentifie. Obligatoire lorsqu'il est actif.",
+  'settings.mcp.env.tools': 'Outils exposés : toutes, ou une liste séparée par des virgules.',
+  'settings.mcp.env.bind':
+    "Adresse d'écoute, réservée à un transport distant. Sans effet dans cette version.",
+  'settings.mcp.related.title': 'Réglages liés',
+  'settings.mcp.related.gate':
+    "Le verrou IA/MCP du locataire gouverne aussi les fonctions d'IA : il reste donc modifié dans Gestion. Sans lui, le MCP reste inerte.",
+  'settings.mcp.related.apiKeys':
+    "Les clés API ne sont pas propres au MCP : elles authentifient tous les clients d'intégration. Elles gardent leur propre onglet.",
   'settings.platform.serviceDetails': 'Détails de contrôle et limites',
   'settings.platform.help.services':
     "Ces actions enregistrent l'état souhaité du service ; l'interface ne présume pas d'un contrôle direct du processus (par exemple le redémarrage automatique de l'API ou le démarrage stdio du MCP).",
@@ -2151,6 +2235,10 @@ export const frFR: Catalog = {
   'settings.about.ledger.valid': 'Chaîne intègre · {count} événements',
   'settings.about.ledger.compromised': 'Chaîne compromise',
   'settings.about.schemaVersion': 'Version du schéma de configuration',
+  'settings.about.interfaceLocale': 'Langue de l’interface',
+  'settings.about.tableCaption': 'Informations sur l’instance',
+  'settings.about.column.item': 'Information',
+  'settings.about.column.value': 'Valeur',
   'settings.save': 'Enregistrer les paramètres',
   'settings.saved': 'Paramètres enregistrés.',
   'toast.settings.saved': 'Paramètres enregistrés.',
@@ -2440,6 +2528,7 @@ export const frFR: Catalog = {
   'entities.print.nipcUnvalidated': '(non validé)',
   'settings.subnav.aria': 'Sections de configuration',
   'settings.subnav.platform': 'Plateforme',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Domaines des opérations',
   'settings.subnav.signing.aria': 'Domaines de signature',
 
@@ -2550,6 +2639,8 @@ export const frFR: Catalog = {
   'users.key.rotate': 'Renouveler la clé',
   'users.key.remove': 'Supprimer la clé',
   'users.key.requiresSecret': 'Définissez un mot de passe avant de générer une clé d’audit.',
+  'users.key.rotateNote':
+    'Le renouvellement génère une nouvelle paire de clés pour les attestations à venir. Les attestations déjà produites restent vérifiables : la partie publique de la clé précédente est conservée, et cette partie ne permet pas de signer.',
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'Vous modifiez les identifiants d’un autre utilisateur. Chaque changement nécessite le mot de passe actuel de cet utilisateur ou une phrase de récupération valide.',
@@ -2677,6 +2768,33 @@ export const frFR: Catalog = {
   'templates.channels.none': 'Aucun canal spécifique',
   'templates.table.source': 'Source',
   'templates.table.actions': 'Actions',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Colonnes',
+  'templates.columns.hint':
+    'Choisissez les colonnes affichées dans le tableau. La source juridique figure toujours en entier sur la page du modèle.',
+  'templates.detail.open': 'Ouvrir le modèle',
+  'templates.detail.subnav.aria': 'Sections du modèle',
+  'templates.detail.section.overview': 'Identification',
+  'templates.detail.section.placeholders': 'Champs attendus',
+  'templates.detail.version': 'Version',
+  'templates.detail.notFound.title': 'Modèle introuvable',
+  'templates.detail.notFound.body':
+    'Le catalogue ne contient aucun modèle portant cet identifiant.',
+  'templates.detail.spec.error': 'Impossible de charger le contenu de ce modèle.',
+  'templates.detail.lawSource.empty': 'Ce modèle n’indique aucune source juridique.',
+  'templates.detail.blocks.empty': 'Ce modèle ne déclare aucun bloc.',
+  'templates.detail.placeholders.intro':
+    'Champs que les blocs de ce modèle lisent dans l’enregistrement du procès-verbal.',
+  'templates.detail.placeholders.empty': 'Ce modèle ne lit aucun champ de l’enregistrement.',
+  'templates.actions.clone': 'Dupliquer',
+  'templates.editor.title.fork': 'Dupliquer le modèle',
+  'templates.fork.source': 'Modèle d’origine : {id}',
+  'templates.fork.builtin.title': 'Les modèles intégrés ne se modifient pas',
+  'templates.fork.builtin.body':
+    'Un modèle intégré est en lecture seule, afin qu’un procès-verbal déjà scellé conserve exactement le même sens. La modification crée une copie sous un nouvel identifiant ; cette copie peut ensuite être modifiée librement.',
+  'templates.fork.limit.title': 'Une copie ne produit pas encore de documents',
+  'templates.fork.limit.body':
+    'Une copie peut être enregistrée, modifiée, exportée et supprimée, mais la génération et le scellement d’un procès-verbal ne reconnaissent que les modèles intégrés : au moment du scellement, la demande est refusée. Utilisez la copie pour préparer le texte et choisissez un modèle intégré pour sceller.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Nouveau modèle',
   'templates.actions.edit': 'Modifier',
@@ -3328,10 +3446,30 @@ export const frFR: Catalog = {
   'data.status.permission.create_file': 'Créer un fichier',
   'data.status.permission.write_file': 'Écrire un fichier',
   'data.status.permission.delete_probe_file': 'Supprimer le fichier de test',
-  'data.status.permission.sqlite_store_open': 'Ouverture SQLite',
+  'data.status.permission.sqlite_store_open': 'SQLite ouvert',
   'data.status.permission.ok': "D'ACCORD",
   'data.status.permission.warn': 'Avertissement',
   'data.status.permission.unchecked': 'Non vérifié',
+  'data.status.permission.durable_store_open': 'Stockage durable',
+  'data.status.probe.read_dir.ok': 'Le dossier peut être lu.',
+  'data.status.probe.read_dir.failed': 'Le dossier ne peut pas être lu.',
+  'data.status.probe.create_file.ok': 'Des fichiers peuvent être créés dans le dossier.',
+  'data.status.probe.create_file.failed': 'Aucun fichier ne peut être créé dans le dossier.',
+  'data.status.probe.write_file.ok': 'Il est possible d’écrire dans le dossier.',
+  'data.status.probe.write_file.failed': 'Il est impossible d’écrire dans le dossier.',
+  'data.status.probe.delete_probe_file.ok': 'Des fichiers peuvent être supprimés du dossier.',
+  'data.status.probe.delete_probe_file.failed': 'Aucun fichier ne peut être supprimé du dossier.',
+  'data.status.probe.durable_store_open.ok': 'Le stockage durable est ouvert.',
+  'data.status.probe.durable_store_open.failed': 'Le stockage durable n’est pas ouvert.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'Le stockage durable n’est pas ouvert car aucun dossier de données n’est configuré.',
+  'data.status.probe.unchecked.noDataDir':
+    'Non vérifié : aucun dossier de données n’est configuré.',
+  'data.status.probe.unchecked.probeSkipped':
+    'Non vérifié : le fichier de test n’a pas pu être créé.',
+  'data.status.probe.detail': 'Détail système : {detail}',
+  'data.status.basis.logical_payload': 'charge utile logique durable',
+  'data.status.basis.sidecar_logical_payload': 'charge utile logique sidecar',
   'data.status.usage.title': 'Utilisation',
   'data.status.usage.total': 'Total',
   'data.status.usage.filesystem': 'Système de fichiers',
@@ -5615,30 +5753,42 @@ export const frFR: Catalog = {
   'unsaved.close.body':
     'Des modifications ne sont pas enregistrées. Si vous fermez l’application maintenant, elles seront perdues.',
   'unsaved.close.confirm': 'Fermer sans enregistrer',
-  "users.create.identityCard": "Identité",
-  "users.create.identityLede": "Qui est la personne. Le nom d'utilisateur l'identifie dans le journal d'audit et ne peut plus être modifié.",
-  "users.create.emailHint": "Nécessaire pour envoyer le message de bienvenue.",
-  "users.create.accessCard": "Accès",
-  "users.create.accessLede": "Le rôle et la portée où il s’applique, attribués dans la même requête que la création du compte.",
-  "users.create.scope.label": "Portée",
-  "users.create.scope.hint": "Où le rôle s'applique. Global couvre toute l'instance.",
-  "users.create.role.label": "Rôle",
-  "users.create.role.hint": "Seuls les rôles dont vous détenez déjà l’autorité à cette portée sont proposés.",
-  "users.create.role.default": "Valeur par défaut du serveur (Gestor, global)",
-  "users.create.role.optionBlocked": "{role} — au-dessus de votre autorité",
-  "users.create.role.carries": "Ce rôle confère",
-  "users.create.role.aboveCeiling": "Vous ne pouvez pas accorder {role} : il inclut des permissions que vous ne détenez pas à cette portée ({permissions}).",
-  "users.create.role.defaultNote": "Sans rôle choisi, le compte prend la valeur par défaut du serveur : Gestor, à portée globale.",
-  "users.create.credentialsCard": "Identifiants",
-  "users.create.credentialsLede": "Définissez le mot de passe initial et transmettez-le par un canal sûr. Il n’est jamais envoyé par courriel.",
-  "users.create.notifyCard": "Notification",
-  "users.create.notifyLede": "Avis facultatif indiquant que le compte existe. Le message ne contient ni mot de passe, ni code, ni lien de connexion.",
-  "users.create.welcome.label": "Envoyer un message de bienvenue au nouveau compte",
-  "users.create.welcome.noSmtp": "L'envoi de courriel n'est pas configuré, le message ne peut donc pas être envoyé.",
-  "users.create.welcome.noAddress": "Saisissez une adresse de courriel ci-dessus pour pouvoir envoyer le message.",
-  "users.create.welcome.settingsLink": "Configurer le courriel",
-  "users.language.label": "Langue",
-  "users.language.auto": "Détecter automatiquement",
-  "users.language.hint.auto": "Suit la langue de l'appareil depuis lequel la personne se connecte. Les messages envoyés par le serveur utilisent la langue par défaut de la plateforme.",
-  "users.language.hint.fixed": "Fixe la langue de l'interface et des messages envoyés à ce compte.",
+  'users.create.identityCard': 'Identité',
+  'users.create.identityLede':
+    "Qui est la personne. Le nom d'utilisateur l'identifie dans le journal d'audit et ne peut plus être modifié.",
+  'users.create.emailHint': 'Nécessaire pour envoyer le message de bienvenue.',
+  'users.create.accessCard': 'Accès',
+  'users.create.accessLede':
+    'Le rôle et la portée où il s’applique, attribués dans la même requête que la création du compte.',
+  'users.create.scope.label': 'Portée',
+  'users.create.scope.hint': "Où le rôle s'applique. Global couvre toute l'instance.",
+  'users.create.role.label': 'Rôle',
+  'users.create.role.hint':
+    'Seuls les rôles dont vous détenez déjà l’autorité à cette portée sont proposés.',
+  'users.create.role.default': 'Valeur par défaut du serveur (Gestor, global)',
+  'users.create.role.optionBlocked': '{role} — au-dessus de votre autorité',
+  'users.create.role.carries': 'Ce rôle confère',
+  'users.create.role.aboveCeiling':
+    'Vous ne pouvez pas accorder {role} : il inclut des permissions que vous ne détenez pas à cette portée ({permissions}).',
+  'users.create.role.defaultNote':
+    'Sans rôle choisi, le compte prend la valeur par défaut du serveur : Gestor, à portée globale.',
+  'users.create.credentialsCard': 'Identifiants',
+  'users.create.credentialsLede':
+    'Définissez le mot de passe initial et transmettez-le par un canal sûr. Il n’est jamais envoyé par courriel.',
+  'users.create.keyNote':
+    'Une clé d’audit est générée à partir de ce mot de passe, afin que les actions de l’utilisateur soient attestées dès sa première connexion. Toute personne connaissant ce mot de passe initial peut produire des attestations au nom de cet utilisateur — demandez-lui de le changer à sa première connexion.',
+  'users.create.notifyCard': 'Notification',
+  'users.create.notifyLede':
+    'Avis facultatif indiquant que le compte existe. Le message ne contient ni mot de passe, ni code, ni lien de connexion.',
+  'users.create.welcome.label': 'Envoyer un message de bienvenue au nouveau compte',
+  'users.create.welcome.noSmtp':
+    "L'envoi de courriel n'est pas configuré, le message ne peut donc pas être envoyé.",
+  'users.create.welcome.noAddress':
+    'Saisissez une adresse de courriel ci-dessus pour pouvoir envoyer le message.',
+  'users.create.welcome.settingsLink': 'Configurer le courriel',
+  'users.language.label': 'Langue',
+  'users.language.auto': 'Détecter automatiquement',
+  'users.language.hint.auto':
+    "Suit la langue de l'appareil depuis lequel la personne se connecte. Les messages envoyés par le serveur utilisent la langue par défaut de la plateforme.",
+  'users.language.hint.fixed': "Fixe la langue de l'interface et des messages envoyés à ce compte.",
 };

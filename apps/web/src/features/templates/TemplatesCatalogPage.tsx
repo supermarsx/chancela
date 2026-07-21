@@ -13,10 +13,9 @@ import {
   type LifecycleStage,
   type MeetingChannel,
   type SignaturePolicyHint,
-  type TemplateSpec,
   type TemplateSummary,
 } from '../../api/types';
-import { useT } from '../../i18n';
+import { useT, type MessageKey } from '../../i18n';
 import {
   ButtonLink,
   Card,
@@ -36,9 +35,27 @@ import {
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { GateButton } from '../session/permissions';
 import { TemplateEditorForm } from './TemplateEditorForm';
+import {
+  TEMPLATE_COLUMNS,
+  loadTemplateColumns,
+  saveTemplateColumns,
+  type TemplateColumn,
+} from './templateColumns';
 import { templateDisplayName } from './templateNames';
 import { TemplateImportDialog } from './TemplateImportDialog';
 import { TemplatesTable } from './TemplatesTable';
+import { useTemplateEditor } from './useTemplateEditor';
+
+/** The header each optional column answers to — the same label the table renders. */
+const TEMPLATE_COLUMN_LABEL_KEYS: Record<TemplateColumn, MessageKey> = {
+  Family: 'templates.card.family',
+  Stage: 'templates.card.stage',
+  Channels: 'templates.card.channels',
+  Signature: 'templates.card.signature',
+  RulePack: 'templates.card.rulePack',
+  LawSource: 'documents.metadata.legalSource',
+  Origin: 'templates.table.source',
+};
 
 const ENTITY_FAMILIES: readonly EntityFamily[] = [
   'CommercialCompany',
@@ -105,16 +122,12 @@ function sortTemplates(a: TemplateSummary, b: TemplateSummary): number {
   );
 }
 
-type EditorState = { mode: 'create' } | { mode: 'edit'; spec: TemplateSpec };
-
 export function TemplatesCatalogPage() {
   const t = useT();
   const toast = useToast();
   const templates = useTemplates();
   const exportTemplate = useExportTemplate();
-  const loadTemplateSpec = useExportTemplate();
   const deleteTemplate = useDeleteTemplate();
-  const [editor, setEditor] = useState<EditorState | null>(null);
   const [importing, setImporting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TemplateSummary | null>(null);
   const [query, setQuery] = useState('');
@@ -124,10 +137,15 @@ export function TemplatesCatalogPage() {
   const [channel, setChannel] = useState<MeetingChannel | ''>('');
   const [signaturePolicy, setSignaturePolicy] = useState<SignaturePolicyHint | ''>('');
   const [rulePack, setRulePack] = useState('');
+  // Read once on mount: the stored set is this device's, and nothing else writes it.
+  const [columns, setColumns] = useState<TemplateColumn[]>(loadTemplateColumns);
 
   const allTemplates = useMemo(
     () => [...(templates.data ?? [])].sort(sortTemplates),
     [templates.data],
+  );
+  const editor = useTemplateEditor(
+    useMemo(() => allTemplates.map((row) => row.id), [allTemplates]),
   );
   const locales = useMemo(
     () => Array.from(new Set(allTemplates.map((template) => template.locale))).sort(),
@@ -168,6 +186,16 @@ export function TemplatesCatalogPage() {
     signaturePolicy !== '' ||
     rulePack !== '';
 
+  function toggleColumn(column: TemplateColumn, checked: boolean) {
+    setColumns((current) => {
+      const next = TEMPLATE_COLUMNS.filter((candidate) =>
+        candidate === column ? checked : current.includes(candidate),
+      );
+      saveTemplateColumns(next);
+      return next;
+    });
+  }
+
   function clearFilters() {
     setQuery('');
     setFamily('');
@@ -202,15 +230,6 @@ export function TemplatesCatalogPage() {
     }
   }
 
-  async function onEdit(template: TemplateSummary) {
-    try {
-      const download = await loadTemplateSpec.mutateAsync(template.id);
-      setEditor({ mode: 'edit', spec: JSON.parse(download.text) as TemplateSpec });
-    } catch (err) {
-      toast.error(err);
-    }
-  }
-
   async function onConfirmDelete(template: TemplateSummary) {
     await deleteTemplate.mutateAsync(template.id);
     toast.success(t('templates.toast.deleted', { id: template.id }));
@@ -218,7 +237,7 @@ export function TemplatesCatalogPage() {
   }
 
   return (
-    // `wide-page` widens the shell measure: nine columns do not fit the prose measure.
+    // `wide-page` widens the shell measure: the full column set does not fit the prose measure.
     <div className="stack wide-page">
       <PageHeader
         title={t('templates.title')}
@@ -230,7 +249,7 @@ export function TemplatesCatalogPage() {
               type="button"
               variant="secondary"
               icon={<Icon.Plus />}
-              onClick={() => setEditor({ mode: 'create' })}
+              onClick={editor.create}
             >
               {t('templates.actions.new')}
             </GateButton>
@@ -393,29 +412,58 @@ export function TemplatesCatalogPage() {
           </span>
         </div>
 
+        {/* Column visibility sits with the RESULTS, not with the search: it decides what the
+            table shows, not which rows it holds. "Fonte legal" is off by default — a badge, a
+            citation, a source line and sometimes a pending note per reference, which squeezed
+            the other columns to slivers — and the template's own page always carries it in
+            full, so nothing is out of reach. */}
+        <details className="templates-columns filter-advanced">
+          <summary>{t('templates.columns.label')}</summary>
+          <fieldset className="templates-columns__body filter-advanced__body">
+            <legend className="sr-only">{t('templates.columns.label')}</legend>
+            <p className="field__hint">{t('templates.columns.hint')}</p>
+            <div className="row-wrap">
+              {TEMPLATE_COLUMNS.map((column) => (
+                <label key={column} className="checkline">
+                  <input
+                    type="checkbox"
+                    checked={columns.includes(column)}
+                    onChange={(event) => toggleColumn(column, event.target.checked)}
+                  />
+                  {t(TEMPLATE_COLUMN_LABEL_KEYS[column])}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </details>
+
         {templates.isLoading ? (
           <SkeletonRegion>
-            <SkeletonTable cols={9} />
+            <SkeletonTable cols={columns.length + 2} />
           </SkeletonRegion>
         ) : templates.error ? (
           <ErrorNote error={templates.error} />
         ) : (
           <TemplatesTable
             templates={filtered}
-            onEdit={(template) => void onEdit(template)}
+            visibleColumns={columns}
+            onEdit={editor.edit}
+            onClone={editor.clone}
             onExport={(template) => void onExport(template)}
             onDelete={setDeleteTarget}
-            editPending={loadTemplateSpec.isPending}
+            editPending={editor.pending}
             exportPending={exportTemplate.isPending}
           />
         )}
       </section>
 
-      {editor ? (
+      {editor.state ? (
         <TemplateEditorForm
-          mode={editor.mode}
-          initialSpec={editor.mode === 'edit' ? editor.spec : null}
-          onClose={() => setEditor(null)}
+          mode={editor.state.mode}
+          initialSpec={editor.state.mode === 'create' ? null : editor.state.spec}
+          sourceId={editor.state.mode === 'fork' ? editor.state.sourceId : undefined}
+          sourceIsBuiltin={editor.state.mode === 'fork' ? editor.state.sourceIsBuiltin : undefined}
+          onClose={editor.close}
         />
       ) : null}
 

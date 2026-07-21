@@ -26,7 +26,9 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
+  Skeleton,
+  SkeletonRegion,
+  SkeletonTable,
   Table,
   useToast,
 } from '../../ui';
@@ -344,7 +346,15 @@ export function PairingPanel() {
         />
       ) : session && mint.isPending ? (
         <Card title={t('pairing.code.title')}>
-          <Loading label={t('pairing.minting')} />
+          {/* The minted panel is a fixed shape — an instruction line, a QR square, then the
+              code and its countdown — so the mint wait reserves it rather than showing a
+              bar. The label rides as visually-hidden text, not a caption. */}
+          <SkeletonRegion className="pairing-code" label={t('pairing.minting')}>
+            <Skeleton height="0.85rem" width="70%" />
+            <Skeleton height="12rem" width="12rem" />
+            <Skeleton height="1.8rem" width="9rem" />
+            <Skeleton height="0.8rem" width="11rem" />
+          </SkeletonRegion>
         </Card>
       ) : !enrolled ? (
         <Card title={t('pairing.connect.title')}>
@@ -382,8 +392,12 @@ export function PairingPanel() {
       {mint.error && !session ? <ErrorNote error={mint.error} /> : null}
 
       <Card title={t('pairing.devices.title')}>
+        {/* Four columns: device, enrolled, status, action. (The mint wait above keeps the
+            indeterminate bar — that one is an action in flight, with no shape to reserve.) */}
         {devices.isLoading ? (
-          <Loading />
+          <SkeletonRegion>
+            <SkeletonTable cols={4} />
+          </SkeletonRegion>
         ) : devices.error ? (
           <ErrorNote error={devices.error} />
         ) : list.length === 0 ? (

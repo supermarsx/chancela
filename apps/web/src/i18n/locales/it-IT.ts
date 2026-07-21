@@ -10,13 +10,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsItIT } from '../ledgerEventLabels';
+import { ledgerScopeLabelsItIT } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsItIT } from '../dashboardSourceLabels';
+import { roleNameLabelsItIT } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const itIT: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsItIT,
+  ...ledgerScopeLabelsItIT,
   ...dashboardSourceLabelsItIT,
+  ...roleNameLabelsItIT,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Non hai il permesso per questa azione',
@@ -1598,6 +1602,23 @@ export const itIT: Catalog = {
   'users.action.edit': 'Modifica',
   'users.new.crumb': 'Nuovo',
   'users.new.title': 'Nuovo utente',
+  'users.edit.title': 'Modifica utente',
+  'users.filters.aria': 'Cerca e filtra gli utenti',
+  'users.filters.search.label': 'Cerca',
+  'users.filters.search.placeholder': 'Nome utente, nome o e-mail',
+  'users.filters.status.label': 'Stato',
+  'users.filters.status.all': 'Tutti gli stati',
+  'users.filters.access.label': 'Accesso',
+  'users.filters.access.all': 'Qualsiasi accesso',
+  'users.filters.access.key': 'Con chiave di audit',
+  'users.filters.access.noKey': 'Senza chiave di audit',
+  'users.filters.access.noPassword': 'Senza password',
+  'users.filters.access.recovery': 'Con frase di recupero',
+  'users.filters.clear.aria': 'Cancella i filtri degli utenti',
+  'users.filters.count': '{shown} di {total}',
+  'users.filters.count.aria': 'Visualizzazione di {shown} di {total} utenti',
+  'users.filters.empty.title': 'Nessun risultato',
+  'users.filters.empty.body': 'Modifica la ricerca o i filtri per rivedere gli utenti.',
   'users.edit.identityCard': 'Identità',
   'users.edit.usernameHint':
     "Il nome utente è l'identificatore di audit e non può essere modificato.",
@@ -1756,7 +1777,7 @@ export const itIT: Catalog = {
     'Usa solo quando un servizio richiede un livello diverso da quello della sua area.',
   'settings.platform.logging.override.none': 'Nessuna sostituzione',
   'settings.platform.logging.override.app': 'Applicazione',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'Server API',
   'settings.platform.logging.override.mcp_stdio': 'Studio MCP',
   'settings.platform.logLevel.trace': 'Traccia',
   'settings.platform.logLevel.debug': 'Debug',
@@ -1805,10 +1826,74 @@ export const itIT: Catalog = {
   'settings.platform.subnav.aria': 'Sezioni delle operazioni',
   'settings.platform.tab.services': 'Servizi',
   'settings.platform.tab.services.desc':
-    'Controllo dello stato desiderato dei server API e MCP, con esiti onesti del backend e un audit delle operazioni.',
+    'Controllo dello stato desiderato del server API, con esiti onesti del backend e un audit delle operazioni.',
   'settings.platform.tab.logs': 'Log',
   'settings.platform.tab.logs.desc':
     "Configurazione dei livelli di log e coda strutturata dei log dell'API (sola lettura).",
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Server',
+  'settings.api.subnav.aria': 'Aree API',
+  'settings.api.cardTitle': 'Server API',
+  'settings.api.intro':
+    'Stato desiderato, log e configurazione di avvio del server API in un unico posto. Le chiavi API stanno nel riquadro accanto.',
+  'settings.api.logging.title': 'Log dell’API',
+  'settings.api.logging.hint':
+    'Questi due campi scrivono nello stesso documento di impostazioni degli altri livelli di log.',
+  'settings.api.env.hint':
+    "Risolte dall'ambiente del processo all'avvio del server. Non sono modificabili qui né tramite alcun endpoint; cambiarle richiede il riavvio del server.",
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    "Il server parla HTTP semplice. Il TLS viene terminato dal reverse proxy davanti a esso e l'intestazione HSTS qui sotto ha effetto solo in quella configurazione.",
+  'settings.api.env.addr': 'Indirizzo host:porta su cui il server è in ascolto.',
+  'settings.api.env.cors':
+    "Origini esatte autorizzate a chiamare l'API cross-origin. Vuoto significa solo stessa origine.",
+  'settings.api.env.rateLimit':
+    'Limitatore di richieste per IP. Attivo per impostazione predefinita sul server.',
+  'settings.api.env.ratePerSecond': 'Ritmo sostenuto di richieste al secondo per IP.',
+  'settings.api.env.rateBurst': 'Capacità di burst per IP.',
+  'settings.api.env.trustForwarded':
+    'Fidarsi di X-Forwarded-For per identificare il client. Solo dietro un reverse proxy affidabile.',
+  'settings.api.env.hstsMaxAge': 'Durata in secondi della politica HSTS annunciata.',
+  'settings.api.env.hstsSubdomains': 'Estendere la politica HSTS ai sottodomini.',
+  'settings.api.env.hstsPreload':
+    'Annunciare la direttiva preload. Attivare solo dopo aver inviato il dominio.',
+  'settings.api.env.sessionLifetime':
+    'Limite assoluto di durata della sessione, in secondi. Zero o negativo disattiva il limite.',
+  'settings.api.related.title': 'Impostazioni correlate',
+  'settings.api.related.egress':
+    "Quella è la lista di uscita dei connettori, non la superficie in ingresso dell'API: delimita dove un connettore può inviare byte. Resta in Piattaforma.",
+  'settings.api.related.logTail':
+    'La coda dei log copre app, API e MCP, quindi resta in Piattaforma › Log.',
+  'settings.mcp.cardTitle': 'Server MCP',
+  'settings.mcp.intro':
+    "Tutta la configurazione specifica dell'MCP in un unico posto: lo stato desiderato del processo stdio, i livelli di log e le variabili d'ambiente lette all'avvio.",
+  'settings.platform.services.hub':
+    'Ogni servizio ha una scheda propria, con lo stato desiderato, i livelli di log e la configurazione di avvio.',
+  'settings.mcp.logging.title': 'Log dell’MCP',
+  'settings.mcp.logging.hint':
+    'Questi due campi scrivono nello stesso documento di impostazioni degli altri livelli di log.',
+  'settings.env.title': 'Configurazione di avvio (ambiente)',
+  'settings.mcp.env.hint':
+    "Lette dall'ambiente del processo all'avvio del server MCP. Non sono modificabili qui né tramite alcun endpoint; cambiarle richiede il rilancio del processo. Il valore della chiave API non raggiunge mai questa interfaccia.",
+  'settings.env.col.variable': 'Variabile',
+  'settings.env.col.meaning': 'Significato',
+  'settings.env.col.default': 'Valore predefinito',
+  'settings.mcp.env.enabled': 'Interruttore principale del server MCP.',
+  'settings.mcp.env.aiGate':
+    'Specchio del blocco IA/MCP del tenant. Il processo serve solo con entrambi attivi.',
+  'settings.mcp.env.transport': 'Trasporto della connessione. Questa build serve solo stdio.',
+  'settings.mcp.env.baseUrl': "URL di base dell'API di integrazione chiamata dagli strumenti.",
+  'settings.mcp.env.basePath': "Percorso di base versionato su cui è montata l'API.",
+  'settings.mcp.env.apiKey':
+    'Chiave API con cui il server MCP si autentica. Obbligatoria quando è attivo.',
+  'settings.mcp.env.tools': 'Strumenti esposti: tutti, oppure un elenco separato da virgole.',
+  'settings.mcp.env.bind':
+    'Indirizzo di ascolto, riservato a un trasporto remoto. Nessun effetto in questa build.',
+  'settings.mcp.related.title': 'Impostazioni correlate',
+  'settings.mcp.related.gate':
+    "Il blocco IA/MCP del tenant governa anche le funzioni di IA, perciò resta modificabile in Gestione. Senza di esso l'MCP resta inerte.",
+  'settings.mcp.related.apiKeys':
+    "Le chiavi API non riguardano solo l'MCP: autenticano ogni client di integrazione. Mantengono la propria scheda.",
   'settings.platform.serviceDetails': 'Dettagli di controllo e limitazioni',
   'settings.platform.help.services':
     "Queste azioni registrano lo stato desiderato del servizio; l'interfaccia non presuppone il controllo diretto del processo (ad esempio il riavvio automatico dell'API o l'avvio stdio dell'MCP).",
@@ -2138,6 +2223,10 @@ export const itIT: Catalog = {
   'settings.about.ledger.valid': 'Catena integra · {count} eventi',
   'settings.about.ledger.compromised': 'Catena compromessa',
   'settings.about.schemaVersion': 'Versione dello schema di configurazione',
+  'settings.about.interfaceLocale': 'Lingua dell’interfaccia',
+  'settings.about.tableCaption': 'Informazioni sull’istanza',
+  'settings.about.column.item': 'Informazione',
+  'settings.about.column.value': 'Valore',
   'settings.save': 'Salva le impostazioni',
   'settings.saved': 'Impostazioni salvate.',
   'toast.settings.saved': 'Impostazioni salvate.',
@@ -2430,6 +2519,7 @@ export const itIT: Catalog = {
   'entities.print.nipcUnvalidated': '(non validato)',
   'settings.subnav.aria': 'Sezioni di configurazione',
   'settings.subnav.platform': 'Piattaforma',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Aree delle operazioni',
   'settings.subnav.signing.aria': 'Aree delle firme',
 
@@ -2538,6 +2628,8 @@ export const itIT: Catalog = {
   'users.key.rotate': 'Ruota chiave',
   'users.key.remove': 'Rimuovi chiave',
   'users.key.requiresSecret': 'Impostate una password prima di generare una chiave di audit.',
+  'users.key.rotateNote':
+    'La rotazione genera una nuova coppia di chiavi per le attestazioni future. Le attestazioni già prodotte restano verificabili: la parte pubblica della chiave precedente viene conservata, e tale parte non consente di firmare.',
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'Stai modificando le credenziali di un altro utente. Ogni modifica richiede la password attuale dell’utente o una frase di recupero valida.',
@@ -2664,6 +2756,33 @@ export const itIT: Catalog = {
   'templates.channels.none': 'Nessun canale specifico',
   'templates.table.source': 'Fonte',
   'templates.table.actions': 'Azioni',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Colonne',
+  'templates.columns.hint':
+    'Scelga quali colonne mostra la tabella. La fonte giuridica compare sempre per intero nella pagina del modello.',
+  'templates.detail.open': 'Apri il modello',
+  'templates.detail.subnav.aria': 'Sezioni del modello',
+  'templates.detail.section.overview': 'Identificazione',
+  'templates.detail.section.placeholders': 'Campi attesi',
+  'templates.detail.version': 'Versione',
+  'templates.detail.notFound.title': 'Modello non trovato',
+  'templates.detail.notFound.body':
+    'Nel catalogo non esiste alcun modello con questo identificativo.',
+  'templates.detail.spec.error': 'Non è stato possibile caricare il contenuto di questo modello.',
+  'templates.detail.lawSource.empty': 'Questo modello non indica alcuna fonte giuridica.',
+  'templates.detail.blocks.empty': 'Questo modello non dichiara blocchi.',
+  'templates.detail.placeholders.intro':
+    'Campi che i blocchi di questo modello leggono dalla registrazione del verbale.',
+  'templates.detail.placeholders.empty': 'Questo modello non legge campi dalla registrazione.',
+  'templates.actions.clone': 'Duplica',
+  'templates.editor.title.fork': 'Duplica il modello',
+  'templates.fork.source': 'Modello di origine: {id}',
+  'templates.fork.builtin.title': 'I modelli integrati non si modificano',
+  'templates.fork.builtin.body':
+    'Un modello integrato è di sola lettura, affinché un verbale già sigillato continui a significare esattamente lo stesso. La modifica crea una copia con un nuovo identificativo; quella copia può poi essere modificata liberamente.',
+  'templates.fork.limit.title': 'Una copia non produce ancora documenti',
+  'templates.fork.limit.body':
+    'Una copia può essere salvata, modificata, esportata ed eliminata, ma la generazione e la sigillatura di un verbale riconoscono soltanto i modelli integrati: al momento della sigillatura la richiesta viene rifiutata. Usi la copia per preparare il testo e scelga un modello integrato per sigillare.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Nuovo modello',
   'templates.actions.edit': 'Modifica',
@@ -3311,10 +3430,30 @@ export const itIT: Catalog = {
   'data.status.permission.create_file': 'Crea file',
   'data.status.permission.write_file': 'Scrivi file',
   'data.status.permission.delete_probe_file': 'Elimina file di prova',
-  'data.status.permission.sqlite_store_open': 'Apertura SQLite',
+  'data.status.permission.sqlite_store_open': 'SQLite aperto',
   'data.status.permission.ok': 'OK',
   'data.status.permission.warn': 'Avviso',
   'data.status.permission.unchecked': 'Non verificato',
+  'data.status.permission.durable_store_open': 'Archiviazione durevole',
+  'data.status.probe.read_dir.ok': 'La cartella può essere letta.',
+  'data.status.probe.read_dir.failed': 'La cartella non può essere letta.',
+  'data.status.probe.create_file.ok': 'È possibile creare file nella cartella.',
+  'data.status.probe.create_file.failed': 'Non è possibile creare file nella cartella.',
+  'data.status.probe.write_file.ok': 'È possibile scrivere nella cartella.',
+  'data.status.probe.write_file.failed': 'Non è possibile scrivere nella cartella.',
+  'data.status.probe.delete_probe_file.ok': 'È possibile eliminare file dalla cartella.',
+  'data.status.probe.delete_probe_file.failed': 'Non è possibile eliminare file dalla cartella.',
+  'data.status.probe.durable_store_open.ok': 'L’archiviazione durevole è aperta.',
+  'data.status.probe.durable_store_open.failed': 'L’archiviazione durevole non è aperta.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'L’archiviazione durevole non è aperta perché non è configurata alcuna cartella dati.',
+  'data.status.probe.unchecked.noDataDir':
+    'Non verificato: non è configurata alcuna cartella dati.',
+  'data.status.probe.unchecked.probeSkipped':
+    'Non verificato: non è stato possibile creare il file di prova.',
+  'data.status.probe.detail': 'Dettaglio di sistema: {detail}',
+  'data.status.basis.logical_payload': 'payload logico durevole',
+  'data.status.basis.sidecar_logical_payload': 'payload logico sidecar',
   'data.status.usage.title': 'Utilizzo',
   'data.status.usage.total': 'Totale',
   'data.status.usage.filesystem': 'Filesystem',
@@ -4676,7 +4815,8 @@ export const itIT: Catalog = {
 
   // --- Ata body: what a paste could not keep (t74-e6) ---
   'acts.body.paste.title': 'Parte di ciò che ha incollato non entra in un verbale',
-  'acts.body.paste.removed': '{construct} ({count}) — abbiamo rimosso. Non c’era testo da conservare.',
+  'acts.body.paste.removed':
+    '{construct} ({count}) — abbiamo rimosso. Non c’era testo da conservare.',
   'acts.body.paste.downgraded':
     '{construct} ({count}) — abbiamo convertito in paragrafi. Il testo è rimasto, la struttura no.',
   'acts.body.paste.why':
@@ -5600,30 +5740,43 @@ export const itIT: Catalog = {
   'unsaved.close.body':
     'Ci sono modifiche non salvate. Se chiudi l’applicazione ora, andranno perse.',
   'unsaved.close.confirm': 'Chiudi senza salvare',
-  "users.create.identityCard": "Identità",
-  "users.create.identityLede": "Chi è la persona. Il nome utente la identifica nel registro di audit e non può essere modificato in seguito.",
-  "users.create.emailHint": "Necessario per inviare il messaggio di benvenuto.",
-  "users.create.accessCard": "Accesso",
-  "users.create.accessLede": "Il ruolo e l'ambito in cui si applica, assegnati nella stessa richiesta che crea l'account.",
-  "users.create.scope.label": "Ambito",
-  "users.create.scope.hint": "Dove si applica il ruolo. Globale copre l'intera istanza.",
-  "users.create.role.label": "Ruolo",
-  "users.create.role.hint": "Sono offerti solo i ruoli la cui autorità si possiede già in questo ambito.",
-  "users.create.role.default": "Predefinito del server (Gestor, globale)",
-  "users.create.role.optionBlocked": "{role} — oltre la propria autorità",
-  "users.create.role.carries": "Questo ruolo conferisce",
-  "users.create.role.aboveCeiling": "Non è possibile assegnare {role}: include permessi che non si possiedono in questo ambito ({permissions}).",
-  "users.create.role.defaultNote": "Senza un ruolo scelto, l'account assume il valore predefinito del server: Gestor, in ambito globale.",
-  "users.create.credentialsCard": "Credenziali",
-  "users.create.credentialsLede": "Imposta la password iniziale e comunicala per un canale sicuro. Non viene mai inviata per e-mail.",
-  "users.create.notifyCard": "Notifica",
-  "users.create.notifyLede": "Avviso facoltativo che l'account esiste. Il messaggio non contiene password, codici né link di accesso.",
-  "users.create.welcome.label": "Invia un messaggio di benvenuto al nuovo account",
-  "users.create.welcome.noSmtp": "L'invio di e-mail non è configurato, quindi il messaggio non può essere inviato.",
-  "users.create.welcome.noAddress": "Inserisci un indirizzo e-mail qui sopra per poter inviare il messaggio.",
-  "users.create.welcome.settingsLink": "Configura e-mail",
-  "users.language.label": "Lingua",
-  "users.language.auto": "Rileva automaticamente",
-  "users.language.hint.auto": "Segue la lingua del dispositivo da cui si accede. I messaggi inviati dal server usano la lingua predefinita della piattaforma.",
-  "users.language.hint.fixed": "Fissa la lingua dell'interfaccia e dei messaggi inviati a questo account.",
+  'users.create.identityCard': 'Identità',
+  'users.create.identityLede':
+    'Chi è la persona. Il nome utente la identifica nel registro di audit e non può essere modificato in seguito.',
+  'users.create.emailHint': 'Necessario per inviare il messaggio di benvenuto.',
+  'users.create.accessCard': 'Accesso',
+  'users.create.accessLede':
+    "Il ruolo e l'ambito in cui si applica, assegnati nella stessa richiesta che crea l'account.",
+  'users.create.scope.label': 'Ambito',
+  'users.create.scope.hint': "Dove si applica il ruolo. Globale copre l'intera istanza.",
+  'users.create.role.label': 'Ruolo',
+  'users.create.role.hint':
+    'Sono offerti solo i ruoli la cui autorità si possiede già in questo ambito.',
+  'users.create.role.default': 'Predefinito del server (Gestor, globale)',
+  'users.create.role.optionBlocked': '{role} — oltre la propria autorità',
+  'users.create.role.carries': 'Questo ruolo conferisce',
+  'users.create.role.aboveCeiling':
+    'Non è possibile assegnare {role}: include permessi che non si possiedono in questo ambito ({permissions}).',
+  'users.create.role.defaultNote':
+    "Senza un ruolo scelto, l'account assume il valore predefinito del server: Gestor, in ambito globale.",
+  'users.create.credentialsCard': 'Credenziali',
+  'users.create.credentialsLede':
+    'Imposta la password iniziale e comunicala per un canale sicuro. Non viene mai inviata per e-mail.',
+  'users.create.keyNote':
+    'Dalla presente password viene generata una chiave di audit, affinché le azioni dell’utente siano attestate fin dal primo accesso. Chiunque conosca questa password iniziale può produrre attestazioni a nome di questo utente: chiedetegli di modificarla al primo accesso.',
+  'users.create.notifyCard': 'Notifica',
+  'users.create.notifyLede':
+    "Avviso facoltativo che l'account esiste. Il messaggio non contiene password, codici né link di accesso.",
+  'users.create.welcome.label': 'Invia un messaggio di benvenuto al nuovo account',
+  'users.create.welcome.noSmtp':
+    "L'invio di e-mail non è configurato, quindi il messaggio non può essere inviato.",
+  'users.create.welcome.noAddress':
+    'Inserisci un indirizzo e-mail qui sopra per poter inviare il messaggio.',
+  'users.create.welcome.settingsLink': 'Configura e-mail',
+  'users.language.label': 'Lingua',
+  'users.language.auto': 'Rileva automaticamente',
+  'users.language.hint.auto':
+    'Segue la lingua del dispositivo da cui si accede. I messaggi inviati dal server usano la lingua predefinita della piattaforma.',
+  'users.language.hint.fixed':
+    "Fissa la lingua dell'interfaccia e dei messaggi inviati a questo account.",
 };

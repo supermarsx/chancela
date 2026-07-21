@@ -33,7 +33,9 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
+  SkeletonForm,
+  SkeletonRegion,
+  SkeletonTable,
   Table,
   useToast,
 } from '../../ui';
@@ -257,7 +259,15 @@ function CreateApiKeyForm({
     );
   }
 
-  if (catalog.isLoading) return <Loading />;
+  // The permission catalog only gates the create form, so the placeholder is that form.
+  if (catalog.isLoading)
+    return (
+      <Card title={t('settings.apiKeys.new')}>
+        <SkeletonRegion>
+          <SkeletonForm fields={4} className="settings-rows" />
+        </SkeletonRegion>
+      </Card>
+    );
   if (catalog.error) return <ErrorNote error={catalog.error} />;
 
   return (
@@ -542,7 +552,17 @@ export function ApiKeysSection() {
   const [creating, setCreating] = useState(false);
   const [issuedSecret, setIssuedSecret] = useState<ApiKeyCreated | null>(null);
 
-  if (keys.isLoading) return <Loading />;
+  // Eight columns: name, prefix, grant, created, expires, status, rate limit, action.
+  if (keys.isLoading)
+    return (
+      <div className="stack">
+        <Card title={t('settings.apiKeys.cardTitle')}>
+          <SkeletonRegion>
+            <SkeletonTable cols={8} />
+          </SkeletonRegion>
+        </Card>
+      </div>
+    );
   if (keys.error) return <ErrorNote error={keys.error} />;
 
   const list = keys.data ?? [];

@@ -8,13 +8,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsNlNL } from '../ledgerEventLabels';
+import { ledgerScopeLabelsNlNL } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsNlNL } from '../dashboardSourceLabels';
+import { roleNameLabelsNlNL } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const nlNL: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsNlNL,
+  ...ledgerScopeLabelsNlNL,
   ...dashboardSourceLabelsNlNL,
+  ...roleNameLabelsNlNL,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'U hebt geen toestemming voor deze actie',
@@ -1597,6 +1601,23 @@ export const nlNL: Catalog = {
   'users.action.edit': 'Bewerken',
   'users.new.crumb': 'Nieuw',
   'users.new.title': 'Nieuwe gebruiker',
+  'users.edit.title': 'Gebruiker bewerken',
+  'users.filters.aria': 'Gebruikers zoeken en filteren',
+  'users.filters.search.label': 'Zoeken',
+  'users.filters.search.placeholder': 'Gebruikersnaam, naam of e-mail',
+  'users.filters.status.label': 'Status',
+  'users.filters.status.all': 'Alle statussen',
+  'users.filters.access.label': 'Toegang',
+  'users.filters.access.all': 'Elke toegang',
+  'users.filters.access.key': 'Met auditsleutel',
+  'users.filters.access.noKey': 'Zonder auditsleutel',
+  'users.filters.access.noPassword': 'Zonder wachtwoord',
+  'users.filters.access.recovery': 'Met herstelzin',
+  'users.filters.clear.aria': 'Gebruikersfilters wissen',
+  'users.filters.count': '{shown} van {total}',
+  'users.filters.count.aria': '{shown} van {total} gebruikers worden getoond',
+  'users.filters.empty.title': 'Geen resultaten',
+  'users.filters.empty.body': 'Wijzig de zoekopdracht of de filters om weer gebruikers te zien.',
   'users.edit.identityCard': 'Identiteit',
   'users.edit.usernameHint':
     'De gebruikersnaam is de audit-identificatie en kan niet worden gewijzigd.',
@@ -1755,7 +1776,7 @@ export const nlNL: Catalog = {
     'Gebruik dit alleen wanneer één dienst een ander niveau nodig heeft dan het niveau van zijn gebied.',
   'settings.platform.logging.override.none': 'Geen overschrijving',
   'settings.platform.logging.override.app': 'Applicatie',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'API-server',
   'settings.platform.logging.override.mcp_stdio': 'MCP-studio',
   'settings.platform.logLevel.trace': 'Spoor',
   'settings.platform.logLevel.debug': 'Foutopsporing',
@@ -1804,10 +1825,73 @@ export const nlNL: Catalog = {
   'settings.platform.subnav.aria': 'Bewerkingssecties',
   'settings.platform.tab.services': 'Diensten',
   'settings.platform.tab.services.desc':
-    'Beheer van de gewenste status van de API- en MCP-servers, met eerlijke backend-resultaten en een bewerkingsaudit.',
+    'Beheer van de gewenste status van de API-server, met eerlijke backend-resultaten en een bewerkingsaudit.',
   'settings.platform.tab.logs': 'Logboeken',
   'settings.platform.tab.logs.desc':
     'Configuratie van logniveaus en gestructureerde API-logstaart (alleen-lezen).',
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Server',
+  'settings.api.subnav.aria': 'API-gebieden',
+  'settings.api.cardTitle': 'API-server',
+  'settings.api.intro':
+    'De gewenste status, logboeken en startconfiguratie van de API-server op één plek. De API-sleutels staan in het paneel ernaast.',
+  'settings.api.logging.title': 'API-logboeken',
+  'settings.api.logging.hint':
+    'Deze twee velden schrijven naar hetzelfde instellingendocument als de overige logniveaus.',
+  'settings.api.env.hint':
+    'Worden bij het starten van de server uit de procesomgeving gelezen. Ze zijn hier noch via een endpoint bewerkbaar; wijzigen vereist een herstart van de server.',
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    'De server spreekt gewone HTTP. TLS wordt beëindigd op de reverse proxy ervoor, en de HSTS-header hieronder werkt alleen in die opzet.',
+  'settings.api.env.addr': 'Het host:poort-adres waarop de server luistert.',
+  'settings.api.env.cors':
+    'Exacte origins die de API cross-origin mogen aanroepen. Leeg betekent alleen dezelfde origin.',
+  'settings.api.env.rateLimit': 'Verzoeklimiet per IP. Standaard aan voor de server.',
+  'settings.api.env.ratePerSecond': 'Aanhoudend aantal verzoeken per seconde per IP.',
+  'settings.api.env.rateBurst': 'Burst-ruimte per IP.',
+  'settings.api.env.trustForwarded':
+    'X-Forwarded-For vertrouwen voor het clientadres. Alleen achter een vertrouwde reverse proxy.',
+  'settings.api.env.hstsMaxAge': 'Hoe lang, in seconden, het aangekondigde HSTS-beleid geldt.',
+  'settings.api.env.hstsSubdomains': 'Het HSTS-beleid uitbreiden naar subdomeinen.',
+  'settings.api.env.hstsPreload':
+    'De preload-richtlijn aankondigen. Pas inschakelen na indiening van het domein.',
+  'settings.api.env.sessionLifetime':
+    'Absolute bovengrens van de sessieduur, in seconden. Nul of negatief schakelt de grens uit.',
+  'settings.api.related.title': 'Gerelateerde instellingen',
+  'settings.api.related.egress':
+    'Dat is de uitgaande lijst van connectoren, niet het inkomende API-oppervlak: hij begrenst waarheen een connector bytes mag sturen. Hij blijft bij Platform.',
+  'settings.api.related.logTail':
+    'Het logoverzicht omvat de app, de API en MCP en blijft daarom bij Platform › Logboeken.',
+  'settings.mcp.cardTitle': 'MCP-server',
+  'settings.mcp.intro':
+    'Alle MCP-specifieke configuratie op één plek: de gewenste status van het stdio-proces, logniveaus en de omgevingsvariabelen die bij het starten worden gelezen.',
+  'settings.platform.services.hub':
+    'Elke dienst heeft een eigen subtabblad, met de gewenste status, logniveaus en startconfiguratie.',
+  'settings.mcp.logging.title': 'MCP-logboeken',
+  'settings.mcp.logging.hint':
+    'Deze twee velden schrijven naar hetzelfde instellingendocument als de overige logniveaus.',
+  'settings.env.title': 'Startconfiguratie (omgeving)',
+  'settings.mcp.env.hint':
+    'Worden bij het starten van de MCP-server uit de procesomgeving gelezen. Ze zijn hier noch via een endpoint bewerkbaar; wijzigen vereist het opnieuw starten van het proces. De waarde van de API-sleutel bereikt deze interface nooit.',
+  'settings.env.col.variable': 'Variabele',
+  'settings.env.col.meaning': 'Betekenis',
+  'settings.env.col.default': 'Standaardwaarde',
+  'settings.mcp.env.enabled': 'Hoofdschakelaar van de MCP-server.',
+  'settings.mcp.env.aiGate':
+    'Spiegel van de AI/MCP-poort van de tenant. Het proces bedient alleen als beide aanstaan.',
+  'settings.mcp.env.transport': 'Verbindingstransport. Deze build bedient alleen stdio.',
+  'settings.mcp.env.baseUrl': 'Basis-URL van de integratie-API die de tools aanroepen.',
+  'settings.mcp.env.basePath': 'Versiegebonden basispad waaronder de API is gekoppeld.',
+  'settings.mcp.env.apiKey':
+    'API-sleutel waarmee de MCP-server zich authenticeert. Vereist wanneer ingeschakeld.',
+  'settings.mcp.env.tools': 'Aangeboden tools: alle, of een door komma’s gescheiden lijst.',
+  'settings.mcp.env.bind':
+    'Luisteradres, gereserveerd voor een externe transportvorm. Zonder effect in deze build.',
+  'settings.mcp.related.title': 'Gerelateerde instellingen',
+  'settings.mcp.related.gate':
+    'De AI/MCP-poort van de tenant stuurt ook de AI-functies aan en wordt daarom nog steeds in Beheer bewerkt. Zonder die poort blijft MCP inactief.',
+  'settings.mcp.related.apiKeys':
+    'API-sleutels zijn niet alleen voor MCP: ze authenticeren elke integratieclient. Ze houden hun eigen subtabblad.',
   'settings.platform.serviceDetails': 'Beheerdetails en beperkingen',
   'settings.platform.help.services':
     'Deze acties leggen de gewenste status van de dienst vast; de interface veronderstelt geen directe procesbesturing (bijvoorbeeld API-zelfherstart of MCP-stdio-start).',
@@ -2140,6 +2224,10 @@ export const nlNL: Catalog = {
   'settings.about.ledger.valid': 'Keten intact · {count} gebeurtenissen',
   'settings.about.ledger.compromised': 'Keten gecompromitteerd',
   'settings.about.schemaVersion': 'Versie van het configuratieschema',
+  'settings.about.interfaceLocale': 'Taal van de interface',
+  'settings.about.tableCaption': 'Instantie-informatie',
+  'settings.about.column.item': 'Informatie',
+  'settings.about.column.value': 'Waarde',
   'settings.save': 'Instellingen opslaan',
   'settings.saved': 'Instellingen opgeslagen.',
   'toast.settings.saved': 'Instellingen opgeslagen.',
@@ -2432,6 +2520,7 @@ export const nlNL: Catalog = {
   'entities.print.nipcUnvalidated': '(niet-gevalideerd)',
   'settings.subnav.aria': 'Configuratiesecties',
   'settings.subnav.platform': 'Platform',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Bewerkingsgebieden',
   'settings.subnav.signing.aria': 'Ondertekeningsgebieden',
 
@@ -2540,6 +2629,8 @@ export const nlNL: Catalog = {
   'users.key.rotate': 'Sleutel roteren',
   'users.key.remove': 'Sleutel verwijderen',
   'users.key.requiresSecret': 'Stel een wachtwoord in voordat u een auditsleutel genereert.',
+  'users.key.rotateNote':
+    'Bij het roteren wordt een nieuw sleutelpaar aangemaakt voor toekomstige attestaties. Reeds gemaakte attestaties blijven verifieerbaar: de publieke helft van de vorige sleutel wordt bewaard, en daarmee kan niet worden ondertekend.',
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'U bewerkt de inloggegevens van een andere gebruiker. Elke wijziging vereist het huidige wachtwoord van die gebruiker of een geldige herstelzin.',
@@ -2665,6 +2756,32 @@ export const nlNL: Catalog = {
   'templates.channels.none': 'Geen specifiek kanaal',
   'templates.table.source': 'Bron',
   'templates.table.actions': 'Acties',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Kolommen',
+  'templates.columns.hint':
+    'Kies welke kolommen de tabel toont. De rechtsgrondslag staat op de sjabloonpagina altijd volledig vermeld.',
+  'templates.detail.open': 'Sjabloon openen',
+  'templates.detail.subnav.aria': 'Onderdelen van het sjabloon',
+  'templates.detail.section.overview': 'Identificatie',
+  'templates.detail.section.placeholders': 'Verwachte velden',
+  'templates.detail.version': 'Versie',
+  'templates.detail.notFound.title': 'Sjabloon niet gevonden',
+  'templates.detail.notFound.body': 'In de catalogus staat geen sjabloon met deze identificatie.',
+  'templates.detail.spec.error': 'De inhoud van dit sjabloon kon niet worden geladen.',
+  'templates.detail.lawSource.empty': 'Dit sjabloon noemt geen rechtsgrondslag.',
+  'templates.detail.blocks.empty': 'Dit sjabloon verklaart geen blokken.',
+  'templates.detail.placeholders.intro':
+    'Velden die de blokken van dit sjabloon uit de notulenregistratie lezen.',
+  'templates.detail.placeholders.empty': 'Dit sjabloon leest geen velden uit de registratie.',
+  'templates.actions.clone': 'Dupliceren',
+  'templates.editor.title.fork': 'Sjabloon dupliceren',
+  'templates.fork.source': 'Oorspronkelijk sjabloon: {id}',
+  'templates.fork.builtin.title': 'Ingebouwde sjablonen zijn niet te bewerken',
+  'templates.fork.builtin.body':
+    'Een ingebouwd sjabloon is alleen-lezen, zodat reeds verzegelde notulen precies hetzelfde blijven betekenen. Bewerken maakt een kopie onder een nieuwe identificatie; die kopie is daarna vrij te wijzigen.',
+  'templates.fork.limit.title': 'Een kopie maakt nog geen documenten',
+  'templates.fork.limit.body':
+    'Een kopie kan worden opgeslagen, bewerkt, geëxporteerd en verwijderd, maar het genereren en verzegelen van notulen herkent uitsluitend ingebouwde sjablonen: bij het verzegelen wordt het verzoek geweigerd. Gebruik de kopie om de tekst voor te bereiden en kies een ingebouwd sjabloon om te verzegelen.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Nieuw sjabloon',
   'templates.actions.edit': 'Bewerken',
@@ -3318,10 +3435,31 @@ export const nlNL: Catalog = {
   'data.status.permission.create_file': 'Bestand aanmaken',
   'data.status.permission.write_file': 'Bestand schrijven',
   'data.status.permission.delete_probe_file': 'Testbestand verwijderen',
-  'data.status.permission.sqlite_store_open': 'SQLite openen',
+  'data.status.permission.sqlite_store_open': 'SQLite geopend',
   'data.status.permission.ok': 'OK',
   'data.status.permission.warn': 'Waarschuwing',
   'data.status.permission.unchecked': 'Niet gecontroleerd',
+  'data.status.permission.durable_store_open': 'Duurzame opslag',
+  'data.status.probe.read_dir.ok': 'De map kan worden gelezen.',
+  'data.status.probe.read_dir.failed': 'De map kan niet worden gelezen.',
+  'data.status.probe.create_file.ok': 'Er kunnen bestanden in de map worden aangemaakt.',
+  'data.status.probe.create_file.failed': 'Er kunnen geen bestanden in de map worden aangemaakt.',
+  'data.status.probe.write_file.ok': 'Er kan naar de map worden geschreven.',
+  'data.status.probe.write_file.failed': 'Er kan niet naar de map worden geschreven.',
+  'data.status.probe.delete_probe_file.ok': 'Er kunnen bestanden uit de map worden verwijderd.',
+  'data.status.probe.delete_probe_file.failed':
+    'Er kunnen geen bestanden uit de map worden verwijderd.',
+  'data.status.probe.durable_store_open.ok': 'De duurzame opslag is geopend.',
+  'data.status.probe.durable_store_open.failed': 'De duurzame opslag is niet geopend.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'De duurzame opslag is niet geopend omdat er geen gegevensmap is geconfigureerd.',
+  'data.status.probe.unchecked.noDataDir':
+    'Niet gecontroleerd: er is geen gegevensmap geconfigureerd.',
+  'data.status.probe.unchecked.probeSkipped':
+    'Niet gecontroleerd: het testbestand kon niet worden aangemaakt.',
+  'data.status.probe.detail': 'Systeemdetail: {detail}',
+  'data.status.basis.logical_payload': 'duurzame logische payload',
+  'data.status.basis.sidecar_logical_payload': 'logische sidecar-payload',
   'data.status.usage.title': 'Gebruik',
   'data.status.usage.total': 'Totaal',
   'data.status.usage.filesystem': 'Bestandssysteem',
@@ -5603,30 +5741,43 @@ export const nlNL: Catalog = {
   'unsaved.close.body':
     'Er zijn niet-opgeslagen wijzigingen. Als u de toepassing nu sluit, gaan ze verloren.',
   'unsaved.close.confirm': 'Sluiten zonder opslaan',
-  "users.create.identityCard": "Identiteit",
-  "users.create.identityLede": "Wie de persoon is. De gebruikersnaam identificeert hem of haar in het auditlogboek en kan later niet worden gewijzigd.",
-  "users.create.emailHint": "Vereist om het welkomstbericht te versturen.",
-  "users.create.accessCard": "Toegang",
-  "users.create.accessLede": "De rol en het bereik waarin die geldt, toegekend in hetzelfde verzoek dat het account aanmaakt.",
-  "users.create.scope.label": "Bereik",
-  "users.create.scope.hint": "Waar de rol geldt. Globaal omvat de hele instantie.",
-  "users.create.role.label": "Rol",
-  "users.create.role.hint": "Alleen rollen waarvan u het gezag in dit bereik al bezit, worden aangeboden.",
-  "users.create.role.default": "Standaard van de server (Gestor, globaal)",
-  "users.create.role.optionBlocked": "{role} — boven uw gezag",
-  "users.create.role.carries": "Deze rol verleent",
-  "users.create.role.aboveCeiling": "U kunt {role} niet toekennen: die bevat rechten die u in dit bereik niet bezit ({permissions}).",
-  "users.create.role.defaultNote": "Zonder gekozen rol krijgt het account de standaard van de server: Gestor, op globaal bereik.",
-  "users.create.credentialsCard": "Inloggegevens",
-  "users.create.credentialsLede": "Stel het eerste wachtwoord in en geef het via een veilig kanaal door. Het wordt nooit per e-mail verstuurd.",
-  "users.create.notifyCard": "Melding",
-  "users.create.notifyLede": "Optionele melding dat het account bestaat. Het bericht bevat geen wachtwoord, code of aanmeldlink.",
-  "users.create.welcome.label": "Het nieuwe account een welkomstbericht sturen",
-  "users.create.welcome.noSmtp": "E-mailverzending is niet geconfigureerd, dus het bericht kan niet worden verstuurd.",
-  "users.create.welcome.noAddress": "Voer hierboven een e-mailadres in om het bericht te kunnen versturen.",
-  "users.create.welcome.settingsLink": "E-mail instellen",
-  "users.language.label": "Taal",
-  "users.language.auto": "Automatisch detecteren",
-  "users.language.hint.auto": "Volgt de taal van het apparaat waarop wordt aangemeld. Door de server verzonden berichten gebruiken de standaardtaal van het platform.",
-  "users.language.hint.fixed": "Legt de taal van de interface en van berichten aan dit account vast.",
+  'users.create.identityCard': 'Identiteit',
+  'users.create.identityLede':
+    'Wie de persoon is. De gebruikersnaam identificeert hem of haar in het auditlogboek en kan later niet worden gewijzigd.',
+  'users.create.emailHint': 'Vereist om het welkomstbericht te versturen.',
+  'users.create.accessCard': 'Toegang',
+  'users.create.accessLede':
+    'De rol en het bereik waarin die geldt, toegekend in hetzelfde verzoek dat het account aanmaakt.',
+  'users.create.scope.label': 'Bereik',
+  'users.create.scope.hint': 'Waar de rol geldt. Globaal omvat de hele instantie.',
+  'users.create.role.label': 'Rol',
+  'users.create.role.hint':
+    'Alleen rollen waarvan u het gezag in dit bereik al bezit, worden aangeboden.',
+  'users.create.role.default': 'Standaard van de server (Gestor, globaal)',
+  'users.create.role.optionBlocked': '{role} — boven uw gezag',
+  'users.create.role.carries': 'Deze rol verleent',
+  'users.create.role.aboveCeiling':
+    'U kunt {role} niet toekennen: die bevat rechten die u in dit bereik niet bezit ({permissions}).',
+  'users.create.role.defaultNote':
+    'Zonder gekozen rol krijgt het account de standaard van de server: Gestor, op globaal bereik.',
+  'users.create.credentialsCard': 'Inloggegevens',
+  'users.create.credentialsLede':
+    'Stel het eerste wachtwoord in en geef het via een veilig kanaal door. Het wordt nooit per e-mail verstuurd.',
+  'users.create.keyNote':
+    'Uit dit wachtwoord wordt een auditsleutel gegenereerd, zodat de handelingen van de gebruiker vanaf de eerste aanmelding worden geattesteerd. Wie dit aanvankelijke wachtwoord kent, kan attestaties op naam van deze gebruiker aanmaken — vraag de gebruiker het bij de eerste aanmelding te wijzigen.',
+  'users.create.notifyCard': 'Melding',
+  'users.create.notifyLede':
+    'Optionele melding dat het account bestaat. Het bericht bevat geen wachtwoord, code of aanmeldlink.',
+  'users.create.welcome.label': 'Het nieuwe account een welkomstbericht sturen',
+  'users.create.welcome.noSmtp':
+    'E-mailverzending is niet geconfigureerd, dus het bericht kan niet worden verstuurd.',
+  'users.create.welcome.noAddress':
+    'Voer hierboven een e-mailadres in om het bericht te kunnen versturen.',
+  'users.create.welcome.settingsLink': 'E-mail instellen',
+  'users.language.label': 'Taal',
+  'users.language.auto': 'Automatisch detecteren',
+  'users.language.hint.auto':
+    'Volgt de taal van het apparaat waarop wordt aangemeld. Door de server verzonden berichten gebruiken de standaardtaal van het platform.',
+  'users.language.hint.fixed':
+    'Legt de taal van de interface en van berichten aan dit account vast.',
 };

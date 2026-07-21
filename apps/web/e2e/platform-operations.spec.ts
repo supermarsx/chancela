@@ -28,7 +28,7 @@ type PlatformOperationsFixtureState = {
   services: PlatformServiceStatus[];
 };
 
-test('platform operations renders API/MCP rows and records MCP start as supervisor-required only', async ({
+test('the API and MCP tabs own their service rows, and MCP start records as supervisor-required only', async ({
   page,
 }) => {
   const controlRequests: ControlRequest[] = [];
@@ -38,8 +38,15 @@ test('platform operations renders API/MCP rows and records MCP start as supervis
   await page.goto('/configuracoes?sec=operacoes');
 
   await expect(page.getByRole('heading', { name: 'Operações', exact: true })).toBeVisible();
-  await expect(page.getByText('Garantia IA/MCP')).toBeVisible();
   await expect(page.getByText(/não prometem controlo direto de processos/i)).toBeVisible();
+
+  // Both service rows moved to their own sub-tabs (t82, t82b); Plataforma routes to them.
+  await expect(page.getByText('Chancela API server')).toHaveCount(0);
+  await expect(page.getByText('Chancela MCP stdio server')).toHaveCount(0);
+
+  const operations = page.getByRole('group', { name: 'Áreas de operações' });
+  await operations.getByRole('button', { name: 'API' }).click();
+  await expect(page.getByRole('heading', { name: 'Servidor API', exact: true })).toBeVisible();
 
   const apiRow = serviceRow(page, 'Chancela API server');
   await expect(apiRow).toBeVisible();
@@ -47,6 +54,18 @@ test('platform operations renders API/MCP rows and records MCP start as supervis
   await expect(apiRow).toContainText('A executar');
   await expect(apiRow).toContainText('Reinício necessário');
   await expect(apiRow).toContainText('requires an external supervisor');
+
+  // The launch-time security posture is surfaced read-only alongside it.
+  await expect(page.getByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeVisible();
+  await expect(page.getByText('CHANCELA_RATE_LIMIT_PER_SECOND')).toBeVisible();
+
+  // The API keys pane is the sibling of this one, at its own unchanged address.
+  const apiPanes = page.getByRole('group', { name: 'Áreas da API' });
+  await expect(apiPanes.getByRole('button', { name: 'Chaves API' })).toBeVisible();
+
+  await operations.getByRole('button', { name: 'MCP' }).click();
+  await expect(page.getByRole('heading', { name: 'Servidor MCP', exact: true })).toBeVisible();
+  await expect(page.getByText('Garantia IA/MCP')).toBeVisible();
 
   const mcpRow = serviceRow(page, 'Chancela MCP stdio server');
   await expect(mcpRow).toBeVisible();
@@ -71,12 +90,8 @@ test('platform operations renders API/MCP rows and records MCP start as supervis
   );
   await expect(mcpRow).not.toContainText(/started process|spawned process|processo iniciado/i);
 
-  // Per-service log overrides now live behind the «Registos» sub-tab of Operações.
-  await page
-    .getByRole('group', { name: 'Secções de operações' })
-    .getByRole('button', { name: 'Registos' })
-    .click();
-  await expect(page.getByRole('heading', { name: 'Níveis de log' })).toBeVisible();
+  // The MCP service log override moved onto this same tab and still writes the settings document.
+  await expect(page.getByRole('heading', { name: 'Registos do MCP' })).toBeVisible();
 
   const autosaveResponse = waitForApiResponse(page, '/v1/settings', 'PUT');
   await page.getByLabel('MCP stdio').selectOption('warn');

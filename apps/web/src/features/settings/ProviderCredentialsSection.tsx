@@ -55,7 +55,8 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
+  SkeletonRegion,
+  SkeletonTable,
   Select,
   Table,
   Toggle,
@@ -969,7 +970,17 @@ export function ProviderCredentialsSection() {
   const credentials = useProviderCredentials();
   const [creating, setCreating] = useState(false);
 
-  if (credentials.isLoading) return <Loading />;
+  // Six columns per provider group: entry, priority, state, endpoint, fields, actions.
+  if (credentials.isLoading)
+    return (
+      <div className="stack">
+        <Card title={t('settings.providerCredentials.cardTitle')}>
+          <SkeletonRegion>
+            <SkeletonTable cols={6} />
+          </SkeletonRegion>
+        </Card>
+      </div>
+    );
   if (credentials.error) return <ErrorNote error={credentials.error} />;
 
   const data = credentials.data;

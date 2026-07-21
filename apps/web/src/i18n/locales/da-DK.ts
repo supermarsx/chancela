@@ -10,13 +10,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsDaDK } from '../ledgerEventLabels';
+import { ledgerScopeLabelsDaDK } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsDaDK } from '../dashboardSourceLabels';
+import { roleNameLabelsDaDK } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const daDK: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsDaDK,
+  ...ledgerScopeLabelsDaDK,
   ...dashboardSourceLabelsDaDK,
+  ...roleNameLabelsDaDK,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har ikke tilladelse til denne handling',
@@ -1591,6 +1595,23 @@ export const daDK: Catalog = {
   'users.action.edit': 'Rediger',
   'users.new.crumb': 'Ny',
   'users.new.title': 'Ny bruger',
+  'users.edit.title': 'Rediger bruger',
+  'users.filters.aria': 'Søg og filtrér brugere',
+  'users.filters.search.label': 'Søg',
+  'users.filters.search.placeholder': 'Brugernavn, navn eller e-mail',
+  'users.filters.status.label': 'Status',
+  'users.filters.status.all': 'Alle statusser',
+  'users.filters.access.label': 'Adgang',
+  'users.filters.access.all': 'Enhver adgang',
+  'users.filters.access.key': 'Med revisionsnøgle',
+  'users.filters.access.noKey': 'Uden revisionsnøgle',
+  'users.filters.access.noPassword': 'Uden adgangskode',
+  'users.filters.access.recovery': 'Med gendannelsessætning',
+  'users.filters.clear.aria': 'Ryd brugerfiltre',
+  'users.filters.count': '{shown} af {total}',
+  'users.filters.count.aria': 'Viser {shown} af {total} brugere',
+  'users.filters.empty.title': 'Ingen resultater',
+  'users.filters.empty.body': 'Ændr søgningen eller filtrene for at se brugere igen.',
   'users.edit.identityCard': 'Identitet',
   'users.edit.usernameHint': 'Brugernavnet er revisionsidentifikatoren og kan ikke ændres.',
   'users.edit.displayNameLabel': 'Vist navn',
@@ -1747,7 +1768,7 @@ export const daDK: Catalog = {
     'Brug kun, når én tjeneste kræver et andet niveau end sit områdeniveau.',
   'settings.platform.logging.override.none': 'Ingen undtagelse',
   'settings.platform.logging.override.app': 'Applikation',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'API-server',
   'settings.platform.logging.override.mcp_stdio': 'MCP studie',
   'settings.platform.logLevel.trace': 'Spor',
   'settings.platform.logLevel.debug': 'Debug',
@@ -1796,10 +1817,73 @@ export const daDK: Catalog = {
   'settings.platform.subnav.aria': 'Driftssektioner',
   'settings.platform.tab.services': 'Tjenester',
   'settings.platform.tab.services.desc':
-    'Styring af ønsket tilstand for API- og MCP-serverne, med ærlige backend-resultater og et driftsrevisionsspor.',
+    'Styring af ønsket tilstand for API-serveren, med ærlige backend-resultater og et driftsrevisionsspor.',
   'settings.platform.tab.logs': 'Logfiler',
   'settings.platform.tab.logs.desc':
     'Konfiguration af logniveauer og struktureret API-loghale (skrivebeskyttet).',
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Server',
+  'settings.api.subnav.aria': 'API-områder',
+  'settings.api.cardTitle': 'API-server',
+  'settings.api.intro':
+    'API-serverens ønskede tilstand, logfiler og opstartskonfiguration ét sted. API-nøglerne ligger i ruden ved siden af.',
+  'settings.api.logging.title': 'API-logfiler',
+  'settings.api.logging.hint':
+    'Disse to felter skriver til det samme indstillingsdokument som de øvrige logniveauer.',
+  'settings.api.env.hint':
+    'Læses fra procesmiljøet, når serveren starter. De kan hverken redigeres her eller via et endpoint; en ændring kræver, at serveren genstartes.',
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    'Serveren taler almindelig HTTP. TLS afsluttes i den omvendte proxy foran den, og HSTS-headeren nedenfor virker kun i den opsætning.',
+  'settings.api.env.addr': 'Den vært:port, serveren lytter på.',
+  'settings.api.env.cors':
+    'Præcise oprindelser, der må kalde API’et på tværs af oprindelser. Tom betyder kun samme oprindelse.',
+  'settings.api.env.rateLimit': 'Anmodningsbegrænser pr. IP. Slået til som standard på serveren.',
+  'settings.api.env.ratePerSecond': 'Vedvarende antal anmodninger pr. sekund pr. IP.',
+  'settings.api.env.rateBurst': 'Burst-kapacitet pr. IP.',
+  'settings.api.env.trustForwarded':
+    'Stol på X-Forwarded-For for klientadressen. Kun bag en betroet omvendt proxy.',
+  'settings.api.env.hstsMaxAge': 'Hvor længe, i sekunder, den annoncerede HSTS-politik gælder.',
+  'settings.api.env.hstsSubdomains': 'Udvid HSTS-politikken til underdomæner.',
+  'settings.api.env.hstsPreload':
+    'Annoncér preload-direktivet. Slå først til, når domænet er indsendt.',
+  'settings.api.env.sessionLifetime':
+    'Absolut loft over sessionens levetid, i sekunder. Nul eller negativt slår loftet fra.',
+  'settings.api.related.title': 'Relaterede indstillinger',
+  'settings.api.related.egress':
+    'Det er konnektorernes udgående liste, ikke API’ets indgående flade: den afgrænser, hvorhen en konnektor må sende bytes. Den bliver under Platform.',
+  'settings.api.related.logTail':
+    'Loghalen dækker appen, API’et og MCP og bliver derfor under Platform › Logfiler.',
+  'settings.mcp.cardTitle': 'MCP-server',
+  'settings.mcp.intro':
+    'Al MCP-specifik konfiguration ét sted: stdio-processens ønskede tilstand, logniveauer og de miljøvariabler, der læses ved opstart.',
+  'settings.platform.services.hub':
+    'Hver tjeneste har sin egen underfane med ønsket tilstand, logniveauer og opstartskonfiguration.',
+  'settings.mcp.logging.title': 'MCP-logfiler',
+  'settings.mcp.logging.hint':
+    'Disse to felter skriver til det samme indstillingsdokument som de øvrige logniveauer.',
+  'settings.env.title': 'Opstartskonfiguration (miljø)',
+  'settings.mcp.env.hint':
+    'Læses fra procesmiljøet, når MCP-serveren starter. De kan hverken redigeres her eller via et endpoint; en ændring kræver, at processen startes igen. API-nøglens værdi når aldrig frem til denne grænseflade.',
+  'settings.env.col.variable': 'Variabel',
+  'settings.env.col.meaning': 'Betydning',
+  'settings.env.col.default': 'Standardværdi',
+  'settings.mcp.env.enabled': 'Hovedafbryder for MCP-serveren.',
+  'settings.mcp.env.aiGate':
+    'Spejl af lejerens AI/MCP-spærre. Processen betjener kun, når begge er slået til.',
+  'settings.mcp.env.transport': 'Forbindelsestransport. Denne udgave betjener kun stdio.',
+  'settings.mcp.env.baseUrl': 'Basis-URL for det integrations-API, værktøjerne kalder.',
+  'settings.mcp.env.basePath': 'Versioneret basissti, som API’et er monteret under.',
+  'settings.mcp.env.apiKey':
+    'API-nøglen, som MCP-serveren godkender sig med. Påkrævet når den er slået til.',
+  'settings.mcp.env.tools': 'Eksponerede værktøjer: alle eller en kommasepareret liste.',
+  'settings.mcp.env.bind':
+    'Lytteadresse, reserveret til en fjerntransport. Uden virkning i denne udgave.',
+  'settings.mcp.related.title': 'Relaterede indstillinger',
+  'settings.mcp.related.gate':
+    'Lejerens AI/MCP-spærre styrer også AI-funktionerne og redigeres derfor fortsat under Administration. Uden den forbliver MCP inaktiv.',
+  'settings.mcp.related.apiKeys':
+    'API-nøgler gælder ikke kun MCP: de godkender alle integrationsklienter. De beholder deres egen underfane.',
   'settings.platform.serviceDetails': 'Styringsdetaljer og begrænsninger',
   'settings.platform.help.services':
     'Disse handlinger registrerer tjenestens ønskede tilstand; grænsefladen forudsætter ikke direkte proceskontrol (for eksempel API-selvgenstart eller MCP-stdio-start).',
@@ -2125,6 +2209,10 @@ export const daDK: Catalog = {
   'settings.about.ledger.valid': 'Kæden er intakt · {count} hændelser',
   'settings.about.ledger.compromised': 'Kæden er kompromitteret',
   'settings.about.schemaVersion': 'Version af konfigurationsskema',
+  'settings.about.interfaceLocale': 'Grænsefladesprog',
+  'settings.about.tableCaption': 'Instansoplysninger',
+  'settings.about.column.item': 'Information',
+  'settings.about.column.value': 'Værdi',
   'settings.save': 'Gem indstillinger',
   'settings.saved': 'Indstillingerne er gemt.',
   'toast.settings.saved': 'Indstillingerne er gemt.',
@@ -2417,6 +2505,7 @@ export const daDK: Catalog = {
   'entities.print.nipcUnvalidated': '(ikke valideret)',
   'settings.subnav.aria': 'Konfigurationsafsnit',
   'settings.subnav.platform': 'Platform',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Driftsområder',
   'settings.subnav.signing.aria': 'Signeringsområder',
 
@@ -2525,6 +2614,8 @@ export const daDK: Catalog = {
   'users.key.rotate': 'Rotér nøgle',
   'users.key.remove': 'Fjern nøgle',
   'users.key.requiresSecret': 'Angiv en adgangskode, før du genererer en revisionsnøgle.',
+  'users.key.rotateNote':
+    'Rotationen genererer et nyt nøglepar til fremtidige attesteringer. Allerede lavede attesteringer kan fortsat verificeres: den offentlige del af den tidligere nøgle gemmes, og med den kan der ikke signeres.',
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'Du redigerer en anden brugers legitimationsoplysninger. Hver ændring kræver den pågældende brugers nuværende adgangskode eller en gyldig gendannelsessætning.',
@@ -2651,6 +2742,32 @@ export const daDK: Catalog = {
   'templates.channels.none': 'Ingen specifik kanal',
   'templates.table.source': 'Kilde',
   'templates.table.actions': 'Handlinger',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Kolonner',
+  'templates.columns.hint':
+    'Vælg hvilke kolonner tabellen viser. Retsgrundlaget står altid fuldt ud på skabelonsiden.',
+  'templates.detail.open': 'Åbn skabelon',
+  'templates.detail.subnav.aria': 'Afsnit i skabelonen',
+  'templates.detail.section.overview': 'Identifikation',
+  'templates.detail.section.placeholders': 'Forventede felter',
+  'templates.detail.version': 'Version',
+  'templates.detail.notFound.title': 'Skabelon ikke fundet',
+  'templates.detail.notFound.body': 'Kataloget indeholder ingen skabelon med denne identifikator.',
+  'templates.detail.spec.error': 'Indholdet af denne skabelon kunne ikke indlæses.',
+  'templates.detail.lawSource.empty': 'Denne skabelon angiver intet retsgrundlag.',
+  'templates.detail.blocks.empty': 'Denne skabelon erklærer ingen blokke.',
+  'templates.detail.placeholders.intro':
+    'Felter, som skabelonens blokke læser fra protokollens registrering.',
+  'templates.detail.placeholders.empty': 'Denne skabelon læser ingen felter fra registreringen.',
+  'templates.actions.clone': 'Kopiér',
+  'templates.editor.title.fork': 'Kopiér skabelon',
+  'templates.fork.source': 'Oprindelig skabelon: {id}',
+  'templates.fork.builtin.title': 'Indbyggede skabeloner kan ikke redigeres',
+  'templates.fork.builtin.body':
+    'En indbygget skabelon er skrivebeskyttet, så en allerede beseglet protokol fortsat betyder præcis det samme. Redigering opretter en kopi under en ny identifikator; den kopi kan derefter ændres frit.',
+  'templates.fork.limit.title': 'En kopi frembringer endnu ikke dokumenter',
+  'templates.fork.limit.body':
+    'En kopi kan gemmes, redigeres, eksporteres og slettes, men frembringelse og besegling af en protokol anerkender kun indbyggede skabeloner: ved beseglingen afvises anmodningen. Brug kopien til at forberede teksten, og vælg en indbygget skabelon til beseglingen.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Ny skabelon',
   'templates.actions.edit': 'Rediger',
@@ -3297,6 +3414,25 @@ export const daDK: Catalog = {
   'data.status.permission.ok': 'OK',
   'data.status.permission.warn': 'Advarsel',
   'data.status.permission.unchecked': 'Ikke kontrolleret',
+  'data.status.permission.durable_store_open': 'Vedvarende lager',
+  'data.status.probe.read_dir.ok': 'Mappen kan læses.',
+  'data.status.probe.read_dir.failed': 'Mappen kan ikke læses.',
+  'data.status.probe.create_file.ok': 'Der kan oprettes filer i mappen.',
+  'data.status.probe.create_file.failed': 'Der kan ikke oprettes filer i mappen.',
+  'data.status.probe.write_file.ok': 'Der kan skrives til mappen.',
+  'data.status.probe.write_file.failed': 'Der kan ikke skrives til mappen.',
+  'data.status.probe.delete_probe_file.ok': 'Der kan slettes filer fra mappen.',
+  'data.status.probe.delete_probe_file.failed': 'Der kan ikke slettes filer fra mappen.',
+  'data.status.probe.durable_store_open.ok': 'Det vedvarende lager er åbent.',
+  'data.status.probe.durable_store_open.failed': 'Det vedvarende lager er ikke åbent.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'Det vedvarende lager er ikke åbent, fordi der ikke er konfigureret nogen datamappe.',
+  'data.status.probe.unchecked.noDataDir':
+    'Ikke kontrolleret: der er ikke konfigureret nogen datamappe.',
+  'data.status.probe.unchecked.probeSkipped': 'Ikke kontrolleret: testfilen kunne ikke oprettes.',
+  'data.status.probe.detail': 'Systemdetalje: {detail}',
+  'data.status.basis.logical_payload': 'vedvarende logisk nyttelast',
+  'data.status.basis.sidecar_logical_payload': 'logisk sidecar-nyttelast',
   'data.status.usage.title': 'Forbrug',
   'data.status.usage.total': 'I alt',
   'data.status.usage.filesystem': 'Filsystem',
@@ -5547,30 +5683,42 @@ export const daDK: Catalog = {
   'unsaved.close.title': 'Luk programmet?',
   'unsaved.close.body': 'Der er ikke-gemte ændringer. Hvis du lukker programmet nu, går de tabt.',
   'unsaved.close.confirm': 'Luk uden at gemme',
-  "users.create.identityCard": "Identitet",
-  "users.create.identityLede": "Hvem personen er. Brugernavnet identificerer vedkommende i revisionsloggen og kan ikke ændres senere.",
-  "users.create.emailHint": "Kræves for at sende velkomstbeskeden.",
-  "users.create.accessCard": "Adgang",
-  "users.create.accessLede": "Rollen og det omfang, den gælder i — tildelt i samme anmodning, som opretter kontoen.",
-  "users.create.scope.label": "Omfang",
-  "users.create.scope.hint": "Hvor rollen gælder. Global dækker hele instansen.",
-  "users.create.role.label": "Rolle",
-  "users.create.role.hint": "Der tilbydes kun roller, hvis myndighed du allerede har i dette omfang.",
-  "users.create.role.default": "Serverens standard (Gestor, global)",
-  "users.create.role.optionBlocked": "{role} — over din myndighed",
-  "users.create.role.carries": "Denne rolle giver",
-  "users.create.role.aboveCeiling": "Du kan ikke tildele {role}: den indeholder tilladelser, du ikke har i dette omfang ({permissions}).",
-  "users.create.role.defaultNote": "Uden en valgt rolle får kontoen serverens standard: Gestor, i globalt omfang.",
-  "users.create.credentialsCard": "Legitimationsoplysninger",
-  "users.create.credentialsLede": "Angiv den første adgangskode, og videregiv den ad en sikker kanal. Den sendes aldrig med e-mail.",
-  "users.create.notifyCard": "Underretning",
-  "users.create.notifyLede": "Valgfri besked om, at kontoen findes. Beskeden indeholder hverken adgangskode, kode eller login-link.",
-  "users.create.welcome.label": "Send den nye konto en velkomstbesked",
-  "users.create.welcome.noSmtp": "Afsendelse af e-mail er ikke konfigureret, så beskeden kan ikke sendes.",
-  "users.create.welcome.noAddress": "Indtast en e-mailadresse ovenfor for at kunne sende beskeden.",
-  "users.create.welcome.settingsLink": "Konfigurer e-mail",
-  "users.language.label": "Sprog",
-  "users.language.auto": "Registrer automatisk",
-  "users.language.hint.auto": "Følger sproget på den enhed, personen logger ind fra. Beskeder sendt af serveren bruger platformens standardsprog.",
-  "users.language.hint.fixed": "Fastlåser sproget for grænsefladen og for beskeder sendt til denne konto.",
+  'users.create.identityCard': 'Identitet',
+  'users.create.identityLede':
+    'Hvem personen er. Brugernavnet identificerer vedkommende i revisionsloggen og kan ikke ændres senere.',
+  'users.create.emailHint': 'Kræves for at sende velkomstbeskeden.',
+  'users.create.accessCard': 'Adgang',
+  'users.create.accessLede':
+    'Rollen og det omfang, den gælder i — tildelt i samme anmodning, som opretter kontoen.',
+  'users.create.scope.label': 'Omfang',
+  'users.create.scope.hint': 'Hvor rollen gælder. Global dækker hele instansen.',
+  'users.create.role.label': 'Rolle',
+  'users.create.role.hint':
+    'Der tilbydes kun roller, hvis myndighed du allerede har i dette omfang.',
+  'users.create.role.default': 'Serverens standard (Gestor, global)',
+  'users.create.role.optionBlocked': '{role} — over din myndighed',
+  'users.create.role.carries': 'Denne rolle giver',
+  'users.create.role.aboveCeiling':
+    'Du kan ikke tildele {role}: den indeholder tilladelser, du ikke har i dette omfang ({permissions}).',
+  'users.create.role.defaultNote':
+    'Uden en valgt rolle får kontoen serverens standard: Gestor, i globalt omfang.',
+  'users.create.credentialsCard': 'Legitimationsoplysninger',
+  'users.create.credentialsLede':
+    'Angiv den første adgangskode, og videregiv den ad en sikker kanal. Den sendes aldrig med e-mail.',
+  'users.create.keyNote':
+    'Der genereres en revisionsnøgle ud fra denne adgangskode, så brugerens handlinger attesteres fra første login. Enhver, der kender denne indledende adgangskode, kan udstede attestationer i denne brugers navn — bed brugeren om at ændre den ved første login.',
+  'users.create.notifyCard': 'Underretning',
+  'users.create.notifyLede':
+    'Valgfri besked om, at kontoen findes. Beskeden indeholder hverken adgangskode, kode eller login-link.',
+  'users.create.welcome.label': 'Send den nye konto en velkomstbesked',
+  'users.create.welcome.noSmtp':
+    'Afsendelse af e-mail er ikke konfigureret, så beskeden kan ikke sendes.',
+  'users.create.welcome.noAddress': 'Indtast en e-mailadresse ovenfor for at kunne sende beskeden.',
+  'users.create.welcome.settingsLink': 'Konfigurer e-mail',
+  'users.language.label': 'Sprog',
+  'users.language.auto': 'Registrer automatisk',
+  'users.language.hint.auto':
+    'Følger sproget på den enhed, personen logger ind fra. Beskeder sendt af serveren bruger platformens standardsprog.',
+  'users.language.hint.fixed':
+    'Fastlåser sproget for grænsefladen og for beskeder sendt til denne konto.',
 };

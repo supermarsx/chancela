@@ -10,6 +10,10 @@
  * Sorting is deliberately small — four label columns, one state, no data grid. Rows keep
  * the catalog's own order (family → stage → rule pack → locale → id) until the reader
  * picks a column, so the default view is still the curated one.
+ *
+ * Which columns appear is the operator's choice (`templateColumns.ts`); `Name` and `Actions`
+ * are structural and always render. A sort on a column that is then hidden is released rather
+ * than left applied invisibly.
  */
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -23,7 +27,9 @@ import type { TemplateLawReference, TemplateSummary } from '../../api/types';
 import { useT, type TFunction } from '../../i18n';
 import { Badge, EmptyState, Icon, Table, Tooltip } from '../../ui';
 import { GateIconButton } from '../session/permissions';
+import type { TemplateColumn } from './templateColumns';
 import { hasTemplateName, templateDisplayName } from './templateNames';
+import { templateDetailPath } from './templateRoutes';
 
 type SortColumn = 'Name' | 'Family' | 'Stage' | 'Origin';
 type SortDirection = 'asc' | 'desc';
@@ -122,24 +128,35 @@ function SortableHeader({
 
 export function TemplatesTable({
   templates,
+  visibleColumns,
   onEdit,
+  onClone,
   onExport,
   onDelete,
   editPending = false,
   exportPending = false,
 }: {
   templates: TemplateSummary[];
+  /** The optional columns to render; `Name` and `Actions` are structural and always shown. */
+  visibleColumns: readonly TemplateColumn[];
   onEdit: (template: TemplateSummary) => void;
+  onClone: (template: TemplateSummary) => void;
   onExport: (template: TemplateSummary) => void;
   onDelete: (template: TemplateSummary) => void;
-  /** The spec download backing "editar" is in flight. */
+  /** The spec download backing "editar" / "duplicar" is in flight. */
   editPending?: boolean;
   exportPending?: boolean;
 }) {
   const t = useT();
   const [sort, setSort] = useState<SortState | null>(null);
-  const rows = useMemo(() => sortRows(templates, sort, t), [templates, sort, t]);
+  const shows = (column: TemplateColumn) => visibleColumns.includes(column);
+  // A sort whose column the operator has since hidden is unreachable, so it is released
+  // rather than left reordering the rows by something no longer on screen.
+  const activeSort =
+    sort && (sort.column === 'Name' || shows(sort.column as TemplateColumn)) ? sort : null;
+  const rows = useMemo(() => sortRows(templates, activeSort, t), [templates, activeSort, t]);
   const openLabel = t('templates.openAct');
+  const detailLabel = t('templates.detail.open');
 
   function toggleSort(column: SortColumn) {
     setSort((current) =>
@@ -166,39 +183,53 @@ export function TemplatesTable({
             <SortableHeader
               column="Name"
               label={t('templates.card.id')}
-              sort={sort}
+              sort={activeSort}
               onSort={toggleSort}
             />
-            <SortableHeader
-              column="Family"
-              label={t('templates.card.family')}
-              sort={sort}
-              onSort={toggleSort}
-            />
-            <SortableHeader
-              column="Stage"
-              label={t('templates.card.stage')}
-              sort={sort}
-              onSort={toggleSort}
-            />
-            <th scope="col" data-template-column="Channels">
-              {t('templates.card.channels')}
-            </th>
-            <th scope="col" data-template-column="Signature">
-              {t('templates.card.signature')}
-            </th>
-            <th scope="col" data-template-column="RulePack">
-              {t('templates.card.rulePack')}
-            </th>
-            <th scope="col" data-template-column="LawSource">
-              {t('documents.metadata.legalSource')}
-            </th>
-            <SortableHeader
-              column="Origin"
-              label={t('templates.table.source')}
-              sort={sort}
-              onSort={toggleSort}
-            />
+            {shows('Family') ? (
+              <SortableHeader
+                column="Family"
+                label={t('templates.card.family')}
+                sort={activeSort}
+                onSort={toggleSort}
+              />
+            ) : null}
+            {shows('Stage') ? (
+              <SortableHeader
+                column="Stage"
+                label={t('templates.card.stage')}
+                sort={activeSort}
+                onSort={toggleSort}
+              />
+            ) : null}
+            {shows('Channels') ? (
+              <th scope="col" data-template-column="Channels">
+                {t('templates.card.channels')}
+              </th>
+            ) : null}
+            {shows('Signature') ? (
+              <th scope="col" data-template-column="Signature">
+                {t('templates.card.signature')}
+              </th>
+            ) : null}
+            {shows('RulePack') ? (
+              <th scope="col" data-template-column="RulePack">
+                {t('templates.card.rulePack')}
+              </th>
+            ) : null}
+            {shows('LawSource') ? (
+              <th scope="col" data-template-column="LawSource">
+                {t('documents.metadata.legalSource')}
+              </th>
+            ) : null}
+            {shows('Origin') ? (
+              <SortableHeader
+                column="Origin"
+                label={t('templates.table.source')}
+                sort={activeSort}
+                onSort={toggleSort}
+              />
+            ) : null}
             <th scope="col" data-template-column="Actions">
               <span className="sr-only">{t('templates.table.actions')}</span>
             </th>
@@ -213,72 +244,104 @@ export function TemplatesTable({
               <td data-template-column="Name">
                 {/* Name first, id second: the `/vN` pins provenance, so it is demoted, not
                     dropped. An unnamed template keeps the id as its only label. */}
-                {hasTemplateName(template.id) ? (
-                  <span className="templates-table__name">{templateDisplayName(template.id)}</span>
-                ) : null}
-                <code className="templates-table__id">{template.id}</code>
+                <Link
+                  className="templates-table__open"
+                  to={templateDetailPath(template.id)}
+                  aria-label={detailLabel}
+                >
+                  {hasTemplateName(template.id) ? (
+                    <span className="templates-table__name">
+                      {templateDisplayName(template.id)}
+                    </span>
+                  ) : null}
+                  <code className="templates-table__id">{template.id}</code>
+                </Link>
               </td>
-              <td data-template-column="Family">{entityFamilyLabels[template.family]}</td>
-              <td data-template-column="Stage">{lifecycleStageLabels[template.stage]}</td>
-              <td data-template-column="Channels">
-                {template.channels.length > 0 ? (
+              {shows('Family') ? (
+                <td data-template-column="Family">{entityFamilyLabels[template.family]}</td>
+              ) : null}
+              {shows('Stage') ? (
+                <td data-template-column="Stage">{lifecycleStageLabels[template.stage]}</td>
+              ) : null}
+              {shows('Channels') ? (
+                <td data-template-column="Channels">
+                  {template.channels.length > 0 ? (
+                    <span className="templates-table__badges">
+                      {template.channels.map((value) => (
+                        <Badge key={value}>{meetingChannelLabels[value]}</Badge>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="muted">{t('templates.channels.none')}</span>
+                  )}
+                </td>
+              ) : null}
+              {shows('Signature') ? (
+                <td data-template-column="Signature">
+                  {signaturePolicyLabels[template.signature_policy]}
+                </td>
+              ) : null}
+              {shows('RulePack') ? (
+                <td data-template-column="RulePack">
+                  <code className="templates-table__code">{template.rule_pack_id}</code>
+                </td>
+              ) : null}
+              {shows('LawSource') ? (
+                <td data-template-column="LawSource">
+                  {lawReferences.length > 0 ? (
+                    <div className="stack--tight">
+                      {lawReferences.map((reference, index) => (
+                        <div key={lawReferenceKey(reference, index)} className="stack--tight">
+                          <span className="templates-table__badges">
+                            <Badge tone={lawReferenceTone(reference)}>
+                              {t(lawReferenceBadgeKey(reference))}
+                            </Badge>
+                            <span className="mono">{reference.citation}</span>
+                          </span>
+                          <span className="muted">
+                            {t('legislacao.corpus.article.source')}:{' '}
+                            {lawReferenceSourceText(reference)}
+                          </span>
+                          {reference.verification === 'Pending' ? (
+                            <span className="muted">{t('legislacao.citations.pendingNote')}</span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+              ) : null}
+              {shows('Origin') ? (
+                <td data-template-column="Origin">
                   <span className="templates-table__badges">
-                    {template.channels.map((value) => (
-                      <Badge key={value}>{meetingChannelLabels[value]}</Badge>
-                    ))}
+                    <Badge tone={isUser ? 'accent' : 'neutral'}>{sourceLabel(template, t)}</Badge>
+                    <Badge tone="accent">{template.locale}</Badge>
                   </span>
-                ) : (
-                  <span className="muted">{t('templates.channels.none')}</span>
-                )}
-              </td>
-              <td data-template-column="Signature">
-                {signaturePolicyLabels[template.signature_policy]}
-              </td>
-              <td data-template-column="RulePack">
-                <code className="templates-table__code">{template.rule_pack_id}</code>
-              </td>
-              <td data-template-column="LawSource">
-                {lawReferences.length > 0 ? (
-                  <div className="stack--tight">
-                    {lawReferences.map((reference, index) => (
-                      <div key={lawReferenceKey(reference, index)} className="stack--tight">
-                        <span className="templates-table__badges">
-                          <Badge tone={lawReferenceTone(reference)}>
-                            {t(lawReferenceBadgeKey(reference))}
-                          </Badge>
-                          <span className="mono">{reference.citation}</span>
-                        </span>
-                        <span className="muted">
-                          {t('legislacao.corpus.article.source')}:{' '}
-                          {lawReferenceSourceText(reference)}
-                        </span>
-                        {reference.verification === 'Pending' ? (
-                          <span className="muted">{t('legislacao.citations.pendingNote')}</span>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </td>
-              <td data-template-column="Origin">
-                <span className="templates-table__badges">
-                  <Badge tone={isUser ? 'accent' : 'neutral'}>{sourceLabel(template, t)}</Badge>
-                  <Badge tone="accent">{template.locale}</Badge>
-                </span>
-              </td>
+                </td>
+              ) : null}
               <td data-template-column="Actions">
                 <span className="templates-table__actions">
+                  {/* "Editar" is offered on a BUILT-IN too, and opens a fork dialog rather
+                      than an in-place editor (see `useTemplateEditor`). Withholding it left
+                      the operator no route at all from a shipped template to an editable one. */}
+                  <GateIconButton
+                    perm="template.manage"
+                    icon={<Icon.Pencil />}
+                    label={t('templates.actions.edit')}
+                    disabled={editPending}
+                    onClick={() => onEdit(template)}
+                  />
+                  <GateIconButton
+                    perm="template.manage"
+                    icon={<Icon.Copy />}
+                    label={t('templates.actions.clone')}
+                    disabled={editPending}
+                    onClick={() => onClone(template)}
+                  />
                   {isUser ? (
                     <>
-                      <GateIconButton
-                        perm="template.manage"
-                        icon={<Icon.Pencil />}
-                        label={t('templates.actions.edit')}
-                        disabled={editPending}
-                        onClick={() => onEdit(template)}
-                      />
                       <GateIconButton
                         perm="template.manage"
                         icon={<Icon.Archive />}

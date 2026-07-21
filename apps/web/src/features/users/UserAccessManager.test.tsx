@@ -106,3 +106,65 @@ describe('UserAccessManager — a wrong current password is a field error, not a
     await waitFor(() => expect(getSessionToken()).toBe('live-session'));
   });
 });
+
+/**
+ * t92 — rotation is no longer destructive: the server retains the superseded key's PUBLIC half, so
+ * attestations it signed keep verifying (`rotating_the_key_keeps_attestations_the_old_key_signed_
+ * verifiable` in `chancela-api`). So there is deliberately NO confirm dialog here — it would be
+ * theatre. What must not disappear with it is the explanation: the rotate control has to say what
+ * it does, and say it where a screen reader reaches it.
+ */
+describe('UserAccessManager — the rotate control explains itself', () => {
+  /** AMÉLIA with a key already in place, so the rotate/remove affordances render. */
+  const KEYED: UserView = {
+    ...AMELIA,
+    has_attestation_key: true,
+    attestation_key_fingerprint: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+  };
+
+  /** Record every non-GET request so the test can assert nothing fired before confirmation. */
+  function stubRecording(calls: string[]): typeof fetch {
+    return ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      if (method !== 'GET') calls.push(`${method} ${url}`);
+      const body = url.endsWith('/v1/session') ? { user: KEYED } : KEYED;
+      return Promise.resolve(
+        new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } }),
+      );
+    }) as typeof fetch;
+  }
+
+  it('describes the rotate button with copy that matches the retained-key behaviour', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', stubRecording(calls));
+    setSessionToken('live-session');
+
+    renderWithProviders(<UserAccessManager user={KEYED} />);
+
+    const rotate = await screen.findByRole('button', { name: 'Rodar chave' });
+    // The note is the button's accessible description, not decoration next to it.
+    const noteId = rotate.getAttribute('aria-describedby');
+    expect(noteId).toBe('key-note-u1');
+    const note = document.getElementById(noteId!);
+    expect(note?.textContent).toContain('continuam verificáveis');
+    expect(note?.textContent).toContain('não permite assinar');
+
+    // And rotating is a single deliberate submit — no dialog, because nothing is destroyed.
+    fireEvent.change(passwordFieldOf('key-cur-u1'), { target: { value: 'Segur0-Chave7!' } });
+    fireEvent.click(rotate);
+    await waitFor(() => expect(calls).toEqual(['POST /v1/users/u1/attestation-key']));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('offers no rotation note to a user who has no key yet', async () => {
+    vi.stubGlobal('fetch', stubRecording([]));
+    setSessionToken('live-session');
+
+    renderWithProviders(<UserAccessManager user={AMELIA} />);
+
+    // Nothing has been signed, so there is nothing to explain about superseding it.
+    expect(await screen.findByRole('button', { name: 'Gerar chave' })).toBeTruthy();
+    expect(document.getElementById('key-note-u1')).toBeNull();
+  });
+});

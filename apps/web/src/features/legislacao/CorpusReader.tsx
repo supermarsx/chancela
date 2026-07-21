@@ -71,7 +71,9 @@ import {
   ErrorNote,
   FieldHelp,
   Input,
-  Loading,
+  Skeleton,
+  SkeletonRegion,
+  SkeletonText,
   InlineWarning,
   Icon,
   abbreviateDigest,
@@ -266,11 +268,36 @@ function DiplomaRow({
   );
 }
 
+/**
+ * The corpus reader shows two shapes and nothing else: a stack of tappable diploma/hit
+ * rows, or one diploma's heading over its prose. Both are known before the query lands,
+ * so both get a placeholder of that shape rather than a line of text.
+ */
+function SkeletonRows({ rows = 5, label }: { rows?: number; label: string }) {
+  return (
+    <SkeletonRegion className="leg-corpus__diplomas" label={label}>
+      {Array.from({ length: rows }, (_, i) => (
+        <Skeleton key={i} height="3.4rem" />
+      ))}
+    </SkeletonRegion>
+  );
+}
+
+function SkeletonDocument({ label }: { label: string }) {
+  return (
+    <SkeletonRegion className="stack--tight" label={label}>
+      <Skeleton height="1.5rem" width="60%" />
+      <Skeleton height="0.85rem" width="30%" />
+      <SkeletonText lines={6} />
+    </SkeletonRegion>
+  );
+}
+
 function CorpusOverview({ onOpenDiploma }: { onOpenDiploma: (id: string) => void }) {
   const t = useT();
   const corpus = useLawCorpus();
 
-  if (corpus.isPending) return <Loading label={t('legislacao.corpus.loading')} />;
+  if (corpus.isPending) return <SkeletonRows label={t('legislacao.corpus.loading')} />;
   if (corpus.error) return <ErrorNote error={corpus.error} />;
   const data = corpus.data;
   if (!data) return <ErrorNote error={new Error(t('legislacao.corpus.unavailable'))} />;
@@ -421,7 +448,7 @@ function DiplomaDetail({
   const t = useT();
   const q = useLawDiploma(diplomaId);
 
-  if (q.isPending) return <Loading label={t('legislacao.corpus.loading')} />;
+  if (q.isPending) return <SkeletonDocument label={t('legislacao.corpus.loading')} />;
   if (q.error) return <ErrorNote error={q.error} />;
   const d = q.data;
   if (!d) return <EmptyState title={t('legislacao.corpus.diploma.notFound')} />;
@@ -477,7 +504,7 @@ function ArticleView({
   const t = useT();
   const q = useLawDiploma(diplomaId);
 
-  if (q.isPending) return <Loading label={t('legislacao.corpus.loading')} />;
+  if (q.isPending) return <SkeletonDocument label={t('legislacao.corpus.loading')} />;
   if (q.error) return <ErrorNote error={q.error} />;
   const d = q.data;
   if (!d) return <EmptyState title={t('legislacao.corpus.diploma.notFound')} />;
@@ -570,7 +597,7 @@ function SearchResults({
   const t = useT();
   const q = useLawCorpusSearch(term);
 
-  if (q.isPending) return <Loading label={t('legislacao.corpus.loading')} />;
+  if (q.isPending) return <SkeletonRows rows={4} label={t('legislacao.corpus.loading')} />;
   if (q.error) return <ErrorNote error={q.error} />;
   const data = q.data;
   if (!data || data.results.length === 0) {

@@ -134,6 +134,7 @@ import type {
   TslRefreshRequest,
   TsaCatalogSearchParams,
   TemplateSummary,
+  TemplateSpec,
   TemplateImportVerdict,
   AppendGroupTemplateLibraryRevisionBody,
   CompanyGroupView,
@@ -194,6 +195,7 @@ export const keys = {
   signatureProviders: ['signature', 'providers'] as const,
   templates: (family?: EntityFamily, stage?: LifecycleStage) =>
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
+  templateSpec: (id: string) => ['templates', 'spec', id] as const,
   ledger: (params: LedgerQueryParams) => ['ledger', params] as const,
   ledgerPage: (params: LedgerQueryParams) => ['ledger', 'page', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
@@ -1140,6 +1142,25 @@ export function useDeleteTemplate() {
  */
 export function useExportTemplate() {
   return useMutation({ mutationFn: (id: string) => api.exportTemplate(id) });
+}
+
+/**
+ * One template's authored spec, as a query (`GET /v1/templates/{id}/export`).
+ *
+ * The API has no `GET /v1/templates/{id}`: `TemplateSummary` is metadata only (no `blocks`),
+ * and the export endpoint is the only way to read a template's body. The detail page needs
+ * that body to show the block structure and the fields the template expects, and a fork needs
+ * it to copy from — all three are reads, so they share one cached query rather than each
+ * firing the export mutation. The catalog is embedded, static data; a user template only
+ * changes through this app, and both write paths already invalidate `['templates']`.
+ */
+export function useTemplateSpec(id: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.templateSpec(id),
+    queryFn: async () => JSON.parse((await api.exportTemplate(id)).text) as TemplateSpec,
+    enabled: enabled && id !== '',
+    staleTime: 60_000,
+  });
 }
 
 /**

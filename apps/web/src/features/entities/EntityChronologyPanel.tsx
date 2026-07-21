@@ -17,7 +17,8 @@ import {
   EmptyState,
   ErrorNote,
   Icon,
-  Loading,
+  SkeletonList,
+  SkeletonRegion,
   TooltipText,
   useToast,
 } from '../../ui';
@@ -508,7 +509,11 @@ export function EntityChronologyPanel({ entityId }: { entityId: string }) {
   if (chronology.isLoading) {
     return (
       <Card title={t('entities.chronology.title')}>
-        <Loading label={t('entities.chronology.loading')} />
+        {/* The chronology is a dated event feed — badge + title over a meta row — which is
+            exactly the box `SkeletonList` reserves. */}
+        <SkeletonRegion label={t('entities.chronology.loading')}>
+          <SkeletonList items={5} />
+        </SkeletonRegion>
       </Card>
     );
   }

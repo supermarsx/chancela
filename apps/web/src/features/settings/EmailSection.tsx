@@ -35,6 +35,7 @@ import {
   Card,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   InlineWarning,
   Input,
@@ -159,19 +160,22 @@ export function EmailSection({ email, onChange }: Props) {
         <p className="lede">{t('settings.email.lede')}</p>
 
         <div className="form settings-rows">
-          <Field
-            label={t('settings.email.enabled.label')}
-            hint={t('settings.email.enabled.hint')}
-            help={emailFieldHelp.enabled}
-          >
-            <Toggle
-              id="set-email-enabled"
-              checked={email.enabled}
-              disabled={!editable}
-              label={t('settings.email.enabled.label')}
-              onChange={(v) => onChange('enabled', v)}
-            />
-          </Field>
+          {/* A boolean row, not a `Field` wrapping one: the `Field` label was a second copy of
+              the switch's own text (and, having no control of its own to point at, an orphan
+              `<label>`). `.settings-rows > .toggle` puts the switch in the control column and
+              keeps the hint attached to it — same row shape, one label. */}
+          <Toggle
+            id="set-email-enabled"
+            checked={email.enabled}
+            disabled={!editable}
+            label={
+              <>
+                {t('settings.email.enabled.label')} <FieldHelp text={emailFieldHelp.enabled} />
+              </>
+            }
+            onChange={(v) => onChange('enabled', v)}
+          />
+          <p className="field__hint">{t('settings.email.enabled.hint')}</p>
 
           <Field
             label={t('settings.email.host.label')}

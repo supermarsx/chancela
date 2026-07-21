@@ -21,8 +21,9 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
   Select,
+  SkeletonDeflist,
+  SkeletonRegion,
   Table,
   Toggle,
   useToast,
@@ -429,7 +430,15 @@ export function RegistryAutoUpdateSection({
           </div>
         </InlineWarning>
 
-        {plan.isLoading ? <Loading label={t('settings.registryAutoUpdate.loadingPlan')} /> : null}
+        {/* The plan renders as a tight deflist — generated at, mode, config, … */}
+        {plan.isLoading ? (
+          <SkeletonRegion
+            className="stack--tight"
+            label={t('settings.registryAutoUpdate.loadingPlan')}
+          >
+            <SkeletonDeflist rows={3} className="deflist deflist--tight" />
+          </SkeletonRegion>
+        ) : null}
         {plan.error ? <ErrorNote error={plan.error} /> : null}
         {plan.data ? (
           <div className="stack--tight">

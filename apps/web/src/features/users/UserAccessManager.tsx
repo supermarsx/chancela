@@ -527,7 +527,17 @@ export function UserAccessManager({ user }: { user: UserView }) {
               />
             </Field>
             <div className="access-manager__actions">
-              <Button type="submit" variant="secondary" icon={<Icon.Seal />} disabled={keyBusy}>
+              <Button
+                type="submit"
+                variant="secondary"
+                icon={<Icon.Seal />}
+                disabled={keyBusy}
+                // t92: rotation is no longer destructive (the server retains the superseded
+                // PUBLIC key, so past attestations keep verifying) — hence no confirm dialog,
+                // which would now be theatre. What it does still has to be said, so the note
+                // below is the button's description rather than a tooltip only a mouse finds.
+                aria-describedby={user.has_attestation_key ? `key-note-${user.id}` : undefined}
+              >
                 {keyBusy
                   ? t('common.saving')
                   : user.has_attestation_key
@@ -546,6 +556,11 @@ export function UserAccessManager({ user }: { user: UserView }) {
                 </Button>
               ) : null}
             </div>
+            {user.has_attestation_key ? (
+              <p className="access-manager__note" id={`key-note-${user.id}`}>
+                {t('users.key.rotateNote')}
+              </p>
+            ) : null}
           </form>
         )}
       </div>

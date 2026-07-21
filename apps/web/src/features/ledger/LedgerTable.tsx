@@ -8,6 +8,7 @@ import { ledgerEventKindLabel } from '../../api/labels';
 import type { LedgerEventView } from '../../api/types';
 import { useT } from '../../i18n';
 import { Badge, DateTime, Digest, EmptyState, Table, TooltipText } from '../../ui';
+import { LedgerScopeCell, useLedgerScopeNames } from './LedgerScopeCell';
 
 function shortChain(chain: string): string {
   const [kind, id] = chain.split(':', 2);
@@ -23,6 +24,10 @@ export function LedgerTable({
   showChains?: boolean;
 }) {
   const t = useT();
+  // One pair of list queries for the whole table — never one per row. Both are shared query keys
+  // and both are skipped when the viewer holds no such permission, so an unauthorized visit costs
+  // nothing and every scope simply keeps its id.
+  const scopeNames = useLedgerScopeNames();
   // Shared by the dashboard and the Arquivo page, so a single malformed row from either
   // payload must not take the surrounding page down with the error boundary: drop it and
   // render the rest of the chain.
@@ -56,7 +61,10 @@ export function LedgerTable({
             </Badge>
           </td>
           <td>
-            <code className="mono">{e.scope}</code>
+            {/* The raw scope was a bare id — `0a20de34-…` told a reader nothing. It now reads as
+                `Tipo — Nome`, resolved only against records this viewer may already read, with
+                the exact scope string one focus away for an auditor. */}
+            <LedgerScopeCell scope={e.scope} names={scopeNames} />
           </td>
           {showChains ? (
             <td>

@@ -15,7 +15,7 @@
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   useHealth,
   useLedgerVerify,
@@ -73,7 +73,7 @@ import {
   type WorkflowSettings,
 } from '../../api/types';
 import { UI_VERSION, displayVersion } from '../../api/versionCheck';
-import { useT } from '../../i18n';
+import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { grainStore } from '../../theme/grainStore';
 import { colorStore } from '../../theme/colorStore';
@@ -89,6 +89,8 @@ import { EmailSection } from './EmailSection';
 import { LanguagePreferenceSection } from './LanguagePreferenceSection';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
 import { PairingPanel } from '../pairing/PairingPanel';
+import { ApiServerSection } from './ApiServerSection';
+import { McpSection } from './McpSection';
 import { PlatformOperationsSection } from './PlatformOperationsSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
@@ -106,17 +108,18 @@ import {
   IconButton,
   InlineWarning,
   Input,
-  Loading,
   PageHeader,
   Select,
   SkeletonDeflist,
+  SkeletonForm,
+  SkeletonRegion,
   SubNav,
   Table,
   Toggle,
   TooltipText,
 } from '../../ui';
-import { EditUserPanel } from '../users/EditUserPage';
-import { NEW_USER_PATH, UsersList } from '../users/UserListPage';
+import { editUserPath, NEW_USER_PATH } from '../users/paths';
+import { UsersList } from '../users/UserListPage';
 
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
@@ -569,7 +572,7 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
  *  autosave savebar is not shown for them. The RBAC tabs (Funções, Delegações) self-gate
  *  their own `role.manage`/`delegation.*` affordances, so they are standalone too. */
 const SETTINGS_SUBSECTIONS = {
-  operacoes: ['plataforma', 'email', 'chaves-api'],
+  operacoes: ['plataforma', 'api', 'mcp', 'email', 'chaves-api'],
   assinaturas: ['fornecedores', 'politica', 'tsl', 'tsa', 'prestadores', 'cmd'],
 } as const;
 
@@ -591,8 +594,14 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
     // Named "Plataforma", not "Operações": it is a CHILD of the Operações tab, and repeating the
     // parent's name in its own strip reads as a broken loop.
     { id: 'plataforma', label: 'settings.subnav.platform', icon: <Icon.Power /> },
+    // API (t82b). One button covering TWO addresses — `?sub=api` (server) and `?sub=chaves-api`
+    // (keys) — which is why `chaves-api` is a valid subsection but not an entry here. See
+    // API_PANES below.
+    { id: 'api', label: 'settings.subnav.api', icon: <Icon.Power /> },
+    // MCP (t82). Sits next to Plataforma because that is where its controls came from; it is a
+    // sibling rather than a third level inside Plataforma so it has a stable `?sub=` address.
+    { id: 'mcp', label: 'settings.subnav.mcp', icon: <Icon.Sliders /> },
     { id: 'email', label: 'settings.email.cardTitle', icon: <Icon.Tray /> },
-    { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
   ],
   assinaturas: [
     { id: 'fornecedores', label: 'settings.providerCredentials.cardTitle', icon: <Icon.IdCard /> },
@@ -611,6 +620,30 @@ const SUBSECTION_ARIA: Partial<Record<SettingsSection, MessageKey>> = {
   operacoes: 'settings.subnav.operations.aria',
   assinaturas: 'settings.subnav.signing.aria',
 };
+
+/**
+ * The API tab's two panes (t82b) — the one place a THIRD level of `?sub=` ids sits behind a single
+ * second-level button.
+ *
+ * The user asked for the API surface to be aggregated into one sub-tab, and it is: one button,
+ * one destination. But server configuration and key management cannot share a *panel*. Everything
+ * on "Servidor" is `settings.manage` working-copy state that the page inerts with a disabled
+ * fieldset; the keys pane is gated on `user.manage` and owns its own data. Rendering the keys
+ * table inside that fieldset would remove key management from anyone holding `user.manage` without
+ * `settings.manage` — a silent narrowing of who may rotate a credential, which is precisely the
+ * failure this restructure must not introduce.
+ *
+ * Keeping them as two `?sub=` ids rather than local state is what preserves that: `isStandalone`
+ * keys off `operacoes:chaves-api`, so the keys pane keeps its exact savebar and fieldset treatment,
+ * and the bookmarkable `?sub=chaves-api` address keeps working with no redirect at all.
+ */
+const API_PANES = [
+  { id: 'api', label: 'settings.api.tab.server', icon: <Icon.Power /> },
+  { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
+] as const satisfies readonly { id: SettingsSubsection; label: MessageKey; icon: ReactNode }[];
+
+const isApiPane = (sub: SettingsSubsection | undefined): boolean =>
+  sub === 'api' || sub === 'chaves-api';
 
 const STANDALONE_SECTIONS: readonly SettingsSection[] = [
   'utilizadores',
@@ -632,6 +665,28 @@ const STANDALONE_SUBSECTIONS: readonly string[] = [
 const isStandalone = (section: SettingsSection, sub: SettingsSubsection | undefined): boolean =>
   STANDALONE_SECTIONS.includes(section) ||
   (sub !== undefined && STANDALONE_SUBSECTIONS.includes(`${section}:${sub}`));
+
+/**
+ * Sub-tabs that opt out of the shell prose measure (t64's shared `.wide-page`, see
+ * `theme.css`). Listed per SUB-TAB rather than per section, exactly as Arquivo puts the
+ * class on its panel rather than its page: Configurações renders one panel for all
+ * sections, so the measure has to follow whichever one is mounted.
+ *
+ * All three are repeated-entry grids of six or seven columns that scroll sideways inside
+ * `.table-wrap` at EVERY viewport at the 1080px measure, however large the window — the
+ * defect t64 was opened for. Their siblings are not here on purpose: Política de assinatura
+ * is label/control rows (measured 78ch → 126ch when widened), CMD is a definition list, and
+ * Prestadores is a four-column read-only table whose Notas column is wrapping prose already
+ * at 61ch and which never scrolls (61ch → 96ch if widened — worse, not better).
+ */
+const WIDE_SUBSECTIONS: readonly string[] = [
+  'assinaturas:tsl',
+  'assinaturas:tsa',
+  'assinaturas:fornecedores',
+];
+
+const isWideSubsection = (section: SettingsSection, sub: SettingsSubsection | undefined): boolean =>
+  sub !== undefined && WIDE_SUBSECTIONS.includes(`${section}:${sub}`);
 
 /**
  * Whether autosave is enabled. Autosave is always-on today (t49) — there is no
@@ -671,6 +726,10 @@ const RETIRED_SECTIONS: Record<string, { section: SettingsSection; sub?: Setting
   identidade: { section: 'documentos' },
   email: { section: 'operacoes', sub: 'email' },
   'chaves-api': { section: 'operacoes', sub: 'chaves-api' },
+  // Not a retired address — a courtesy one. `?sec=mcp` is the link an operator is most likely to
+  // guess or hand-write for a tab called MCP, so it resolves rather than falling back to Aparência.
+  mcp: { section: 'operacoes', sub: 'mcp' },
+  api: { section: 'operacoes', sub: 'api' },
   'fornecedores-assinatura': { section: 'assinaturas', sub: 'fornecedores' },
 };
 
@@ -967,8 +1026,16 @@ export function SettingsPage() {
   // panel. A retired `?sec=` link names its own destination sub-tab and wins over any `sub`.
   const subNav = SUBSECTION_NAV[section];
   const subParam = params.get('sub');
+  // Validity is decided by SETTINGS_SUBSECTIONS, not by the strip: `chaves-api` is a real,
+  // bookmarkable address that no longer has a button of its own (it is a pane of the API tab),
+  // and resolving it through the strip would silently redirect an existing bookmark to Plataforma.
+  const validSubs: readonly string[] | undefined =
+    section === 'operacoes' || section === 'assinaturas'
+      ? SETTINGS_SUBSECTIONS[section]
+      : undefined;
   const sub: SettingsSubsection | undefined = subNav
-    ? (retired?.sub ?? subNav.find((s) => s.id === subParam)?.id ?? subNav[0].id)
+    ? (retired?.sub ??
+      (validSubs?.includes(subParam ?? '') ? (subParam as SettingsSubsection) : subNav[0].id))
     : undefined;
   const selectedUser = section === 'utilizadores' ? params.get('user') : null;
   const selectSection = (next: SettingsSection) =>
@@ -996,20 +1063,14 @@ export function SettingsPage() {
       else p.set('sub', next);
       return p;
     });
-  const selectUser = (next: string | null) =>
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        p.set('sec', 'utilizadores');
-        if (next) p.set('user', next);
-        else p.delete('user');
-        return p;
-      },
-      { replace: true },
-    );
+  // The fragment of the current location, carried through the `?user=` → edit-screen redirect.
+  const { hash } = useLocation();
   const settings = useSettings();
   const health = useHealth();
   const ledger = useLedgerVerify();
+  // The live UI language, for the read-only "Sobre" table: it is a fact an operator needs in a
+  // support report, and it is the ONLY environment fact the client can state without guessing.
+  const activeLocale = useActiveLocale();
   const save = useUpdateSettings();
   // Writing the settings document requires `settings.manage` (PUT /v1/settings, t64-E3).
   // Without it the whole-document autosave is suspended and the working-copy sections are
@@ -1088,9 +1149,23 @@ export function SettingsPage() {
     document.getElementById(IDENTITY_ANCHOR_ID)?.scrollIntoView?.({ block: 'start' });
   }, [retired, draft]);
 
-  if (settings.isLoading) return <Loading />;
+  // Both waits are the same wait: `draft` is seeded from `settings` in an effect, so the
+  // page has no content in either branch. What arrives is stacked cards of form rows.
+  const settingsSkeleton = (
+    <div className="stack">
+      <Card>
+        <SkeletonRegion>
+          <SkeletonForm fields={4} className="settings-rows" />
+        </SkeletonRegion>
+      </Card>
+      <Card>
+        <SkeletonForm fields={3} className="settings-rows" />
+      </Card>
+    </div>
+  );
+  if (settings.isLoading) return settingsSkeleton;
   if (settings.error) return <ErrorNote error={settings.error} />;
-  if (!draft) return <Loading />;
+  if (!draft) return settingsSkeleton;
 
   const setOrganization = <K extends keyof OrganizationSettings>(
     key: K,
@@ -1293,9 +1368,23 @@ export function SettingsPage() {
       {subNav && sub ? (
         <SubNav
           items={subNav.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
-          active={sub}
+          // `chaves-api` is a pane of the API tab, so the API button is the one that reads as
+          // active while it is open — otherwise the strip would show nothing selected.
+          active={sub === 'chaves-api' ? 'api' : sub}
           onSelect={selectSub}
           ariaLabel={t(SUBSECTION_ARIA[section] ?? 'settings.subnav.aria')}
+        />
+      ) : null}
+
+      {/* The API tab's own strip. Outside the fieldset for the same reason the level above is:
+          a reader looking at the inerted server pane must still be able to reach the keys pane,
+          which is not locked at all. */}
+      {section === 'operacoes' && isApiPane(sub) ? (
+        <SubNav
+          items={API_PANES.map((p) => ({ id: p.id, label: t(p.label), icon: p.icon }))}
+          active={sub as string}
+          onSelect={(next) => selectSub(next as SettingsSubsection)}
+          ariaLabel={t('settings.api.subnav.aria')}
         />
       ) : null}
 
@@ -1303,7 +1392,11 @@ export function SettingsPage() {
           is always reachable. The panel replays the route-enter fade on each switch. */}
       <fieldset className="settings-fieldset" disabled={editingLocked}>
         <div
-          className="route-transition settings-section"
+          className={
+            isWideSubsection(section, sub)
+              ? 'route-transition settings-section wide-page'
+              : 'route-transition settings-section'
+          }
           key={sub ? `${section}:${sub}` : section}
         >
           {/* Aparência --------------------------------------------------------------- */}
@@ -2298,7 +2391,6 @@ export function SettingsPage() {
                   <PlatformOperationsSection
                     value={draft.platform}
                     audit={committed.platform.audit}
-                    canManage={canManageSettings}
                     onChange={setPlatform}
                     logsPanel={<PlatformLogTailPanel />}
                   />
@@ -2309,44 +2401,61 @@ export function SettingsPage() {
                 </div>
               ) : null}
 
+              {/* API — t82b, the "Servidor" pane. Same working copy, same endpoints, same
+                  `settings.manage` gate the API service row and API log levels already had. */}
+              {sub === 'api' ? (
+                <ApiServerSection
+                  value={draft.platform}
+                  canManage={canManageSettings}
+                  onChange={setPlatform}
+                />
+              ) : null}
+
+              {/* MCP — t82. Every MCP-specific control, gathered. It edits the SAME
+                  `platform.logging` object and posts the SAME service-action endpoint as the
+                  Plataforma tab did, so it is part of the settings working copy and autosaves
+                  with it; `canManage` and the page's `settings.manage` fieldset carry over
+                  unchanged. `ai.enabled` and the connector egress allow-list are NOT here —
+                  see the comment block in McpSection.tsx. */}
+              {sub === 'mcp' ? (
+                <McpSection
+                  value={draft.platform}
+                  aiEnabled={draft.ai.enabled}
+                  canManage={canManageSettings}
+                  onChange={setPlatform}
+                />
+              ) : null}
+
               {/* Email (SMTP) — t23. Relocated here by t73; the section's CONTENTS are untouched.
                   The non-secret fields are part of the settings working copy and autosave with
                   everything else; the password and the test send are its own endpoints. */}
               {sub === 'email' ? <EmailSection email={draft.email} onChange={setEmail} /> : null}
 
-              {/* Chaves API — standalone (its own endpoints), relocated here by t73. */}
+              {/* Chaves API — the API tab's second pane since t82b, but STILL its own `?sub=`
+                  address and still in STANDALONE_SUBSECTIONS, which is what keeps its
+                  `user.manage` gating and its no-savebar/no-fieldset treatment byte-identical.
+                  Its component is untouched: the plaintext secret is still shown once, on
+                  create/rotate only, and the table still renders the non-secret prefix alone. */}
               {sub === 'chaves-api' ? <ApiKeysSection /> : null}
             </div>
           ) : null}
 
           {/* Utilizadores ------------------------------------------------------------ */}
-          {/* The roster and the edit/access managers are hosted inside this settings sub-tab;
-            legacy `/utilizadores` and `/utilizadores/:id` routes redirect here. CREATION does
-            NOT live here any more (t71) — it grants authority, so it earned its own screen at
-            `/utilizadores/novo`, and the old `?user=novo` state redirects out to it so there is
-            exactly one place a user is created. */}
+          {/* ONLY the roster lives here. Neither creating nor editing a user is an inline panel
+            any more: creation left in t71, editing in t89, and both left for the same reason —
+            they hand out or change authority and credentials, which is not a thing to bury under
+            a list, and two addresses for one action is a defect rather than a convenience. The
+            old `?user=novo` and `?user=:id` states redirect OUT to those screens, so bookmarks
+            resolve and there is exactly one place each action happens. */}
           {section === 'utilizadores' ? (
             selectedUser === 'novo' ? (
               <Navigate to={NEW_USER_PATH} replace />
+            ) : selectedUser ? (
+              // The fragment travels with the redirect: a bookmarked
+              // `?sec=utilizadores&user=u1#acesso` must still land on the access section.
+              <Navigate to={editUserPath(selectedUser, hash)} replace />
             ) : (
-              <div className="stack">
-                <UsersList />
-                {selectedUser ? (
-                  <div className="stack">
-                    <div className="form__actions">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        icon={<Icon.Users />}
-                        onClick={() => selectUser(null)}
-                      >
-                        {t('users.breadcrumb.self')}
-                      </Button>
-                    </div>
-                    <EditUserPanel id={selectedUser} />
-                  </div>
-                ) : null}
-              </div>
+              <UsersList />
             )
           ) : null}
 
@@ -2373,18 +2482,29 @@ export function SettingsPage() {
           {section === 'dados' ? <GestaoDadosSection /> : null}
 
           {/* Sobre ------------------------------------------------------------------- */}
+          {/* Name/value version facts are genuinely tabular, so they render as a table with a
+              hidden caption naming it for a screen reader. Read-only throughout: an operator
+              transcribes these into a support report, never edits them here. */}
           {section === 'sobre' ? (
             <Card title={t('settings.about.cardTitle')}>
-              <dl className="deflist">
-                <div>
-                  <dt>{t('settings.about.serverVersion')}</dt>
-                  <dd className="mono">
+              <Table
+                caption={t('settings.about.tableCaption')}
+                head={
+                  <tr>
+                    <th scope="col">{t('settings.about.column.item')}</th>
+                    <th scope="col">{t('settings.about.column.value')}</th>
+                  </tr>
+                }
+              >
+                <tr>
+                  <th scope="row">{t('settings.about.serverVersion')}</th>
+                  <td className="mono">
                     {health.data?.version ? displayVersion(health.data.version) : '—'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('settings.about.uiVersion')}</dt>
-                  <dd className="mono">
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('settings.about.uiVersion')}</th>
+                  <td className="mono">
                     {displayVersion(UI_VERSION)}
                     {health.data?.version && health.data.version !== UI_VERSION && (
                       <>
@@ -2392,11 +2512,11 @@ export function SettingsPage() {
                         <Badge tone="error">{t('settings.about.serverOutdated')}</Badge>
                       </>
                     )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('settings.about.ledger')}</dt>
-                  <dd>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('settings.about.ledger')}</th>
+                  <td>
                     {ledger.data ? (
                       ledger.data.valid ? (
                         <Badge tone="ok">
@@ -2408,13 +2528,17 @@ export function SettingsPage() {
                     ) : (
                       <span className="muted">—</span>
                     )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('settings.about.schemaVersion')}</dt>
-                  <dd className="mono">{draft.schema_version}</dd>
-                </div>
-              </dl>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('settings.about.schemaVersion')}</th>
+                  <td className="mono">{draft.schema_version}</td>
+                </tr>
+                <tr>
+                  <th scope="row">{t('settings.about.interfaceLocale')}</th>
+                  <td>{localeLabels[activeLocale]}</td>
+                </tr>
+              </Table>
             </Card>
           ) : null}
         </div>

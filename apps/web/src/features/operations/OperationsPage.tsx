@@ -2,7 +2,19 @@ import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useEntities } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { ErrorNote, Field, Icon, InlineWarning, PageHeader, Select, SubNav } from '../../ui';
+import {
+  Card,
+  ErrorNote,
+  Field,
+  Icon,
+  InlineWarning,
+  PageHeader,
+  Select,
+  SkeletonForm,
+  SkeletonRegion,
+  SkeletonTable,
+  SubNav,
+} from '../../ui';
 import { tenantIdsFromEntities } from './operatorModels';
 import { ConnectorOperations } from './ConnectorOperations';
 import { GroupsOperations } from './GroupsOperations';
@@ -105,7 +117,20 @@ export function OperationsPage() {
         />
       </PageHeader>
 
-      {entities.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+      {/* The entity list gates both the tenant picker and the whole section body, so this
+          wait is the page. Every section below is the same two-card shape — a create form
+          over a list table — so the placeholder reserves exactly that and the real panel
+          swaps in without shoving the page down. */}
+      {entities.isLoading ? (
+        <SkeletonRegion className="stack">
+          <Card>
+            <SkeletonForm fields={2} />
+          </Card>
+          <Card>
+            <SkeletonTable cols={4} />
+          </Card>
+        </SkeletonRegion>
+      ) : null}
       {entities.error ? <ErrorNote error={entities.error} /> : null}
       {!entities.isLoading && !entities.error && tenantIds.length === 0 ? (
         <InlineWarning tone="info" title={t('operations.tenant.empty.title')}>

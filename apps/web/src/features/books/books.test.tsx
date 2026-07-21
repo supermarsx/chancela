@@ -587,6 +587,28 @@ describe('BooksPage', () => {
     ]);
     expect(css).toContain('@media (max-width: 700px)');
   });
+
+  it('opts the book list out of the shell prose measure so its seven columns get the room', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/entities', body: [ENTITY] },
+        { match: '/v1/books', body: [BOOK] },
+      ]),
+    );
+    renderWithProviders(<BooksPage />, ['/livros']);
+    await screen.findByRole('table');
+    // The page root carries the opt-in; the width itself is a CSS concern jsdom cannot lay out.
+    expect(document.querySelector('.wide-page')).toBeTruthy();
+
+    const css = await themeCss();
+    // The shell measure still applies by default — the opt-out is a separate rule, not a
+    // relaxation of `.app` that every prose page would inherit.
+    expectCssRule(css, /\.app\s*\{([^}]*)\}/, ['max-width: 1080px;']);
+    // The gutters are the shell's own padding, so widening must not have dropped it.
+    expectCssRule(css, /\.app\s*\{([^}]*)\}/, ['padding: clamp(1.25rem, 4vw, 3rem);']);
+    expectCssRule(css, /\.app:has\(\.wide-page\)\s*\{([^}]*)\}/, ['max-width: 92rem;']);
+  });
 });
 
 describe('BookDetailPage — preservation package download', () => {
@@ -2495,6 +2517,29 @@ describe('BookDetailPage — sub-tabs', () => {
     renderAtBook('/livros/book-1?sec=importacoes');
 
     expect(await screen.findByText('Sem importações preservadas')).toBeTruthy();
+  });
+
+  it('keeps every book sub-tab at the prose measure, including the atas table', async () => {
+    // Deliberate, and measured: unlike the book LIST (percentage-fixed, truncating
+    // columns), the atas table's Título cell WRAPS. At the shell measure it already runs
+    // at 72ch — the theme's own `--measure` is 68ch — and it never scrolls at any
+    // viewport, so widening would push it to 114ch for no gain. Termo is a definition
+    // list; retenção and importações are three-column tables of stacked prose. This
+    // asserts the absence so nobody re-widens the page without redoing the measurement.
+    const panel = () => document.querySelector('.route-transition');
+    for (const entry of [
+      '/livros/book-1',
+      '/livros/book-1?sec=termo',
+      '/livros/book-1?sec=retencao',
+      '/livros/book-1?sec=importacoes',
+    ]) {
+      vi.stubGlobal('fetch', bookDetailFetch().fn);
+      const { unmount } = renderAtBook(entry);
+      await screen.findByRole('group', { name: 'Secções do livro' });
+      expect(panel(), entry).toBeTruthy();
+      expect(panel()?.classList.contains('wide-page'), entry).toBe(false);
+      unmount();
+    }
   });
 
   it('falls back to Atas for an unknown sec value rather than rendering nothing', async () => {

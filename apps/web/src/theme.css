@@ -3679,6 +3679,10 @@ a,
   /* The ceiling for the content-sized track: the column grows to the widest label in the card,
      but never past this, so one very long label cannot squeeze every control on the tab. */
   --settings-label-col-max: 22rem;
+  /* The band between two rows — the same value above and below the hairline. Named (t90) so a
+     row that is not a `Field`, such as a `Toggle`, matches its neighbours by construction
+     instead of by a re-typed literal that drifts at the next adjustment. */
+  --settings-row-gap: 0.9rem;
 }
 
 .settings-rows > .field {
@@ -3709,9 +3713,65 @@ a,
 /* Row separation: a hairline instead of `.form`'s plain 1rem gap. This is what makes the
    sections read as neat bands rather than as one undifferentiated column. */
 .settings-rows > * + * {
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
+  margin-top: var(--settings-row-gap);
+  padding-top: var(--settings-row-gap);
   border-top: 1px solid var(--border);
+}
+
+/* --- Boolean rows (t90) ----------------------------------------------------------
+   A `Toggle` that is a DIRECT child of the row grid is a settings row in its own right: its
+   text is the row's label and the switch is the row's control. Untouched, `.toggle` is a
+   `display: flex; width: fit-content` block that spans both tracks and paints the switch
+   BEFORE its text at the far left of the card — so a card of mixed rows had its booleans
+   stepping out of the control column that every `Field` above them establishes. Re-tracked
+   here, in the shared rule, so every settings tab inherits it rather than each call site
+   growing its own treatment.
+
+   DIRECT children only. A toggle inside a `.checkbox-grid`, a table cell, or a
+   `stack--tight` group (the shape t86 introduced for a switch plus its own disabled-state
+   reason) is one of a cluster rather than a row, and keeps the primitive's compact
+   switch-then-text form.
+
+   The DOM is untouched: `Toggle` still wraps its native `<input>` in its own `<label>`, so
+   the accessible name is exactly what it was. This assigns grid tracks and nothing else. */
+.settings-rows > .toggle {
+  display: grid;
+  grid-template-columns: minmax(0, var(--settings-label-col)) minmax(0, 1fr);
+  column-gap: calc(var(--space) * 1.25);
+  align-items: center;
+  /* Overrides the primitive's `fit-content` shrink-wrap: a row spans its container so the
+     control track lands where the neighbouring rows' controls land. */
+  width: auto;
+  max-width: none;
+}
+
+.settings-rows > .toggle > .toggle__label {
+  grid-column: 1;
+  grid-row: 1;
+  overflow-wrap: anywhere;
+}
+
+.settings-rows > .toggle > .toggle__track {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* `.toggle + .toggle`'s own 1rem stacking margin is more specific than the row band above,
+   so without this two adjacent boolean rows sat 1rem apart while every other pair sat at the
+   row gap. Same band as the rest of the card. */
+.settings-rows > .toggle + .toggle {
+  margin-top: var(--settings-row-gap);
+}
+
+/* A hint immediately after a boolean row explains THAT row. The `> * + *` band would put a
+   hairline between a switch and its own caption, which reads as an unrelated second item —
+   the defect t86 fixed by hand on the new-user screen. Here it joins the control column
+   directly beneath the switch, no divider. */
+.settings-rows > .toggle + .field__hint {
+  grid-column: 2;
+  margin-top: 0.3rem;
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* Below the point where a label column plus a usable control still fit, drop back to the
@@ -3731,6 +3791,19 @@ a,
   .settings-rows > .field > .field__label,
   .settings-rows > .field > .field__labelrow {
     padding-top: 0;
+  }
+
+  /* No columns to align to, so a boolean row goes back to the primitive's compact form —
+     switch and text on one line, wrapping inside the panel. Collapsing it to a single track
+     instead would leave the switch and its label stacked on top of each other. */
+  .settings-rows > .toggle {
+    display: flex;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .settings-rows > .toggle + .field__hint {
+    margin-top: 0.3rem;
   }
 }
 
@@ -3755,7 +3828,8 @@ a,
       grid-column: 1 / -1;
     }
 
-    .settings-rows > .field {
+    .settings-rows > .field,
+    .settings-rows > .toggle {
       grid-template-columns: subgrid;
     }
   }
@@ -8526,6 +8600,37 @@ a.btn--primary {
   line-height: 1.3;
 }
 
+/* The row's label is the link to the template's page. It carries no underline at rest —
+   a rule under every row would read as a table border — but keeps one on hover/focus so
+   it is discoverable as a link rather than only on the pointer. */
+.templates-table__open {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.templates-table__open:hover,
+.templates-table__open:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* The column-visibility disclosure, under the results heading. */
+.templates-columns {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.templates-columns__body {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
 /* Secondary to the name when there is one, but never hidden: the `/vN` is provenance. */
 .templates-table__id {
   display: block;
@@ -8620,7 +8725,27 @@ a.btn--primary {
   );
   background-size: 220% 100%;
   background-repeat: no-repeat;
-  animation: skeleton-sweep 1.25s ease-in-out infinite;
+  /* Two animations, and the second one is the important one. `skeleton-appear` holds the
+     block for ~180ms before it fades in: `both` pins the
+     from-frame at opacity 0 through the delay, so a query that resolves quickly never
+     flashes a skeleton in and out. A placeholder that blinks reads as a glitch, not as a
+     wait. Pure CSS — no JS timer, no extra render, and identical timing on every surface.
+     The global reduced-motion block zeroes `animation-duration` but not `animation-delay`,
+     so the anti-flicker hold survives there while the shimmer does not. */
+  animation:
+    skeleton-sweep 1.25s ease-in-out infinite,
+    skeleton-appear 140ms ease-out 180ms both;
+}
+
+/* The appear hold shared by every skeleton block. `both` is the load-bearing part: it
+   pins the from-frame through the delay, so a fast response never flashes a placeholder. */
+@keyframes skeleton-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes skeleton-sweep {
@@ -8656,6 +8781,18 @@ a.btn--primary {
 .skeleton-table__row--head {
   border-bottom: 2px solid var(--rule);
   padding-bottom: 0.6rem;
+  /* The head rule is the one part of a table skeleton that is not made of `.skeleton`
+     blocks, so it needs the appear hold of its own or it would draw a lone line across
+     the surface during the 180ms the blocks are still invisible. */
+  animation: skeleton-appear 140ms ease-out 180ms both;
+}
+
+/* A horizontal band of pill placeholders, for selector rows whose real content is a row
+   of buttons (`.operations-selector-list`). Wraps like the real row does. */
+.skeleton-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 /* Under reduced-motion the sweep stops (the global block zeroes animation-duration);
@@ -8664,103 +8801,6 @@ a.btn--primary {
 @media (prefers-reduced-motion: reduce) {
   .skeleton {
     background-image: none;
-  }
-}
-
-/* --- Indeterminate loading bar (t74) ------------------------------------------- */
-/* The shared `<Loading>` wait. Replaces the bare muted paragraph that used to be the
-   only thing on screen during an unresolved route.
-
-   DELIBERATELY INDETERMINATE: the indicator sweeps across a fixed-width track and never
-   reports a percentage. We do not have a numerator for these waits, and a bar that
-   crawled to 90% on a timer would be a lie about state — costly in a product where the
-   real waits are signing, sealing and validation.
-
-   No `will-change` here (see the budget note on `.skeleton`): this is a transform
-   animation, which the compositor promotes on its own while it runs. */
-.loading {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  /* The ~180ms delay is the point of this animation, not the 140ms fade: `both` holds the
-     `from` frame (opacity 0) through the delay, so a response that arrives quickly never
-     flashes a bar in and out — a flicker reads as a glitch, not as progress. The global
-     reduced-motion block zeroes `animation-duration` but NOT `animation-delay`, so the
-     anti-flicker delay survives there while the fade itself does not. */
-  animation: loading-appear 140ms ease-out 180ms both;
-}
-
-@keyframes loading-appear {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.loading__track {
-  position: relative;
-  overflow: hidden;
-  display: block;
-  width: 100%;
-  max-width: 22rem;
-  height: 0.25rem;
-  border-radius: var(--radius);
-  background-color: color-mix(in srgb, var(--text-muted) 22%, transparent);
-}
-
-.loading__indicator {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 38%;
-  border-radius: inherit;
-  background-image: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--accent) 85%, transparent),
-    transparent
-  );
-  animation: loading-sweep 1.15s ease-in-out infinite;
-}
-
-@keyframes loading-sweep {
-  from {
-    transform: translateX(-105%);
-  }
-  to {
-    transform: translateX(315%);
-  }
-}
-
-.loading__label {
-  font-size: 0.85rem;
-}
-
-/* The route-level fallback: the bar is the whole page for a moment, so give it room and
-   keep it left-aligned with the content that is about to replace it (a centred indicator
-   would jump the eye away from where the page actually starts). */
-.route-loading {
-  padding: 2.5rem 0;
-}
-
-/* Reduced motion: the global block would freeze the sweep at its first frame — an
-   indicator parked off the left edge, i.e. an empty track that communicates nothing. So
-   the indicator is re-laid-out as a static filled bar instead. Still a bar, still themed,
-   simply not moving; the label carries the meaning either way. */
-@media (prefers-reduced-motion: reduce) {
-  .loading__indicator {
-    position: static;
-    /* `display: block` is load-bearing, not tidiness: dropping `position: absolute` returns
-       this span to `display: inline`, where `width` does not apply — the bar measured 0px
-       wide and the track rendered empty. */
-    display: block;
-    width: 100%;
-    height: 100%;
-    background-image: none;
-    background-color: color-mix(in srgb, var(--accent) 45%, transparent);
-    animation: none;
   }
 }
 
@@ -9823,6 +9863,67 @@ input[type='radio']:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+}
+
+/* --------------------------------------------------------------------------
+ * Utilizadores roster filter bar (t89) — the same shape every list page uses
+ * (`.entities-filterbar`, `.books-filterbar`, `.ledger-filterbar`). Three controls,
+ * so the search box takes twice the basis of the two selects and everything wraps
+ * to a single column below ~720px rather than scrolling the page sideways.
+ * ------------------------------------------------------------------------ */
+.users-filters {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.users-filters .field,
+.users-filters .control {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.users-filterbar {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  padding-bottom: 0;
+}
+
+.users-filterbar__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.users-filterbar__primary .field {
+  flex: 1 1 11rem;
+  min-width: min(100%, 11rem);
+  max-width: 100%;
+}
+
+.users-filterbar__primary .field:first-child {
+  flex: 2 1 18rem;
+  min-width: min(100%, 18rem);
+}
+
+.users-filterbar__primary .tooltip {
+  flex: 0 0 auto;
+}
+
+.users-filterbar__clear {
+  align-self: flex-end;
+}
+
+@media (max-width: 720px) {
+  .users-filterbar__primary .field,
+  .users-filterbar__primary .field:first-child {
+    flex-basis: min(100%, 13rem);
+  }
 }
 
 .users-manage-row > td {

@@ -25,6 +25,7 @@
  * it where authority resolves, never because a row is hidden here. Reused by t62.
  */
 import { useMemo, useState } from 'react';
+import { isRetiredRoleId, roleNameLabel } from '../../api/labels';
 import {
   useDelegations,
   useGrantDelegation,
@@ -35,7 +36,7 @@ import {
   useSetDelegationSuspended,
   useUsers,
 } from '../../api/hooks';
-import { useT } from '../../i18n';
+import { useT, useLocale, type MessageKey } from '../../i18n';
 import {
   Badge,
   Button,
@@ -92,6 +93,10 @@ function useDelegableRoles(): RoleView[] {
   const roles = useRoles();
   const catalog = usePermissionCatalog();
   const { grants } = usePermissions();
+  // The list is sorted by the *displayed* name under the active locale's collation. Sorting the
+  // stored English name would order the list by words the operator cannot see, and the default
+  // collation would misplace the accented names most of these locales use.
+  const locale = useLocale();
 
   return useMemo(() => {
     const meta = new Set(
@@ -104,8 +109,27 @@ function useDelegableRoles(): RoleView[] {
           r.permissions.length > 0 &&
           r.permissions.every((p) => !meta.has(p) && heldViaRole.has(p)),
       )
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [roles.data, catalog.data, grants]);
+      .sort((a, b) =>
+        roleNameLabel(a.id, a.name).localeCompare(roleNameLabel(b.id, b.name), locale),
+      );
+  }, [roles.data, catalog.data, grants, locale]);
+}
+
+/**
+ * Name a função carried by a delegation.
+ *
+ * `known: false` means the id is not in the live catalog — usually a função an operator deleted, and
+ * then there is genuinely no name to show. But a **retired seeded id** (t87) is also absent from the
+ * catalog while still being perfectly nameable: it was merged into another função, and delegations
+ * and ledger events written before the merge still reference it. Naming those keeps the history
+ * readable instead of showing "função desconhecida" for a role we know exactly.
+ */
+function delegatedRoleName(
+  r: { id: string; name: string; known: boolean },
+  t: (key: MessageKey) => string,
+): string {
+  if (r.known) return roleNameLabel(r.id, r.name);
+  return isRetiredRoleId(r.id) ? roleNameLabel(r.id) : t('rbac.deleg.funcao.unknown');
 }
 
 /** The grant form. Split out so its own hooks (scope/função drafts) stay local. */
@@ -241,7 +265,7 @@ function GrantForm({ onClose }: { onClose: () => void }) {
                   onChange={() => toggleRole(r.id)}
                 />
                 <span>
-                  <strong>{r.name}</strong>
+                  <strong>{roleNameLabel(r.id, r.name)}</strong>
                   <span className="muted"> · {t('rbac.deleg.funcao.carries')}: </span>
                   <span className="rbac-matrix__perms">
                     {r.permissions.map((p) => (
@@ -385,7 +409,7 @@ function DelegationRow({ d, now }: { d: DelegationView; now: number }) {
           <div className="stack">
             {rolesOf(d).map((r) => (
               <div key={r.id}>
-                <strong>{r.known ? r.name : t('rbac.deleg.funcao.unknown')}</strong>
+                <strong>{delegatedRoleName(r, t)}</strong>
                 <div className="rbac-matrix__perms">
                   {r.permissions.map((p) => (
                     <code className="mono" key={p}>
@@ -502,7 +526,7 @@ export function DelegacoesSection() {
     const named = new Map<string, string>();
     for (const d of list) {
       for (const r of rolesOf(d))
-        named.set(r.id, r.known ? r.name : t('rbac.deleg.funcao.unknown'));
+        named.set(r.id, delegatedRoleName(r, t));
     }
     return [...named].map(([value, label]) => ({ value, label }));
   }, [list, t]);

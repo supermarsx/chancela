@@ -10,13 +10,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsFiFI } from '../ledgerEventLabels';
+import { ledgerScopeLabelsFiFI } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsFiFI } from '../dashboardSourceLabels';
+import { roleNameLabelsFiFI } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const fiFI: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsFiFI,
+  ...ledgerScopeLabelsFiFI,
   ...dashboardSourceLabelsFiFI,
+  ...roleNameLabelsFiFI,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sinulla ei ole oikeutta tähän toimintoon',
@@ -1590,6 +1594,23 @@ export const fiFI: Catalog = {
   'users.action.edit': 'Muokkaa',
   'users.new.crumb': 'Uusi',
   'users.new.title': 'Uusi käyttäjä',
+  'users.edit.title': 'Muokkaa käyttäjää',
+  'users.filters.aria': 'Hae ja suodata käyttäjiä',
+  'users.filters.search.label': 'Hae',
+  'users.filters.search.placeholder': 'Käyttäjätunnus, nimi tai sähköposti',
+  'users.filters.status.label': 'Tila',
+  'users.filters.status.all': 'Kaikki tilat',
+  'users.filters.access.label': 'Käyttöoikeus',
+  'users.filters.access.all': 'Mikä tahansa käyttöoikeus',
+  'users.filters.access.key': 'Auditointiavain käytössä',
+  'users.filters.access.noKey': 'Ei auditointiavainta',
+  'users.filters.access.noPassword': 'Ei salasanaa',
+  'users.filters.access.recovery': 'Palautuslause käytössä',
+  'users.filters.clear.aria': 'Tyhjennä käyttäjäsuodattimet',
+  'users.filters.count': '{shown}/{total}',
+  'users.filters.count.aria': 'Näytetään {shown}/{total} käyttäjästä',
+  'users.filters.empty.title': 'Ei tuloksia',
+  'users.filters.empty.body': 'Muuta hakua tai suodattimia nähdäksesi käyttäjiä uudelleen.',
   'users.edit.identityCard': 'Identiteetti',
   'users.edit.usernameHint': 'Käyttäjänimi on auditointitunniste, eikä sitä voi muuttaa.',
   'users.edit.displayNameLabel': 'Näyttönimi',
@@ -1745,7 +1766,7 @@ export const fiFI: Catalog = {
     'Käytä vain, kun jokin palvelu tarvitsee aluetasostaan poikkeavan tason.',
   'settings.platform.logging.override.none': 'Ei ohitusta',
   'settings.platform.logging.override.app': 'Sovellus',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'API-palvelin',
   'settings.platform.logging.override.mcp_stdio': 'MCP studio',
   'settings.platform.logLevel.trace': 'Jäljittää',
   'settings.platform.logLevel.debug': 'Debug',
@@ -1794,10 +1815,73 @@ export const fiFI: Catalog = {
   'settings.platform.subnav.aria': 'Toimintojen osiot',
   'settings.platform.tab.services': 'Palvelut',
   'settings.platform.tab.services.desc':
-    'API- ja MCP-palvelinten halutun tilan hallinta rehellisin taustajärjestelmän tuloksin ja toimintojen auditointi.',
+    'API-palvelimen halutun tilan hallinta rehellisin taustajärjestelmän tuloksin ja toimintojen auditointi.',
   'settings.platform.tab.logs': 'Lokit',
   'settings.platform.tab.logs.desc':
     'Lokitasojen määritys ja API:n jäsennelty lokihäntä (vain luku).',
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Palvelin',
+  'settings.api.subnav.aria': 'API-alueet',
+  'settings.api.cardTitle': 'API-palvelin',
+  'settings.api.intro':
+    'API-palvelimen haluttu tila, lokit ja käynnistysasetukset yhdessä paikassa. API-avaimet ovat viereisessä paneelissa.',
+  'settings.api.logging.title': 'API:n lokit',
+  'settings.api.logging.hint':
+    'Nämä kaksi kenttää kirjoittavat samaan asetusdokumenttiin kuin muutkin lokitasot.',
+  'settings.api.env.hint':
+    'Luetaan prosessin ympäristöstä, kun palvelin käynnistyy. Niitä ei voi muokata täällä eikä minkään päätepisteen kautta; muutos vaatii palvelimen uudelleenkäynnistyksen.',
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    'Palvelin puhuu tavallista HTTP:tä. TLS päätetään sen edessä olevassa käänteisvälityspalvelimessa, ja alla oleva HSTS-otsake vaikuttaa vain siinä kokoonpanossa.',
+  'settings.api.env.addr': 'Osoite host:portti, jota palvelin kuuntelee.',
+  'settings.api.env.cors':
+    'Tarkat alkuperät, jotka saavat kutsua rajapintaa alkuperien välillä. Tyhjä tarkoittaa vain samaa alkuperää.',
+  'settings.api.env.rateLimit': 'IP-kohtainen pyyntörajoitin. Palvelimella oletuksena päällä.',
+  'settings.api.env.ratePerSecond': 'Kestävä pyyntömäärä sekunnissa IP-osoitetta kohti.',
+  'settings.api.env.rateBurst': 'Purskevara IP-osoitetta kohti.',
+  'settings.api.env.trustForwarded':
+    'Luota X-Forwarded-For-otsakkeeseen asiakkaan osoitteena. Vain luotetun käänteisvälityspalvelimen takana.',
+  'settings.api.env.hstsMaxAge': 'Ilmoitetun HSTS-käytännön kesto sekunteina.',
+  'settings.api.env.hstsSubdomains': 'Laajenna HSTS-käytäntö aliverkkotunnuksiin.',
+  'settings.api.env.hstsPreload':
+    'Ilmoita preload-direktiivi. Ota käyttöön vasta, kun verkkotunnus on lähetetty.',
+  'settings.api.env.sessionLifetime':
+    'Istunnon eliniän ehdoton yläraja sekunteina. Nolla tai negatiivinen poistaa rajan.',
+  'settings.api.related.title': 'Liittyvät asetukset',
+  'settings.api.related.egress':
+    'Se on liittimien lähtevä lista, ei rajapinnan saapuva pinta: se rajaa, minne liitin saa lähettää tavuja. Se pysyy Alusta-välilehdellä.',
+  'settings.api.related.logTail':
+    'Lokihäntä kattaa sovelluksen, rajapinnan ja MCP:n, joten se pysyy kohdassa Alusta › Lokit.',
+  'settings.mcp.cardTitle': 'MCP-palvelin',
+  'settings.mcp.intro':
+    'Kaikki MCP:n oma asetuskokonaisuus yhdessä paikassa: stdio-prosessin haluttu tila, lokitasot ja käynnistyksessä luettavat ympäristömuuttujat.',
+  'settings.platform.services.hub':
+    'Jokaisella palvelulla on oma alivälilehtensä, jossa ovat sen haluttu tila, lokitasot ja käynnistysasetukset.',
+  'settings.mcp.logging.title': 'MCP:n lokit',
+  'settings.mcp.logging.hint':
+    'Nämä kaksi kenttää kirjoittavat samaan asetusdokumenttiin kuin muutkin lokitasot.',
+  'settings.env.title': 'Käynnistysasetukset (ympäristö)',
+  'settings.mcp.env.hint':
+    'Luetaan prosessin ympäristöstä, kun MCP-palvelin käynnistyy. Niitä ei voi muokata täällä eikä minkään päätepisteen kautta; muutos vaatii prosessin uudelleenkäynnistyksen. API-avaimen arvo ei koskaan päädy tähän käyttöliittymään.',
+  'settings.env.col.variable': 'Muuttuja',
+  'settings.env.col.meaning': 'Merkitys',
+  'settings.env.col.default': 'Oletusarvo',
+  'settings.mcp.env.enabled': 'MCP-palvelimen pääkytkin.',
+  'settings.mcp.env.aiGate':
+    'Vuokralaisen tekoäly-/MCP-portin peilaus. Prosessi palvelee vain, kun molemmat ovat päällä.',
+  'settings.mcp.env.transport': 'Yhteyden siirtotapa. Tämä versio palvelee vain stdio-yhteyttä.',
+  'settings.mcp.env.baseUrl': 'Työkalujen kutsuman integraatiorajapinnan perus-URL.',
+  'settings.mcp.env.basePath': 'Versioitu peruspolku, johon rajapinta on liitetty.',
+  'settings.mcp.env.apiKey':
+    'API-avain, jolla MCP-palvelin tunnistautuu. Pakollinen, kun palvelin on käytössä.',
+  'settings.mcp.env.tools': 'Julkaistut työkalut: kaikki tai pilkuin eroteltu luettelo.',
+  'settings.mcp.env.bind':
+    'Kuunteluosoite, varattu etäsiirtotavalle. Ei vaikutusta tässä versiossa.',
+  'settings.mcp.related.title': 'Liittyvät asetukset',
+  'settings.mcp.related.gate':
+    'Vuokralaisen tekoäly-/MCP-portti ohjaa myös tekoälyominaisuuksia, joten sitä muokataan edelleen Hallinta-osiossa. Ilman sitä MCP pysyy toimettomana.',
+  'settings.mcp.related.apiKeys':
+    'API-avaimet eivät koske vain MCP:tä: ne tunnistavat jokaisen integraatioasiakkaan. Ne säilyttävät oman alivälilehtensä.',
   'settings.platform.serviceDetails': 'Hallinnan tiedot ja rajoitukset',
   'settings.platform.help.services':
     'Nämä toiminnot kirjaavat palvelun halutun tilan; käyttöliittymä ei oleta suoraa prosessinhallintaa (esimerkiksi API:n itsekäynnistystä tai MCP:n stdio-käynnistystä).',
@@ -2129,6 +2213,10 @@ export const fiFI: Catalog = {
   'settings.about.ledger.valid': 'Ketju eheä · {count} tapahtumaa',
   'settings.about.ledger.compromised': 'Ketju vaarantunut',
   'settings.about.schemaVersion': 'Kokoonpanon skeemaversio',
+  'settings.about.interfaceLocale': 'Käyttöliittymän kieli',
+  'settings.about.tableCaption': 'Instanssin tiedot',
+  'settings.about.column.item': 'Tieto',
+  'settings.about.column.value': 'Arvo',
   'settings.save': 'Tallenna asetukset',
   'settings.saved': 'Asetukset tallennettu.',
   'toast.settings.saved': 'Asetukset tallennettu.',
@@ -2421,6 +2509,7 @@ export const fiFI: Catalog = {
   'entities.print.nipcUnvalidated': '(ei validoitu)',
   'settings.subnav.aria': 'Asetusosiot',
   'settings.subnav.platform': 'Alusta',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Käyttöalueet',
   'settings.subnav.signing.aria': 'Allekirjoitusalueet',
 
@@ -2529,6 +2618,8 @@ export const fiFI: Catalog = {
   'users.key.rotate': 'Kierrätä avain',
   'users.key.remove': 'Poista avain',
   'users.key.requiresSecret': 'Aseta salasana ennen auditointiavaimen luomista.',
+  'users.key.rotateNote':
+    'Kierrätys luo uuden avainparin tulevia todistuksia varten. Jo tuotetut todistukset pysyvät vahvistettavina: aiemman avaimen julkinen osa säilytetään, eikä sillä osalla voi allekirjoittaa.',
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'Muokkaat toisen käyttäjän tunnuksia. Jokainen muutos edellyttää kyseisen käyttäjän nykyistä salasanaa tai kelvollista palautuslausetta.',
@@ -2654,6 +2745,32 @@ export const fiFI: Catalog = {
   'templates.channels.none': 'Ei erityistä kanavaa',
   'templates.table.source': 'Lähde',
   'templates.table.actions': 'Toiminnot',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Sarakkeet',
+  'templates.columns.hint':
+    'Valitse, mitkä sarakkeet taulukko näyttää. Oikeuslähde näkyy mallin sivulla aina kokonaisuudessaan.',
+  'templates.detail.open': 'Avaa malli',
+  'templates.detail.subnav.aria': 'Mallin osiot',
+  'templates.detail.section.overview': 'Tunnistetiedot',
+  'templates.detail.section.placeholders': 'Odotetut kentät',
+  'templates.detail.version': 'Versio',
+  'templates.detail.notFound.title': 'Mallia ei löytynyt',
+  'templates.detail.notFound.body': 'Luettelossa ei ole mallia tällä tunnisteella.',
+  'templates.detail.spec.error': 'Tämän mallin sisältöä ei voitu ladata.',
+  'templates.detail.lawSource.empty': 'Tämä malli ei ilmoita oikeuslähdettä.',
+  'templates.detail.blocks.empty': 'Tämä malli ei määrittele lohkoja.',
+  'templates.detail.placeholders.intro':
+    'Kentät, jotka tämän mallin lohkot lukevat pöytäkirjan tietueesta.',
+  'templates.detail.placeholders.empty': 'Tämä malli ei lue kenttiä tietueesta.',
+  'templates.actions.clone': 'Monista',
+  'templates.editor.title.fork': 'Monista malli',
+  'templates.fork.source': 'Lähdemalli: {id}',
+  'templates.fork.builtin.title': 'Sisäänrakennettuja malleja ei voi muokata',
+  'templates.fork.builtin.body':
+    'Sisäänrakennettu malli on vain luettava, jotta jo sinetöity pöytäkirja tarkoittaa edelleen täsmälleen samaa. Muokkaaminen luo kopion uudella tunnisteella; sitä kopiota voi sen jälkeen muuttaa vapaasti.',
+  'templates.fork.limit.title': 'Kopio ei vielä tuota asiakirjoja',
+  'templates.fork.limit.body':
+    'Kopion voi tallentaa, muokata, viedä ja poistaa, mutta pöytäkirjan luonti ja sinetöinti tunnistavat vain sisäänrakennetut mallit: sinetöitäessä pyyntö hylätään. Käytä kopiota tekstin valmisteluun ja valitse sinetöintiin sisäänrakennettu malli.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Uusi malli',
   'templates.actions.edit': 'Muokkaa',
@@ -3307,6 +3424,24 @@ export const fiFI: Catalog = {
   'data.status.permission.ok': 'OK',
   'data.status.permission.warn': 'Varoitus',
   'data.status.permission.unchecked': 'Tarkistamatta',
+  'data.status.permission.durable_store_open': 'Pysyvä tallennustila',
+  'data.status.probe.read_dir.ok': 'Kansio voidaan lukea.',
+  'data.status.probe.read_dir.failed': 'Kansiota ei voi lukea.',
+  'data.status.probe.create_file.ok': 'Kansioon voidaan luoda tiedostoja.',
+  'data.status.probe.create_file.failed': 'Kansioon ei voi luoda tiedostoja.',
+  'data.status.probe.write_file.ok': 'Kansioon voidaan kirjoittaa.',
+  'data.status.probe.write_file.failed': 'Kansioon ei voi kirjoittaa.',
+  'data.status.probe.delete_probe_file.ok': 'Kansiosta voidaan poistaa tiedostoja.',
+  'data.status.probe.delete_probe_file.failed': 'Kansiosta ei voi poistaa tiedostoja.',
+  'data.status.probe.durable_store_open.ok': 'Pysyvä tallennustila on avoinna.',
+  'data.status.probe.durable_store_open.failed': 'Pysyvä tallennustila ei ole avoinna.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'Pysyvä tallennustila ei ole avoinna, koska datakansiota ei ole määritetty.',
+  'data.status.probe.unchecked.noDataDir': 'Tarkistamatta: datakansiota ei ole määritetty.',
+  'data.status.probe.unchecked.probeSkipped': 'Tarkistamatta: testitiedostoa ei voitu luoda.',
+  'data.status.probe.detail': 'Järjestelmän lisätieto: {detail}',
+  'data.status.basis.logical_payload': 'pysyvä looginen hyötykuorma',
+  'data.status.basis.sidecar_logical_payload': 'looginen sidecar-hyötykuorma',
   'data.status.usage.title': 'Käyttö',
   'data.status.usage.total': 'Yhteensä',
   'data.status.usage.filesystem': 'Tiedostojärjestelmä',
@@ -5563,30 +5698,42 @@ export const fiFI: Catalog = {
   'unsaved.close.body':
     'Tallentamattomia muutoksia on olemassa. Jos suljet sovelluksen nyt, ne menetetään.',
   'unsaved.close.confirm': 'Sulje tallentamatta',
-  "users.create.identityCard": "Henkilöllisyys",
-  "users.create.identityLede": "Kuka henkilö on. Käyttäjätunnus yksilöi hänet valvontalokissa, eikä sitä voi myöhemmin muuttaa.",
-  "users.create.emailHint": "Tarvitaan tervetuloviestin lähettämiseen.",
-  "users.create.accessCard": "Käyttöoikeudet",
-  "users.create.accessLede": "Rooli ja laajuus, jossa se on voimassa — myönnetään samassa pyynnössä, joka luo tilin.",
-  "users.create.scope.label": "Laajuus",
-  "users.create.scope.hint": "Missä rooli on voimassa. Globaali kattaa koko instanssin.",
-  "users.create.role.label": "Rooli",
-  "users.create.role.hint": "Tarjolla ovat vain roolit, joiden valtuudet sinulla jo on tässä laajuudessa.",
-  "users.create.role.default": "Palvelimen oletus (Gestor, globaali)",
-  "users.create.role.optionBlocked": "{role} — valtuuksiesi yläpuolella",
-  "users.create.role.carries": "Tämä rooli antaa",
-  "users.create.role.aboveCeiling": "Et voi myöntää roolia {role}: se sisältää oikeuksia, joita sinulla ei ole tässä laajuudessa ({permissions}).",
-  "users.create.role.defaultNote": "Jos roolia ei valita, tili saa palvelimen oletuksen: Gestor, globaalissa laajuudessa.",
-  "users.create.credentialsCard": "Kirjautumistiedot",
-  "users.create.credentialsLede": "Aseta ensimmäinen salasana ja välitä se turvallista kanavaa pitkin. Sitä ei koskaan lähetetä sähköpostitse.",
-  "users.create.notifyCard": "Ilmoitus",
-  "users.create.notifyLede": "Valinnainen ilmoitus siitä, että tili on olemassa. Viesti ei sisällä salasanaa, koodia eikä kirjautumislinkkiä.",
-  "users.create.welcome.label": "Lähetä uudelle tilille tervetuloviesti",
-  "users.create.welcome.noSmtp": "Sähköpostin lähetystä ei ole määritetty, joten viestiä ei voi lähettää.",
-  "users.create.welcome.noAddress": "Anna yllä sähköpostiosoite, jotta viesti voidaan lähettää.",
-  "users.create.welcome.settingsLink": "Määritä sähköposti",
-  "users.language.label": "Kieli",
-  "users.language.auto": "Tunnista automaattisesti",
-  "users.language.hint.auto": "Seuraa sen laitteen kieltä, jolta käyttäjä kirjautuu. Palvelimen lähettämät viestit käyttävät alustan oletuskieltä.",
-  "users.language.hint.fixed": "Kiinnittää käyttöliittymän ja tälle tilille lähetettävien viestien kielen.",
+  'users.create.identityCard': 'Henkilöllisyys',
+  'users.create.identityLede':
+    'Kuka henkilö on. Käyttäjätunnus yksilöi hänet valvontalokissa, eikä sitä voi myöhemmin muuttaa.',
+  'users.create.emailHint': 'Tarvitaan tervetuloviestin lähettämiseen.',
+  'users.create.accessCard': 'Käyttöoikeudet',
+  'users.create.accessLede':
+    'Rooli ja laajuus, jossa se on voimassa — myönnetään samassa pyynnössä, joka luo tilin.',
+  'users.create.scope.label': 'Laajuus',
+  'users.create.scope.hint': 'Missä rooli on voimassa. Globaali kattaa koko instanssin.',
+  'users.create.role.label': 'Rooli',
+  'users.create.role.hint':
+    'Tarjolla ovat vain roolit, joiden valtuudet sinulla jo on tässä laajuudessa.',
+  'users.create.role.default': 'Palvelimen oletus (Gestor, globaali)',
+  'users.create.role.optionBlocked': '{role} — valtuuksiesi yläpuolella',
+  'users.create.role.carries': 'Tämä rooli antaa',
+  'users.create.role.aboveCeiling':
+    'Et voi myöntää roolia {role}: se sisältää oikeuksia, joita sinulla ei ole tässä laajuudessa ({permissions}).',
+  'users.create.role.defaultNote':
+    'Jos roolia ei valita, tili saa palvelimen oletuksen: Gestor, globaalissa laajuudessa.',
+  'users.create.credentialsCard': 'Kirjautumistiedot',
+  'users.create.credentialsLede':
+    'Aseta ensimmäinen salasana ja välitä se turvallista kanavaa pitkin. Sitä ei koskaan lähetetä sähköpostitse.',
+  'users.create.keyNote':
+    'Tästä salasanasta luodaan tarkastusavain, joten käyttäjän toimet todennetaan ensimmäisestä kirjautumisesta alkaen. Kuka tahansa, joka tietää tämän alkuperäisen salasanan, voi tuottaa todennuksia tämän käyttäjän nimissä — pyydä häntä vaihtamaan se ensimmäisellä kirjautumiskerralla.',
+  'users.create.notifyCard': 'Ilmoitus',
+  'users.create.notifyLede':
+    'Valinnainen ilmoitus siitä, että tili on olemassa. Viesti ei sisällä salasanaa, koodia eikä kirjautumislinkkiä.',
+  'users.create.welcome.label': 'Lähetä uudelle tilille tervetuloviesti',
+  'users.create.welcome.noSmtp':
+    'Sähköpostin lähetystä ei ole määritetty, joten viestiä ei voi lähettää.',
+  'users.create.welcome.noAddress': 'Anna yllä sähköpostiosoite, jotta viesti voidaan lähettää.',
+  'users.create.welcome.settingsLink': 'Määritä sähköposti',
+  'users.language.label': 'Kieli',
+  'users.language.auto': 'Tunnista automaattisesti',
+  'users.language.hint.auto':
+    'Seuraa sen laitteen kieltä, jolta käyttäjä kirjautuu. Palvelimen lähettämät viestit käyttävät alustan oletuskieltä.',
+  'users.language.hint.fixed':
+    'Kiinnittää käyttöliittymän ja tälle tilille lähetettävien viestien kielen.',
 };

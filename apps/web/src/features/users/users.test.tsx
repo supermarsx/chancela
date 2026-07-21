@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
 
@@ -13,21 +13,21 @@ const saveFileMock = vi.hoisted(() => ({
 
 vi.mock('../../desktop/saveFile', () => saveFileMock);
 
-import { LegacyUserRedirect, LegacyUsersRedirect } from '../../app/router';
+import { LegacyUserEditRedirect, LegacyUsersRedirect } from '../../app/router';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import { UsersList } from './UserListPage';
 import { NewUserPage } from './NewUserPage';
-import { EditUserPanel } from './EditUserPage';
+import { EditUserPage } from './EditUserPage';
 import { isValidUsername, usernameError } from './username';
 import type { DsrRequestView, DsrRequestType, UserView } from '../../api/types';
 
-/** Render the edit screen at a real `:id` path so `useParams` resolves the user id. */
+/** Render the edit screen at its real `/utilizadores/:id` path so `useParams` resolves the id. */
 function renderEditAt(id: string) {
   return renderWithProviders(
     <Routes>
-      <Route path="/configuracoes" element={<EditUserPanel id={id} />} />
+      <Route path="/utilizadores/:id" element={<EditUserPage />} />
     </Routes>,
-    [`/configuracoes?sec=utilizadores&user=${id}`],
+    [`/utilizadores/${id}`],
   );
 }
 
@@ -119,7 +119,9 @@ describe('UsersList (Configurações → Utilizadores)', () => {
 
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
     expect(screen.getByText('Amélia Marques')).toBeTruthy();
-    expect(screen.getByText('Ativo')).toBeTruthy();
+    // Scoped to the table: `Ativo` is also a filter option now, and an assertion that cannot
+    // tell the badge from the option would pass on a roster that renders no rows at all.
+    expect(within(screen.getByRole('table')).getByText('Ativo')).toBeTruthy();
   });
 
   it('exposes icon-only row actions via their accessible names', async () => {
@@ -135,22 +137,18 @@ describe('UsersList (Configurações → Utilizadores)', () => {
     expect(screen.getByRole('button', { name: 'Acesso e auditoria' })).toBeTruthy();
   });
 
-  it('navigates list actions within the settings users section', async () => {
+  it('sends the row actions to the dedicated screens, never to an inline panel', async () => {
     const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(
-      <Routes>
-        <Route
-          path="/configuracoes"
-          element={
-            <>
-              <UsersList />
-              <LocationProbe />
-            </>
-          }
-        />
-      </Routes>,
+      <>
+        <Routes>
+          <Route path="/configuracoes" element={<UsersList />} />
+          <Route path="/utilizadores/:id" element={null} />
+        </Routes>
+        <LocationProbe />
+      </>,
       ['/configuracoes?sec=utilizadores'],
     );
 
@@ -158,16 +156,31 @@ describe('UsersList (Configurações → Utilizadores)', () => {
     const novo = await screen.findByRole('link', { name: /novo utilizador/i });
     expect(novo.getAttribute('href')).toBe('/utilizadores/novo');
 
+    // t89: editing leaves Configurações too. The row action navigates to the edit SCREEN — the
+    // `?user=` state it used to set is gone, so there is no second way to reach these controls.
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
-    expect(screen.getByLabelText('location').textContent).toBe(
-      '/configuracoes?sec=utilizadores&user=u1',
+    expect(screen.getByLabelText('location').textContent).toBe('/utilizadores/u1');
+  });
+
+  it('sends the access action to the edit screen anchored at its access section', async () => {
+    const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/configuracoes" element={<UsersList />} />
+          <Route path="/utilizadores/:id" element={null} />
+        </Routes>
+        <LocationProbe />
+      </>,
+      ['/configuracoes?sec=utilizadores'],
     );
 
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Acesso e auditoria' }));
-    expect(screen.getByLabelText('location').textContent).toBe(
-      '/configuracoes?sec=utilizadores&user=u1#acesso',
-    );
+    expect(screen.getByLabelText('location').textContent).toBe('/utilizadores/u1#acesso');
   });
 
   it('toggles a user active/inactive via PATCH', async () => {
@@ -189,6 +202,142 @@ describe('UsersList (Configurações → Utilizadores)', () => {
   });
 });
 
+// --- Roster filters (t89) -------------------------------------------------------------
+//
+// Three accounts that differ in exactly the facets the filters key on, so a filter that matched
+// on the wrong field would show the wrong name rather than merely the wrong count.
+const BRUNO_INACTIVE: UserView = {
+  id: 'u2',
+  username: 'bruno.dias',
+  display_name: 'Bruno Dias',
+  email: 'bruno@example.pt',
+  created_at: '2026-07-07T12:05:00Z',
+  active: false,
+  has_secret: true,
+  has_attestation_key: true,
+  has_recovery_phrase: false,
+  language: 'auto',
+};
+
+const CLARA_RECOVERY: UserView = {
+  id: 'u3',
+  username: 'clara.nunes',
+  display_name: 'Clara Nunes',
+  created_at: '2026-07-07T12:06:00Z',
+  active: true,
+  has_secret: true,
+  has_attestation_key: false,
+  has_recovery_phrase: true,
+  language: 'auto',
+};
+
+function renderRoster(entries: string[]) {
+  const { fn } = recordingFetch(() => jsonResponse([AMELIA, BRUNO_INACTIVE, CLARA_RECOVERY]));
+  vi.stubGlobal('fetch', fn);
+  return renderWithProviders(
+    <Routes>
+      <Route
+        path="/configuracoes"
+        element={
+          <>
+            <UsersList />
+            <LocationProbe />
+          </>
+        }
+      />
+    </Routes>,
+    entries,
+  );
+}
+
+describe('UsersList filters (t89) — Arquivo idiom, state carried in the URL', () => {
+  it('filters by the search term across username, name and e-mail, and mirrors it to ?q', async () => {
+    renderRoster(['/configuracoes?sec=utilizadores']);
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: 'bruno@example' } });
+
+    // The box → URL write is debounced: the address does not change on the keystroke itself.
+    expect(screen.getByLabelText('location').textContent).toBe('/configuracoes?sec=utilizadores');
+
+    // …and once it settles, the term is in the URL — with `sec` preserved, not clobbered — so
+    // the filtered roster is a link someone else can open.
+    await waitFor(() =>
+      expect(screen.getByLabelText('location').textContent).toBe(
+        '/configuracoes?sec=utilizadores&q=bruno%40example',
+      ),
+    );
+    // Matched on the e-mail, which the table does not even render — and the others are gone.
+    expect(screen.getByText('bruno.dias')).toBeTruthy();
+    expect(screen.queryByText('amelia.marques')).toBeNull();
+    expect(screen.queryByText('clara.nunes')).toBeNull();
+  });
+
+  it('folds accents and case, so "amelia" finds "Amélia Marques"', async () => {
+    renderRoster(['/configuracoes?sec=utilizadores']);
+    expect(await screen.findByText('clara.nunes')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: 'AMÉLIA marques' } });
+    await waitFor(() => expect(screen.queryByText('clara.nunes')).toBeNull());
+    expect(screen.getByText('amelia.marques')).toBeTruthy();
+  });
+
+  it('applies a filtered URL on first paint, so the view survives a reload and a Back', async () => {
+    renderRoster(['/configuracoes?sec=utilizadores&status=inactive']);
+
+    expect(await screen.findByText('bruno.dias')).toBeTruthy();
+    expect(screen.queryByText('amelia.marques')).toBeNull();
+    // The select reads its value from the URL rather than from a fresh component state.
+    expect((screen.getByLabelText('Estado') as HTMLSelectElement).value).toBe('inactive');
+  });
+
+  it('filters on the credential facts the list payload can actually answer', async () => {
+    renderRoster(['/configuracoes?sec=utilizadores&access=key']);
+    expect(await screen.findByText('bruno.dias')).toBeTruthy();
+    expect(screen.queryByText('amelia.marques')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Acesso'), { target: { value: 'no-password' } });
+    // Only Amélia has no sign-in secret.
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+    expect(screen.queryByText('bruno.dias')).toBeNull();
+    expect(screen.getByLabelText('location').textContent).toBe(
+      '/configuracoes?sec=utilizadores&access=no-password',
+    );
+
+    fireEvent.change(screen.getByLabelText('Acesso'), { target: { value: 'recovery' } });
+    expect(await screen.findByText('clara.nunes')).toBeTruthy();
+    expect(screen.queryByText('amelia.marques')).toBeNull();
+  });
+
+  it('clears every filter param at once and keeps the section', async () => {
+    renderRoster(['/configuracoes?sec=utilizadores&q=bruno&status=inactive&access=key']);
+    expect(await screen.findByText('bruno.dias')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros de utilizadores' }));
+
+    await waitFor(() => expect(screen.queryByText('amelia.marques')).not.toBeNull());
+    expect(screen.getByLabelText('location').textContent).toBe('/configuracoes?sec=utilizadores');
+    expect((screen.getByLabelText('Pesquisar') as HTMLInputElement).value).toBe('');
+  });
+
+  it('says so when the filters exclude everyone, rather than showing an empty roster', async () => {
+    renderRoster(['/configuracoes?sec=utilizadores&q=nao-existe']);
+
+    expect(await screen.findByText('Sem resultados')).toBeTruthy();
+    // The roster is not empty — the FILTERS are. The two states must not read alike.
+    expect(screen.queryByText('Sem utilizadores')).toBeNull();
+  });
+
+  it('ignores an unknown filter value instead of showing nobody', async () => {
+    // A hand-edited or stale link must degrade to the unfiltered roster, not to a blank page.
+    renderRoster(['/configuracoes?sec=utilizadores&status=banido&access=quantum']);
+
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+    expect(screen.getByText('bruno.dias')).toBeTruthy();
+    expect(screen.getByText('clara.nunes')).toBeTruthy();
+  });
+});
+
 describe('NewUserPage (/utilizadores/novo)', () => {
   it('renders a client-side validation error for an invalid username and disables submit', async () => {
     const { fn } = recordingFetch(() => jsonResponse([]));
@@ -203,6 +352,21 @@ describe('NewUserPage (/utilizadores/novo)', () => {
     expect(
       (screen.getByRole('button', { name: /criar utilizador/i }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  // t88: the audit key is generated from the password typed on this screen, which means the
+  // operator filling it in can unlock it and attest as the new user until it is changed. That is a
+  // property of a password-wrapped key, not a bug — but it has to be on the screen, so this pins
+  // that the disclosure is present and names the mitigation.
+  it('discloses on the credentials card that the audit key is bound to this password', async () => {
+    const { fn } = recordingFetch(() => jsonResponse([]));
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
+
+    const note = await screen.findByText(/chave de auditoria/i);
+    expect(note.textContent).toMatch(/em nome deste utilizador/i);
+    expect(note.textContent).toMatch(/altere no primeiro acesso/i);
   });
 
   it('creates a user with a valid slug and sends identity email fields', async () => {
@@ -454,7 +618,7 @@ const BRUNO: UserView = {
   language: 'auto',
 };
 
-describe('EditUserPanel (Configurações → Utilizadores → user) — identity + access manager', () => {
+describe('EditUserPage (/utilizadores/:id) — identity + access manager', () => {
   it('renders identity and resolves a cold deep link via GET /v1/users/{id}', async () => {
     // Empty list cache → the edit screen falls back to the single-user read.
     const user = { ...AMELIA, email: 'amelia@example.pt' };
@@ -465,7 +629,7 @@ describe('EditUserPanel (Configurações → Utilizadores → user) — identity
 
     renderEditAt('u1');
 
-    // The immutable username and display name show as form values in the inline panel.
+    // The immutable username and display name show as form values on the edit screen.
     expect(await screen.findByDisplayValue('amelia.marques')).toBeTruthy();
     expect(screen.getByDisplayValue('Amélia Marques')).toBeTruthy();
     expect(screen.getByDisplayValue('amelia@example.pt')).toBeTruthy();
@@ -741,10 +905,10 @@ describe('EditUserPanel (Configurações → Utilizadores → user) — identity
         value={permissionsValue((permission) => permission !== 'user.manage')}
       >
         <Routes>
-          <Route path="/configuracoes" element={<EditUserPanel id="u1" />} />
+          <Route path="/utilizadores/:id" element={<EditUserPage />} />
         </Routes>
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=utilizadores&user=u1'],
+      ['/utilizadores/u1'],
     );
 
     expect(await screen.findByDisplayValue('amelia.marques')).toBeTruthy();
@@ -769,33 +933,16 @@ describe('legacy /utilizadores routes', () => {
     );
   });
 
-
-  it('redirects /utilizadores/:id and preserves #acesso', async () => {
+  it('redirects legacy edit-style user links onto the edit screen, keeping #acesso', async () => {
     renderWithProviders(
       <Routes>
-        <Route path="/utilizadores/:id" element={<LegacyUserRedirect />} />
-        <Route path="/configuracoes" element={<LocationProbe />} />
+        <Route path="/utilizadores/:id/editar" element={<LegacyUserEditRedirect />} />
+        <Route path="/utilizadores/:id" element={<LocationProbe />} />
       </Routes>,
-      ['/utilizadores/u1#acesso'],
+      ['/utilizadores/u1/editar#acesso'],
     );
 
-    expect((await screen.findByLabelText('location')).textContent).toBe(
-      '/configuracoes?sec=utilizadores&user=u1#acesso',
-    );
-  });
-
-  it('redirects legacy edit-style user links to the canonical settings user state', async () => {
-    renderWithProviders(
-      <Routes>
-        <Route path="/utilizadores/:id/editar" element={<LegacyUserRedirect />} />
-        <Route path="/configuracoes" element={<LocationProbe />} />
-      </Routes>,
-      ['/utilizadores/u1/editar'],
-    );
-
-    expect((await screen.findByLabelText('location')).textContent).toBe(
-      '/configuracoes?sec=utilizadores&user=u1',
-    );
+    expect((await screen.findByLabelText('location')).textContent).toBe('/utilizadores/u1#acesso');
   });
 });
 
@@ -813,7 +960,7 @@ const OPERATOR: UserView = {
   language: 'auto',
 };
 
-describe('EditUserPanel — cross-user password change proof + 403 (t51)', () => {
+describe('EditUserPage — cross-user password change proof + 403 (t51)', () => {
   it('self-service change shows the plain current-password field, not the cross-user proof', async () => {
     const { fn, calls } = recordingFetch((r) => {
       if (r.url.endsWith('/v1/session')) return jsonResponse({ user: BRUNO }); // editing yourself

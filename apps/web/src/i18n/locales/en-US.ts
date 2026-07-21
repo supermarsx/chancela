@@ -10,13 +10,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsEnglish } from '../ledgerEventLabels';
+import { ledgerScopeLabelsEnglish } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsEnglish } from '../dashboardSourceLabels';
+import { roleNameLabelsEnglish } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const enUS: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsEnglish,
+  ...ledgerScopeLabelsEnglish,
   ...dashboardSourceLabelsEnglish,
+  ...roleNameLabelsEnglish,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'You do not have permission for this action',
@@ -1584,6 +1588,23 @@ export const enUS: Catalog = {
   'users.action.edit': 'Edit',
   'users.new.crumb': 'New',
   'users.new.title': 'New user',
+  'users.edit.title': 'Edit user',
+  'users.filters.aria': 'Search and filter users',
+  'users.filters.search.label': 'Search',
+  'users.filters.search.placeholder': 'Username, name, or email',
+  'users.filters.status.label': 'State',
+  'users.filters.status.all': 'All states',
+  'users.filters.access.label': 'Access',
+  'users.filters.access.all': 'Any access',
+  'users.filters.access.key': 'With an audit key',
+  'users.filters.access.noKey': 'Without an audit key',
+  'users.filters.access.noPassword': 'Without a password',
+  'users.filters.access.recovery': 'With a recovery phrase',
+  'users.filters.clear.aria': 'Clear user filters',
+  'users.filters.count': '{shown} of {total}',
+  'users.filters.count.aria': 'Showing {shown} of {total} users',
+  'users.filters.empty.title': 'No results',
+  'users.filters.empty.body': 'Change the search or filters to see users again.',
   'users.edit.identityCard': 'Identity',
   'users.edit.usernameHint': 'The username is the audit identifier and cannot be changed.',
   'users.edit.displayNameLabel': 'Display name',
@@ -1739,7 +1760,7 @@ export const enUS: Catalog = {
     'Use only when one service needs a level different from its area level.',
   'settings.platform.logging.override.none': 'No override',
   'settings.platform.logging.override.app': 'Application',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'API server',
   'settings.platform.logging.override.mcp_stdio': 'MCP studio',
   'settings.platform.logLevel.trace': 'Trace',
   'settings.platform.logLevel.debug': 'Debug',
@@ -1788,10 +1809,73 @@ export const enUS: Catalog = {
   'settings.platform.subnav.aria': 'Operations sections',
   'settings.platform.tab.services': 'Services',
   'settings.platform.tab.services.desc':
-    'Desired-state control of the API and MCP servers, with honest backend outcomes and an operations audit.',
+    'Desired-state control of the API server, with honest backend outcomes and an operations audit.',
   'settings.platform.tab.logs': 'Logs',
   'settings.platform.tab.logs.desc':
     'Log-level configuration and the structured API log tail (read-only).',
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Server',
+  'settings.api.subnav.aria': 'API areas',
+  'settings.api.cardTitle': 'API server',
+  'settings.api.intro':
+    'The API server’s desired state, logs and launch configuration in one place. API keys are the pane next door.',
+  'settings.api.logging.title': 'API logs',
+  'settings.api.logging.hint':
+    'These two fields write to the same settings document as the other log levels.',
+  'settings.api.env.hint':
+    'Resolved from the process environment when the server starts. They are not editable here or through any endpoint; changing them requires restarting the server.',
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    'The server speaks plain HTTP. TLS is terminated at the reverse proxy in front of it, and the HSTS header below only takes effect in that setup.',
+  'settings.api.env.addr': 'The host:port the server listens on.',
+  'settings.api.env.cors':
+    'Exact origins allowed to call the API cross-origin. Empty means same-origin only.',
+  'settings.api.env.rateLimit': 'Per-IP request limiter. On by default for the server.',
+  'settings.api.env.ratePerSecond': 'Sustained requests per second, per IP.',
+  'settings.api.env.rateBurst': 'Burst allowance per IP.',
+  'settings.api.env.trustForwarded':
+    'Trust X-Forwarded-For for the client address. Only behind a trusted reverse proxy.',
+  'settings.api.env.hstsMaxAge': 'How long, in seconds, the advertised HSTS policy lasts.',
+  'settings.api.env.hstsSubdomains': 'Extend the HSTS policy to subdomains.',
+  'settings.api.env.hstsPreload':
+    'Advertise the preload directive. Turn on only after submitting the domain.',
+  'settings.api.env.sessionLifetime':
+    'Absolute session lifetime cap, in seconds. Zero or negative disables the cap.',
+  'settings.api.related.title': 'Related settings',
+  'settings.api.related.egress':
+    'That is the connector egress list, not the API’s inbound surface: it bounds where a connector may ship bytes. It stays in Platform.',
+  'settings.api.related.logTail':
+    'The log tail spans the app, the API and MCP, so it stays in Platform › Logs.',
+  'settings.mcp.cardTitle': 'MCP server',
+  'settings.mcp.intro':
+    'Every MCP-specific setting in one place: the stdio process desired state, log levels, and the environment variables read at launch.',
+  'settings.platform.services.hub':
+    'Each service has a sub-tab of its own, with its desired state, log levels and launch configuration.',
+  'settings.mcp.logging.title': 'MCP logs',
+  'settings.mcp.logging.hint':
+    'These two fields write to the same settings document as the other log levels.',
+  'settings.env.title': 'Launch configuration (environment)',
+  'settings.mcp.env.hint':
+    'Read from the process environment when the MCP server launches. They are not editable here or through any endpoint; changing them requires relaunching the process. The API key value never reaches this interface.',
+  'settings.env.col.variable': 'Variable',
+  'settings.env.col.meaning': 'Meaning',
+  'settings.env.col.default': 'Default',
+  'settings.mcp.env.enabled': 'Master switch for the MCP server.',
+  'settings.mcp.env.aiGate':
+    'Mirror of the tenant AI/MCP gate. The process only serves when both are on.',
+  'settings.mcp.env.transport': 'Wire transport. This build only serves stdio.',
+  'settings.mcp.env.baseUrl': 'Base URL of the integration API the tools call.',
+  'settings.mcp.env.basePath': 'Versioned base path the API is mounted under.',
+  'settings.mcp.env.apiKey':
+    'The API key the MCP server authenticates with. Required when enabled.',
+  'settings.mcp.env.tools': 'Tools exposed: all, or a comma-separated list.',
+  'settings.mcp.env.bind':
+    'Bind address, reserved for a remote transport. No effect in this build.',
+  'settings.mcp.related.title': 'Related settings',
+  'settings.mcp.related.gate':
+    'The tenant AI/MCP gate governs the AI features too, so it is still edited in Management. Without it MCP stays inert.',
+  'settings.mcp.related.apiKeys':
+    'API keys are not MCP-only: they authenticate every integration client. They keep their own sub-tab.',
   'settings.platform.serviceDetails': 'Control details and limitations',
   'settings.platform.help.services':
     'These actions record the desired state of the service; the UI does not assume direct process control (for example, API self-restart or MCP stdio start).',
@@ -2116,6 +2200,10 @@ export const enUS: Catalog = {
   'settings.about.ledger.valid': 'Chain intact · {count} events',
   'settings.about.ledger.compromised': 'Chain compromised',
   'settings.about.schemaVersion': 'Configuration schema version',
+  'settings.about.interfaceLocale': 'Interface language',
+  'settings.about.tableCaption': 'Instance information',
+  'settings.about.column.item': 'Information',
+  'settings.about.column.value': 'Value',
   'settings.save': 'Save settings',
   'settings.saved': 'Settings saved.',
   'toast.settings.saved': 'Settings saved.',
@@ -2405,6 +2493,7 @@ export const enUS: Catalog = {
   'entities.print.nipcUnvalidated': '(unvalidated)',
   'settings.subnav.aria': 'Settings sections',
   'settings.subnav.platform': 'Platform',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Operations areas',
   'settings.subnav.signing.aria': 'Signing areas',
 
@@ -2513,6 +2602,8 @@ export const enUS: Catalog = {
   'users.key.rotate': 'Rotate key',
   'users.key.remove': 'Remove key',
   'users.key.requiresSecret': 'Set a password before generating an audit key.',
+  'users.key.rotateNote':
+    "Rotating the key mints a new key pair for future attestations. Attestations already produced keep verifying: the previous key's public half is retained, and a public half cannot sign.",
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'You are editing another user’s credentials. Every change requires that user’s current password or a valid recovery phrase.',
@@ -2639,6 +2730,32 @@ export const enUS: Catalog = {
   'templates.channels.none': 'No specific channel',
   'templates.table.source': 'Source',
   'templates.table.actions': 'Actions',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Columns',
+  'templates.columns.hint':
+    'Choose which columns the table shows. The legal source is always shown in full on the template page.',
+  'templates.detail.open': 'Open template',
+  'templates.detail.subnav.aria': 'Template sections',
+  'templates.detail.section.overview': 'Identification',
+  'templates.detail.section.placeholders': 'Expected fields',
+  'templates.detail.version': 'Version',
+  'templates.detail.notFound.title': 'Template not found',
+  'templates.detail.notFound.body': 'The catalog holds no template with this identifier.',
+  'templates.detail.spec.error': 'The contents of this template could not be loaded.',
+  'templates.detail.lawSource.empty': 'This template states no legal source.',
+  'templates.detail.blocks.empty': 'This template declares no blocks.',
+  'templates.detail.placeholders.intro':
+    'Fields that this template’s blocks read from the minutes record.',
+  'templates.detail.placeholders.empty': 'This template reads no fields from the record.',
+  'templates.actions.clone': 'Duplicate',
+  'templates.editor.title.fork': 'Duplicate template',
+  'templates.fork.source': 'Source template: {id}',
+  'templates.fork.builtin.title': 'Built-in templates cannot be edited',
+  'templates.fork.builtin.body':
+    'A built-in template is read-only, so that an already sealed record keeps meaning exactly what it meant. Editing creates a copy under a new identifier; that copy is yours to change freely.',
+  'templates.fork.limit.title': 'A copy cannot produce documents yet',
+  'templates.fork.limit.body':
+    'A copy can be saved, edited, exported and deleted, but document generation and sealing recognise built-in templates only: at the sealing step the request is refused. Use the copy to prepare the wording, and pick a built-in template to seal.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'New template',
   'templates.actions.edit': 'Edit',
@@ -3279,6 +3396,24 @@ export const enUS: Catalog = {
   'data.status.permission.ok': 'OK',
   'data.status.permission.warn': 'Warning',
   'data.status.permission.unchecked': 'Unchecked',
+  'data.status.permission.durable_store_open': 'Durable store',
+  'data.status.probe.read_dir.ok': 'The folder can be read.',
+  'data.status.probe.read_dir.failed': 'The folder cannot be read.',
+  'data.status.probe.create_file.ok': 'Files can be created in the folder.',
+  'data.status.probe.create_file.failed': 'Files cannot be created in the folder.',
+  'data.status.probe.write_file.ok': 'The folder can be written to.',
+  'data.status.probe.write_file.failed': 'The folder cannot be written to.',
+  'data.status.probe.delete_probe_file.ok': 'Files can be deleted from the folder.',
+  'data.status.probe.delete_probe_file.failed': 'Files cannot be deleted from the folder.',
+  'data.status.probe.durable_store_open.ok': 'The durable store is open.',
+  'data.status.probe.durable_store_open.failed': 'The durable store is not open.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'The durable store is not open because no data folder is configured.',
+  'data.status.probe.unchecked.noDataDir': 'Not checked: no data folder is configured.',
+  'data.status.probe.unchecked.probeSkipped': 'Not checked: the probe file could not be created.',
+  'data.status.probe.detail': 'System detail: {detail}',
+  'data.status.basis.logical_payload': 'durable logical payload',
+  'data.status.basis.sidecar_logical_payload': 'sidecar logical payload',
   'data.status.usage.title': 'Usage',
   'data.status.usage.total': 'Total',
   'data.status.usage.filesystem': 'Filesystem',
@@ -5511,30 +5646,41 @@ export const enUS: Catalog = {
   'unsaved.close.title': 'Close the app?',
   'unsaved.close.body': 'There are unsaved changes. If you close the app now, they will be lost.',
   'unsaved.close.confirm': 'Close without saving',
-  "users.create.identityCard": "Identity",
-  "users.create.identityLede": "Who the person is. The username identifies them in the audit ledger and cannot be changed later.",
-  "users.create.emailHint": "Required to send the welcome message.",
-  "users.create.accessCard": "Access",
-  "users.create.accessLede": "The role and the scope it applies at, granted in the same request that creates the account.",
-  "users.create.scope.label": "Scope",
-  "users.create.scope.hint": "Where the role applies. Global covers the entire instance.",
-  "users.create.role.label": "Role",
-  "users.create.role.hint": "Only roles whose authority you already hold at this scope are offered.",
-  "users.create.role.default": "Server default (Gestor, global)",
-  "users.create.role.optionBlocked": "{role} — above your authority",
-  "users.create.role.carries": "This role carries",
-  "users.create.role.aboveCeiling": "You cannot grant {role}: it includes permissions you do not hold at this scope ({permissions}).",
-  "users.create.role.defaultNote": "With no role chosen, the account takes the server default: Gestor, at global scope.",
-  "users.create.credentialsCard": "Credentials",
-  "users.create.credentialsLede": "Set the initial password and pass it along through a secure channel. It is never sent by email.",
-  "users.create.notifyCard": "Notification",
-  "users.create.notifyLede": "An optional note that the account exists. The message carries no password, code, or sign-in link.",
-  "users.create.welcome.label": "Send the new account a welcome message",
-  "users.create.welcome.noSmtp": "Email sending is not configured, so the message cannot be sent.",
-  "users.create.welcome.noAddress": "Enter an email address above to be able to send the message.",
-  "users.create.welcome.settingsLink": "Configure email",
-  "users.language.label": "Language",
-  "users.language.auto": "Detect automatically",
-  "users.language.hint.auto": "Follows the language of the device the person signs in on. Messages sent by the server use the platform default.",
-  "users.language.hint.fixed": "Pins the language of the interface and of messages sent to this account.",
+  'users.create.identityCard': 'Identity',
+  'users.create.identityLede':
+    'Who the person is. The username identifies them in the audit ledger and cannot be changed later.',
+  'users.create.emailHint': 'Required to send the welcome message.',
+  'users.create.accessCard': 'Access',
+  'users.create.accessLede':
+    'The role and the scope it applies at, granted in the same request that creates the account.',
+  'users.create.scope.label': 'Scope',
+  'users.create.scope.hint': 'Where the role applies. Global covers the entire instance.',
+  'users.create.role.label': 'Role',
+  'users.create.role.hint':
+    'Only roles whose authority you already hold at this scope are offered.',
+  'users.create.role.default': 'Server default (Gestor, global)',
+  'users.create.role.optionBlocked': '{role} — above your authority',
+  'users.create.role.carries': 'This role carries',
+  'users.create.role.aboveCeiling':
+    'You cannot grant {role}: it includes permissions you do not hold at this scope ({permissions}).',
+  'users.create.role.defaultNote':
+    'With no role chosen, the account takes the server default: Gestor, at global scope.',
+  'users.create.credentialsCard': 'Credentials',
+  'users.create.credentialsLede':
+    'Set the initial password and pass it along through a secure channel. It is never sent by email.',
+  'users.create.keyNote':
+    "An audit key is generated from this password, so the user's actions are attested from their first sign-in. Anyone who knows this initial password can produce attestations in this user's name — ask them to change it when they first sign in.",
+  'users.create.notifyCard': 'Notification',
+  'users.create.notifyLede':
+    'An optional note that the account exists. The message carries no password, code, or sign-in link.',
+  'users.create.welcome.label': 'Send the new account a welcome message',
+  'users.create.welcome.noSmtp': 'Email sending is not configured, so the message cannot be sent.',
+  'users.create.welcome.noAddress': 'Enter an email address above to be able to send the message.',
+  'users.create.welcome.settingsLink': 'Configure email',
+  'users.language.label': 'Language',
+  'users.language.auto': 'Detect automatically',
+  'users.language.hint.auto':
+    'Follows the language of the device the person signs in on. Messages sent by the server use the platform default.',
+  'users.language.hint.fixed':
+    'Pins the language of the interface and of messages sent to this account.',
 };

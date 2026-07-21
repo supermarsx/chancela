@@ -26,7 +26,8 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
+  SkeletonRegion,
+  SkeletonTable,
   Table,
   useToast,
 } from '../../ui';
@@ -323,7 +324,12 @@ export function ExternalSigningWorkflowsPage() {
             </div>
           </dl>
 
-          {isLoading ? <Loading label={t('externalSigning.loading')} /> : null}
+          {/* Seven columns: act, signer, status, workflow, link, expires, actions. */}
+          {isLoading ? (
+            <SkeletonRegion label={t('externalSigning.loading')}>
+              <SkeletonTable cols={7} />
+            </SkeletonRegion>
+          ) : null}
           {firstError ? <ErrorNote error={firstError} /> : null}
           {!isLoading && !firstError && manageableBooks.length === 0 ? (
             <InlineWarning tone="info" title={t('signing.invites.title')}>

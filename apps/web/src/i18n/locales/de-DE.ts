@@ -10,13 +10,17 @@
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { ledgerEventLabelsDeDE } from '../ledgerEventLabels';
+import { ledgerScopeLabelsDeDE } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsDeDE } from '../dashboardSourceLabels';
+import { roleNameLabelsDeDE } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const deDE: Catalog = {
   ...operationsEnglish,
   ...ledgerEventLabelsDeDE,
+  ...ledgerScopeLabelsDeDE,
   ...dashboardSourceLabelsDeDE,
+  ...roleNameLabelsDeDE,
   ...attendeeQualityLabelsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Keine Berechtigung für diese Aktion',
@@ -1608,6 +1612,23 @@ export const deDE: Catalog = {
   'users.action.edit': 'Bearbeiten',
   'users.new.crumb': 'Neu',
   'users.new.title': 'Neuer Benutzer',
+  'users.edit.title': 'Benutzer bearbeiten',
+  'users.filters.aria': 'Benutzer suchen und filtern',
+  'users.filters.search.label': 'Suchen',
+  'users.filters.search.placeholder': 'Benutzername, Name oder E-Mail',
+  'users.filters.status.label': 'Status',
+  'users.filters.status.all': 'Alle Status',
+  'users.filters.access.label': 'Zugang',
+  'users.filters.access.all': 'Beliebiger Zugang',
+  'users.filters.access.key': 'Mit Auditschlüssel',
+  'users.filters.access.noKey': 'Ohne Auditschlüssel',
+  'users.filters.access.noPassword': 'Ohne Passwort',
+  'users.filters.access.recovery': 'Mit Wiederherstellungsphrase',
+  'users.filters.clear.aria': 'Benutzerfilter zurücksetzen',
+  'users.filters.count': '{shown} von {total}',
+  'users.filters.count.aria': '{shown} von {total} Benutzern werden angezeigt',
+  'users.filters.empty.title': 'Keine Ergebnisse',
+  'users.filters.empty.body': 'Ändern Sie die Suche oder die Filter, um wieder Benutzer zu sehen.',
   'users.edit.identityCard': 'Identität',
   'users.edit.usernameHint':
     'Der Benutzername ist die Prüf-Kennung und kann nicht geändert werden.',
@@ -1766,7 +1787,7 @@ export const deDE: Catalog = {
     'Nur verwenden, wenn ein Dienst eine andere Stufe als seine Bereichsstufe benötigt.',
   'settings.platform.logging.override.none': 'Keine Überschreibung',
   'settings.platform.logging.override.app': 'Anwendung',
-  'settings.platform.logging.override.api': 'API',
+  'settings.platform.logging.override.api': 'API-Server',
   'settings.platform.logging.override.mcp_stdio': 'MCP-Studio',
   'settings.platform.logLevel.trace': 'Verfolgen',
   'settings.platform.logLevel.debug': 'Debuggen',
@@ -1815,10 +1836,73 @@ export const deDE: Catalog = {
   'settings.platform.subnav.aria': 'Betriebsbereiche',
   'settings.platform.tab.services': 'Dienste',
   'settings.platform.tab.services.desc':
-    'Sollzustandssteuerung der API- und MCP-Server, mit ehrlichen Backend-Ergebnissen und einem Betriebsprotokoll.',
+    'Sollzustandssteuerung des API-Servers, mit ehrlichen Backend-Ergebnissen und einem Betriebsprotokoll.',
   'settings.platform.tab.logs': 'Protokolle',
   'settings.platform.tab.logs.desc':
     'Konfiguration der Protokollstufen und strukturierter API-Protokollauszug (schreibgeschützt).',
+  'settings.subnav.api': 'API',
+  'settings.api.tab.server': 'Server',
+  'settings.api.subnav.aria': 'API-Bereiche',
+  'settings.api.cardTitle': 'API-Server',
+  'settings.api.intro':
+    'Sollzustand, Protokolle und Startkonfiguration des API-Servers an einer Stelle. Die API-Schlüssel liegen im Bereich daneben.',
+  'settings.api.logging.title': 'API-Protokolle',
+  'settings.api.logging.hint':
+    'Diese beiden Felder schreiben in dasselbe Einstellungsdokument wie die übrigen Protokollstufen.',
+  'settings.api.env.hint':
+    'Werden beim Serverstart aus der Prozessumgebung gelesen. Sie sind weder hier noch über einen Endpunkt änderbar; eine Änderung erfordert einen Serverneustart.',
+  'settings.api.tls.title': 'TLS',
+  'settings.api.tls.body':
+    'Der Server spricht einfaches HTTP. TLS wird am vorgelagerten Reverse Proxy terminiert, und der HSTS-Header unten wirkt nur in dieser Konstellation.',
+  'settings.api.env.addr': 'Adresse host:port, auf der der Server lauscht.',
+  'settings.api.env.cors':
+    'Exakte Ursprünge, die die API quellübergreifend aufrufen dürfen. Leer bedeutet nur derselbe Ursprung.',
+  'settings.api.env.rateLimit': 'Anfragebegrenzer pro IP. Beim Server standardmäßig aktiv.',
+  'settings.api.env.ratePerSecond': 'Dauerhafte Anfragerate pro Sekunde und IP.',
+  'settings.api.env.rateBurst': 'Burst-Kapazität pro IP.',
+  'settings.api.env.trustForwarded':
+    'X-Forwarded-For für die Clientadresse vertrauen. Nur hinter einem vertrauenswürdigen Reverse Proxy.',
+  'settings.api.env.hstsMaxAge': 'Dauer der angekündigten HSTS-Richtlinie in Sekunden.',
+  'settings.api.env.hstsSubdomains': 'Die HSTS-Richtlinie auf Subdomains ausdehnen.',
+  'settings.api.env.hstsPreload':
+    'Die preload-Direktive ankündigen. Erst nach Einreichung der Domain aktivieren.',
+  'settings.api.env.sessionLifetime':
+    'Absolute Obergrenze der Sitzungsdauer in Sekunden. Null oder negativ hebt die Grenze auf.',
+  'settings.api.related.title': 'Verwandte Einstellungen',
+  'settings.api.related.egress':
+    'Das ist die Ausgangsliste der Konnektoren, nicht die eingehende API-Oberfläche: sie begrenzt, wohin ein Konnektor Bytes senden darf. Sie bleibt unter Plattform.',
+  'settings.api.related.logTail':
+    'Der Protokollauszug umfasst App, API und MCP und bleibt daher unter Plattform › Protokolle.',
+  'settings.mcp.cardTitle': 'MCP-Server',
+  'settings.mcp.intro':
+    'Die gesamte MCP-spezifische Konfiguration an einer Stelle: Sollzustand des stdio-Prozesses, Protokollstufen und die beim Start gelesenen Umgebungsvariablen.',
+  'settings.platform.services.hub':
+    'Jeder Dienst hat einen eigenen Unterreiter mit Sollzustand, Protokollstufen und Startkonfiguration.',
+  'settings.mcp.logging.title': 'MCP-Protokolle',
+  'settings.mcp.logging.hint':
+    'Diese beiden Felder schreiben in dasselbe Einstellungsdokument wie die übrigen Protokollstufen.',
+  'settings.env.title': 'Startkonfiguration (Umgebung)',
+  'settings.mcp.env.hint':
+    'Werden beim Start des MCP-Servers aus der Prozessumgebung gelesen. Sie sind weder hier noch über einen Endpunkt änderbar; eine Änderung erfordert einen Neustart des Prozesses. Der Wert des API-Schlüssels erreicht diese Oberfläche nie.',
+  'settings.env.col.variable': 'Variable',
+  'settings.env.col.meaning': 'Bedeutung',
+  'settings.env.col.default': 'Standardwert',
+  'settings.mcp.env.enabled': 'Hauptschalter des MCP-Servers.',
+  'settings.mcp.env.aiGate':
+    'Spiegel der KI/MCP-Sperre des Mandanten. Der Prozess bedient nur, wenn beides aktiv ist.',
+  'settings.mcp.env.transport': 'Übertragungsweg. Dieser Build bedient nur stdio.',
+  'settings.mcp.env.baseUrl': 'Basis-URL der Integrations-API, die die Werkzeuge aufrufen.',
+  'settings.mcp.env.basePath': 'Versionierter Basispfad, unter dem die API eingehängt ist.',
+  'settings.mcp.env.apiKey':
+    'API-Schlüssel, mit dem sich der MCP-Server authentifiziert. Bei Aktivierung erforderlich.',
+  'settings.mcp.env.tools': 'Bereitgestellte Werkzeuge: alle oder eine kommagetrennte Liste.',
+  'settings.mcp.env.bind':
+    'Bind-Adresse, reserviert für einen entfernten Übertragungsweg. Ohne Wirkung in diesem Build.',
+  'settings.mcp.related.title': 'Verwandte Einstellungen',
+  'settings.mcp.related.gate':
+    'Die KI/MCP-Sperre des Mandanten steuert auch die KI-Funktionen und wird daher weiterhin unter Verwaltung bearbeitet. Ohne sie bleibt MCP untätig.',
+  'settings.mcp.related.apiKeys':
+    'API-Schlüssel gelten nicht nur für MCP: Sie authentifizieren jeden Integrationsclient. Sie behalten ihren eigenen Unterreiter.',
   'settings.platform.serviceDetails': 'Steuerungsdetails und Einschränkungen',
   'settings.platform.help.services':
     'Diese Aktionen erfassen den Sollzustand des Dienstes; die Oberfläche setzt keine direkte Prozesssteuerung voraus (etwa API-Selbstneustart oder MCP-stdio-Start).',
@@ -2156,6 +2240,10 @@ export const deDE: Catalog = {
   'settings.about.ledger.valid': 'Kette intakt · {count} Ereignisse',
   'settings.about.ledger.compromised': 'Kette kompromittiert',
   'settings.about.schemaVersion': 'Version des Konfigurationsschemas',
+  'settings.about.interfaceLocale': 'Sprache der Oberfläche',
+  'settings.about.tableCaption': 'Instanzinformationen',
+  'settings.about.column.item': 'Information',
+  'settings.about.column.value': 'Wert',
   'settings.save': 'Einstellungen speichern',
   'settings.saved': 'Einstellungen gespeichert.',
   'toast.settings.saved': 'Einstellungen gespeichert.',
@@ -2449,6 +2537,7 @@ export const deDE: Catalog = {
   'entities.print.nipcUnvalidated': '(nicht validiert)',
   'settings.subnav.aria': 'Konfigurationsbereiche',
   'settings.subnav.platform': 'Plattform',
+  'settings.subnav.mcp': 'MCP',
   'settings.subnav.operations.aria': 'Bereiche des Betriebs',
   'settings.subnav.signing.aria': 'Bereiche der Signatur',
 
@@ -2559,6 +2648,8 @@ export const deDE: Catalog = {
   'users.key.remove': 'Schlüssel entfernen',
   'users.key.requiresSecret':
     'Legen Sie ein Passwort fest, bevor Sie einen Prüfschlüssel erzeugen.',
+  'users.key.rotateNote':
+    'Beim Wechsel wird ein neues Schlüsselpaar für künftige Attestierungen erzeugt. Bereits erstellte Attestierungen bleiben prüfbar: der öffentliche Teil des bisherigen Schlüssels wird aufbewahrt, und mit diesem Teil lässt sich nicht signieren.',
   // Cross-user authorization + recovery phrase (t51)
   'users.access.crossUserNote':
     'Sie bearbeiten die Anmeldedaten eines anderen Benutzers. Jede Änderung erfordert das aktuelle Passwort dieses Benutzers oder eine gültige Wiederherstellungsphrase.',
@@ -2686,6 +2777,32 @@ export const deDE: Catalog = {
   'templates.channels.none': 'Kein spezifischer Kanal',
   'templates.table.source': 'Quelle',
   'templates.table.actions': 'Aktionen',
+  // --- Template detail page, columns and forking (t79) ----------------------------
+  'templates.columns.label': 'Spalten',
+  'templates.columns.hint':
+    'Wählen Sie, welche Spalten die Tabelle zeigt. Die Rechtsgrundlage steht auf der Vorlagenseite stets vollständig.',
+  'templates.detail.open': 'Vorlage öffnen',
+  'templates.detail.subnav.aria': 'Abschnitte der Vorlage',
+  'templates.detail.section.overview': 'Identifikation',
+  'templates.detail.section.placeholders': 'Erwartete Felder',
+  'templates.detail.version': 'Version',
+  'templates.detail.notFound.title': 'Vorlage nicht gefunden',
+  'templates.detail.notFound.body': 'Im Katalog gibt es keine Vorlage mit dieser Kennung.',
+  'templates.detail.spec.error': 'Der Inhalt dieser Vorlage konnte nicht geladen werden.',
+  'templates.detail.lawSource.empty': 'Diese Vorlage nennt keine Rechtsgrundlage.',
+  'templates.detail.blocks.empty': 'Diese Vorlage erklärt keine Blöcke.',
+  'templates.detail.placeholders.intro':
+    'Felder, die die Blöcke dieser Vorlage aus dem Protokolldatensatz lesen.',
+  'templates.detail.placeholders.empty': 'Diese Vorlage liest keine Felder aus dem Datensatz.',
+  'templates.actions.clone': 'Duplizieren',
+  'templates.editor.title.fork': 'Vorlage duplizieren',
+  'templates.fork.source': 'Ausgangsvorlage: {id}',
+  'templates.fork.builtin.title': 'Integrierte Vorlagen lassen sich nicht bearbeiten',
+  'templates.fork.builtin.body':
+    'Eine integrierte Vorlage ist schreibgeschützt, damit ein bereits versiegeltes Protokoll genau dasselbe bedeutet wie zuvor. Beim Bearbeiten entsteht eine Kopie unter einer neuen Kennung; diese Kopie lässt sich dann frei ändern.',
+  'templates.fork.limit.title': 'Eine Kopie erzeugt noch keine Dokumente',
+  'templates.fork.limit.body':
+    'Eine Kopie lässt sich speichern, bearbeiten, exportieren und löschen, doch Erzeugung und Versiegelung eines Protokolls erkennen ausschließlich integrierte Vorlagen: beim Versiegeln wird die Anfrage abgelehnt. Nutzen Sie die Kopie, um den Text vorzubereiten, und wählen Sie zum Versiegeln eine integrierte Vorlage.',
   // --- User-authored templates (wp23) -------------------------------------------
   'templates.actions.new': 'Neue Vorlage',
   'templates.actions.edit': 'Bearbeiten',
@@ -3341,10 +3458,29 @@ export const deDE: Catalog = {
   'data.status.permission.create_file': 'Datei erstellen',
   'data.status.permission.write_file': 'Datei schreiben',
   'data.status.permission.delete_probe_file': 'Prüfdatei löschen',
-  'data.status.permission.sqlite_store_open': 'SQLite öffnen',
+  'data.status.permission.sqlite_store_open': 'SQLite geöffnet',
   'data.status.permission.ok': 'OK',
   'data.status.permission.warn': 'Warnung',
   'data.status.permission.unchecked': 'Nicht geprüft',
+  'data.status.permission.durable_store_open': 'Dauerhafter Speicher',
+  'data.status.probe.read_dir.ok': 'Der Ordner kann gelesen werden.',
+  'data.status.probe.read_dir.failed': 'Der Ordner kann nicht gelesen werden.',
+  'data.status.probe.create_file.ok': 'Im Ordner können Dateien erstellt werden.',
+  'data.status.probe.create_file.failed': 'Im Ordner können keine Dateien erstellt werden.',
+  'data.status.probe.write_file.ok': 'In den Ordner kann geschrieben werden.',
+  'data.status.probe.write_file.failed': 'In den Ordner kann nicht geschrieben werden.',
+  'data.status.probe.delete_probe_file.ok': 'Dateien im Ordner können gelöscht werden.',
+  'data.status.probe.delete_probe_file.failed': 'Dateien im Ordner können nicht gelöscht werden.',
+  'data.status.probe.durable_store_open.ok': 'Der dauerhafte Speicher ist geöffnet.',
+  'data.status.probe.durable_store_open.failed': 'Der dauerhafte Speicher ist nicht geöffnet.',
+  'data.status.probe.durable_store_open.noDataDir':
+    'Der dauerhafte Speicher ist nicht geöffnet, weil kein Datenordner konfiguriert ist.',
+  'data.status.probe.unchecked.noDataDir': 'Nicht geprüft: Es ist kein Datenordner konfiguriert.',
+  'data.status.probe.unchecked.probeSkipped':
+    'Nicht geprüft: Die Testdatei konnte nicht erstellt werden.',
+  'data.status.probe.detail': 'Systemdetail: {detail}',
+  'data.status.basis.logical_payload': 'dauerhafte logische Nutzlast',
+  'data.status.basis.sidecar_logical_payload': 'logische Sidecar-Nutzlast',
   'data.status.usage.title': 'Nutzung',
   'data.status.usage.total': 'Gesamt',
   'data.status.usage.filesystem': 'Dateisystem',
@@ -5626,30 +5762,43 @@ export const deDE: Catalog = {
   'unsaved.close.body':
     'Es gibt ungespeicherte Änderungen. Wenn Sie die Anwendung jetzt schließen, gehen sie verloren.',
   'unsaved.close.confirm': 'Ohne Speichern schließen',
-  "users.create.identityCard": "Identität",
-  "users.create.identityLede": "Wer die Person ist. Der Benutzername identifiziert sie im Prüfprotokoll und kann später nicht geändert werden.",
-  "users.create.emailHint": "Erforderlich, um die Willkommensnachricht zu senden.",
-  "users.create.accessCard": "Zugriff",
-  "users.create.accessLede": "Die Rolle und der Geltungsbereich, in dem sie gilt — vergeben in derselben Anfrage, die das Konto anlegt.",
-  "users.create.scope.label": "Geltungsbereich",
-  "users.create.scope.hint": "Wo die Rolle gilt. Global umfasst die gesamte Instanz.",
-  "users.create.role.label": "Rolle",
-  "users.create.role.hint": "Angeboten werden nur Rollen, deren Befugnis Sie in diesem Geltungsbereich bereits besitzen.",
-  "users.create.role.default": "Server-Voreinstellung (Gestor, global)",
-  "users.create.role.optionBlocked": "{role} — über Ihrer Befugnis",
-  "users.create.role.carries": "Diese Rolle umfasst",
-  "users.create.role.aboveCeiling": "Sie können {role} nicht vergeben: Diese Rolle enthält Berechtigungen, die Sie in diesem Geltungsbereich nicht besitzen ({permissions}).",
-  "users.create.role.defaultNote": "Ohne gewählte Rolle erhält das Konto die Server-Voreinstellung: Gestor, im globalen Geltungsbereich.",
-  "users.create.credentialsCard": "Zugangsdaten",
-  "users.create.credentialsLede": "Legen Sie das erste Passwort fest und geben Sie es über einen sicheren Weg weiter. Es wird nie per E-Mail verschickt.",
-  "users.create.notifyCard": "Benachrichtigung",
-  "users.create.notifyLede": "Optionaler Hinweis, dass das Konto besteht. Die Nachricht enthält weder Passwort noch Code oder Anmeldelink.",
-  "users.create.welcome.label": "Dem neuen Konto eine Willkommensnachricht senden",
-  "users.create.welcome.noSmtp": "Der E-Mail-Versand ist nicht eingerichtet, daher kann die Nachricht nicht gesendet werden.",
-  "users.create.welcome.noAddress": "Geben Sie oben eine E-Mail-Adresse ein, um die Nachricht senden zu können.",
-  "users.create.welcome.settingsLink": "E-Mail einrichten",
-  "users.language.label": "Sprache",
-  "users.language.auto": "Automatisch erkennen",
-  "users.language.hint.auto": "Folgt der Sprache des Geräts, von dem aus sich die Person anmeldet. Vom Server versendete Nachrichten verwenden die Standardsprache der Plattform.",
-  "users.language.hint.fixed": "Legt die Sprache der Oberfläche und der an dieses Konto gesendeten Nachrichten fest.",
+  'users.create.identityCard': 'Identität',
+  'users.create.identityLede':
+    'Wer die Person ist. Der Benutzername identifiziert sie im Prüfprotokoll und kann später nicht geändert werden.',
+  'users.create.emailHint': 'Erforderlich, um die Willkommensnachricht zu senden.',
+  'users.create.accessCard': 'Zugriff',
+  'users.create.accessLede':
+    'Die Rolle und der Geltungsbereich, in dem sie gilt — vergeben in derselben Anfrage, die das Konto anlegt.',
+  'users.create.scope.label': 'Geltungsbereich',
+  'users.create.scope.hint': 'Wo die Rolle gilt. Global umfasst die gesamte Instanz.',
+  'users.create.role.label': 'Rolle',
+  'users.create.role.hint':
+    'Angeboten werden nur Rollen, deren Befugnis Sie in diesem Geltungsbereich bereits besitzen.',
+  'users.create.role.default': 'Server-Voreinstellung (Gestor, global)',
+  'users.create.role.optionBlocked': '{role} — über Ihrer Befugnis',
+  'users.create.role.carries': 'Diese Rolle umfasst',
+  'users.create.role.aboveCeiling':
+    'Sie können {role} nicht vergeben: Diese Rolle enthält Berechtigungen, die Sie in diesem Geltungsbereich nicht besitzen ({permissions}).',
+  'users.create.role.defaultNote':
+    'Ohne gewählte Rolle erhält das Konto die Server-Voreinstellung: Gestor, im globalen Geltungsbereich.',
+  'users.create.credentialsCard': 'Zugangsdaten',
+  'users.create.credentialsLede':
+    'Legen Sie das erste Passwort fest und geben Sie es über einen sicheren Weg weiter. Es wird nie per E-Mail verschickt.',
+  'users.create.keyNote':
+    'Aus diesem Kennwort wird ein Prüfschlüssel erzeugt, sodass die Aktionen des Benutzers ab der ersten Anmeldung attestiert werden. Wer dieses anfängliche Kennwort kennt, kann Attestierungen im Namen dieses Benutzers erzeugen — bitten Sie ihn, es bei der ersten Anmeldung zu ändern.',
+  'users.create.notifyCard': 'Benachrichtigung',
+  'users.create.notifyLede':
+    'Optionaler Hinweis, dass das Konto besteht. Die Nachricht enthält weder Passwort noch Code oder Anmeldelink.',
+  'users.create.welcome.label': 'Dem neuen Konto eine Willkommensnachricht senden',
+  'users.create.welcome.noSmtp':
+    'Der E-Mail-Versand ist nicht eingerichtet, daher kann die Nachricht nicht gesendet werden.',
+  'users.create.welcome.noAddress':
+    'Geben Sie oben eine E-Mail-Adresse ein, um die Nachricht senden zu können.',
+  'users.create.welcome.settingsLink': 'E-Mail einrichten',
+  'users.language.label': 'Sprache',
+  'users.language.auto': 'Automatisch erkennen',
+  'users.language.hint.auto':
+    'Folgt der Sprache des Geräts, von dem aus sich die Person anmeldet. Vom Server versendete Nachrichten verwenden die Standardsprache der Plattform.',
+  'users.language.hint.fixed':
+    'Legt die Sprache der Oberfläche und der an dieses Konto gesendeten Nachrichten fest.',
 };

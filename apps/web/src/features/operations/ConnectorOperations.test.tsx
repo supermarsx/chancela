@@ -604,6 +604,10 @@ describe('connector jobs', () => {
     const detail = (await screen.findByRole('heading', { name: 'Detalhe do trabalho' })).closest(
       'section',
     ) as HTMLElement;
+    // The panel header now renders while the job is still in flight — its skeleton stands
+    // in for the detail grid — so the heading no longer implies the data has landed. Wait
+    // for a field of the grid itself; the assertions below are unchanged.
+    await within(detail).findByText('Tentativa');
     expect(within(detail).getByText('Tentativa').nextElementSibling?.textContent).toBe('2');
     expect(within(detail).getByText('a'.repeat(64))).toBeTruthy();
     expect(

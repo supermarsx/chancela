@@ -16,7 +16,7 @@ import { useCreateSession, useDeleteSession, useSession, useUsers } from '../../
 import { ApiError } from '../../api/client';
 import type { UserView } from '../../api/types';
 import { useT } from '../../i18n';
-import { Tooltip, useToast } from '../../ui';
+import { Skeleton, SkeletonRegion, Tooltip, useToast } from '../../ui';
 import { SignOut } from '../../ui/icons';
 
 export function CurrentUserPicker() {
@@ -234,7 +234,13 @@ export function CurrentUserPicker() {
             ) : (
               <div className="session-picker__list">
                 {users.isLoading ? (
-                  <p className="muted session-picker__empty">{t('common.loading')}</p>
+                  // What lands here is a short column of `.session-picker__item` buttons,
+                  // so the menu keeps its height instead of snapping open once they arrive.
+                  <SkeletonRegion>
+                    {[0, 1, 2].map((i) => (
+                      <Skeleton key={i} height="2.4rem" style={{ marginBottom: '0.25rem' }} />
+                    ))}
+                  </SkeletonRegion>
                 ) : activeUsers.length === 0 ? (
                   <p className="muted session-picker__empty">{t('session.empty')}</p>
                 ) : (

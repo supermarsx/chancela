@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { Skeleton, SkeletonCards, SkeletonList, SkeletonRegion, SkeletonTable } from './Skeleton';
+import {
+  Skeleton,
+  SkeletonCards,
+  SkeletonChips,
+  SkeletonDeflist,
+  SkeletonForm,
+  SkeletonList,
+  SkeletonRegion,
+  SkeletonTable,
+} from './Skeleton';
 
 afterEach(cleanup);
 
@@ -38,6 +47,27 @@ describe('Skeleton', () => {
     // Same class names as the real list, so the swap keeps the box model identical.
     expect(container.querySelectorAll('.dashboard-list__head').length).toBe(3);
     expect(container.querySelectorAll('.dashboard-list__meta').length).toBe(3);
+  });
+
+  it('SkeletonForm reserves label + control pairs on the real form boxes', () => {
+    const { container } = render(<SkeletonForm fields={3} className="settings-rows" />);
+    expect(container.querySelector('.form.settings-rows')).toBeTruthy();
+    expect(container.querySelectorAll('.field').length).toBe(3);
+    // Label over control, so a form waiting on its seed data holds its real height.
+    expect(container.querySelectorAll('.field')[0].querySelectorAll('.skeleton').length).toBe(2);
+  });
+
+  it('SkeletonDeflist adopts the grid class it stands in for', () => {
+    // The operations metric strip is the same dt/dd shape under another name; a `.deflist`
+    // placeholder in front of it would lay out at the wrong width.
+    const { container } = render(<SkeletonDeflist rows={4} className="operations-metrics" />);
+    expect(container.querySelector('.operations-metrics')).toBeTruthy();
+    expect(container.querySelector('.deflist')).toBeNull();
+  });
+
+  it('SkeletonChips renders a wrapping band of pills', () => {
+    const { container } = render(<SkeletonChips count={3} />);
+    expect(container.querySelectorAll('.skeleton-chips > .skeleton').length).toBe(3);
   });
 });
 
@@ -118,6 +148,34 @@ describe('will-change budget', () => {
     const css = (await themeCss()).replace(/\/\*[\s\S]*?\*\//g, '');
     // `width` is a layout property and cannot be composited; hinting it promotes for nothing.
     expect(css).not.toMatch(/will-change:[^;]*width/);
+  });
+});
+
+describe('appear delay', () => {
+  it('blocks hold at opacity 0 for ~180ms so a fast load never flashes a skeleton', async () => {
+    const css = (await themeCss()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = /\.skeleton\s*\{([\s\S]*?)\}/.exec(css)?.[1] ?? '';
+    // The same `skeleton-appear` hold the indeterminate bar uses. `both` is load-bearing:
+    // without it the from-frame is not held through the delay and the hold does nothing.
+    const appear = /skeleton-appear\s+\d+ms\s+[\w-]+\s+(\d+)ms\s+both/.exec(block);
+    expect(appear, 'no delayed skeleton-appear on .skeleton').toBeTruthy();
+    const delay = Number(appear?.[1]);
+    expect(delay).toBeGreaterThanOrEqual(150);
+    expect(delay).toBeLessThanOrEqual(200);
+  });
+
+  it('the table head rule holds too, so it cannot draw alone before the blocks', async () => {
+    const css = (await themeCss()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const head = /\.skeleton-table__row--head\s*\{([\s\S]*?)\}/.exec(css)?.[1] ?? '';
+    expect(head).toMatch(/skeleton-appear/);
+  });
+
+  it('no skeleton keyframe animates width — a placeholder must not imply progress', async () => {
+    const css = (await themeCss()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const frames = /@keyframes\s+skeleton-sweep\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+    expect(frames).toMatch(/background-position/);
+    // A block that grew would read as a determinate bar. These waits have no numerator.
+    expect(frames).not.toMatch(/width/);
   });
 });
 

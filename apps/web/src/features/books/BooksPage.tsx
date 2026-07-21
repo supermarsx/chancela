@@ -170,7 +170,11 @@ export function BooksPage() {
   }));
 
   return (
-    <div className="stack">
+    /* `wide-page` widens the shell measure (t64's shared opt-out, see theme.css). The whole
+       page is the seven-column book list, whose columns are percentage-fixed and truncate
+       rather than wrap — every column scales with the measure and none becomes prose.
+       Finalidade, the free-text column, goes 224px → 318px at 1920. */
+    <div className="stack wide-page">
       <PageHeader
         title={t('books.title')}
         lede={t('books.lede')}

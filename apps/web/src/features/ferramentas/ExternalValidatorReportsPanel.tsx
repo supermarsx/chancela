@@ -17,7 +17,8 @@ import {
   Icon,
   IconButton,
   InlineWarning,
-  Loading,
+  SkeletonRegion,
+  SkeletonTable,
   Table,
   useToast,
 } from '../../ui';
@@ -621,7 +622,12 @@ export function ExternalValidatorReportsPanel() {
         </div>
 
         {upload.error ? <ErrorNote error={upload.error} /> : null}
-        {reports.isLoading ? <Loading label={t('externalValidatorReports.loading')} /> : null}
+        {/* Seven columns: case, family, path, content type, digest, raw report, actions. */}
+        {reports.isLoading ? (
+          <SkeletonRegion label={t('externalValidatorReports.loading')}>
+            <SkeletonTable cols={7} />
+          </SkeletonRegion>
+        ) : null}
         {reports.error ? <ErrorNote error={reports.error} /> : null}
         {data ? (
           <>

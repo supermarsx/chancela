@@ -17,6 +17,7 @@
  * drops into either the Configurações sub-tab host or the admin host.
  */
 import { useMemo, useState } from 'react';
+import { roleNameLabel } from '../../api/labels';
 import {
   useApplySeededRoleReconciliation,
   useCreateRole,
@@ -221,7 +222,7 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
   return (
     <tr>
       <td>
-        {role.name}
+        {roleNameLabel(role.id, role.name)}
         {role.protected ? (
           <>
             {' '}

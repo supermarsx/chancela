@@ -32,6 +32,9 @@ import {
   InlineWarning,
   Input,
   Select,
+  SkeletonDeflist,
+  SkeletonRegion,
+  SkeletonTable,
   Table,
   TextArea,
   Toggle,
@@ -433,7 +436,16 @@ function JobDetail({ tenantId, jobId }: { tenantId: string; jobId: string }) {
   const job = useConnectorJob(tenantId, jobId);
   const cancel = useCancelConnectorJob();
   const retry = useRetryConnectorJob();
-  if (job.isLoading) return <p className="muted">{t('common.loading')}</p>;
+  // Six dt/dd pairs — id, state, created, attempt, destination, sha256 — on the detail
+  // grid's own class, so the card is already its final height when the job arrives.
+  if (job.isLoading)
+    return (
+      <Card title={t('operations.connectors.jobs.detail.title')}>
+        <SkeletonRegion>
+          <SkeletonDeflist rows={6} className="operations-detail-grid" />
+        </SkeletonRegion>
+      </Card>
+    );
   if (job.error) return <ErrorNote error={job.error} />;
   if (!job.data) return null;
   const data = job.data;
@@ -520,7 +532,12 @@ function ConnectorJobs({ tenantId }: { tenantId: string }) {
   return (
     <div className="stack">
       <Card title={t('operations.connectors.jobs.title')}>
-        {jobs.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+        {/* Five columns: state, purpose, destination, created, actions. */}
+        {jobs.isLoading ? (
+          <SkeletonRegion>
+            <SkeletonTable cols={5} />
+          </SkeletonRegion>
+        ) : null}
         {jobs.error ? <ErrorNote error={jobs.error} /> : null}
         {jobs.data?.jobs.length === 0 ? (
           <EmptyState title={t('operations.connectors.jobs.empty')} />
@@ -603,7 +620,12 @@ export function ConnectorOperations({ tenantId }: { tenantId: string }) {
     <div className="stack">
       <CreateConnectorForm tenantId={tenantId} />
       <Card title={t('operations.connectors.targets.title')}>
-        {targets.isLoading ? <p className="muted">{t('common.loading')}</p> : null}
+        {/* Five columns: name, kind, purposes, enabled, actions. */}
+        {targets.isLoading ? (
+          <SkeletonRegion>
+            <SkeletonTable cols={5} />
+          </SkeletonRegion>
+        ) : null}
         {targets.error ? <ErrorNote error={targets.error} /> : null}
         {targets.data?.length === 0 ? (
           <EmptyState title={t('operations.connectors.targets.empty')} />

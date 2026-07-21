@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { useLocation, useNavigationType } from 'react-router-dom';
+import { Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import { SettingsPage } from './SettingsPage';
 import {
   DEFAULT_SETTINGS,
@@ -2818,26 +2818,244 @@ describe('SettingsPage', () => {
     );
   });
 
-  it('shows platform API and MCP status with honest control limitations', async () => {
+  it('routes Plataforma to the per-service tabs instead of listing services it no longer holds', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
 
     expect(await screen.findByRole('button', { name: 'Operações' })).toBeTruthy();
+
+    // Both service rows moved out (t82, t82b). `GET /v1/platform/services` returns exactly these
+    // two, so the list here is empty by design — the pane routes rather than showing "no services".
+    expect(screen.queryByText('Chancela API server')).toBeNull();
+    expect(screen.queryByText('Chancela MCP stdio server')).toBeNull();
+    expect(screen.queryByText(/cannot observe or spawn/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Registar reinício/ })).toBeNull();
+
+    const links = Object.fromEntries(
+      screen.getAllByRole('link').map((a) => [a.textContent?.trim(), a.getAttribute('href')]),
+    );
+    expect(links['Servidor API']).toBe('/configuracoes?sec=operacoes&sub=api');
+    expect(links['Servidor MCP']).toBe('/configuracoes?sec=operacoes&sub=mcp');
+  });
+
+  it('gathers every API-server control on the API sub-tab, at its own deep link', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=api']);
+
+    // The service row, with the honest backend limitations it carried in Plataforma.
     expect(await screen.findByText('Chancela API server')).toBeTruthy();
-    expect(await screen.findByText('Chancela MCP stdio server')).toBeTruthy();
     expect(screen.getAllByText('Reinício necessário').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /Registar reinício/ })).toBeTruthy();
+
+    // The API log area level and the API service override, off the generic logging grid. Their
+    // labels are now distinct: both read "API" before, in one panel, which named two controls
+    // identically.
+    expect((screen.getByLabelText('API') as HTMLSelectElement).value).toBe('info');
+    expect((screen.getByLabelText('Servidor API') as HTMLSelectElement).value).toBe('');
+
+    // The launch-time security posture, read-only — surfaced in the product for the first time.
+    expect(screen.getByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeTruthy();
+    expect(screen.getByText('CHANCELA_RATE_LIMIT_PER_SECOND')).toBeTruthy();
+    expect(screen.getByText('CHANCELA_HSTS_MAX_AGE')).toBeTruthy();
+    expect(screen.getByText('CHANCELA_SESSION_MAX_LIFETIME')).toBeTruthy();
+
+    // The connector allow-list is OUTBOUND connector egress, not the API's inbound surface. It is
+    // named here only to say so, and its editor is not rendered on this tab.
+    expect(screen.queryByLabelText(/Anfitriões permitidos/)).toBeNull();
+    expect(screen.getByText(/não a superfície de entrada da API/)).toBeTruthy();
+  });
+
+  it('keeps the API keys pane on its own address, gate and disclosure inside the API tab', async () => {
+    const { fn } = apiKeysFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=chaves-api']);
+
+    // The bookmarkable address still lands on the keys pane, now under the API button.
+    expect(await screen.findByRole('heading', { name: 'Chaves API' })).toBeTruthy();
+    const operations = within(screen.getByRole('group', { name: 'Áreas de operações' }));
+    expect(operations.getByRole('button', { name: 'API' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    const panes = within(screen.getByRole('group', { name: 'Áreas da API' }));
+    expect(panes.getByRole('button', { name: 'Chaves API' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+
+    // Disclosure unchanged: the table shows the non-secret prefix, never a `chk_` secret.
+    expect(document.body.textContent ?? '').not.toMatch(/chk_[a-z0-9]+_[a-z0-9]{8,}/i);
+    cleanup();
+
+    // …and the gate did not narrow. Key management is `user.manage`, NOT `settings.manage`: a
+    // holder of the former without the latter must still be able to work here. Nesting the pane
+    // inside the server pane would have put it in the disabled fieldset and taken that away.
+    vi.stubGlobal('fetch', apiKeysFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission !== 'settings.manage')}
+      >
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=operacoes&sub=chaves-api'],
+    );
+
+    const create = await screen.findByRole('button', { name: 'Nova chave API' });
+    const fieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(fieldset.contains(create)).toBe(true);
+    expect(fieldset.disabled).toBe(false);
+    expect(create.hasAttribute('disabled')).toBe(false);
+    expect(create.getAttribute('data-gated')).toBeNull();
+  });
+
+  it('gathers every MCP control on the MCP sub-tab, at its own deep link', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=mcp']);
+
+    // The service row, with the same honest backend limitations it carried in Plataforma.
+    expect(await screen.findByText('Chancela MCP stdio server')).toBeTruthy();
     expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
     expect(screen.getByText(/cannot observe or spawn/)).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /Registar reinício/ }).length).toBeGreaterThan(0);
+
+    // The MCP log level and the MCP service override, both moved off the generic logging grid.
+    expect((screen.getByLabelText('MCP') as HTMLSelectElement).value).toBe('info');
+    expect((screen.getByLabelText('MCP stdio') as HTMLSelectElement).value).toBe('');
+
+    // The launch-time environment surface, read-only, with the API key named but never valued.
+    expect(screen.getByText('CHANCELA_MCP_ENABLED_TOOLS')).toBeTruthy();
+    expect(screen.getByText('CHANCELA_MCP_API_KEY')).toBeTruthy();
+    // The connector egress allow-list is NOT MCP configuration and must not be implied to be:
+    // `chancela-mcp` never reads it. It stays in Plataforma and is not even named here.
+    expect(screen.queryByText('CHANCELA_CONNECTOR_ALLOWED_HOSTS')).toBeNull();
+    expect(screen.queryByLabelText('Anfitriões permitidos')).toBeNull();
+
+    // The shared AI/MCP gate is mirrored, not duplicated: no second writer for it lives here.
+    expect(screen.queryByRole('checkbox', { name: 'Ativar IA/MCP' })).toBeNull();
+    expect(screen.getByText('Ativar IA/MCP')).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: 'Gestão' })[0].getAttribute('href')).toBe(
+      '/configuracoes?sec=gestao',
+    );
+  });
+
+  it('carries the settings.manage gate onto the API tab with the controls it moved', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission !== 'settings.manage')}
+      >
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=operacoes&sub=api'],
+    );
+
+    const restart = await screen.findByRole('button', { name: /Registar reinício/ });
+    expect(restart.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(restart);
+    expect(calls.some((c) => c.method === 'POST' && c.url.includes('/actions/'))).toBe(false);
+
+    const fieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(fieldset.disabled).toBe(true);
+    expect(fieldset.contains(screen.getByLabelText('API'))).toBe(true);
+    expect(fieldset.contains(screen.getByLabelText('Servidor API'))).toBe(true);
+    expect(screen.getByText('Sem permissão')).toBeTruthy();
+  });
+
+  it('autosaves the API log level and override to the same settings document', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=api']);
+
+    fireEvent.change(await screen.findByLabelText('API'), { target: { value: 'debug' } });
+    fireEvent.change(screen.getByLabelText('Servidor API'), { target: { value: 'trace' } });
+
+    await waitFor(
+      () => {
+        const put = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(put).toBeTruthy();
+        const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(sent.platform.logging.api).toBe('debug');
+        expect(sent.platform.logging.service_overrides.api).toBe('trace');
+        // Untouched fields ride along unchanged — this is the whole-document autosave, same as
+        // when these two selects lived in the Plataforma grid.
+        expect(sent.platform.logging.global).toBe('info');
+        expect(sent.platform.api_server.desired_state).toBe('running');
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  it('records an API restart desired state from the API tab, on the same endpoint', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=api']);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Registar reinício/ }));
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === 'POST' &&
+            call.url.includes('/v1/platform/services/api/actions/restart'),
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it('carries the settings.manage gate onto the MCP tab with the controls it moved', async () => {
+    // The point of the whole task: a relocated control must keep the gate it had. Both MCP
+    // controls are admin-reserved — the service action through `canManage`, the two log selects
+    // through the page's disabled fieldset — and neither may widen by having moved.
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission !== 'settings.manage')}
+      >
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=operacoes&sub=mcp'],
+    );
+
+    const start = await screen.findByRole('button', { name: /Registar arranque/ });
+    expect(start.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(start);
+    expect(calls.some((c) => c.method === 'POST' && c.url.includes('/actions/start'))).toBe(false);
+
+    const fieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(fieldset.disabled).toBe(true);
+    expect(fieldset.contains(screen.getByLabelText('MCP'))).toBe(true);
+    expect(fieldset.contains(screen.getByLabelText('MCP stdio'))).toBe(true);
+    expect(screen.getByText('Sem permissão')).toBeTruthy();
+  });
+
+  it('keeps `?sec=mcp` resolvable as a hand-written deep link into the sub-tab', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=mcp']);
+
+    expect(
+      (await screen.findByRole('group', { name: 'Áreas de operações' })).querySelector(
+        'button[aria-pressed="true"]',
+      )?.textContent,
+    ).toContain('MCP');
   });
 
   it('renders only meaningful platform action buttons from backend capabilities', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    // Each row now lives on the tab that owns its service; the rows themselves are unchanged.
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=api']);
 
     const apiRow = (await screen.findByText('Chancela API server')).closest('section');
     expect(apiRow).toBeTruthy();
@@ -2848,6 +3066,12 @@ describe('SettingsPage', () => {
     expect(
       within(apiRow!).getByText('The current API process cannot start another copy of itself.'),
     ).toBeTruthy();
+
+    // The same assertion for MCP, on the tab the row moved to (t82): same component, same
+    // backend capabilities, same rendering — only the address changed.
+    cleanup();
+    vi.stubGlobal('fetch', settingsFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=mcp']);
 
     const mcpRow = (await screen.findByText('Chancela MCP stdio server')).closest('section');
     expect(mcpRow).toBeTruthy();
@@ -2907,7 +3131,7 @@ describe('SettingsPage', () => {
       >
         <SettingsPage />
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=operacoes'],
+      ['/configuracoes?sec=operacoes&sub=mcp'],
     );
 
     const title = await screen.findByText('Garantia IA/MCP');
@@ -3037,7 +3261,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=mcp']);
 
     const mcpRow = (await screen.findByText('Chancela MCP stdio server')).closest('section');
     expect(mcpRow).toBeTruthy();
@@ -3059,7 +3283,7 @@ describe('SettingsPage', () => {
     expect((await screen.findAllByText('Operações')).length).toBeGreaterThan(0);
   });
 
-  it('autosaves platform logging levels through the whole settings document', async () => {
+  it('autosaves platform logging levels through the whole settings document, across Registos and MCP', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -3069,19 +3293,34 @@ describe('SettingsPage', () => {
 
     const globalLog = (await screen.findByLabelText('Global')) as HTMLSelectElement;
     fireEvent.change(globalLog, { target: { value: 'debug' } });
-    const mcpOverride = screen.getByLabelText('MCP stdio') as HTMLSelectElement;
-    fireEvent.change(mcpOverride, { target: { value: 'trace' } });
 
-    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
-      timeout: 3000,
+    // The MCP area level and the MCP service override moved to their own sub-tab (t82). The
+    // point of this assertion is that they still write the SAME field of the SAME working copy:
+    // one PUT carries an edit made on Registos and an edit made on MCP.
+    expect(screen.queryByLabelText('MCP stdio')).toBeNull();
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Áreas de operações' })).getByRole('button', {
+        name: 'MCP',
+      }),
+    );
+    const mcpOverride = (await screen.findByLabelText('MCP stdio')) as HTMLSelectElement;
+    fireEvent.change(mcpOverride, { target: { value: 'trace' } });
+    fireEvent.change(screen.getByLabelText('MCP') as HTMLSelectElement, {
+      target: { value: 'warn' },
     });
 
-    const put = calls.find((c) => c.method === 'PUT');
-    expect(put).toBeTruthy();
-    const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
-    expect(sent.platform.logging.global).toBe('debug');
-    expect(sent.platform.logging.service_overrides.mcp_stdio).toBe('trace');
-    expect(sent.platform.api_server.desired_state).toBe('running');
+    await waitFor(
+      () => {
+        const put = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(put).toBeTruthy();
+        const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(sent.platform.logging.global).toBe('debug');
+        expect(sent.platform.logging.mcp).toBe('warn');
+        expect(sent.platform.logging.service_overrides.mcp_stdio).toBe('trace');
+        expect(sent.platform.api_server.desired_state).toBe('running');
+      },
+      { timeout: 5000 },
+    );
   });
 
   it('shows the backend-owned registry auto-update plan and records a dry-run attempt', async () => {
@@ -3371,6 +3610,44 @@ describe('SettingsPage', () => {
     // that also grants authority needs the room, and there is now exactly one place to do it.
     const novo = screen.getByRole('link', { name: /novo utilizador/i });
     expect(novo.getAttribute('href')).toBe('/utilizadores/novo');
+    // t89: and editing left too. No inline edit panel is reachable from this tab at all.
+    expect(screen.queryByLabelText('Nome a apresentar')).toBeNull();
+  });
+
+  it('redirects the retired inline edit state out to the edit screen, keeping the fragment', async () => {
+    const fn = ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/v1/users')) return Promise.resolve(jsonResponse([]));
+      if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      if (url.includes('/v1/ledger/verify'))
+        return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
+      if (url.includes('/health'))
+        return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    // A bookmark of the old inline address must resolve, not 404 and not render a second copy
+    // of the credential controls — the whole point of deleting the panel.
+    function LocationProbe() {
+      const location = useLocation();
+      return <output aria-label="location">{`${location.pathname}${location.hash}`}</output>;
+    }
+
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/configuracoes" element={<SettingsPage />} />
+          <Route path="/utilizadores/:id" element={null} />
+        </Routes>
+        <LocationProbe />
+      </>,
+      ['/configuracoes?sec=utilizadores&user=u1#acesso'],
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('location').textContent).toBe('/utilizadores/u1#acesso'),
+    );
   });
 
   it('hosts privacy/compliance processor and DPIA registers with search and filters', async () => {
@@ -5704,7 +5981,9 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
     // …and two of them are here, in Operações' own strip, behind the platform controls.
     const operations = childStrip('Áreas de operações');
-    expect(labels(operations)).toEqual(['Plataforma', 'Email', 'Chaves API']);
+    // "Chaves API" is no longer a button here: since t82b it is a pane of the API tab, reached
+    // from the API tab's own strip while keeping its `?sub=chaves-api` address.
+    expect(labels(operations)).toEqual(['Plataforma', 'API', 'MCP', 'Email']);
 
     // Plataforma is the default and carries no `sub` param, mirroring the `sec` rule.
     expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
@@ -5737,6 +6016,60 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
   });
 
+  it('widens only the tabular Assinaturas sub-tabs, from a deep link as well as a switch', async () => {
+    // Configurações renders ONE panel for every section, so `wide-page` has to ride on that
+    // panel (Arquivo's pattern) rather than on the page root. The three grids scrolled
+    // sideways inside `.table-wrap` at every viewport at the shell measure; their siblings
+    // are prose- or control-shaped and read worse when widened.
+    const panel = () => document.querySelector('.route-transition');
+
+    for (const [sub, wide] of [
+      ['tsl', true],
+      ['tsa', true],
+      ['fornecedores', true],
+      ['politica', false],
+      ['prestadores', false],
+      ['cmd', false],
+    ] as const) {
+      vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
+      renderWithProviders(<SettingsPage />, [`/configuracoes?sec=assinaturas&sub=${sub}`]);
+      await loaded();
+      expect(panel(), sub).toBeTruthy();
+      expect(panel()?.classList.contains('wide-page'), sub).toBe(wide);
+      cleanup();
+    }
+
+    // …and it follows a live tab switch, not only the first paint.
+    vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
+    await loaded();
+    expect(panel()?.classList.contains('wide-page')).toBe(true);
+    fireEvent.click(
+      childStrip('Áreas de assinaturas').getByRole('button', { name: 'Política de assinatura' }),
+    );
+    await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(false));
+    fireEvent.click(
+      childStrip('Áreas de assinaturas').getByRole('button', { name: 'Prestadores TSA' }),
+    );
+    await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(true));
+
+    // The shared rule, not a bespoke override: `.app` keeps the prose measure every other
+    // settings tab inherits, and its own padding, so the gutters survive.
+    const nodeFs = 'node:fs';
+    const { readFileSync } = (await import(nodeFs)) as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    const css = readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
+    const appRule = css.match(/\.app\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    expect(appRule).toContain('max-width: 1080px;');
+    expect(appRule).toContain('padding: clamp(1.25rem, 4vw, 3rem);');
+    const wideRule = css.match(/\.app:has\(\.wide-page\)\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    expect(wideRule).toContain('max-width: 92rem;');
+    // `.settings-section` must not re-impose a cap the opt-out would then fight.
+    const sectionRule = css.match(/\.settings-section\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    expect(sectionRule).toContain('max-width: none;');
+  });
+
   it('preserves every retired top-level address as a deep link into its new home', async () => {
     // /configuracoes?sec=email → Operações › Email
     vi.stubGlobal('fetch', settingsFetch().fn);
@@ -5749,12 +6082,18 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
     cleanup();
 
-    // /configuracoes?sec=chaves-api → Operações › Chaves API
+    // /configuracoes?sec=chaves-api → Operações › API › Chaves API. Both hops of the address
+    // still resolve: the API button in the operations strip, and the keys pane inside it.
     vi.stubGlobal('fetch', apiKeysFetch().fn);
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
     await loaded();
     expect(
       childStrip('Áreas de operações')
+        .getByRole('button', { name: 'API' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      childStrip('Áreas da API')
         .getByRole('button', { name: 'Chaves API' })
         .getAttribute('aria-pressed'),
     ).toBe('true');

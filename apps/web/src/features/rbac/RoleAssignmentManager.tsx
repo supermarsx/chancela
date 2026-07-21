@@ -16,6 +16,7 @@
  * note says so), after which the server's echoed list is authoritative.
  */
 import { useEffect, useState } from 'react';
+import { roleNameLabel } from '../../api/labels';
 import {
   useAssignRole,
   useRoles,
@@ -77,8 +78,11 @@ export function RoleAssignmentManager({ user }: { user: UserView }) {
   const roleList = roles.data ?? [];
   const effectiveRoleId = roleId || roleList[0]?.id || '';
 
+  // Seeded funções are named from the catalog (localized); an operator-authored name is shown
+  // verbatim. An id absent from the catalog still resolves when it is a retired seeded id, so an
+  // assignment predating the t87 merge is readable rather than a bare UUID.
   function roleName(id: string): string {
-    return roleList.find((r) => r.id === id)?.name ?? id;
+    return roleNameLabel(id, roleList.find((r) => r.id === id)?.name);
   }
 
   function submitAssign() {
@@ -130,7 +134,7 @@ export function RoleAssignmentManager({ user }: { user: UserView }) {
               id="rbac-assign-role"
               value={effectiveRoleId}
               onChange={(e) => setRoleId(e.target.value)}
-              options={roleList.map((r) => ({ value: r.id, label: r.name }))}
+              options={roleList.map((r) => ({ value: r.id, label: roleNameLabel(r.id, r.name) }))}
             />
           </Field>
 

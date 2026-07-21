@@ -11,7 +11,8 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Badge, Card, ErrorNote, Loading, Tooltip, Icon } from '../../ui';
+import { Badge, Card, ErrorNote, SkeletonRegion, Tooltip, Icon } from '../../ui';
+import { NotificationsSkeleton } from './NotificationsSkeleton';
 import { NotificationList } from './NotificationList';
 import {
   buildDashboardNotifications,
@@ -136,7 +137,9 @@ export function NotificationBell() {
           }
         >
           {isLoading || triage.isLoading ? (
-            <Loading />
+            <SkeletonRegion>
+              <NotificationsSkeleton items={3} compact />
+            </SkeletonRegion>
           ) : error || triage.error ? (
             <ErrorNote error={error ?? triage.error} />
           ) : (

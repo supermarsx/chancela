@@ -256,8 +256,20 @@ export function EntityDetailPage() {
         />
       </PageHeader>
 
-      {/* One section at a time; the panel replays the route-enter fade on each switch. */}
-      <div className="route-transition stack" key={section}>
+      {/* One section at a time; the panel replays the route-enter fade on each switch.
+          `wide-page` rides on the PANEL, not the page, exactly as Arquivo does: only
+          `livros` is a table (six truncating columns — Finalidade goes 327px → 464px at
+          1920). The other five are prose-shaped — a definition list, a form, two registry
+          transcriptions and a chronology whose descrição column wraps — and the 68ch
+          measure this design system defines is what makes them readable. `section` is
+          derived from `?sec=` on every render, so a deep link gets the right width on
+          first paint. */}
+      <div
+        className={
+          section === 'livros' ? 'route-transition stack wide-page' : 'route-transition stack'
+        }
+        key={section}
+      >
         {section === 'livros' ? (
           <Card
             title={t('entities.booksCard')}

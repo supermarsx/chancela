@@ -138,13 +138,28 @@ function TemplateModal({
 }
 
 export interface TemplateEditorFormProps {
-  mode: 'create' | 'edit';
+  /**
+   * `fork` is a create in disguise: it POSTs a brand-new template whose body was copied from
+   * another one. It exists as its own mode because it is the ONLY way to change a built-in,
+   * and the operator has to be told what that copy can and cannot do before typing into it.
+   */
+  mode: 'create' | 'edit' | 'fork';
   /** The current spec to edit (fetched from the export endpoint); omitted for create. */
   initialSpec?: TemplateSpec | null;
+  /** For `fork`: the id the body was copied from, echoed so the copy's origin stays visible. */
+  sourceId?: string;
+  /** For `fork`: whether that source was a built-in, which is why editing it made a copy. */
+  sourceIsBuiltin?: boolean;
   onClose: () => void;
 }
 
-export function TemplateEditorForm({ mode, initialSpec, onClose }: TemplateEditorFormProps) {
+export function TemplateEditorForm({
+  mode,
+  initialSpec,
+  sourceId,
+  sourceIsBuiltin = false,
+  onClose,
+}: TemplateEditorFormProps) {
   const t = useT();
   const toast = useToast();
   const createTemplate = useCreateTemplate();
@@ -202,7 +217,7 @@ export function TemplateEditorForm({ mode, initialSpec, onClose }: TemplateEdito
     const rawJson = JSON.stringify(payload);
 
     try {
-      if (mode === 'create') {
+      if (mode !== 'edit') {
         const created = await createTemplate.mutateAsync(rawJson);
         toast.success(t('templates.toast.created', { id: created.id }));
       } else {
@@ -223,12 +238,34 @@ export function TemplateEditorForm({ mode, initialSpec, onClose }: TemplateEdito
   }
 
   const title =
-    mode === 'create' ? t('templates.editor.title.create') : t('templates.editor.title.edit');
+    mode === 'fork'
+      ? t('templates.editor.title.fork')
+      : mode === 'create'
+        ? t('templates.editor.title.create')
+        : t('templates.editor.title.edit');
 
   return (
     <TemplateModal title={title} onClose={onClose}>
       <form className="modal__body stack--tight" onSubmit={submit}>
         <p className="modal__intro field__hint">{t('templates.editor.intro')}</p>
+
+        {/* Said HERE, before a single field is filled in — not at the sealing step, where it
+            would arrive after the work rather than before it. */}
+        {mode === 'fork' ? (
+          <>
+            {sourceIsBuiltin ? (
+              <InlineWarning tone="info" title={t('templates.fork.builtin.title')}>
+                <p>{t('templates.fork.builtin.body')}</p>
+              </InlineWarning>
+            ) : null}
+            <InlineWarning tone="warn" title={t('templates.fork.limit.title')}>
+              <p>{t('templates.fork.limit.body')}</p>
+            </InlineWarning>
+            {sourceId ? (
+              <p className="field__hint">{t('templates.fork.source', { id: sourceId })}</p>
+            ) : null}
+          </>
+        ) : null}
 
         <Field
           label={t('templates.editor.field.id.label')}

@@ -25,3 +25,4 @@ export {
   LABELLED_DASHBOARD_REMINDER_RULES,
   normalizeAlertSource,
 } from './dashboardSourceLabels';
+export { SEEDED_ROLE_NAMES, type SeededRoleEntry } from './roleNameLabels';
