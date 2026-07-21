@@ -49,7 +49,7 @@ export function DegradedBanner() {
         <strong className="degraded-banner__title">{t('degraded.title')}</strong>
         <span className="degraded-banner__detail">{t('degraded.detail')}</span>
       </div>
-      <Link className="degraded-banner__link" to="/configuracoes?sec=integridade">
+      <Link className="degraded-banner__link" to="/settings/integrity">
         {t('degraded.link')}
       </Link>
     </div>

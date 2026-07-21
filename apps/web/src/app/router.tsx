@@ -3,8 +3,22 @@
  * `index.html`, so `createBrowserRouter` with clean URLs works in production and in
  * the Tauri WebView alike. Deep-linkable book/ata URLs are the point — a sealed
  * ata's `/atas/:id` is a stable reference.
+ *
+ * Sections and sub-tabs are PATH segments (t97): `/settings/operations/email`, not
+ * `/configuracoes?sec=operacoes&sub=email`. Every optional trailing `:sec?`/`:sub?` here is
+ * one surface's sub-navigation. Static siblings (`entities/:id/import`, `books/:id/new-act`) are
+ * ranked above the dynamic section segment by React Router, so they never collide.
+ *
+ * Slugs are ENGLISH (t97b) — the programming base is English and pt-PT is the user-facing
+ * language, and an address is an identifier rather than copy. Every Portuguese address still
+ * resolves, permanently: {@link LegacySlugRedirect} on the catch-all translates both the slugs
+ * and the pre-t97 query params in a single `replace`. See {@link ./legacySlugs}.
+ *
+ * `handle.navDepth` is how many leading segments identify the PAGE. The shell keys the routed
+ * content on that prefix, so a sub-tab switch no longer looks like a route change and does not
+ * remount the page (which would throw away Configurações' unsaved working copy).
  */
-import { Suspense, lazy, type ComponentType } from 'react';
+import { Suspense, lazy, type ComponentType, type ReactNode } from 'react';
 import {
   Navigate,
   createBrowserRouter,
@@ -13,6 +27,8 @@ import {
   useRouteError,
 } from 'react-router-dom';
 import { Layout } from './layout';
+import { LegacyNavRedirect } from './LegacyNavRedirect';
+import { LegacySlugRedirect } from './LegacySlugRedirect';
 import { RouteLoading } from './RouteLoading';
 import { CrashScreen } from './CrashScreen';
 import { useT } from '../i18n';
@@ -61,19 +77,26 @@ function lazyRoute<TModule, TName extends keyof TModule & string>(
   );
 }
 
-const usersSettingsPath = (hash = '') => `/configuracoes?sec=utilizadores${hash}`;
+const usersSettingsPath = (hash = '') => `/settings/users${hash}`;
+
+/** The section levels each surface used to address through the query string, per route. */
+const legacy = (levels: string[][], depth: number, element: ReactNode, base?: string) => (
+  <LegacyNavRedirect levels={levels} depth={depth} base={base}>
+    {element}
+  </LegacyNavRedirect>
+);
 
 /**
- * `/utilizadores/:id/editar` → `/utilizadores/:id` (t89). The edit screen IS the route now, so
- * this only normalises the older `/editar` spelling; the fragment is carried so a bookmarked
- * `#acesso` still lands on the access section.
+ * `/users/:id/edit` → `/users/:id` (t89). The edit screen IS the route now, so this only
+ * normalises the older `/edit` spelling; the fragment is carried so a bookmarked `#acesso` still
+ * lands on the access section.
  */
 export function LegacyUserEditRedirect() {
   const { id } = useParams();
   const { hash } = useLocation();
   return (
     <Navigate
-      to={id ? `/utilizadores/${encodeURIComponent(id)}${hash}` : usersSettingsPath(hash)}
+      to={id ? `/users/${encodeURIComponent(id)}${hash}` : usersSettingsPath(hash)}
       replace
     />
   );
@@ -117,14 +140,19 @@ export const router = createBrowserRouter([
   // `Layout` chrome (no tab bar / picker). The AuthGate inside Layout redirects a fresh
   // install here; the wizard redirects back once a user exists (plan t44 §3.2).
   {
-    path: '/bem-vindo',
+    path: '/welcome',
     element: lazyRoute(routeModuleLoaders.onboarding, 'OnboardingWizard'),
     errorElement: <RouteCrash />,
   },
+  // The two out-of-shell addresses get EXPLICIT legacy entries rather than falling through to
+  // the catch-all: both are reachable while signed out, and the catch-all sits inside the shell
+  // behind the auth gate, which would swallow the redirect for exactly those visitors.
+  { path: '/bem-vindo', element: <LegacySlugRedirect />, errorElement: <RouteCrash /> },
+  { path: '/assinatura-externa', element: <LegacySlugRedirect />, errorElement: <RouteCrash /> },
   // Token-authenticated external invite landing page. It stays outside Layout because token holders
   // may be signed out; the page removes the token from the URL after first read.
   {
-    path: '/assinatura-externa',
+    path: '/external-signature',
     element: lazyRoute(routeModuleLoaders.externalSigner, 'ExternalSignerInvitePage'),
     errorElement: <RouteCrash />,
   },
@@ -135,92 +163,121 @@ export const router = createBrowserRouter([
     // chunk-load failure inside the shell shows a recoverable fallback, not a blank page.
     errorElement: <RouteCrash />,
     children: [
+      // The dashboard's default panel keeps the bare `/` address; the other five are
+      // `/dashboard/:tab`. Both share a `navDepth` of 0, so switching panel is not a page change.
+      // `?painel=` is promoted here rather than on the catch-all, because `/` DOES match a route
+      // and so never falls through to it.
       {
         index: true,
+        handle: { navDepth: 0 },
+        element: legacy(
+          [['painel']],
+          0,
+          lazyRoute(routeModuleLoaders.dashboard, 'DashboardPage'),
+          '/dashboard',
+        ),
+      },
+      {
+        path: 'dashboard/:tab?',
+        handle: { navDepth: 0 },
         element: lazyRoute(routeModuleLoaders.dashboard, 'DashboardPage'),
       },
       {
-        path: 'entidades',
+        path: 'entities',
         element: lazyRoute(routeModuleLoaders.entities, 'EntitiesPage'),
       },
       // Static create/import segments are declared before `:id`; React Router ranks
-      // static routes above dynamic ones regardless, so `/entidades/nova` never resolves
+      // static routes above dynamic ones regardless, so `/entities/new` never resolves
       // to the detail page.
       {
-        path: 'entidades/nova',
+        path: 'entities/new',
         element: lazyRoute(routeModuleLoaders.newEntity, 'NewEntityPage'),
       },
       {
-        path: 'entidades/importar',
+        path: 'entities/import',
         element: lazyRoute(routeModuleLoaders.importEntity, 'ImportEntityPage'),
       },
       {
-        path: 'entidades/:id',
+        path: 'entities/:id/:sec?',
+        handle: { navDepth: 2 },
         element: lazyRoute(routeModuleLoaders.entityDetail, 'EntityDetailPage'),
       },
       {
-        path: 'entidades/:id/importar',
+        path: 'entities/:id/import',
         element: lazyRoute(routeModuleLoaders.entityRegistryImport, 'EntityRegistryImportPage'),
       },
       {
-        path: 'livros',
+        path: 'books',
         element: lazyRoute(routeModuleLoaders.books, 'BooksPage'),
       },
       {
-        path: 'livros/novo',
+        path: 'books/new',
         element: lazyRoute(routeModuleLoaders.newBook, 'NewBookPage'),
       },
       {
-        path: 'livros/:id',
+        path: 'books/:id/:sec?',
+        handle: { navDepth: 2 },
         element: lazyRoute(routeModuleLoaders.bookDetail, 'BookDetailPage'),
       },
       {
-        path: 'livros/:id/nova-ata',
+        path: 'books/:id/new-act',
         element: lazyRoute(routeModuleLoaders.newAta, 'NewAtaPage'),
       },
       {
-        path: 'livros/:id/encerrar',
+        path: 'books/:id/close',
         element: lazyRoute(routeModuleLoaders.closeBook, 'CloseBookPage'),
       },
       {
-        path: 'atas/:id',
+        path: 'acts/:id',
         element: lazyRoute(routeModuleLoaders.ataEditor, 'AtaEditorPage'),
       },
       {
-        path: 'minutas',
+        path: 'templates',
         element: lazyRoute(routeModuleLoaders.templates, 'TemplatesCatalogPage'),
       },
       // The id carries a slash (`csc-ata-ag/v1`) and is therefore URL-encoded by the links
-      // that lead here; React Router decodes the param back for `useParams`.
+      // that lead here; React Router decodes the param back for `useParams`. The trailing
+      // section segment is safe alongside it: `%2F` is not a segment boundary, so the encoded
+      // id stays one segment and `/templates/csc-ata-ag%2Fv1/source` splits where it should.
+      // `edit` is a SECTION of this route, not a sibling of it — `TemplateDetailPage` hands the
+      // `edit` section to its own full-width component. A static `templates/:id/edit` beside
+      // `:sec?` would shadow any future section spelled the same way; a closed set cannot.
       {
-        path: 'minutas/:id',
+        path: 'templates/:id/:sec?',
+        handle: { navDepth: 2 },
         element: lazyRoute(routeModuleLoaders.templateDetail, 'TemplateDetailPage'),
       },
-      { path: 'templates', element: <Navigate to="/minutas" replace /> },
       {
-        path: 'arquivo',
+        path: 'archive/:sec?',
+        handle: { navDepth: 1 },
         element: lazyRoute(routeModuleLoaders.ledger, 'LedgerPage'),
       },
       {
-        path: 'notificacoes',
+        path: 'notifications',
         element: lazyRoute(routeModuleLoaders.notifications, 'NotificationsPage'),
       },
       {
-        path: 'operacoes',
+        path: 'operations/:view?',
+        handle: { navDepth: 1 },
         element: lazyRoute(routeModuleLoaders.operations, 'OperationsPage'),
       },
+      // Two levels: the tool, then that tool's own sub-tab — the PDF validator spelled its
+      // second level `?sec=` and Legislação spelled it `?leg=`, and both are the same
+      // segment now (`/tools/pdf/asic`, `/tools/legislation/shelf`).
       {
-        path: 'ferramentas',
+        path: 'tools/:tool?/:sec?',
+        handle: { navDepth: 1 },
         element: lazyRoute(routeModuleLoaders.ferramentas, 'FerramentasPage'),
       },
       {
-        path: 'configuracoes',
+        path: 'settings/:sec?/:sub?',
+        handle: { navDepth: 1 },
         element: lazyRoute(routeModuleLoaders.settings, 'SettingsPage'),
       },
       // `/cae` now redirects into Ferramentas (deep links preserved).
       { path: 'cae', element: lazyRoute(routeModuleLoaders.cae, 'CaePage') },
       {
-        path: 'utilizadores',
+        path: 'users',
         element: <LegacyUsersRedirect />,
       },
       // Static `/novo` before `:id` (React Router ranks static above dynamic anyway —
@@ -229,20 +286,33 @@ export const router = createBrowserRouter([
       // `?user=novo` settings state now redirects HERE — the reverse of the t50 arrangement —
       // so there is exactly one place a user is created.
       {
-        path: 'utilizadores/novo',
+        path: 'users/new',
         element: lazyRoute(routeModuleLoaders.newUser, 'NewUserPage'),
       },
       // t89: editing is a real screen too, and the ONLY one — the inline panel that used to
       // render below the roster at `?sec=utilizadores&user=:id` is deleted, and that settings
       // state now redirects HERE so old bookmarks resolve instead of 404-ing.
-      { path: 'utilizadores/:id/editar', element: <LegacyUserEditRedirect /> },
+      { path: 'users/:id/edit', element: <LegacyUserEditRedirect /> },
+      // t103: the edit screen is sub-tabbed (general / dsr / roles / access), so the section
+      // is a path segment exactly as it is for `entities/:id/:sec?`. `navDepth: 2` keys the
+      // shell on `/users/:id`, so switching tab does not remount the screen and discard the
+      // identity form's working copy. The static `users/:id/edit` sibling above is ranked
+      // higher by React Router, so `edit` can never be read as a section.
       {
-        path: 'utilizadores/:id',
+        path: 'users/:id/:sec?',
+        handle: { navDepth: 2 },
         element: lazyRoute(routeModuleLoaders.editUser, 'EditUserPage'),
       },
+      // Last resort, and the whole legacy-slug layer: a Portuguese address matches no English
+      // route, arrives here, and is translated + `replace`d. Anything genuinely unknown renders
+      // the real Not Found page.
       {
         path: '*',
-        element: lazyRoute(routeModuleLoaders.notFound, 'NotFoundPage'),
+        element: (
+          <LegacySlugRedirect>
+            {lazyRoute(routeModuleLoaders.notFound, 'NotFoundPage')}
+          </LegacySlugRedirect>
+        ),
       },
     ],
   },

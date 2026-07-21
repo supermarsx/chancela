@@ -13,9 +13,9 @@
  *     back/forward cache, and a clean app should cost nothing.
  *  2. **In-app route changes** — React Router's `useBlocker` (a data router, so it is the
  *     stable API). Here we CAN show a real dialog: translated, focus-trapped, Escape to
- *     cancel — so this path gets the good experience. Only a pathname change is blocked;
- *     the app's own hash/query navigation (e.g. the ata editor's guidance anchors) is not
- *     leaving the page and must never prompt.
+ *     cancel — so this path gets the good experience. Only a change of PAGE is blocked; the
+ *     app's own in-page navigation — hash anchors, filter query params, and (since t97) the
+ *     sub-tab path segments — is not leaving the page and must never prompt.
  *  3. **Closing the desktop window** — a Tauri `close-requested` event, which is not an
  *     unload at all. The web layer CAN veto it, so the same translated dialog is shown
  *     and the window is destroyed only once the operator confirms. Registering the
@@ -30,6 +30,7 @@
 import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { UNSAFE_DataRouterContext, useBlocker, useLocation } from 'react-router-dom';
+import { pageKeyForLocation } from './navPath';
 import { isTauri } from '../desktop/tauri';
 import { useT } from '../i18n';
 import { Button } from '../ui';
@@ -151,16 +152,29 @@ export function UnsavedChangesGuard() {
 function RouteChangeBlocker({ suppressed }: { suppressed: boolean }) {
   const t = useT();
   const location = useLocation();
+  // The route table, so "same page" can be decided the way the shell decides it. Since t97 a
+  // sub-tab is a PATH segment, so comparing raw pathnames would prompt the operator to confirm
+  // discarding their work merely for moving between two tabs of the surface they are editing —
+  // Configurações, whose working copy spans every one of its sub-tabs, is exactly that case.
+  const routes = useContext(UNSAFE_DataRouterContext)?.router.routes ?? [];
   const blocker = useBlocker(
-    useCallback(({ currentLocation, nextLocation }) => {
-      // Staying on the same page (hash anchors, filter query params) is not leaving.
-      if (currentLocation.pathname === nextLocation.pathname) return false;
-      if (!hasUnsavedChanges()) return false;
-      // Only consume the one-shot token when it would actually have blocked, so a
-      // post-save `navigate()` spends it on the navigation it was meant for.
-      if (consumeNavigationBypass()) return false;
-      return true;
-    }, []),
+    useCallback(
+      ({ currentLocation, nextLocation }) => {
+        // Staying on the same page (sub-tabs, hash anchors, filter query params) is not leaving.
+        if (
+          pageKeyForLocation(routes, currentLocation.pathname) ===
+          pageKeyForLocation(routes, nextLocation.pathname)
+        ) {
+          return false;
+        }
+        if (!hasUnsavedChanges()) return false;
+        // Only consume the one-shot token when it would actually have blocked, so a
+        // post-save `navigate()` spends it on the navigation it was meant for.
+        if (consumeNavigationBypass()) return false;
+        return true;
+      },
+      [routes],
+    ),
   );
 
   // A token that was never spent must not leak into some later, unrelated navigation.

@@ -42,6 +42,9 @@ function Editor({ initiallyDirty = false }: { initiallyDirty?: boolean }) {
       </button>
       <Link to="/outra">sair</Link>
       <Link to="/editor#ancora">ancora</Link>
+      {/* Since t97 a sub-tab is a path segment, so this link changes the pathname without
+          leaving the surface being edited. */}
+      <Link to="/editor/dados">outra sub-seccao</Link>
     </div>
   );
 }
@@ -50,7 +53,8 @@ function renderApp(ui: ReactNode, initialEntry = '/editor') {
   const router = createMemoryRouter(
     [
       {
-        path: '/editor',
+        path: '/editor/:sec?',
+        handle: { navDepth: 1 },
         element: (
           <>
             <UnsavedChangesGuard />
@@ -172,6 +176,31 @@ describe('in-app navigation', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'ancora' }));
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('never prompts for a sub-tab switch, which changes the pathname but not the page', async () => {
+    // t97 moved sub-tabs into the path. A guard comparing raw pathnames would start asking an
+    // operator to confirm discarding their work for clicking a tab of the surface they are
+    // still editing — so it compares PAGE identity (`handle.navDepth`) instead.
+    renderApp(<Editor initiallyDirty />);
+
+    fireEvent.click(screen.getByRole('link', { name: 'outra sub-seccao' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // …and the navigation actually happened, rather than being silently swallowed.
+    expect(screen.getByRole('link', { name: 'sair' })).toBeTruthy();
+    expect(fireBeforeUnload()).toBe(true);
+  });
+
+  it('still prompts when a sub-tab switch is followed by leaving the page for real', async () => {
+    // The other direction: relaxing the comparison must not disarm the guard.
+    renderApp(<Editor initiallyDirty />);
+
+    fireEvent.click(screen.getByRole('link', { name: 'outra sub-seccao' }));
+    fireEvent.click(screen.getByRole('link', { name: 'sair' }));
+
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('Sair sem guardar?')).toBeTruthy();
   });
 });
 

@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { Layout } from './layout';
 import { EntitiesPage } from '../features/entities/EntitiesPage';
-import { renderWithProviders, fetchTable } from '../test/utils';
+import { renderWithDataRouter, renderWithProviders, fetchTable } from '../test/utils';
 import { DEFAULT_SETTINGS, type Dashboard } from '../api/types';
 import { UI_VERSION, displayVersion } from '../api/versionCheck';
 
@@ -64,6 +65,36 @@ function stubSignedInShellFetch() {
   );
 }
 
+/**
+ * A stand-in for a sub-tabbed page that HOLDS unsaved state — Configurações' working copy is
+ * exactly this shape. The draft lives in component state, so it survives precisely as long as
+ * the component is not remounted, which is what the route key decides.
+ */
+function SectionProbe() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [draft, setDraft] = useState('');
+
+  return (
+    <div>
+      <p>{`aqui: ${pathname}`}</p>
+      <label>
+        rascunho
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} />
+      </label>
+      <button type="button" onClick={() => navigate('/settings/data')}>
+        Dados
+      </button>
+      <button type="button" onClick={() => navigate('/entities/ent-1')}>
+        Entidade 1
+      </button>
+      <button type="button" onClick={() => navigate('/entities/ent-2')}>
+        Entidade 2
+      </button>
+    </div>
+  );
+}
+
 function CrashingRoute(): never {
   throw new Error('rota rebentou');
 }
@@ -93,12 +124,8 @@ describe('Layout', () => {
     // an active session + a non-onboarding roster. (Order matters — the roster substring is
     // matched before the bare `/v1/session`.)
     stubSignedInShellFetch();
-    renderWithProviders(
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<div>painel</div>} />
-        </Route>
-      </Routes>,
+    renderWithDataRouter(
+      [{ path: '/', element: <Layout />, children: [{ index: true, element: <div>painel</div> }] }],
       ['/'],
     );
 
@@ -124,12 +151,8 @@ describe('Layout', () => {
     // The version is derived from the build global via displayVersion(), never hard-coded, so
     // the assertion computes the expected label the same way the footer does.
     stubSignedInShellFetch();
-    renderWithProviders(
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<div>painel</div>} />
-        </Route>
-      </Routes>,
+    renderWithDataRouter(
+      [{ path: '/', element: <Layout />, children: [{ index: true, element: <div>painel</div> }] }],
       ['/'],
     );
 
@@ -147,12 +170,8 @@ describe('Layout', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     stubSignedInShellFetch();
 
-    renderWithProviders(
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<CrashingRoute />} />
-        </Route>
-      </Routes>,
+    renderWithDataRouter(
+      [{ path: '/', element: <Layout />, children: [{ index: true, element: <CrashingRoute /> }] }],
       ['/'],
     );
 
@@ -173,20 +192,24 @@ describe('Layout', () => {
     // touching pixels: navigation swaps the keyed node (fresh mount ⇒ the enter replays),
     // and the collapse is CSS-governed off the same class.
     stubSignedInShellFetch();
-    const { container } = renderWithProviders(
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<div>painel</div>} />
-          <Route path="entidades" element={<div>entidades</div>} />
-        </Route>
-      </Routes>,
+    const { container } = renderWithDataRouter(
+      [
+        {
+          path: '/',
+          element: <Layout />,
+          children: [
+            { index: true, element: <div>painel</div> },
+            { path: 'entities', element: <div>entidades</div> },
+          ],
+        },
+      ],
       ['/'],
     );
 
     await screen.findByText('painel');
     const before = container.querySelector('.route-transition');
     expect(before).not.toBeNull();
-    // The wrapper is keyed on the pathname (exposed as data-route-key for this assertion).
+    // The wrapper is keyed on the route (exposed as data-route-key for this assertion).
     expect(before?.getAttribute('data-route-key')).toBe('/');
 
     fireEvent.click(screen.getByRole('link', { name: 'Entidades' }));
@@ -195,19 +218,93 @@ describe('Layout', () => {
     const after = container.querySelector('.route-transition');
     // Same class (the gating hook survives), new key ⇒ a fresh node that replays the enter.
     expect(after?.classList.contains('route-transition')).toBe(true);
-    expect(after?.getAttribute('data-route-key')).toBe('/entidades');
+    expect(after?.getAttribute('data-route-key')).toBe('/entities');
+    expect(after).not.toBe(before);
+  });
+
+  /** The shell around a sub-tabbed settings page and a record page with its own sub-tabs. */
+  function renderSectionShell(entry: string) {
+    return renderWithDataRouter(
+      [
+        {
+          path: '/',
+          element: <Layout />,
+          children: [
+            { index: true, element: <div>painel</div> },
+            {
+              path: 'settings/:sec?',
+              handle: { navDepth: 1 },
+              element: <SectionProbe />,
+            },
+            {
+              path: 'entities/:id/:sec?',
+              handle: { navDepth: 2 },
+              element: <SectionProbe />,
+            },
+          ],
+        },
+      ],
+      [entry],
+    );
+  }
+
+  it('keeps page state across a sub-tab switch inside the same page', async () => {
+    // t97 moved sub-tabs into the path, which would otherwise make every sub-tab switch look
+    // like a route change and remount the page — silently throwing away Configurações' unsaved
+    // working copy the moment an operator clicked a tab. `handle.navDepth` says how many
+    // segments name the PAGE, and the key stops there.
+    stubSignedInShellFetch();
+    const { container } = renderSectionShell('/settings');
+
+    await screen.findByText('aqui: /settings');
+    const before = container.querySelector('.route-transition');
+    expect(before?.getAttribute('data-route-key')).toBe('/settings');
+    fireEvent.change(screen.getByLabelText('rascunho'), { target: { value: 'por guardar' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dados' }));
+    await screen.findByText('aqui: /settings/data');
+
+    // The unsaved draft is still there — the page was never remounted.
+    expect((screen.getByLabelText('rascunho') as HTMLInputElement).value).toBe('por guardar');
+    const after = container.querySelector('.route-transition');
+    expect(after?.getAttribute('data-route-key')).toBe('/settings');
+    expect(after).toBe(before);
+  });
+
+  it("still remounts when the RECORD changes, so one entity never shows another's state", async () => {
+    // The other direction, and the one that fails silently: a key that never changes is as
+    // wrong as one that changes too often. Moving between two entities is a different page,
+    // so the state must NOT survive — otherwise entity 2 renders entity 1's draft.
+    stubSignedInShellFetch();
+    const { container } = renderSectionShell('/entities/ent-1');
+
+    await screen.findByText('aqui: /entities/ent-1');
+    const before = container.querySelector('.route-transition');
+    expect(before?.getAttribute('data-route-key')).toBe('/entities/ent-1');
+    fireEvent.change(screen.getByLabelText('rascunho'), { target: { value: 'da ent-1' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Entidade 2' }));
+    await screen.findByText('aqui: /entities/ent-2');
+
+    expect((screen.getByLabelText('rascunho') as HTMLInputElement).value).toBe('');
+    const after = container.querySelector('.route-transition');
+    expect(after?.getAttribute('data-route-key')).toBe('/entities/ent-2');
     expect(after).not.toBe(before);
   });
 
   it('focuses the main landmark after pathname navigation', async () => {
     stubSignedInShellFetch();
-    renderWithProviders(
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<div>painel</div>} />
-          <Route path="entidades" element={<div>entidades</div>} />
-        </Route>
-      </Routes>,
+    renderWithDataRouter(
+      [
+        {
+          path: '/',
+          element: <Layout />,
+          children: [
+            { index: true, element: <div>painel</div> },
+            { path: 'entities', element: <div>entidades</div> },
+          ],
+        },
+      ],
       ['/'],
     );
 
@@ -222,12 +319,14 @@ describe('Layout', () => {
 
   it('does not steal focus on same-path query and hash navigation', async () => {
     stubSignedInShellFetch();
-    renderWithProviders(
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<SamePathControls />} />
-        </Route>
-      </Routes>,
+    renderWithDataRouter(
+      [
+        {
+          path: '/',
+          element: <Layout />,
+          children: [{ index: true, element: <SamePathControls /> }],
+        },
+      ],
       ['/'],
     );
 
@@ -264,7 +363,7 @@ describe('EntitiesPage', () => {
       ]),
     );
 
-    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText('Encosto Estratégico, Lda.')).toBeTruthy();
     expect(screen.getByText('500000000')).toBeTruthy();
@@ -273,5 +372,113 @@ describe('EntitiesPage', () => {
     expect(screen.getByRole('link', { name: /nova entidade/i })).toBeTruthy();
     expect(screen.getByRole('link', { name: /importar do registo/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /criar entidade/i })).toBeNull();
+  });
+});
+
+// --- Top-bar utility glyphs (t103) ----------------------------------------------------
+describe('Layout — Ferramentas and Configurações as top-bar icons', () => {
+  function renderShell() {
+    stubSignedInShellFetch();
+    return renderWithDataRouter(
+      [{ path: '/', element: <Layout />, children: [{ index: true, element: <div>painel</div> }] }],
+      ['/'],
+    );
+  }
+
+  it('orders them tools → cog → divider → alerts', async () => {
+    renderShell();
+    await screen.findByText('painel');
+
+    const session = document.querySelector('.topbar__session') as HTMLElement;
+    expect(session).not.toBeNull();
+
+    // Read the rendered order rather than trusting the source order.
+    const order = [
+      ...session.querySelectorAll('.topbar__icon, .topbar__divider, .notification-bell'),
+    ].map((el) =>
+      el.classList.contains('topbar__divider')
+        ? 'divider'
+        : el.classList.contains('notification-bell')
+          ? 'alerts'
+          : el.getAttribute('aria-label'),
+    );
+    expect(order).toEqual(['Ferramentas', 'Configurações', 'divider', 'alerts']);
+  });
+
+  it('gives each glyph a real accessible name, not just a tooltip', async () => {
+    renderShell();
+    await screen.findByText('painel');
+
+    // A tooltip is a hover/focus affordance, not an accessible name. These must resolve by
+    // role+name, which is what a screen reader and `getByRole` both use.
+    for (const name of ['Ferramentas', 'Configurações']) {
+      const link = screen.getByRole('link', { name });
+      expect(link.classList.contains('topbar__icon')).toBe(true);
+      // The glyph itself stays decorative so it cannot contribute a second, competing name.
+      expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+
+  it('renders two VISUALLY DISTINCT glyphs', async () => {
+    // Verified in the rendered DOM, not by reading the source: a peer found two different
+    // notification actions rendering the identical check glyph, which no amount of reading the
+    // call sites would have caught — both looked correct, they just resolved to the same icon.
+    renderShell();
+    await screen.findByText('painel');
+
+    const geometry = (name: string) => {
+      const svg = screen.getByRole('link', { name }).querySelector('svg');
+      return [...(svg?.querySelectorAll('path, circle, rect, line') ?? [])]
+        .map((node) => node.outerHTML)
+        .join('');
+    };
+
+    const wrench = geometry('Ferramentas');
+    const cog = geometry('Configurações');
+
+    expect(wrench.length).toBeGreaterThan(0);
+    expect(cog.length).toBeGreaterThan(0);
+    expect(cog).not.toBe(wrench);
+  });
+
+  it('does not announce the divider as content', async () => {
+    renderShell();
+    await screen.findByText('painel');
+
+    const divider = document.querySelector('.topbar__divider') as HTMLElement;
+    expect(divider.getAttribute('aria-hidden')).toBe('true');
+    // No text content either — an aria-hidden element carrying text is still a copy hazard.
+    expect(divider.textContent).toBe('');
+  });
+
+  it('keeps them keyboard-reachable and in DOM order, and marks the current surface', async () => {
+    stubSignedInShellFetch();
+    renderWithDataRouter(
+      [
+        {
+          path: '/',
+          element: <Layout />,
+          children: [
+            { index: true, element: <div>painel</div> },
+            { path: 'settings/:sec?', element: <div>config</div> },
+          ],
+        },
+      ],
+      ['/settings/users'],
+    );
+    await screen.findByText('config');
+
+    // Anchors with href are natively focusable — the reorder moved them, it did not turn them
+    // into divs with click handlers, which is the usual way a reorder loses keyboard access.
+    for (const name of ['Ferramentas', 'Configurações']) {
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBeTruthy();
+    }
+    // The cog lights for a sub-tab deep inside Configurações, not only for the bare address.
+    expect(screen.getByRole('link', { name: 'Configurações' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(
+      screen.getByRole('link', { name: 'Ferramentas' }).getAttribute('aria-current'),
+    ).toBeNull();
   });
 });
