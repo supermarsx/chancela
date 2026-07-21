@@ -35,6 +35,7 @@ function userWithLanguage(language: UserView['language']): UserView {
     has_attestation_key: false,
     has_recovery_phrase: false,
     language,
+    role_assignments: [],
   };
 }
 

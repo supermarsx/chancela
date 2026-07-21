@@ -9,6 +9,7 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { opsConfigEnglish } from '../opsConfigFallback';
 import { ledgerEventLabelsFiFI } from '../ledgerEventLabels';
 import { ledgerScopeLabelsFiFI } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsFiFI } from '../dashboardSourceLabels';
@@ -17,6 +18,7 @@ import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const fiFI: Catalog = {
   ...operationsEnglish,
+  ...opsConfigEnglish,
   ...ledgerEventLabelsFiFI,
   ...ledgerScopeLabelsFiFI,
   ...dashboardSourceLabelsFiFI,
@@ -1609,15 +1611,54 @@ export const fiFI: Catalog = {
   'users.filters.access.noKey': 'Ei auditointiavainta',
   'users.filters.access.noPassword': 'Ei salasanaa',
   'users.filters.access.recovery': 'Palautuslause käytössä',
+  'users.filters.advanced': 'Lisäsuodattimet',
+  'users.filters.role.label': 'Rooli',
+  'users.filters.role.all': 'Mikä tahansa rooli',
+  'users.filters.role.none': 'Ei roolia',
+  'users.filters.scope.label': 'Laajuus',
+  'users.filters.scope.all': 'Mikä tahansa laajuus',
+  'users.filters.scope.global': 'Globaali valtuus',
+  'users.filters.scope.scoped': 'Rajattu tiettyihin resursseihin',
+  'users.filters.email.label': 'Sähköposti',
+  'users.filters.email.all': 'Sähköpostilla tai ilman',
+  'users.filters.email.with': 'Sähköposti asetettu',
+  'users.filters.email.without': 'Ei sähköpostia',
+  'users.filters.created.label': 'Luontipäivä',
+  'users.filters.created.all': 'Mikä tahansa päivä',
+  'users.filters.created.d7': 'Viimeiset 7 päivää',
+  'users.filters.created.d30': 'Viimeiset 30 päivää',
+  'users.filters.created.d90': 'Viimeiset 90 päivää',
+  'users.filters.retiredRole.title': 'Tämä rooli yhdistettiin',
+  'users.filters.retiredRole.body':
+    'Roolia ei enää ole: sen haltijat siirrettiin sen korvanneelle roolille. Valitse toinen rooli nähdäksesi käyttäjiä.',
   'users.filters.clear.aria': 'Tyhjennä käyttäjäsuodattimet',
   'users.filters.count': '{shown}/{total}',
   'users.filters.count.aria': 'Näytetään {shown}/{total} käyttäjästä',
   'users.filters.empty.title': 'Ei tuloksia',
   'users.filters.empty.body': 'Muuta hakua tai suodattimia nähdäksesi käyttäjiä uudelleen.',
   'users.edit.identityCard': 'Identiteetti',
+  'users.edit.subnav.aria': 'Käyttäjän osiot',
+  'users.edit.subnav.general': 'Yleiset',
+  'users.edit.subnav.dsr': 'DSR-pyynnöt',
+  'users.edit.subnav.roles': 'Roolit',
+  'users.edit.subnav.access': 'Käyttöoikeus ja auditointi',
+  'users.edit.subnav.security': 'Suojaus',
+  'users.security.title': 'Tilin suojaus',
+  'users.security.intro.self': 'Hallitse oman tilisi suojausta täällä. Samat tunnukset näkyvät kohdassa Käyttöoikeus ja auditointi, jossa järjestelmänvalvoja tarkastaa ja nollaa ne — täällä näet ne tilin haltijana.',
+  'users.security.intro.other': 'Tämän tilin suojaustila. Vain haltija voi hallita tunnuksiaan; nollaa ne järjestelmänvalvojana kohdassa Käyttöoikeus ja auditointi.',
+  'users.security.password.hint': 'Kirjautumissalasana.',
+  'users.security.recovery.hint': 'Palautuslause, vaihtoehto salasanalle, jos se unohtuu.',
+  'users.security.key.hint': 'Auditoinnin vahvistusavain. Sen kierrättäminen luo uuden avaimen tuleville vahvistuksille; aiemmat pysyvät todennettavina.',
+  'users.security.manage': 'Hallitse kohdassa Käyttöoikeus ja auditointi',
   'users.edit.usernameHint': 'Käyttäjänimi on auditointitunniste, eikä sitä voi muuttaa.',
   'users.edit.displayNameLabel': 'Näyttönimi',
   'users.edit.activationCard': 'Tila',
+  'users.edit.status.label': 'Tilin tila',
+  'users.edit.status.hint.active':
+    'Tämä tili voi kirjautua sisään. Tilejä ei koskaan poisteta — käytöstä poistaminen estää kirjautumisen ja säilyttää kaiken jo tehdyn kohdistuksen ennallaan.',
+  'users.edit.status.hint.inactive':
+    'Tämä tili ei voi kirjautua sisään. Se kohdistaa edelleen kaiken, mitä se teki ennen käytöstä poistamista.',
+  'users.edit.status.pending': 'Päivitetään…',
   'users.edit.notFound': 'Käyttäjää ei löytynyt.',
   'users.edit.save': 'Tallenna nimi',
   'users.create.cardTitle': 'Uusi käyttäjä',
@@ -1661,6 +1702,11 @@ export const fiFI: Catalog = {
   'settings.appearance.intensity.label': 'Tekstuurin voimakkuus — {value}',
   'settings.appearance.intensity.hint': '0–100. Skaalaa rakeen peittävyyttä reaaliaikaisesti.',
   'settings.appearance.reroll': 'Luo rae uudelleen',
+  'settings.appearance.grain.title': 'Rae',
+  'settings.appearance.grain.hint':
+    'Piirtää nahkapinnan kuvion uudelleen. Edellyttää, että taustapinta on käytössä.',
+  'settings.appearance.grain.help':
+    'Rae arvotaan jokaisella istunnolla eikä sitä tallenneta: sivun lataamisen jälkeen se on jo toinen. Uudelleenarvonta piirtää uuden kuvion samalla voimakkuudella. Vain ulkoasua koskeva asetus, joka ei vaikuta asiakirjoihin.',
   'settings.appearance.colors.title': 'Mukautetut värit',
   'settings.appearance.colors.hint':
     'Valitse omat värisi; jätä näyte koskematta säilyttääksesi teeman oletusvärin.',
@@ -1706,6 +1752,7 @@ export const fiFI: Catalog = {
   'settings.management.ai.label': 'Ota AI/MCP käyttöön',
   'settings.management.ai.hint':
     'Ohjaa tämän instanssin pääsyä tekoälyominaisuuksiin ja MCP-palvelimeen. Oletuksena pois käytöstä.',
+  'settings.management.ai.moved': 'Otetaan käyttöön kohdassa Toiminnot › Tekoäly ja MCP.',
   'settings.management.usersLink': 'Käyttäjät',
   'settings.management.toolsLink': 'Työkalut',
   'settings.platform.cardTitle': 'Toiminnot',
@@ -1815,7 +1862,6 @@ export const fiFI: Catalog = {
   'settings.platform.logs.column.message': 'Viesti',
   'settings.platform.logs.context.show': 'Konteksti',
   'settings.platform.logs.context.empty': 'Ei kontekstia',
-  'settings.platform.subnav.aria': 'Toimintojen osiot',
   'settings.platform.tab.services': 'Palvelut',
   'settings.platform.tab.services.desc':
     'API-palvelimen halutun tilan hallinta rehellisin taustajärjestelmän tuloksin ja toimintojen auditointi.',
@@ -1852,10 +1898,11 @@ export const fiFI: Catalog = {
     'Istunnon eliniän ehdoton yläraja sekunteina. Nolla tai negatiivinen poistaa rajan.',
   'settings.api.related.title': 'Liittyvät asetukset',
   'settings.api.related.egress':
-    'Se on liittimien lähtevä lista, ei rajapinnan saapuva pinta: se rajaa, minne liitin saa lähettää tavuja. Se pysyy Alusta-välilehdellä.',
+    'Se on liittimien lähtevä lista, ei rajapinnan saapuva pinta: se rajaa, minne liitin saa lähettää tavuja. Se on kohdassa Toiminnot › Palvelut.',
   'settings.api.related.logTail':
-    'Lokihäntä kattaa sovelluksen, rajapinnan ja MCP:n, joten se pysyy kohdassa Alusta › Lokit.',
+    'Lokihäntä kattaa sovelluksen, rajapinnan ja MCP:n, joten se on kohdassa Toiminnot › Lokit.',
   'settings.mcp.cardTitle': 'MCP-palvelin',
+  'settings.mcp.gate.title': 'Tekoälyn ja MCP:n käyttöönotto',
   'settings.mcp.intro':
     'Kaikki MCP:n oma asetuskokonaisuus yhdessä paikassa: stdio-prosessin haluttu tila, lokitasot ja käynnistyksessä luettavat ympäristömuuttujat.',
   'settings.platform.services.hub':
@@ -2511,10 +2558,10 @@ export const fiFI: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC ei validoitu',
   'entities.print.nipcUnvalidated': '(ei validoitu)',
   'settings.subnav.aria': 'Asetusosiot',
-  'settings.subnav.platform': 'Alusta',
-  'settings.subnav.mcp': 'MCP',
+  'settings.subnav.mcp': 'Tekoäly ja MCP',
   'settings.subnav.operations.aria': 'Käyttöalueet',
   'settings.subnav.signing.aria': 'Allekirjoitusalueet',
+  'settings.subnav.users.aria': 'Käyttäjäalueet',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Vaihe {current}/{total}',
@@ -3418,6 +3465,28 @@ export const fiFI: Catalog = {
   'data.status.openFolder': 'Avaa kansio',
   'data.status.openUnavailable':
     'Paikallisten polkujen avaaminen ei ole mahdollista selaimessa. Kopioi polku ja avaa se käyttöjärjestelmässä.',
+  'data.status.col.fact': 'Tieto',
+  'data.status.col.value': 'Arvo',
+  'data.status.col.check': 'Tarkistus',
+  'data.status.col.state': 'Tila',
+  'data.status.col.result': 'Tulos',
+  'data.status.col.item': 'Tietojoukko',
+  'data.status.col.size': 'Koko',
+  'data.status.col.detail': 'Yksityiskohta',
+  'data.status.col.table': 'Taulu',
+  'data.status.col.rows': 'Rivit',
+  'data.status.col.average': 'Keskiarvo riviä kohden',
+  'data.status.col.method': 'Menetelmä',
+  'data.status.col.cleanup': 'Siivous',
+  'data.status.col.usage': 'Käyttö',
+  'data.status.col.action': 'Toiminto',
+  'data.status.col.when': 'Vaihdon päivämäärä',
+  'data.status.col.boundary': 'Ilmoitettu raja',
+  'data.status.col.step': 'Vaihe',
+  'data.status.folder.path': 'Kansion polku',
+  'data.status.folder.configured': 'Kansio määritetty',
+  'data.status.folder.exists': 'Löytyy levyltä',
+  'data.status.folder.isDirectory': 'On kansio',
   'data.status.permissions.title': 'Oikeudet',
   'data.status.permission.read_dir': 'Lue kansio',
   'data.status.permission.create_file': 'Luo tiedosto',
@@ -4261,6 +4330,46 @@ export const fiFI: Catalog = {
   'trust.detail.history': 'Historia',
   'trust.detail.historyEntries': 'Historiamerkinnät',
   'trust.detail.noStatusHistory': 'Ei julkaistua tilahistoriaa.',
+  // --- Luottamusluettelo taulukkoina (t101) ----------------------------------------
+  // Yhteinen otsikko yhtä kohdetta koskeville tietotaulukoille (kenttä/arvo-parit),
+  // sekä kolme toistuvia rivejä sisältävää taulukkoa, joissa on sarakekohtainen ohje.
+  'trust.table.field': 'Kenttä',
+  'trust.table.value': 'Arvo',
+  'trust.table.facts.caption': 'Tämän kohteen tiedot',
+  'trust.detail.historyCount': 'Historiamerkinnät: {count}',
+  'trust.table.history.caption': 'Palvelun tilahistoria',
+  'trust.table.history.status': 'Tila',
+  'trust.table.history.status.help':
+    'Tila, joka palvelulla oli kyseisellä jaksolla luottamuslistan mukaan: myönnetty tarkoittaa, että hyväksytty asema oli voimassa, peruttu sitä, että se oli kumottu. Tämä ratkaisee, nojasiko kyseisenä päivänä tehty allekirjoitus hyväksyttyyn palveluun.',
+  'trust.table.history.name': 'Nimi tuolloin',
+  'trust.table.history.name.help':
+    'Nimi, jolla palvelu julkaistiin kyseisellä jaksolla. Palveluntarjoajat nimeävät palveluja uudelleen, joten se voi poiketa tämän näkymän yläreunassa olevasta nykyisestä nimestä — ja juuri tämä nimi on niissä asiakirjoissa, jotka allekirjoitettiin silloin.',
+  'trust.table.history.type': 'Palvelun tyyppi',
+  'trust.table.history.type.help':
+    'Kyseisellä jaksolla voimassa olleen palvelutyypin URI-tunniste, esimerkiksi CA/QC hyväksytylle varmentajalle tai TSA/QTST hyväksytylle aikaleimalle. Tyypin muutos on muutos siihen, mihin palvelu oli valtuutettu.',
+  'trust.table.history.since': 'Alkaen',
+  'trust.table.history.since.help':
+    'Hetki, josta alkaen kyseinen tila tuli voimaan, sellaisena kuin se on listassa julkaistu. Jos listan päivämäärää ei voi tulkita, näytetään raakamuotoinen arvo tyhjän sijaan.',
+  'trust.table.identity.caption': 'Palvelun digitaaliset identiteetit',
+  'trust.table.identity.kind': 'Tyyppi',
+  'trust.table.identity.kind.help':
+    'Millaisen identiteetin tämä rivi sisältää: koko X.509-varmenteen, kohteen erottuvan nimen vai kohteen avaintunnisteen. Tämä kertoo, miten arvoa verrataan käsillä olevaan varmenteeseen.',
+  'trust.table.identity.value': 'Arvo',
+  'trust.table.identity.value.help':
+    'Identiteetti sellaisena kuin se on luottamuslistassa julkaistu. Tiivisteen muotoiset arvot näytetään lyhennettyinä, ja koko arvo on viereisessä ilmaisimessa; mitään ei katkaista lopullisesti, ja teksti on edelleen kokonaisuudessaan valittavissa ja kopioitavissa.',
+  'trust.table.identity.digest': 'SHA-256',
+  'trust.table.identity.digest.help':
+    'Identiteetin SHA-256-tiiviste, kun lista julkaisee sen erikseen. Kenttä jää tyhjäksi, kun arvo itsessään on jo tuo tiiviste, jottei syntyisi vaikutelmaa kahdesta eri sormenjäljestä.',
+  'trust.table.service.caption': 'Tämän palveluntarjoajan palvelut',
+  'trust.table.service.name': 'Palvelu',
+  'trust.table.service.name.help':
+    'Palvelun julkaistu nimi. Valitsemalla sen avaat koko näkymän: digitaaliset identiteetit, palvelupisteet ja tilahistorian.',
+  'trust.table.service.type': 'Tyyppi',
+  'trust.table.service.type.help':
+    'URI-tunniste, joka kertoo mikä palvelu on — CA/QC myöntää hyväksyttyjä varmenteita, TSA/QTST antaa hyväksyttyjä aikaleimoja. Se määrää, mihin tarkoituksiin palveluun voidaan vedota.',
+  'trust.table.service.attributes': 'Tila ja attribuutit',
+  'trust.table.service.attributes.help':
+    'Nykyinen tila sekä ne attribuutit, jotka lista palvelulle antaa: onko se hyväksytty varmentaja, onko se hyväksytty tai luotettu sähköisiä allekirjoituksia varten, onko sillä tilahistoriaa ja ilmoittaako se palvelupisteitä.',
   'trust.detail.identities': 'Identiteetit',
   'trust.provider.analysis': 'Analyysi',
   'trust.provider.analysis.value':
@@ -5004,6 +5113,39 @@ export const fiFI: Catalog = {
   'settings.privacy.guidance.column.checklist': 'Kentät/tarkistuslista',
   'settings.privacy.guidance.required': 'pakollinen: {value}',
   'settings.privacy.guidance.noClaims': 'Ilman väitettä -liput',
+  'settings.privacy.guidance.column.claim': 'Lippu',
+  'settings.privacy.guidance.column.claimState': 'Tila',
+  'settings.privacy.guidance.notClaimed': 'Ei väitetty',
+  'settings.privacy.filters.aria': 'Suodattimet: {name}',
+  'settings.privacy.filters.clear': 'Tyhjennä suodattimet',
+  'settings.privacy.filters.advanced': 'Lisää suodattimia',
+  'settings.privacy.filters.count': '{shown} / {total}',
+  'settings.privacy.filters.countAria': '{shown} / {total} näkyvää tietuetta',
+  'settings.privacy.filter.review': 'Tarkastuksen tila',
+  'settings.privacy.filter.review.all': 'Kaikki tarkastustilat',
+  'settings.privacy.filter.subprocessors': 'Alikäsittelijät',
+  'settings.privacy.filter.subprocessors.all': 'Alikäsittelijöiden kanssa tai ilman',
+  'settings.privacy.filter.subprocessors.with': 'Alikäsittelijöiden kanssa',
+  'settings.privacy.filter.subprocessors.without': 'Ilman alikäsittelijöitä',
+  'settings.privacy.filter.evidence': 'Näyttökuitit',
+  'settings.privacy.filter.evidence.all': 'Kuittien kanssa tai ilman',
+  'settings.privacy.filter.evidence.with': 'Kirjattujen kuittien kanssa',
+  'settings.privacy.filter.evidence.without': 'Ilman kirjattuja kuitteja',
+  'settings.privacy.filter.destination': 'Kohde',
+  'settings.privacy.filter.destination.all': 'Kaikki kohteet',
+  'settings.privacy.filter.disposal': 'Hävitystoimenpide',
+  'settings.privacy.filter.disposal.all': 'Kaikki toimenpiteet',
+  'settings.privacy.filter.active': 'Aktiivinen käytäntö',
+  'settings.privacy.filter.active.all': 'Aktiiviset ja ei-aktiiviset',
+  'settings.privacy.filter.decision': 'Tarkastuspäätös',
+  'settings.privacy.filter.decision.all': 'Kaikki päätökset',
+  'settings.privacy.filter.legalHold': 'Oikeudellinen säilytys',
+  'settings.privacy.filter.legalHold.all': 'Oikeudellisen säilytyksen kanssa tai ilman',
+  'settings.privacy.filter.legalHold.with': 'Oikeudellinen säilytyseste',
+  'settings.privacy.filter.legalHold.without': 'Ei oikeudellista säilytysestettä',
+  'settings.privacy.execution.decision.reviewRequired': 'Tarkastus vaaditaan',
+  'settings.privacy.execution.decision.blocked': 'Estetty',
+  'settings.privacy.execution.decision.executionRecorded': 'Suoritus kirjattu',
   'settings.privacy.guidance.operatorActions': 'Operaattorin toimet',
   'settings.privacy.help.processor':
     'Käsittelijä käsittelee henkilötietoja organisaation puolesta. Tämä rekisteri kirjaa kuka käsittelee, mihin, millä oikeusperusteella ja mitä alikäsittelijöitä käytetään.',
@@ -5670,6 +5812,43 @@ export const fiFI: Catalog = {
   'settings.signing.table.provider': 'Palveluntarjoaja',
   'settings.signing.table.mode': 'Toimintatapa',
   'settings.signing.table.notes': 'Huomautukset',
+  'common.columnHelp': 'Ohje sarakkeesta {column}',
+  'settings.signing.tslSources.help.name':
+    'Nimi, jolla tämä luottamuslista tunnistetaan tällä sivulla. Nimen alla näkyy sisäinen, pysyvä ja yksilöivä tunniste, jolla asetustiedosto viittaa lähteeseen; nimen muuttaminen ei muuta tunnistetta.',
+  'settings.signing.tslSources.help.status':
+    'Ottaa lähteen käyttöön tai poistaa sen käytöstä. Käytöstä poistettu lähde säilyy tallennettuna ja tarkistettuna, mutta taustapalvelu ohittaa sen päivittäessään ja selvittäessään listoja — näin lähteen käytön voi keskeyttää poistamatta sitä.',
+  'settings.signing.tslSources.help.url':
+    'Osoite, josta lista noudetaan — kansallinen lista (TSL) tai eurooppalainen listojen lista (LOTL). Vain http ja https hyväksytään, ja palvelin hylkää loopback-osoitteet sekä yksityiset ja varatut osoitteet. Anna URL-osoite tai paikallinen polku: vähintään toinen vaaditaan.',
+  'settings.signing.tslSources.help.path':
+    'Polku listatiedostoon, joka on jo palvelimen koneella, internetyhteydettömiä asennuksia varten. Se on vaihtoehto URL-osoitteelle, ei sen täydennys.',
+  'settings.signing.tslSources.help.country':
+    'Listan aluemerkintä: PT kansalliselle listalle, EU eurooppalaiselle listojen listalle. Sitä käytetään lähteiden luettelointiin ja erotteluun; se ei sellaisenaan rajoita sitä, mitkä varmenteet hyväksytään.',
+  'settings.signing.tslSources.help.scheme':
+    'Sen mallin tunniste, jota lista noudattaa — eidas, lotl tai ylläpitäjän valitsema arvo. Alueen tavoin se on lähteen luettelointiin tarkoitettua metatietoa.',
+  'settings.signing.tslSources.help.actions':
+    'Poistaa lähteen taulukosta. Tämä sivu tallentaa automaattisesti, joten poisto jää heti voimaan; jos haluat keskeyttää lähteen käytön mutta säilyttää määritykset, poista se käytöstä Tila-sarakkeessa.',
+  'settings.signing.tsaProviders.help.name':
+    'Nimi, jolla tämä aikaleimaviranomainen tunnistetaan tällä sivulla. Nimen alla näkyy sisäinen, pysyvä ja yksilöivä tunniste, jolla asetustiedosto viittaa palveluntarjoajaan.',
+  'settings.signing.tsaProviders.help.status':
+    'Ottaa palveluntarjoajan käyttöön tai poistaa sen käytöstä ja näyttää, mikä niistä on oletus. Käytöstä poistettu palveluntarjoaja säilyy tallennettuna mutta jää valitsematta; käytössä olevista täsmälleen yksi on aina oletus, ja sitä käytetään aikaleimaamiseen. Toisen asettaminen oletukseksi siirtää tämän aseman sille.',
+  'settings.signing.tsaProviders.help.url':
+    'Sen RFC 3161 -palvelun osoite, johon aikaleimapyynnöt lähetetään. Vain http ja https hyväksytään, ja palvelin hylkää loopback-osoitteet sekä yksityiset ja varatut osoitteet.',
+  'settings.signing.tsaProviders.help.path':
+    'Paikallinen polku offline- tai testipalveluntarjoajaan HTTP-osoitteen vaihtoehtona. Se palvelee asennuksia, joilla ei ole internetyhteyttä.',
+  'settings.signing.tsaProviders.help.policy':
+    'Tältä palveluntarjoajalta vaaditun aikaleimakäytännön OID, esimerkiksi 1.2.3.4. Tyhjäksi jättäminen tarkoittaa, että mikä tahansa käytäntö hyväksytään — TSA-luettelossa tämä näkyy muodossa ”Any”.',
+  'settings.signing.tsaProviders.help.limits':
+    'Pyynnön parametrit, jotka palvelin määrittää eikä niitä voi muokata tässä: palveluntarjoajalle lähetettävä tiivistealgoritmi, vastauksen aikakatkaisu sekunteina ja vastaukselle hyväksyttävä enimmäiskoko.',
+  'settings.signing.tsaProviders.help.actions':
+    'Poistaa palveluntarjoajan taulukosta. Tämä sivu tallentaa automaattisesti. Jos haluat keskeyttää palveluntarjoajan käytön mutta säilyttää määritykset, poista se käytöstä Tila-sarakkeessa; jos poistat oletuksen, aseta jokin toinen oletukseksi.',
+  'settings.signing.providers.help.provider':
+    'Allekirjoitustapa, jonka palvelin tunnistaa tässä asennuksessa. Taulukko on vain luettava: se kuvaa, mitä palvelimella on käytettävissä, ei tässä tehtyä valintaa.',
+  'settings.signing.providers.help.mode':
+    'Tavan tekninen perhe, joka määrää, missä yksityinen avain sijaitsee ja mitä on määritettävä: CMD/SCMD allekirjoittaa etänä AMA:ssa, Kansalaiskortti vaatii lukijan ja paikallisen prosessin, CSC/QTSP allekirjoittaa etäpalveluna hyväksytyllä palveluntarjoajalla, paikallinen PKCS#12 käyttää tiedostossa olevaa varmennetta.',
+  'settings.signing.providers.help.status':
+    'Kertoo, onko tapa valmis käytettäväksi. ”Määritetty” tarkoittaa, että vaadittu ei-salainen määritys on olemassa; ”Estetty tuotannossa”, että jotain testikäytön ulkopuolella vaadittua puuttuu; ”Vain paikallinen” merkitsee tavat, jotka toimivat vain koneella itsellään ajettavan prosessin kanssa; ”Ei määritetty”, ettei mitään ole vielä annettu.',
+  'settings.signing.providers.help.notes':
+    'Palvelimelta tuleva käyttöhuomautus siitä, mitä puuttuu tai mikä rajoittaa tätä tapaa — puuttuva AMA:n ApplicationId, kortinlukijan tarve. Teksti tulee palvelimelta, eikä sitä voi määrittää tässä.',
   'settings.providerCredentials.protection.unavailable.title': 'Tunnuksia ei voi tallentaa',
   'settings.providerCredentials.protection.unavailable.body':
     'Tämä palvelin ei pysty salaamaan eikä tallentamaan palveluntarjoajien salaisuuksia. Mitään ei tallenneta ennen kuin asia on korjattu — tunnuksia ei säilytetä heikommalla suojauksella, niitä ei säilytetä lainkaan.',

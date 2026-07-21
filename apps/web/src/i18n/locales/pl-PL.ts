@@ -9,6 +9,7 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { opsConfigEnglish } from '../opsConfigFallback';
 import { ledgerEventLabelsPlPL } from '../ledgerEventLabels';
 import { ledgerScopeLabelsPlPL } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsPlPL } from '../dashboardSourceLabels';
@@ -17,6 +18,7 @@ import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const plPL: Catalog = {
   ...operationsEnglish,
+  ...opsConfigEnglish,
   ...ledgerEventLabelsPlPL,
   ...ledgerScopeLabelsPlPL,
   ...dashboardSourceLabelsPlPL,
@@ -1611,16 +1613,55 @@ export const plPL: Catalog = {
   'users.filters.access.noKey': 'Bez klucza audytu',
   'users.filters.access.noPassword': 'Bez hasła',
   'users.filters.access.recovery': 'Z frazą odzyskiwania',
+  'users.filters.advanced': 'Filtry zaawansowane',
+  'users.filters.role.label': 'Rola',
+  'users.filters.role.all': 'Dowolna rola',
+  'users.filters.role.none': 'Brak roli',
+  'users.filters.scope.label': 'Zakres',
+  'users.filters.scope.all': 'Dowolny zakres',
+  'users.filters.scope.global': 'Uprawnienia globalne',
+  'users.filters.scope.scoped': 'Ograniczone do wybranych zasobów',
+  'users.filters.email.label': 'E-mail',
+  'users.filters.email.all': 'Z adresem e-mail lub bez',
+  'users.filters.email.with': 'Z adresem e-mail',
+  'users.filters.email.without': 'Bez adresu e-mail',
+  'users.filters.created.label': 'Data utworzenia',
+  'users.filters.created.all': 'Dowolna data',
+  'users.filters.created.d7': 'Ostatnie 7 dni',
+  'users.filters.created.d30': 'Ostatnie 30 dni',
+  'users.filters.created.d90': 'Ostatnie 90 dni',
+  'users.filters.retiredRole.title': 'Ta rola została scalona',
+  'users.filters.retiredRole.body':
+    'Rola już nie istnieje: jej posiadaczy przypisano do roli, która ją zastąpiła. Wybierz inną rolę, aby zobaczyć użytkowników.',
   'users.filters.clear.aria': 'Wyczyść filtry użytkowników',
   'users.filters.count': '{shown} z {total}',
   'users.filters.count.aria': 'Wyświetlanie {shown} z {total} użytkowników',
   'users.filters.empty.title': 'Brak wyników',
   'users.filters.empty.body': 'Zmień wyszukiwanie lub filtry, aby ponownie zobaczyć użytkowników.',
   'users.edit.identityCard': 'Tożsamość',
+  'users.edit.subnav.aria': 'Sekcje użytkownika',
+  'users.edit.subnav.general': 'Ogólne',
+  'users.edit.subnav.dsr': 'Wnioski DSR',
+  'users.edit.subnav.roles': 'Role',
+  'users.edit.subnav.access': 'Dostęp i audyt',
+  'users.edit.subnav.security': 'Bezpieczeństwo',
+  'users.security.title': 'Bezpieczeństwo konta',
+  'users.security.intro.self': 'Zarządzaj tutaj bezpieczeństwem własnego konta. Te same poświadczenia pojawiają się w Dostęp i audyt, gdzie administrator je sprawdza i resetuje — tutaj widzisz je jako właściciel konta.',
+  'users.security.intro.other': 'Stan bezpieczeństwa tego konta. Tylko właściciel może zarządzać swoimi poświadczeniami; aby zresetować je jako administrator, użyj Dostęp i audyt.',
+  'users.security.password.hint': 'Hasło logowania.',
+  'users.security.recovery.hint': 'Fraza odzyskiwania, alternatywa dla hasła w razie jego zapomnienia.',
+  'users.security.key.hint': 'Klucz atestacji audytu. Jego rotacja tworzy nowy klucz dla przyszłych atestacji; poprzednie pozostają weryfikowalne.',
+  'users.security.manage': 'Zarządzaj w Dostęp i audyt',
   'users.edit.usernameHint':
     'Nazwa użytkownika jest identyfikatorem audytu i nie można jej zmienić.',
   'users.edit.displayNameLabel': 'Nazwa wyświetlana',
   'users.edit.activationCard': 'Stan',
+  'users.edit.status.label': 'Stan konta',
+  'users.edit.status.hint.active':
+    'To konto może się logować. Konta nigdy nie są usuwane — dezaktywacja uniemożliwia logowanie i zachowuje przypisanie wszystkiego, co konto już zrobiło.',
+  'users.edit.status.hint.inactive':
+    'To konto nie może się logować. Nadal jest przypisane do wszystkiego, co zrobiło przed dezaktywacją.',
+  'users.edit.status.pending': 'Aktualizowanie…',
   'users.edit.notFound': 'Nie znaleziono użytkownika.',
   'users.edit.save': 'Zapisz nazwę',
   'users.create.cardTitle': 'Nowy użytkownik',
@@ -1664,6 +1705,11 @@ export const plPL: Catalog = {
   'settings.appearance.intensity.label': 'Intensywność tekstury — {value}',
   'settings.appearance.intensity.hint': 'Od 0 do 100. Skaluje krycie ziarna w czasie rzeczywistym.',
   'settings.appearance.reroll': 'Wygeneruj ziarno ponownie',
+  'settings.appearance.grain.title': 'Ziarno',
+  'settings.appearance.grain.hint':
+    'Rysuje wzór tekstury skóry od nowa. Wymaga włączonej tekstury tła.',
+  'settings.appearance.grain.help':
+    'Ziarno jest losowane w każdej sesji i nie jest zapisywane: po ponownym wczytaniu jest już inne. Ponowne wylosowanie rysuje nowy wzór o tej samej intensywności. Wyłącznie estetyczne, bez wpływu na dokumenty.',
   'settings.appearance.colors.title': 'Kolory niestandardowe',
   'settings.appearance.colors.hint':
     'Wybierz własne kolory; pozostaw próbkę bez zmian, aby zachować domyślny kolor motywu.',
@@ -1709,6 +1755,7 @@ export const plPL: Catalog = {
   'settings.management.ai.label': 'Włącz AI/MCP',
   'settings.management.ai.hint':
     'Kontroluje dostęp tego najemcy do funkcji AI oraz serwera MCP. Domyślnie pozostaje wyłączony.',
+  'settings.management.ai.moved': 'Włącza się w Operacje › AI i MCP.',
   'settings.management.usersLink': 'Użytkownicy',
   'settings.management.toolsLink': 'Narzędzia',
   'settings.platform.cardTitle': 'Operacje',
@@ -1818,7 +1865,6 @@ export const plPL: Catalog = {
   'settings.platform.logs.column.message': 'Komunikat',
   'settings.platform.logs.context.show': 'Kontekst',
   'settings.platform.logs.context.empty': 'Brak kontekstu',
-  'settings.platform.subnav.aria': 'Sekcje operacji',
   'settings.platform.tab.services': 'Usługi',
   'settings.platform.tab.services.desc':
     'Sterowanie stanem docelowym serwera API, z uczciwymi wynikami backendu i dziennikiem audytu operacji.',
@@ -1854,10 +1900,11 @@ export const plPL: Catalog = {
     'Bezwzględny limit czasu życia sesji, w sekundach. Zero lub wartość ujemna wyłącza limit.',
   'settings.api.related.title': 'Powiązane ustawienia',
   'settings.api.related.egress':
-    'To lista wyjściowa konektorów, a nie przychodząca powierzchnia API: ogranicza, dokąd konektor może wysyłać bajty. Pozostaje w sekcji Platforma.',
+    'To lista wyjściowa konektorów, a nie przychodząca powierzchnia API: ogranicza, dokąd konektor może wysyłać bajty. Znajduje się w Operacje › Usługi.',
   'settings.api.related.logTail':
-    'Ogon dzienników obejmuje aplikację, API i MCP, więc pozostaje w Platforma › Dzienniki.',
+    'Ogon dzienników obejmuje aplikację, API i MCP, więc znajduje się w Operacje › Dzienniki.',
   'settings.mcp.cardTitle': 'Serwer MCP',
+  'settings.mcp.gate.title': 'Włączenie AI i MCP',
   'settings.mcp.intro':
     'Cała konfiguracja właściwa dla MCP w jednym miejscu: stan docelowy procesu stdio, poziomy dzienników i zmienne środowiskowe odczytywane przy starcie.',
   'settings.platform.services.hub':
@@ -2514,10 +2561,10 @@ export const plPL: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC niezweryfikowany',
   'entities.print.nipcUnvalidated': '(niezweryfikowany)',
   'settings.subnav.aria': 'Sekcje konfiguracji',
-  'settings.subnav.platform': 'Platforma',
-  'settings.subnav.mcp': 'MCP',
+  'settings.subnav.mcp': 'AI i MCP',
   'settings.subnav.operations.aria': 'Obszary operacji',
   'settings.subnav.signing.aria': 'Obszary podpisu',
+  'settings.subnav.users.aria': 'Obszary użytkowników',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Krok {current} z {total}',
@@ -3413,6 +3460,28 @@ export const plPL: Catalog = {
   'data.status.openFolder': 'Otwórz folder',
   'data.status.openUnavailable':
     'Otwieranie ścieżek lokalnych nie jest dostępne w przeglądarce. Skopiuj ścieżkę i otwórz ją w systemie operacyjnym.',
+  'data.status.col.fact': 'Informacja',
+  'data.status.col.value': 'Wartość',
+  'data.status.col.check': 'Kontrola',
+  'data.status.col.state': 'Stan',
+  'data.status.col.result': 'Wynik',
+  'data.status.col.item': 'Zbiór danych',
+  'data.status.col.size': 'Rozmiar',
+  'data.status.col.detail': 'Szczegóły',
+  'data.status.col.table': 'Tabela',
+  'data.status.col.rows': 'Wiersze',
+  'data.status.col.average': 'Średnia na wiersz',
+  'data.status.col.method': 'Metoda',
+  'data.status.col.cleanup': 'Czyszczenie',
+  'data.status.col.usage': 'Zajętość',
+  'data.status.col.action': 'Działanie',
+  'data.status.col.when': 'Data zmiany klucza',
+  'data.status.col.boundary': 'Zadeklarowana granica',
+  'data.status.col.step': 'Krok',
+  'data.status.folder.path': 'Ścieżka folderu',
+  'data.status.folder.configured': 'Folder skonfigurowany',
+  'data.status.folder.exists': 'Istnieje na dysku',
+  'data.status.folder.isDirectory': 'To folder',
   'data.status.permissions.title': 'Uprawnienia',
   'data.status.permission.read_dir': 'Odczyt folderu',
   'data.status.permission.create_file': 'Utworzenie pliku',
@@ -4264,6 +4333,46 @@ export const plPL: Catalog = {
   'trust.detail.history': 'Historia',
   'trust.detail.historyEntries': 'Wpisy historyczne',
   'trust.detail.noStatusHistory': 'Brak opublikowanej historii stanu.',
+  // --- Katalog zaufania przedstawiony w tabelach (t101) -----------------------------
+  // Wspólny nagłówek tabel z danymi (pary pole/wartość dla jednej pozycji),
+  // a następnie trzy tabele z powtarzalnymi wierszami, z pomocą przy każdej kolumnie.
+  'trust.table.field': 'Pole',
+  'trust.table.value': 'Wartość',
+  'trust.table.facts.caption': 'Dane tej pozycji',
+  'trust.detail.historyCount': 'Wpisy historyczne: {count}',
+  'trust.table.history.caption': 'Historia stanu usługi',
+  'trust.table.history.status': 'Stan',
+  'trust.table.history.status.help':
+    'Stan, jaki usługa miała w tym okresie według listy zaufania: przyznana oznacza, że status kwalifikowany obowiązywał, wycofana — że został cofnięty. To właśnie rozstrzyga, czy podpis złożony w tej dacie opierał się na usłudze kwalifikowanej.',
+  'trust.table.history.name': 'Nazwa w tamtym czasie',
+  'trust.table.history.name.help':
+    'Nazwa, pod jaką usługa była publikowana w tym okresie. Dostawcy zmieniają nazwy usług, więc może się ona różnić od bieżącej nazwy u góry tego widoku — a to właśnie ona figuruje w dokumentach podpisanych w tamtym czasie.',
+  'trust.table.history.type': 'Typ usługi',
+  'trust.table.history.type.help':
+    'Identyfikator URI typu usługi obowiązującego w tym okresie, na przykład CA/QC dla kwalifikowanego urzędu certyfikacji lub TSA/QTST dla kwalifikowanego znacznika czasu. Zmiana typu to zmiana tego, do czego usługa była upoważniona.',
+  'trust.table.history.since': 'Od',
+  'trust.table.history.since.help':
+    'Moment, od którego ten stan zaczął obowiązywać, w postaci opublikowanej na liście. Gdy lista podaje datę, której nie da się zinterpretować, wyświetlana jest wartość surowa zamiast pustego pola.',
+  'trust.table.identity.caption': 'Tożsamości cyfrowe usługi',
+  'trust.table.identity.kind': 'Typ',
+  'trust.table.identity.kind.help':
+    'Jaką postać tożsamości zawiera ten wiersz: pełny certyfikat X.509, nazwę wyróżniającą podmiotu albo identyfikator klucza podmiotu. Wskazuje, jak porównać wartość z posiadanym certyfikatem.',
+  'trust.table.identity.value': 'Wartość',
+  'trust.table.identity.value.help':
+    'Tożsamość w postaci opublikowanej na liście zaufania. Wartości mające postać skrótu są wyświetlane w skróconej formie, a pełna wartość znajduje się we wskaźniku obok; nic nie jest ucinane bezpowrotnie, a tekst nadal można w całości zaznaczyć i skopiować.',
+  'trust.table.identity.digest': 'SHA-256',
+  'trust.table.identity.digest.help':
+    'Skrót SHA-256 tożsamości, gdy lista publikuje go osobno. Pole pozostaje puste, gdy sama wartość jest już tym skrótem, aby nie sugerować dwóch różnych odcisków palca.',
+  'trust.table.service.caption': 'Usługi tego dostawcy',
+  'trust.table.service.name': 'Usługa',
+  'trust.table.service.name.help':
+    'Opublikowana nazwa usługi. Wybierz ją, aby otworzyć pełny widok z tożsamościami cyfrowymi, punktami usługowymi i historią stanu.',
+  'trust.table.service.type': 'Typ',
+  'trust.table.service.type.help':
+    'Identyfikator URI mówiący, czym jest usługa — CA/QC wydaje certyfikaty kwalifikowane, TSA/QTST nakłada kwalifikowane znaczniki czasu. Określa, do czego można się na nią powołać.',
+  'trust.table.service.attributes': 'Stan i atrybuty',
+  'trust.table.service.attributes.help':
+    'Bieżący stan wraz z atrybutami, które lista przypisuje usłudze: czy jest kwalifikowanym urzędem certyfikacji, czy jest kwalifikowana lub zaufana dla podpisów elektronicznych, czy ma historię stanu i czy deklaruje punkty usługowe.',
   'trust.detail.identities': 'Tożsamości',
   'trust.provider.analysis': 'Analiza',
   'trust.provider.analysis.value':
@@ -5004,6 +5113,39 @@ export const plPL: Catalog = {
   'settings.privacy.guidance.column.checklist': 'Pola/lista kontrolna',
   'settings.privacy.guidance.required': 'wymagane: {value}',
   'settings.privacy.guidance.noClaims': 'Flagi bez roszczeń',
+  'settings.privacy.guidance.column.claim': 'Flaga',
+  'settings.privacy.guidance.column.claimState': 'Stan',
+  'settings.privacy.guidance.notClaimed': 'Bez deklaracji',
+  'settings.privacy.filters.aria': 'Filtry: {name}',
+  'settings.privacy.filters.clear': 'Wyczyść filtry',
+  'settings.privacy.filters.advanced': 'Więcej filtrów',
+  'settings.privacy.filters.count': '{shown} z {total}',
+  'settings.privacy.filters.countAria': '{shown} z {total} widocznych rekordów',
+  'settings.privacy.filter.review': 'Stan przeglądu',
+  'settings.privacy.filter.review.all': 'Wszystkie stany przeglądu',
+  'settings.privacy.filter.subprocessors': 'Podprzetwarzający',
+  'settings.privacy.filter.subprocessors.all': 'Z podprzetwarzającymi lub bez',
+  'settings.privacy.filter.subprocessors.with': 'Z podprzetwarzającymi',
+  'settings.privacy.filter.subprocessors.without': 'Bez podprzetwarzających',
+  'settings.privacy.filter.evidence': 'Potwierdzenia dowodowe',
+  'settings.privacy.filter.evidence.all': 'Z potwierdzeniami lub bez',
+  'settings.privacy.filter.evidence.with': 'Z zarejestrowanymi potwierdzeniami',
+  'settings.privacy.filter.evidence.without': 'Bez zarejestrowanych potwierdzeń',
+  'settings.privacy.filter.destination': 'Cel',
+  'settings.privacy.filter.destination.all': 'Wszystkie cele',
+  'settings.privacy.filter.disposal': 'Czynność usunięcia',
+  'settings.privacy.filter.disposal.all': 'Wszystkie czynności',
+  'settings.privacy.filter.active': 'Zasada aktywna',
+  'settings.privacy.filter.active.all': 'Aktywne i nieaktywne',
+  'settings.privacy.filter.decision': 'Decyzja przeglądu',
+  'settings.privacy.filter.decision.all': 'Wszystkie decyzje',
+  'settings.privacy.filter.legalHold': 'Blokada prawna',
+  'settings.privacy.filter.legalHold.all': 'Z blokadą prawną lub bez',
+  'settings.privacy.filter.legalHold.with': 'Z blokadą prawną',
+  'settings.privacy.filter.legalHold.without': 'Bez blokady prawnej',
+  'settings.privacy.execution.decision.reviewRequired': 'Wymagany przegląd',
+  'settings.privacy.execution.decision.blocked': 'Zablokowane',
+  'settings.privacy.execution.decision.executionRecorded': 'Wykonanie zarejestrowane',
   'settings.privacy.guidance.operatorActions': 'Działania operatora',
   'settings.privacy.help.processor':
     'Podmiot przetwarzający przetwarza dane osobowe w imieniu organizacji. Ten rejestr dokumentuje kto przetwarza, w jakim celu, na jakiej podstawie prawnej i jakich podprzetwarzających używa.',
@@ -5682,6 +5824,43 @@ export const plPL: Catalog = {
   'settings.signing.table.provider': 'Dostawca',
   'settings.signing.table.mode': 'Tryb',
   'settings.signing.table.notes': 'Uwagi',
+  'common.columnHelp': 'Pomoc dotycząca kolumny {column}',
+  'settings.signing.tslSources.help.name':
+    'Nazwa, pod którą ta lista zaufania jest widoczna na tej stronie. Poniżej wyświetlany jest wewnętrzny, stały i unikalny identyfikator, którym dokument konfiguracji odwołuje się do źródła; zmiana nazwy go nie zmienia.',
+  'settings.signing.tslSources.help.status':
+    'Włącza lub wyłącza źródło. Wyłączone źródło pozostaje zapisane i sprawdzone, ale backend pomija je przy aktualizacji i przy rozpoznawaniu list — w ten sposób zawiesza się źródło bez jego usuwania.',
+  'settings.signing.tslSources.help.url':
+    'Adres, spod którego pobierana jest lista — lista krajowa (TSL) albo europejska lista list (LOTL). Akceptowane są wyłącznie http i https, a serwer odrzuca adresy pętli zwrotnej, prywatne i zarezerwowane. Podaj adres URL albo ścieżkę lokalną: wymagane jest co najmniej jedno z nich.',
+  'settings.signing.tslSources.help.path':
+    'Ścieżka do pliku listy znajdującego się już na maszynie serwera, dla instalacji bez dostępu do internetu. Jest to alternatywa dla adresu URL, a nie jego uzupełnienie.',
+  'settings.signing.tslSources.help.country':
+    'Oznaczenie terytorium listy: PT dla listy krajowej, EU dla europejskiej listy list. Służy do katalogowania i rozróżniania źródeł; samo w sobie nie ogranicza tego, które certyfikaty są akceptowane.',
+  'settings.signing.tslSources.help.scheme':
+    'Etykieta schematu, któremu podlega lista — eidas, lotl albo wartość wybrana przez operatora. Podobnie jak terytorium są to metadane katalogowe źródła.',
+  'settings.signing.tslSources.help.actions':
+    'Usuwa źródło z tabeli. Ta strona zapisuje automatycznie, więc usunięcie zostaje od razu utrwalone; aby zawiesić źródło z zachowaniem konfiguracji, wyłącz je w kolumnie Stan.',
+  'settings.signing.tsaProviders.help.name':
+    'Nazwa, pod którą ten urząd znakowania czasem jest widoczny na tej stronie. Poniżej wyświetlany jest wewnętrzny, stały i unikalny identyfikator, którym dokument konfiguracji odwołuje się do dostawcy.',
+  'settings.signing.tsaProviders.help.status':
+    'Włącza lub wyłącza dostawcę i pokazuje, który z nich jest domyślny. Wyłączony dostawca pozostaje zapisany, ale nie jest wybierany; wśród włączonych zawsze dokładnie jeden jest domyślny i to on służy do znakowania czasem. Ustawienie innego jako domyślnego przenosi tę rolę.',
+  'settings.signing.tsaProviders.help.url':
+    'Adres usługi RFC 3161, do której trafiają żądania znacznika czasu. Akceptowane są wyłącznie http i https, a serwer odrzuca adresy pętli zwrotnej, prywatne i zarezerwowane.',
+  'settings.signing.tsaProviders.help.path':
+    'Ścieżka lokalna do dostawcy offline lub testowego, jako alternatywa dla adresu HTTP. Służy instalacjom bez dostępu do internetu.',
+  'settings.signing.tsaProviders.help.policy':
+    'OID polityki znakowania czasem wymaganej od tego dostawcy, na przykład 1.2.3.4. Pozostawienie pola pustego oznacza akceptowanie dowolnej polityki — katalog TSA pokazuje to jako „Any”.',
+  'settings.signing.tsaProviders.help.limits':
+    'Parametry żądania ustalane przez serwer i nieedytowalne w tym miejscu: algorytm skrótu wysyłany do dostawcy, limit czasu odpowiedzi w sekundach oraz maksymalny akceptowany rozmiar tej odpowiedzi.',
+  'settings.signing.tsaProviders.help.actions':
+    'Usuwa dostawcę z tabeli. Ta strona zapisuje automatycznie. Aby zawiesić dostawcę z zachowaniem konfiguracji, wyłącz go w kolumnie Stan; jeśli usuniesz domyślnego, ustaw domyślnym innego.',
+  'settings.signing.providers.help.provider':
+    'Sposób podpisywania, który serwer rozpoznaje w tej instalacji. Tabela jest tylko do odczytu: opisuje to, czym serwer dysponuje, a nie wybór dokonywany w tym miejscu.',
+  'settings.signing.providers.help.mode':
+    'Rodzina techniczna sposobu, która przesądza, gdzie znajduje się klucz prywatny i co trzeba skonfigurować: CMD/SCMD podpisuje zdalnie w AMA, Karta Obywatelska wymaga czytnika i procesu lokalnego, CSC/QTSP podpisuje u zdalnego dostawcy kwalifikowanego, PKCS#12 lokalny używa certyfikatu z pliku.',
+  'settings.signing.providers.help.status':
+    'Czy dany sposób jest gotowy do użycia. „Skonfigurowany” oznacza, że wymagana konfiguracja niepoufna jest obecna; „Zablokowany w produkcji” — że brakuje czegoś wymaganego poza trybem testowym; „Tylko lokalnie” wskazuje sposoby działające wyłącznie z procesem na tej samej maszynie; „Nieskonfigurowany” — że nic jeszcze nie zostało podane.',
+  'settings.signing.providers.help.notes':
+    'Uwaga eksploatacyjna z serwera wyjaśniająca, czego brakuje lub co ogranicza ten sposób — brakujący ApplicationId z AMA, konieczność czytnika kart. To tekst z serwera, nieedytowalny w tym miejscu.',
   'settings.providerCredentials.protection.unavailable.title': 'Nie można zapisać poświadczeń',
   'settings.providerCredentials.protection.unavailable.body':
     'Ten serwer nie potrafi zaszyfrować ani zapisać sekretów dostawcy. Nic nie zostanie zapisane, dopóki nie zostanie to naprawione — poświadczenia nie są przechowywane ze słabszą ochroną, po prostu nie są przechowywane.',

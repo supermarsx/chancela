@@ -13,6 +13,7 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { opsConfigEnglish } from '../opsConfigFallback';
 import { ledgerEventLabelsSvFI } from '../ledgerEventLabels';
 import { ledgerScopeLabelsSvFI } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsSvFI } from '../dashboardSourceLabels';
@@ -21,6 +22,7 @@ import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const svFI: Catalog = {
   ...operationsEnglish,
+  ...opsConfigEnglish,
   ...ledgerEventLabelsSvFI,
   ...ledgerScopeLabelsSvFI,
   ...dashboardSourceLabelsSvFI,
@@ -1614,15 +1616,54 @@ export const svFI: Catalog = {
   'users.filters.access.noKey': 'Utan granskningsnyckel',
   'users.filters.access.noPassword': 'Utan lösenord',
   'users.filters.access.recovery': 'Med återställningsfras',
+  'users.filters.advanced': 'Avancerade filter',
+  'users.filters.role.label': 'Roll',
+  'users.filters.role.all': 'Alla roller',
+  'users.filters.role.none': 'Ingen roll',
+  'users.filters.scope.label': 'Omfattning',
+  'users.filters.scope.all': 'Alla omfattningar',
+  'users.filters.scope.global': 'Global behörighet',
+  'users.filters.scope.scoped': 'Begränsad till vissa resurser',
+  'users.filters.email.label': 'E-post',
+  'users.filters.email.all': 'Med eller utan e-post',
+  'users.filters.email.with': 'Med e-post',
+  'users.filters.email.without': 'Utan e-post',
+  'users.filters.created.label': 'Skapad den',
+  'users.filters.created.all': 'Vilket datum som helst',
+  'users.filters.created.d7': 'Senaste 7 dagarna',
+  'users.filters.created.d30': 'Senaste 30 dagarna',
+  'users.filters.created.d90': 'Senaste 90 dagarna',
+  'users.filters.retiredRole.title': 'Den här rollen har slagits samman',
+  'users.filters.retiredRole.body':
+    'Rollen finns inte längre: innehavarna flyttades till rollen som ersatte den. Välj en annan roll för att se användare.',
   'users.filters.clear.aria': 'Rensa användarfiltren',
   'users.filters.count': '{shown} av {total}',
   'users.filters.count.aria': 'Visar {shown} av {total} användare',
   'users.filters.empty.title': 'Inga resultat',
   'users.filters.empty.body': 'Ändra sökningen eller filtren för att se användare igen.',
   'users.edit.identityCard': 'Identitet',
+  'users.edit.subnav.aria': 'Användaravsnitt',
+  'users.edit.subnav.general': 'Allmänt',
+  'users.edit.subnav.dsr': 'DSR-begäranden',
+  'users.edit.subnav.roles': 'Roller',
+  'users.edit.subnav.access': 'Åtkomst och granskning',
+  'users.edit.subnav.security': 'Säkerhet',
+  'users.security.title': 'Kontosäkerhet',
+  'users.security.intro.self': 'Hantera säkerheten för ditt eget konto här. Samma inloggningsuppgifter visas under Åtkomst och granskning, där en administratör inspekterar och återställer dem — här ser du dem som kontoinnehavare.',
+  'users.security.intro.other': 'Säkerhetsstatus för detta konto. Endast innehavaren kan hantera sina inloggningsuppgifter; använd Åtkomst och granskning för att återställa dem som administratör.',
+  'users.security.password.hint': 'Inloggningslösenord.',
+  'users.security.recovery.hint': 'Återställningsfras, ett alternativ till lösenordet om det glöms bort.',
+  'users.security.key.hint': 'Attesteringsnyckel för granskning. Att rotera den skapar en ny nyckel för framtida attesteringar; tidigare förblir verifierbara.',
+  'users.security.manage': 'Hantera i Åtkomst och granskning',
   'users.edit.usernameHint': 'Användarnamnet är granskningsidentifieraren och kan inte ändras.',
   'users.edit.displayNameLabel': 'Visningsnamn',
   'users.edit.activationCard': 'Status',
+  'users.edit.status.label': 'Kontostatus',
+  'users.edit.status.hint.active':
+    'Det här kontot kan logga in. Konton raderas aldrig — att inaktivera det hindrar inloggning och lämnar tillskrivningen av allt det redan gjort orörd.',
+  'users.edit.status.hint.inactive':
+    'Det här kontot kan inte logga in. Det tillskrivs fortfarande allt det gjorde innan det inaktiverades.',
+  'users.edit.status.pending': 'Uppdaterar…',
   'users.edit.notFound': 'Användaren hittades inte.',
   'users.edit.save': 'Spara namn',
   'users.create.cardTitle': 'Ny användare',
@@ -1666,6 +1707,11 @@ export const svFI: Catalog = {
   'settings.appearance.intensity.label': 'Strukturens intensitet — {value}',
   'settings.appearance.intensity.hint': '0 till 100. Skalar kornets opacitet i realtid.',
   'settings.appearance.reroll': 'Generera om kornet',
+  'settings.appearance.grain.title': 'Korn',
+  'settings.appearance.grain.hint':
+    'Ritar om mönstret i lädertexturen. Kräver att bakgrundstexturen är på.',
+  'settings.appearance.grain.help':
+    'Kornet lottas fram för varje session och sparas inte: efter en omladdning är det redan ett annat. En ny lottning ritar ett nytt mönster med samma intensitet. Enbart estetiskt och påverkar inte dokumenten.',
   'settings.appearance.colors.title': 'Anpassade färger',
   'settings.appearance.colors.hint':
     'Välj egna färger; lämna ett prov orört för att behålla temats standard.',
@@ -1711,6 +1757,7 @@ export const svFI: Catalog = {
   'settings.management.ai.label': 'Aktivera AI/MCP',
   'settings.management.ai.hint':
     'Styr den här klientens åtkomst till AI-funktioner och MCP-servern. Den är avstängd som standard.',
+  'settings.management.ai.moved': 'Slås på under Drift › AI och MCP.',
   'settings.management.usersLink': 'Användare',
   'settings.management.toolsLink': 'Verktyg',
   'settings.platform.cardTitle': 'Drift',
@@ -1820,7 +1867,6 @@ export const svFI: Catalog = {
   'settings.platform.logs.column.message': 'Meddelande',
   'settings.platform.logs.context.show': 'Kontext',
   'settings.platform.logs.context.empty': 'Ingen kontext',
-  'settings.platform.subnav.aria': 'Driftsektioner',
   'settings.platform.tab.services': 'Tjänster',
   'settings.platform.tab.services.desc':
     'Styrning av önskat tillstånd för API-servern, med ärliga backend-utfall och ett driftgranskningsspår.',
@@ -1857,10 +1903,11 @@ export const svFI: Catalog = {
     'Absolut tak för sessionens livslängd, i sekunder. Noll eller negativt stänger av taket.',
   'settings.api.related.title': 'Relaterade inställningar',
   'settings.api.related.egress':
-    'Det är konnektorernas utgående lista, inte API:ets ingående yta: den avgränsar vart en konnektor får skicka byte. Den ligger kvar under Plattform.',
+    'Det är konnektorernas utgående lista, inte API:ets ingående yta: den avgränsar vart en konnektor får skicka byte. Den ligger under Drift › Tjänster.',
   'settings.api.related.logTail':
-    'Loggsvansen omfattar appen, API:et och MCP och ligger därför kvar under Plattform › Loggar.',
+    'Loggsvansen omfattar appen, API:et och MCP och ligger därför under Drift › Loggar.',
   'settings.mcp.cardTitle': 'MCP-server',
+  'settings.mcp.gate.title': 'Aktivering av AI och MCP',
   'settings.mcp.intro':
     'All MCP-specifik konfiguration på ett ställe: stdio-processens önskade tillstånd, loggnivåer och de miljövariabler som läses vid start.',
   'settings.platform.services.hub':
@@ -2513,10 +2560,10 @@ export const svFI: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC ej validerad',
   'entities.print.nipcUnvalidated': '(ej validerad)',
   'settings.subnav.aria': 'Konfigurationsavsnitt',
-  'settings.subnav.platform': 'Plattform',
-  'settings.subnav.mcp': 'MCP',
+  'settings.subnav.mcp': 'AI och MCP',
   'settings.subnav.operations.aria': 'Driftområden',
   'settings.subnav.signing.aria': 'Signeringsområden',
+  'settings.subnav.users.aria': 'Användarområden',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Steg {current} av {total}',
@@ -3416,6 +3463,28 @@ export const svFI: Catalog = {
   'data.status.openFolder': 'Öppna mapp',
   'data.status.openUnavailable':
     'Att öppna lokala sökvägar är inte tillgängligt i webbläsaren. Kopiera sökvägen och öppna den i operativsystemet.',
+  'data.status.col.fact': 'Uppgift',
+  'data.status.col.value': 'Värde',
+  'data.status.col.check': 'Kontroll',
+  'data.status.col.state': 'Status',
+  'data.status.col.result': 'Resultat',
+  'data.status.col.item': 'Datamängd',
+  'data.status.col.size': 'Storlek',
+  'data.status.col.detail': 'Detalj',
+  'data.status.col.table': 'Tabell',
+  'data.status.col.rows': 'Rader',
+  'data.status.col.average': 'Medeltal per rad',
+  'data.status.col.method': 'Metod',
+  'data.status.col.cleanup': 'Rensning',
+  'data.status.col.usage': 'Utrymme',
+  'data.status.col.action': 'Åtgärd',
+  'data.status.col.when': 'Datum för rotation',
+  'data.status.col.boundary': 'Deklarerad gräns',
+  'data.status.col.step': 'Steg',
+  'data.status.folder.path': 'Sökväg till mappen',
+  'data.status.folder.configured': 'Mapp konfigurerad',
+  'data.status.folder.exists': 'Finns på disken',
+  'data.status.folder.isDirectory': 'Är en mapp',
   'data.status.permissions.title': 'Behörigheter',
   'data.status.permission.read_dir': 'Läs mapp',
   'data.status.permission.create_file': 'Skapa fil',
@@ -4260,6 +4329,46 @@ export const svFI: Catalog = {
   'trust.detail.history': 'Historik',
   'trust.detail.historyEntries': 'Historiska poster',
   'trust.detail.noStatusHistory': 'Ingen publicerad statushistorik.',
+  // --- Förtroendekatalogen visad som tabeller (t101) --------------------------------
+  // Gemensam rubrik för faktatabellerna (fält/värde-par om ett enda subjekt),
+  // följd av de tre rutnäten med upprepade rader, som har hjälptext per kolumn.
+  'trust.table.field': 'Fält',
+  'trust.table.value': 'Värde',
+  'trust.table.facts.caption': 'Fakta om den här posten',
+  'trust.detail.historyCount': 'Historiska poster: {count}',
+  'trust.table.history.caption': 'Tjänstens statushistorik',
+  'trust.table.history.status': 'Status',
+  'trust.table.history.status.help':
+    'Den status tjänsten hade under den perioden enligt förtroendelistan: beviljad betyder att den kvalificerade statusen gällde, återkallad att den hade dragits tillbaka. Det är detta som avgör om en underskrift som gjordes det datumet vilade på en kvalificerad tjänst.',
+  'trust.table.history.name': 'Namn vid den tidpunkten',
+  'trust.table.history.name.help':
+    'Det namn tjänsten publicerades under i den perioden. Leverantörer byter namn på sina tjänster, så det kan skilja sig från det aktuella namnet högst upp i den här vyn — och det är detta namn som står i de dokument som undertecknades då.',
+  'trust.table.history.type': 'Tjänstetyp',
+  'trust.table.history.type.help':
+    'Den URI som identifierar den tjänstetyp som gällde under den perioden, till exempel CA/QC för en kvalificerad certifikatutfärdare eller TSA/QTST för kvalificerad tidsstämpling. Ett byte av typ är ett byte av vad tjänsten hade tillstånd att göra.',
+  'trust.table.history.since': 'Gäller från',
+  'trust.table.history.since.help':
+    'Tidpunkten då den statusen började gälla, så som den publicerats i listan. När listan innehåller ett datum som inte går att tolka visas det råa värdet i stället för ingenting.',
+  'trust.table.identity.caption': 'Tjänstens digitala identiteter',
+  'trust.table.identity.kind': 'Typ',
+  'trust.table.identity.kind.help':
+    'Vilken form av identitet raden innehåller: hela X.509-certifikatet, subjektets särskiljande namn eller subjektets nyckelidentifierare. Det är detta som säger hur värdet ska jämföras med ett certifikat du har till hands.',
+  'trust.table.identity.value': 'Värde',
+  'trust.table.identity.value.help':
+    'Identiteten så som den publicerats i förtroendelistan. Värden som har formen av en hash visas förkortade, med hela värdet i indikatorn bredvid; ingenting kapas utan väg tillbaka, och texten går fortfarande att markera och kopiera i sin helhet.',
+  'trust.table.identity.digest': 'SHA-256',
+  'trust.table.identity.digest.help':
+    'Identitetens SHA-256-hash, när listan publicerar den separat. Fältet lämnas tomt när själva värdet redan är den hashen, för att inte antyda två olika fingeravtryck.',
+  'trust.table.service.caption': 'Den här leverantörens tjänster',
+  'trust.table.service.name': 'Tjänst',
+  'trust.table.service.name.help':
+    'Tjänstens publicerade namn. Välj det för att öppna hela vyn, med digitala identiteter, servicepunkter och statushistorik.',
+  'trust.table.service.type': 'Typ',
+  'trust.table.service.type.help':
+    'Den URI som säger vad tjänsten är — CA/QC utfärdar kvalificerade certifikat, TSA/QTST utfärdar kvalificerade tidsstämplar. Den avgör vad tjänsten kan åberopas för.',
+  'trust.table.service.attributes': 'Status och attribut',
+  'trust.table.service.attributes.help':
+    'Den aktuella statusen plus de attribut som listan tillskriver tjänsten: om den är en kvalificerad certifikatutfärdare, om den är kvalificerad eller betrodd för elektroniska underskrifter, om den har en statushistorik och om den anger servicepunkter.',
   'trust.detail.identities': 'Identiteter',
   'trust.provider.analysis': 'Analys',
   'trust.provider.analysis.value':
@@ -4999,6 +5108,39 @@ export const svFI: Catalog = {
   'settings.privacy.guidance.column.checklist': 'Fält/checklista',
   'settings.privacy.guidance.required': 'obligatoriskt: {value}',
   'settings.privacy.guidance.noClaims': 'No-claim-flaggor',
+  'settings.privacy.guidance.column.claim': 'Flagga',
+  'settings.privacy.guidance.column.claimState': 'Tillstånd',
+  'settings.privacy.guidance.notClaimed': 'Inte påstått',
+  'settings.privacy.filters.aria': 'Filter: {name}',
+  'settings.privacy.filters.clear': 'Rensa filter',
+  'settings.privacy.filters.advanced': 'Fler filter',
+  'settings.privacy.filters.count': '{shown} av {total}',
+  'settings.privacy.filters.countAria': '{shown} av {total} visade poster',
+  'settings.privacy.filter.review': 'Granskningstillstånd',
+  'settings.privacy.filter.review.all': 'Alla granskningstillstånd',
+  'settings.privacy.filter.subprocessors': 'Underbiträden',
+  'settings.privacy.filter.subprocessors.all': 'Med eller utan underbiträden',
+  'settings.privacy.filter.subprocessors.with': 'Med underbiträden',
+  'settings.privacy.filter.subprocessors.without': 'Utan underbiträden',
+  'settings.privacy.filter.evidence': 'Beviskvitton',
+  'settings.privacy.filter.evidence.all': 'Med eller utan kvitton',
+  'settings.privacy.filter.evidence.with': 'Med registrerade kvitton',
+  'settings.privacy.filter.evidence.without': 'Utan registrerade kvitton',
+  'settings.privacy.filter.destination': 'Destination',
+  'settings.privacy.filter.destination.all': 'Alla destinationer',
+  'settings.privacy.filter.disposal': 'Gallringsåtgärd',
+  'settings.privacy.filter.disposal.all': 'Alla åtgärder',
+  'settings.privacy.filter.active': 'Aktiv policy',
+  'settings.privacy.filter.active.all': 'Aktiva och inaktiva',
+  'settings.privacy.filter.decision': 'Granskningsbeslut',
+  'settings.privacy.filter.decision.all': 'Alla beslut',
+  'settings.privacy.filter.legalHold': 'Rättslig spärr',
+  'settings.privacy.filter.legalHold.all': 'Med eller utan rättslig spärr',
+  'settings.privacy.filter.legalHold.with': 'Med rättslig spärr',
+  'settings.privacy.filter.legalHold.without': 'Utan rättslig spärr',
+  'settings.privacy.execution.decision.reviewRequired': 'Granskning krävs',
+  'settings.privacy.execution.decision.blocked': 'Blockerad',
+  'settings.privacy.execution.decision.executionRecorded': 'Utförande registrerat',
   'settings.privacy.guidance.operatorActions': 'Operatörsåtgärder',
   'settings.privacy.help.processor':
     'Ett personuppgiftsbiträde behandlar personuppgifter för organisationens räkning. Detta register anger vem som behandlar, för vad, på vilken rättslig grund och vilka underbiträden som används.',
@@ -5665,6 +5807,43 @@ export const svFI: Catalog = {
   'settings.signing.table.provider': 'Leverantör',
   'settings.signing.table.mode': 'Läge',
   'settings.signing.table.notes': 'Anmärkningar',
+  'common.columnHelp': 'Hjälp om kolumnen {column}',
+  'settings.signing.tslSources.help.name':
+    'Det namn som denna tillitslista visas med på den här sidan. Under namnet visas den interna identifieraren — stabil och unik — som konfigurationsdokumentet använder för att hänvisa till källan; att byta namn ändrar den inte.',
+  'settings.signing.tslSources.help.status':
+    'Slår på eller av källan. En avstängd källa förblir sparad och validerad, men servern hoppar över den vid uppdatering och när listorna slås upp — så här pausar du en källa utan att radera den.',
+  'settings.signing.tslSources.help.url':
+    'Adressen som listan hämtas från — den nationella listan (TSL) eller den europeiska listan över listor (LOTL). Endast http och https godtas, och servern avvisar loopback-adresser samt privata och reserverade adresser. Ange URL eller lokal sökväg: minst en av dem krävs.',
+  'settings.signing.tslSources.help.path':
+    'Sökvägen till en listfil som redan finns på serverns maskin, för installationer utan internetanslutning. Den är alternativet till URL, inte ett komplement.',
+  'settings.signing.tslSources.help.country':
+    'Listans territoriemarkering: PT för den nationella listan, EU för den europeiska listan över listor. Den används för att katalogisera och skilja källorna åt; den begränsar inte i sig vilka certifikat som godtas.',
+  'settings.signing.tslSources.help.scheme':
+    'Etiketten för det schema som listan följer — eidas, lotl eller ett värde som operatören själv väljer. Precis som territoriet är den katalogiseringsmetadata om källan.',
+  'settings.signing.tslSources.help.actions':
+    'Tar bort källan från tabellen. Den här sidan sparar automatiskt, så borttagningen blir omedelbart bestående; för att pausa en källa men behålla konfigurationen stänger du av den under Status.',
+  'settings.signing.tsaProviders.help.name':
+    'Det namn som denna tidsstämplingsmyndighet visas med på den här sidan. Under namnet visas den interna identifieraren — stabil och unik — som konfigurationsdokumentet använder för att hänvisa till leverantören.',
+  'settings.signing.tsaProviders.help.status':
+    'Slår på eller av leverantören och visar vilken som är standard. En avstängd leverantör förblir sparad men väljs inte; bland de påslagna finns alltid exakt en standardleverantör, och det är den som används för att tidsstämpla. Gör du en annan till standard flyttas den rollen dit.',
+  'settings.signing.tsaProviders.help.url':
+    'Adressen till den RFC 3161-tjänst dit begäran om tidsstämpel skickas. Endast http och https godtas, och servern avvisar loopback-adresser samt privata och reserverade adresser.',
+  'settings.signing.tsaProviders.help.path':
+    'Lokal sökväg till en leverantör som körs offline eller för test, som alternativ till HTTP-adressen. Den finns för installationer utan internetanslutning.',
+  'settings.signing.tsaProviders.help.policy':
+    'OID för den tidsstämplingspolicy som krävs av den här leverantören, till exempel 1.2.3.4. Lämnas fältet tomt godtas vilken policy som helst — det är vad TSA-katalogen visar som ”Any”.',
+  'settings.signing.tsaProviders.help.limits':
+    'Parametrar för begäran, fastställda av servern och inte redigerbara här: den digest-algoritm som skickas till leverantören, tidsgränsen för svaret i sekunder och den största svarsstorlek som godtas.',
+  'settings.signing.tsaProviders.help.actions':
+    'Tar bort leverantören från tabellen. Den här sidan sparar automatiskt. För att pausa leverantören men behålla konfigurationen stänger du av den under Status; tar du bort standardleverantören, gör en annan till standard.',
+  'settings.signing.providers.help.provider':
+    'Det signeringssätt som servern känner igen i den här installationen. Tabellen är skrivskyddad: den beskriver vad servern har tillgängligt, inte ett val som görs här.',
+  'settings.signing.providers.help.mode':
+    'Sättets tekniska familj, som avgör var den privata nyckeln finns och vad som behöver konfigureras: CMD/SCMD signerar på distans hos AMA, Medborgarkort kräver kortläsare och en lokal process, CSC/QTSP signerar hos en fjärransluten kvalificerad leverantör, lokal PKCS#12 använder ett certifikat i en fil.',
+  'settings.signing.providers.help.status':
+    'Om sättet är redo att användas. ”Konfigurerad” betyder att den icke-hemliga konfiguration som krävs finns på plats; ”Blockerad i produktion” att något som krävs utanför test saknas; ”Endast lokal” markerar de sätt som bara fungerar med en process på själva maskinen; ”Inte konfigurerad” att inget ännu har angetts.',
+  'settings.signing.providers.help.notes':
+    'Driftanmärkning från servern om vad som saknas eller vad som begränsar det här sättet — ett ApplicationId från AMA som saknas, behovet av en kortläsare. Det är text från servern, inte något som konfigureras här.',
   'settings.providerCredentials.protection.unavailable.title': 'Uppgifterna kan inte sparas',
   'settings.providerCredentials.protection.unavailable.body':
     'Den här servern kan varken kryptera eller spara leverantörshemligheter. Ingenting sparas förrän detta är åtgärdat — uppgifterna förvaras inte med svagare skydd, de förvaras inte alls.',

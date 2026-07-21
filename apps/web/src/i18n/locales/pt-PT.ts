@@ -15,6 +15,7 @@
  * they are rendered verbatim as received. Only client-authored UI chrome lives here.
  */
 import { operationsPtPT } from '../operationsFallback';
+import { opsConfigPtPT } from '../opsConfigFallback';
 import { ledgerEventLabelsPtPT } from '../ledgerEventLabels';
 import { ledgerScopeLabelsPtPT } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsPtPT } from '../dashboardSourceLabels';
@@ -23,6 +24,7 @@ import { attendeeQualityLabelsPtPT } from '../attendeeQualityLabels';
 
 export const ptPT = {
   ...operationsPtPT,
+  ...opsConfigPtPT,
   ...ledgerEventLabelsPtPT,
   ...ledgerScopeLabelsPtPT,
   ...dashboardSourceLabelsPtPT,
@@ -1650,16 +1652,55 @@ export const ptPT = {
   'users.filters.access.noKey': 'Sem chave de auditoria',
   'users.filters.access.noPassword': 'Sem palavra-passe',
   'users.filters.access.recovery': 'Com frase de recuperação',
+  'users.filters.advanced': 'Filtros avançados',
+  'users.filters.role.label': 'Função',
+  'users.filters.role.all': 'Qualquer função',
+  'users.filters.role.none': 'Sem função',
+  'users.filters.scope.label': 'Âmbito',
+  'users.filters.scope.all': 'Qualquer âmbito',
+  'users.filters.scope.global': 'Autoridade global',
+  'users.filters.scope.scoped': 'Limitada a recursos específicos',
+  'users.filters.email.label': 'E-mail',
+  'users.filters.email.all': 'Com ou sem e-mail',
+  'users.filters.email.with': 'Com e-mail',
+  'users.filters.email.without': 'Sem e-mail',
+  'users.filters.created.label': 'Data de criação',
+  'users.filters.created.all': 'Qualquer data',
+  'users.filters.created.d7': 'Últimos 7 dias',
+  'users.filters.created.d30': 'Últimos 30 dias',
+  'users.filters.created.d90': 'Últimos 90 dias',
+  'users.filters.retiredRole.title': 'Esta função foi fundida',
+  'users.filters.retiredRole.body':
+    'A função já não existe: os titulares foram reatribuídos à função que a substituiu. Escolha outra função para ver utilizadores.',
   'users.filters.clear.aria': 'Limpar filtros de utilizadores',
   'users.filters.count': '{shown} de {total}',
   'users.filters.count.aria': 'A mostrar {shown} de {total} utilizadores',
   'users.filters.empty.title': 'Sem resultados',
   'users.filters.empty.body': 'Altere a pesquisa ou os filtros para voltar a ver utilizadores.',
   'users.edit.identityCard': 'Identidade',
+  'users.edit.subnav.aria': 'Secções do utilizador',
+  'users.edit.subnav.general': 'Geral',
+  'users.edit.subnav.dsr': 'Pedidos DSR',
+  'users.edit.subnav.roles': 'Funções',
+  'users.edit.subnav.access': 'Acesso e auditoria',
+  'users.edit.subnav.security': 'Segurança',
+  'users.security.title': 'Segurança da conta',
+  'users.security.intro.self': 'Aqui gere a segurança da sua própria conta. As mesmas credenciais aparecem em Acesso e auditoria, onde um administrador as inspeciona e repõe — aqui vê-as como titular.',
+  'users.security.intro.other': 'Estado de segurança desta conta. Só o titular pode gerir as suas credenciais; para as repor como administrador, use Acesso e auditoria.',
+  'users.security.password.hint': 'Palavra-passe de início de sessão.',
+  'users.security.recovery.hint': 'Frase de recuperação, uma alternativa à palavra-passe em caso de esquecimento.',
+  'users.security.key.hint': 'Chave de atestação de auditoria. Rodá-la cria uma nova chave para atestações futuras; as anteriores continuam verificáveis.',
+  'users.security.manage': 'Gerir em Acesso e auditoria',
   'users.edit.usernameHint':
     'O nome de utilizador é o identificador de auditoria e não pode ser alterado.',
   'users.edit.displayNameLabel': 'Nome a apresentar',
   'users.edit.activationCard': 'Estado',
+  'users.edit.status.label': 'Estado da conta',
+  'users.edit.status.hint.active':
+    'Esta conta pode iniciar sessão. As contas nunca são eliminadas — desativá-la impede o início de sessão e mantém intacta a atribuição de tudo o que já fez.',
+  'users.edit.status.hint.inactive':
+    'Esta conta não pode iniciar sessão. Continua a atribuir tudo o que fez antes de ser desativada.',
+  'users.edit.status.pending': 'A atualizar…',
   'users.edit.notFound': 'Utilizador não encontrado.',
   'users.edit.save': 'Guardar nome',
 
@@ -1684,6 +1725,11 @@ export const ptPT = {
   'settings.appearance.intensity.label': 'Intensidade da textura — {value}',
   'settings.appearance.intensity.hint': '0 a 100. Escala a opacidade do grão em tempo real.',
   'settings.appearance.reroll': 'Regenerar grão',
+  'settings.appearance.grain.title': 'Grão',
+  'settings.appearance.grain.hint':
+    'Redesenha o padrão da textura de couro. Requer a textura de fundo ativa.',
+  'settings.appearance.grain.help':
+    'O grão é sorteado a cada sessão e não fica guardado: ao recarregar a aplicação já é outro. Regenerar desenha um padrão novo com a mesma intensidade. É apenas estético e não afeta os documentos.',
   'settings.appearance.colors.title': 'Cores personalizadas',
   'settings.appearance.colors.hint':
     'Escolha as suas cores; deixe uma amostra intacta para manter a predefinição do tema.',
@@ -1729,6 +1775,7 @@ export const ptPT = {
   'settings.management.ai.label': 'Ativar IA/MCP',
   'settings.management.ai.hint':
     'Controla o acesso deste tenant às funcionalidades de IA e ao servidor MCP. Mantém-se desativado por predefinição.',
+  'settings.management.ai.moved': 'Ativa-se em Operações › IA e MCP.',
   'settings.management.usersLink': 'Utilizadores',
   'settings.management.toolsLink': 'Ferramentas',
   'settings.platform.cardTitle': 'Operações',
@@ -1838,7 +1885,6 @@ export const ptPT = {
   'settings.platform.logs.column.message': 'Mensagem',
   'settings.platform.logs.context.show': 'Contexto',
   'settings.platform.logs.context.empty': 'Sem contexto',
-  'settings.platform.subnav.aria': 'Secções de operações',
   'settings.platform.tab.services': 'Serviços',
   'settings.platform.tab.services.desc':
     'Controlo do estado desejado do servidor API, com resultados honestos do backend e auditoria de operações.',
@@ -1875,10 +1921,11 @@ export const ptPT = {
     'Limite absoluto de vida da sessão, em segundos. Zero ou negativo desliga o limite.',
   'settings.api.related.title': 'Definições relacionadas',
   'settings.api.related.egress':
-    'É a lista de saída dos conetores, não a superfície de entrada da API: limita para onde um conetor pode enviar bytes. Continua em Plataforma.',
+    'É a lista de saída dos conetores, não a superfície de entrada da API: limita para onde um conetor pode enviar bytes. Fica em Operações › Serviços.',
   'settings.api.related.logTail':
-    'A cauda de registos abrange a aplicação, a API e o MCP, por isso continua em Plataforma › Registos.',
+    'A cauda de registos abrange a aplicação, a API e o MCP, por isso fica em Operações › Registos.',
   'settings.mcp.cardTitle': 'Servidor MCP',
+  'settings.mcp.gate.title': 'Ativação de IA e MCP',
   'settings.mcp.intro':
     'Toda a configuração específica do MCP reunida num sítio: estado desejado do processo stdio, níveis de registo e as variáveis de ambiente lidas no arranque.',
   'settings.platform.services.hub':
@@ -2567,10 +2614,10 @@ export const ptPT = {
   'entities.nipcUnvalidated.aria': 'NIPC não validado',
   'entities.print.nipcUnvalidated': '(não validado)',
   'settings.subnav.aria': 'Secções de configuração',
-  'settings.subnav.platform': 'Plataforma',
-  'settings.subnav.mcp': 'MCP',
+  'settings.subnav.mcp': 'IA e MCP',
   'settings.subnav.operations.aria': 'Áreas de operações',
   'settings.subnav.signing.aria': 'Áreas de assinaturas',
+  'settings.subnav.users.aria': 'Áreas de utilizadores',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Passo {current} de {total}',
@@ -3563,6 +3610,28 @@ export const ptPT = {
   'data.status.openFolder': 'Abrir pasta',
   'data.status.openUnavailable':
     'Abrir caminhos locais não está disponível no navegador. Copie o caminho e abra-o no sistema operativo.',
+  'data.status.col.fact': 'Informação',
+  'data.status.col.value': 'Valor',
+  'data.status.col.check': 'Verificação',
+  'data.status.col.state': 'Estado',
+  'data.status.col.result': 'Resultado',
+  'data.status.col.item': 'Conjunto',
+  'data.status.col.size': 'Tamanho',
+  'data.status.col.detail': 'Detalhe',
+  'data.status.col.table': 'Tabela',
+  'data.status.col.rows': 'Linhas',
+  'data.status.col.average': 'Média por linha',
+  'data.status.col.method': 'Método',
+  'data.status.col.cleanup': 'Limpeza',
+  'data.status.col.usage': 'Ocupação',
+  'data.status.col.action': 'Ação',
+  'data.status.col.when': 'Data da rotação',
+  'data.status.col.boundary': 'Limite declarado',
+  'data.status.col.step': 'Passo',
+  'data.status.folder.path': 'Caminho da pasta',
+  'data.status.folder.configured': 'Pasta configurada',
+  'data.status.folder.exists': 'Existe no disco',
+  'data.status.folder.isDirectory': 'É uma pasta',
   'data.status.permissions.title': 'Permissões',
   'data.status.permission.read_dir': 'Ler pasta',
   'data.status.permission.create_file': 'Criar ficheiro',
@@ -4418,6 +4487,46 @@ export const ptPT = {
   'trust.detail.history': 'Histórico',
   'trust.detail.historyEntries': 'Entradas históricas',
   'trust.detail.noStatusHistory': 'Sem histórico de estado publicado.',
+  // --- Catálogo de confiança apresentado em tabela (t101) --------------------------
+  // Cabeçalho partilhado das tabelas de factos (pares campo/valor de um só sujeito),
+  // seguido das três grelhas com entradas repetidas, que levam ajuda por coluna.
+  'trust.table.field': 'Campo',
+  'trust.table.value': 'Valor',
+  'trust.table.facts.caption': 'Factos desta entrada',
+  'trust.detail.historyCount': 'Entradas de histórico: {count}',
+  'trust.table.history.caption': 'Histórico de estado do serviço',
+  'trust.table.history.status': 'Estado',
+  'trust.table.history.status.help':
+    'O estado que o serviço tinha nesse período segundo a lista de confiança: concedido significa que o estatuto qualificado vigorava, retirado que tinha sido revogado. É o que determina se uma assinatura feita nessa data se apoiava num serviço qualificado.',
+  'trust.table.history.name': 'Nome nessa altura',
+  'trust.table.history.name.help':
+    'O nome com que o serviço era publicado nesse período. Os prestadores renomeiam serviços, por isso pode divergir do nome atual no topo desta ficha — e é este que consta dos documentos assinados na altura.',
+  'trust.table.history.type': 'Tipo de serviço',
+  'trust.table.history.type.help':
+    'O identificador URI do tipo de serviço em vigor nesse período, por exemplo CA/QC para uma autoridade de certificação qualificada ou TSA/QTST para carimbo temporal qualificado. Uma mudança de tipo é uma mudança do que o serviço estava autorizado a fazer.',
+  'trust.table.history.since': 'Início',
+  'trust.table.history.since.help':
+    'O momento a partir do qual esse estado passou a vigorar, tal como publicado na lista. Quando a lista traz uma data que não é possível interpretar, mostra-se o valor em bruto em vez de nada.',
+  'trust.table.identity.caption': 'Identidades digitais do serviço',
+  'trust.table.identity.kind': 'Tipo',
+  'trust.table.identity.kind.help':
+    'Que forma de identidade esta linha traz: o certificado X.509 completo, o nome distinto do sujeito, ou o identificador da chave do sujeito. É o que diz como comparar o valor com um certificado em mãos.',
+  'trust.table.identity.value': 'Valor',
+  'trust.table.identity.value.help':
+    'A identidade tal como publicada na lista de confiança. Valores com forma de resumo aparecem abreviados, com o valor completo no indicador ao lado; nada é cortado sem recurso, e o texto continua selecionável e copiável na íntegra.',
+  'trust.table.identity.digest': 'SHA-256',
+  'trust.table.identity.digest.help':
+    'O resumo SHA-256 da identidade, quando a lista o publica em separado. Fica vazio quando o próprio valor já é esse resumo, para não sugerir duas impressões digitais diferentes.',
+  'trust.table.service.caption': 'Serviços deste prestador',
+  'trust.table.service.name': 'Serviço',
+  'trust.table.service.name.help':
+    'O nome publicado do serviço. Escolha-o para abrir a ficha completa, com identidades digitais, pontos de fornecimento e histórico de estado.',
+  'trust.table.service.type': 'Tipo',
+  'trust.table.service.type.help':
+    'O identificador URI que diz o que o serviço é — CA/QC emite certificados qualificados, TSA/QTST aplica carimbos temporais qualificados. Determina para que pode ser invocado.',
+  'trust.table.service.attributes': 'Estado e atributos',
+  'trust.table.service.attributes.help':
+    'O estado atual mais os atributos que a lista atribui ao serviço: se é uma autoridade de certificação qualificada, se está qualificado ou é de confiança para assinaturas eletrónicas, se tem histórico de estado e se declara pontos de fornecimento.',
   'trust.detail.identities': 'Identidades',
   'trust.provider.analysis': 'Análise',
   'trust.provider.analysis.value':
@@ -5067,7 +5176,40 @@ export const ptPT = {
   'settings.privacy.guidance.column.checklist': 'Campos/checklist',
   'settings.privacy.guidance.required': 'obrigatório: {value}',
   'settings.privacy.guidance.noClaims': 'Flags sem alegação',
+  'settings.privacy.guidance.column.claim': 'Flag',
+  'settings.privacy.guidance.column.claimState': 'Estado',
+  'settings.privacy.guidance.notClaimed': 'Não alegado',
   'settings.privacy.guidance.operatorActions': 'Ações do operador',
+  'settings.privacy.filters.aria': 'Filtros: {name}',
+  'settings.privacy.filters.clear': 'Limpar filtros',
+  'settings.privacy.filters.advanced': 'Mais filtros',
+  'settings.privacy.filters.count': '{shown} de {total}',
+  'settings.privacy.filters.countAria': '{shown} de {total} registos visíveis',
+  'settings.privacy.filter.review': 'Estado da revisão',
+  'settings.privacy.filter.review.all': 'Todos os estados de revisão',
+  'settings.privacy.filter.subprocessors': 'Subprocessadores',
+  'settings.privacy.filter.subprocessors.all': 'Com ou sem subprocessadores',
+  'settings.privacy.filter.subprocessors.with': 'Com subprocessadores',
+  'settings.privacy.filter.subprocessors.without': 'Sem subprocessadores',
+  'settings.privacy.filter.evidence': 'Recibos de evidência',
+  'settings.privacy.filter.evidence.all': 'Com ou sem recibos',
+  'settings.privacy.filter.evidence.with': 'Com recibos registados',
+  'settings.privacy.filter.evidence.without': 'Sem recibos registados',
+  'settings.privacy.filter.destination': 'Destino',
+  'settings.privacy.filter.destination.all': 'Todos os destinos',
+  'settings.privacy.filter.disposal': 'Ação de eliminação',
+  'settings.privacy.filter.disposal.all': 'Todas as ações',
+  'settings.privacy.filter.active': 'Política ativa',
+  'settings.privacy.filter.active.all': 'Ativas e inativas',
+  'settings.privacy.filter.decision': 'Decisão de revisão',
+  'settings.privacy.filter.decision.all': 'Todas as decisões',
+  'settings.privacy.filter.legalHold': 'Retenção legal',
+  'settings.privacy.filter.legalHold.all': 'Com ou sem retenção legal',
+  'settings.privacy.filter.legalHold.with': 'Com bloqueio de retenção legal',
+  'settings.privacy.filter.legalHold.without': 'Sem bloqueio de retenção legal',
+  'settings.privacy.execution.decision.reviewRequired': 'Revisão necessária',
+  'settings.privacy.execution.decision.blocked': 'Bloqueado',
+  'settings.privacy.execution.decision.executionRecorded': 'Execução registada',
   'settings.privacy.help.processor':
     'Um processador trata dados pessoais por conta da organização. Este registo documenta quem trata, para quê, com que base legal e que subprocessadores usa.',
   'settings.privacy.help.dpia':
@@ -5672,6 +5814,47 @@ export const ptPT = {
   'settings.signing.table.provider': 'Prestador',
   'settings.signing.table.mode': 'Modo',
   'settings.signing.table.notes': 'Notas',
+  // --- Ajuda por coluna das grelhas de Assinaturas (t101) -------------------------
+  // O nome acessível do gatilho nomeia a coluna, para que quem usa leitor de ecrã saiba
+  // a que se refere a descrição. O substantivo inflectido é «coluna», constante por
+  // locale; o valor interpolado é apenas o rótulo, e não governa nenhuma concordância.
+  'common.columnHelp': 'Ajuda sobre a coluna {column}',
+  'settings.signing.tslSources.help.name':
+    'Nome com que esta lista de confiança é identificada nesta página. Por baixo aparece o identificador interno, estável e único, que o documento de configurações usa para referir a fonte; mudar o nome não o altera.',
+  'settings.signing.tslSources.help.status':
+    'Liga ou desliga a fonte. Uma fonte desligada continua guardada e validada, mas o backend ignora-a ao atualizar e ao resolver as listas — é a forma de suspender uma fonte sem a apagar.',
+  'settings.signing.tslSources.help.url':
+    'Endereço de onde a lista é descarregada — a lista nacional (TSL) ou a lista europeia de listas (LOTL). Só http e https são aceites, e o servidor recusa endereços de loopback, privados ou reservados. Indique URL ou caminho local: pelo menos um é obrigatório.',
+  'settings.signing.tslSources.help.path':
+    'Caminho de um ficheiro de lista já presente na máquina do servidor, para instalações sem saída para a Internet. É a alternativa ao URL, não um complemento.',
+  'settings.signing.tslSources.help.country':
+    'Marcador de território da lista: PT para a lista nacional, EU para a lista europeia de listas. Serve para catalogar e distinguir as fontes; não restringe por si só que certificados são aceites.',
+  'settings.signing.tslSources.help.scheme':
+    'Etiqueta do esquema a que a lista obedece — eidas, lotl, ou um valor à escolha do operador. Tal como o território, é metadados de catalogação da fonte.',
+  'settings.signing.tslSources.help.actions':
+    'Remove a fonte da grelha. Esta página grava automaticamente, por isso a remoção fica logo persistida; para suspender uma fonte mantendo a configuração, desligue-a em Estado.',
+  'settings.signing.tsaProviders.help.name':
+    'Nome com que esta autoridade de selo temporal é identificada nesta página. Por baixo aparece o identificador interno, estável e único, que o documento de configurações usa para referir o prestador.',
+  'settings.signing.tsaProviders.help.status':
+    'Liga ou desliga o prestador e mostra qual é o predefinido. Um prestador desligado fica guardado mas não é escolhido; entre os ligados existe sempre exatamente um predefinido, que é o usado para carimbar. Promover outro transfere essa condição.',
+  'settings.signing.tsaProviders.help.url':
+    'Endereço do serviço RFC 3161 para onde seguem os pedidos de selo temporal. Só http e https são aceites, e o servidor recusa endereços de loopback, privados ou reservados.',
+  'settings.signing.tsaProviders.help.path':
+    'Caminho local para um prestador offline ou de ensaio, em alternativa ao endereço HTTP. Serve instalações sem saída para a Internet.',
+  'settings.signing.tsaProviders.help.policy':
+    'OID da política de carimbo exigida a este prestador, por exemplo 1.2.3.4. Deixar vazio significa aceitar qualquer política — é o que o catálogo TSA apresenta como «Any».',
+  'settings.signing.tsaProviders.help.limits':
+    'Parâmetros do pedido, definidos pelo servidor e não editáveis aqui: o algoritmo de resumo enviado ao prestador, o tempo limite da resposta em segundos e o tamanho máximo aceite para essa resposta.',
+  'settings.signing.tsaProviders.help.actions':
+    'Remove o prestador da grelha. Esta página grava automaticamente. Para o suspender mantendo a configuração, desligue-o em Estado; se remover o predefinido, promova outro.',
+  'settings.signing.providers.help.provider':
+    'O meio de assinatura que o servidor reconhece nesta instalação. A grelha é só de leitura: descreve o que o servidor tem disponível, não uma escolha feita aqui.',
+  'settings.signing.providers.help.mode':
+    'A família técnica do meio, que determina onde fica a chave privada e o que é preciso configurar: CMD/SCMD assina remotamente na AMA, Cartão de Cidadão exige leitor e processo local, CSC/QTSP assina num prestador qualificado remoto, PKCS#12 local usa um certificado em ficheiro.',
+  'settings.signing.providers.help.status':
+    'Se o meio está pronto a usar. «Configurado» diz que a configuração não secreta necessária está presente; «Bloqueado em produção» que falta algo exigido fora de ensaio; «Apenas local» marca os meios que só funcionam com um processo na própria máquina; «Não configurado» que nada foi ainda fornecido.',
+  'settings.signing.providers.help.notes':
+    'Nota operacional vinda do servidor a explicar o que falta ou o que condiciona este meio — um ApplicationId da AMA em falta, a necessidade de leitor de cartões. É texto do servidor, não configurável aqui.',
   // --- Fornecedores de assinatura: grelha e estado honesto do cofre (t36) ---------
   'settings.providerCredentials.protection.unavailable.title': 'Não é possível guardar credenciais',
   'settings.providerCredentials.protection.unavailable.body':

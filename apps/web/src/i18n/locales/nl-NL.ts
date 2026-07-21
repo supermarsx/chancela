@@ -7,6 +7,7 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { opsConfigEnglish } from '../opsConfigFallback';
 import { ledgerEventLabelsNlNL } from '../ledgerEventLabels';
 import { ledgerScopeLabelsNlNL } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsNlNL } from '../dashboardSourceLabels';
@@ -15,6 +16,7 @@ import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const nlNL: Catalog = {
   ...operationsEnglish,
+  ...opsConfigEnglish,
   ...ledgerEventLabelsNlNL,
   ...ledgerScopeLabelsNlNL,
   ...dashboardSourceLabelsNlNL,
@@ -1616,16 +1618,55 @@ export const nlNL: Catalog = {
   'users.filters.access.noKey': 'Zonder auditsleutel',
   'users.filters.access.noPassword': 'Zonder wachtwoord',
   'users.filters.access.recovery': 'Met herstelzin',
+  'users.filters.advanced': 'Geavanceerde filters',
+  'users.filters.role.label': 'Rol',
+  'users.filters.role.all': 'Elke rol',
+  'users.filters.role.none': 'Geen rol',
+  'users.filters.scope.label': 'Bereik',
+  'users.filters.scope.all': 'Elk bereik',
+  'users.filters.scope.global': 'Globale bevoegdheid',
+  'users.filters.scope.scoped': 'Beperkt tot bepaalde resources',
+  'users.filters.email.label': 'E-mail',
+  'users.filters.email.all': 'Met of zonder e-mail',
+  'users.filters.email.with': 'Met e-mail',
+  'users.filters.email.without': 'Zonder e-mail',
+  'users.filters.created.label': 'Aanmaakdatum',
+  'users.filters.created.all': 'Elke datum',
+  'users.filters.created.d7': 'Laatste 7 dagen',
+  'users.filters.created.d30': 'Laatste 30 dagen',
+  'users.filters.created.d90': 'Laatste 90 dagen',
+  'users.filters.retiredRole.title': 'Deze rol is samengevoegd',
+  'users.filters.retiredRole.body':
+    'De rol bestaat niet meer: de houders zijn overgezet naar de rol die deze heeft vervangen. Kies een andere rol om gebruikers te zien.',
   'users.filters.clear.aria': 'Gebruikersfilters wissen',
   'users.filters.count': '{shown} van {total}',
   'users.filters.count.aria': '{shown} van {total} gebruikers worden getoond',
   'users.filters.empty.title': 'Geen resultaten',
   'users.filters.empty.body': 'Wijzig de zoekopdracht of de filters om weer gebruikers te zien.',
   'users.edit.identityCard': 'Identiteit',
+  'users.edit.subnav.aria': 'Gebruikerssecties',
+  'users.edit.subnav.general': 'Algemeen',
+  'users.edit.subnav.dsr': 'AVG-verzoeken',
+  'users.edit.subnav.roles': 'Rollen',
+  'users.edit.subnav.access': 'Toegang en audit',
+  'users.edit.subnav.security': 'Beveiliging',
+  'users.security.title': 'Accountbeveiliging',
+  'users.security.intro.self': 'Beheer hier de beveiliging van uw eigen account. Dezelfde inloggegevens verschijnen onder Toegang en audit, waar een beheerder ze inspecteert en opnieuw instelt — hier ziet u ze als accounthouder.',
+  'users.security.intro.other': 'Beveiligingsstatus van dit account. Alleen de houder kan zijn inloggegevens beheren; gebruik Toegang en audit om ze als beheerder opnieuw in te stellen.',
+  'users.security.password.hint': 'Aanmeldwachtwoord.',
+  'users.security.recovery.hint': 'Herstelzin, een alternatief voor het wachtwoord als het wordt vergeten.',
+  'users.security.key.hint': 'Audit-attestatiesleutel. Roteren maakt een nieuwe sleutel voor toekomstige attestaties; eerdere blijven verifieerbaar.',
+  'users.security.manage': 'Beheren in Toegang en audit',
   'users.edit.usernameHint':
     'De gebruikersnaam is de audit-identificatie en kan niet worden gewijzigd.',
   'users.edit.displayNameLabel': 'Weergavenaam',
   'users.edit.activationCard': 'Status',
+  'users.edit.status.label': 'Accountstatus',
+  'users.edit.status.hint.active':
+    'Dit account kan zich aanmelden. Accounts worden nooit verwijderd — deactiveren voorkomt aanmelden en laat de toewijzing van alles wat het al heeft gedaan intact.',
+  'users.edit.status.hint.inactive':
+    'Dit account kan zich niet aanmelden. Het blijft toegewezen aan alles wat het deed voordat het werd gedeactiveerd.',
+  'users.edit.status.pending': 'Bijwerken…',
   'users.edit.notFound': 'Gebruiker niet gevonden.',
   'users.edit.save': 'Naam opslaan',
   'users.create.cardTitle': 'Nieuwe gebruiker',
@@ -1669,6 +1710,11 @@ export const nlNL: Catalog = {
   'settings.appearance.intensity.label': 'Textuurintensiteit — {value}',
   'settings.appearance.intensity.hint': '0 tot 100. Schaalt de korrelopaciteit in realtime.',
   'settings.appearance.reroll': 'Korrel opnieuw genereren',
+  'settings.appearance.grain.title': 'Korrel',
+  'settings.appearance.grain.hint':
+    'Tekent het patroon van de leertextuur opnieuw. Vereist een actieve achtergrondtextuur.',
+  'settings.appearance.grain.help':
+    'De korrel wordt per sessie willekeurig getrokken en wordt niet bewaard: na het herladen is het al een andere. Opnieuw genereren tekent een nieuw patroon met dezelfde intensiteit. Puur cosmetisch en zonder invloed op de documenten.',
   'settings.appearance.colors.title': 'Aangepaste kleuren',
   'settings.appearance.colors.hint':
     'Kies je eigen kleuren; laat een staal ongewijzigd om de standaardkleur van het thema te behouden.',
@@ -1715,6 +1761,7 @@ export const nlNL: Catalog = {
   'settings.management.ai.label': 'AI/MCP inschakelen',
   'settings.management.ai.hint':
     'Regelt de toegang van deze tenant tot AI-functies en de MCP-server. Staat standaard uit.',
+  'settings.management.ai.moved': 'Wordt ingeschakeld bij Beheer › AI en MCP.',
   'settings.management.usersLink': 'Gebruikers',
   'settings.management.toolsLink': 'Hulpmiddelen',
   'settings.platform.cardTitle': 'Bewerkingen',
@@ -1825,7 +1872,6 @@ export const nlNL: Catalog = {
   'settings.platform.logs.column.message': 'Bericht',
   'settings.platform.logs.context.show': 'Context',
   'settings.platform.logs.context.empty': 'Geen context',
-  'settings.platform.subnav.aria': 'Bewerkingssecties',
   'settings.platform.tab.services': 'Diensten',
   'settings.platform.tab.services.desc':
     'Beheer van de gewenste status van de API-server, met eerlijke backend-resultaten en een bewerkingsaudit.',
@@ -1862,10 +1908,11 @@ export const nlNL: Catalog = {
     'Absolute bovengrens van de sessieduur, in seconden. Nul of negatief schakelt de grens uit.',
   'settings.api.related.title': 'Gerelateerde instellingen',
   'settings.api.related.egress':
-    'Dat is de uitgaande lijst van connectoren, niet het inkomende API-oppervlak: hij begrenst waarheen een connector bytes mag sturen. Hij blijft bij Platform.',
+    'Dat is de uitgaande lijst van connectoren, niet het inkomende API-oppervlak: hij begrenst waarheen een connector bytes mag sturen. Hij staat bij Bewerkingen › Diensten.',
   'settings.api.related.logTail':
-    'Het logoverzicht omvat de app, de API en MCP en blijft daarom bij Platform › Logboeken.',
+    'Het logoverzicht omvat de app, de API en MCP en staat daarom bij Bewerkingen › Logboeken.',
   'settings.mcp.cardTitle': 'MCP-server',
+  'settings.mcp.gate.title': 'AI- en MCP-activering',
   'settings.mcp.intro':
     'Alle MCP-specifieke configuratie op één plek: de gewenste status van het stdio-proces, logniveaus en de omgevingsvariabelen die bij het starten worden gelezen.',
   'settings.platform.services.hub':
@@ -2522,10 +2569,10 @@ export const nlNL: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC niet-gevalideerd',
   'entities.print.nipcUnvalidated': '(niet-gevalideerd)',
   'settings.subnav.aria': 'Configuratiesecties',
-  'settings.subnav.platform': 'Platform',
-  'settings.subnav.mcp': 'MCP',
+  'settings.subnav.mcp': 'AI en MCP',
   'settings.subnav.operations.aria': 'Bewerkingsgebieden',
   'settings.subnav.signing.aria': 'Ondertekeningsgebieden',
+  'settings.subnav.users.aria': 'Gebruikersgebieden',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Stap {current} van {total}',
@@ -3433,6 +3480,28 @@ export const nlNL: Catalog = {
   'data.status.openFolder': 'Map openen',
   'data.status.openUnavailable':
     'Het openen van lokale paden is niet beschikbaar in de browser. Kopieer het pad en open het in het besturingssysteem.',
+  'data.status.col.fact': 'Informatie',
+  'data.status.col.value': 'Waarde',
+  'data.status.col.check': 'Controle',
+  'data.status.col.state': 'Status',
+  'data.status.col.result': 'Resultaat',
+  'data.status.col.item': 'Gegevensset',
+  'data.status.col.size': 'Grootte',
+  'data.status.col.detail': 'Detail',
+  'data.status.col.table': 'Tabel',
+  'data.status.col.rows': 'Rijen',
+  'data.status.col.average': 'Gemiddelde per rij',
+  'data.status.col.method': 'Methode',
+  'data.status.col.cleanup': 'Opschoning',
+  'data.status.col.usage': 'Bezetting',
+  'data.status.col.action': 'Actie',
+  'data.status.col.when': 'Datum van rotatie',
+  'data.status.col.boundary': 'Verklaarde grens',
+  'data.status.col.step': 'Stap',
+  'data.status.folder.path': 'Pad van de map',
+  'data.status.folder.configured': 'Map geconfigureerd',
+  'data.status.folder.exists': 'Bestaat op schijf',
+  'data.status.folder.isDirectory': 'Is een map',
   'data.status.permissions.title': 'Machtigingen',
   'data.status.permission.read_dir': 'Map lezen',
   'data.status.permission.create_file': 'Bestand aanmaken',
@@ -4281,6 +4350,46 @@ export const nlNL: Catalog = {
   'trust.detail.history': 'Historie',
   'trust.detail.historyEntries': 'Historische vermeldingen',
   'trust.detail.noStatusHistory': 'Geen gepubliceerde statushistorie.',
+  // --- Vertrouwenscatalogus in tabelvorm (t101) ------------------------------------
+  // Gedeelde kop van de feitentabellen (veld/waarde-paren over één onderwerp),
+  // gevolgd door de drie rasters met herhaalde rijen, met hulp per kolom.
+  'trust.table.field': 'Veld',
+  'trust.table.value': 'Waarde',
+  'trust.table.facts.caption': 'Feiten over dit item',
+  'trust.detail.historyCount': 'Historische vermeldingen: {count}',
+  'trust.table.history.caption': 'Statushistorie van de dienst',
+  'trust.table.history.status': 'Status',
+  'trust.table.history.status.help':
+    'De status die de dienst in die periode volgens de vertrouwenslijst had: verleend betekent dat de gekwalificeerde status gold, ingetrokken dat die was herroepen. Dit bepaalt of een handtekening van die datum steunde op een gekwalificeerde dienst.',
+  'trust.table.history.name': 'Naam in die periode',
+  'trust.table.history.name.help':
+    'De naam waaronder de dienst in die periode werd gepubliceerd. Aanbieders hernoemen diensten, dus deze naam kan afwijken van de huidige naam boven aan dit overzicht — en het is deze naam die in de destijds ondertekende documenten staat.',
+  'trust.table.history.type': 'Type dienst',
+  'trust.table.history.type.help':
+    'De URI-identifier van het diensttype dat in die periode gold, bijvoorbeeld CA/QC voor een gekwalificeerde certificatieautoriteit of TSA/QTST voor een gekwalificeerd tijdstempel. Een wijziging van het type is een wijziging van wat de dienst mocht doen.',
+  'trust.table.history.since': 'Begin',
+  'trust.table.history.since.help':
+    'Het moment waarop deze status van kracht werd, zoals gepubliceerd in de lijst. Bevat de lijst een datum die niet te interpreteren is, dan wordt de onbewerkte waarde getoond in plaats van niets.',
+  'trust.table.identity.caption': 'Digitale identiteiten van de dienst',
+  'trust.table.identity.kind': 'Type',
+  'trust.table.identity.kind.help':
+    'Welke vorm van identiteit deze rij bevat: het volledige X.509-certificaat, de distinguished name van het subject of de identifier van de sleutel van het subject. Dat bepaalt hoe u de waarde vergelijkt met een certificaat dat u in handen hebt.',
+  'trust.table.identity.value': 'Waarde',
+  'trust.table.identity.value.help':
+    'De identiteit zoals gepubliceerd in de vertrouwenslijst. Waarden met de vorm van een hash worden verkort weergegeven, met de volledige waarde in de aanwijzing ernaast; niets wordt afgekapt zonder uitweg, en de tekst blijft volledig selecteerbaar en kopieerbaar.',
+  'trust.table.identity.digest': 'SHA-256',
+  'trust.table.identity.digest.help':
+    'De SHA-256-hash van de identiteit, wanneer de lijst die apart publiceert. Deze kolom blijft leeg wanneer de waarde zelf al die hash is, om niet twee verschillende fingerprints te suggereren.',
+  'trust.table.service.caption': 'Diensten van deze aanbieder',
+  'trust.table.service.name': 'Dienst',
+  'trust.table.service.name.help':
+    'De gepubliceerde naam van de dienst. Kies deze om het volledige overzicht te openen, met digitale identiteiten, servicepunten en statushistorie.',
+  'trust.table.service.type': 'Type',
+  'trust.table.service.type.help':
+    'De URI-identifier die aangeeft wat de dienst is — CA/QC geeft gekwalificeerde certificaten uit, TSA/QTST plaatst gekwalificeerde tijdstempels. Die identifier bepaalt waarvoor de dienst kan worden ingeroepen.',
+  'trust.table.service.attributes': 'Status en attributen',
+  'trust.table.service.attributes.help':
+    'De huidige status plus de attributen die de lijst aan de dienst toekent: of het een gekwalificeerde certificatieautoriteit is, of de dienst gekwalificeerd of vertrouwd is voor elektronische handtekeningen, of er statushistorie is en of er servicepunten worden opgegeven.',
   'trust.detail.identities': 'Identiteiten',
   'trust.provider.analysis': 'Analyse',
   'trust.provider.analysis.value':
@@ -5035,6 +5144,39 @@ export const nlNL: Catalog = {
   'settings.privacy.guidance.column.checklist': 'Velden/checklist',
   'settings.privacy.guidance.required': 'vereist: {value}',
   'settings.privacy.guidance.noClaims': 'No-claim-vlaggen',
+  'settings.privacy.guidance.column.claim': 'Vlag',
+  'settings.privacy.guidance.column.claimState': 'Toestand',
+  'settings.privacy.guidance.notClaimed': 'Niet geclaimd',
+  'settings.privacy.filters.aria': 'Filters: {name}',
+  'settings.privacy.filters.clear': 'Filters wissen',
+  'settings.privacy.filters.advanced': 'Meer filters',
+  'settings.privacy.filters.count': '{shown} van {total}',
+  'settings.privacy.filters.countAria': '{shown} van {total} getoonde records',
+  'settings.privacy.filter.review': 'Beoordelingstoestand',
+  'settings.privacy.filter.review.all': 'Alle beoordelingstoestanden',
+  'settings.privacy.filter.subprocessors': 'Subverwerkers',
+  'settings.privacy.filter.subprocessors.all': 'Met of zonder subverwerkers',
+  'settings.privacy.filter.subprocessors.with': 'Met subverwerkers',
+  'settings.privacy.filter.subprocessors.without': 'Zonder subverwerkers',
+  'settings.privacy.filter.evidence': 'Bewijsbonnen',
+  'settings.privacy.filter.evidence.all': 'Met of zonder bonnen',
+  'settings.privacy.filter.evidence.with': 'Met geregistreerde bonnen',
+  'settings.privacy.filter.evidence.without': 'Zonder geregistreerde bonnen',
+  'settings.privacy.filter.destination': 'Bestemming',
+  'settings.privacy.filter.destination.all': 'Alle bestemmingen',
+  'settings.privacy.filter.disposal': 'Verwijderingsactie',
+  'settings.privacy.filter.disposal.all': 'Alle acties',
+  'settings.privacy.filter.active': 'Actief beleid',
+  'settings.privacy.filter.active.all': 'Actieve en inactieve',
+  'settings.privacy.filter.decision': 'Beoordelingsbeslissing',
+  'settings.privacy.filter.decision.all': 'Alle beslissingen',
+  'settings.privacy.filter.legalHold': 'Juridische bewaarplicht',
+  'settings.privacy.filter.legalHold.all': 'Met of zonder juridische bewaarplicht',
+  'settings.privacy.filter.legalHold.with': 'Met juridische blokkade',
+  'settings.privacy.filter.legalHold.without': 'Zonder juridische blokkade',
+  'settings.privacy.execution.decision.reviewRequired': 'Beoordeling vereist',
+  'settings.privacy.execution.decision.blocked': 'Geblokkeerd',
+  'settings.privacy.execution.decision.executionRecorded': 'Uitvoering geregistreerd',
   'settings.privacy.guidance.operatorActions': 'Operatoracties',
   'settings.privacy.help.processor':
     'Een verwerker verwerkt persoonsgegevens namens de organisatie. Dit register legt vast wie verwerkt, waarvoor, op welke rechtsgrond en welke subverwerkers worden gebruikt.',
@@ -5711,6 +5853,43 @@ export const nlNL: Catalog = {
   'settings.signing.table.provider': 'Aanbieder',
   'settings.signing.table.mode': 'Modus',
   'settings.signing.table.notes': 'Opmerkingen',
+  'common.columnHelp': 'Hulp bij de kolom {column}',
+  'settings.signing.tslSources.help.name':
+    'Naam waaronder deze vertrouwenslijst op deze pagina wordt aangeduid. Daaronder verschijnt de interne, stabiele en unieke identificator waarmee het configuratiedocument naar de bron verwijst; de naam wijzigen verandert die identificator niet.',
+  'settings.signing.tslSources.help.status':
+    'Schakelt de bron in of uit. Een uitgeschakelde bron blijft bewaard en gevalideerd, maar de backend negeert deze bij het bijwerken en bij het oplossen van de lijsten — zo schort u een bron op zonder deze te verwijderen.',
+  'settings.signing.tslSources.help.url':
+    'Adres waarvandaan de lijst wordt gedownload — de nationale lijst (TSL) of de Europese lijst van lijsten (LOTL). Alleen http en https worden aanvaard, en de server weigert loopback-, privé- en gereserveerde adressen. Geef een URL of een lokaal pad op: ten minste één van beide is verplicht.',
+  'settings.signing.tslSources.help.path':
+    'Pad naar een lijstbestand dat al op de servermachine staat, voor installaties zonder internetverbinding. Dit pad is het alternatief voor de URL, geen aanvulling daarop.',
+  'settings.signing.tslSources.help.country':
+    'Gebiedsaanduiding van de lijst: PT voor de nationale lijst, EU voor de Europese lijst van lijsten. Deze aanduiding dient om de bronnen te catalogiseren en te onderscheiden; ze beperkt op zichzelf niet welke certificaten worden aanvaard.',
+  'settings.signing.tslSources.help.scheme':
+    'Aanduiding van het schema dat de lijst volgt — eidas, lotl of een waarde naar keuze van de beheerder. Net als het gebied zijn dit catalogiseringsmetagegevens van de bron.',
+  'settings.signing.tslSources.help.actions':
+    'Verwijdert de bron uit de tabel. Deze pagina slaat automatisch op, dus de verwijdering wordt meteen bewaard; wilt u een bron opschorten met behoud van de configuratie, schakel die bron dan uit in de kolom “Status”.',
+  'settings.signing.tsaProviders.help.name':
+    'Naam waaronder deze tijdstempelaanbieder op deze pagina wordt aangeduid. Daaronder verschijnt de interne, stabiele en unieke identificator waarmee het configuratiedocument naar de aanbieder verwijst.',
+  'settings.signing.tsaProviders.help.status':
+    'Schakelt de aanbieder in of uit en toont welke aanbieder de standaard is. Een uitgeschakelde aanbieder blijft bewaard maar wordt niet gekozen; onder de ingeschakelde aanbieders is er altijd precies één standaard, en die wordt gebruikt om te stempelen. Een andere aanbieder tot standaard maken draagt die hoedanigheid over.',
+  'settings.signing.tsaProviders.help.url':
+    'Adres van de RFC 3161-dienst waarnaar de aanvragen om een tijdstempel gaan. Alleen http en https worden aanvaard, en de server weigert loopback-, privé- en gereserveerde adressen.',
+  'settings.signing.tsaProviders.help.path':
+    'Lokaal pad naar een offline- of testaanbieder, als alternatief voor het HTTP-adres. Bedoeld voor installaties zonder internetverbinding.',
+  'settings.signing.tsaProviders.help.policy':
+    'OID van het stempelbeleid dat van deze aanbieder wordt geëist, bijvoorbeeld 1.2.3.4. Leeg laten betekent dat elk beleid wordt aanvaard — de TSA-catalogus toont dat als “Any”.',
+  'settings.signing.tsaProviders.help.limits':
+    'Parameters van de aanvraag, door de server bepaald en hier niet bewerkbaar: het hash-algoritme dat naar de aanbieder wordt gestuurd, de tijdslimiet voor het antwoord in seconden en de maximaal aanvaarde omvang van dat antwoord.',
+  'settings.signing.tsaProviders.help.actions':
+    'Verwijdert de aanbieder uit de tabel. Deze pagina slaat automatisch op. Wilt u een aanbieder opschorten met behoud van de configuratie, schakel die aanbieder dan uit in de kolom “Status”; verwijdert u de standaardaanbieder, maak dan een andere tot standaard.',
+  'settings.signing.providers.help.provider':
+    'Het ondertekeningsmiddel dat de server in deze installatie herkent. De tabel is alleen-lezen en beschrijft wat op de server beschikbaar is, niet een hier gemaakte keuze.',
+  'settings.signing.providers.help.mode':
+    'De technische familie van het middel, die bepaalt waar de privésleutel zich bevindt en wat er geconfigureerd moet worden: CMD/SCMD ondertekent op afstand bij de AMA, de Burgerkaart (Cartão de Cidadão) vereist een kaartlezer en een lokaal proces, CSC/QTSP ondertekent bij een externe gekwalificeerde aanbieder, PKCS#12 lokaal gebruikt een certificaat in een bestand.',
+  'settings.signing.providers.help.status':
+    'Of het middel klaar is voor gebruik. “Geconfigureerd” zegt dat de vereiste niet-geheime configuratie aanwezig is; “Geblokkeerd in productie” dat er iets ontbreekt wat buiten een testomgeving verplicht is; “Alleen lokaal” markeert de middelen die alleen werken met een proces op de machine zelf; “Niet geconfigureerd” dat er nog niets is opgegeven.',
+  'settings.signing.providers.help.notes':
+    'Operationele opmerking van de server die uitlegt wat er ontbreekt of wat dit middel beperkt — een ontbrekende ApplicationId van de AMA, de noodzaak van een kaartlezer. Deze tekst komt van de server en is hier niet configureerbaar.',
   'settings.providerCredentials.protection.unavailable.title':
     'Inloggegevens kunnen niet worden opgeslagen',
   'settings.providerCredentials.protection.unavailable.body':

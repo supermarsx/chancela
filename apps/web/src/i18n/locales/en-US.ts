@@ -9,6 +9,7 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { opsConfigEnglish } from '../opsConfigFallback';
 import { ledgerEventLabelsEnglish } from '../ledgerEventLabels';
 import { ledgerScopeLabelsEnglish } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsEnglish } from '../dashboardSourceLabels';
@@ -17,6 +18,7 @@ import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const enUS: Catalog = {
   ...operationsEnglish,
+  ...opsConfigEnglish,
   ...ledgerEventLabelsEnglish,
   ...ledgerScopeLabelsEnglish,
   ...dashboardSourceLabelsEnglish,
@@ -1603,15 +1605,54 @@ export const enUS: Catalog = {
   'users.filters.access.noKey': 'Without an audit key',
   'users.filters.access.noPassword': 'Without a password',
   'users.filters.access.recovery': 'With a recovery phrase',
+  'users.filters.advanced': 'Advanced filters',
+  'users.filters.role.label': 'Role',
+  'users.filters.role.all': 'Any role',
+  'users.filters.role.none': 'No role',
+  'users.filters.scope.label': 'Scope',
+  'users.filters.scope.all': 'Any scope',
+  'users.filters.scope.global': 'Global authority',
+  'users.filters.scope.scoped': 'Limited to specific resources',
+  'users.filters.email.label': 'Email',
+  'users.filters.email.all': 'With or without email',
+  'users.filters.email.with': 'With email',
+  'users.filters.email.without': 'Without email',
+  'users.filters.created.label': 'Created',
+  'users.filters.created.all': 'Any date',
+  'users.filters.created.d7': 'Last 7 days',
+  'users.filters.created.d30': 'Last 30 days',
+  'users.filters.created.d90': 'Last 90 days',
+  'users.filters.retiredRole.title': 'This role was merged',
+  'users.filters.retiredRole.body':
+    'The role no longer exists: its holders were reassigned to the role that replaced it. Choose another role to see users.',
   'users.filters.clear.aria': 'Clear user filters',
   'users.filters.count': '{shown} of {total}',
   'users.filters.count.aria': 'Showing {shown} of {total} users',
   'users.filters.empty.title': 'No results',
   'users.filters.empty.body': 'Change the search or filters to see users again.',
   'users.edit.identityCard': 'Identity',
+  'users.edit.subnav.aria': 'User sections',
+  'users.edit.subnav.general': 'General',
+  'users.edit.subnav.dsr': 'DSR requests',
+  'users.edit.subnav.roles': 'Roles',
+  'users.edit.subnav.access': 'Access and audit',
+  'users.edit.subnav.security': 'Security',
+  'users.security.title': 'Account security',
+  'users.security.intro.self': 'Manage your own account security here. The same credentials appear under Access and audit, where an administrator inspects and resets them — here you see them as the account holder.',
+  'users.security.intro.other': 'This account’s security state. Only the holder can manage their credentials; to reset them as an administrator, use Access and audit.',
+  'users.security.password.hint': 'Sign-in password.',
+  'users.security.recovery.hint': 'Recovery phrase, an alternative to the password if it is forgotten.',
+  'users.security.key.hint': 'Audit attestation key. Rotating it makes a new key for future attestations; past ones stay verifiable.',
+  'users.security.manage': 'Manage in Access and audit',
   'users.edit.usernameHint': 'The username is the audit identifier and cannot be changed.',
   'users.edit.displayNameLabel': 'Display name',
   'users.edit.activationCard': 'Status',
+  'users.edit.status.label': 'Account status',
+  'users.edit.status.hint.active':
+    'This account can sign in. Accounts are never deleted — deactivating it prevents sign-in and leaves the attribution of everything it has already done intact.',
+  'users.edit.status.hint.inactive':
+    'This account cannot sign in. It still attributes everything it did before it was deactivated.',
+  'users.edit.status.pending': 'Updating…',
   'users.edit.notFound': 'User not found.',
   'users.edit.save': 'Save name',
   'users.create.cardTitle': 'New user',
@@ -1655,6 +1696,11 @@ export const enUS: Catalog = {
   'settings.appearance.intensity.label': 'Texture intensity — {value}',
   'settings.appearance.intensity.hint': '0 to 100. Scales the grain opacity in real time.',
   'settings.appearance.reroll': 'Regenerate grain',
+  'settings.appearance.grain.title': 'Grain',
+  'settings.appearance.grain.hint':
+    'Redraws the leather texture pattern. Requires the background texture to be on.',
+  'settings.appearance.grain.help':
+    'The grain is drawn at random for each session and is never stored: reload the app and it is already a different one. Regenerating draws a fresh pattern at the same intensity. It is purely cosmetic and does not affect documents.',
   'settings.appearance.colors.title': 'Custom colors',
   'settings.appearance.colors.hint':
     'Pick your own colors; leave a swatch untouched to keep the theme default.',
@@ -1700,6 +1746,7 @@ export const enUS: Catalog = {
   'settings.management.ai.label': 'Enable AI/MCP',
   'settings.management.ai.hint':
     'Controls this tenant’s access to AI features and the MCP server. It stays off by default.',
+  'settings.management.ai.moved': 'Turned on in Operations › AI and MCP.',
   'settings.management.usersLink': 'Users',
   'settings.management.toolsLink': 'Tools',
   'settings.platform.cardTitle': 'Operations',
@@ -1809,7 +1856,6 @@ export const enUS: Catalog = {
   'settings.platform.logs.column.message': 'Message',
   'settings.platform.logs.context.show': 'Context',
   'settings.platform.logs.context.empty': 'No context',
-  'settings.platform.subnav.aria': 'Operations sections',
   'settings.platform.tab.services': 'Services',
   'settings.platform.tab.services.desc':
     'Desired-state control of the API server, with honest backend outcomes and an operations audit.',
@@ -1846,10 +1892,11 @@ export const enUS: Catalog = {
     'Absolute session lifetime cap, in seconds. Zero or negative disables the cap.',
   'settings.api.related.title': 'Related settings',
   'settings.api.related.egress':
-    'That is the connector egress list, not the API’s inbound surface: it bounds where a connector may ship bytes. It stays in Platform.',
+    'That is the connector egress list, not the API’s inbound surface: it bounds where a connector may ship bytes. It lives in Operations › Services.',
   'settings.api.related.logTail':
-    'The log tail spans the app, the API and MCP, so it stays in Platform › Logs.',
+    'The log tail spans the app, the API and MCP, so it lives in Operations › Logs.',
   'settings.mcp.cardTitle': 'MCP server',
+  'settings.mcp.gate.title': 'AI and MCP activation',
   'settings.mcp.intro':
     'Every MCP-specific setting in one place: the stdio process desired state, log levels, and the environment variables read at launch.',
   'settings.platform.services.hub':
@@ -2495,10 +2542,10 @@ export const enUS: Catalog = {
   'entities.nipcUnvalidated.aria': 'Unvalidated NIPC',
   'entities.print.nipcUnvalidated': '(unvalidated)',
   'settings.subnav.aria': 'Settings sections',
-  'settings.subnav.platform': 'Platform',
-  'settings.subnav.mcp': 'MCP',
+  'settings.subnav.mcp': 'AI and MCP',
   'settings.subnav.operations.aria': 'Operations areas',
   'settings.subnav.signing.aria': 'Signing areas',
+  'settings.subnav.users.aria': 'User areas',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Step {current} of {total}',
@@ -3390,6 +3437,28 @@ export const enUS: Catalog = {
   'data.status.openFolder': 'Open folder',
   'data.status.openUnavailable':
     'Opening local paths is not available in the browser. Copy the path and open it in the operating system.',
+  'data.status.col.fact': 'Information',
+  'data.status.col.value': 'Value',
+  'data.status.col.check': 'Check',
+  'data.status.col.state': 'State',
+  'data.status.col.result': 'Result',
+  'data.status.col.item': 'Data set',
+  'data.status.col.size': 'Size',
+  'data.status.col.detail': 'Detail',
+  'data.status.col.table': 'Table',
+  'data.status.col.rows': 'Rows',
+  'data.status.col.average': 'Average per row',
+  'data.status.col.method': 'Method',
+  'data.status.col.cleanup': 'Cleanup',
+  'data.status.col.usage': 'Usage',
+  'data.status.col.action': 'Action',
+  'data.status.col.when': 'Rotation date',
+  'data.status.col.boundary': 'Declared boundary',
+  'data.status.col.step': 'Step',
+  'data.status.folder.path': 'Folder path',
+  'data.status.folder.configured': 'Folder configured',
+  'data.status.folder.exists': 'Exists on disk',
+  'data.status.folder.isDirectory': 'Is a folder',
   'data.status.permissions.title': 'Permissions',
   'data.status.permission.read_dir': 'Read folder',
   'data.status.permission.create_file': 'Create file',
@@ -4227,6 +4296,46 @@ export const enUS: Catalog = {
   'trust.detail.history': 'History',
   'trust.detail.historyEntries': 'Historical entries',
   'trust.detail.noStatusHistory': 'No published status history.',
+  // --- Trust catalog rendered as tables (t101) -------------------------------------
+  // Shared header for the field/value fact tables (one subject), then the three grids of
+  // repeated entries, which carry per-column help.
+  'trust.table.field': 'Field',
+  'trust.table.value': 'Value',
+  'trust.table.facts.caption': 'Facts about this entry',
+  'trust.detail.historyCount': 'History entries: {count}',
+  'trust.table.history.caption': 'Service status history',
+  'trust.table.history.status': 'Status',
+  'trust.table.history.status.help':
+    'The status the service held during that period according to the trusted list: granted means the qualified standing was in force, withdrawn that it had been revoked. This is what decides whether a signature made on that date rested on a qualified service.',
+  'trust.table.history.name': 'Name at the time',
+  'trust.table.history.name.help':
+    'The name the service was published under during that period. Providers rename services, so it can differ from the current name at the top of this record — and it is this one that appears in documents signed at the time.',
+  'trust.table.history.type': 'Service type',
+  'trust.table.history.type.help':
+    'The service-type URI in force during that period, for example CA/QC for a qualified certification authority or TSA/QTST for qualified timestamping. A change of type is a change in what the service was authorized to do.',
+  'trust.table.history.since': 'In force from',
+  'trust.table.history.since.help':
+    'The moment that status took effect, as published in the list. When the list carries a date that cannot be parsed, the raw value is shown rather than nothing.',
+  'trust.table.identity.caption': 'Digital identities of the service',
+  'trust.table.identity.kind': 'Kind',
+  'trust.table.identity.kind.help':
+    'Which form of identity this row carries: the full X.509 certificate, the subject distinguished name, or the subject key identifier. It is what tells you how to compare the value against a certificate in hand.',
+  'trust.table.identity.value': 'Value',
+  'trust.table.identity.value.help':
+    'The identity exactly as published in the trusted list. Digest-shaped values are shown abbreviated, with the full value on the indicator beside them; nothing is cut off without recourse, and the text stays selectable and copyable in full.',
+  'trust.table.identity.digest': 'SHA-256',
+  'trust.table.identity.digest.help':
+    'The SHA-256 digest of the identity, where the list publishes it separately. It is empty when the value itself already is that digest, so as not to suggest two different fingerprints.',
+  'trust.table.service.caption': 'Services operated by this provider',
+  'trust.table.service.name': 'Service',
+  'trust.table.service.name.help':
+    'The published name of the service. Choose it to open the full record, with digital identities, supply points and status history.',
+  'trust.table.service.type': 'Type',
+  'trust.table.service.type.help':
+    'The URI that says what the service is — CA/QC issues qualified certificates, TSA/QTST applies qualified timestamps. It decides what the service can be relied on for.',
+  'trust.table.service.attributes': 'Status and attributes',
+  'trust.table.service.attributes.help':
+    'The current status plus the attributes the list assigns to the service: whether it is a qualified certification authority, whether it is qualified or trusted for electronic signatures, whether it has status history, and whether it declares supply points.',
   'trust.detail.identities': 'Identities',
   'trust.provider.analysis': 'Analysis',
   'trust.provider.analysis.value':
@@ -4957,6 +5066,39 @@ export const enUS: Catalog = {
   'settings.privacy.guidance.column.checklist': 'Fields/checklist',
   'settings.privacy.guidance.required': 'required: {value}',
   'settings.privacy.guidance.noClaims': 'No-claim flags',
+  'settings.privacy.guidance.column.claim': 'Flag',
+  'settings.privacy.guidance.column.claimState': 'State',
+  'settings.privacy.guidance.notClaimed': 'Not claimed',
+  'settings.privacy.filters.aria': 'Filters: {name}',
+  'settings.privacy.filters.clear': 'Clear filters',
+  'settings.privacy.filters.advanced': 'More filters',
+  'settings.privacy.filters.count': '{shown} of {total}',
+  'settings.privacy.filters.countAria': '{shown} of {total} records shown',
+  'settings.privacy.filter.review': 'Review state',
+  'settings.privacy.filter.review.all': 'All review states',
+  'settings.privacy.filter.subprocessors': 'Subprocessors',
+  'settings.privacy.filter.subprocessors.all': 'With or without subprocessors',
+  'settings.privacy.filter.subprocessors.with': 'With subprocessors',
+  'settings.privacy.filter.subprocessors.without': 'Without subprocessors',
+  'settings.privacy.filter.evidence': 'Evidence receipts',
+  'settings.privacy.filter.evidence.all': 'With or without receipts',
+  'settings.privacy.filter.evidence.with': 'With recorded receipts',
+  'settings.privacy.filter.evidence.without': 'Without recorded receipts',
+  'settings.privacy.filter.destination': 'Destination',
+  'settings.privacy.filter.destination.all': 'All destinations',
+  'settings.privacy.filter.disposal': 'Disposal action',
+  'settings.privacy.filter.disposal.all': 'All actions',
+  'settings.privacy.filter.active': 'Active policy',
+  'settings.privacy.filter.active.all': 'Active and inactive',
+  'settings.privacy.filter.decision': 'Review decision',
+  'settings.privacy.filter.decision.all': 'All decisions',
+  'settings.privacy.filter.legalHold': 'Legal hold',
+  'settings.privacy.filter.legalHold.all': 'With or without legal hold',
+  'settings.privacy.filter.legalHold.with': 'With legal-hold block',
+  'settings.privacy.filter.legalHold.without': 'Without legal-hold block',
+  'settings.privacy.execution.decision.reviewRequired': 'Review required',
+  'settings.privacy.execution.decision.blocked': 'Blocked',
+  'settings.privacy.execution.decision.executionRecorded': 'Execution recorded',
   'settings.privacy.guidance.operatorActions': 'Operator actions',
   'settings.privacy.help.processor':
     'A processor handles personal data on the organisation’s behalf. This register records who processes it, for what, on which legal basis and which subprocessors are used.',
@@ -5619,6 +5761,44 @@ export const enUS: Catalog = {
   'settings.signing.table.provider': 'Provider',
   'settings.signing.table.mode': 'Mode',
   'settings.signing.table.notes': 'Notes',
+  // --- Per-column help for the Signatures grids (t101) ----------------------------
+  'common.columnHelp': 'Help for the {column} column',
+  'settings.signing.tslSources.help.name':
+    'The name this trusted list is known by on this page. Below it sits the internal identifier — stable and unique — that the settings document uses to refer to the source; renaming does not change that identifier.',
+  'settings.signing.tslSources.help.status':
+    'Turns the source on or off. A source that is off stays stored and validated, but the backend skips it when refreshing and resolving the lists — this is how to suspend a source without deleting it.',
+  'settings.signing.tslSources.help.url':
+    'Where the list is downloaded from — a national trusted list (TSL) or the European list of trusted lists (LOTL). Only http and https are accepted, and the server refuses loopback, private and reserved addresses. Give a URL or a local path: at least one is required.',
+  'settings.signing.tslSources.help.path':
+    'Path to a list file already present on the server machine, for installations with no route to the internet. It is the alternative to the URL, not an addition to it.',
+  'settings.signing.tslSources.help.country':
+    'Territory marker for the list: PT for the national list, EU for the European list of lists. It catalogs and tells the sources apart; on its own it does not restrict which certificates are accepted.',
+  'settings.signing.tslSources.help.scheme':
+    'Label for the scheme the list follows — eidas, lotl, or a value of the operator’s choosing. Like the territory, it is cataloging metadata about the source.',
+  'settings.signing.tslSources.help.actions':
+    'Removes the source from the grid. This page saves automatically, so the removal persists straight away; to suspend a source while keeping its configuration, turn it off under Status.',
+  'settings.signing.tsaProviders.help.name':
+    'The name this timestamping authority is known by on this page. Below it sits the internal identifier — stable and unique — that the settings document uses to refer to the provider.',
+  'settings.signing.tsaProviders.help.status':
+    'Turns the provider on or off and shows which one is the default. A provider that is off stays stored but is never selected; among those that are on there is always exactly one default, and it is the one used to stamp. Promoting another moves that status across.',
+  'settings.signing.tsaProviders.help.url':
+    'Address of the RFC 3161 service the timestamp requests are sent to. Only http and https are accepted, and the server refuses loopback, private and reserved addresses.',
+  'settings.signing.tsaProviders.help.path':
+    'Local path to an offline or test provider, as an alternative to the HTTP address. It serves installations with no route to the internet.',
+  'settings.signing.tsaProviders.help.policy':
+    'OID of the timestamp policy required of this provider, for example 1.2.3.4. Leaving it empty means any policy is accepted — what the TSA catalog reports as “Any”.',
+  'settings.signing.tsaProviders.help.limits':
+    'Request parameters, set by the server and not editable here: the digest algorithm sent to the provider, the response timeout in seconds, and the largest response accepted.',
+  'settings.signing.tsaProviders.help.actions':
+    'Removes the provider from the grid. This page saves automatically. To suspend it while keeping its configuration, turn it off under Status; if you remove the default, promote another.',
+  'settings.signing.providers.help.provider':
+    'A signing means the server recognizes on this installation. The grid is read-only: it describes what the server has available, not a choice made here.',
+  'settings.signing.providers.help.mode':
+    'The technical family the means belongs to, which decides where the private key lives and what has to be configured: CMD/SCMD signs remotely at AMA, Citizen Card needs a reader and a local process, CSC/QTSP signs at a remote qualified provider, Local PKCS#12 uses a certificate in a file.',
+  'settings.signing.providers.help.status':
+    'Whether the means is ready to use. “Configured” says the non-secret configuration it needs is present; “Blocked in production” that something required outside testing is missing; “Local only” marks the means that work solely with a process on the user’s own machine; “Not configured” that nothing has been supplied yet.',
+  'settings.signing.providers.help.notes':
+    'An operational note from the server explaining what is missing or what constrains this means — an absent AMA ApplicationId, the need for a card reader. It is server text, not configurable here.',
   'settings.providerCredentials.protection.unavailable.title': 'Credentials cannot be stored',
   'settings.providerCredentials.protection.unavailable.body':
     'This server cannot encrypt or store provider secrets. Nothing will be saved until this is resolved — the credentials are not being kept with weaker protection, they are simply not being kept.',

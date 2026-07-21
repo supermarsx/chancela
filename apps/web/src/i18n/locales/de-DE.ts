@@ -9,6 +9,7 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { opsConfigEnglish } from '../opsConfigFallback';
 import { ledgerEventLabelsDeDE } from '../ledgerEventLabels';
 import { ledgerScopeLabelsDeDE } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsDeDE } from '../dashboardSourceLabels';
@@ -17,6 +18,7 @@ import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const deDE: Catalog = {
   ...operationsEnglish,
+  ...opsConfigEnglish,
   ...ledgerEventLabelsDeDE,
   ...ledgerScopeLabelsDeDE,
   ...dashboardSourceLabelsDeDE,
@@ -1627,16 +1629,55 @@ export const deDE: Catalog = {
   'users.filters.access.noKey': 'Ohne Auditschlüssel',
   'users.filters.access.noPassword': 'Ohne Passwort',
   'users.filters.access.recovery': 'Mit Wiederherstellungsphrase',
+  'users.filters.advanced': 'Erweiterte Filter',
+  'users.filters.role.label': 'Rolle',
+  'users.filters.role.all': 'Beliebige Rolle',
+  'users.filters.role.none': 'Keine Rolle',
+  'users.filters.scope.label': 'Geltungsbereich',
+  'users.filters.scope.all': 'Beliebiger Geltungsbereich',
+  'users.filters.scope.global': 'Globale Befugnis',
+  'users.filters.scope.scoped': 'Auf bestimmte Ressourcen begrenzt',
+  'users.filters.email.label': 'E-Mail',
+  'users.filters.email.all': 'Mit oder ohne E-Mail',
+  'users.filters.email.with': 'Mit E-Mail',
+  'users.filters.email.without': 'Ohne E-Mail',
+  'users.filters.created.label': 'Erstellungsdatum',
+  'users.filters.created.all': 'Beliebiges Datum',
+  'users.filters.created.d7': 'Letzte 7 Tage',
+  'users.filters.created.d30': 'Letzte 30 Tage',
+  'users.filters.created.d90': 'Letzte 90 Tage',
+  'users.filters.retiredRole.title': 'Diese Rolle wurde zusammengeführt',
+  'users.filters.retiredRole.body':
+    'Die Rolle existiert nicht mehr: Ihre Inhaber wurden der Nachfolgerolle zugewiesen. Wählen Sie eine andere Rolle, um Benutzer zu sehen.',
   'users.filters.clear.aria': 'Benutzerfilter zurücksetzen',
   'users.filters.count': '{shown} von {total}',
   'users.filters.count.aria': '{shown} von {total} Benutzern werden angezeigt',
   'users.filters.empty.title': 'Keine Ergebnisse',
   'users.filters.empty.body': 'Ändern Sie die Suche oder die Filter, um wieder Benutzer zu sehen.',
   'users.edit.identityCard': 'Identität',
+  'users.edit.subnav.aria': 'Benutzerbereiche',
+  'users.edit.subnav.general': 'Allgemein',
+  'users.edit.subnav.dsr': 'DSGVO-Anfragen',
+  'users.edit.subnav.roles': 'Rollen',
+  'users.edit.subnav.access': 'Zugang und Audit',
+  'users.edit.subnav.security': 'Sicherheit',
+  'users.security.title': 'Kontosicherheit',
+  'users.security.intro.self': 'Verwalten Sie hier die Sicherheit Ihres eigenen Kontos. Dieselben Anmeldedaten erscheinen unter Zugang und Audit, wo ein Administrator sie prüft und zurücksetzt — hier sehen Sie sie als Kontoinhaber.',
+  'users.security.intro.other': 'Sicherheitsstatus dieses Kontos. Nur der Inhaber kann seine Anmeldedaten verwalten; zum Zurücksetzen als Administrator verwenden Sie Zugang und Audit.',
+  'users.security.password.hint': 'Anmeldekennwort.',
+  'users.security.recovery.hint': 'Wiederherstellungsphrase, eine Alternative zum Kennwort, falls es vergessen wird.',
+  'users.security.key.hint': 'Audit-Attestierungsschlüssel. Beim Rotieren entsteht ein neuer Schlüssel für künftige Attestierungen; frühere bleiben überprüfbar.',
+  'users.security.manage': 'In Zugang und Audit verwalten',
   'users.edit.usernameHint':
     'Der Benutzername ist die Prüf-Kennung und kann nicht geändert werden.',
   'users.edit.displayNameLabel': 'Anzeigename',
   'users.edit.activationCard': 'Status',
+  'users.edit.status.label': 'Kontostatus',
+  'users.edit.status.hint.active':
+    'Dieses Konto kann sich anmelden. Konten werden nie gelöscht — eine Deaktivierung verhindert die Anmeldung und lässt die Zuordnung aller bisherigen Vorgänge unberührt.',
+  'users.edit.status.hint.inactive':
+    'Dieses Konto kann sich nicht anmelden. Es bleibt weiterhin allem zugeordnet, was es vor der Deaktivierung getan hat.',
+  'users.edit.status.pending': 'Wird aktualisiert…',
   'users.edit.notFound': 'Benutzer nicht gefunden.',
   'users.edit.save': 'Namen speichern',
   'users.create.cardTitle': 'Neuer Benutzer',
@@ -1681,6 +1722,11 @@ export const deDE: Catalog = {
   'settings.appearance.intensity.hint':
     '0 bis 100. Skaliert die Deckkraft der Körnung in Echtzeit.',
   'settings.appearance.reroll': 'Körnung neu erzeugen',
+  'settings.appearance.grain.title': 'Körnung',
+  'settings.appearance.grain.hint':
+    'Zeichnet das Muster der Lederstruktur neu. Erfordert eine aktive Hintergrundstruktur.',
+  'settings.appearance.grain.help':
+    'Die Körnung wird für jede Sitzung zufällig gezogen und nicht gespeichert: nach einem Neuladen ist sie bereits eine andere. Ein Neuerzeugen zeichnet ein frisches Muster mit derselben Intensität. Rein kosmetisch, ohne Auswirkung auf die Dokumente.',
   'settings.appearance.colors.title': 'Eigene Farben',
   'settings.appearance.colors.hint':
     'Wählen Sie eigene Farben; lassen Sie ein Feld unberührt, um die Standardfarbe des Themes zu behalten.',
@@ -1726,6 +1772,7 @@ export const deDE: Catalog = {
   'settings.management.ai.label': 'KI/MCP aktivieren',
   'settings.management.ai.hint':
     'Steuert den Zugriff dieses Mandanten auf KI-Funktionen und den MCP-Server. Standardmäßig bleibt er deaktiviert.',
+  'settings.management.ai.moved': 'Wird unter Betrieb › KI und MCP eingeschaltet.',
   'settings.management.usersLink': 'Benutzer',
   'settings.management.toolsLink': 'Werkzeuge',
   'settings.platform.cardTitle': 'Betrieb',
@@ -1836,7 +1883,6 @@ export const deDE: Catalog = {
   'settings.platform.logs.column.message': 'Meldung',
   'settings.platform.logs.context.show': 'Kontext',
   'settings.platform.logs.context.empty': 'Kein Kontext',
-  'settings.platform.subnav.aria': 'Betriebsbereiche',
   'settings.platform.tab.services': 'Dienste',
   'settings.platform.tab.services.desc':
     'Sollzustandssteuerung des API-Servers, mit ehrlichen Backend-Ergebnissen und einem Betriebsprotokoll.',
@@ -1873,10 +1919,11 @@ export const deDE: Catalog = {
     'Absolute Obergrenze der Sitzungsdauer in Sekunden. Null oder negativ hebt die Grenze auf.',
   'settings.api.related.title': 'Verwandte Einstellungen',
   'settings.api.related.egress':
-    'Das ist die Ausgangsliste der Konnektoren, nicht die eingehende API-Oberfläche: sie begrenzt, wohin ein Konnektor Bytes senden darf. Sie bleibt unter Plattform.',
+    'Das ist die Ausgangsliste der Konnektoren, nicht die eingehende API-Oberfläche: sie begrenzt, wohin ein Konnektor Bytes senden darf. Sie liegt unter Betrieb › Dienste.',
   'settings.api.related.logTail':
-    'Der Protokollauszug umfasst App, API und MCP und bleibt daher unter Plattform › Protokolle.',
+    'Der Protokollauszug umfasst App, API und MCP und liegt daher unter Betrieb › Protokolle.',
   'settings.mcp.cardTitle': 'MCP-Server',
+  'settings.mcp.gate.title': 'KI- und MCP-Aktivierung',
   'settings.mcp.intro':
     'Die gesamte MCP-spezifische Konfiguration an einer Stelle: Sollzustand des stdio-Prozesses, Protokollstufen und die beim Start gelesenen Umgebungsvariablen.',
   'settings.platform.services.hub':
@@ -2539,10 +2586,10 @@ export const deDE: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC nicht validiert',
   'entities.print.nipcUnvalidated': '(nicht validiert)',
   'settings.subnav.aria': 'Konfigurationsbereiche',
-  'settings.subnav.platform': 'Plattform',
-  'settings.subnav.mcp': 'MCP',
+  'settings.subnav.mcp': 'KI und MCP',
   'settings.subnav.operations.aria': 'Bereiche des Betriebs',
   'settings.subnav.signing.aria': 'Bereiche der Signatur',
+  'settings.subnav.users.aria': 'Bereiche der Benutzer',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Schritt {current} von {total}',
@@ -3456,6 +3503,28 @@ export const deDE: Catalog = {
   'data.status.openFolder': 'Ordner öffnen',
   'data.status.openUnavailable':
     'Das Öffnen lokaler Pfade ist im Browser nicht verfügbar. Kopieren Sie den Pfad und öffnen Sie ihn im Betriebssystem.',
+  'data.status.col.fact': 'Information',
+  'data.status.col.value': 'Wert',
+  'data.status.col.check': 'Prüfung',
+  'data.status.col.state': 'Status',
+  'data.status.col.result': 'Ergebnis',
+  'data.status.col.item': 'Datenbestand',
+  'data.status.col.size': 'Größe',
+  'data.status.col.detail': 'Detail',
+  'data.status.col.table': 'Tabelle',
+  'data.status.col.rows': 'Zeilen',
+  'data.status.col.average': 'Durchschnitt pro Zeile',
+  'data.status.col.method': 'Methode',
+  'data.status.col.cleanup': 'Bereinigung',
+  'data.status.col.usage': 'Belegung',
+  'data.status.col.action': 'Aktion',
+  'data.status.col.when': 'Datum der Rotation',
+  'data.status.col.boundary': 'Erklärte Grenze',
+  'data.status.col.step': 'Schritt',
+  'data.status.folder.path': 'Pfad des Ordners',
+  'data.status.folder.configured': 'Ordner konfiguriert',
+  'data.status.folder.exists': 'Existiert auf dem Datenträger',
+  'data.status.folder.isDirectory': 'Ist ein Ordner',
   'data.status.permissions.title': 'Berechtigungen',
   'data.status.permission.read_dir': 'Ordner lesen',
   'data.status.permission.create_file': 'Datei erstellen',
@@ -4305,6 +4374,46 @@ export const deDE: Catalog = {
   'trust.detail.history': 'Verlauf',
   'trust.detail.historyEntries': 'Verlaufseinträge',
   'trust.detail.noStatusHistory': 'Kein veröffentlichter Statusverlauf.',
+  // --- Vertrauenskatalog als Tabelle (t101) ---------------------------------------
+  // Gemeinsamer Kopf der Faktentabellen (Feld/Wert-Paare zu einem einzigen Subjekt),
+  // danach die drei Raster mit wiederholten Einträgen, die Hilfe je Spalte tragen.
+  'trust.table.field': 'Feld',
+  'trust.table.value': 'Wert',
+  'trust.table.facts.caption': 'Fakten zu diesem Eintrag',
+  'trust.detail.historyCount': 'Verlaufseinträge: {count}',
+  'trust.table.history.caption': 'Statusverlauf des Dienstes',
+  'trust.table.history.status': 'Status',
+  'trust.table.history.status.help':
+    'Der Status, den der Dienst in diesem Zeitraum laut Vertrauensliste hatte: gewährt bedeutet, dass der qualifizierte Status galt, entzogen, dass er widerrufen worden war. Davon hängt ab, ob eine an jenem Datum erstellte Signatur sich auf einen qualifizierten Dienst stützte.',
+  'trust.table.history.name': 'Damaliger Name',
+  'trust.table.history.name.help':
+    'Der Name, unter dem der Dienst in diesem Zeitraum veröffentlicht wurde. Anbieter benennen Dienste um, daher kann dieser Name vom aktuellen Namen oben in dieser Ansicht abweichen — und es ist der damalige Name, der in den seinerzeit signierten Dokumenten steht.',
+  'trust.table.history.type': 'Diensttyp',
+  'trust.table.history.type.help':
+    'Der URI-Bezeichner des Diensttyps, der in diesem Zeitraum galt, etwa CA/QC für eine qualifizierte Zertifizierungsstelle oder TSA/QTST für qualifizierte Zeitstempel. Ein Wechsel des Typs ist ein Wechsel dessen, wozu der Dienst befugt war.',
+  'trust.table.history.since': 'Beginn',
+  'trust.table.history.since.help':
+    'Der Zeitpunkt, ab dem dieser Status galt, so wie in der Liste veröffentlicht. Enthält die Liste ein Datum, das sich nicht auswerten lässt, wird der Rohwert angezeigt statt gar nichts.',
+  'trust.table.identity.caption': 'Digitale Identitäten des Dienstes',
+  'trust.table.identity.kind': 'Typ',
+  'trust.table.identity.kind.help':
+    'Welche Form von Identität diese Zeile enthält: das vollständige X.509-Zertifikat, den Distinguished Name des Subjekts oder die Kennung des Subjektschlüssels. Diese Angabe sagt, wie sich der Wert mit einem vorliegenden Zertifikat vergleichen lässt.',
+  'trust.table.identity.value': 'Wert',
+  'trust.table.identity.value.help':
+    'Die Identität, so wie in der Vertrauensliste veröffentlicht. Werte in Form eines Hashwerts erscheinen gekürzt, der vollständige Wert steht im Hinweis daneben; nichts wird ohne Rückgriff abgeschnitten, und der Text bleibt vollständig markier- und kopierbar.',
+  'trust.table.identity.digest': 'SHA-256',
+  'trust.table.identity.digest.help':
+    'Der SHA-256-Hashwert der Identität, sofern die Liste ihn getrennt veröffentlicht. Diese Spalte bleibt leer, wenn der Wert selbst bereits dieser Hashwert ist, damit nicht zwei verschiedene Fingerprints suggeriert werden.',
+  'trust.table.service.caption': 'Dienste dieses Anbieters',
+  'trust.table.service.name': 'Dienst',
+  'trust.table.service.name.help':
+    'Der veröffentlichte Name des Dienstes. Wählen Sie ihn, um die vollständige Ansicht mit digitalen Identitäten, Servicepunkten und Statusverlauf zu öffnen.',
+  'trust.table.service.type': 'Typ',
+  'trust.table.service.type.help':
+    'Der URI-Bezeichner, der angibt, was der Dienst ist — CA/QC stellt qualifizierte Zertifikate aus, TSA/QTST setzt qualifizierte Zeitstempel. Dieser Bezeichner bestimmt, wofür der Dienst herangezogen werden kann.',
+  'trust.table.service.attributes': 'Status und Attribute',
+  'trust.table.service.attributes.help':
+    'Der aktuelle Status und die Attribute, die die Liste dem Dienst zuschreibt: ob er eine qualifizierte Zertifizierungsstelle ist, ob er für elektronische Signaturen qualifiziert oder vertrauenswürdig ist, ob ein Statusverlauf vorliegt und ob Servicepunkte angegeben sind.',
   'trust.detail.identities': 'Identitäten',
   'trust.provider.analysis': 'Analyse',
   'trust.provider.analysis.value':
@@ -5053,6 +5162,39 @@ export const deDE: Catalog = {
   'settings.privacy.guidance.column.checklist': 'Felder/Checkliste',
   'settings.privacy.guidance.required': 'erforderlich: {value}',
   'settings.privacy.guidance.noClaims': 'No-Claim-Flags',
+  'settings.privacy.guidance.column.claim': 'Kennzeichen',
+  'settings.privacy.guidance.column.claimState': 'Zustand',
+  'settings.privacy.guidance.notClaimed': 'Nicht behauptet',
+  'settings.privacy.filters.aria': 'Filter: {name}',
+  'settings.privacy.filters.clear': 'Filter zurücksetzen',
+  'settings.privacy.filters.advanced': 'Weitere Filter',
+  'settings.privacy.filters.count': '{shown} von {total}',
+  'settings.privacy.filters.countAria': '{shown} von {total} angezeigten Einträgen',
+  'settings.privacy.filter.review': 'Prüfungszustand',
+  'settings.privacy.filter.review.all': 'Alle Prüfungszustände',
+  'settings.privacy.filter.subprocessors': 'Unterauftragsverarbeiter',
+  'settings.privacy.filter.subprocessors.all': 'Mit oder ohne Unterauftragsverarbeiter',
+  'settings.privacy.filter.subprocessors.with': 'Mit Unterauftragsverarbeitern',
+  'settings.privacy.filter.subprocessors.without': 'Ohne Unterauftragsverarbeiter',
+  'settings.privacy.filter.evidence': 'Nachweisbelege',
+  'settings.privacy.filter.evidence.all': 'Mit oder ohne Belege',
+  'settings.privacy.filter.evidence.with': 'Mit erfassten Belegen',
+  'settings.privacy.filter.evidence.without': 'Ohne erfasste Belege',
+  'settings.privacy.filter.destination': 'Ziel',
+  'settings.privacy.filter.destination.all': 'Alle Ziele',
+  'settings.privacy.filter.disposal': 'Entsorgungsaktion',
+  'settings.privacy.filter.disposal.all': 'Alle Aktionen',
+  'settings.privacy.filter.active': 'Aktive Richtlinie',
+  'settings.privacy.filter.active.all': 'Aktive und inaktive',
+  'settings.privacy.filter.decision': 'Prüfungsentscheidung',
+  'settings.privacy.filter.decision.all': 'Alle Entscheidungen',
+  'settings.privacy.filter.legalHold': 'Rechtliche Sperre',
+  'settings.privacy.filter.legalHold.all': 'Mit oder ohne rechtliche Sperre',
+  'settings.privacy.filter.legalHold.with': 'Mit rechtlicher Sperre',
+  'settings.privacy.filter.legalHold.without': 'Ohne rechtliche Sperre',
+  'settings.privacy.execution.decision.reviewRequired': 'Prüfung erforderlich',
+  'settings.privacy.execution.decision.blocked': 'Gesperrt',
+  'settings.privacy.execution.decision.executionRecorded': 'Ausführung erfasst',
   'settings.privacy.guidance.operatorActions': 'Bedieneraktionen',
   'settings.privacy.help.processor':
     'Ein Auftragsverarbeiter verarbeitet personenbezogene Daten im Auftrag der Organisation. Dieses Verzeichnis hält fest, wer verarbeitet, wozu, auf welcher Rechtsgrundlage und welche Unterauftragsverarbeiter genutzt werden.',
@@ -5732,6 +5874,43 @@ export const deDE: Catalog = {
   'settings.signing.table.provider': 'Anbieter',
   'settings.signing.table.mode': 'Modus',
   'settings.signing.table.notes': 'Hinweise',
+  'common.columnHelp': 'Hilfe zur Spalte {column}',
+  'settings.signing.tslSources.help.name':
+    'Name, unter dem diese Vertrauensliste auf dieser Seite geführt wird. Darunter erscheint die interne, stabile und eindeutige Kennung, mit der das Konfigurationsdokument auf die Quelle verweist; eine Änderung des Namens ändert diese Kennung nicht.',
+  'settings.signing.tslSources.help.status':
+    'Schaltet die Quelle ein oder aus. Eine ausgeschaltete Quelle bleibt gespeichert und validiert, wird beim Aktualisieren und beim Auflösen der Listen jedoch vom Backend übergangen — so lässt sich eine Quelle aussetzen, ohne sie zu löschen.',
+  'settings.signing.tslSources.help.url':
+    'Adresse, von der die Liste heruntergeladen wird — die nationale Liste (TSL) oder die europäische Liste der Listen (LOTL). Nur http und https werden akzeptiert, und der Server weist Loopback-, private und reservierte Adressen zurück. Geben Sie eine URL oder einen lokalen Pfad an: mindestens eines von beiden ist erforderlich.',
+  'settings.signing.tslSources.help.path':
+    'Pfad zu einer Listendatei, die bereits auf dem Servercomputer liegt, für Installationen ohne Internetzugang. Dieser Pfad ist die Alternative zur URL, keine Ergänzung.',
+  'settings.signing.tslSources.help.country':
+    'Gebietskennzeichen der Liste: PT für die nationale Liste, EU für die europäische Liste der Listen. Es dient dazu, die Quellen zu katalogisieren und zu unterscheiden; welche Zertifikate akzeptiert werden, schränkt dieses Kennzeichen für sich genommen nicht ein.',
+  'settings.signing.tslSources.help.scheme':
+    'Kennzeichnung des Schemas, dem die Liste folgt — eidas, lotl oder ein vom Betreiber frei gewählter Wert. Wie das Gebiet sind auch diese Angaben reine Katalogisierungsmetadaten der Quelle.',
+  'settings.signing.tslSources.help.actions':
+    'Entfernt die Quelle aus der Tabelle. Diese Seite speichert automatisch, die Entfernung ist daher sofort dauerhaft; um eine Quelle auszusetzen und ihre Konfiguration zu behalten, schalten Sie diese Quelle in der Spalte „Status“ aus.',
+  'settings.signing.tsaProviders.help.name':
+    'Name, unter dem dieser Zeitstempelanbieter auf dieser Seite geführt wird. Darunter erscheint die interne, stabile und eindeutige Kennung, mit der das Konfigurationsdokument auf den Anbieter verweist.',
+  'settings.signing.tsaProviders.help.status':
+    'Schaltet den Anbieter ein oder aus und zeigt an, welcher Anbieter der Standard ist. Ein ausgeschalteter Anbieter bleibt gespeichert, wird aber nicht ausgewählt; unter den eingeschalteten gibt es immer genau einen Standardanbieter, und dieser wird zum Stempeln verwendet. Wird ein anderer Anbieter zum Standard erhoben, geht diese Eigenschaft auf ihn über.',
+  'settings.signing.tsaProviders.help.url':
+    'Adresse des RFC 3161-Dienstes, an den die Zeitstempelanfragen gehen. Nur http und https werden akzeptiert, und der Server weist Loopback-, private und reservierte Adressen zurück.',
+  'settings.signing.tsaProviders.help.path':
+    'Lokaler Pfad zu einem Offline- oder Testanbieter, als Alternative zur HTTP-Adresse. Gedacht für Installationen ohne Internetzugang.',
+  'settings.signing.tsaProviders.help.policy':
+    'OID der Stempelrichtlinie, die von diesem Anbieter verlangt wird, zum Beispiel 1.2.3.4. Bleibt das Feld leer, wird jede Richtlinie akzeptiert — im TSA-Katalog erscheint das als „Any“.',
+  'settings.signing.tsaProviders.help.limits':
+    'Vom Server festgelegte Parameter der Anfrage, die hier nicht bearbeitet werden können: das an den Anbieter gesendete Hash-Verfahren, die Zeitgrenze für die Antwort in Sekunden und die maximal akzeptierte Größe dieser Antwort.',
+  'settings.signing.tsaProviders.help.actions':
+    'Entfernt den Anbieter aus der Tabelle. Diese Seite speichert automatisch. Um einen Anbieter auszusetzen und seine Konfiguration zu behalten, schalten Sie diesen Anbieter in der Spalte „Status“ aus; wenn Sie den Standardanbieter entfernen, erheben Sie einen anderen zum Standard.',
+  'settings.signing.providers.help.provider':
+    'Das Signaturverfahren, das der Server in dieser Installation kennt. Die Tabelle ist schreibgeschützt und beschreibt, was auf dem Server verfügbar ist, nicht eine hier getroffene Auswahl.',
+  'settings.signing.providers.help.mode':
+    'Die technische Familie des Verfahrens, die bestimmt, wo der private Schlüssel liegt und was konfiguriert werden muss: CMD/SCMD signiert per Fernzugriff bei der AMA, die Bürgerkarte (Cartão de Cidadão) erfordert ein Lesegerät und einen lokalen Prozess, CSC/QTSP signiert bei einem entfernten qualifizierten Anbieter, PKCS#12 lokal verwendet ein Zertifikat aus einer Datei.',
+  'settings.signing.providers.help.status':
+    'Ob das Verfahren einsatzbereit ist. „Konfiguriert“ besagt, dass die erforderliche nicht geheime Konfiguration vorhanden ist; „In Produktion blockiert“, dass etwas fehlt, das außerhalb des Testbetriebs verlangt wird; „Nur lokal“ kennzeichnet die Verfahren, die nur mit einem Prozess auf dem Rechner selbst funktionieren; „Nicht konfiguriert“, dass noch nichts hinterlegt wurde.',
+  'settings.signing.providers.help.notes':
+    'Betriebshinweis vom Server, der erklärt, was fehlt oder was dieses Verfahren einschränkt — eine fehlende ApplicationId der AMA, die Notwendigkeit eines Kartenlesegeräts. Dieser Hinweis stammt vom Server und ist hier nicht konfigurierbar.',
   'settings.providerCredentials.protection.unavailable.title':
     'Zugangsdaten können nicht gespeichert werden',
   'settings.providerCredentials.protection.unavailable.body':

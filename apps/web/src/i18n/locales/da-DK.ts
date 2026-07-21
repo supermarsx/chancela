@@ -9,6 +9,7 @@
  */
 import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
+import { opsConfigEnglish } from '../opsConfigFallback';
 import { ledgerEventLabelsDaDK } from '../ledgerEventLabels';
 import { ledgerScopeLabelsDaDK } from '../ledgerScopeLabels';
 import { dashboardSourceLabelsDaDK } from '../dashboardSourceLabels';
@@ -17,6 +18,7 @@ import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
 export const daDK: Catalog = {
   ...operationsEnglish,
+  ...opsConfigEnglish,
   ...ledgerEventLabelsDaDK,
   ...ledgerScopeLabelsDaDK,
   ...dashboardSourceLabelsDaDK,
@@ -1610,15 +1612,54 @@ export const daDK: Catalog = {
   'users.filters.access.noKey': 'Uden revisionsnøgle',
   'users.filters.access.noPassword': 'Uden adgangskode',
   'users.filters.access.recovery': 'Med gendannelsessætning',
+  'users.filters.advanced': 'Avancerede filtre',
+  'users.filters.role.label': 'Rolle',
+  'users.filters.role.all': 'Enhver rolle',
+  'users.filters.role.none': 'Ingen rolle',
+  'users.filters.scope.label': 'Omfang',
+  'users.filters.scope.all': 'Ethvert omfang',
+  'users.filters.scope.global': 'Global myndighed',
+  'users.filters.scope.scoped': 'Begrænset til bestemte ressourcer',
+  'users.filters.email.label': 'E-mail',
+  'users.filters.email.all': 'Med eller uden e-mail',
+  'users.filters.email.with': 'Med e-mail',
+  'users.filters.email.without': 'Uden e-mail',
+  'users.filters.created.label': 'Oprettelsesdato',
+  'users.filters.created.all': 'Enhver dato',
+  'users.filters.created.d7': 'Seneste 7 dage',
+  'users.filters.created.d30': 'Seneste 30 dage',
+  'users.filters.created.d90': 'Seneste 90 dage',
+  'users.filters.retiredRole.title': 'Denne rolle er lagt sammen',
+  'users.filters.retiredRole.body':
+    'Rollen findes ikke længere: indehaverne blev overført til den rolle, der erstattede den. Vælg en anden rolle for at se brugere.',
   'users.filters.clear.aria': 'Ryd brugerfiltre',
   'users.filters.count': '{shown} af {total}',
   'users.filters.count.aria': 'Viser {shown} af {total} brugere',
   'users.filters.empty.title': 'Ingen resultater',
   'users.filters.empty.body': 'Ændr søgningen eller filtrene for at se brugere igen.',
   'users.edit.identityCard': 'Identitet',
+  'users.edit.subnav.aria': 'Brugerafsnit',
+  'users.edit.subnav.general': 'Generelt',
+  'users.edit.subnav.dsr': 'DSR-anmodninger',
+  'users.edit.subnav.roles': 'Roller',
+  'users.edit.subnav.access': 'Adgang og revision',
+  'users.edit.subnav.security': 'Sikkerhed',
+  'users.security.title': 'Kontosikkerhed',
+  'users.security.intro.self': 'Administrer sikkerheden for din egen konto her. De samme legitimationsoplysninger vises under Adgang og revision, hvor en administrator inspicerer og nulstiller dem — her ser du dem som kontoindehaver.',
+  'users.security.intro.other': 'Denne kontos sikkerhedstilstand. Kun indehaveren kan administrere sine legitimationsoplysninger; brug Adgang og revision for at nulstille dem som administrator.',
+  'users.security.password.hint': 'Adgangskode til login.',
+  'users.security.recovery.hint': 'Gendannelsessætning, et alternativ til adgangskoden, hvis den glemmes.',
+  'users.security.key.hint': 'Attesteringsnøgle til revision. At rotere den laver en ny nøgle til fremtidige attesteringer; tidligere forbliver verificerbare.',
+  'users.security.manage': 'Administrer i Adgang og revision',
   'users.edit.usernameHint': 'Brugernavnet er revisionsidentifikatoren og kan ikke ændres.',
   'users.edit.displayNameLabel': 'Vist navn',
   'users.edit.activationCard': 'Status',
+  'users.edit.status.label': 'Kontostatus',
+  'users.edit.status.hint.active':
+    'Denne konto kan logge ind. Konti slettes aldrig — deaktivering forhindrer login og bevarer tilskrivningen af alt, kontoen allerede har gjort.',
+  'users.edit.status.hint.inactive':
+    'Denne konto kan ikke logge ind. Den tilskriver stadig alt, den gjorde, før den blev deaktiveret.',
+  'users.edit.status.pending': 'Opdaterer…',
   'users.edit.notFound': 'Bruger blev ikke fundet.',
   'users.edit.save': 'Gem navn',
   'users.create.cardTitle': 'Ny bruger',
@@ -1662,6 +1703,11 @@ export const daDK: Catalog = {
   'settings.appearance.intensity.label': 'Strukturens intensitet — {value}',
   'settings.appearance.intensity.hint': '0 til 100. Skalerer kornets opacitet i realtid.',
   'settings.appearance.reroll': 'Regenerér korn',
+  'settings.appearance.grain.title': 'Korn',
+  'settings.appearance.grain.hint':
+    'Gentegner mønsteret i læderteksturen. Kræver, at baggrundsteksturen er slået til.',
+  'settings.appearance.grain.help':
+    'Kornet trækkes tilfældigt for hver session og gemmes ikke: efter en genindlæsning er det allerede et andet. En ny udtrækning tegner et friskt mønster med samme intensitet. Rent kosmetisk og uden betydning for dokumenterne.',
   'settings.appearance.colors.title': 'Tilpassede farver',
   'settings.appearance.colors.hint':
     'Vælg dine egne farver; lad en prøve være urørt for at beholde temaets standard.',
@@ -1707,6 +1753,7 @@ export const daDK: Catalog = {
   'settings.management.ai.label': 'Aktivér AI/MCP',
   'settings.management.ai.hint':
     'Styrer denne lejers adgang til AI-funktioner og MCP-serveren. Den er slået fra som standard.',
+  'settings.management.ai.moved': 'Slås til under Drift › AI og MCP.',
   'settings.management.usersLink': 'Brugere',
   'settings.management.toolsLink': 'Værktøjer',
   'settings.platform.cardTitle': 'Drift',
@@ -1817,7 +1864,6 @@ export const daDK: Catalog = {
   'settings.platform.logs.column.message': 'Besked',
   'settings.platform.logs.context.show': 'Kontekst',
   'settings.platform.logs.context.empty': 'Ingen kontekst',
-  'settings.platform.subnav.aria': 'Driftssektioner',
   'settings.platform.tab.services': 'Tjenester',
   'settings.platform.tab.services.desc':
     'Styring af ønsket tilstand for API-serveren, med ærlige backend-resultater og et driftsrevisionsspor.',
@@ -1854,10 +1900,11 @@ export const daDK: Catalog = {
     'Absolut loft over sessionens levetid, i sekunder. Nul eller negativt slår loftet fra.',
   'settings.api.related.title': 'Relaterede indstillinger',
   'settings.api.related.egress':
-    'Det er konnektorernes udgående liste, ikke API’ets indgående flade: den afgrænser, hvorhen en konnektor må sende bytes. Den bliver under Platform.',
+    'Det er konnektorernes udgående liste, ikke API’ets indgående flade: den afgrænser, hvorhen en konnektor må sende bytes. Den ligger under Drift › Tjenester.',
   'settings.api.related.logTail':
-    'Loghalen dækker appen, API’et og MCP og bliver derfor under Platform › Logfiler.',
+    'Loghalen dækker appen, API’et og MCP og ligger derfor under Drift › Logfiler.',
   'settings.mcp.cardTitle': 'MCP-server',
+  'settings.mcp.gate.title': 'Aktivering af AI og MCP',
   'settings.mcp.intro':
     'Al MCP-specifik konfiguration ét sted: stdio-processens ønskede tilstand, logniveauer og de miljøvariabler, der læses ved opstart.',
   'settings.platform.services.hub':
@@ -2507,10 +2554,10 @@ export const daDK: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC ikke valideret',
   'entities.print.nipcUnvalidated': '(ikke valideret)',
   'settings.subnav.aria': 'Konfigurationsafsnit',
-  'settings.subnav.platform': 'Platform',
-  'settings.subnav.mcp': 'MCP',
+  'settings.subnav.mcp': 'AI og MCP',
   'settings.subnav.operations.aria': 'Driftsområder',
   'settings.subnav.signing.aria': 'Signeringsområder',
+  'settings.subnav.users.aria': 'Brugerområder',
 
   // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
   'onboarding.step': 'Trin {current} af {total}',
@@ -3408,6 +3455,28 @@ export const daDK: Catalog = {
   'data.status.openFolder': 'Åbn mappe',
   'data.status.openUnavailable':
     'Åbning af lokale stier er ikke tilgængelig i browseren. Kopiér stien, og åbn den i operativsystemet.',
+  'data.status.col.fact': 'Oplysning',
+  'data.status.col.value': 'Værdi',
+  'data.status.col.check': 'Kontrol',
+  'data.status.col.state': 'Status',
+  'data.status.col.result': 'Resultat',
+  'data.status.col.item': 'Datasæt',
+  'data.status.col.size': 'Størrelse',
+  'data.status.col.detail': 'Detalje',
+  'data.status.col.table': 'Tabel',
+  'data.status.col.rows': 'Rækker',
+  'data.status.col.average': 'Gennemsnit pr. række',
+  'data.status.col.method': 'Metode',
+  'data.status.col.cleanup': 'Oprydning',
+  'data.status.col.usage': 'Forbrug',
+  'data.status.col.action': 'Handling',
+  'data.status.col.when': 'Dato for rotation',
+  'data.status.col.boundary': 'Erklæret grænse',
+  'data.status.col.step': 'Trin',
+  'data.status.folder.path': 'Sti til mappen',
+  'data.status.folder.configured': 'Mappe konfigureret',
+  'data.status.folder.exists': 'Findes på disken',
+  'data.status.folder.isDirectory': 'Er en mappe',
   'data.status.permissions.title': 'Tilladelser',
   'data.status.permission.read_dir': 'Læs mappe',
   'data.status.permission.create_file': 'Opret fil',
@@ -4248,6 +4317,46 @@ export const daDK: Catalog = {
   'trust.detail.history': 'Historik',
   'trust.detail.historyEntries': 'Historiske poster',
   'trust.detail.noStatusHistory': 'Ingen offentliggjort statushistorik.',
+  // --- Tillidskataloget vist som tabeller (t101) -----------------------------------
+  // Fælles hoved for faktatabellerne (felt/værdi-par om ét enkelt subjekt),
+  // efterfulgt af de tre gitre med gentagne rækker, der har hjælp pr. kolonne.
+  'trust.table.field': 'Felt',
+  'trust.table.value': 'Værdi',
+  'trust.table.facts.caption': 'Fakta om denne post',
+  'trust.detail.historyCount': 'Historiske poster: {count}',
+  'trust.table.history.caption': 'Tjenestens statushistorik',
+  'trust.table.history.status': 'Status',
+  'trust.table.history.status.help':
+    'Den status, tjenesten havde i den periode ifølge tillidslisten: tildelt betyder, at den kvalificerede status var gældende, tilbagetrukket at den var tilbagekaldt. Det er dette, der afgør, om en signatur fra den dato hvilede på en kvalificeret tjeneste.',
+  'trust.table.history.name': 'Navn dengang',
+  'trust.table.history.name.help':
+    'Det navn, tjenesten blev offentliggjort under i den periode. Udbydere omdøber tjenester, så navnet kan afvige fra det aktuelle navn øverst på dette kort — og det er dette navn, der står i de dokumenter, der blev underskrevet dengang.',
+  'trust.table.history.type': 'Tjenestetype',
+  'trust.table.history.type.help':
+    'URI-identifikatoren for den tjenestetype, der var gældende i den periode, for eksempel CA/QC for en kvalificeret certificeringsmyndighed eller TSA/QTST for kvalificeret tidsstempling. Et skift af type er et skift i, hvad tjenesten var bemyndiget til at gøre.',
+  'trust.table.history.since': 'Start',
+  'trust.table.history.since.help':
+    'Det tidspunkt, hvor denne status trådte i kraft, som offentliggjort på listen. Hvis listen indeholder en dato, der ikke kan fortolkes, vises råværdien i stedet for ingenting.',
+  'trust.table.identity.caption': 'Tjenestens digitale identiteter',
+  'trust.table.identity.kind': 'Type',
+  'trust.table.identity.kind.help':
+    'Hvilken form for identitet denne række indeholder: det fulde X.509-certifikat, subjektets distinguished name eller identifikatoren for subjektets nøgle. Det er dette, der afgør, hvordan værdien sammenlignes med et certifikat, man har ved hånden.',
+  'trust.table.identity.value': 'Værdi',
+  'trust.table.identity.value.help':
+    'Identiteten, som den er offentliggjort på tillidslisten. Værdier, der har form af et hash, vises forkortet, med den fulde værdi i indikatoren ved siden af; intet afkortes uden adgang til resten, og teksten kan fortsat markeres og kopieres i sin helhed.',
+  'trust.table.identity.digest': 'SHA-256',
+  'trust.table.identity.digest.help':
+    'Identitetens SHA-256-hash, når listen offentliggør den separat. Denne kolonne står tom, når værdien selv allerede er dette hash, så der ikke antydes to forskellige fingeraftryk.',
+  'trust.table.service.caption': 'Denne udbyders tjenester',
+  'trust.table.service.name': 'Tjeneste',
+  'trust.table.service.name.help':
+    'Tjenestens offentliggjorte navn. Vælg det for at åbne det fulde kort med digitale identiteter, tjenestepunkter og statushistorik.',
+  'trust.table.service.type': 'Type',
+  'trust.table.service.type.help':
+    'URI-identifikatoren, der angiver, hvad tjenesten er — CA/QC udsteder kvalificerede certifikater, TSA/QTST påfører kvalificerede tidsstempler. Den afgør, hvad tjenesten kan påberåbes til.',
+  'trust.table.service.attributes': 'Status og attributter',
+  'trust.table.service.attributes.help':
+    'Den aktuelle status samt de attributter, listen tildeler tjenesten: om den er en kvalificeret certificeringsmyndighed, om den er kvalificeret eller betroet til elektroniske signaturer, om der findes statushistorik, og om der angives tjenestepunkter.',
   'trust.detail.identities': 'Identiteter',
   'trust.provider.analysis': 'Analyse',
   'trust.provider.analysis.value':
@@ -4987,6 +5096,39 @@ export const daDK: Catalog = {
   'settings.privacy.guidance.column.checklist': 'Felter/tjekliste',
   'settings.privacy.guidance.required': 'påkrævet: {value}',
   'settings.privacy.guidance.noClaims': 'No-claim-flag',
+  'settings.privacy.guidance.column.claim': 'Markering',
+  'settings.privacy.guidance.column.claimState': 'Tilstand',
+  'settings.privacy.guidance.notClaimed': 'Ikke påstået',
+  'settings.privacy.filters.aria': 'Filtre: {name}',
+  'settings.privacy.filters.clear': 'Ryd filtre',
+  'settings.privacy.filters.advanced': 'Flere filtre',
+  'settings.privacy.filters.count': '{shown} af {total}',
+  'settings.privacy.filters.countAria': '{shown} af {total} viste poster',
+  'settings.privacy.filter.review': 'Gennemgangstilstand',
+  'settings.privacy.filter.review.all': 'Alle gennemgangstilstande',
+  'settings.privacy.filter.subprocessors': 'Underdatabehandlere',
+  'settings.privacy.filter.subprocessors.all': 'Med eller uden underdatabehandlere',
+  'settings.privacy.filter.subprocessors.with': 'Med underdatabehandlere',
+  'settings.privacy.filter.subprocessors.without': 'Uden underdatabehandlere',
+  'settings.privacy.filter.evidence': 'Dokumentationskvitteringer',
+  'settings.privacy.filter.evidence.all': 'Med eller uden kvitteringer',
+  'settings.privacy.filter.evidence.with': 'Med registrerede kvitteringer',
+  'settings.privacy.filter.evidence.without': 'Uden registrerede kvitteringer',
+  'settings.privacy.filter.destination': 'Bestemmelsessted',
+  'settings.privacy.filter.destination.all': 'Alle bestemmelsessteder',
+  'settings.privacy.filter.disposal': 'Bortskaffelseshandling',
+  'settings.privacy.filter.disposal.all': 'Alle handlinger',
+  'settings.privacy.filter.active': 'Aktiv politik',
+  'settings.privacy.filter.active.all': 'Aktive og inaktive',
+  'settings.privacy.filter.decision': 'Gennemgangsbeslutning',
+  'settings.privacy.filter.decision.all': 'Alle beslutninger',
+  'settings.privacy.filter.legalHold': 'Juridisk tilbageholdelse',
+  'settings.privacy.filter.legalHold.all': 'Med eller uden juridisk tilbageholdelse',
+  'settings.privacy.filter.legalHold.with': 'Med juridisk tilbageholdelsesblokering',
+  'settings.privacy.filter.legalHold.without': 'Uden juridisk tilbageholdelsesblokering',
+  'settings.privacy.execution.decision.reviewRequired': 'Gennemgang påkrævet',
+  'settings.privacy.execution.decision.blocked': 'Blokeret',
+  'settings.privacy.execution.decision.executionRecorded': 'Udførelse registreret',
   'settings.privacy.guidance.operatorActions': 'Operatørhandlinger',
   'settings.privacy.help.processor':
     'En databehandler behandler personoplysninger på organisationens vegne. Denne fortegnelse registrerer hvem der behandler, til hvad, på hvilket retsgrundlag og hvilke underdatabehandlere der bruges.',
@@ -5655,6 +5797,43 @@ export const daDK: Catalog = {
   'settings.signing.table.provider': 'Udbyder',
   'settings.signing.table.mode': 'Tilstand',
   'settings.signing.table.notes': 'Bemærkninger',
+  'common.columnHelp': 'Hjælp til kolonnen {column}',
+  'settings.signing.tslSources.help.name':
+    'Navn, som denne tillidsliste vises under på denne side. Nedenunder står den interne, stabile og entydige identifikator, som konfigurationsdokumentet bruger til at henvise til kilden; at ændre navnet ændrer ikke denne identifikator.',
+  'settings.signing.tslSources.help.status':
+    'Slår kilden til eller fra. En kilde, der er slået fra, forbliver gemt og valideret, men backenden ignorerer den ved opdatering og ved opslag i listerne — det er måden at sætte en kilde i bero på uden at slette den.',
+  'settings.signing.tslSources.help.url':
+    'Adresse, som listen hentes fra — den nationale liste (TSL) eller den europæiske liste over lister (LOTL). Kun http og https accepteres, og serveren afviser loopback-adresser, private adresser og reserverede adresser. Angiv enten en URL eller en lokal sti: mindst én af delene er påkrævet.',
+  'settings.signing.tslSources.help.path':
+    'Sti til en listefil, der allerede findes på servermaskinen, til installationer uden internetadgang. Denne sti er alternativet til URL-adressen, ikke et supplement.',
+  'settings.signing.tslSources.help.country':
+    'Områdemarkering for listen: PT for den nationale liste, EU for den europæiske liste over lister. Denne markering bruges til at katalogisere og skelne mellem kilderne; den begrænser ikke i sig selv, hvilke certifikater der accepteres.',
+  'settings.signing.tslSources.help.scheme':
+    'Betegnelse for det skema, listen følger — eidas, lotl eller en værdi, som operatøren selv vælger. Ligesom området er dette katalogiseringsmetadata om kilden.',
+  'settings.signing.tslSources.help.actions':
+    'Fjerner kilden fra tabellen. Denne side gemmer automatisk, så fjernelsen bliver bevaret med det samme; vil du sætte en kilde i bero og beholde konfigurationen, skal du slå den fra i kolonnen »Status«.',
+  'settings.signing.tsaProviders.help.name':
+    'Navn, som denne tidsstempeludbyder vises under på denne side. Nedenunder står den interne, stabile og entydige identifikator, som konfigurationsdokumentet bruger til at henvise til udbyderen.',
+  'settings.signing.tsaProviders.help.status':
+    'Slår udbyderen til eller fra og viser, hvilken udbyder der er standard. En udbyder, der er slået fra, forbliver gemt, men bliver ikke valgt; blandt dem, der er slået til, er der altid præcis én standard, og det er den, der bruges til at stemple med. Gør du en anden udbyder til standard, overgår den egenskab til den.',
+  'settings.signing.tsaProviders.help.url':
+    'Adresse på den RFC 3161-tjeneste, som anmodningerne om tidsstempel sendes til. Kun http og https accepteres, og serveren afviser loopback-adresser, private adresser og reserverede adresser.',
+  'settings.signing.tsaProviders.help.path':
+    'Lokal sti til en offline- eller testudbyder som alternativ til HTTP-adressen. Beregnet til installationer uden internetadgang.',
+  'settings.signing.tsaProviders.help.policy':
+    'OID for den stempelpolitik, der kræves af denne udbyder, for eksempel 1.2.3.4. Lades feltet tomt, accepteres enhver politik — det er det, TSA-kataloget viser som »Any«.',
+  'settings.signing.tsaProviders.help.limits':
+    'Parametre for anmodningen, som serveren fastsætter, og som ikke kan redigeres her: den hash-algoritme, der sendes til udbyderen, tidsgrænsen for svaret i sekunder og den maksimale størrelse, der accepteres for dette svar.',
+  'settings.signing.tsaProviders.help.actions':
+    'Fjerner udbyderen fra tabellen. Denne side gemmer automatisk. Vil du sætte en udbyder i bero og beholde konfigurationen, skal du slå den fra i kolonnen »Status«; fjerner du standardudbyderen, skal du gøre en anden til standard.',
+  'settings.signing.providers.help.provider':
+    'Det signeringsmiddel, som serveren genkender i denne installation. Tabellen er skrivebeskyttet og beskriver, hvad serveren har til rådighed, ikke et valg, der træffes her.',
+  'settings.signing.providers.help.mode':
+    'Middelets tekniske familie, som afgør, hvor den private nøgle ligger, og hvad der skal konfigureres: CMD/SCMD signerer eksternt hos AMA, Borgerkort (Cartão de Cidadão) kræver kortlæser og en lokal proces, CSC/QTSP signerer hos en ekstern kvalificeret udbyder, lokal PKCS#12 bruger et certifikat i en fil.',
+  'settings.signing.providers.help.status':
+    'Om midlet er klar til brug. »Konfigureret« siger, at den nødvendige ikke-hemmelige konfiguration er til stede; »Blokeret i produktion«, at der mangler noget, som kræves uden for testbrug; »Kun lokal« markerer de midler, der kun virker med en proces på selve maskinen; »Ikke konfigureret«, at der endnu ikke er angivet noget.',
+  'settings.signing.providers.help.notes':
+    'Driftsbemærkning fra serveren, som forklarer, hvad der mangler, eller hvad der begrænser dette middel — et manglende ApplicationId fra AMA, behovet for en kortlæser. Denne tekst kommer fra serveren og kan ikke konfigureres her.',
   'settings.providerCredentials.protection.unavailable.title':
     'Legitimationsoplysninger kan ikke gemmes',
   'settings.providerCredentials.protection.unavailable.body':
