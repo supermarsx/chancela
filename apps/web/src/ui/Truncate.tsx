@@ -36,7 +36,7 @@ interface TruncateProps {
  * Scheme allowlist for rendered `href`s. A `javascript:`/`data:` URL reaching the
  * renderer would execute in the app origin, so any absolute scheme other than
  * http(s)/mailto/tel is treated as untrusted text (rendered as a plain span, no
- * `href`). Relative URLs (no scheme, e.g. `/entidades/ent-1`) resolve against the
+ * `href`). Relative URLs (no scheme, e.g. `/entities/ent-1`) resolve against the
  * app origin and are always safe.
  */
 function isSafeUrl(url: string): boolean {

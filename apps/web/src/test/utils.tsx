@@ -4,7 +4,12 @@
  */
 import type { ReactElement, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import {
+  MemoryRouter,
+  RouterProvider,
+  createMemoryRouter,
+  type RouteObject,
+} from 'react-router-dom';
 import { render } from '@testing-library/react';
 import { ToastProvider } from '../ui/toast';
 import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../features/session/permissions';
@@ -102,6 +107,25 @@ export function Wrapper({
 
 export function renderWithProviders(ui: ReactElement, initialEntries?: string[]) {
   return render(<Wrapper initialEntries={initialEntries}>{ui}</Wrapper>);
+}
+
+/**
+ * The same context, but around a DATA router — the kind the app actually ships
+ * (`createBrowserRouter`). Needed by anything that reads route `handle` metadata (the shell's
+ * route key does, to tell a page change from a sub-tab switch), because `useMatches` is only
+ * available under a data router.
+ */
+export function renderWithDataRouter(routes: RouteObject[], initialEntries: string[] = ['/']) {
+  const router = createMemoryRouter(routes, { initialEntries });
+  return render(
+    <QueryClientProvider client={makeClient()}>
+      <ToastProvider>
+        <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
+          <RouterProvider router={router} />
+        </StaticPermissionsProvider>
+      </ToastProvider>
+    </QueryClientProvider>,
+  );
 }
 
 /**

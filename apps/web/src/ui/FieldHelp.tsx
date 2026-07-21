@@ -26,13 +26,20 @@ interface FieldHelpProps {
   label?: string;
   /** Where the bubble sits relative to the trigger. Default `top`. */
   placement?: TooltipPlacement;
+  /**
+   * Give the bubble this id, so something OTHER than the glyph can also be described by it
+   * (t101). {@link Field} passes the id it hands to its own control: the explanation then
+   * reaches a screen-reader user who tabs into the input, not only one who happens to land on
+   * the glyph. One node, two referrers — the sentence is not duplicated in the tree.
+   */
+  describedById?: string;
 }
 
-export function FieldHelp({ text, label, placement = 'top' }: FieldHelpProps) {
+export function FieldHelp({ text, label, placement = 'top', describedById }: FieldHelpProps) {
   const t = useT();
   return (
     <span className="field-help-wrap">
-      <Tooltip label={text} placement={placement} variant="prose">
+      <Tooltip label={text} placement={placement} variant="prose" id={describedById}>
         <button type="button" className="field-help" aria-label={label ?? t('common.help')}>
           <Icon.Info />
         </button>

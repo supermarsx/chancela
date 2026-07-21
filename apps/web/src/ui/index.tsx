@@ -4,6 +4,7 @@
  * dark-green, light/dark via `prefers-color-scheme`). Kept deliberately small so the
  * feature pages stay readable.
  */
+import { createContext, useContext, useId } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -26,6 +27,7 @@ export { SubNav, type SubNavItem } from './SubNav';
 export { Stepper, type StepperStep } from './Stepper';
 export { Tooltip, IconButton, TooltipText, useIsClipped, type TooltipPlacement } from './Tooltip';
 export { FieldHelp } from './FieldHelp';
+export { ColumnHead } from './ColumnHead';
 export * as Icon from './icons';
 export {
   Skeleton,
@@ -85,7 +87,45 @@ interface FieldProps {
   children: ReactNode;
 }
 
+/**
+ * The id of the help sentence a surrounding {@link Field} is showing, for its control to describe
+ * itself with (t101, reported by t102-privacyux).
+ *
+ * ## The defect
+ *
+ * `Field` renders the explanation through a `FieldHelp` glyph beside the label, and `FieldHelp`
+ * puts `aria-describedby` on *its own button*. That button is a separate tab stop. So a
+ * screen-reader user who tabs into the input — the overwhelmingly common way to reach a form
+ * control — heard the label and nothing else: the sentence existed, was announced to nobody who
+ * needed it, and the tooltip was decoration for everyone not using a mouse.
+ *
+ * ## Why context rather than cloning the child
+ *
+ * The obvious fix is to `cloneElement(children, { 'aria-describedby': id })`. It is wrong here:
+ * `Field`'s child is frequently NOT the control — it is a `<div className="row">` holding the
+ * input plus a reset button, or a fragment — so the description would land on a wrapper and
+ * describe nothing. Poking the DOM via `htmlFor` was the other option and loses to React on the
+ * next render.
+ *
+ * Context reaches the control at any depth, and the control merges the id into whatever
+ * `aria-describedby` the call site already passes rather than replacing it. A control that is
+ * not one of these primitives simply does not opt in, which is honest: nothing silently claims
+ * an association it does not have.
+ *
+ * The id is the BUBBLE's id, threaded through `FieldHelp` into the shared `Tooltip`, so the glyph
+ * and the control point at the same node — the sentence is not duplicated in the accessibility
+ * tree, and the bubble is always mounted, so the reference never dangles.
+ */
+const FieldHelpId = createContext<string | null>(null);
+
+/** Merge the surrounding `Field`'s help id into a control's own `aria-describedby`. */
+function useDescribedBy(own: string | undefined): string | undefined {
+  const helpId = useContext(FieldHelpId);
+  return [own, helpId].filter(Boolean).join(' ') || undefined;
+}
+
 export function Field({ label, htmlFor, hint, error, help, children }: FieldProps) {
+  const helpId = useId();
   const labelEl = (
     <label className="field__label" htmlFor={htmlFor}>
       {label}
@@ -96,12 +136,14 @@ export function Field({ label, htmlFor, hint, error, help, children }: FieldProp
       {help ? (
         <span className="field__labelrow">
           {labelEl}
-          <FieldHelp text={help} />
+          <FieldHelp text={help} describedById={helpId} />
         </span>
       ) : (
         labelEl
       )}
-      {children}
+      {/* Only provided when there IS a help sentence: an empty provider would make every control
+          in the app carry a describedby pointing at nothing. */}
+      {help ? <FieldHelpId.Provider value={helpId}>{children}</FieldHelpId.Provider> : children}
       {hint && !error ? <p className="field__hint">{hint}</p> : null}
       {error ? (
         <p className="field__error" role="alert">
@@ -113,11 +155,15 @@ export function Field({ label, htmlFor, hint, error, help, children }: FieldProp
 }
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className="control" {...props} />;
+  const describedBy = useDescribedBy(props['aria-describedby']);
+  return <input className="control" {...props} aria-describedby={describedBy} />;
 }
 
 export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className="control control--textarea" {...props} />;
+  const describedBy = useDescribedBy(props['aria-describedby']);
+  return (
+    <textarea className="control control--textarea" {...props} aria-describedby={describedBy} />
+  );
 }
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
@@ -130,8 +176,13 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 export function Select({ options, className, ...props }: SelectProps) {
+  const describedBy = useDescribedBy(props['aria-describedby']);
   return (
-    <select className={`control control--select ${className ?? ''}`.trim()} {...props}>
+    <select
+      className={`control control--select ${className ?? ''}`.trim()}
+      {...props}
+      aria-describedby={describedBy}
+    >
       {options.map((o) => (
         <option key={o.value} value={o.value} disabled={o.disabled}>
           {o.label}
@@ -153,13 +204,16 @@ export function Toggle({
   label,
   disabled,
   id,
+  'aria-describedby': ariaDescribedBy,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: ReactNode;
   disabled?: boolean;
   id?: string;
+  'aria-describedby'?: string;
 }) {
+  const describedBy = useDescribedBy(ariaDescribedBy);
   return (
     <label className={`toggle${disabled ? ' toggle--disabled' : ''}`}>
       <input
@@ -167,6 +221,7 @@ export function Toggle({
         type="checkbox"
         className="toggle__input"
         role="switch"
+        aria-describedby={describedBy}
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
@@ -184,14 +239,21 @@ export function Toggle({
 export function Card({
   title,
   actions,
+  className,
   children,
 }: {
   title?: ReactNode;
   actions?: ReactNode;
+  /**
+   * Extra class on the panel, for a caller that needs to address its own instance — the same
+   * affordance {@link Table} already carries, and used for the same reason. It does NOT change
+   * how a card looks: `.panel` still supplies the whole treatment.
+   */
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="panel">
+    <section className={className ? `panel ${className}` : 'panel'}>
       {(title || actions) && (
         <header className="panel__head">
           {title ? <h3 className="panel__title">{title}</h3> : <span />}
@@ -212,6 +274,8 @@ export function Panel({ children }: { children: ReactNode }) {
 export function Table({
   head,
   caption,
+  className,
+  rowCount,
   children,
 }: {
   head: ReactNode;
@@ -220,11 +284,20 @@ export function Table({
    * reader announces what the grid is without the page repeating the heading visually.
    */
   caption?: string;
+  /** Extra class on the wrapper, for a caller that restyles its own instance of the table. */
+  className?: string;
+  /**
+   * Total rows the table stands for, header included — `aria-rowcount`. Only meaningful for a
+   * table that grows lazily: pass `-1` (the ARIA value for "total not known") while more rows
+   * remain on the server, and the real total once they do not. Omitting it leaves the table
+   * plain, which is right when every row is already rendered.
+   */
+  rowCount?: number;
   children: ReactNode;
 }) {
   return (
-    <div className="table-wrap">
-      <table className="table">
+    <div className={className ? `table-wrap ${className}` : 'table-wrap'}>
+      <table className="table" aria-rowcount={rowCount}>
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <thead>{head}</thead>
         <tbody>{children}</tbody>

@@ -133,6 +133,18 @@ interface TooltipProps {
    * bubble is then also `aria-hidden`, so it contributes nothing to the tree at all.
    */
   describe?: boolean;
+  /**
+   * Use THIS id for the bubble instead of a generated one (t101).
+   *
+   * The point is to let a second element describe itself with the same sentence without the text
+   * existing twice in the accessibility tree. {@link FieldHelp} uses it so a `Field` can point its
+   * *control* at the help sentence — a screen-reader user tabbing into an input must hear the
+   * explanation, and before this the description only ever landed on the glyph, which is a
+   * separate tab stop they may never reach.
+   *
+   * Ids are document-global, so the association holds across the portal boundary either way.
+   */
+  id?: string;
   /** The trigger — a single focusable element; it receives `aria-describedby`. */
   children: ReactElement;
 }
@@ -143,9 +155,11 @@ export function Tooltip({
   variant = 'label',
   anchorRef: externalAnchorRef,
   describe = true,
+  id: externalId,
   children,
 }: TooltipProps) {
-  const id = useId();
+  const generatedId = useId();
+  const id = externalId ?? generatedId;
   const [open, setOpen] = useState(false);
   const ownAnchorRef = useRef<HTMLSpanElement>(null);
   const anchorRef = externalAnchorRef ?? ownAnchorRef;

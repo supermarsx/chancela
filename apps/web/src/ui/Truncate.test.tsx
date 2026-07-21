@@ -76,7 +76,7 @@ describe('Truncate', () => {
   });
 
   it('does not add target/rel for a relative href', () => {
-    render(<Truncate text="/entidades/ent-1" href="/entidades/ent-1" />);
+    render(<Truncate text="/entities/ent-1" href="/entities/ent-1" />);
     const link = screen.getByRole('link');
     expect(link.getAttribute('target')).toBeNull();
   });
@@ -97,7 +97,7 @@ describe('Truncate', () => {
   });
 
   it('does not intercept a relative (in-app) href', () => {
-    render(<Truncate text="/entidades/ent-1" href="/entidades/ent-1" />);
+    render(<Truncate text="/entities/ent-1" href="/entities/ent-1" />);
     fireEvent.click(screen.getByRole('link'));
     expect(openExternal).not.toHaveBeenCalled();
   });

@@ -2229,8 +2229,20 @@ a.btn.btn--iconOnly {
   --ec-last-registry-change: 13rem;
   --ec-fiscal-year-end: 7rem;
   --ec-last-book: 15rem;
-  --ec-last-activity: 13rem;
-  --ec-actions: 3.6rem;
+  /* Both of these were sized to the bare minimum and measured too tight.
+     `Última atividade` is a fixed dd/mm/aaaa date (79px) plus a gap plus an event
+     badge; at 13rem the badge got 103px, which fit 2 of the 134 pt-PT event labels.
+     At 17rem it gets 167px and fits 43 of them — the ceiling, not the wish: any wider
+     and either `Entidade` drops under the 495px a long firm name needs at 1280, or the
+     default five-column floor outgrows the 900px the card offers at 1024 and the list
+     starts side-scrolling on an ordinary laptop. The tail keeps ellipsising into the
+     cell's tooltip, which is unavoidable — labels run to 60 characters in pl-PL. */
+  --ec-last-activity: 17rem;
+  /* Sized to the HEADER, not the button: one 31px icon button always fitted, but the
+     column heading did not, and a clipped "Açõe…" is what reads as broken. The widest
+     translation is da-DK "Handlinger" at 101px (fi-FI "Toiminnot" 92, de-DE "Aktionen"
+     84); pt-PT "Ações" needs 60 and was clipped by 2px at 3.6rem. */
+  --ec-actions: 6.5rem;
 
   min-width: 0;
   max-width: 100%;
@@ -2844,6 +2856,49 @@ a.btn.btn--iconOnly {
   max-width: 18rem;
 }
 
+/* Arquivo Registo — the compact ledger row (t99).
+ *
+ * Scoped to this one table on purpose: the Arquivo is read as an unbroken run of hundreds of
+ * lines, where the app-wide table rhythm costs a fifth of the visible rows, while every other
+ * table in the product is a short list that wants the air. Derived from `--space` rather than
+ * hand-picked pixels so the row still moves with the theme.
+ *
+ * The floor is not a chosen number. Every row carries the digest copy control, so the row can
+ * never be shorter than a usable target for it — `--ledger-row-control` is simultaneously that
+ * control's size and the row's minimum content box. It is held at 24px, the WCAG 2.2 (2.5.8,
+ * Target Size Minimum) floor: the shared `.digest__copy` is 1.4rem and already sits under it, so
+ * compacting this table RAISES the control instead of shrinking with the row. Text keeps the
+ * theme's own `.table` size; only the leading tightens. */
+.ledger-table {
+  --ledger-row-pad-y: calc(var(--space) * 0.25);
+  --ledger-row-pad-x: calc(var(--space) * 0.5);
+  --ledger-row-control: 1.5rem;
+}
+
+.ledger-table .table th,
+.ledger-table .table td {
+  padding: var(--ledger-row-pad-y) var(--ledger-row-pad-x);
+}
+
+.ledger-table .table td {
+  line-height: 1.25;
+}
+
+.ledger-table .digest__copy {
+  width: var(--ledger-row-control);
+  height: var(--ledger-row-control);
+}
+
+/* The chain column is the one cell that wraps to a second line, which would undo the compaction
+   row by row. The extra measure only exists at the `.wide-page` width the Arquivo now opts into,
+   so it is claimed there and nowhere else; the badges still wrap rather than being clipped,
+   because truncating a chain id on an evidentiary surface is worse than a taller row. */
+@media (min-width: 1100px) {
+  .ledger-table .ledger-chain-list {
+    max-width: 26rem;
+  }
+}
+
 @media (max-width: 720px) {
   .ledger-export-controls {
     justify-content: stretch;
@@ -3315,6 +3370,18 @@ body {
   .btn *,
   [role='button'],
   [role='button'] *,
+  /* A `<select>` is a CONTROL, not text — and leaving it out of this block is what produced
+     the "stuck pointer" defect (t100). The `.app *` opt-in above re-enables text selection
+     wholesale and reaches the select as well; with `appearance: none` (`.control--select`)
+     its value then lays out as ordinary selectable text, so a mousedown on it seeds a
+     selection anchor. That same mousedown opens the UA option popup, which swallows the
+     matching `mouseup` — the document never ends the drag it just began, the pointer reads
+     as still held, and the next move sweeps a highlight across the chosen value. Carving the
+     control back out means no anchor is ever seeded, so the swallowed `mouseup` has nothing
+     to leave behind. Keyboard operation, focus-visible and the accessible value are
+     untouched; only the drag-highlight over a control's own value goes. */
+  select,
+  select *,
   label,
   label *,
   .nav,
@@ -3833,6 +3900,24 @@ a,
       grid-template-columns: subgrid;
     }
   }
+}
+
+/* --- Trailing notes beneath a settings card's rows (t100) ------------------------------
+   Explanatory sentences that follow the whole form rather than any one field — Aparência ›
+   Idioma ends with four of them ("o tema segue o sistema operativo…", the documents-locale
+   distinction, the sign-in-screen caveat).
+
+   They sat flush against the last control, and the reason is worth recording because it will
+   catch the next card: `.panel__body` has NO child-spacing rule, and `.field__hint` sets
+   `margin: 0` so it can sit tight under the control it explains. Both are right on their own;
+   together they mean a hint placed as a SIBLING of the form gets no space at all. The fix
+   belongs here rather than between the cards — the gap the operator sees missing is inside
+   the language card, not around it, and the card split itself (t69: per-user preference vs.
+   instance-wide settings) is doing its job. `.stack--tight` on the same element spaces the
+   notes from each other; this spaces the block from the rows above it, by the same 1rem step
+   `.form > * + *` puts between the form's own blocks. */
+.settings-notes {
+  margin-top: 1rem;
 }
 
 .settings-toggle {
@@ -6546,6 +6631,38 @@ a.btn--primary {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+/* --- Ferramentas + Configurações as top-bar glyphs (t103) -----------------------------
+   Icon-only nav controls sitting with the alerts bell. They reuse the shared
+   `.btn--ghost.btn--iconOnly` treatment (so hover, focus-visible and the disabled/ghost ink
+   all come from one place rather than being restated here) and add only the active state,
+   which a plain button has no concept of. Tokens only. */
+.topbar__icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.topbar__icon:hover {
+  color: var(--text);
+}
+
+/* The current surface, matching what `.nav__link.is-active` does for the text tabs: the gilt
+   accent, not a background fill, so the bar keeps one visual language. */
+.topbar__icon.is-active {
+  color: var(--accent);
+}
+
+/* Visual separator between the utility glyphs and the alerts bell. Deliberately a bare
+   hairline rather than a character: it is `aria-hidden` with no text content in the markup,
+   so nothing announces it, and drawing it in CSS keeps it that way. */
+.topbar__divider {
+  flex: none;
+  width: 1px;
+  align-self: center;
+  height: 1.1rem;
+  margin-inline: 0.15rem;
+  background: var(--border);
 }
 
 .notification-center {
@@ -9984,6 +10101,45 @@ input[type='radio']:disabled {
   align-self: flex-end;
 }
 
+/* The advanced-filter disclosure (t103) — the SAME shape as `.entities-advanced-filters`, so the
+   two list screens read as one pattern rather than two near-misses. Tokens only. */
+.users-advanced-filters {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.users-advanced-filters > summary {
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.users-advanced-filters[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+.users-advanced-filters__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: end;
+  gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.users-advanced-filters__body .field {
+  min-width: 0;
+}
+
 @media (max-width: 720px) {
   .users-filterbar__primary .field,
   .users-filterbar__primary .field:first-child {
@@ -9995,67 +10151,28 @@ input[type='radio']:disabled {
   background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
-.access-manager {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.25rem;
-  padding: 0.5rem 0.25rem;
-}
+/* --- Per-user access + audit (t44, restyled t103) --------------------------------------
+   The three credential blocks (password, recovery phrase, attestation key) are now ordinary
+   `Card`s in a `.stack`, with `.settings-rows` inside each for the label/control pairs — the
+   same treatment as every other card on the edit screen.
 
-.access-manager__note {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
+   What was here before was a **two-column grid** that tiled the three blocks inside a single
+   outer Card, plus hand-rolled substitutes for the shared primitives: `__head`/`__label` for a
+   card heading, `__form` for the row grid, `__actions` for `.form__actions`, `__note` for
+   `.field__hint`, `__fingerprint`/`__fplabel` for a label/value row. That is why the section
+   read as a different design language from the rest of the app, and why it side-stepped both
+   the group styling and the table display type. All of it is deleted rather than adjusted:
+   the primitives already do these jobs.
 
-.access-manager__block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
+   `.access-manager__block` survives as a **structural hook only** — no styling, `.panel`
+   supplies the whole treatment. It is kept because the Playwright suites address the three
+   blocks positionally through it (`e2e/session.spec.ts`,
+   `e2e/settings-users-rbac-recovery.spec.ts`); removing the class would have meant rewriting
+   selectors in specs that other tasks are concurrently editing. */
 
-.access-manager__head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.access-manager__label {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.access-manager__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.access-manager__form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
-.access-manager__fingerprint {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
-.access-manager__fplabel {
-  color: var(--text-muted);
-}
-
-@media (max-width: 40rem) {
-  .access-manager {
-    grid-template-columns: 1fr;
-  }
-}
+/* `.access-manager__recovery-phrase` is referenced by the once-shown recovery phrase and by
+   three e2e specs, and has never had a rule here. Left as-is: it is a test hook, and inventing
+   a style for it now would change how a security-critical block looks without review. */
 
 /* ============================================================================
  * Startup splash + entrance choreography (t50 W4).
@@ -10467,16 +10584,6 @@ input[type='radio']:disabled {
   max-width: 100%;
 }
 
-.data-status-summary {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-  gap: 0.65rem;
-}
-
-.data-status-summary dd {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 .data-status-section {
   padding-top: 1.05rem;
   border-top: 1px solid var(--rule);
@@ -10535,109 +10642,87 @@ input[type='radio']:disabled {
   word-break: break-word;
 }
 
-.data-status-permissions,
-.data-status-usage-list {
-  display: grid;
-  gap: 0.5rem;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.data-status-permissions {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+/* ── The storage tables (t104) ──────────────────────────────────────────────────────
+   Every read-only readout on Gestão de dados is a real `<table>`, so the rules that used
+   to lay out probe rows, usage rows and the five SQLite pseudo-columns as CSS grids are
+   gone — the columns are columns now. `.table-wrap` keeps its own `overflow-x: auto`, so
+   a narrow viewport scrolls the table inside its own box and never the page body. */
+.data-status-table {
   margin-top: 0.1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  overflow: hidden;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
 }
 
-.data-status-probe,
-.data-status-usage-row {
-  min-width: 0;
-  padding: 0.62rem 0.72rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
+.data-status-table .table {
+  font-size: 0.84rem;
 }
 
-.data-status-probe {
-  display: grid;
-  grid-template-columns: minmax(8rem, 0.85fr) auto minmax(12rem, 1.4fr);
-  align-items: center;
-  gap: 0.42rem 0.8rem;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.data-status-probe + .data-status-probe {
-  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-}
-
-.data-status-probe--ok {
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--ok) 72%, transparent);
-}
-
-.data-status-probe--warn {
-  background: color-mix(in srgb, var(--warn-bg) 40%, transparent);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--warn) 72%, transparent);
-}
-
-.data-status-usage-row__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem;
-  min-width: 0;
-}
-
-.data-status-probe__label,
-.data-status-usage-row__label {
-  min-width: 0;
-  font-weight: 600;
+.data-status-table .table th,
+.data-status-table .table td {
+  padding: 0.45rem 0.6rem;
+  vertical-align: top;
+  /* Paths, digests and backend names wrap inside their cell. A half-shown identifier is
+     worse than a wrapped one, so nothing in these tables truncates. */
   overflow-wrap: anywhere;
 }
 
-.data-status-probe__message,
-.data-status-usage-row__meta,
-.data-status-total {
-  margin: 0;
+/* A `<th scope="row">` names its row; it is not a column header. Without this it inherits
+   `.table th`'s uppercase muted treatment and a fact table reads as a stack of headings. */
+.data-status-table .table tbody th[scope='row'] {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.data-status-table .table tbody tr:last-child th,
+.data-status-table .table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Derived secondary text inside a cell: probe verdicts, measurement basis, estimate method. */
+.data-status-table__meta {
   color: var(--text-muted);
   font-size: 0.8rem;
   line-height: 1.4;
-  overflow-wrap: anywhere;
 }
 
-.data-status-probe__message {
-  justify-self: start;
-}
-
-.data-status-usage-row {
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.7rem 0.78rem;
-}
-
-.data-status-usage-row__head {
-  align-items: baseline;
-}
-
-.data-status-usage-row__meta {
+/* Repeated measurement facts inside one cell, separated the way the old meta row was. */
+.data-status-table__tags {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem 0.55rem;
-  padding-top: 0.42rem;
-  border-top: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
   line-height: 1.5;
 }
 
-.data-status-usage-row__meta > span + span {
+.data-status-table__tags > span + span {
   padding-left: 0.55rem;
   border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.data-status-table .data-status-probe__message {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+}
+
+/* Probe tone, carried by the row's own cells — `box-shadow` on a `<tr>` is not reliable
+   under `border-collapse: collapse`, so the marker sits on the first cell. */
+.data-status-probe--ok > th:first-child {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--ok) 72%, transparent);
+}
+
+.data-status-probe--warn > th:first-child {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--warn) 72%, transparent);
+}
+
+.data-status-probe--warn > th,
+.data-status-probe--warn > td {
+  background: color-mix(in srgb, var(--warn-bg) 40%, transparent);
 }
 
 .data-status-sqlite-usage {
@@ -10646,43 +10731,10 @@ input[type='radio']:disabled {
   min-width: 0;
 }
 
-.data-status-sqlite-table-list {
-  display: grid;
-  gap: 0;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 76%, transparent);
-  overflow: hidden;
-  list-style: none;
-}
-
 .data-status-sqlite-table-summary {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.84rem;
-}
-
-.data-status-sqlite-table-row {
-  display: grid;
-  grid-template-columns:
-    minmax(0, 1fr)
-    minmax(5.6rem, auto)
-    minmax(4.5rem, auto)
-    minmax(6rem, auto);
-  align-items: baseline;
-  gap: 0.28rem 0.6rem;
-  min-width: 0;
-  padding: 0.42rem 0.55rem;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  line-height: 1.35;
-}
-
-.data-status-sqlite-table-row + .data-status-sqlite-table-row {
-  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 .data-status-sqlite-table-row__label {
@@ -10692,20 +10744,12 @@ input[type='radio']:disabled {
   overflow-wrap: anywhere;
 }
 
-.data-status-sqlite-table-row__rows,
-.data-status-sqlite-table-row__bytes,
-.data-status-sqlite-table-row__average {
-  justify-self: end;
-  white-space: nowrap;
-}
-
-.data-status-sqlite-table-row__method {
-  grid-column: 1 / -1;
-  color: var(--text-subtle);
-  font-size: 0.76rem;
-}
-
 .data-status-total {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
   margin-top: 0;
 }
 
@@ -10728,34 +10772,6 @@ input[type='radio']:disabled {
   margin-top: 0.55rem;
 }
 
-.data-status-cleanups {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
-  overflow: hidden;
-}
-
-.data-status-cleanup {
-  display: grid;
-  grid-template-columns: minmax(16rem, 1fr) minmax(10rem, auto) auto;
-  align-items: center;
-  gap: 0.4rem 0.85rem;
-  min-width: 0;
-  padding: 0.5rem 0.62rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  background: transparent;
-}
-
-.data-status-cleanup:last-child {
-  border-bottom: 0;
-}
-
 .data-status-cleanup__main {
   display: flex;
   flex-wrap: wrap;
@@ -10764,11 +10780,10 @@ input[type='radio']:disabled {
   min-width: 0;
 }
 
-.data-status-cleanup h5 {
+.data-status-cleanup-row h5 {
   margin: 0;
   color: var(--text);
   font-size: 0.82rem;
-  white-space: nowrap;
 }
 
 .data-status-cleanup__description {
@@ -10779,7 +10794,7 @@ input[type='radio']:disabled {
   overflow-wrap: anywhere;
 }
 
-.data-status-cleanup p {
+.data-status-cleanup-row p {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -10789,11 +10804,9 @@ input[type='radio']:disabled {
 
 .data-status-cleanup__metric {
   display: flex;
-  flex-wrap: nowrap;
-  justify-self: end;
+  flex-wrap: wrap;
   gap: 0.35rem 0.55rem;
   margin: 0;
-  white-space: nowrap;
 }
 
 .data-status-cleanup__actions {
@@ -10805,65 +10818,7 @@ input[type='radio']:disabled {
 }
 
 .data-status-cleanup__actions > .btn {
-  justify-self: end;
   white-space: nowrap;
-}
-
-@media (max-width: 640px) {
-  .data-status-probe {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .data-status-probe__message {
-    grid-column: 1 / -1;
-  }
-
-  .data-status-cleanup {
-    grid-template-columns: 1fr;
-  }
-
-  .data-status-cleanup__main {
-    align-items: flex-start;
-  }
-
-  .data-status-cleanup__metric {
-    justify-self: start;
-    flex-wrap: wrap;
-    white-space: normal;
-  }
-
-  .data-status-cleanup__actions {
-    justify-self: stretch;
-  }
-
-  .data-status-cleanup__actions > .btn {
-    flex: 1 1 12rem;
-  }
-
-  .data-status-sqlite-table-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .data-status-sqlite-table-row__label {
-    grid-column: 1 / -1;
-  }
-
-  .data-status-sqlite-table-row__rows {
-    grid-column: 1;
-    justify-self: start;
-    white-space: normal;
-  }
-
-  .data-status-sqlite-table-row__bytes {
-    grid-column: 2;
-  }
-
-  .data-status-sqlite-table-row__average,
-  .data-status-sqlite-table-row__method {
-    grid-column: 1 / -1;
-    justify-self: start;
-    white-space: normal;
-  }
 }
 
 /* A plain (un-bulleted) list used in the integrity/data panels. */
@@ -11054,12 +11009,22 @@ input[type='radio']:disabled {
  * Purely presentational chrome; the live application happens in JS (colorStore →
  * applyColorOverrides), so nothing here depends on the override being set.
  * ========================================================================== */
+/* --- A named group inside a settings card (t100) ---------------------------------------
+   `.color-customizer` established the shape: a titled sub-block set off from the rows above
+   it by the card's gilt rule, rather than one more banded row. The grain controls now use the
+   same shape, so the two read as siblings instead of as one group beside a loose button. The
+   generic name is the one to reach for next time — a third variant of this block would be the
+   drift this rule exists to prevent. Same 1rem step `.form > * + *` uses between blocks — the
+   literal deliberately, for the reason spelled out on `.color-customizer > .form__actions`
+   below and pinned by a test: a group must sit on the card's existing rhythm, not near it. */
+.settings-group,
 .color-customizer {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--rule);
 }
 
+.settings-group__title,
 .color-customizer__title {
   margin: 0;
   font-family: var(--font-sans);
@@ -11067,6 +11032,15 @@ input[type='radio']:disabled {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-muted);
+}
+
+/* A group's own actions row picks up the same step the colour reset does below; without it
+   the row collapses against the group body (see the note on `.color-customizer`). */
+.settings-group > .form__actions {
+  margin-top: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 0.5rem;
 }
 
 .color-customizer__grid {
@@ -11130,9 +11104,18 @@ input[type='radio']:disabled {
    it collapsed against the swatch grid. That is why it read as cramped while its twin two
    rows up looked fine. Restore the same 1rem step the section already uses (deliberately the
    literal that `.form > * + *` uses, so the two rows stay locked together) instead of giving
-   this one control a bespoke margin. */
+   this one control a bespoke margin.
+
+   t100: it now carries a hairline as well. "Repor predefinições do tema" discards every
+   swatch above it in one click — a terminal, undoing action sitting flush against the
+   ordinary controls it undoes, which is the one place on the card where a mis-click costs
+   something. The card's own separators are the vocabulary for "a new thing starts here", so
+   it gets the same `--border` hairline the settings rows use and the section's own 1rem band
+   on each side of it, rather than a bespoke emphasis of its own. */
 .color-customizer > .form__actions {
   margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
   /* The row is button + "a usar predefinições" note; let it wrap instead of overflowing the
      card once the settings column narrows. */
   flex-wrap: wrap;
@@ -11205,4 +11188,66 @@ input[type='radio']:disabled {
   max-height: 22rem;
   overflow: auto;
   white-space: pre;
+}
+
+/* --------------------------------------------------------------------------
+ * Privacidade register filter bars (t102) — the same shape every list page uses
+ * (`.entities-filterbar`, `.books-filterbar`, `.ledger-filterbar`, `.users-filterbar`).
+ * Six registers on the tab share one `PrivacyFilterBar`, so unlike its siblings this
+ * block is written once and worn by all of them. Two or three primary controls plus the
+ * clear button, with the search box taking twice the basis of the selects, wrapping to a
+ * single column below ~720px rather than scrolling the settings column sideways.
+ *
+ * The advanced `<details>` reuses the already-generic `.filter-advanced` rules; only the
+ * bar itself needs a per-area class.
+ * ------------------------------------------------------------------------ */
+.privacy-filters {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.privacy-filters .field,
+.privacy-filters .control {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.privacy-filterbar {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  padding-bottom: 0;
+}
+
+.privacy-filterbar__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.privacy-filterbar__primary .field {
+  flex: 1 1 11rem;
+  min-width: min(100%, 11rem);
+  max-width: 100%;
+}
+
+.privacy-filterbar__primary .field:first-child {
+  flex: 2 1 18rem;
+  min-width: min(100%, 18rem);
+}
+
+.privacy-filterbar__clear {
+  align-self: flex-end;
+}
+
+@media (max-width: 720px) {
+  .privacy-filterbar__primary .field,
+  .privacy-filterbar__primary .field:first-child {
+    flex-basis: min(100%, 13rem);
+  }
 }

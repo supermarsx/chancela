@@ -290,6 +290,25 @@ export function Calendar(props: IconProps) {
   );
 }
 
+/**
+ * settings / Configurações — a cog wheel (t103).
+ *
+ * Deliberately a **cog**, not {@link Sliders}: the app already uses `Sliders` for filter and
+ * preference controls *inside* pages, and the top bar needed a glyph that reads as "the settings
+ * surface" at a glance beside the tools wrench. Two teeth-rings plus a hub, drawn in the same
+ * single-stroke 24×24 style as the rest of the set, so it inherits the stroke, sizing and
+ * `aria-hidden` chrome from {@link Icon} and cannot drift from the house line weight.
+ */
+export function Cog(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5" />
+      <path d="M18.01 5.99l-1.56 1.56M7.55 16.45l-1.56 1.56M18.01 18.01l-1.56-1.56M7.55 7.55L5.99 5.99" />
+    </Icon>
+  );
+}
+
 /** tools / wrench (Ferramentas). */
 export function Wrench(props: IconProps) {
   return (
@@ -408,6 +427,23 @@ export function Scale(props: IconProps) {
       <path d="M4.5 7h15" />
       <path d="M4.5 7 2 12.5a2.5 2.5 0 0 0 5 0z" />
       <path d="M19.5 7 17 12.5a2.5 2.5 0 0 0 5 0z" />
+    </Icon>
+  );
+}
+
+/**
+ * security / Segurança — a shield with a check (t103).
+ *
+ * The user-facing security tab needed a glyph distinct from `Seal` (the attestation key) and
+ * `Cog` (settings): a shield reads as "account protection" at a glance. Single-stroke, in the
+ * house 24×24 style, so it inherits the shared `Icon` chrome and cannot drift from the line
+ * weight — the same discipline the `Cog` addition followed.
+ */
+export function Shield(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3.5 5 6.2v5c0 4.3 2.9 7.4 7 8.8 4.1-1.4 7-4.5 7-8.8v-5z" />
+      <path d="M9 11.7l2.2 2.2L15 8.6" />
     </Icon>
   );
 }
