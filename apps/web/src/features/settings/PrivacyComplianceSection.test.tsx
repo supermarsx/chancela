@@ -557,7 +557,11 @@ describe('PrivacyComplianceSection', () => {
     expect(screen.getByText(/Evidence reference/)).toBeTruthy();
     expect(screen.getByText('Escalate unresolved questions to the DPO.')).toBeTruthy();
     fireEvent.click(screen.getByText('Flags sem alegação'));
-    expect(screen.getByText(/authority_filing_completed:/)).toBeTruthy();
+    // t102: the disclosure is a two-column table now, not a `key: value` tag row, so the flag
+    // identifier is a cell of its own and no longer carries a trailing colon.
+    const claimRow = screen.getByText('authority_filing_completed').closest('tr');
+    expect(claimRow).toBeTruthy();
+    expect(within(claimRow as HTMLElement).getByText('Não alegado')).toBeTruthy();
   });
 
   it('filters and edits retention policy metadata and performs a non-destructive dry run', async () => {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import { SettingsPage } from './SettingsPage';
+import { MCP_TAB_PATH } from './PlatformOperationsSection';
 import {
   DEFAULT_SETTINGS,
   RETENTION_DISPOSAL_ACTIONS,
@@ -2457,7 +2458,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+    renderWithProviders(<SettingsPage />, ['/settings']);
 
     // A segmented sub-tab per section (Gestão included).
     for (const name of ['Aparência', 'Documentos', 'Assinaturas', 'Gestão', 'Operações', 'Sobre']) {
@@ -2469,11 +2470,11 @@ describe('SettingsPage', () => {
     expect(screen.queryByLabelText('URL de atualização do catálogo CAE')).toBeNull();
   });
 
-  it('deep-links to a section via ?sec= and navigates between sub-tabs', async () => {
+  it('deep-links to a section via a path segment and navigates between sub-tabs', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=documentos']);
+    renderWithProviders(<SettingsPage />, ['/settings/documents']);
 
     // The deep-linked section renders its field; the default section's does not.
     expect(await screen.findByLabelText('URL de atualização do catálogo CAE')).toBeTruthy();
@@ -2489,7 +2490,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     // Identidade is no longer a sub-tab…
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/identity']);
     expect(await screen.findByLabelText('Nome da organização')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Identidade' })).toBeNull();
 
@@ -2519,7 +2520,7 @@ describe('SettingsPage', () => {
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+    renderWithProviders(<SettingsPage />, ['/settings']);
 
     expect(await screen.findByText('settings document unavailable')).toBeTruthy();
     expect(screen.queryByText('A carregar…')).toBeNull();
@@ -2539,7 +2540,7 @@ describe('SettingsPage', () => {
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=sobre']);
+    renderWithProviders(<SettingsPage />, ['/settings/about']);
 
     const about = (await screen.findByRole('heading', { name: 'Sobre', level: 3 })).closest(
       '.panel',
@@ -2552,7 +2553,7 @@ describe('SettingsPage', () => {
   it('persists document locale and numbering edits through the whole settings document', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=documentos']);
+    renderWithProviders(<SettingsPage />, ['/settings/documents']);
 
     fireEvent.change(await screen.findByLabelText('Idioma'), {
       target: { value: 'en-GB' },
@@ -2576,7 +2577,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
     const reroll = vi.spyOn(grainStore, 'reroll');
     colorStore.reset();
-    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+    renderWithProviders(<SettingsPage />, ['/settings']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Regenerar grão' }));
     expect(reroll).toHaveBeenCalledOnce();
@@ -2622,7 +2623,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithoutAi());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+    renderWithProviders(<SettingsPage />, [MCP_TAB_PATH]);
 
     const toggle = (await screen.findByRole('switch', {
       name: 'Ativar IA/MCP',
@@ -2630,11 +2631,13 @@ describe('SettingsPage', () => {
     expect(toggle.checked).toBe(false);
   });
 
-  it('round-trips an enabled AI/MCP tenant gate through the settings autosave', async () => {
+  it('round-trips the AI/MCP tenant gate through the settings autosave from its new home', async () => {
+    // The gate moved out of Gestão into the IA e MCP tab (user ruling). It must write the SAME
+    // field on the SAME whole-document PUT it wrote from Gestão — a relocation, not a rewrite.
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+    renderWithProviders(<SettingsPage />, [MCP_TAB_PATH]);
 
     const toggle = (await screen.findByRole('switch', {
       name: 'Ativar IA/MCP',
@@ -2647,25 +2650,60 @@ describe('SettingsPage', () => {
 
     const put = calls.find((c) => c.method === 'PUT');
     expect(put).toBeTruthy();
+    expect(new URL(put!.url, 'http://localhost').pathname).toBe('/v1/settings');
     const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
     expect(sent.ai).toEqual({ enabled: true });
   });
 
-  it('hides the AI/MCP tenant gate from users without settings.manage', async () => {
-    const { fn } = settingsFetch();
+  it('leaves Gestão a read-only pointer to the gate, never a second writer', async () => {
+    const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(
-      <StaticPermissionsProvider
-        value={permissionsValue((permission) => permission !== 'settings.manage')}
-      >
-        <SettingsPage />
-      </StaticPermissionsProvider>,
-      ['/configuracoes?sec=gestao'],
-    );
+    renderWithProviders(<SettingsPage />, ['/settings/management']);
 
     expect(await screen.findByRole('heading', { name: 'Gestão' })).toBeTruthy();
+    // The label is still here, so the absence of the control is not mysterious…
+    expect(screen.getByText('Ativar IA/MCP')).toBeTruthy();
+    expect(screen.getByText('Ativa-se em Operações › IA e MCP.')).toBeTruthy();
+    // …but there is no control, and nothing here can write the setting.
     expect(screen.queryByRole('switch', { name: 'Ativar IA/MCP' })).toBeNull();
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    // And it links to the one writer.
+    expect(screen.getAllByRole('link', { name: 'IA e MCP' })[0].getAttribute('href')).toBe(
+      MCP_TAB_PATH,
+    );
+  });
+
+  it('hides the AI/MCP tenant gate, in both places, from users without settings.manage', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    const readerOnly = permissionsValue((permission) => permission !== 'settings.manage');
+
+    renderWithProviders(
+      <StaticPermissionsProvider value={readerOnly}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/management'],
+    );
+
+    // Gestão hid the toggle entirely (not merely disabled it) from a reader before the move.
+    expect(await screen.findByRole('heading', { name: 'Gestão' })).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'Ativar IA/MCP' })).toBeNull();
+    expect(screen.queryByText('Ativar IA/MCP')).toBeNull();
+    cleanup();
+
+    // The new home reproduces that exactly: hidden, not a disabled control the reader can see.
+    vi.stubGlobal('fetch', settingsFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={readerOnly}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      [MCP_TAB_PATH],
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Servidor MCP' })).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'Ativar IA/MCP' })).toBeNull();
+    expect(screen.queryByText('Ativar IA/MCP')).toBeNull();
   });
 
   it('renders and autosaves the workflow reminder policy fields', { timeout: 15_000 }, async () => {
@@ -2674,7 +2712,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(olderSettings);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+    renderWithProviders(<SettingsPage />, ['/settings/management']);
 
     const enabled = (await screen.findByRole('switch', {
       name: 'Gerar lembretes locais',
@@ -2735,7 +2773,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(olderSettings);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+    renderWithProviders(<SettingsPage />, ['/settings/management']);
 
     expect(
       await screen.findByRole('heading', {
@@ -2780,7 +2818,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(olderSettings);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+    renderWithProviders(<SettingsPage />, ['/settings/management']);
 
     expect(
       await screen.findByRole('heading', {
@@ -2822,7 +2860,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations']);
 
     expect(await screen.findByRole('button', { name: 'Operações' })).toBeTruthy();
 
@@ -2836,15 +2874,15 @@ describe('SettingsPage', () => {
     const links = Object.fromEntries(
       screen.getAllByRole('link').map((a) => [a.textContent?.trim(), a.getAttribute('href')]),
     );
-    expect(links['Servidor API']).toBe('/configuracoes?sec=operacoes&sub=api');
-    expect(links['Servidor MCP']).toBe('/configuracoes?sec=operacoes&sub=mcp');
+    expect(links['Servidor API']).toBe('/settings/operations/api');
+    expect(links['Servidor MCP']).toBe('/settings/operations/mcp');
   });
 
   it('gathers every API-server control on the API sub-tab, at its own deep link', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=api']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/api']);
 
     // The service row, with the honest backend limitations it carried in Plataforma.
     expect(await screen.findByText('Chancela API server')).toBeTruthy();
@@ -2863,9 +2901,16 @@ describe('SettingsPage', () => {
     expect(screen.getByText('CHANCELA_HSTS_MAX_AGE')).toBeTruthy();
     expect(screen.getByText('CHANCELA_SESSION_MAX_LIFETIME')).toBeTruthy();
 
-    // The connector allow-list is OUTBOUND connector egress, not the API's inbound surface. It is
-    // named here only to say so, and its editor is not rendered on this tab.
+    // The connector allow-list is OUTBOUND connector egress, not the API's inbound surface — and
+    // it is far likelier to look at home here, beside CORS and the rate limiter, than it was on
+    // the MCP tab. So the same absence assertion applies, harder: no editor, and the env var is
+    // NOT a row of the API's launch-configuration table, which would present it as API config.
     expect(screen.queryByLabelText(/Anfitriões permitidos/)).toBeNull();
+    expect(screen.queryByRole('textbox', { name: /Anfitriões permitidos/ })).toBeNull();
+    const envTable = screen.getByRole('table', { name: 'Configuração de arranque (ambiente)' });
+    expect(within(envTable).getByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeTruthy();
+    expect(within(envTable).queryByText('CHANCELA_CONNECTOR_ALLOWED_HOSTS')).toBeNull();
+    // It is named on the tab in exactly one place: the cross-reference that says it is NOT this.
     expect(screen.getByText(/não a superfície de entrada da API/)).toBeTruthy();
   });
 
@@ -2873,7 +2918,7 @@ describe('SettingsPage', () => {
     const { fn } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=chaves-api']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/api-keys']);
 
     // The bookmarkable address still lands on the keys pane, now under the API button.
     expect(await screen.findByRole('heading', { name: 'Chaves API' })).toBeTruthy();
@@ -2900,7 +2945,7 @@ describe('SettingsPage', () => {
       >
         <SettingsPage />
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=operacoes&sub=chaves-api'],
+      ['/settings/operations/api-keys'],
     );
 
     const create = await screen.findByRole('button', { name: 'Nova chave API' });
@@ -2915,7 +2960,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=mcp']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/mcp']);
 
     // The service row, with the same honest backend limitations it carried in Plataforma.
     expect(await screen.findByText('Chancela MCP stdio server')).toBeTruthy();
@@ -2934,12 +2979,10 @@ describe('SettingsPage', () => {
     expect(screen.queryByText('CHANCELA_CONNECTOR_ALLOWED_HOSTS')).toBeNull();
     expect(screen.queryByLabelText('Anfitriões permitidos')).toBeNull();
 
-    // The shared AI/MCP gate is mirrored, not duplicated: no second writer for it lives here.
-    expect(screen.queryByRole('checkbox', { name: 'Ativar IA/MCP' })).toBeNull();
-    expect(screen.getByText('Ativar IA/MCP')).toBeTruthy();
-    expect(screen.getAllByRole('link', { name: 'Gestão' })[0].getAttribute('href')).toBe(
-      '/configuracoes?sec=gestao',
-    );
+    // The AI/MCP gate is now WRITTEN here — this tab is its only writer, and Gestão holds a
+    // read-only pointer rather than a second control.
+    expect(screen.getByRole('switch', { name: 'Ativar IA/MCP' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Gestão' })).toBeNull();
   });
 
   it('carries the settings.manage gate onto the API tab with the controls it moved', async () => {
@@ -2951,7 +2994,7 @@ describe('SettingsPage', () => {
       >
         <SettingsPage />
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=operacoes&sub=api'],
+      ['/settings/operations/api'],
     );
 
     const restart = await screen.findByRole('button', { name: /Registar reinício/ });
@@ -2970,7 +3013,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=api']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/api']);
 
     fireEvent.change(await screen.findByLabelText('API'), { target: { value: 'debug' } });
     fireEvent.change(screen.getByLabelText('Servidor API'), { target: { value: 'trace' } });
@@ -2995,7 +3038,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=api']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/api']);
 
     fireEvent.click(await screen.findByRole('button', { name: /Registar reinício/ }));
 
@@ -3022,7 +3065,7 @@ describe('SettingsPage', () => {
       >
         <SettingsPage />
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=operacoes&sub=mcp'],
+      ['/settings/operations/mcp'],
     );
 
     const start = await screen.findByRole('button', { name: /Registar arranque/ });
@@ -3037,11 +3080,11 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Sem permissão')).toBeTruthy();
   });
 
-  it('keeps `?sec=mcp` resolvable as a hand-written deep link into the sub-tab', async () => {
+  it('keeps `/settings/mcp` resolvable as a hand-written deep link into the sub-tab', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=mcp']);
+    renderWithProviders(<SettingsPage />, ['/settings/mcp']);
 
     expect(
       (await screen.findByRole('group', { name: 'Áreas de operações' })).querySelector(
@@ -3055,7 +3098,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     // Each row now lives on the tab that owns its service; the rows themselves are unchanged.
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=api']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/api']);
 
     const apiRow = (await screen.findByText('Chancela API server')).closest('section');
     expect(apiRow).toBeTruthy();
@@ -3071,7 +3114,7 @@ describe('SettingsPage', () => {
     // backend capabilities, same rendering — only the address changed.
     cleanup();
     vi.stubGlobal('fetch', settingsFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=mcp']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/mcp']);
 
     const mcpRow = (await screen.findByText('Chancela MCP stdio server')).closest('section');
     expect(mcpRow).toBeTruthy();
@@ -3108,7 +3151,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3131,7 +3174,7 @@ describe('SettingsPage', () => {
       >
         <SettingsPage />
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=operacoes&sub=mcp'],
+      ['/settings/operations/mcp'],
     );
 
     const title = await screen.findByText('Garantia IA/MCP');
@@ -3148,7 +3191,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3177,7 +3220,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3220,7 +3263,7 @@ describe('SettingsPage', () => {
     });
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3247,7 +3290,7 @@ describe('SettingsPage', () => {
     });
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3261,7 +3304,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes&sub=mcp']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/mcp']);
 
     const mcpRow = (await screen.findByText('Chancela MCP stdio server')).closest('section');
     expect(mcpRow).toBeTruthy();
@@ -3287,7 +3330,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3300,7 +3343,7 @@ describe('SettingsPage', () => {
     expect(screen.queryByLabelText('MCP stdio')).toBeNull();
     fireEvent.click(
       within(screen.getByRole('group', { name: 'Áreas de operações' })).getByRole('button', {
-        name: 'MCP',
+        name: 'IA e MCP',
       }),
     );
     const mcpOverride = (await screen.findByLabelText('MCP stdio')) as HTMLSelectElement;
@@ -3327,7 +3370,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+    renderWithProviders(<SettingsPage />, ['/settings/management']);
 
     expect(await screen.findByText('Atualização automática da certidão permanente')).toBeTruthy();
     expect(await screen.findByText('Acme, S.A.')).toBeTruthy();
@@ -3354,7 +3397,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+    renderWithProviders(<SettingsPage />, ['/settings/management']);
 
     const toggle = (await screen.findByRole('switch', {
       name: 'Ativar trabalhador de atualização',
@@ -3381,7 +3424,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+    renderWithProviders(<SettingsPage />, ['/settings/management']);
 
     const seat = (await screen.findByRole('switch', { name: 'Sede' })) as HTMLInputElement;
     expect(seat.checked).toBe(false);
@@ -3408,7 +3451,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+    renderWithProviders(<SettingsPage />, ['/settings']);
     const themeSelect = (await screen.findByLabelText('Tema')) as HTMLSelectElement;
 
     fireEvent.change(themeSelect, { target: { value: 'dark' } });
@@ -3422,7 +3465,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+    renderWithProviders(<SettingsPage />, ['/settings']);
     const slider = (await screen.findByRole('slider')) as HTMLInputElement;
 
     fireEvent.change(slider, { target: { value: '30' } });
@@ -3437,7 +3480,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+    renderWithProviders(<SettingsPage />, ['/settings']);
 
     // Edit the org name under Documentos (Identidade is a card there now)…
     fireEvent.click(await screen.findByRole('button', { name: 'Documentos' }));
@@ -3478,7 +3521,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/identity']);
 
     const nameInput = (await screen.findByLabelText('Nome da organização')) as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: 'Encosto Estratégico, Lda.' } });
@@ -3524,7 +3567,7 @@ describe('SettingsPage', () => {
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/identity']);
 
     const nameInput = (await screen.findByLabelText('Nome da organização')) as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: 'Encosto Estratégico, Lda.' } });
@@ -3549,7 +3592,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    const { container } = renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+    const { container } = renderWithProviders(<SettingsPage />, ['/settings/identity']);
 
     // The section loaded (its field is present) but the manual flush button is not shown —
     // autosave is always-on today.
@@ -3564,7 +3607,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+    renderWithProviders(<SettingsPage />, ['/settings']);
 
     // The theme control is present…
     expect(await screen.findByLabelText('Tema')).toBeTruthy();
@@ -3601,15 +3644,19 @@ describe('SettingsPage', () => {
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=utilizadores']);
+    renderWithProviders(<SettingsPage />, ['/settings/users']);
 
     // The sub-tab button exists and the roster renders inline (the fictional example user).
-    expect(await screen.findByRole('button', { name: 'Utilizadores' })).toBeTruthy();
+    // Scoped to the TOP strip since t106: Utilizadores now has a second-level strip whose first
+    // button carries the same label (it reuses the roster's own card title), so an unscoped query
+    // legitimately finds two. Both are wanted; this assertion is about the top-level one.
+    const sections = await screen.findByRole('group', { name: 'Secções de configuração' });
+    expect(within(sections).getByRole('button', { name: 'Utilizadores' })).toBeTruthy();
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
     // t71: the roster stays here, but creating a user leaves for its own screen — a create
     // that also grants authority needs the room, and there is now exactly one place to do it.
     const novo = screen.getByRole('link', { name: /novo utilizador/i });
-    expect(novo.getAttribute('href')).toBe('/utilizadores/novo');
+    expect(novo.getAttribute('href')).toBe('/users/new');
     // t89: and editing left too. No inline edit panel is reachable from this tab at all.
     expect(screen.queryByLabelText('Nome a apresentar')).toBeNull();
   });
@@ -3637,16 +3684,16 @@ describe('SettingsPage', () => {
     renderWithProviders(
       <>
         <Routes>
-          <Route path="/configuracoes" element={<SettingsPage />} />
-          <Route path="/utilizadores/:id" element={null} />
+          <Route path="/settings/:sec?/:sub?" element={<SettingsPage />} />
+          <Route path="/users/:id" element={null} />
         </Routes>
         <LocationProbe />
       </>,
-      ['/configuracoes?sec=utilizadores&user=u1#acesso'],
+      ['/settings/users?user=u1#acesso'],
     );
 
     await waitFor(() =>
-      expect(screen.getByLabelText('location').textContent).toBe('/utilizadores/u1#acesso'),
+      expect(screen.getByLabelText('location').textContent).toBe('/users/u1#acesso'),
     );
   });
 
@@ -3654,7 +3701,7 @@ describe('SettingsPage', () => {
     const { fn } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
 
     expect(await screen.findByRole('button', { name: 'Privacidade' })).toBeTruthy();
     expect(await screen.findByText('Cloud Processor')).toBeTruthy();
@@ -3667,7 +3714,15 @@ describe('SettingsPage', () => {
     });
     expect(within(dpiaPanel!).getByText('Marketing profiling')).toBeTruthy();
     expect(await within(dpiaPanel!).findByText(/Sem submissão à autoridade/)).toBeTruthy();
-    expect(await within(dpiaPanel!).findByText('Em revisão local')).toBeTruthy();
+    // t102: the panel now also offers an advisory-review FILTER, whose options carry the same
+    // labels as the row badges. Assert the badge specifically — the row's review state is what
+    // this covers, not the filter's option list.
+    await within(dpiaPanel!).findAllByText('Em revisão local');
+    expect(
+      within(dpiaPanel!)
+        .getAllByText('Em revisão local')
+        .some((el) => el.classList.contains('badge')),
+    ).toBe(true);
 
     fireEvent.change(within(dpiaPanel!).getByLabelText('Risco'), {
       target: { value: 'critical' },
@@ -3698,7 +3753,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch([sentinelProcessor], [sentinelDpia]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Orientação');
 
     const panel = (await screen.findByText('Modelo DPIA local')).closest('section');
@@ -3706,10 +3761,12 @@ describe('SettingsPage', () => {
     expect(await within(panel!).findByText('privacy-dpia-guidance/v1')).toBeTruthy();
     expect(within(panel!).getByText('Processing description')).toBeTruthy();
     expect(within(panel!).getByText('Risk prompts')).toBeTruthy();
-    expect(within(panel!).getByText(/authority_filing_completed:/)).toBeTruthy();
-    expect(within(panel!).getByText(/automated_risk_scoring_performed:/)).toBeTruthy();
-    expect(within(panel!).getByText(/register_mutation_performed:/)).toBeTruthy();
-    expect(within(panel!).getByText(/external_call_performed:/)).toBeTruthy();
+    // t102: the "Flags sem alegação" disclosure is a two-column table now, so each flag
+    // identifier is its own cell rather than the `key:` half of an inline pair.
+    expect(within(panel!).getByText('authority_filing_completed')).toBeTruthy();
+    expect(within(panel!).getByText('automated_risk_scoring_performed')).toBeTruthy();
+    expect(within(panel!).getByText('register_mutation_performed')).toBeTruthy();
+    expect(within(panel!).getByText('external_call_performed')).toBeTruthy();
 
     for (const forbidden of [
       'SENTINEL_LIVE_PROCESSOR_NAME',
@@ -3737,7 +3794,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
 
     const dpiaPanel = (await screen.findByText('DPIAs')).closest('section');
     expect(dpiaPanel).toBeTruthy();
@@ -3834,7 +3891,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
 
     const processorPanel = (await screen.findByText('Processadores GDPR')).closest('section');
     expect(processorPanel).toBeTruthy();
@@ -3901,7 +3958,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
 
     const breachPanel = (await screen.findByText('Playbooks de resposta a violações')).closest(
       'section',
@@ -3909,7 +3966,13 @@ describe('SettingsPage', () => {
     expect(breachPanel).toBeTruthy();
     expect(await within(breachPanel!).findByText('Suspected account compromise')).toBeTruthy();
     expect(await within(breachPanel!).findByText(/Sem notificação à autoridade/)).toBeTruthy();
-    expect(await within(breachPanel!).findByText('Revisão atual')).toBeTruthy();
+    // t102: as in the DPIA register, the review-state filter's options share the badge labels.
+    await within(breachPanel!).findAllByText('Revisão atual');
+    expect(
+      within(breachPanel!)
+        .getAllByText('Revisão atual')
+        .some((el) => el.classList.contains('badge')),
+    ).toBe(true);
     fireEvent.click(within(breachPanel!).getByRole('button', { name: 'Novo registo' }));
 
     let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
@@ -3965,7 +4028,13 @@ describe('SettingsPage', () => {
     expect(transferPanel).toBeTruthy();
     expect(await within(transferPanel!).findByText('EU to UK support access')).toBeTruthy();
     expect(await within(transferPanel!).findByText(/Sem aprovação/)).toBeTruthy();
-    expect(await within(transferPanel!).findByText('Revisão atual')).toBeTruthy();
+    // t102: as above — the review-state filter's options share the badge labels.
+    await within(transferPanel!).findAllByText('Revisão atual');
+    expect(
+      within(transferPanel!)
+        .getAllByText('Revisão atual')
+        .some((el) => el.classList.contains('badge')),
+    ).toBe(true);
     fireEvent.click(within(transferPanel!).getByRole('button', { name: 'Novo registo' }));
 
     formCard = await screen.findByRole('heading', { name: 'Novo registo' });
@@ -4031,7 +4100,7 @@ describe('SettingsPage', () => {
     const { fn } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const legalHoldStatusPanel = (
@@ -4070,7 +4139,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -4136,7 +4205,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -4241,7 +4310,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -4270,7 +4339,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -4387,7 +4456,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
@@ -4463,7 +4532,7 @@ describe('SettingsPage', () => {
     ]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
@@ -4524,7 +4593,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -4589,7 +4658,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -4806,7 +4875,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -4899,7 +4968,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -5096,7 +5165,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -5172,7 +5241,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -5267,12 +5336,12 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     await screen.findByText('Candidatos de retenção vencidos');
     cleanup();
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
     await screen.findByText('Candidatos de retenção vencidos');
 
@@ -5300,7 +5369,7 @@ describe('SettingsPage', () => {
     const { fn } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
@@ -5332,7 +5401,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Retenção');
 
     const retentionPanel = (await screen.findByText('Políticas de retenção')).closest('section');
@@ -5512,7 +5581,7 @@ describe('SettingsPage', () => {
       >
         <SettingsPage />
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=privacidade'],
+      ['/settings/privacy'],
     );
 
     expect(await screen.findByText('Cloud Processor')).toBeTruthy();
@@ -5526,7 +5595,7 @@ describe('SettingsPage', () => {
       <StaticPermissionsProvider value={permissionsValue(() => false)}>
         <SettingsPage />
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=privacidade'],
+      ['/settings/privacy'],
     );
 
     expect(await screen.findByText('Sem permissão')).toBeTruthy();
@@ -5537,7 +5606,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsa']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/tsa']);
 
     const tsa = (await screen.findByLabelText(
       'URL da autoridade de selo temporal (TSA)',
@@ -5564,7 +5633,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=prestadores']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/trust-services']);
 
     // By `heading`, not by text: since t73 the sub-tab that opens this card is a button carrying
     // the very same words, so a bare text query would match two nodes.
@@ -5584,7 +5653,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithoutProviderMetadata());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=prestadores']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/trust-services']);
 
     expect(await screen.findByText(/Local soft certificate \(PKCS#12\/PFX\)/)).toBeTruthy();
   });
@@ -5593,7 +5662,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
 
     // Every source is now one grid row whose name is an editable cell, so the names read back as
     // input values rather than headings — that is the point of the redesign: two sources can be
@@ -5622,7 +5691,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
 
     const cachedSource = await screen.findByRole('group', { name: 'Operator cached TSL' });
     // One control per row, and its label states the row's current state (t36) — the row used to
@@ -5652,7 +5721,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsa']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/tsa']);
 
     const backupTsa = await screen.findByRole('group', { name: 'Backup Timestamp TSA' });
     fireEvent.click(within(backupTsa).getByRole('button', { name: 'Tornar predefinido' }));
@@ -5676,7 +5745,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithoutTrustSourceMetadata());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
 
     expect(await screen.findByDisplayValue('Portugal GNS Trusted List')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Prestadores TSA' }));
@@ -5708,7 +5777,7 @@ describe('SettingsPage', () => {
     });
     const { fn, calls } = settingsFetch(initial);
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Adicionar fonte TSL' }));
     const newSource = screen.getByRole('group', { name: 'Nova fonte TSL' });
@@ -5801,7 +5870,7 @@ describe('SettingsPage', () => {
     const { fn } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
 
     expect(await screen.findByRole('button', { name: 'Chaves API' })).toBeTruthy();
     expect(await screen.findByText('ERP bridge')).toBeTruthy();
@@ -5816,7 +5885,7 @@ describe('SettingsPage', () => {
     const { fn } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Nova chave API' }));
 
@@ -5829,7 +5898,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Nova chave API' }));
     fireEvent.change(await screen.findByLabelText('Nome da chave'), {
@@ -5866,7 +5935,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Rodar chave' }));
 
@@ -5887,7 +5956,7 @@ describe('SettingsPage', () => {
     const { fn } = apiKeysFetch([API_KEY_ONE, API_KEY_REVOKED]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
 
     const activeRow = (await screen.findByText('ERP bridge')).closest('tr');
     const revokedRow = (await screen.findByText('Retired bridge')).closest('tr');
@@ -5904,7 +5973,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Revogar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar revogação' }));
@@ -5923,7 +5992,7 @@ describe('SettingsPage', () => {
 
     // The browser tab title is owned by index.html; no page may clobber it.
     document.title = 'Chancela — Livro de Atas Digital';
-    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+    renderWithProviders(<SettingsPage />, ['/settings']);
 
     // The header used to repeat the title as a self-referential breadcrumb, in the
     // singular ("Configuração") above the plural <h1>; only the <h1> survives.
@@ -5939,21 +6008,22 @@ describe('SettingsPage', () => {
  * t73 — eight flat sub-tabs folded into two parents.
  *
  * Email and Chaves API moved under Operações; Fornecedores de assinatura joined the five signing
- * cards, each now its own sub-tab, under Assinaturas. The second level is `?sec=<parent>&sub=`,
+ * cards, each now its own sub-tab, under Assinaturas. The second level is `/settings/<parent>/<sub>`,
  * rendered with the same shared `<SubNav>`; the three retired top-level addresses still resolve.
  */
 describe('SettingsPage — second-level sub-tabs (t73)', () => {
   /** Reports the live query string and how the last navigation happened (PUSH vs REPLACE). */
+  // The section and its sub-tab are path segments now, so the probe reports the pathname.
   function NavProbe() {
     return (
       <>
-        <span data-testid="search-probe">{useLocation().search}</span>
+        <span data-testid="search-probe">{useLocation().pathname}</span>
         <span data-testid="navtype-probe">{useNavigationType()}</span>
       </>
     );
   }
 
-  const search = () => new URLSearchParams(screen.getByTestId('search-probe').textContent ?? '');
+  const path = () => screen.getByTestId('search-probe').textContent;
 
   /** The page renders a loader until the settings document arrives; the strips come with it. */
   const loaded = async () =>
@@ -5969,7 +6039,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
   it('collapses the eight former top-level sub-tabs into Operações and Assinaturas', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+    renderWithProviders(<SettingsPage />, ['/settings/operations']);
 
     // The three that moved are gone from the TOP strip…
     const top = await loaded();
@@ -5982,20 +6052,81 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     // …and two of them are here, in Operações' own strip, behind the platform controls.
     const operations = childStrip('Áreas de operações');
     // "Chaves API" is no longer a button here: since t82b it is a pane of the API tab, reached
-    // from the API tab's own strip while keeping its `?sub=chaves-api` address.
-    expect(labels(operations)).toEqual(['Plataforma', 'API', 'MCP', 'Email']);
+    // from the API tab's own strip while keeping its `/operations/chaves-api` address.
+    // "IA e MCP", not "MCP": the tab holds the tenant AI gate as well, so the strip says so.
+    // "Serviços" and "Registos" replace "Plataforma" (t101): they were a third level inside it,
+    // and are now siblings here — the panel they used to share no longer exists as an id.
+    // "Base de dados", "Redis e estado partilhado" and "Gestão de Dados" arrive with t105: the
+    // first two are new read-only environment panes, the third was a top-level section until the
+    // move. They sit after API and before IA e MCP, so the strip reads outwards from the API
+    // surface through the stores behind it.
+    expect(labels(operations)).toEqual([
+      'Serviços',
+      'Registos',
+      'API',
+      'Base de dados',
+      'Redis e estado partilhado',
+      'Gestão de Dados',
+      'IA e MCP',
+      'Email',
+    ]);
 
-    // Plataforma is the default and carries no `sub` param, mirroring the `sec` rule.
+    // Serviços is the default and carries no `sub` segment, mirroring the `sec` rule.
     expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
+    expect(operations.getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+  });
+
+  it('promotes Serviços and Registos to addressable siblings under Operações', async () => {
+    // The user: "the logging should be a subtab under operations not a 2nd sub level. services
+    // too." They were a `useState` strip inside Plataforma, so neither had an address, neither
+    // could be linked to, and Back did not walk through them. This asserts the three things that
+    // could regress: the addresses exist, the old one still resolves, and the moved controls
+    // still write what they wrote.
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/logs']);
+    await loaded();
+
+    // Deep-linkable in its own right, and the strip agrees with the address.
+    const operations = childStrip('Áreas de operações');
+    expect(operations.getByRole('button', { name: 'Registos' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    // No third-level strip survives: two identically-named landmarks on one page was the defect.
+    expect(screen.queryByRole('navigation', { name: 'Secções de operações' })).toBeNull();
+
+    // The moved control still writes to the same place in the same document. `platform.logging`
+    // is the object the MCP and API tabs also read out of, so this is the assertion that moving
+    // the panel that renders it did not fork it.
+    fireEvent.change(await screen.findByLabelText('Global'), { target: { value: 'debug' } });
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const body = JSON.parse(
+      calls.filter((c) => c.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(body.platform.logging.global).toBe('debug');
+
+    cleanup();
+
+    // The retired address keeps resolving — onto the pane it always opened on, not a 404 and not
+    // Aparência.
+    vi.stubGlobal('fetch', settingsFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/settings/operations/platform']);
+    await loaded();
     expect(
-      operations.getByRole('button', { name: 'Plataforma' }).getAttribute('aria-pressed'),
+      childStrip('Áreas de operações')
+        .getByRole('button', { name: 'Serviços' })
+        .getAttribute('aria-pressed'),
     ).toBe('true');
   });
 
   it('lists the six Assinaturas sub-tabs in the requested order', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing']);
     await loaded();
 
     expect(labels(childStrip('Áreas de assinaturas'))).toEqual([
@@ -6006,7 +6137,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       'Modos de prestador configurados',
       'Chave Móvel Digital (CMD)',
     ]);
-    // The first is the default: bare `?sec=assinaturas` opens the credentials manager. Asserted
+    // The first is the default: bare `/settings/signing` opens the credentials manager. Asserted
     // on the strip, not on the card heading — that section loads its own data over its own
     // endpoint, which this settings-document stub deliberately does not serve.
     expect(
@@ -6026,13 +6157,13 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     for (const [sub, wide] of [
       ['tsl', true],
       ['tsa', true],
-      ['fornecedores', true],
-      ['politica', false],
-      ['prestadores', false],
+      ['providers', true],
+      ['policy', false],
+      ['trust-services', false],
       ['cmd', false],
     ] as const) {
       vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
-      renderWithProviders(<SettingsPage />, [`/configuracoes?sec=assinaturas&sub=${sub}`]);
+      renderWithProviders(<SettingsPage />, [`/settings/signing/${sub}`]);
       await loaded();
       expect(panel(), sub).toBeTruthy();
       expect(panel()?.classList.contains('wide-page'), sub).toBe(wide);
@@ -6041,7 +6172,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
     // …and it follows a live tab switch, not only the first paint.
     vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
     await loaded();
     expect(panel()?.classList.contains('wide-page')).toBe(true);
     fireEvent.click(
@@ -6070,10 +6201,75 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     expect(sectionRule).toContain('max-width: none;');
   });
 
+  it('explains every Assinaturas column through a focusable, described help trigger', async () => {
+    // The user asked for "tooltip indicators … describing what each field does" on these three
+    // grids. The point of the ticket is that the explanation reaches a keyboard and a screen
+    // reader, not only a mouse — so this asserts the wiring, not the presence of a glyph:
+    //
+    //  - the trigger is a real `<button>` (a tab stop) whose accessible NAME names its column,
+    //    so someone who tabs onto it out of visual context still knows what it belongs to;
+    //  - the sentence is reachable through `aria-describedby`, resolving to a mounted node;
+    //  - the `<th>` itself is still named by the bare column label, because a screen reader
+    //    re-announces the column header on every cell and must not recite the help each time.
+    const grids = [
+      {
+        sub: 'tsl',
+        columns: ['Nome', 'Estado', 'URL', 'Caminho local', 'Território', 'Esquema', 'Ações'],
+        // One spot-check per grid that the RIGHT sentence is wired to the right column.
+        probe: 'Esquema',
+        describes: /eidas, lotl/,
+      },
+      {
+        sub: 'tsa',
+        columns: ['Nome', 'Estado', 'URL', 'Caminho local', 'Política aceite', 'Limites', 'Ações'],
+        probe: 'Política aceite',
+        describes: /OID da política de carimbo/,
+      },
+      {
+        sub: 'trust-services',
+        columns: ['Prestador', 'Modo', 'Estado', 'Notas'],
+        probe: 'Modo',
+        describes: /onde fica a chave privada/,
+      },
+    ] as const;
+
+    for (const grid of grids) {
+      vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
+      renderWithProviders(<SettingsPage />, [`/settings/signing/${grid.sub}`]);
+      await loaded();
+
+      for (const column of grid.columns) {
+        // The header's own accessible name is the column label alone.
+        const header = screen.getByRole('columnheader', { name: column });
+        const trigger = within(header).getByRole('button', {
+          name: `Ajuda sobre a coluna ${column}`,
+        });
+
+        // Reachable without a pointer: a real button takes focus.
+        trigger.focus();
+        expect(document.activeElement, `${grid.sub}/${column}`).toBe(trigger);
+
+        // …and carries a description that actually resolves to a mounted node with text.
+        const describedBy = trigger.getAttribute('aria-describedby');
+        expect(describedBy, `${grid.sub}/${column}`).toBeTruthy();
+        const bubble = document.getElementById(describedBy as string);
+        expect(bubble, `${grid.sub}/${column}`).toBeTruthy();
+        const sentence = bubble?.textContent ?? '';
+        // A real explanation, not a restatement of the header.
+        expect(sentence.length, `${grid.sub}/${column}`).toBeGreaterThan(60);
+        expect(sentence.trim(), `${grid.sub}/${column}`).not.toBe(column);
+
+        if (column === grid.probe) expect(sentence).toMatch(grid.describes);
+      }
+
+      cleanup();
+    }
+  });
+
   it('preserves every retired top-level address as a deep link into its new home', async () => {
-    // /configuracoes?sec=email → Operações › Email
+    // /settings/email → Operações › Email
     vi.stubGlobal('fetch', settingsFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=email']);
+    renderWithProviders(<SettingsPage />, ['/settings/email']);
     await loaded();
     expect(
       childStrip('Áreas de operações')
@@ -6082,10 +6278,10 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
     cleanup();
 
-    // /configuracoes?sec=chaves-api → Operações › API › Chaves API. Both hops of the address
+    // /settings/api-keys → Operações › API › Chaves API. Both hops of the address
     // still resolve: the API button in the operations strip, and the keys pane inside it.
     vi.stubGlobal('fetch', apiKeysFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
     await loaded();
     expect(
       childStrip('Áreas de operações')
@@ -6099,9 +6295,9 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
     cleanup();
 
-    // /configuracoes?sec=fornecedores-assinatura → Assinaturas › Fornecedores
+    // /settings/signing-providers → Assinaturas › Fornecedores
     vi.stubGlobal('fetch', settingsFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=fornecedores-assinatura']);
+    renderWithProviders(<SettingsPage />, ['/settings/signing-providers']);
     await loaded();
     expect(
       childStrip('Áreas de assinaturas')
@@ -6110,7 +6306,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
   });
 
-  it('deep-links a sub-tab, pushes history when one is chosen, and drops `sub` on the default', async () => {
+  it('deep-links a sub-tab, pushes history when one is chosen, and drops it on the default', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
     renderWithProviders(
@@ -6118,7 +6314,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
         <NavProbe />
         <SettingsPage />
       </>,
-      ['/configuracoes?sec=assinaturas&sub=tsl'],
+      ['/settings/signing/tsl'],
     );
 
     // Deep-linkable: the URL alone selects the sub-tab.
@@ -6131,20 +6327,19 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       }),
     );
     expect(await screen.findByRole('heading', { name: 'Chave Móvel Digital (CMD)' })).toBeTruthy();
-    expect(search().get('sub')).toBe('cmd');
+    expect(path()).toBe('/settings/signing/cmd');
     expect(screen.getByTestId('navtype-probe').textContent).toBe('PUSH');
 
-    // The default sub-tab carries no param at all, exactly like the default section.
+    // The default sub-tab carries no segment at all, exactly like the default section.
     fireEvent.click(
       childStrip('Áreas de assinaturas').getByRole('button', {
         name: 'Fornecedores de assinatura',
       }),
     );
-    expect(search().get('sub')).toBeNull();
-    expect(search().get('sec')).toBe('assinaturas');
+    expect(path()).toBe('/settings/signing');
   });
 
-  it('falls back to the first sub-tab for an unknown `sub`, and drops it when the section changes', async () => {
+  it('falls back to the first sub-tab for an unknown one, and drops it when the section changes', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
     renderWithProviders(
@@ -6152,7 +6347,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
         <NavProbe />
         <SettingsPage />
       </>,
-      ['/configuracoes?sec=assinaturas&sub=naoexiste'],
+      ['/settings/signing/naoexiste'],
     );
 
     await loaded();
@@ -6165,7 +6360,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     // A `sub` belongs to the section that declared it: leaving Assinaturas discards it rather
     // than carrying a stale child id into Operações.
     fireEvent.click((await loaded()).getByRole('button', { name: 'Operações' }));
-    expect(search().get('sub')).toBeNull();
+    expect(path()).toBe('/settings/operations');
     expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
   });
 
@@ -6178,7 +6373,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       >
         <SettingsPage />
       </StaticPermissionsProvider>,
-      ['/configuracoes?sec=assinaturas&sub=politica'],
+      ['/settings/signing/policy'],
     );
 
     // The editable card is inerted by the disabled fieldset, with the honest explanation…
@@ -6196,5 +6391,339 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     expect(cmd.hasAttribute('disabled')).toBe(false);
     fireEvent.click(cmd);
     expect(await screen.findByRole('heading', { name: 'Chave Móvel Digital (CMD)' })).toBeTruthy();
+  });
+});
+
+/**
+ * Utilizadores, Delegações and Funções were three top-level tabs; they are one tab with three
+ * sub-tabs (t106). Two things must survive that move and both are asserted here rather than
+ * argued in a comment: every address that resolved before still resolves, and **no principal
+ * gains or loses reach to any of the three**.
+ *
+ * The gating half is the point. Grouping panels under a parent is exactly how a subtree silently
+ * inherits a gate it was never designed under — the failure t102 flagged on the privacy registers.
+ * These three were designed under three DIFFERENT gates (`user.manage`, `delegation.grant`,
+ * `role.manage`), and none of them is `settings.manage`, which is the gate the Configurações page
+ * itself applies to its own working-copy sections.
+ */
+describe('SettingsPage — Utilizadores sub-tabs (t106)', () => {
+  function usersFetch(): { fn: typeof fetch; calls: Recorded[] } {
+    const calls: Recorded[] = [];
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, method: init?.method ?? 'GET', body: (init?.body as string) ?? null });
+      if (url.includes('/v1/users')) return Promise.resolve(jsonResponse([]));
+      if (url.includes('/v1/roles')) return Promise.resolve(jsonResponse([]));
+      if (url.includes('/v1/delegations')) return Promise.resolve(jsonResponse([]));
+      if (url.includes('/v1/permissions')) return Promise.resolve(jsonResponse(PERMISSION_CATALOG));
+      if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      if (url.includes('/v1/ledger/verify')) {
+        return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
+      }
+      if (url.includes('/health')) {
+        return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    }) as typeof fetch;
+    return { fn, calls };
+  }
+
+  const topStrip = async () =>
+    within(await screen.findByRole('group', { name: 'Secções de configuração' }));
+  const userStrip = () => within(screen.getByRole('group', { name: 'Áreas de utilizadores' }));
+  const stripLabels = (scope: ReturnType<typeof within>): (string | undefined)[] =>
+    scope
+      .getAllByRole('button')
+      .map((b: HTMLElement) => b.textContent?.replace(/\s+/gu, ' ').trim());
+
+  it('groups the three former top-level tabs into one Utilizadores tab', async () => {
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/settings/users']);
+
+    // Funções and Delegações are gone from the TOP strip…
+    const top = await topStrip();
+    expect(top.getByRole('button', { name: 'Utilizadores' })).toBeTruthy();
+    expect(top.queryByRole('button', { name: 'Funções' })).toBeNull();
+    expect(top.queryByRole('button', { name: 'Delegações' })).toBeNull();
+
+    // …and are here instead, in the order the user asked for.
+    expect(stripLabels(userStrip())).toEqual(['Utilizadores', 'Delegações', 'Funções']);
+
+    // The roster is the default sub-tab, so `/settings/users` is unchanged for anyone who
+    // bookmarked it.
+    expect(
+      userStrip().getByRole('button', { name: 'Utilizadores' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('mounts each panel at its own second-level address', async () => {
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/settings/users/delegations']);
+    expect(await screen.findByRole('heading', { name: 'Delegações' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Funções' })).toBeNull();
+    cleanup();
+
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/settings/users/roles']);
+    expect(await screen.findByRole('heading', { name: 'Funções' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Delegações' })).toBeNull();
+  });
+
+  it('keeps both former top-level addresses resolving to the panel they always showed', async () => {
+    // These were real, linkable addresses. A restructure that 404s them breaks somebody's link.
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/settings/roles']);
+    expect(await screen.findByRole('heading', { name: 'Funções' })).toBeTruthy();
+    // And it lands ON the sub-tab, not merely on the parent's default.
+    expect(userStrip().getByRole('button', { name: 'Funções' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    cleanup();
+
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/settings/delegations']);
+    expect(await screen.findByRole('heading', { name: 'Delegações' })).toBeTruthy();
+    expect(
+      userStrip().getByRole('button', { name: 'Delegações' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('moves the panels without moving who may use them', async () => {
+    // A principal holding `role.manage` and `delegation.grant` but NOT `settings.manage`. Before
+    // the move all three panels were top-level STANDALONE sections, so the settings fieldset never
+    // inerted them. Had Utilizadores not stayed standalone, this operator would now find authority
+    // they genuinely hold greyed out by a gate that has nothing to do with it.
+    const noSettingsManage = permissionsValue((permission) => permission !== 'settings.manage');
+
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={noSettingsManage}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/users/roles'],
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Funções' })).toBeTruthy();
+    const newRole = screen.getByRole('button', { name: 'Nova função' });
+    // Not inerted by the settings fieldset. Asserted on the FIELDSET, not on the button's
+    // `disabled` property: jsdom does not propagate `fieldset[disabled]` to descendant controls,
+    // so `button.disabled` stays false under a disabled fieldset and an assertion on it would
+    // pass whether or not the panel had been inerted. Verified by mutation — removing `users`
+    // from STANDALONE_SECTIONS must fail this test.
+    const rolesFieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(rolesFieldset.contains(newRole)).toBe(true);
+    expect(rolesFieldset.disabled).toBe(false);
+    // The page also drops its "Sem permissão" note for a standalone sub-tab, because nothing here
+    // is locked and saying otherwise would be false.
+    expect(screen.queryByText('Sem permissão')).toBeNull();
+    // …and the panel's OWN gate does not block either, because this principal holds `role.manage`.
+    expect(newRole.getAttribute('data-gated')).toBeNull();
+    cleanup();
+
+    // Same for Delegações, whose gate is `delegation.grant`.
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={noSettingsManage}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/users/delegations'],
+    );
+    expect(await screen.findByRole('heading', { name: 'Delegações' })).toBeTruthy();
+    const grant = screen.getByRole('button', { name: 'Nova delegação' });
+    const delegFieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(delegFieldset.contains(grant)).toBe(true);
+    expect(delegFieldset.disabled).toBe(false);
+    expect(screen.queryByText('Sem permissão')).toBeNull();
+    expect(grant.getAttribute('data-gated')).toBeNull();
+  });
+
+  it('does not widen access: each sub-tab still refuses its own action on its own gate', async () => {
+    // The mirror of the test above. Grouping must not hand anyone an affordance they lacked, so a
+    // principal denied each panel's specific verb must still be refused it — one sub-tab at a time,
+    // because the three verbs are genuinely different and a shared parent must not conflate them.
+    const noRoleManage = permissionsValue((permission) => permission !== 'role.manage');
+
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={noRoleManage}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/users/roles'],
+    );
+
+    // Reachable — the panel is not hidden, which is the other half of "must not narrow"…
+    expect(await screen.findByRole('heading', { name: 'Funções' })).toBeTruthy();
+    // …but refused, by the panel's own gate rather than by the page's.
+    expect(screen.getByRole('button', { name: 'Nova função' }).getAttribute('data-gated')).toBe(
+      'true',
+    );
+    cleanup();
+
+    // Denying `role.manage` must NOT have reached Delegações, gated on a different verb.
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={noRoleManage}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/users/delegations'],
+    );
+    expect(await screen.findByRole('heading', { name: 'Delegações' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Nova delegação' }).getAttribute('data-gated'),
+    ).toBeNull();
+    cleanup();
+
+    // And the converse: denying `delegation.grant` must not reach Funções.
+    const noGrant = permissionsValue((permission) => permission !== 'delegation.grant');
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={noGrant}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/users/delegations'],
+    );
+    expect(await screen.findByRole('heading', { name: 'Delegações' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nova delegação' }).getAttribute('data-gated')).toBe(
+      'true',
+    );
+    cleanup();
+
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={noGrant}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/users/roles'],
+    );
+    expect(await screen.findByRole('heading', { name: 'Funções' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Nova função' }).getAttribute('data-gated'),
+    ).toBeNull();
+  });
+
+  it('keeps the roster `?user=` redirect on the roster alone', async () => {
+    // `?user=` is the roster's own legacy state and redirects out to the edit screen. Left
+    // section-wide it would fire on the sibling sub-tabs too and throw an operator off the panel
+    // they actually asked for.
+    vi.stubGlobal('fetch', usersFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/settings/users/roles?user=u1']);
+    expect(await screen.findByRole('heading', { name: 'Funções' })).toBeTruthy();
+  });
+});
+
+/**
+ * Gestão de dados moving under Operações (t105).
+ *
+ * The move itself is trivial; the thing that can go wrong silently is the gate. Gestão de dados was
+ * a STANDALONE top-level section, so the page's `settings.manage` fieldset never inerted it. Under
+ * a parent that is NOT standalone, dropping it from `STANDALONE_SECTIONS` without adding
+ * `operations:data` to `STANDALONE_SUBSECTIONS` would have handed it its parent's gating — exactly
+ * the inherited-gate hole t102 flagged on the privacy registers. These tests are what stops that
+ * regression being invisible.
+ */
+describe('Operações › Gestão de dados (t105)', () => {
+  function dataFetch(): typeof fetch {
+    return ((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v1/permissions')) return Promise.resolve(jsonResponse(PERMISSION_CATALOG));
+      if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      if (url.includes('/v1/zk-repositories/storage-status')) {
+        return Promise.resolve(
+          jsonResponse({
+            ready: false,
+            reason:
+              'zero-knowledge repository storage is disabled on PostgreSQL/HA until CHANCELA_ZK_SHARED_OBJECT_ROOT explicitly names the shared mounted <data_dir>/zk-repositories root',
+            requires_shared_root: true,
+            declared_root: null,
+            source: 'unset',
+          }),
+        );
+      }
+      if (url.includes('/health')) {
+        return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+      }
+      // These tests are about the gate and the ZK pane; the data readouts belong to
+      // `GestaoDadosSection.test.tsx`, which owns their fixtures. `null` puts that panel in its
+      // own empty state instead of duplicating a 200-line status document here.
+      if (url.includes('/v1/data/status')) return Promise.resolve(jsonResponse(null));
+      return Promise.resolve(jsonResponse([]));
+    }) as typeof fetch;
+  }
+
+  const opsStrip = () => within(screen.getByRole('group', { name: 'Áreas de operações' }));
+
+  it('mounts at its new address under Operações', async () => {
+    vi.stubGlobal('fetch', dataFetch());
+    renderWithProviders(<SettingsPage />, ['/settings/operations/data']);
+    expect(await screen.findByRole('group', { name: 'Sub-secções da gestão de dados' })).toBeTruthy();
+    expect(
+      opsStrip().getByRole('button', { name: 'Gestão de Dados' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('keeps the former top-level address resolving to the same panel', async () => {
+    // `/settings/data` was a real, linkable address. A restructure that drops it to the Aparência
+    // fallback breaks somebody's bookmark without telling them.
+    vi.stubGlobal('fetch', dataFetch());
+    renderWithProviders(<SettingsPage />, ['/settings/data']);
+    expect(await screen.findByRole('group', { name: 'Sub-secções da gestão de dados' })).toBeTruthy();
+    expect(
+      opsStrip().getByRole('button', { name: 'Gestão de Dados' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('moves the panel without moving who may use it', async () => {
+    // A principal WITHOUT `settings.manage`. Before the move this panel was standalone and the
+    // settings fieldset never touched it. Removing `operations:data` from STANDALONE_SUBSECTIONS
+    // must fail this test — that is the mutation this assertion exists to catch.
+    const noSettingsManage = permissionsValue((permission) => permission !== 'settings.manage');
+    vi.stubGlobal('fetch', dataFetch());
+    renderWithProviders(
+      <StaticPermissionsProvider value={noSettingsManage}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/operations/data'],
+    );
+
+    const landmark = await screen.findByRole('group', { name: 'Sub-secções da gestão de dados' });
+    // Asserted on the FIELDSET rather than on any control's `disabled`: jsdom does not propagate
+    // `fieldset[disabled]` to descendants, so a per-control assertion would pass either way.
+    const fieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(fieldset.contains(landmark)).toBe(true);
+    expect(fieldset.disabled).toBe(false);
+    // And the page does not claim a lock that is not there.
+    expect(screen.queryByText('Sem permissão')).toBeNull();
+  });
+
+  it('still refuses the ZK declaration to a principal without `settings.manage`', async () => {
+    // The other half of "must not widen". The pane is reachable — it is a status surface an
+    // operator needs — but the one control on it that changes a safety interlock stays refused.
+    const noSettingsManage = permissionsValue((permission) => permission !== 'settings.manage');
+    vi.stubGlobal('fetch', dataFetch());
+    renderWithProviders(
+      <StaticPermissionsProvider value={noSettingsManage}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/settings/operations/data'],
+    );
+
+    expect(
+      (await screen.findByLabelText('Raiz de objetos partilhada')).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Guardar declaração' }).hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('states why the interlock is closed rather than merely that it is', async () => {
+    // Misconfiguration must never be silent: the pane carries the server's own reason verbatim.
+    vi.stubGlobal('fetch', dataFetch());
+    renderWithProviders(<SettingsPage />, ['/settings/operations/data']);
+    expect(await screen.findByText('Desativado (fecho seguro)')).toBeTruthy();
+    expect(screen.getByText(/CHANCELA_ZK_SHARED_OBJECT_ROOT/)).toBeTruthy();
+    // And it does not imply an assurance the server never made.
+    expect(
+      screen.getByText(/Não consegue verificar que é realmente uma montagem partilhada/),
+    ).toBeTruthy();
   });
 });

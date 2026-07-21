@@ -608,7 +608,7 @@ describe('GestaoDadosSection', () => {
     renderWithProviders(<GestaoDadosSection />);
     await selectTab(TAB_BACKUP);
 
-    expect(await screen.findByText('Política local de recuperação')).toBeTruthy();
+    expect(await screen.findByRole('table', { name: 'Política local de recuperação' })).toBeTruthy();
     expect(screen.getByText('Estado do ensaio')).toBeTruthy();
     expect(screen.getAllByText('Sem recibo local').length).toBeGreaterThan(0);
     expect(screen.getByText('RPO alvo declarado')).toBeTruthy();
@@ -724,9 +724,10 @@ describe('GestaoDadosSection', () => {
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
       .closest('section')!;
-    const cleanupRows = within(maintenanceSection).getAllByRole('listitem');
+    // Header row plus one row per target.
+    const cleanupRows = within(maintenanceSection).getAllByRole('row').slice(1);
     expect(cleanupRows).toHaveLength(3);
-    const crashCleanup = within(maintenanceSection).getByText('Relatórios de falha').closest('li')!;
+    const crashCleanup = within(maintenanceSection).getByText('Relatórios de falha').closest('tr')!;
     expect(crashCleanup.querySelector('.data-status-cleanup__main')?.textContent).toContain(
       'Remove diagnósticos locais de falhas antigas',
     );
@@ -736,7 +737,7 @@ describe('GestaoDadosSection', () => {
     expect(within(crashCleanup).getByRole('button', { name: 'Limpar falhas' })).toBeTruthy();
     const platformLogsCleanup = within(maintenanceSection)
       .getByText('Registos de plataforma')
-      .closest('li')!;
+      .closest('tr')!;
     expect(platformLogsCleanup.querySelector('.data-status-cleanup__main')?.textContent).toContain(
       'Remove apenas o ficheiro local platform-logs.json',
     );
@@ -747,20 +748,20 @@ describe('GestaoDadosSection', () => {
       within(platformLogsCleanup).getByRole('button', { name: 'Limpar registos' }),
     ).toBeTruthy();
     const usageSection = screen.getByRole('heading', { name: 'Utilização' }).closest('section')!;
-    const databaseRow = within(usageSection).getByText('Database').closest('li')!;
+    const databaseRow = within(usageSection).getByText('Database').closest('tr')!;
     expect(within(databaseRow).getByText('ficheiro SQLite')).toBeTruthy();
     expect(within(databaseRow).getByText('medição exata')).toBeTruthy();
     expect(within(databaseRow).getByText('Ficheiros: 2')).toBeTruthy();
     expect(within(databaseRow).getByText('Pastas: 0')).toBeTruthy();
     expect(within(databaseRow).getByText('Raízes: chancela.db, chancela.db-wal')).toBeTruthy();
-    const ledgerRow = within(usageSection).getByText('Ledger payloads').closest('li')!;
+    const ledgerRow = within(usageSection).getByText('Ledger payloads').closest('tr')!;
     expect(within(ledgerRow).getByText('Linhas: 3')).toBeTruthy();
     const sqliteGroup = within(usageSection)
       .getByRole('heading', { name: 'Payload lógico durável' })
       .closest('.data-status-usage-group')!;
-    const tablePayloads = sqliteGroup.querySelector('.data-status-sqlite-table-list')!;
+    const tablePayloads = sqliteGroup.querySelector('.data-status-sqlite-table .table')!;
     expect(tablePayloads).toBeTruthy();
-    const tableRows = tablePayloads.querySelectorAll('.data-status-sqlite-table-row');
+    const tableRows = tablePayloads.querySelectorAll('tbody tr');
     expect(tableRows).toHaveLength(2);
     expect(
       within(sqliteGroup as HTMLElement).getByText(/não provam eliminação, retenção, custódia/),
@@ -799,7 +800,12 @@ describe('GestaoDadosSection', () => {
 
     expect((await screen.findAllByText('Em memória')).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('Sem pasta de dados configurada')).toBeTruthy();
-    expect(screen.getByText('Configurada: Não · existe: — · pasta: —')).toBeTruthy();
+    const folderTable = screen.getByRole('table', { name: 'Pasta de dados' });
+    const folderRow = (label: string) =>
+      within(folderTable).getByRole('rowheader', { name: label }).closest('tr')!;
+    expect(folderRow('Pasta configurada').textContent).toContain('Não');
+    expect(folderRow('Existe no disco').textContent).toContain('—');
+    expect(folderRow('É uma pasta').textContent).toContain('—');
     expect(screen.getAllByText('Sem dados reportados.').length).toBe(2);
     expect(screen.getAllByText('Não verificado').length).toBeGreaterThanOrEqual(4);
   });
@@ -812,7 +818,7 @@ describe('GestaoDadosSection', () => {
     const permissionsSection = screen
       .getByRole('heading', { name: 'Permissões' })
       .closest('section')!;
-    const permissionItems = within(permissionsSection).getAllByRole('listitem');
+    const permissionItems = within(permissionsSection).getAllByRole('row').slice(1);
     expect(permissionItems).toHaveLength(5);
     expect(permissionItems.map((item) => item.textContent)).toEqual([
       expect.stringContaining('Ler pasta'),
@@ -850,7 +856,7 @@ describe('GestaoDadosSection', () => {
       .getByRole('heading', { name: 'Permissões' })
       .closest('section')!;
     const durableRow = within(permissionsSection)
-      .getAllByRole('listitem')
+      .getAllByRole('row')
       .find((item) => item.textContent?.includes('Armazenamento durável'))!;
     expect(durableRow.textContent).toContain('Não verificado');
     expect(durableRow.className).toContain('data-status-probe--neutral');
@@ -917,7 +923,7 @@ describe('GestaoDadosSection', () => {
     renderWithProviders(<GestaoDadosSection />);
     await selectTab(TAB_KEYS);
 
-    expect(await screen.findByText('Recibos locais de rotação')).toBeTruthy();
+    expect(await screen.findByRole('table', { name: 'Recibos locais de rotação' })).toBeTruthy();
     expect(screen.getByText(/Evidência operacional local/)).toBeTruthy();
     expect(screen.getByText(/não certificam cifragem em repouso/)).toBeTruthy();
     expect(screen.getByText('guarded_sqlcipher_rekey')).toBeTruthy();
@@ -1128,7 +1134,9 @@ describe('GestaoDadosSection', () => {
     const executeCall = calls.find((c) => c.url === '/v1/data/key-rotation')!;
     expect(JSON.parse(executeCall.body as string)).toEqual({ new_key: executionSecret });
 
-    expect(await screen.findByText('Resultado da execução SQLCipher')).toBeTruthy();
+    expect(
+      await screen.findByRole('table', { name: 'Resultado da execução SQLCipher' }),
+    ).toBeTruthy();
     expect(screen.getByText('rekey_applied')).toBeTruthy();
     expect(screen.getByText('sqlcipher_rekey')).toBeTruthy();
     expect(execution.value).toBe('');
@@ -1191,7 +1199,8 @@ describe('GestaoDadosSection', () => {
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
       .closest('section')!;
-    const cleanupRows = within(maintenanceSection).getAllByRole('listitem');
+    // Header row plus one row per target.
+    const cleanupRows = within(maintenanceSection).getAllByRole('row').slice(1);
     expect(cleanupRows).toHaveLength(3);
     expect(cleanupRows[0].textContent).toContain('Relatórios de falha');
     expect(cleanupRows[1].textContent).toContain('Registos de plataforma');
@@ -1318,7 +1327,7 @@ describe('GestaoDadosSection', () => {
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
       .closest('section')!;
-    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
+    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('tr')!;
     expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
       'Pré-visualiza ficheiros de exportação locais retidos com pelo menos 45 dias',
     );
@@ -1331,11 +1340,11 @@ describe('GestaoDadosSection', () => {
     expect(exportsRow.querySelector('.data-status-cleanup__metric')?.textContent).toContain(
       '2 ficheiros',
     );
-    const crashRow = within(maintenanceSection).getByText('Relatórios de falha').closest('li')!;
+    const crashRow = within(maintenanceSection).getByText('Relatórios de falha').closest('tr')!;
     const crashCleanupButton = within(crashRow).getByRole('button', { name: 'Limpar falhas' });
     const platformLogsRow = within(maintenanceSection)
       .getByText('Registos de plataforma')
-      .closest('li')!;
+      .closest('tr')!;
     const platformLogsCleanupButton = within(platformLogsRow).getByRole('button', {
       name: 'Limpar registos',
     });
@@ -1439,7 +1448,7 @@ describe('GestaoDadosSection', () => {
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
       .closest('section')!;
-    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
+    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('tr')!;
 
     fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
     await waitFor(() =>
@@ -1488,7 +1497,7 @@ describe('GestaoDadosSection', () => {
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
       .closest('section')!;
-    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
+    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('tr')!;
 
     fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
     await waitFor(() =>
@@ -1537,7 +1546,7 @@ describe('GestaoDadosSection', () => {
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
       .closest('section')!;
-    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
+    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('tr')!;
 
     fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
     await waitFor(() =>
@@ -1608,7 +1617,7 @@ describe('GestaoDadosSection', () => {
     const backup = calls.find((c) => c.url === '/v1/backup')!;
     expect(backup.method).toBe('POST');
     expect(backup.body).toBeNull();
-    expect(await screen.findByText('Backup criado')).toBeTruthy();
+    expect(await screen.findByRole('table', { name: 'Backup criado' })).toBeTruthy();
     expect(screen.getByText(backupPath)).toBeTruthy();
     expect(screen.getAllByText('4 KB').length).toBeGreaterThan(0);
     expect(screen.getByText('2 / 4 KB')).toBeTruthy();
@@ -1773,42 +1782,48 @@ describe('GestaoDadosSection', () => {
     expect(screen.getByText('chancela-backup-manifest/v1')).toBeTruthy();
     expect(screen.getByText('Membros no arquivo')).toBeTruthy();
     expect(screen.getByText('Membros sidecar')).toBeTruthy();
-    const isolated = screen.getByText('Verificação isolada').closest('div')!;
+    // Two scopes now: the fact rows live in the table, the findings/errors lists beside it.
+    const isolatedBlock = screen
+      .getByRole('heading', { name: 'Verificação isolada' })
+      .closest('div')!;
+    const isolated = within(isolatedBlock).getByRole('table', {
+      name: 'Verificação isolada',
+    });
     expect(within(isolated).getByText('verified')).toBeTruthy();
     expect(
-      within(isolated).getByText('Snapshot materializado').closest('div')?.textContent,
+      within(isolated).getByText('Snapshot materializado').closest('tr')?.textContent,
     ).toContain('Sim');
-    expect(within(isolated).getByText('Snapshot aberto').closest('div')?.textContent).toContain(
+    expect(within(isolated).getByText('Snapshot aberto').closest('tr')?.textContent).toContain(
       'Sim',
     );
-    expect(within(isolated).getByText('Estado carregado').closest('div')?.textContent).toContain(
+    expect(within(isolated).getByText('Estado carregado').closest('tr')?.textContent).toContain(
       'Sim',
     );
-    expect(within(isolated).getByText('Ledger verificado').closest('div')?.textContent).toContain(
+    expect(within(isolated).getByText('Ledger verificado').closest('tr')?.textContent).toContain(
       'Sim',
     );
-    expect(within(isolated).getByText('Limpeza verificada').closest('div')?.textContent).toContain(
+    expect(within(isolated).getByText('Limpeza verificada').closest('tr')?.textContent).toContain(
       'Sim',
     );
-    expect(within(isolated).getByText('Entidades').closest('div')?.textContent).toContain('4');
-    expect(within(isolated).getByText('Livros').closest('div')?.textContent).toContain('2');
-    expect(within(isolated).getByText('Atos').closest('div')?.textContent).toContain('12');
-    expect(within(isolated).getByText('Raízes sidecar').closest('div')?.textContent).toContain('2');
+    expect(within(isolated).getByText('Entidades').closest('tr')?.textContent).toContain('4');
+    expect(within(isolated).getByText('Livros').closest('tr')?.textContent).toContain('2');
+    expect(within(isolated).getByText('Atos').closest('tr')?.textContent).toContain('12');
+    expect(within(isolated).getByText('Raízes sidecar').closest('tr')?.textContent).toContain('2');
     expect(
-      within(isolated).getByText('Ficheiros sidecar materializados').closest('div')?.textContent,
+      within(isolated).getByText('Ficheiros sidecar materializados').closest('tr')?.textContent,
     ).toContain('2');
     expect(
-      within(isolated).getByText('Bytes sidecar materializados').closest('div')?.textContent,
+      within(isolated).getByText('Bytes sidecar materializados').closest('tr')?.textContent,
     ).toContain('4 KB');
     expect(
-      within(isolated).getByText('isolated database snapshot was materialized, opened, and loaded'),
+      within(isolatedBlock).getByText('isolated database snapshot was materialized, opened, and loaded'),
     ).toBeTruthy();
     expect(
-      within(isolated).getByText(/record as preflight-only isolated snapshot evidence/),
+      within(isolatedBlock).getByText(/record as preflight-only isolated snapshot evidence/),
     ).toBeTruthy();
-    expect(within(isolated).getByText(/hash redigido/)).toBeTruthy();
-    expect(within(isolated).getByText(/caminho redigido/)).toBeTruthy();
-    expect(within(isolated).getAllByText(/segredo redigido/).length).toBeGreaterThan(0);
+    expect(within(isolatedBlock).getByText(/hash redigido/)).toBeTruthy();
+    expect(within(isolatedBlock).getByText(/caminho redigido/)).toBeTruthy();
+    expect(within(isolatedBlock).getAllByText(/segredo redigido/).length).toBeGreaterThan(0);
     for (const limit of [
       'Sem restauro ao vivo',
       'Sem troca ao vivo da base de dados',
@@ -1818,7 +1833,7 @@ describe('GestaoDadosSection', () => {
       'Sem certificação de custódia off-site',
       'Sem certificação legal ou de arquivo',
     ]) {
-      expect(screen.getByText(limit).closest('div')?.textContent).toContain('Confirmado');
+      expect(screen.getByText(limit).closest('tr')?.textContent).toContain('Confirmado');
     }
     for (const overclaim of [
       'Restauro executado',

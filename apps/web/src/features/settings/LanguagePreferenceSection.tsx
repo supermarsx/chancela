@@ -111,17 +111,23 @@ export function LanguagePreferenceSection() {
         </Field>
       </div>
 
-      {/* Only meaningful while `auto` is the stored choice: it states what the standing instruction
-          currently produces WITHOUT the select pretending that is the stored value. */}
-      {preference === LANGUAGE_AUTO ? (
-        <p className="field__hint">
-          {t('settings.language.autoResolves', { locale: localeLabels[resolvedByAuto] })}
-        </p>
-      ) : null}
+      {/* The four sentences that qualify the whole card rather than the field, grouped so they
+          are spaced off the control above them (t100 — `.field__hint` sets `margin: 0` for the
+          in-field case and `.panel__body` spaces nothing, so as siblings of the form they sat
+          flush against the select). */}
+      <div className="settings-notes stack--tight">
+        {/* Only meaningful while `auto` is the stored choice: it states what the standing
+            instruction currently produces WITHOUT the select pretending that is the stored value. */}
+        {preference === LANGUAGE_AUTO ? (
+          <p className="field__hint">
+            {t('settings.language.autoResolves', { locale: localeLabels[resolvedByAuto] })}
+          </p>
+        ) : null}
 
-      <p className="field__hint">{t('settings.language.notTheme')}</p>
-      <p className="field__hint">{t('settings.language.notDocuments')}</p>
-      <p className="field__hint">{t('settings.language.signInScreen')}</p>
+        <p className="field__hint">{t('settings.language.notTheme')}</p>
+        <p className="field__hint">{t('settings.language.notDocuments')}</p>
+        <p className="field__hint">{t('settings.language.signInScreen')}</p>
+      </div>
     </Card>
   );
 }

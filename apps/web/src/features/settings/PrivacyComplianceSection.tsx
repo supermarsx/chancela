@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useDeferredValue, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   useCreatePrivacyBreachPlaybook,
   useCreatePrivacyDpia,
@@ -46,6 +46,7 @@ import {
   type PatchProcessorRecordBody,
   type PatchRetentionPolicyBody,
   type PatchTransferControlBody,
+  PRIVACY_ADVISORY_REVIEW_STATUSES,
   type PrivacyAdvisoryReviewStatus,
   type PrivacyAdvisoryReviewSummary,
   type PrivacyRecordStatus,
@@ -64,6 +65,7 @@ import {
   type RetentionExecutionOutcome,
   type RetentionExecutionRecord,
   type RetentionExecutionStatus,
+  type RetentionOperatorReviewDecision,
   type RetentionPolicyStatus,
   type RetentionPolicyView,
   type RetentionReviewClosureDecision,
@@ -80,6 +82,7 @@ import {
   Field,
   FieldHelp,
   Icon,
+  IconButton,
   InlineWarning,
   Input,
   Select,
@@ -274,6 +277,26 @@ const RETENTION_EXECUTION_STATUS_LABEL_KEYS: Record<RetentionExecutionStatus, Me
   executed: 'settings.privacy.execution.status.executed',
 };
 
+/**
+ * The operator's review decision on a queued execution — a state THIS system records, which is
+ * why it can be given a label. It was previously rendered as its raw wire identifier
+ * (`review_required`) in the queue's status cell.
+ */
+const RETENTION_OPERATOR_REVIEW_DECISION_LABEL_KEYS: Record<
+  RetentionOperatorReviewDecision,
+  MessageKey
+> = {
+  review_required: 'settings.privacy.execution.decision.reviewRequired',
+  blocked: 'settings.privacy.execution.decision.blocked',
+  execution_recorded: 'settings.privacy.execution.decision.executionRecorded',
+};
+
+const RETENTION_OPERATOR_REVIEW_DECISIONS = [
+  'review_required',
+  'blocked',
+  'execution_recorded',
+] as const satisfies readonly RetentionOperatorReviewDecision[];
+
 const RETENTION_BOUNDED_EVIDENCE_SUPPRESSED_STATES: ReadonlySet<RetentionEvidenceState> = new Set([
   'blocked',
   'bounded_archive_recorded',
@@ -300,6 +323,104 @@ function riskFilterOptions(t: TFunction) {
     { value: 'all', label: t('settings.privacy.risk.all') },
     ...PRIVACY_RISK_LEVELS.map((risk) => ({ value: risk, label: riskLabel(t, risk) })),
   ];
+}
+
+/**
+ * Filter chrome shared by every register on this tab (t102).
+ *
+ * This is the shape every list page in the app already uses — Entidades, Livros, Arquivo,
+ * Modelos, Utilizadores — reproduced here because Privacidade was the one register area that
+ * had bare `<div className="filter">` with no primary bar, no clear affordance and no result
+ * count. See `.entities-filterbar` / `.books-filterbar` in theme.css for the siblings; the
+ * `filter-advanced` classes are the already-generic half of that vocabulary.
+ *
+ * Filters are LOCAL STATE, deliberately, and are NOT synchronised to the query string. No list
+ * surface in this app puts filters in the URL, and Privacidade is not the place to start
+ * diverging: `t97`'s rule moves *navigation identity* out of the query, which says nothing about
+ * filters moving in. If linkable filtered views are ever wanted they are one app-wide change.
+ */
+function PrivacyFilterBar({
+  name,
+  hasFilters,
+  onClear,
+  children,
+  advanced,
+}: {
+  /** The register's own title, for the search landmark's accessible name. */
+  name: string;
+  hasFilters: boolean;
+  onClear: () => void;
+  children: ReactNode;
+  advanced?: ReactNode;
+}) {
+  const t = useT();
+  return (
+    <div
+      className="stack--tight privacy-filters"
+      role="search"
+      aria-label={t('settings.privacy.filters.aria', { name })}
+    >
+      <div className="privacy-filterbar filter">
+        <div className="privacy-filterbar__primary">
+          {children}
+          <IconButton
+            className="privacy-filterbar__clear"
+            icon={<Icon.Close />}
+            label={t('settings.privacy.filters.clear')}
+            disabled={!hasFilters}
+            onClick={onClear}
+          />
+        </div>
+      </div>
+      {advanced ? (
+        <details className="privacy-advanced-filters filter-advanced">
+          <summary>{t('settings.privacy.filters.advanced')}</summary>
+          <div className="privacy-advanced-filters__body filter filter-advanced__body">
+            {advanced}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * "N of M" beside a register's title. Carries a spelled-out `aria-label` because the badge
+ * itself reads as two bare numerals; the same pairing Entidades and Livros use.
+ */
+function FilterCountBadge({ shown, total }: { shown: number; total: number }) {
+  const t = useT();
+  if (total === 0) return null;
+  return (
+    <span aria-label={t('settings.privacy.filters.countAria', { shown, total })}>
+      <Badge>{t('settings.privacy.filters.count', { shown, total })}</Badge>
+    </span>
+  );
+}
+
+/** Advisory-review state — carried by DPIAs, playbooks and transfer controls alike. */
+function advisoryReviewFilterOptions(t: TFunction) {
+  return [
+    { value: 'all', label: t('settings.privacy.filter.review.all') },
+    ...PRIVACY_ADVISORY_REVIEW_STATUSES.map((status) => ({
+      value: status,
+      label: advisoryReviewLabel(t, status),
+    })),
+  ];
+}
+
+function presenceFilterOptions(t: TFunction, allKey: MessageKey, withKey: MessageKey, withoutKey: MessageKey) {
+  return [
+    { value: 'all', label: t(allKey) },
+    { value: 'with', label: t(withKey) },
+    { value: 'without', label: t(withoutKey) },
+  ];
+}
+
+/** `with` / `without` against a boolean the row already carries. */
+function matchesPresence(filter: string, present: boolean): boolean {
+  if (filter === 'all') return true;
+  return filter === 'with' ? present : !present;
 }
 
 function statusSelectOptionsFor(t: TFunction) {
@@ -330,6 +451,23 @@ function retentionDisposalLabel(t: TFunction, action: RetentionDisposalAction): 
 
 function retentionExecutionStatusLabel(t: TFunction, status: RetentionExecutionStatus): string {
   return t(RETENTION_EXECUTION_STATUS_LABEL_KEYS[status]);
+}
+
+function retentionOperatorReviewDecisionLabel(
+  t: TFunction,
+  decision: RetentionOperatorReviewDecision,
+): string {
+  return t(RETENTION_OPERATOR_REVIEW_DECISION_LABEL_KEYS[decision]);
+}
+
+function executionDecisionFilterOptions(t: TFunction) {
+  return [
+    { value: 'all', label: t('settings.privacy.filter.decision.all') },
+    ...RETENTION_OPERATOR_REVIEW_DECISIONS.map((decision) => ({
+      value: decision,
+      label: retentionOperatorReviewDecisionLabel(t, decision),
+    })),
+  ];
 }
 
 function retentionReviewClosureDecisionForOutcome(
@@ -930,15 +1068,43 @@ function DpiaTemplateGuidancePanel({
               ))}
             </Table>
 
+            {/*
+              The "Flags sem alegação" disclosure (t102). This was a `tag-row` of loose inline
+              spans — `key: false` pairs wrapping mid-line under a proper Table — which is the
+              rendering the user reported as not neatly displayed. It is a two-column grid, so
+              it is a table.
+
+              The flag IDENTIFIER is deliberately NOT translated. Each one names a legal claim
+              this product does not make (`cnpd_filing_completed`, `legal_review_accepted`), and
+              authoring 28 Portuguese renderings of legal claims is exactly the copy this area
+              must not invent — the same boundary TRANSLATIONS.md draws for the names of legal
+              instruments, which render verbatim in every locale. The column headers and the
+              state carry the translation; the identifier stays the backend's own wire name.
+            */}
             <details className="privacy-disclosure">
               <summary>{t('settings.privacy.guidance.noClaims')}</summary>
-              <div className="tag-row">
-                {noClaims.map(([key, value]) => (
-                  <span key={key} className="mono">
-                    {key}: <Badge tone="neutral">{String(value)}</Badge>
-                  </span>
+              {/*
+                No `caption`: the `<summary>` immediately above already names this table, and a
+                visually hidden caption repeating it would announce the same phrase twice. The
+                sibling guidance table in this panel is captionless for the same reason.
+              */}
+              <Table
+                head={
+                  <tr>
+                    <th>{t('settings.privacy.guidance.column.claim')}</th>
+                    <th>{t('settings.privacy.guidance.column.claimState')}</th>
+                  </tr>
+                }
+              >
+                {noClaims.map(([key]) => (
+                  <tr key={key}>
+                    <td className="mono">{key}</td>
+                    <td>
+                      <Badge tone="neutral">{t('settings.privacy.guidance.notClaimed')}</Badge>
+                    </td>
+                  </tr>
                 ))}
-              </div>
+              </Table>
             </details>
 
             <div className="stack--tight">
@@ -1314,19 +1480,62 @@ function RegisterPanel({
   const t = useT();
   const toast = useToast();
   const [search, setSearch] = useState('');
+  // `useDeferredValue` is the debounce every list page in this app uses — it keeps the input
+  // responsive while the filter pass runs against the stale value, with no timer to clean up.
+  const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
+  const [subprocessorFilter, setSubprocessorFilter] = useState('all');
+  const [evidenceFilter, setEvidenceFilter] = useState('all');
+  const [reviewFilter, setReviewFilter] = useState('all');
   const [form, setForm] = useState<RegisterFormState | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // Only DPIAs carry evidence receipts and an advisory-review summary; the processor register
+  // has neither, so it does not get the two filters that would always read "all".
+  const hasDpiaAxes = kind === 'dpia';
+
   const filtered = useMemo(() => {
-    const q = normalizeSearch(search.trim());
+    const q = normalizeSearch(deferredSearch.trim());
     return records.filter((record) => {
       if (statusFilter !== 'all' && record.status !== statusFilter) return false;
       if (riskFilter !== 'all' && record.risk_level !== riskFilter) return false;
+      if (!matchesPresence(subprocessorFilter, record.subprocessors.length > 0)) return false;
+      if (hasDpiaAxes) {
+        const dpia = record as DpiaRecordView;
+        if (!matchesPresence(evidenceFilter, dpia.evidence_receipts.length > 0)) return false;
+        if (reviewFilter !== 'all' && dpia.advisory_review.status !== reviewFilter) return false;
+      }
       return q.length === 0 || recordSearchText(kind, record).includes(q);
     });
-  }, [kind, records, riskFilter, search, statusFilter]);
+  }, [
+    deferredSearch,
+    evidenceFilter,
+    hasDpiaAxes,
+    kind,
+    records,
+    reviewFilter,
+    riskFilter,
+    statusFilter,
+    subprocessorFilter,
+  ]);
+
+  const hasFilters =
+    search.trim() !== '' ||
+    statusFilter !== 'all' ||
+    riskFilter !== 'all' ||
+    subprocessorFilter !== 'all' ||
+    evidenceFilter !== 'all' ||
+    reviewFilter !== 'all';
+
+  function clearFilters() {
+    setSearch('');
+    setStatusFilter('all');
+    setRiskFilter('all');
+    setSubprocessorFilter('all');
+    setEvidenceFilter('all');
+    setReviewFilter('all');
+  }
 
   function startCreate() {
     setEditingId(null);
@@ -1391,18 +1600,77 @@ function RegisterPanel({
           </span>
         }
         actions={
-          <Button type="button" variant="primary" icon={<Icon.Plus />} onClick={startCreate}>
-            {t('settings.privacy.action.new')}
-          </Button>
+          <>
+            <FilterCountBadge shown={filtered.length} total={records.length} />
+            <Button type="button" variant="primary" icon={<Icon.Plus />} onClick={startCreate}>
+              {t('settings.privacy.action.new')}
+            </Button>
+          </>
         }
       >
         <div className="stack">
           <p className="field__hint">{lede}</p>
 
-          <div className="filter">
+          <PrivacyFilterBar
+            name={title}
+            hasFilters={hasFilters}
+            onClear={clearFilters}
+            advanced={
+              <>
+                <Field
+                  label={t('settings.privacy.filter.subprocessors')}
+                  htmlFor={`privacy-${kind}-subprocessor-filter`}
+                >
+                  <Select
+                    id={`privacy-${kind}-subprocessor-filter`}
+                    value={subprocessorFilter}
+                    onChange={(e) => setSubprocessorFilter(e.target.value)}
+                    options={presenceFilterOptions(
+                      t,
+                      'settings.privacy.filter.subprocessors.all',
+                      'settings.privacy.filter.subprocessors.with',
+                      'settings.privacy.filter.subprocessors.without',
+                    )}
+                  />
+                </Field>
+                {hasDpiaAxes ? (
+                  <>
+                    <Field
+                      label={t('settings.privacy.filter.evidence')}
+                      htmlFor={`privacy-${kind}-evidence-filter`}
+                    >
+                      <Select
+                        id={`privacy-${kind}-evidence-filter`}
+                        value={evidenceFilter}
+                        onChange={(e) => setEvidenceFilter(e.target.value)}
+                        options={presenceFilterOptions(
+                          t,
+                          'settings.privacy.filter.evidence.all',
+                          'settings.privacy.filter.evidence.with',
+                          'settings.privacy.filter.evidence.without',
+                        )}
+                      />
+                    </Field>
+                    <Field
+                      label={t('settings.privacy.filter.review')}
+                      htmlFor={`privacy-${kind}-review-filter`}
+                    >
+                      <Select
+                        id={`privacy-${kind}-review-filter`}
+                        value={reviewFilter}
+                        onChange={(e) => setReviewFilter(e.target.value)}
+                        options={advisoryReviewFilterOptions(t)}
+                      />
+                    </Field>
+                  </>
+                ) : null}
+              </>
+            }
+          >
             <Field label={t('settings.privacy.filter.search')} htmlFor={`privacy-${kind}-search`}>
               <Input
                 id={`privacy-${kind}-search`}
+                type="search"
                 value={search}
                 placeholder={t('settings.privacy.register.searchPlaceholder')}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1427,7 +1695,7 @@ function RegisterPanel({
                 options={riskFilterOptions(t)}
               />
             </Field>
-          </div>
+          </PrivacyFilterBar>
 
           {loading ? (
             <SkeletonTable cols={9} />
@@ -1756,18 +2024,38 @@ function BreachPlaybookPanel({
   const t = useT();
   const toast = useToast();
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
+  const [reviewFilter, setReviewFilter] = useState('all');
+  const [evidenceFilter, setEvidenceFilter] = useState('all');
   const [form, setForm] = useState<BreachPlaybookFormState | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const filtered = useMemo(() => {
-    const q = normalizeSearch(search.trim());
+    const q = normalizeSearch(deferredSearch.trim());
     return records.filter((record) => {
       if (statusFilter !== 'all' && record.status !== statusFilter) return false;
       if (riskFilter !== 'all' && record.risk_level !== riskFilter) return false;
+      if (reviewFilter !== 'all' && record.advisory_review.status !== reviewFilter) return false;
+      if (!matchesPresence(evidenceFilter, record.evidence_receipts.length > 0)) return false;
       return q.length === 0 || breachSearchText(record).includes(q);
     });
-  }, [records, riskFilter, search, statusFilter]);
+  }, [deferredSearch, evidenceFilter, records, reviewFilter, riskFilter, statusFilter]);
+
+  const hasFilters =
+    search.trim() !== '' ||
+    statusFilter !== 'all' ||
+    riskFilter !== 'all' ||
+    reviewFilter !== 'all' ||
+    evidenceFilter !== 'all';
+
+  function clearFilters() {
+    setSearch('');
+    setStatusFilter('all');
+    setRiskFilter('all');
+    setReviewFilter('all');
+    setEvidenceFilter('all');
+  }
 
   async function submitForm() {
     if (!form) return;
@@ -1811,25 +2099,64 @@ function BreachPlaybookPanel({
           </span>
         }
         actions={
-          <Button
-            type="button"
-            variant="primary"
-            icon={<Icon.Plus />}
-            onClick={() => {
-              setEditingId(null);
-              setForm(EMPTY_BREACH_FORM);
-            }}
-          >
-            {t('settings.privacy.action.new')}
-          </Button>
+          <>
+            <FilterCountBadge shown={filtered.length} total={records.length} />
+            <Button
+              type="button"
+              variant="primary"
+              icon={<Icon.Plus />}
+              onClick={() => {
+                setEditingId(null);
+                setForm(EMPTY_BREACH_FORM);
+              }}
+            >
+              {t('settings.privacy.action.new')}
+            </Button>
+          </>
         }
       >
         <div className="stack">
           <p className="field__hint">{t('settings.privacy.breach.lede')}</p>
-          <div className="filter">
+          <PrivacyFilterBar
+            name={t('settings.privacy.breach.title')}
+            hasFilters={hasFilters}
+            onClear={clearFilters}
+            advanced={
+              <>
+                <Field
+                  label={t('settings.privacy.filter.review')}
+                  htmlFor="privacy-breach-review-filter"
+                >
+                  <Select
+                    id="privacy-breach-review-filter"
+                    value={reviewFilter}
+                    onChange={(e) => setReviewFilter(e.target.value)}
+                    options={advisoryReviewFilterOptions(t)}
+                  />
+                </Field>
+                <Field
+                  label={t('settings.privacy.filter.evidence')}
+                  htmlFor="privacy-breach-evidence-filter"
+                >
+                  <Select
+                    id="privacy-breach-evidence-filter"
+                    value={evidenceFilter}
+                    onChange={(e) => setEvidenceFilter(e.target.value)}
+                    options={presenceFilterOptions(
+                      t,
+                      'settings.privacy.filter.evidence.all',
+                      'settings.privacy.filter.evidence.with',
+                      'settings.privacy.filter.evidence.without',
+                    )}
+                  />
+                </Field>
+              </>
+            }
+          >
             <Field label={t('settings.privacy.filter.search')} htmlFor="privacy-breach-search">
               <Input
                 id="privacy-breach-search"
+                type="search"
                 value={search}
                 placeholder={t('settings.privacy.breach.searchPlaceholder')}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1851,7 +2178,7 @@ function BreachPlaybookPanel({
                 options={riskFilterOptions(t)}
               />
             </Field>
-          </div>
+          </PrivacyFilterBar>
           {loading ? (
             <SkeletonTable cols={8} />
           ) : error ? (
@@ -2138,18 +2465,53 @@ function TransferControlPanel({
   const t = useT();
   const toast = useToast();
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
+  const [destinationFilter, setDestinationFilter] = useState('all');
+  const [reviewFilter, setReviewFilter] = useState('all');
   const [form, setForm] = useState<TransferControlFormState | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Destination options come from the rows actually loaded, the way Entidades derives its
+  // family/kind options — so the list only ever offers destinations that exist.
+  const destinationOptions = useMemo(() => {
+    const seen = [...new Set(records.map((record) => record.destination_country.trim()))]
+      .filter((value) => value !== '')
+      .sort((a, b) => a.localeCompare(b));
+    return [
+      { value: 'all', label: t('settings.privacy.filter.destination.all') },
+      ...seen.map((value) => ({ value, label: value })),
+    ];
+  }, [records, t]);
+
   const filtered = useMemo(() => {
-    const q = normalizeSearch(search.trim());
+    const q = normalizeSearch(deferredSearch.trim());
     return records.filter((record) => {
       if (statusFilter !== 'all' && record.status !== statusFilter) return false;
       if (riskFilter !== 'all' && record.risk_level !== riskFilter) return false;
+      if (destinationFilter !== 'all' && record.destination_country.trim() !== destinationFilter) {
+        return false;
+      }
+      if (reviewFilter !== 'all' && record.advisory_review.status !== reviewFilter) return false;
       return q.length === 0 || transferSearchText(record).includes(q);
     });
-  }, [records, riskFilter, search, statusFilter]);
+  }, [deferredSearch, destinationFilter, records, reviewFilter, riskFilter, statusFilter]);
+
+  const hasFilters =
+    search.trim() !== '' ||
+    statusFilter !== 'all' ||
+    riskFilter !== 'all' ||
+    destinationFilter !== 'all' ||
+    reviewFilter !== 'all';
+
+  function clearFilters() {
+    setSearch('');
+    setStatusFilter('all');
+    setRiskFilter('all');
+    setDestinationFilter('all');
+    setReviewFilter('all');
+  }
 
   async function submitForm() {
     if (!form) return;
@@ -2193,25 +2555,59 @@ function TransferControlPanel({
           </span>
         }
         actions={
-          <Button
-            type="button"
-            variant="primary"
-            icon={<Icon.Plus />}
-            onClick={() => {
-              setEditingId(null);
-              setForm(EMPTY_TRANSFER_FORM);
-            }}
-          >
-            {t('settings.privacy.action.new')}
-          </Button>
+          <>
+            <FilterCountBadge shown={filtered.length} total={records.length} />
+            <Button
+              type="button"
+              variant="primary"
+              icon={<Icon.Plus />}
+              onClick={() => {
+                setEditingId(null);
+                setForm(EMPTY_TRANSFER_FORM);
+              }}
+            >
+              {t('settings.privacy.action.new')}
+            </Button>
+          </>
         }
       >
         <div className="stack">
           <p className="field__hint">{t('settings.privacy.transfer.lede')}</p>
-          <div className="filter">
+          <PrivacyFilterBar
+            name={t('settings.privacy.transfer.title')}
+            hasFilters={hasFilters}
+            onClear={clearFilters}
+            advanced={
+              <>
+                <Field
+                  label={t('settings.privacy.filter.destination')}
+                  htmlFor="privacy-transfer-destination-filter"
+                >
+                  <Select
+                    id="privacy-transfer-destination-filter"
+                    value={destinationFilter}
+                    onChange={(e) => setDestinationFilter(e.target.value)}
+                    options={destinationOptions}
+                  />
+                </Field>
+                <Field
+                  label={t('settings.privacy.filter.review')}
+                  htmlFor="privacy-transfer-review-filter"
+                >
+                  <Select
+                    id="privacy-transfer-review-filter"
+                    value={reviewFilter}
+                    onChange={(e) => setReviewFilter(e.target.value)}
+                    options={advisoryReviewFilterOptions(t)}
+                  />
+                </Field>
+              </>
+            }
+          >
             <Field label={t('settings.privacy.filter.search')} htmlFor="privacy-transfer-search">
               <Input
                 id="privacy-transfer-search"
+                type="search"
                 value={search}
                 placeholder={t('settings.privacy.transfer.searchPlaceholder')}
                 onChange={(e) => setSearch(e.target.value)}
@@ -2233,7 +2629,7 @@ function TransferControlPanel({
                 options={riskFilterOptions(t)}
               />
             </Field>
-          </div>
+          </PrivacyFilterBar>
           {loading ? (
             <SkeletonTable cols={8} />
           ) : error ? (
@@ -3057,14 +3453,37 @@ function RetentionExecutionReviewQueue({
   const toast = useToast();
   const closeReview = useClosePrivacyRetentionExecutionReview();
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const [decisionFilter, setDecisionFilter] = useState('all');
+  const [legalHoldFilter, setLegalHoldFilter] = useState('all');
   const [closingId, setClosingId] = useState<string | null>(null);
   const filtered = useMemo(() => {
-    const q = normalizeSearch(search.trim());
+    const q = normalizeSearch(deferredSearch.trim());
     return records.filter((record) => {
       if (statusFilter !== 'all' && record.execution_status !== statusFilter) return false;
+      if (decisionFilter !== 'all' && record.operator_review_decision !== decisionFilter) {
+        return false;
+      }
+      if (!matchesPresence(legalHoldFilter, record.legal_hold_blockers.length > 0)) return false;
       return q.length === 0 || retentionExecutionSearchText(record).includes(q);
     });
-  }, [records, search, statusFilter]);
+  }, [decisionFilter, deferredSearch, legalHoldFilter, records, statusFilter]);
+
+  // The execution-status filter is the one server-side filter on this tab (it is a query
+  // parameter of the list request, lifted to the section). Clearing has to reset it through
+  // the same callback that owns it rather than resetting local state alone.
+  const hasFilters =
+    search.trim() !== '' ||
+    statusFilter !== 'all' ||
+    decisionFilter !== 'all' ||
+    legalHoldFilter !== 'all';
+
+  function clearFilters() {
+    setSearch('');
+    setDecisionFilter('all');
+    setLegalHoldFilter('all');
+    onStatusFilterChange('all');
+  }
   const statusOptions = RETENTION_EXECUTION_STATUSES.map((status) => ({
     value: status,
     label: retentionExecutionStatusLabel(t, status),
@@ -3090,16 +3509,53 @@ function RetentionExecutionReviewQueue({
           <FieldHelp text={t('settings.privacy.help.execution')} />
         </span>
       }
+      actions={<FilterCountBadge shown={filtered.length} total={records.length} />}
     >
       <div className="stack">
         <p className="field__hint">{t('settings.privacy.execution.lede')}</p>
-        <div className="filter">
+        <PrivacyFilterBar
+          name={t('settings.privacy.execution.title')}
+          hasFilters={hasFilters}
+          onClear={clearFilters}
+          advanced={
+            <>
+              <Field
+                label={t('settings.privacy.filter.decision')}
+                htmlFor="privacy-retention-execution-decision"
+              >
+                <Select
+                  id="privacy-retention-execution-decision"
+                  value={decisionFilter}
+                  onChange={(e) => setDecisionFilter(e.target.value)}
+                  options={executionDecisionFilterOptions(t)}
+                />
+              </Field>
+              <Field
+                label={t('settings.privacy.filter.legalHold')}
+                htmlFor="privacy-retention-execution-legal-hold"
+              >
+                <Select
+                  id="privacy-retention-execution-legal-hold"
+                  value={legalHoldFilter}
+                  onChange={(e) => setLegalHoldFilter(e.target.value)}
+                  options={presenceFilterOptions(
+                    t,
+                    'settings.privacy.filter.legalHold.all',
+                    'settings.privacy.filter.legalHold.with',
+                    'settings.privacy.filter.legalHold.without',
+                  )}
+                />
+              </Field>
+            </>
+          }
+        >
           <Field
             label={t('settings.privacy.filter.search')}
             htmlFor="privacy-retention-execution-search"
           >
             <Input
               id="privacy-retention-execution-search"
+              type="search"
               value={search}
               placeholder={t('settings.privacy.execution.searchPlaceholder')}
               onChange={(e) => setSearch(e.target.value)}
@@ -3121,7 +3577,7 @@ function RetentionExecutionReviewQueue({
               ]}
             />
           </Field>
-        </div>
+        </PrivacyFilterBar>
         {loading ? (
           <SkeletonTable cols={6} />
         ) : error ? (
@@ -3166,7 +3622,9 @@ function RetentionExecutionReviewQueue({
                       {retentionExecutionStatusLabel(t, record.execution_status)}
                     </Badge>
                     <span className="muted">{record.outcome}</span>
-                    <span className="muted">{record.operator_review_decision}</span>
+                    <span className="muted">
+                      {retentionOperatorReviewDecisionLabel(t, record.operator_review_decision)}
+                    </span>
                   </div>
                 </td>
                 <td>
@@ -3352,7 +3810,10 @@ function RetentionPolicyPanel({
   const t = useT();
   const toast = useToast();
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [disposalFilter, setDisposalFilter] = useState('all');
+  const [activeFilter, setActiveFilter] = useState('all');
   const retentionStatusOptions = RETENTION_POLICY_STATUSES.map((status) => ({
     value: status,
     label: retentionStatusLabel(t, status),
@@ -3360,12 +3821,27 @@ function RetentionPolicyPanel({
   const [form, setForm] = useState<RetentionPolicyFormState | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const filtered = useMemo(() => {
-    const q = normalizeSearch(search.trim());
+    const q = normalizeSearch(deferredSearch.trim());
     return records.filter((record) => {
       if (statusFilter !== 'all' && record.status !== statusFilter) return false;
+      if (disposalFilter !== 'all' && record.disposal_action !== disposalFilter) return false;
+      if (!matchesPresence(activeFilter, record.active)) return false;
       return q.length === 0 || retentionSearchText(record).includes(q);
     });
-  }, [records, search, statusFilter]);
+  }, [activeFilter, deferredSearch, disposalFilter, records, statusFilter]);
+
+  const hasFilters =
+    search.trim() !== '' ||
+    statusFilter !== 'all' ||
+    disposalFilter !== 'all' ||
+    activeFilter !== 'all';
+
+  function clearFilters() {
+    setSearch('');
+    setStatusFilter('all');
+    setDisposalFilter('all');
+    setActiveFilter('all');
+  }
 
   async function submitForm() {
     if (!form) return;
@@ -3409,25 +3885,51 @@ function RetentionPolicyPanel({
           </span>
         }
         actions={
-          <Button
-            type="button"
-            variant="primary"
-            icon={<Icon.Plus />}
-            onClick={() => {
-              setEditingId(null);
-              setForm(EMPTY_RETENTION_FORM);
-            }}
-          >
-            {t('settings.privacy.action.new')}
-          </Button>
+          <>
+            <FilterCountBadge shown={filtered.length} total={records.length} />
+            <Button
+              type="button"
+              variant="primary"
+              icon={<Icon.Plus />}
+              onClick={() => {
+                setEditingId(null);
+                setForm(EMPTY_RETENTION_FORM);
+              }}
+            >
+              {t('settings.privacy.action.new')}
+            </Button>
+          </>
         }
       >
         <div className="stack">
           <p className="field__hint">{t('settings.privacy.retention.lede')}</p>
-          <div className="filter">
+          <PrivacyFilterBar
+            name={t('settings.privacy.retention.title')}
+            hasFilters={hasFilters}
+            onClear={clearFilters}
+            advanced={
+              <Field
+                label={t('settings.privacy.filter.active')}
+                htmlFor="privacy-retention-active-filter"
+              >
+                <Select
+                  id="privacy-retention-active-filter"
+                  value={activeFilter}
+                  onChange={(e) => setActiveFilter(e.target.value)}
+                  options={presenceFilterOptions(
+                    t,
+                    'settings.privacy.filter.active.all',
+                    'settings.privacy.retention.active.true',
+                    'settings.privacy.retention.active.false',
+                  )}
+                />
+              </Field>
+            }
+          >
             <Field label={t('settings.privacy.filter.search')} htmlFor="privacy-retention-search">
               <Input
                 id="privacy-retention-search"
+                type="search"
                 value={search}
                 placeholder={t('settings.privacy.retention.searchPlaceholder')}
                 onChange={(e) => setSearch(e.target.value)}
@@ -3444,7 +3946,24 @@ function RetentionPolicyPanel({
                 ]}
               />
             </Field>
-          </div>
+            <Field
+              label={t('settings.privacy.filter.disposal')}
+              htmlFor="privacy-retention-disposal-filter"
+            >
+              <Select
+                id="privacy-retention-disposal-filter"
+                value={disposalFilter}
+                onChange={(e) => setDisposalFilter(e.target.value)}
+                options={[
+                  { value: 'all', label: t('settings.privacy.filter.disposal.all') },
+                  ...RETENTION_DISPOSAL_ACTIONS.map((action) => ({
+                    value: action,
+                    label: retentionDisposalLabel(t, action),
+                  })),
+                ]}
+              />
+            </Field>
+          </PrivacyFilterBar>
           {loading ? (
             <SkeletonTable cols={8} />
           ) : error ? (

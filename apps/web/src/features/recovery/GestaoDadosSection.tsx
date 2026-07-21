@@ -75,9 +75,10 @@ import {
   Icon,
   InlineWarning,
   Input,
-  SkeletonDeflist,
   SkeletonRegion,
+  SkeletonTable,
   SubNav,
+  Table,
   TextArea,
   TooltipText,
   useToast,
@@ -503,6 +504,57 @@ function syncHandoffPreflightReportJson(report: SyncHandoffPreflightReport): str
   return `${JSON.stringify(report, null, 2)}\n`;
 }
 
+type FactRow = {
+  key: string;
+  label: ReactNode;
+  value: ReactNode;
+  /** Identifiers, digests, paths and backend names: monospace, never truncated. */
+  mono?: boolean;
+};
+
+/**
+ * One read-only name/value block, as a real table.
+ *
+ * t69 converted this surface's *forms* to the shared `.settings-rows` grid and deliberately left
+ * the ~25 fact readouts as `dl.deflist.data-status-summary`, reasoning that read-only facts should
+ * not be dressed as editable settings. That reasoning was about not looking like a *form*; a table
+ * is the opposite of a form, and it is what t83 already did for the Sobre panel. So the facts
+ * become tables here: hidden `<caption>` naming the block, `<th scope="row">` per fact, and no
+ * control of any kind inside. Nothing on this surface became editable.
+ */
+function FactTable({
+  caption,
+  columns,
+  rows,
+}: {
+  caption: string;
+  /** Column headers. Defaults to the generic Informação / Valor pair. */
+  columns?: [string, string];
+  rows: FactRow[];
+}) {
+  const t = useT();
+  const [factColumn, valueColumn] = columns ?? [t('data.status.col.fact'), t('data.status.col.value')];
+  return (
+    <Table
+      className="data-status-table"
+      caption={caption}
+      head={
+        <tr>
+          <th scope="col">{factColumn}</th>
+          <th scope="col">{valueColumn}</th>
+        </tr>
+      }
+    >
+      {rows.map((row) => (
+        <tr key={row.key}>
+          <th scope="row">{row.label}</th>
+          <td className={row.mono ? 'mono' : undefined}>{row.value}</td>
+        </tr>
+      ))}
+    </Table>
+  );
+}
+
 function DataDatabaseEncryptionReadiness({
   encryption,
   t,
@@ -545,85 +597,104 @@ function DataDatabaseEncryptionReadiness({
             'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao',
           )}{' '}
         </p>
-        <dl className="deflist data-status-summary">
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.sqlcipherNoBuild')}</dt>
-            <dd>
-              <StatusBadge value={encryption.sqlcipher_available} t={t} />
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada')}</dt>
-            <dd>
-              <StatusBadge value={encryption.configured} t={t} />
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.backendSqlcipherLocal')}</dt>
-            <dd>
-              <StatusBadge value={encryption.sqlcipher_backed} t={t} />
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.fonteDeChave')}</dt>
-            <dd className="mono">{encryption.key_source}</dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.formatoDoCabecalho')}</dt>
-            <dd className="mono">{encryption.database_format ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.planoKeyOps')}</dt>
-            <dd className="mono">{encryption.key_ops_plan ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.configuracaoDaChave')}</dt>
-            <dd className="mono">{encryption.key_ops?.key_config ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.migracaoPlaintextPendente')}</dt>
-            <dd>
-              <StatusBadge value={encryption.plaintext_migration_pending} positive={false} t={t} />
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada')}</dt>
-            <dd>
-              <StatusBadge value={encryption.plaintext_migration_blocked} positive={false} t={t} />
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.fallbackHardware')}</dt>
-            <dd>
-              <span className="mono">{encryption.hardware_derived_fallback.status}</span>
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.fallbackFalhaFechado')}</dt>
-            <dd>
-              <StatusBadge
-                value={encryption.hardware_derived_fallback.fail_closed_if_requested}
-                t={t}
-              />
-            </dd>
-          </div>
-          {migration ? (
-            <div className="deflist__wide">
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.planoDeMigracao')}</dt>
-              <dd>
-                <span className="mono">{migration.status}</span>
-                {' · '}
-                {migration.summary}
-              </dd>
-            </div>
-          ) : null}
-          {encryption.key_ops_error ? (
-            <div className="deflist__wide">
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.erroKeyOps')}</dt>
-              <dd>{encryption.key_ops_error}</dd>
-            </div>
-          ) : null}
-        </dl>
+        <FactTable
+          caption={translateNow('uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave')}
+          rows={[
+            {
+              key: 'sqlcipher_available',
+              label: translateNow('uiLiteral.gestaoDadosSection.sqlcipherNoBuild'),
+              value: <StatusBadge value={encryption.sqlcipher_available} t={t} />,
+            },
+            {
+              key: 'configured',
+              label: translateNow('uiLiteral.gestaoDadosSection.lojaAbertaComChaveConfigurada'),
+              value: <StatusBadge value={encryption.configured} t={t} />,
+            },
+            {
+              key: 'sqlcipher_backed',
+              label: translateNow('uiLiteral.gestaoDadosSection.backendSqlcipherLocal'),
+              value: <StatusBadge value={encryption.sqlcipher_backed} t={t} />,
+            },
+            {
+              key: 'key_source',
+              label: translateNow('uiLiteral.gestaoDadosSection.fonteDeChave'),
+              value: encryption.key_source,
+              mono: true,
+            },
+            {
+              key: 'database_format',
+              label: translateNow('uiLiteral.gestaoDadosSection.formatoDoCabecalho'),
+              value: encryption.database_format ?? '—',
+              mono: true,
+            },
+            {
+              key: 'key_ops_plan',
+              label: translateNow('uiLiteral.gestaoDadosSection.planoKeyOps'),
+              value: encryption.key_ops_plan ?? '—',
+              mono: true,
+            },
+            {
+              key: 'key_config',
+              label: translateNow('uiLiteral.gestaoDadosSection.configuracaoDaChave'),
+              value: encryption.key_ops?.key_config ?? '—',
+              mono: true,
+            },
+            {
+              key: 'plaintext_migration_pending',
+              label: translateNow('uiLiteral.gestaoDadosSection.migracaoPlaintextPendente'),
+              value: (
+                <StatusBadge value={encryption.plaintext_migration_pending} positive={false} t={t} />
+              ),
+            },
+            {
+              key: 'plaintext_migration_blocked',
+              label: translateNow('uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada'),
+              value: (
+                <StatusBadge value={encryption.plaintext_migration_blocked} positive={false} t={t} />
+              ),
+            },
+            {
+              key: 'hardware_derived_fallback',
+              label: translateNow('uiLiteral.gestaoDadosSection.fallbackHardware'),
+              value: encryption.hardware_derived_fallback.status,
+              mono: true,
+            },
+            {
+              key: 'fail_closed_if_requested',
+              label: translateNow('uiLiteral.gestaoDadosSection.fallbackFalhaFechado'),
+              value: (
+                <StatusBadge
+                  value={encryption.hardware_derived_fallback.fail_closed_if_requested}
+                  t={t}
+                />
+              ),
+            },
+            ...(migration
+              ? [
+                  {
+                    key: 'migration_plan',
+                    label: translateNow('uiLiteral.gestaoDadosSection.planoDeMigracao'),
+                    value: (
+                      <>
+                        <span className="mono">{migration.status}</span>
+                        {' · '}
+                        {migration.summary}
+                      </>
+                    ),
+                  },
+                ]
+              : []),
+            ...(encryption.key_ops_error
+              ? [
+                  {
+                    key: 'key_ops_error',
+                    label: translateNow('uiLiteral.gestaoDadosSection.erroKeyOps'),
+                    value: encryption.key_ops_error,
+                  },
+                ]
+              : []),
+          ]}
+        />
         <div>
           <h5>{translateNow('uiLiteral.gestaoDadosSection.lacunasDeProntidao')}</h5>
           {gaps.length > 0 ? (
@@ -641,13 +712,16 @@ function DataDatabaseEncryptionReadiness({
         {migration && migration.steps.length > 0 ? (
           <div>
             <h5>{translateNow('uiLiteral.gestaoDadosSection.passosDeclarados')}</h5>
-            <ul className="plain-list">
-              {migration.steps.map((step) => (
-                <li key={step.order}>
-                  <span className="mono">{step.title}</span>: {step.detail}
-                </li>
-              ))}
-            </ul>
+            {/* `title: detail` pairs repeated down the block — two columns, not list items. */}
+            <FactTable
+              caption={translateNow('uiLiteral.gestaoDadosSection.passosDeclarados')}
+              columns={[t('data.status.col.step'), t('data.status.col.detail')]}
+              rows={migration.steps.map((step) => ({
+                key: String(step.order),
+                label: <span className="mono">{step.title}</span>,
+                value: step.detail,
+              }))}
+            />
           </div>
         ) : null}
       </div>
@@ -699,52 +773,53 @@ function IsolatedRestoreVerificationReport({
   return (
     <div>
       <h5>{translateNow('uiLiteral.gestaoDadosSection.verificacaoIsolada')}</h5>
-      <dl className="deflist data-status-summary">
-        <div>
-          <dt>{translateNow('uiLiteral.gestaoDadosSection.estado')}</dt>
-          <dd>
-            <Badge tone={statusTone}>{verification.status}</Badge>
-          </dd>
-        </div>
-        <div>
-          <dt>{translateNow('uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado')}</dt>
-          <dd>
-            <Badge tone={verified ? 'ok' : 'warn'}>
-              {verified ? t('common.yes') : t('common.no')}
-            </Badge>
-          </dd>
-        </div>
-        {booleanRows.map((row) => (
-          <div key={row.label}>
-            <dt>{row.label}</dt>
-            <dd>
+      <FactTable
+        caption={translateNow('uiLiteral.gestaoDadosSection.verificacaoIsolada')}
+        rows={[
+          {
+            key: 'status',
+            label: translateNow('uiLiteral.gestaoDadosSection.estado'),
+            value: <Badge tone={statusTone}>{verification.status}</Badge>,
+          },
+          {
+            key: 'isolated_restore_verified',
+            label: translateNow('uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado'),
+            value: (
+              <Badge tone={verified ? 'ok' : 'warn'}>
+                {verified ? t('common.yes') : t('common.no')}
+              </Badge>
+            ),
+          },
+          ...booleanRows.map((row) => ({
+            key: row.label,
+            label: row.label,
+            value: (
               <Badge tone={row.value ? 'ok' : 'warn'}>
                 {row.value ? t('common.yes') : t('common.no')}
               </Badge>
-            </dd>
-          </div>
-        ))}
-        <div>
-          <dt>{translateNow('uiLiteral.gestaoDadosSection.sqlcipherVerificado')}</dt>
-          <dd>
-            <StatusBadge value={verification.sqlcipher_encryption_verified} t={t} />
-          </dd>
-        </div>
-        {countRows.map((row) => (
-          <div key={row.label}>
-            <dt>{row.label}</dt>
-            <dd className="mono">
-              {typeof row.value === 'number'
+            ),
+          })),
+          {
+            key: 'sqlcipher_encryption_verified',
+            label: translateNow('uiLiteral.gestaoDadosSection.sqlcipherVerificado'),
+            value: <StatusBadge value={verification.sqlcipher_encryption_verified} t={t} />,
+          },
+          ...countRows.map((row) => ({
+            key: row.label,
+            label: row.label,
+            value:
+              typeof row.value === 'number'
                 ? new Intl.NumberFormat(locale).format(row.value)
-                : row.value}
-            </dd>
-          </div>
-        ))}
-        <div className="deflist__wide">
-          <dt>{translateNow('uiLiteral.gestaoDadosSection.proximoPasso')}</dt>
-          <dd>{redactReceiptEvidenceText(verification.next_step)}</dd>
-        </div>
-      </dl>
+                : row.value,
+            mono: true,
+          })),
+          {
+            key: 'next_step',
+            label: translateNow('uiLiteral.gestaoDadosSection.proximoPasso'),
+            value: redactReceiptEvidenceText(verification.next_step),
+          },
+        ]}
+      />
 
       <div>
         <h5>{translateNow('uiLiteral.gestaoDadosSection.constatacoes')}</h5>
@@ -802,6 +877,110 @@ function RecoveryDrillReceiptReport({
     receipt.isolated_restore_verified &&
     receipt.isolated_restore_verification.status === 'verified';
   const drillVerified = receipt.preflight_ok && receipt.preflight_ready && isolatedVerified;
+  const evidenceRows: FactRow[] = [
+    {
+      key: 'archive',
+      label: translateNow('uiLiteral.gestaoDadosSection.arquivoVerificado'),
+      value: safeArchiveLabel(receipt.archive),
+      mono: true,
+    },
+    {
+      key: 'created_at',
+      label: translateNow('uiLiteral.gestaoDadosSection.registadoEm'),
+      value: formatTimestamp(receipt.created_at),
+    },
+    {
+      key: 'preflight_ok',
+      label: translateNow('uiLiteral.gestaoDadosSection.preValidacaoOk'),
+      value: (
+        <Badge tone={receipt.preflight_ok ? 'ok' : 'warn'}>
+          {receipt.preflight_ok ? t('common.yes') : t('common.no')}
+        </Badge>
+      ),
+    },
+    {
+      key: 'preflight_ready',
+      label: translateNow('uiLiteral.gestaoDadosSection.prontoParaRestauro'),
+      value: (
+        <Badge tone={receipt.preflight_ready ? 'ok' : 'warn'}>
+          {receipt.preflight_ready ? t('common.yes') : t('common.no')}
+        </Badge>
+      ),
+    },
+    {
+      key: 'encrypted',
+      label: translateNow('uiLiteral.gestaoDadosSection.cifrado'),
+      value: yesNo(receipt.encrypted, t),
+    },
+    {
+      key: 'ledger_verified',
+      label: t('data.status.ledgerVerified'),
+      value: receipt.ledger_verified ? t('common.yes') : t('common.no'),
+    },
+    ...(manifest
+      ? [
+          {
+            key: 'schema',
+            label: t('data.status.schemaVersion'),
+            value: manifest.schema,
+            mono: true,
+          },
+          {
+            key: 'store_schema_version',
+            label: translateNow('uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados'),
+            value: manifest.store_schema_version,
+            mono: true,
+          },
+          {
+            key: 'ledger_length',
+            label: t('data.status.ledgerLength'),
+            value: manifest.ledger_length,
+            mono: true,
+          },
+          {
+            key: 'member_count',
+            label: translateNow('uiLiteral.gestaoDadosSection.membrosNoArquivo'),
+            value: manifest.member_count,
+            mono: true,
+          },
+          {
+            key: 'sidecar_member_count',
+            label: translateNow('uiLiteral.gestaoDadosSection.membrosSidecar'),
+            value: manifest.sidecar_member_count,
+            mono: true,
+          },
+          {
+            key: 'db_member_present',
+            label: translateNow('uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente'),
+            value: manifest.db_member_present ? t('common.yes') : t('common.no'),
+          },
+          {
+            key: 'total_member_bytes',
+            label: translateNow('uiLiteral.gestaoDadosSection.totalDeBytesDosMembros'),
+            value: formatBytes(manifest.total_member_bytes, locale),
+            mono: true,
+          },
+        ]
+      : []),
+    ...(receipt.custody_location
+      ? [
+          {
+            key: 'custody_location',
+            label: translateNow('uiLiteral.gestaoDadosSection.localDeCustodiaIndicado'),
+            value: redactReceiptEvidenceText(receipt.custody_location),
+          },
+        ]
+      : []),
+    ...(receipt.operator_notes
+      ? [
+          {
+            key: 'operator_notes',
+            label: translateNow('uiLiteral.gestaoDadosSection.notasDoOperador'),
+            value: redactReceiptEvidenceText(receipt.operator_notes),
+          },
+        ]
+      : []),
+  ];
   return (
     <InlineWarning
       tone={drillVerified ? 'info' : 'warn'}
@@ -828,103 +1007,28 @@ function RecoveryDrillReceiptReport({
         <details className="recovery-evidence">
           <summary>{t('data.status.recoveryDrill.evidenceToggle')}</summary>
           <div className="stack--tight">
-            <dl className="deflist data-status-summary">
-              <div className="deflist__wide">
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.arquivoVerificado')}</dt>
-                <dd className="mono">{safeArchiveLabel(receipt.archive)}</dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.registadoEm')}</dt>
-                <dd>{formatTimestamp(receipt.created_at)}</dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.preValidacaoOk')}</dt>
-                <dd>
-                  <Badge tone={receipt.preflight_ok ? 'ok' : 'warn'}>
-                    {receipt.preflight_ok ? t('common.yes') : t('common.no')}
-                  </Badge>
-                </dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.prontoParaRestauro')}</dt>
-                <dd>
-                  <Badge tone={receipt.preflight_ready ? 'ok' : 'warn'}>
-                    {receipt.preflight_ready ? t('common.yes') : t('common.no')}
-                  </Badge>
-                </dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.cifrado')}</dt>
-                <dd>{yesNo(receipt.encrypted, t)}</dd>
-              </div>
-              <div>
-                <dt>{t('data.status.ledgerVerified')}</dt>
-                <dd>{receipt.ledger_verified ? t('common.yes') : t('common.no')}</dd>
-              </div>
-              {manifest ? (
-                <>
-                  <div>
-                    <dt>{t('data.status.schemaVersion')}</dt>
-                    <dd className="mono">{manifest.schema}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateNow('uiLiteral.gestaoDadosSection.esquemaDaBaseDeDados')}</dt>
-                    <dd className="mono">{manifest.store_schema_version}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.ledgerLength')}</dt>
-                    <dd className="mono">{manifest.ledger_length}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateNow('uiLiteral.gestaoDadosSection.membrosNoArquivo')}</dt>
-                    <dd className="mono">{manifest.member_count}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateNow('uiLiteral.gestaoDadosSection.membrosSidecar')}</dt>
-                    <dd className="mono">{manifest.sidecar_member_count}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      {translateNow('uiLiteral.gestaoDadosSection.membroDaBaseDeDadosPresente')}
-                    </dt>
-                    <dd>{manifest.db_member_present ? t('common.yes') : t('common.no')}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateNow('uiLiteral.gestaoDadosSection.totalDeBytesDosMembros')}</dt>
-                    <dd className="mono">{formatBytes(manifest.total_member_bytes, locale)}</dd>
-                  </div>
-                </>
-              ) : null}
-              {receipt.custody_location ? (
-                <div className="deflist__wide">
-                  <dt>{translateNow('uiLiteral.gestaoDadosSection.localDeCustodiaIndicado')}</dt>
-                  <dd>{redactReceiptEvidenceText(receipt.custody_location)}</dd>
-                </div>
-              ) : null}
-              {receipt.operator_notes ? (
-                <div className="deflist__wide">
-                  <dt>{translateNow('uiLiteral.gestaoDadosSection.notasDoOperador')}</dt>
-                  <dd>{redactReceiptEvidenceText(receipt.operator_notes)}</dd>
-                </div>
-              ) : null}
-            </dl>
+            <FactTable
+              caption={t('data.status.recoveryDrill.evidenceToggle')}
+              rows={evidenceRows}
+            />
 
             <IsolatedRestoreVerificationReport receipt={receipt} t={t} locale={locale} />
 
             <div>
               <h5>{translateNow('uiLiteral.gestaoDadosSection.limitesDoRecibo')}</h5>
-              <dl className="deflist data-status-summary">
-                {limitRows.map((row) => (
-                  <div key={row.label}>
-                    <dt>{row.label}</dt>
-                    <dd>
-                      <Badge tone={row.confirmed ? 'ok' : 'warn'}>
-                        {row.confirmed ? 'Confirmado' : 'Não confirmado'}
-                      </Badge>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+              <FactTable
+                caption={translateNow('uiLiteral.gestaoDadosSection.limitesDoRecibo')}
+                columns={[t('data.status.col.boundary'), t('data.status.col.state')]}
+                rows={limitRows.map((row) => ({
+                  key: row.label,
+                  label: row.label,
+                  value: (
+                    <Badge tone={row.confirmed ? 'ok' : 'warn'}>
+                      {row.confirmed ? 'Confirmado' : 'Não confirmado'}
+                    </Badge>
+                  ),
+                }))}
+              />
             </div>
           </div>
         </details>
@@ -959,61 +1063,61 @@ function RecoveryFreshnessReviewReport({
       title={translateNow('uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao')}
     >
       <div className="stack--tight">
-        <dl className="deflist data-status-summary">
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.estadoDoEnsaio')}</dt>
-            <dd>
-              <Badge tone={warning ? 'warn' : 'ok'}>
-                {recoveryFreshnessLabel(freshness.status)}
-              </Badge>
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.idadeMaximaConfigurada')}</dt>
-            <dd>
-              {freshness.policy.max_drill_age_days}{' '}
-              {translateNow('uiLiteral.gestaoDadosSection.dias')}
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.rpoAlvoDeclarado')}</dt>
-            <dd>
-              {freshness.policy.target_rpo_minutes}{' '}
-              {translateNow('uiLiteral.gestaoDadosSection.min')}
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.rtoAlvoDeclarado')}</dt>
-            <dd>
-              {freshness.policy.target_rto_minutes}{' '}
-              {translateNow('uiLiteral.gestaoDadosSection.min')}
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.ultimoRecibo')}</dt>
-            <dd>
-              {freshness.latest_receipt_at
+        <FactTable
+          caption={translateNow('uiLiteral.gestaoDadosSection.politicaLocalDeRecuperacao')}
+          rows={[
+            {
+              key: 'status',
+              label: translateNow('uiLiteral.gestaoDadosSection.estadoDoEnsaio'),
+              value: (
+                <Badge tone={warning ? 'warn' : 'ok'}>
+                  {recoveryFreshnessLabel(freshness.status)}
+                </Badge>
+              ),
+            },
+            {
+              key: 'max_drill_age_days',
+              label: translateNow('uiLiteral.gestaoDadosSection.idadeMaximaConfigurada'),
+              value: `${freshness.policy.max_drill_age_days} ${translateNow('uiLiteral.gestaoDadosSection.dias')}`,
+            },
+            {
+              key: 'target_rpo_minutes',
+              label: translateNow('uiLiteral.gestaoDadosSection.rpoAlvoDeclarado'),
+              value: `${freshness.policy.target_rpo_minutes} ${translateNow('uiLiteral.gestaoDadosSection.min')}`,
+            },
+            {
+              key: 'target_rto_minutes',
+              label: translateNow('uiLiteral.gestaoDadosSection.rtoAlvoDeclarado'),
+              value: `${freshness.policy.target_rto_minutes} ${translateNow('uiLiteral.gestaoDadosSection.min')}`,
+            },
+            {
+              key: 'latest_receipt_at',
+              label: translateNow('uiLiteral.gestaoDadosSection.ultimoRecibo'),
+              value: freshness.latest_receipt_at
                 ? formatTimestamp(freshness.latest_receipt_at)
-                : 'Sem recibo local'}
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo')}</dt>
-            <dd>
-              {freshness.latest_receipt_age_days === null
-                ? '—'
-                : `${freshness.latest_receipt_age_days} dias`}
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo')}</dt>
-            <dd>{freshness.latest_receipt_preflight_ready === true ? 'Sim' : 'Não'}</dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado')}</dt>
-            <dd>{freshness.latest_receipt_isolated_restore_verified === true ? 'Sim' : 'Não'}</dd>
-          </div>
-        </dl>
+                : 'Sem recibo local',
+            },
+            {
+              key: 'latest_receipt_age_days',
+              label: translateNow('uiLiteral.gestaoDadosSection.idadeDoUltimoRecibo'),
+              value:
+                freshness.latest_receipt_age_days === null
+                  ? '—'
+                  : `${freshness.latest_receipt_age_days} dias`,
+            },
+            {
+              key: 'latest_receipt_preflight_ready',
+              label: translateNow('uiLiteral.gestaoDadosSection.preValidacaoDoUltimoRecibo'),
+              value: freshness.latest_receipt_preflight_ready === true ? 'Sim' : 'Não',
+            },
+            {
+              key: 'latest_receipt_isolated_restore_verified',
+              label: translateNow('uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado'),
+              value:
+                freshness.latest_receipt_isolated_restore_verified === true ? 'Sim' : 'Não',
+            },
+          ]}
+        />
         <p className="field__hint">
           {' '}
           {translateNow(
@@ -1067,7 +1171,7 @@ function SyncHandoffPreflightReportCard({
     ['Sem importação executada', !report.no_claims.import_performed],
     ['Sem registos alterados', !report.no_claims.records_mutated],
     [
-      'Sem certificação DGLAB/arquivo',
+      'Sem certificação DGLAB/archive',
       !report.no_claims.dglab_certification_claimed &&
         !report.no_claims.archive_certification_claimed,
     ],
@@ -1134,114 +1238,123 @@ function SyncHandoffPreflightReportCard({
 
         <details className="recovery-evidence">
           <summary>{t('data.status.syncHandoff.evidenceToggle')}</summary>
-          <dl className="deflist data-status-summary">
+          <div className="stack--tight">
+            <FactTable
+              caption={t('data.status.syncHandoff.evidenceToggle')}
+              rows={[
+                {
+                  key: 'readiness',
+                  label: translateNow('uiLiteral.gestaoDadosSection.estado'),
+                  value: <Badge tone={readinessTone}>{report.readiness.status}</Badge>,
+                },
+                {
+                  key: 'generated_at',
+                  label: translateNow('uiLiteral.gestaoDadosSection.geradoEm'),
+                  value: formatTimestamp(report.generated_at),
+                },
+                {
+                  key: 'untrusted_candidates',
+                  label: translateNow('uiLiteral.gestaoDadosSection.candidatosNaoValidados'),
+                  value: (
+                    <>
+                      {new Intl.NumberFormat(locale).format(
+                        report.backup.backup_directory.untrusted_candidate_file_count,
+                      )}{' '}
+                      /{' '}
+                      <span className="mono">
+                        {formatBytes(report.backup.backup_directory.total_candidate_bytes, locale)}
+                      </span>
+                    </>
+                  ),
+                },
+                {
+                  key: 'latest_candidate',
+                  label: translateNow(
+                    'uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente',
+                  ),
+                  value: latestCandidate
+                    ? `${latestCandidate.file_name} (${formatBytes(latestCandidate.bytes, locale)})`
+                    : '—',
+                  mono: true,
+                },
+                {
+                  key: 'verified_evidence',
+                  label: translateNow('uiLiteral.gestaoDadosSection.evidenciaVerificada'),
+                  value: (
+                    <Badge tone={report.backup.verified_recovery_drill_evidence ? 'ok' : 'warn'}>
+                      {report.backup.verified_recovery_drill_evidence ? 'verified' : 'missing'}
+                    </Badge>
+                  ),
+                },
+                {
+                  key: 'drill_count',
+                  label: translateNow('uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao'),
+                  value: new Intl.NumberFormat(locale).format(
+                    report.backup.recovery_drill_receipt_count,
+                  ),
+                },
+                {
+                  key: 'latest_drill',
+                  label: translateNow('uiLiteral.gestaoDadosSection.ultimoEnsaio'),
+                  value: latestDrill ? (
+                    <Badge tone={latestDrill.verified_manifest_and_isolated_snapshot ? 'ok' : 'warn'}>
+                      {latestDrill.verified_manifest_and_isolated_snapshot ? 'verified' : 'missing'}
+                    </Badge>
+                  ) : (
+                    '—'
+                  ),
+                },
+                {
+                  key: 'books',
+                  label: translateNow('uiLiteral.gestaoDadosSection.livros'),
+                  value: `${new Intl.NumberFormat(locale).format(report.book_bundles.book_count)} ${translateNow('uiLiteral.gestaoDadosSection.total')} ${new Intl.NumberFormat(locale).format(report.book_bundles.closed_book_count)} ${translateNow('uiLiteral.gestaoDadosSection.fechados')}`,
+                },
+                {
+                  key: 'preservable_acts',
+                  label: translateNow('uiLiteral.gestaoDadosSection.atosPreservaveis'),
+                  value: new Intl.NumberFormat(locale).format(
+                    report.archive_dglab.sealed_or_archived_act_count,
+                  ),
+                },
+                {
+                  key: 'preserved_documents',
+                  label: translateNow('uiLiteral.gestaoDadosSection.documentosPreservados'),
+                  value: new Intl.NumberFormat(locale).format(
+                    report.archive_dglab.preserved_document_count,
+                  ),
+                },
+                {
+                  key: 'import_preflight',
+                  label: translateNow('uiLiteral.gestaoDadosSection.preValidacaoDeImportacao'),
+                  value: (
+                    <Badge tone={report.book_bundles.import_preflight_read_only ? 'ok' : 'warn'}>
+                      {report.book_bundles.import_preflight_read_only ? 'read-only' : 'mutating'}
+                    </Badge>
+                  ),
+                },
+              ]}
+            />
+
+            {/* The declared boundaries were `<li>`s inside a `<dd>` — six label/verdict pairs read
+                down a column, which is a table. They get their own, with real column headers,
+                instead of hiding as one row of the evidence list. */}
             <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.estado')}</dt>
-              <dd>
-                <Badge tone={readinessTone}>{report.readiness.status}</Badge>
-              </dd>
+              <h5>{translateNow('uiLiteral.gestaoDadosSection.semAlegacoes')}</h5>
+              <FactTable
+                caption={translateNow('uiLiteral.gestaoDadosSection.semAlegacoes')}
+                columns={[t('data.status.col.boundary'), t('data.status.col.state')]}
+                rows={boundaryRows.map(([label, satisfied]) => ({
+                  key: label,
+                  label,
+                  value: (
+                    <Badge tone={satisfied ? 'ok' : 'warn'}>
+                      {satisfied ? t('common.yes') : t('common.no')}
+                    </Badge>
+                  ),
+                }))}
+              />
             </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.geradoEm')}</dt>
-              <dd>{formatTimestamp(report.generated_at)}</dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.candidatosNaoValidados')}</dt>
-              <dd>
-                {new Intl.NumberFormat(locale).format(
-                  report.backup.backup_directory.untrusted_candidate_file_count,
-                )}{' '}
-                /{' '}
-                <span className="mono">
-                  {formatBytes(report.backup.backup_directory.total_candidate_bytes, locale)}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt>
-                {translateNow('uiLiteral.gestaoDadosSection.candidatoNaoValidadoMaisRecente')}
-              </dt>
-              <dd className="mono">
-                {latestCandidate
-                  ? `${latestCandidate.file_name} (${formatBytes(latestCandidate.bytes, locale)})`
-                  : '—'}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.evidenciaVerificada')}</dt>
-              <dd>
-                <Badge tone={report.backup.verified_recovery_drill_evidence ? 'ok' : 'warn'}>
-                  {report.backup.verified_recovery_drill_evidence ? 'verified' : 'missing'}
-                </Badge>
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.ensaiosDeRecuperacao')}</dt>
-              <dd>
-                {new Intl.NumberFormat(locale).format(report.backup.recovery_drill_receipt_count)}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.ultimoEnsaio')}</dt>
-              <dd>
-                {latestDrill ? (
-                  <Badge tone={latestDrill.verified_manifest_and_isolated_snapshot ? 'ok' : 'warn'}>
-                    {latestDrill.verified_manifest_and_isolated_snapshot ? 'verified' : 'missing'}
-                  </Badge>
-                ) : (
-                  '—'
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.livros')}</dt>
-              <dd>
-                {new Intl.NumberFormat(locale).format(report.book_bundles.book_count)}{' '}
-                {translateNow('uiLiteral.gestaoDadosSection.total')}{' '}
-                {new Intl.NumberFormat(locale).format(report.book_bundles.closed_book_count)}{' '}
-                {translateNow('uiLiteral.gestaoDadosSection.fechados')}{' '}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.atosPreservaveis')}</dt>
-              <dd>
-                {new Intl.NumberFormat(locale).format(
-                  report.archive_dglab.sealed_or_archived_act_count,
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.documentosPreservados')}</dt>
-              <dd>
-                {new Intl.NumberFormat(locale).format(
-                  report.archive_dglab.preserved_document_count,
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.preValidacaoDeImportacao')}</dt>
-              <dd>
-                <Badge tone={report.book_bundles.import_preflight_read_only ? 'ok' : 'warn'}>
-                  {report.book_bundles.import_preflight_read_only ? 'read-only' : 'mutating'}
-                </Badge>
-              </dd>
-            </div>
-            <div className="deflist__wide">
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.semAlegacoes')}</dt>
-              <dd>
-                <ul className="plain-list">
-                  {boundaryRows.map(([label, satisfied]) => (
-                    <li key={label}>
-                      {label}:{' '}
-                      <Badge tone={satisfied ? 'ok' : 'warn'}>
-                        {satisfied ? t('common.yes') : t('common.no')}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              </dd>
-            </div>
-          </dl>
+          </div>
         </details>
       </div>
     </InlineWarning>
@@ -1262,28 +1375,32 @@ function DataKeyRotationPreflightReport({
       title={t('data.status.keyRotation.resultTitle')}
     >
       <div className="stack--tight">
-        <dl className="deflist data-status-summary">
-          <div>
-            <dt>{t('data.status.keyRotation.status')}</dt>
-            <dd>
-              <Badge tone={report.ready ? 'ok' : 'warn'}>{report.status}</Badge>
-            </dd>
-          </div>
-          <div>
-            <dt>{t('data.status.keyRotation.ready')}</dt>
-            <dd>
-              <Badge tone={report.ready ? 'ok' : 'warn'}>
-                {report.ready
-                  ? t('data.status.keyRotation.ready.yes')
-                  : t('data.status.keyRotation.ready.no')}
-              </Badge>
-            </dd>
-          </div>
-          <div className="deflist__wide">
-            <dt>{t('data.status.keyRotation.nextAction')}</dt>
-            <dd>{report.next_action}</dd>
-          </div>
-        </dl>
+        <FactTable
+          caption={t('data.status.keyRotation.resultTitle')}
+          rows={[
+            {
+              key: 'status',
+              label: t('data.status.keyRotation.status'),
+              value: <Badge tone={report.ready ? 'ok' : 'warn'}>{report.status}</Badge>,
+            },
+            {
+              key: 'ready',
+              label: t('data.status.keyRotation.ready'),
+              value: (
+                <Badge tone={report.ready ? 'ok' : 'warn'}>
+                  {report.ready
+                    ? t('data.status.keyRotation.ready.yes')
+                    : t('data.status.keyRotation.ready.no')}
+                </Badge>
+              ),
+            },
+            {
+              key: 'next_action',
+              label: t('data.status.keyRotation.nextAction'),
+              value: report.next_action,
+            },
+          ]}
+        />
 
         <div>
           <h5>{t('data.status.keyRotation.blockers')}</h5>
@@ -1302,48 +1419,64 @@ function DataKeyRotationPreflightReport({
 
         <div>
           <h5>{t('data.status.keyRotation.evidence')}</h5>
-          <dl className="deflist data-status-summary">
-            <div>
-              <dt>{t('data.status.keyRotation.evidence.databaseFormat')}</dt>
-              <dd className="mono">{report.evidence.database_format}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.keyRotation.evidence.currentKey')}</dt>
-              <dd className="mono">{report.evidence.current_key_config}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.keyRotation.evidence.replacementKey')}</dt>
-              <dd className="mono">{report.evidence.requested_key_config}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.keyRotation.evidence.sqlcipher')}</dt>
-              <dd>{report.evidence.sqlcipher_available ? t('common.yes') : t('common.no')}</dd>
-            </div>
-            <div className="deflist__wide">
-              <dt>{t('data.status.keyRotation.evidence.databaseFile')}</dt>
-              <dd className="mono">{report.evidence.database_file}</dd>
-            </div>
-          </dl>
+          <FactTable
+            caption={t('data.status.keyRotation.evidence')}
+            rows={[
+              {
+                key: 'database_format',
+                label: t('data.status.keyRotation.evidence.databaseFormat'),
+                value: report.evidence.database_format,
+                mono: true,
+              },
+              {
+                key: 'current_key_config',
+                label: t('data.status.keyRotation.evidence.currentKey'),
+                value: report.evidence.current_key_config,
+                mono: true,
+              },
+              {
+                key: 'requested_key_config',
+                label: t('data.status.keyRotation.evidence.replacementKey'),
+                value: report.evidence.requested_key_config,
+                mono: true,
+              },
+              {
+                key: 'sqlcipher_available',
+                label: t('data.status.keyRotation.evidence.sqlcipher'),
+                value: report.evidence.sqlcipher_available ? t('common.yes') : t('common.no'),
+              },
+              {
+                key: 'database_file',
+                label: t('data.status.keyRotation.evidence.databaseFile'),
+                value: report.evidence.database_file,
+                mono: true,
+              },
+            ]}
+          />
         </div>
 
         <div>
           <h5>{t('data.status.keyRotation.metadata')}</h5>
-          <dl className="deflist data-status-summary">
-            <div>
-              <dt>{t('data.status.keyRotation.metadata.provider')}</dt>
-              <dd>{translateNow('uiLiteral.gestaoDadosSection.sqlcipher')}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.keyRotation.metadata.readOnly')}</dt>
-              <dd>
-                <Badge tone="ok">{t('common.yes')}</Badge>
-              </dd>
-            </div>
-            <div className="deflist__wide">
-              <dt>{t('data.status.keyRotation.metadata.execution')}</dt>
-              <dd>{t('data.status.keyRotation.metadata.execution.none')}</dd>
-            </div>
-          </dl>
+          <FactTable
+            caption={t('data.status.keyRotation.metadata')}
+            rows={[
+              {
+                key: 'provider',
+                label: t('data.status.keyRotation.metadata.provider'),
+                value: translateNow('uiLiteral.gestaoDadosSection.sqlcipher'),
+              },
+              {
+                key: 'read_only',
+                label: t('data.status.keyRotation.metadata.readOnly'),
+                value: <Badge tone="ok">{t('common.yes')}</Badge>,
+              },
+              {
+                key: 'execution',
+                label: t('data.status.keyRotation.metadata.execution'),
+                value: t('data.status.keyRotation.metadata.execution.none'),
+              },
+            ]}
+          />
         </div>
       </div>
     </InlineWarning>
@@ -1364,40 +1497,49 @@ function BackupManifestReport({
       tone={manifest.ledger_verified ? 'info' : 'warn'}
       title={t('data.status.backup.doneTitle')}
     >
-      <dl className="deflist data-status-summary">
-        <div className="deflist__wide">
-          <dt>{t('data.status.backup.path')}</dt>
-          <dd className="mono">{manifest.path}</dd>
-        </div>
-        <div>
-          <dt>{t('data.status.backup.createdAt')}</dt>
-          <dd>{formatTimestamp(manifest.created_at)}</dd>
-        </div>
-        <div>
-          <dt>{t('data.status.backup.size')}</dt>
-          <dd className="mono">{formatBytes(manifest.bytes, locale)}</dd>
-        </div>
-        <div>
-          <dt>{t('data.status.backup.files')}</dt>
-          <dd className="mono">{backupFileSummary(manifest, locale)}</dd>
-        </div>
-        <div>
-          <dt>{t('data.status.schemaVersion')}</dt>
-          <dd>{formatOptionalNumber(manifest.store_schema_version, locale)}</dd>
-        </div>
-        <div>
-          <dt>{t('data.status.ledgerLength')}</dt>
-          <dd>{formatOptionalNumber(manifest.ledger_length, locale)}</dd>
-        </div>
-        <div>
-          <dt>{t('data.status.ledgerVerified')}</dt>
-          <dd>
-            <Badge tone={manifest.ledger_verified ? 'ok' : 'warn'}>
-              {manifest.ledger_verified ? t('common.yes') : t('common.no')}
-            </Badge>
-          </dd>
-        </div>
-      </dl>
+      <FactTable
+        caption={t('data.status.backup.doneTitle')}
+        rows={[
+          // The archive path is an identifier: full value, monospace, wrapped rather than clipped.
+          { key: 'path', label: t('data.status.backup.path'), value: manifest.path, mono: true },
+          {
+            key: 'created_at',
+            label: t('data.status.backup.createdAt'),
+            value: formatTimestamp(manifest.created_at),
+          },
+          {
+            key: 'bytes',
+            label: t('data.status.backup.size'),
+            value: formatBytes(manifest.bytes, locale),
+            mono: true,
+          },
+          {
+            key: 'files',
+            label: t('data.status.backup.files'),
+            value: backupFileSummary(manifest, locale),
+            mono: true,
+          },
+          {
+            key: 'store_schema_version',
+            label: t('data.status.schemaVersion'),
+            value: formatOptionalNumber(manifest.store_schema_version, locale),
+          },
+          {
+            key: 'ledger_length',
+            label: t('data.status.ledgerLength'),
+            value: formatOptionalNumber(manifest.ledger_length, locale),
+          },
+          {
+            key: 'ledger_verified',
+            label: t('data.status.ledgerVerified'),
+            value: (
+              <Badge tone={manifest.ledger_verified ? 'ok' : 'warn'}>
+                {manifest.ledger_verified ? t('common.yes') : t('common.no')}
+              </Badge>
+            ),
+          },
+        ]}
+      />
     </InlineWarning>
   );
 }
@@ -1417,69 +1559,87 @@ function DataKeyRotationExecutionReport({
       title={translateNow('uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher')}
     >
       <div className="stack--tight">
-        <dl className="deflist data-status-summary">
-          <div>
-            <dt>{t('data.status.keyRotation.status')}</dt>
-            <dd>
-              <Badge tone={execution.rekey_executed ? 'ok' : 'warn'}>{execution.status}</Badge>
-            </dd>
-          </div>
-          <div>
-            <dt>{translateNow('uiLiteral.gestaoDadosSection.rekeyExecutado')}</dt>
-            <dd>
-              <Badge tone={execution.rekey_executed ? 'ok' : 'warn'}>
-                {execution.rekey_executed ? t('common.yes') : t('common.no')}
-              </Badge>
-            </dd>
-          </div>
-          <div>
-            <dt>{t('data.status.ledgerVerified')}</dt>
-            <dd>
-              <Badge tone={execution.ledger_integrity_verified ? 'ok' : 'warn'}>
-                {execution.ledger_integrity_verified ? t('common.yes') : t('common.no')}
-              </Badge>
-            </dd>
-          </div>
-          <div>
-            <dt>{t('data.status.ledgerLength')}</dt>
-            <dd>{new Intl.NumberFormat(locale).format(execution.ledger_length)}</dd>
-          </div>
-        </dl>
+        <FactTable
+          caption={translateNow('uiLiteral.gestaoDadosSection.resultadoDaExecucaoSqlcipher')}
+          rows={[
+            {
+              key: 'status',
+              label: t('data.status.keyRotation.status'),
+              value: (
+                <Badge tone={execution.rekey_executed ? 'ok' : 'warn'}>{execution.status}</Badge>
+              ),
+            },
+            {
+              key: 'rekey_executed',
+              label: translateNow('uiLiteral.gestaoDadosSection.rekeyExecutado'),
+              value: (
+                <Badge tone={execution.rekey_executed ? 'ok' : 'warn'}>
+                  {execution.rekey_executed ? t('common.yes') : t('common.no')}
+                </Badge>
+              ),
+            },
+            {
+              key: 'ledger_integrity_verified',
+              label: t('data.status.ledgerVerified'),
+              value: (
+                <Badge tone={execution.ledger_integrity_verified ? 'ok' : 'warn'}>
+                  {execution.ledger_integrity_verified ? t('common.yes') : t('common.no')}
+                </Badge>
+              ),
+            },
+            {
+              key: 'ledger_length',
+              label: t('data.status.ledgerLength'),
+              value: new Intl.NumberFormat(locale).format(execution.ledger_length),
+            },
+          ]}
+        />
 
         <div>
           <h5>{t('data.status.keyRotation.evidence')}</h5>
-          <dl className="deflist data-status-summary">
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.operacao')}</dt>
-              <dd className="mono">{execution.evidence.operation}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.keyRotation.evidence.replacementKey')}</dt>
-              <dd className="mono">{execution.evidence.requested_key_config}</dd>
-            </div>
-            <div>
-              <dt>{t('data.status.keyRotation.evidence.sqlcipher')}</dt>
-              <dd>{execution.evidence.sqlcipher_available ? t('common.yes') : t('common.no')}</dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.checkpointAntes')}</dt>
-              <dd>
-                {execution.evidence.checkpointed_before_rekey ? t('common.yes') : t('common.no')}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.checkpointDepois')}</dt>
-              <dd>
-                {execution.evidence.checkpointed_after_rekey ? t('common.yes') : t('common.no')}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateNow('uiLiteral.gestaoDadosSection.integridadePosRekey')}</dt>
-              <dd>
-                {execution.evidence.post_rekey_integrity_checked ? t('common.yes') : t('common.no')}
-              </dd>
-            </div>
-          </dl>
+          <FactTable
+            caption={t('data.status.keyRotation.evidence')}
+            rows={[
+              {
+                key: 'operation',
+                label: translateNow('uiLiteral.gestaoDadosSection.operacao'),
+                value: execution.evidence.operation,
+                mono: true,
+              },
+              {
+                key: 'requested_key_config',
+                label: t('data.status.keyRotation.evidence.replacementKey'),
+                value: execution.evidence.requested_key_config,
+                mono: true,
+              },
+              {
+                key: 'sqlcipher_available',
+                label: t('data.status.keyRotation.evidence.sqlcipher'),
+                value: execution.evidence.sqlcipher_available ? t('common.yes') : t('common.no'),
+              },
+              {
+                key: 'checkpointed_before_rekey',
+                label: translateNow('uiLiteral.gestaoDadosSection.checkpointAntes'),
+                value: execution.evidence.checkpointed_before_rekey
+                  ? t('common.yes')
+                  : t('common.no'),
+              },
+              {
+                key: 'checkpointed_after_rekey',
+                label: translateNow('uiLiteral.gestaoDadosSection.checkpointDepois'),
+                value: execution.evidence.checkpointed_after_rekey
+                  ? t('common.yes')
+                  : t('common.no'),
+              },
+              {
+                key: 'post_rekey_integrity_checked',
+                label: translateNow('uiLiteral.gestaoDadosSection.integridadePosRekey'),
+                value: execution.evidence.post_rekey_integrity_checked
+                  ? t('common.yes')
+                  : t('common.no'),
+              },
+            ]}
+          />
         </div>
       </div>
     </InlineWarning>
@@ -1513,77 +1673,93 @@ function DataKeyRotationReceiptSummary({
         {summary.read_error ? <p className="field__hint">{summary.read_error}</p> : null}
         {latest ? (
           <>
-            <dl className="deflist data-status-summary">
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.ultimaRotacao')}</dt>
-                <dd>{formatTimestamp(latest.rotated_at)}</dd>
-              </div>
-              <div>
-                <dt>{t('data.status.keyRotation.status')}</dt>
-                <dd>
-                  <Badge tone={latest.rekey_executed ? 'ok' : 'warn'}>{latest.status}</Badge>
-                </dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.modo')}</dt>
-                <dd className="mono">{latest.mode}</dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.backend')}</dt>
-                <dd className="mono">{latest.backend_family ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.utilizador')}</dt>
-                <dd className="mono">{latest.actor_user_id ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>{t('data.status.ledgerLength')}</dt>
-                <dd>{new Intl.NumberFormat(locale).format(latest.ledger_length)}</dd>
-              </div>
-              <div>
-                <dt>{t('data.status.ledgerVerified')}</dt>
-                <dd>
-                  <StatusBadge value={latest.ledger_integrity_verified} t={t} />
-                </dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.historicoGuardado')}</dt>
-                <dd>
-                  {new Intl.NumberFormat(locale).format(summary.history_count)} /{' '}
-                  {new Intl.NumberFormat(locale).format(summary.history_limit)}
-                </dd>
-              </div>
-            </dl>
-            <dl className="deflist data-status-summary">
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.operacao')}</dt>
-                <dd className="mono">{latest.evidence.operation}</dd>
-              </div>
-              <div>
-                <dt>{t('data.status.keyRotation.evidence.replacementKey')}</dt>
-                <dd className="mono">{latest.evidence.requested_key_config}</dd>
-              </div>
-              <div>
-                <dt>{t('data.status.keyRotation.evidence.sqlcipher')}</dt>
-                <dd>{latest.evidence.sqlcipher_available ? t('common.yes') : t('common.no')}</dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.semChaveGuardada')}</dt>
-                <dd>
-                  {!latest.no_claims.current_key_persisted &&
-                  !latest.no_claims.replacement_key_persisted &&
-                  !latest.no_claims.key_fingerprint_persisted
-                    ? t('common.yes')
-                    : t('common.no')}
-                </dd>
-              </div>
-              <div>
-                <dt>{translateNow('uiLiteral.gestaoDadosSection.semCaminhoDaBd')}</dt>
-                <dd>
-                  {latest.no_claims.database_path_persisted ? t('common.no') : t('common.yes')}
-                </dd>
-              </div>
-            </dl>
+            <FactTable
+              caption={translateNow('uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao')}
+              rows={[
+                {
+                  key: 'rotated_at',
+                  label: translateNow('uiLiteral.gestaoDadosSection.ultimaRotacao'),
+                  value: formatTimestamp(latest.rotated_at),
+                },
+                {
+                  key: 'status',
+                  label: t('data.status.keyRotation.status'),
+                  value: <Badge tone={latest.rekey_executed ? 'ok' : 'warn'}>{latest.status}</Badge>,
+                },
+                {
+                  key: 'mode',
+                  label: translateNow('uiLiteral.gestaoDadosSection.modo'),
+                  value: latest.mode,
+                  mono: true,
+                },
+                {
+                  key: 'backend_family',
+                  label: translateNow('uiLiteral.gestaoDadosSection.backend'),
+                  value: latest.backend_family ?? '—',
+                  mono: true,
+                },
+                {
+                  key: 'actor_user_id',
+                  label: translateNow('uiLiteral.gestaoDadosSection.utilizador'),
+                  value: latest.actor_user_id ?? '—',
+                  mono: true,
+                },
+                {
+                  key: 'ledger_length',
+                  label: t('data.status.ledgerLength'),
+                  value: new Intl.NumberFormat(locale).format(latest.ledger_length),
+                },
+                {
+                  key: 'ledger_integrity_verified',
+                  label: t('data.status.ledgerVerified'),
+                  value: <StatusBadge value={latest.ledger_integrity_verified} t={t} />,
+                },
+                {
+                  key: 'history',
+                  label: translateNow('uiLiteral.gestaoDadosSection.historicoGuardado'),
+                  value: `${new Intl.NumberFormat(locale).format(summary.history_count)} / ${new Intl.NumberFormat(locale).format(summary.history_limit)}`,
+                },
+              ]}
+            />
+            <FactTable
+              caption={t('data.status.keyRotation.evidence')}
+              rows={[
+                {
+                  key: 'operation',
+                  label: translateNow('uiLiteral.gestaoDadosSection.operacao'),
+                  value: latest.evidence.operation,
+                  mono: true,
+                },
+                {
+                  key: 'requested_key_config',
+                  label: t('data.status.keyRotation.evidence.replacementKey'),
+                  value: latest.evidence.requested_key_config,
+                  mono: true,
+                },
+                {
+                  key: 'sqlcipher_available',
+                  label: t('data.status.keyRotation.evidence.sqlcipher'),
+                  value: latest.evidence.sqlcipher_available ? t('common.yes') : t('common.no'),
+                },
+                {
+                  key: 'no_key_persisted',
+                  label: translateNow('uiLiteral.gestaoDadosSection.semChaveGuardada'),
+                  value:
+                    !latest.no_claims.current_key_persisted &&
+                    !latest.no_claims.replacement_key_persisted &&
+                    !latest.no_claims.key_fingerprint_persisted
+                      ? t('common.yes')
+                      : t('common.no'),
+                },
+                {
+                  key: 'no_database_path',
+                  label: translateNow('uiLiteral.gestaoDadosSection.semCaminhoDaBd'),
+                  value: latest.no_claims.database_path_persisted
+                    ? t('common.no')
+                    : t('common.yes'),
+                },
+              ]}
+            />
           </>
         ) : (
           <p className="muted">
@@ -1593,15 +1769,28 @@ function DataKeyRotationReceiptSummary({
         {history.length > 1 ? (
           <div>
             <h5>{translateNow('uiLiteral.gestaoDadosSection.historicoRecente')}</h5>
-            <ul className="data-status-list">
+            {/* Repeated homogeneous receipts — date, verdict, backend — read down three columns. */}
+            <Table
+              className="data-status-table"
+              caption={translateNow('uiLiteral.gestaoDadosSection.historicoRecente')}
+              head={
+                <tr>
+                  <th scope="col">{t('data.status.col.when')}</th>
+                  <th scope="col">{t('data.status.col.state')}</th>
+                  <th scope="col">{translateNow('uiLiteral.gestaoDadosSection.backend')}</th>
+                </tr>
+              }
+            >
               {history.map((receipt: DataKeyRotationReceipt) => (
-                <li key={receipt.receipt_id}>
-                  <span>{formatTimestamp(receipt.rotated_at)}</span>
-                  <Badge tone={receipt.rekey_executed ? 'ok' : 'warn'}>{receipt.status}</Badge>
-                  <span className="mono">{receipt.backend_family ?? '—'}</span>
-                </li>
+                <tr key={receipt.receipt_id}>
+                  <th scope="row">{formatTimestamp(receipt.rotated_at)}</th>
+                  <td>
+                    <Badge tone={receipt.rekey_executed ? 'ok' : 'warn'}>{receipt.status}</Badge>
+                  </td>
+                  <td className="mono">{receipt.backend_family ?? '—'}</td>
+                </tr>
               ))}
-            </ul>
+            </Table>
           </div>
         ) : null}
       </div>
@@ -1609,12 +1798,20 @@ function DataKeyRotationReceiptSummary({
   );
 }
 
+/**
+ * One usage breakdown as a table. Every row is the same shape — a storage set, its size and the
+ * measurement detail behind that size — so the sizes are compared down a real column instead of
+ * being read out of stacked list items.
+ */
 function UsageList({
   concerns,
+  label,
   locale,
   t,
 }: {
   concerns: DataUsageConcern[];
+  /** The group's own heading, reused as the table's visually hidden caption. */
+  label: string;
   locale: string;
   t: TFunction;
 }) {
@@ -1622,24 +1819,34 @@ function UsageList({
     return <p className="muted">{t('data.status.usage.empty')}</p>;
   }
   return (
-    <ul className="data-status-usage-list">
+    <Table
+      className="data-status-table"
+      caption={label}
+      head={
+        <tr>
+          <th scope="col">{t('data.status.col.item')}</th>
+          <th scope="col">{t('data.status.col.size')}</th>
+          <th scope="col">{t('data.status.col.detail')}</th>
+        </tr>
+      }
+    >
       {concerns.map((concern) => {
         const meta = concernMetaItems(concern, t, locale);
         return (
-          <li key={`${concern.id}:${concern.basis}`} className="data-status-usage-row">
-            <div className="data-status-usage-row__head">
-              <span className="data-status-usage-row__label">{concern.label}</span>
-              <span className="mono">{formatBytes(concern.bytes, locale)}</span>
-            </div>
-            <div className="data-status-usage-row__meta" aria-label={meta.join(' · ')}>
+          <tr key={`${concern.id}:${concern.basis}`}>
+            <th scope="row">{concern.label}</th>
+            <td className="mono">{formatBytes(concern.bytes, locale)}</td>
+            {/* Each measurement stays its own element rather than one joined sentence: the
+                basis, exactness and counts are separate facts an operator reads individually. */}
+            <td className="data-status-table__meta data-status-table__tags">
               {meta.map((item) => (
                 <span key={item}>{item}</span>
               ))}
-            </div>
-          </li>
+            </td>
+          </tr>
         );
       })}
-    </ul>
+    </Table>
   );
 }
 
@@ -1654,8 +1861,22 @@ function SqliteTablePayloadList({
   locale: string;
   t: TFunction;
 }) {
+  // Five values per row, already laid out in five pseudo-columns by CSS: a real table with real
+  // column headers is what this list has been imitating.
   return (
-    <ul className="data-status-sqlite-table-list" aria-label={ariaLabel}>
+    <Table
+      className="data-status-table data-status-sqlite-table"
+      caption={ariaLabel}
+      head={
+        <tr>
+          <th scope="col">{t('data.status.col.table')}</th>
+          <th scope="col">{t('data.status.col.rows')}</th>
+          <th scope="col">{t('data.status.col.size')}</th>
+          <th scope="col">{t('data.status.col.average')}</th>
+          <th scope="col">{t('data.status.col.method')}</th>
+        </tr>
+      }
+    >
       {concerns.map((concern) => {
         const stats = sqlitePayloadStats(concern);
         const label = stats.table_name || sqliteTableLabel(concern);
@@ -1678,26 +1899,22 @@ function SqliteTablePayloadList({
           average,
         ];
         return (
-          <li
-            key={`${concern.id}:${concern.basis}`}
-            className="data-status-sqlite-table-row"
-            aria-label={meta.join(' · ')}
-          >
-            <TooltipText className="data-status-sqlite-table-row__label" label={concern.label}>
-              {label}
-            </TooltipText>
-            <span className="data-status-sqlite-table-row__rows">{rowCount}</span>
-            <span className="data-status-sqlite-table-row__bytes mono">
-              {formatBytes(stats.estimated_payload_bytes, locale)}
-            </span>
-            <span className="data-status-sqlite-table-row__average">{average}</span>
-            <span className="data-status-sqlite-table-row__method">
+          <tr key={`${concern.id}:${concern.basis}`} aria-label={meta.join(' · ')}>
+            <th scope="row">
+              <TooltipText className="data-status-sqlite-table-row__label" label={concern.label}>
+                {label}
+              </TooltipText>
+            </th>
+            <td>{rowCount}</td>
+            <td className="mono">{formatBytes(stats.estimated_payload_bytes, locale)}</td>
+            <td>{average}</td>
+            <td className="data-status-table__meta">
               {t('data.status.usage.sqliteEstimateMethod.localLoadedPayload')}
-            </span>
-          </li>
+            </td>
+          </tr>
         );
       })}
-    </ul>
+    </Table>
   );
 }
 
@@ -1739,7 +1956,7 @@ function SqliteLogicalUsageList({
         </p>
       ) : null}
       {summaryConcerns.length > 0 ? (
-        <UsageList concerns={summaryConcerns} locale={locale} t={t} />
+        <UsageList concerns={summaryConcerns} label={label} locale={locale} t={t} />
       ) : null}
       {tableConcerns.length > 0 ? (
         <SqliteTablePayloadList concerns={tableConcerns} ariaLabel={label} locale={locale} t={t} />
@@ -1962,100 +2179,112 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
               </Button>
             }
           >
-            {/* What arrives is `.data-status` — a deflist summary over sectioned blocks — so
-                the placeholder reserves that instead of a line of text. */}
+            {/* What arrives is `.data-status` — a two-column fact table over sectioned blocks
+                — so the placeholder reserves that instead of a line of text. */}
             {status.isLoading ? (
               <SkeletonRegion className="data-status" label={t('data.status.loading')}>
-                <SkeletonDeflist rows={4} className="deflist data-status-summary" />
+                <SkeletonTable rows={5} cols={2} />
               </SkeletonRegion>
             ) : null}
             {status.isError ? <ErrorNote error={status.error} /> : null}
             {data ? (
               <div className="data-status">
-                <dl className="deflist data-status-summary">
-                  <div>
-                    <dt>{t('data.status.mode')}</dt>
-                    <dd>
-                      <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
-                        {t(MODE_LABEL[data.persistence.mode])}
-                      </Badge>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.generatedAt')}</dt>
-                    <dd>{formatTimestamp(data.generated_at)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.usage.title')}</dt>
-                    <dd className="mono">{formatBytes(data.usage.total_bytes, locale)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.permissions.title')}</dt>
-                    <dd>
-                      {permissions ? (
+                <FactTable
+                  caption={t('data.status.title')}
+                  rows={[
+                    {
+                      key: 'mode',
+                      label: t('data.status.mode'),
+                      value: (
+                        <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
+                          {t(MODE_LABEL[data.persistence.mode])}
+                        </Badge>
+                      ),
+                    },
+                    {
+                      key: 'generated_at',
+                      label: t('data.status.generatedAt'),
+                      value: formatTimestamp(data.generated_at),
+                    },
+                    {
+                      key: 'total_bytes',
+                      label: t('data.status.usage.title'),
+                      value: formatBytes(data.usage.total_bytes, locale),
+                      mono: true,
+                    },
+                    {
+                      key: 'permissions',
+                      label: t('data.status.permissions.title'),
+                      value: permissions ? (
                         <Badge tone={permissions.tone}>{permissions.label}</Badge>
                       ) : (
                         '—'
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.durable')}</dt>
-                    <dd>
-                      <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
-                        {data.persistence.durable_store_open
-                          ? t('data.status.durable.open')
-                          : t('data.status.durable.closed')}
-                      </Badge>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('uiLiteral.gestaoDadosSection.backendDuravel')}</dt>
-                    <dd>
-                      <Badge tone={data.persistence.active_backend_family ? 'ok' : 'neutral'}>
-                        {data.persistence.active_backend_family ?? '—'}
-                      </Badge>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('uiLiteral.gestaoDadosSection.sidecars')}</dt>
-                    <dd>
-                      <Badge
-                        tone={
-                          data.persistence.sidecar_storage_mode === 'database' ? 'ok' : 'neutral'
-                        }
-                      >
-                        {data.persistence.sidecar_storage_mode}
-                      </Badge>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.encryption')}</dt>
-                    <dd>
-                      <StatusBadge value={data.persistence.database_encryption_configured} t={t} />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.schemaVersion')}</dt>
-                    <dd>{formatOptionalNumber(data.persistence.store_schema_version, locale)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.ledgerLength')}</dt>
-                    <dd>{formatOptionalNumber(data.persistence.ledger_length, locale)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.ledgerVerified')}</dt>
-                    <dd>
-                      <StatusBadge value={data.persistence.ledger_verified} t={t} />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('data.status.degraded')}</dt>
-                    <dd>
-                      <StatusBadge value={data.persistence.degraded} positive={false} t={t} />
-                    </dd>
-                  </div>
-                </dl>
+                      ),
+                    },
+                    {
+                      key: 'durable',
+                      label: t('data.status.durable'),
+                      value: (
+                        <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
+                          {data.persistence.durable_store_open
+                            ? t('data.status.durable.open')
+                            : t('data.status.durable.closed')}
+                        </Badge>
+                      ),
+                    },
+                    {
+                      key: 'backend',
+                      label: t('uiLiteral.gestaoDadosSection.backendDuravel'),
+                      value: (
+                        <Badge tone={data.persistence.active_backend_family ? 'ok' : 'neutral'}>
+                          {data.persistence.active_backend_family ?? '—'}
+                        </Badge>
+                      ),
+                    },
+                    {
+                      key: 'sidecars',
+                      label: t('uiLiteral.gestaoDadosSection.sidecars'),
+                      value: (
+                        <Badge
+                          tone={
+                            data.persistence.sidecar_storage_mode === 'database' ? 'ok' : 'neutral'
+                          }
+                        >
+                          {data.persistence.sidecar_storage_mode}
+                        </Badge>
+                      ),
+                    },
+                    {
+                      key: 'encryption',
+                      label: t('data.status.encryption'),
+                      value: (
+                        <StatusBadge value={data.persistence.database_encryption_configured} t={t} />
+                      ),
+                    },
+                    {
+                      key: 'schema_version',
+                      label: t('data.status.schemaVersion'),
+                      value: formatOptionalNumber(data.persistence.store_schema_version, locale),
+                    },
+                    {
+                      key: 'ledger_length',
+                      label: t('data.status.ledgerLength'),
+                      value: formatOptionalNumber(data.persistence.ledger_length, locale),
+                    },
+                    {
+                      key: 'ledger_verified',
+                      label: t('data.status.ledgerVerified'),
+                      value: <StatusBadge value={data.persistence.ledger_verified} t={t} />,
+                    },
+                    {
+                      key: 'degraded',
+                      label: t('data.status.degraded'),
+                      value: (
+                        <StatusBadge value={data.persistence.degraded} positive={false} t={t} />
+                      ),
+                    },
+                  ]}
+                />
 
                 <section className="data-status-section" aria-labelledby="data-status-folder">
                   <div className="data-status-section__head">
@@ -2081,16 +2310,38 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                       </Button>
                     </div>
                   </div>
-                  <p className="data-status-path mono">
-                    {dataPath ?? t('data.status.path.unconfigured')}
-                  </p>
-                  <p className="field__hint">
-                    {t('data.status.folderState', {
-                      configured: yesNo(data.persistence.data_dir_configured, t),
-                      exists: yesNo(data.data_dir.exists, t),
-                      directory: yesNo(data.data_dir.is_directory, t),
-                    })}
-                  </p>
+                  {/* `data.status.folderState` crammed three name/value pairs into one sentence
+                      separated by `·`. Those are facts about the folder, so they are rows; the
+                      path keeps its own boxed, selectable, never-truncated cell. */}
+                  <FactTable
+                    caption={t('data.status.dataDir')}
+                    rows={[
+                      {
+                        key: 'path',
+                        label: t('data.status.folder.path'),
+                        value: (
+                          <span className="data-status-path mono">
+                            {dataPath ?? t('data.status.path.unconfigured')}
+                          </span>
+                        ),
+                      },
+                      {
+                        key: 'configured',
+                        label: t('data.status.folder.configured'),
+                        value: yesNo(data.persistence.data_dir_configured, t),
+                      },
+                      {
+                        key: 'exists',
+                        label: t('data.status.folder.exists'),
+                        value: yesNo(data.data_dir.exists, t),
+                      },
+                      {
+                        key: 'is_directory',
+                        label: t('data.status.folder.isDirectory'),
+                        value: yesNo(data.data_dir.is_directory, t),
+                      },
+                    ]}
+                  />
                   <p className="field__hint">{t('data.status.openUnavailable')}</p>
                 </section>
 
@@ -2098,7 +2349,19 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                   <div className="data-status-section__head">
                     <h4 id="data-status-permissions">{t('data.status.permissions.title')}</h4>
                   </div>
-                  <ul className="data-status-permissions">
+                  {/* Five probes, identical in shape — probe, verdict, what the verdict means.
+                      Compared down columns rather than read out of stacked list items. */}
+                  <Table
+                    className="data-status-table"
+                    caption={t('data.status.permissions.title')}
+                    head={
+                      <tr>
+                        <th scope="col">{t('data.status.col.check')}</th>
+                        <th scope="col">{t('data.status.col.state')}</th>
+                        <th scope="col">{t('data.status.col.result')}</th>
+                      </tr>
+                    }
+                  >
                     {PERMISSION_ROWS.map((row) => {
                       // Typed as possibly absent on purpose: a response missing this probe
                       // renders as "unchecked" instead of taking the page down.
@@ -2110,22 +2373,26 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                         t,
                       );
                       return (
-                        <li
+                        <tr
                           key={row.key}
-                          className={`data-status-probe data-status-probe--${permissionTone(check)}`}
+                          className={`data-status-probe--${permissionTone(check)}`}
                         >
-                          <span className="data-status-probe__label">{t(row.label)}</span>
-                          <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
-                          <span className="data-status-probe__message">{message.text}</span>
-                          {message.detail ? (
-                            <span className="data-status-probe__message mono">
-                              {t('data.status.probe.detail', { detail: message.detail })}
-                            </span>
-                          ) : null}
-                        </li>
+                          <th scope="row">{t(row.label)}</th>
+                          <td>
+                            <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
+                          </td>
+                          <td className="data-status-table__meta">
+                            {message.text}
+                            {message.detail ? (
+                              <span className="data-status-probe__message mono">
+                                {t('data.status.probe.detail', { detail: message.detail })}
+                              </span>
+                            ) : null}
+                          </td>
+                        </tr>
                       );
                     })}
-                  </ul>
+                  </Table>
                 </section>
 
                 <section className="data-status-section" aria-labelledby="data-status-usage">
@@ -2140,7 +2407,12 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                   <div className="data-status-usage-groups data-status-usage-groups--breakdown">
                     <div className="data-status-usage-group">
                       <h5>{t('data.status.usage.filesystem')}</h5>
-                      <UsageList concerns={data.usage.filesystem} locale={locale} t={t} />
+                      <UsageList
+                        concerns={data.usage.filesystem}
+                        label={t('data.status.usage.filesystem')}
+                        locale={locale}
+                        t={t}
+                      />
                     </div>
                     <div className="data-status-usage-group">
                       <h5>{logicalUsageLabel}</h5>
@@ -2155,7 +2427,12 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                     {showSidecars ? (
                       <div className="data-status-usage-group">
                         <h5>{t('uiLiteral.gestaoDadosSection.sidecarsDuraveis')}</h5>
-                        <UsageList concerns={data.usage.sidecars} locale={locale} t={t} />
+                        <UsageList
+                          concerns={data.usage.sidecars}
+                          label={t('uiLiteral.gestaoDadosSection.sidecarsDuraveis')}
+                          locale={locale}
+                          t={t}
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -2178,7 +2455,20 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                       <p className="data-status-section__hint">{t('data.status.cleanup.body')}</p>
                     </div>
                   </div>
-                  <ul className="data-status-cleanups">
+                  {/* Three maintenance targets, identical in shape: what it clears, how much it
+                      currently occupies, and the action. The action column carries the existing
+                      gated buttons — a control that *acts*, never a field that edits a fact. */}
+                  <Table
+                    className="data-status-table data-status-cleanup-table"
+                    caption={t('data.status.cleanup.title')}
+                    head={
+                      <tr>
+                        <th scope="col">{t('data.status.col.cleanup')}</th>
+                        <th scope="col">{t('data.status.col.usage')}</th>
+                        <th scope="col">{t('data.status.col.action')}</th>
+                      </tr>
+                    }
+                  >
                     {CLEANUP_TARGETS.map((target) => {
                       const usage = usageForTarget(data.usage.filesystem, target.target);
                       const isExportsPreview = target.target === 'exports';
@@ -2186,32 +2476,39 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                         cleanup.isPending &&
                         (isExportsPreview ? previewingExports : cleanupTarget === target.target);
                       return (
-                        <li key={target.target} className="data-status-cleanup">
-                          <div className="data-status-cleanup__main">
-                            <h5>
-                              {t(target.title)} <FieldHelp text={t(target.help)} />
-                            </h5>
-                            <span className="data-status-cleanup__description">
-                              {isExportsPreview ? exportCleanupDescription : t(target.body)}
-                            </span>
-                            {isExportsPreview && hasExportCleanupPreview ? (
+                        <tr key={target.target} className="data-status-cleanup-row">
+                          <th scope="row">
+                            <div className="data-status-cleanup__main">
+                              <h5>
+                                {t(target.title)} <FieldHelp text={t(target.help)} />
+                              </h5>
                               <span className="data-status-cleanup__description">
-                                {EXPORT_CLEANUP_CONFIRM_DESCRIPTION}
+                                {isExportsPreview ? exportCleanupDescription : t(target.body)}
                               </span>
-                            ) : null}
-                          </div>
-                          <p className="data-status-cleanup__metric">
-                            <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
-                            <span>
-                              {t('data.status.cleanup.items', {
-                                files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),
-                                directories: new Intl.NumberFormat(locale).format(
-                                  usage?.directory_count ?? 0,
-                                ),
-                              })}
-                            </span>
-                          </p>
-                          <div className="data-status-cleanup__actions">
+                              {isExportsPreview && hasExportCleanupPreview ? (
+                                <span className="data-status-cleanup__description">
+                                  {EXPORT_CLEANUP_CONFIRM_DESCRIPTION}
+                                </span>
+                              ) : null}
+                            </div>
+                          </th>
+                          <td>
+                            <p className="data-status-cleanup__metric">
+                              <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
+                              <span>
+                                {t('data.status.cleanup.items', {
+                                  files: new Intl.NumberFormat(locale).format(
+                                    usage?.file_count ?? 0,
+                                  ),
+                                  directories: new Intl.NumberFormat(locale).format(
+                                    usage?.directory_count ?? 0,
+                                  ),
+                                })}
+                              </span>
+                            </p>
+                          </td>
+                          <td>
+                            <div className="data-status-cleanup__actions">
                             <GateButton
                               perm="settings.manage"
                               type="button"
@@ -2251,11 +2548,12 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                                   : EXPORT_CLEANUP_EXECUTION_BUTTON}
                               </GateButton>
                             ) : null}
-                          </div>
-                        </li>
+                            </div>
+                          </td>
+                        </tr>
                       );
                     })}
-                  </ul>
+                  </Table>
                   {lastCleanup ? (
                     <InlineWarning
                       tone="info"
@@ -2287,11 +2585,11 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
 
         {tab === 'copias' ? (
           <Card title={t('data.status.tab.backup')}>
-            {/* What arrives is `.data-status` — a deflist summary over sectioned blocks — so
-                the placeholder reserves that instead of a line of text. */}
+            {/* What arrives is `.data-status` — a two-column fact table over sectioned blocks
+                — so the placeholder reserves that instead of a line of text. */}
             {status.isLoading ? (
               <SkeletonRegion className="data-status" label={t('data.status.loading')}>
-                <SkeletonDeflist rows={4} className="deflist data-status-summary" />
+                <SkeletonTable rows={5} cols={2} />
               </SkeletonRegion>
             ) : null}
             {status.isError ? <ErrorNote error={status.error} /> : null}
@@ -2347,7 +2645,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                     <SkeletonRegion
                       label={t('uiLiteral.gestaoDadosSection.aCarregarPoliticaDeRecuperacao')}
                     >
-                      <SkeletonDeflist rows={3} />
+                      <SkeletonTable rows={4} cols={2} />
                     </SkeletonRegion>
                   ) : null}
                   {recoveryDrills.error ? <ErrorNote error={recoveryDrills.error} /> : null}
@@ -2472,7 +2770,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                     <SkeletonRegion
                       label={t('uiLiteral.gestaoDadosSection.aCarregarPreValidacaoLocalDeHandoff')}
                     >
-                      <SkeletonDeflist rows={4} />
+                      <SkeletonTable rows={5} cols={2} />
                     </SkeletonRegion>
                   ) : null}
                   {syncHandoffPreflight.error ? (
@@ -2498,11 +2796,11 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
         {tab === 'chaves' ? (
           <>
             <Card title={t('data.status.tab.keys')}>
-              {/* What arrives is `.data-status` — a deflist summary over sectioned blocks — so
-                the placeholder reserves that instead of a line of text. */}
+              {/* What arrives is `.data-status` — a two-column fact table over sectioned blocks
+                — so the placeholder reserves that instead of a line of text. */}
               {status.isLoading ? (
                 <SkeletonRegion className="data-status" label={t('data.status.loading')}>
-                  <SkeletonDeflist rows={4} className="deflist data-status-summary" />
+                  <SkeletonTable rows={5} cols={2} />
                 </SkeletonRegion>
               ) : null}
               {status.isError ? <ErrorNote error={status.error} /> : null}

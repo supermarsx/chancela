@@ -16,14 +16,19 @@
  *   heading that misnames it would be worse than leaving it where it is, so it stays in Plataforma
  *   and is not even cross-referenced here: naming it on this tab would itself assert the wrong
  *   grouping.
- * - `ai.enabled` is the tenant **AI/MCP** gate. MCP is inert without it (the API says so in the
- *   service limitations), but it is the AI switch too, so its editable home stays in Gestão. This
- *   tab mirrors its state read-only and links to it. There is exactly one writer.
+ * - API keys authenticate every integration client, not only MCP. Cross-referenced, not moved.
  *
- * Everything the tab does write goes to the same endpoints, fields and permission gate it wrote
+ * **`ai.enabled` now lives here, and only here.** It was left in Gestão on the reasoning that it
+ * gates the AI features as well as MCP, and one writer per setting is what stops two screens
+ * disagreeing. The user overruled the placement, not the principle: the writer moved rather than
+ * being duplicated, Gestão keeps a read-only pointer to it, and the tab is labelled "IA e MCP" so
+ * the strip says what it actually governs.
+ *
+ * Everything the tab writes goes to the same endpoints, fields and permission gate it wrote
  * before: the service row posts `/v1/platform/services/mcp_stdio/actions/{action}` behind
- * `canManage` (`settings.manage`), and the two log selects edit `platform.logging` in the shared
- * settings working copy inside the page's `settings.manage` fieldset.
+ * `canManage` (`settings.manage`); the two log selects and the AI toggle edit the shared settings
+ * working copy inside the page's `settings.manage` fieldset, and the toggle keeps Gestão's
+ * hidden-not-disabled treatment for anyone without that permission.
  */
 import { usePlatformServices } from '../../api/hooks';
 import type { PlatformLogLevel, PlatformSettings } from '../../api/types';
@@ -42,6 +47,7 @@ import {
   Skeleton,
   SkeletonRegion,
   Table,
+  Toggle,
   useToast,
 } from '../../ui';
 import {
@@ -81,12 +87,14 @@ export function McpSection({
   aiEnabled,
   canManage,
   onChange,
+  onAiEnabledChange,
 }: {
   value: PlatformSettings;
-  /** Read-only mirror of `settings.ai.enabled`; its single writer stays in Gestão. */
+  /** `settings.ai.enabled`. This section is its only writer. */
   aiEnabled: boolean;
   canManage: boolean;
   onChange: (value: PlatformSettings) => void;
+  onAiEnabledChange: (enabled: boolean) => void;
 }) {
   const t = useT();
   const toast = useToast();
@@ -104,6 +112,25 @@ export function McpSection({
 
   return (
     <div className="stack">
+      {/* The tenant AI/MCP gate. It lived in Gestão until the user ruled that it belongs here and
+          only here, so this is now its ONE writer — Gestão keeps a read-only pointer.
+          `canManage` reproduces Gestão's gating exactly: the toggle was HIDDEN there from anyone
+          without `settings.manage`, not merely disabled, so it is hidden here on the same
+          condition. It also sits inside the settings page's `settings.manage` fieldset, and it
+          writes `ai.enabled` on the same whole-document `PUT /v1/settings` autosave as before. */}
+      {canManage ? (
+        <Card title={t('settings.mcp.gate.title')}>
+          <div className="form settings-rows">
+            <Toggle
+              label={t('settings.management.ai.label')}
+              checked={aiEnabled}
+              onChange={onAiEnabledChange}
+            />
+            <p className="field__hint">{t('settings.management.ai.hint')}</p>
+          </div>
+        </Card>
+      ) : null}
+
       <Card title={t('settings.mcp.cardTitle')}>
         <div className="form settings-rows">
           <p className="field__hint">{t('settings.mcp.intro')}</p>
@@ -215,29 +242,17 @@ export function McpSection({
         </Table>
       </Card>
 
-      {/* Cross-references, not relocations. Both of these govern more than MCP, so they keep
-          their existing single writer and this tab only says where it is and what it reads. */}
+      {/* Cross-reference, not a relocation. API keys authenticate every integration client, not
+          only MCP, so they keep their own single writer and this tab only says where it is. */}
       <Card title={t('settings.mcp.related.title')}>
         <dl className="deflist deflist--tight">
-          <div>
-            <dt>{t('settings.management.ai.label')}</dt>
-            <dd>
-              <Badge tone={aiEnabled ? 'ok' : 'neutral'}>
-                {aiEnabled ? t('settings.platform.enabled.yes') : t('settings.platform.enabled.no')}
-              </Badge>{' '}
-              {t('settings.mcp.related.gate')}
-            </dd>
-          </div>
           <div>
             <dt>{t('settings.apiKeys.cardTitle')}</dt>
             <dd>{t('settings.mcp.related.apiKeys')}</dd>
           </div>
         </dl>
         <div className="row-wrap">
-          <ButtonLink to="/configuracoes?sec=gestao" icon={<Icon.Sliders />}>
-            {t('settings.management.cardTitle')}
-          </ButtonLink>
-          <ButtonLink to="/configuracoes?sec=operacoes&sub=chaves-api" icon={<Icon.Seal />}>
+          <ButtonLink to="/settings/operations/api-keys" icon={<Icon.Seal />}>
             {t('settings.apiKeys.cardTitle')}
           </ButtonLink>
         </div>

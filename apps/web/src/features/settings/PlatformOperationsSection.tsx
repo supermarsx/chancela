@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useControlPlatformService, usePlatformServices } from '../../api/hooks';
 import {
   PLATFORM_LOG_LEVELS,
@@ -29,15 +29,15 @@ import {
   Icon,
   InlineWarning,
   Select,
-  SubNav,
   useToast,
 } from '../../ui';
 
-/** The Operations surface splits into two logically-grouped sub-sub-tabs, each reached
- *  through the shared `<SubNav>` (the same segmented idiom the parent settings page uses):
- *  "Serviços" holds the desired-state service controls + operations audit; "Registos"
- *  holds the log-level configuration and the structured API log tail/viewer. */
-type OperationsTab = 'servicos' | 'registos';
+/** The two Operações panels this file renders, chosen by the ROUTE rather than by local state
+ *  (t101). "Serviços" holds the desired-state service controls plus the operations audit;
+ *  "Registos" holds the log-level configuration and the structured API log tail/viewer. They
+ *  used to be a third-level `<SubNav>` inside the Plataforma sub-tab, which meant neither had a
+ *  linkable address; they are now siblings of Email, API and MCP directly under Operações. */
+type OperationsTab = 'services' | 'logs';
 
 /** Stable id of the external stdio MCP process, matching `PLATFORM_MCP_STDIO_SERVICE_ID`. */
 export const MCP_SERVICE_ID = 'mcp_stdio' satisfies PlatformServiceId;
@@ -46,9 +46,14 @@ export const API_SERVICE_ID = 'api' satisfies PlatformServiceId;
 
 /** Deep links between the three sibling tabs, so the cross-references cannot drift from the real
  *  addresses. */
-export const MCP_TAB_PATH = '/configuracoes?sec=operacoes&sub=mcp';
-export const API_TAB_PATH = '/configuracoes?sec=operacoes&sub=api';
-export const PLATFORM_TAB_PATH = '/configuracoes?sec=operacoes';
+export const MCP_TAB_PATH = '/settings/operations/mcp';
+export const API_TAB_PATH = '/settings/operations/api';
+/** The Registos tab, which owns the shared structured log tail. Was `PLATFORM_TAB_PATH`, the
+ *  Operações default, back when that default was the Plataforma sub-tab hosting this panel
+ *  (t101). Cross-references point here so a "see the log tail" link lands on the log tail. */
+export const LOGS_TAB_PATH = '/settings/operations/logs';
+/** The Serviços tab. */
+export const SERVICES_TAB_PATH = '/settings/operations/services';
 
 /** Every log AREA the settings document carries. `logAreaField` maps a service onto one of these;
  *  it is NOT the list this tab edits (see `LOG_BASE_FIELDS`). */
@@ -481,16 +486,28 @@ function AuditTail({ audit }: { audit: PlatformAuditEvent[] }) {
 }
 
 export function PlatformOperationsSection({
+  tab,
   value,
   audit,
   onChange,
   logsPanel,
 }: {
+  /**
+   * Which panel to render. This used to be local `useState`, which made Serviços and Registos a
+   * THIRD navigation level with no address of its own — you could not link to the log-level
+   * config, and the browser Back button did not walk back through it. It is now decided by the
+   * route (`/settings/operations/services` and `.../logs`), so the two panels are siblings of
+   * Email, API and MCP rather than children of one of them (t101, the follow-up t82 deferred).
+   *
+   * Nothing else moved: same working copy, same `onChange`, same endpoints, and the same
+   * `settings.manage` fieldset the settings page wraps this in.
+   */
+  tab: OperationsTab;
   value: PlatformSettings;
   audit: PlatformAuditEvent[];
   onChange: (value: PlatformSettings) => void;
   /** The structured API log tail/viewer, hosted by the settings page and rendered inside
-   *  the "Registos" sub-sub-tab so the log-level config and the log evidence sit together. */
+   *  the Registos tab so the log-level config and the log evidence sit together. */
   logsPanel?: ReactNode;
 }) {
   // No `canManage`: the per-service action buttons that needed it moved to the API and MCP tabs
@@ -500,7 +517,6 @@ export function PlatformOperationsSection({
   const services = usePlatformServices();
   const levels = useMemo(() => logLevelOptions(t), [t]);
   const overrides = useMemo(() => overrideOptions(t), [t]);
-  const [tab, setTab] = useState<OperationsTab>('servicos');
   const setLogging = (logging: PlatformLoggingSettings) => onChange({ ...value, logging });
   const setBaseLevel = (field: (typeof LOG_BASE_FIELDS)[number], level: PlatformLogLevel) =>
     setLogging({ ...value.logging, [field]: level });
@@ -512,33 +528,19 @@ export function PlatformOperationsSection({
   };
 
   const tabDescription =
-    tab === 'servicos'
+    tab === 'services'
       ? t('settings.platform.tab.services.desc')
       : t('settings.platform.tab.logs.desc');
 
+  // No strip of its own any more: the parent's Operações strip is the only one, which is the
+  // whole point of the change. The lead-in sentence stays, because it is what tells an operator
+  // what the panel they just opened is for.
   return (
     <div className="stack">
-      <SubNav
-        items={[
-          {
-            id: 'servicos',
-            label: t('settings.platform.tab.services'),
-            icon: <Icon.Power />,
-          },
-          {
-            id: 'registos',
-            label: t('settings.platform.tab.logs'),
-            icon: <Icon.Layers />,
-          },
-        ]}
-        active={tab}
-        onSelect={setTab}
-        ariaLabel={t('settings.platform.subnav.aria')}
-      />
       <p className="field__hint">{tabDescription}</p>
 
-      <div className="route-transition stack" key={tab}>
-        {tab === 'servicos' ? (
+      <div className="stack">
+        {tab === 'services' ? (
           <>
             <Card title={t('settings.platform.cardTitle')}>
               <div className="form settings-rows">
@@ -605,7 +607,6 @@ export function PlatformOperationsSection({
                     ))}
                   </div>
                 </div>
-                <ServiceLinks />
               </div>
             </Card>
 

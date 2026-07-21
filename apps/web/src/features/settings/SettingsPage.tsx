@@ -11,11 +11,13 @@
  *
  * Sections are reached through a segmented sub-nav (the Ferramentas idiom, via the shared
  * `<SubNav>`): Aparência · Documentos · Assinaturas · Gestão · Sobre. The
- * active section is deep-linkable (`?sec=`); the working copy spans all of them, so the
+ * active section is deep-linkable (`/settings/data`); the working copy spans all of
+ * them, so the
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useSectionNav } from '../../app/navPath';
 import {
   useHealth,
   useLedgerVerify,
@@ -81,6 +83,7 @@ import { applyAppearance, applyLocale, COLOR_OVERRIDE_FIELDS } from '../../theme
 import type { ColorOverrideField } from '../../theme/appearance';
 import { LivrosIntegridadeSection } from '../recovery/LivrosIntegridadeSection';
 import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
+import { ZkObjectRootSection } from '../recovery/ZkObjectRootSection';
 import { FuncoesSection } from '../rbac/FuncoesSection';
 import { DelegacoesSection } from '../rbac/DelegacoesSection';
 import { ApiKeysSection } from './ApiKeysSection';
@@ -90,8 +93,10 @@ import { LanguagePreferenceSection } from './LanguagePreferenceSection';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
 import { PairingPanel } from '../pairing/PairingPanel';
 import { ApiServerSection } from './ApiServerSection';
+import { CacheSection } from './CacheSection';
+import { DatabaseSection } from './DatabaseSection';
 import { McpSection } from './McpSection';
-import { PlatformOperationsSection } from './PlatformOperationsSection';
+import { MCP_TAB_PATH, PlatformOperationsSection } from './PlatformOperationsSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
 import { useCan } from '../session/permissions';
@@ -100,6 +105,7 @@ import {
   Button,
   ButtonLink,
   Card,
+  ColumnHead,
   DateTime,
   ErrorNote,
   Field,
@@ -534,51 +540,52 @@ function toWireBody(draft: Settings): Settings {
 /** The sub-tabs, in order. Each label reuses its section card title (identical text).
  *  The array is appended cleanly by peers (t60 Utilizadores, t62 Administração). */
 type SettingsSection =
-  | 'aparencia'
-  | 'documentos'
-  | 'assinaturas'
-  | 'gestao'
-  | 'operacoes'
-  | 'privacidade'
-  | 'utilizadores'
-  | 'dispositivos'
-  | 'funcoes'
-  | 'delegacoes'
-  | 'integridade'
-  | 'dados'
-  | 'sobre';
+  | 'appearance'
+  | 'documents'
+  | 'signing'
+  | 'management'
+  | 'operations'
+  | 'privacy'
+  | 'users'
+  | 'devices'
+  | 'integrity'
+  | 'about';
 
 type SettingsSectionNav =
   | { id: SettingsSection; label: MessageKey; icon: ReactNode; literal?: never }
   | { id: SettingsSection; label?: never; icon: ReactNode; literal: string };
 
 const SETTINGS_SECTIONS: SettingsSectionNav[] = [
-  { id: 'aparencia', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
-  { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
-  { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
-  { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
-  { id: 'operacoes', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
-  { id: 'privacidade', label: 'settings.privacy.tab', icon: <Icon.Seal /> },
-  { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
-  { id: 'dispositivos', label: 'pairing.tab', icon: <Icon.IdCard /> },
-  { id: 'funcoes', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
-  { id: 'delegacoes', label: 'rbac.delegacoes.tab', icon: <Icon.ArrowRight /> },
-  { id: 'integridade', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
-  { id: 'dados', label: 'data.cardTitle', icon: <Icon.Archive /> },
-  { id: 'sobre', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
+  { id: 'appearance', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
+  { id: 'documents', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
+  { id: 'signing', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
+  { id: 'management', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
+  { id: 'operations', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
+  { id: 'privacy', label: 'settings.privacy.tab', icon: <Icon.Seal /> },
+  { id: 'users', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
+  { id: 'devices', label: 'pairing.tab', icon: <Icon.IdCard /> },
+  // Funções and Delegações were top-level tabs beside Utilizadores until t106. They are now the
+  // second and third sub-tabs OF it (see SUBSECTION_NAV) — same three panels, one fewer thing to
+  // scan in this strip. Their old addresses resolve through RETIRED_SECTIONS.
+  { id: 'integrity', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
+  // Gestão de dados moved into Operações (t105). It is instance operations — storage, backups,
+  // keys — not a subject of its own beside Livros. Its old address resolves via RETIRED_SECTIONS.
+  { id: 'about', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
 ];
 
 /** The sub-tabs that manage their OWN data (not the settings working copy), so the
  *  autosave savebar is not shown for them. The RBAC tabs (Funções, Delegações) self-gate
  *  their own `role.manage`/`delegation.*` affordances, so they are standalone too. */
 const SETTINGS_SUBSECTIONS = {
-  operacoes: ['plataforma', 'api', 'mcp', 'email', 'chaves-api'],
-  assinaturas: ['fornecedores', 'politica', 'tsl', 'tsa', 'prestadores', 'cmd'],
+  operations: ['services', 'logs', 'api', 'database', 'cache', 'data', 'mcp', 'email', 'api-keys'],
+  signing: ['providers', 'policy', 'tsl', 'tsa', 'trust-services', 'cmd'],
+  users: ['users', 'delegations', 'roles'],
 } as const;
 
 type SettingsSubsection =
-  | (typeof SETTINGS_SUBSECTIONS)['operacoes'][number]
-  | (typeof SETTINGS_SUBSECTIONS)['assinaturas'][number];
+  | (typeof SETTINGS_SUBSECTIONS)['operations'][number]
+  | (typeof SETTINGS_SUBSECTIONS)['signing'][number]
+  | (typeof SETTINGS_SUBSECTIONS)['users'][number];
 
 type SettingsSubsectionNav = { id: SettingsSubsection; label: MessageKey; icon: ReactNode };
 
@@ -586,30 +593,62 @@ type SettingsSubsectionNav = { id: SettingsSubsection; label: MessageKey; icon: 
  * Second-level sub-tabs (t73). Two parents grew long enough to need their own strip, and three
  * former top-level sub-tabs belonged inside them rather than beside them. Same primitive and same
  * contract as every other tab strip: the shared `<SubNav>`, a deep-linkable query param, and
- * "the first sub-tab is the default and carries no param". The second level uses `?sub=` because
- * `?sec=` already names the parent. Every label reuses the card title it heads.
+ * "the first sub-tab is the default and carries no segment". The second level is a second path
+ * segment under the parent's — `/settings/operations/email`. Every label reuses the card
+ * title it heads.
  */
 const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> = {
-  operacoes: [
-    // Named "Plataforma", not "Operações": it is a CHILD of the Operações tab, and repeating the
-    // parent's name in its own strip reads as a broken loop.
-    { id: 'plataforma', label: 'settings.subnav.platform', icon: <Icon.Power /> },
-    // API (t82b). One button covering TWO addresses — `?sub=api` (server) and `?sub=chaves-api`
-    // (keys) — which is why `chaves-api` is a valid subsection but not an entry here. See
+  operations: [
+    // Serviços and Registos (t101). These were a THIRD level — a `useState` strip inside the
+    // Plataforma sub-tab — so neither had an address and neither could be linked to. Promoting
+    // them here is the standalone follow-up t82 deliberately deferred: they are siblings of the
+    // other operations panels, not children of one of them. `platform` is no longer an id, and the
+    // address it used to answer is covered twice over: the pt-PT spelling anyone could actually
+    // have bookmarked, `/configuracoes/operacoes/plataforma`, is forwarded EXPLICITLY by
+    // `app/legacySlugs.ts` (`plataforma: 'services'`), and the English spelling — which existed
+    // only between this morning's id rename and this change, and which nothing links — falls
+    // through to the first entry below. Both land on Serviços, the pane that address opened on.
+    { id: 'services', label: 'settings.platform.tab.services', icon: <Icon.Power /> },
+    { id: 'logs', label: 'settings.platform.tab.logs', icon: <Icon.Layers /> },
+    // API (t82b). One button covering TWO addresses — `.../api` (server) and `.../api-keys`
+    // (keys) — which is why `api-keys` is a valid subsection but not an entry here. See
     // API_PANES below.
     { id: 'api', label: 'settings.subnav.api', icon: <Icon.Power /> },
+    // Base de dados and Redis (t105). Both are launch-time environment surfaces, shown the same
+    // read-only way the API pane already shows CHANCELA_ADDR and the rate limits — see the header
+    // comment on each section for why neither is an editor.
+    { id: 'database', label: 'settings.database.cardTitle', icon: <Icon.Archive /> },
+    { id: 'cache', label: 'settings.cache.cardTitle', icon: <Icon.Layers /> },
+    // Gestão de dados (t105), promoted from a top-level section. Standalone — see
+    // STANDALONE_SUBSECTIONS, which is what preserves its gating across the move.
+    { id: 'data', label: 'data.cardTitle', icon: <Icon.Archive /> },
     // MCP (t82). Sits next to Plataforma because that is where its controls came from; it is a
-    // sibling rather than a third level inside Plataforma so it has a stable `?sub=` address.
+    // sibling rather than a third level inside Plataforma so it has a stable address of its own.
     { id: 'mcp', label: 'settings.subnav.mcp', icon: <Icon.Sliders /> },
     { id: 'email', label: 'settings.email.cardTitle', icon: <Icon.Tray /> },
   ],
-  assinaturas: [
-    { id: 'fornecedores', label: 'settings.providerCredentials.cardTitle', icon: <Icon.IdCard /> },
-    { id: 'politica', label: 'settings.signing.policy.cardTitle', icon: <Icon.Scale /> },
+  signing: [
+    { id: 'providers', label: 'settings.providerCredentials.cardTitle', icon: <Icon.IdCard /> },
+    { id: 'policy', label: 'settings.signing.policy.cardTitle', icon: <Icon.Scale /> },
     { id: 'tsl', label: 'settings.signing.tslSources.title', icon: <Icon.Layers /> },
     { id: 'tsa', label: 'settings.signing.tsaProviders.title', icon: <Icon.Calendar /> },
-    { id: 'prestadores', label: 'settings.signing.providers.title', icon: <Icon.Sliders /> },
+    { id: 'trust-services', label: 'settings.signing.providers.title', icon: <Icon.Sliders /> },
     { id: 'cmd', label: 'settings.signing.cmd.title', icon: <Icon.PenNib /> },
+  ],
+  // Utilizadores (t106). Three panels that were three top-level tabs: the roster, who may act for
+  // whom, and what a função may do. They are one subject — who has authority here — and reading
+  // them as one tab with three children is how an operator actually uses them (grant a delegation,
+  // check the função it inherits, find the person it names).
+  //
+  // The first label is "Utilizadores", the same word as the parent, and that is deliberate rather
+  // than the loop the Operações note above warns against. The rule this strip follows is the
+  // stronger one — every label reuses the card title it heads — and the roster's own card title
+  // genuinely IS `users.list.cardTitle`. Operações differs because its first child had a truthful
+  // name of its own ("Plataforma"); inventing one here would rename a surface operators know.
+  users: [
+    { id: 'users', label: 'users.list.cardTitle', icon: <Icon.Users /> },
+    { id: 'delegations', label: 'rbac.delegacoes.tab', icon: <Icon.ArrowRight /> },
+    { id: 'roles', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
   ],
 };
 
@@ -617,12 +656,13 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
  *  the wording of `settings.platform.subnav.aria`, which labels the THIRD-level strip inside
  *  Plataforma — two identically-named landmarks on one page is a real defect. */
 const SUBSECTION_ARIA: Partial<Record<SettingsSection, MessageKey>> = {
-  operacoes: 'settings.subnav.operations.aria',
-  assinaturas: 'settings.subnav.signing.aria',
+  operations: 'settings.subnav.operations.aria',
+  signing: 'settings.subnav.signing.aria',
+  users: 'settings.subnav.users.aria',
 };
 
 /**
- * The API tab's two panes (t82b) — the one place a THIRD level of `?sub=` ids sits behind a single
+ * The API tab's two panes (t82b) — the one place a THIRD level of sub-tab ids sits behind a single
  * second-level button.
  *
  * The user asked for the API surface to be aggregated into one sub-tab, and it is: one button,
@@ -633,33 +673,51 @@ const SUBSECTION_ARIA: Partial<Record<SettingsSection, MessageKey>> = {
  * `settings.manage` — a silent narrowing of who may rotate a credential, which is precisely the
  * failure this restructure must not introduce.
  *
- * Keeping them as two `?sub=` ids rather than local state is what preserves that: `isStandalone`
- * keys off `operacoes:chaves-api`, so the keys pane keeps its exact savebar and fieldset treatment,
- * and the bookmarkable `?sub=chaves-api` address keeps working with no redirect at all.
+ * Keeping them as two sub-tab ids rather than local state is what preserves that: `isStandalone`
+ * keys off `operations:api-keys`, so the keys pane keeps its exact savebar and fieldset treatment,
+ * and the bookmarkable `/settings/operations/api-keys` address keeps working.
  */
 const API_PANES = [
   { id: 'api', label: 'settings.api.tab.server', icon: <Icon.Power /> },
-  { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
+  { id: 'api-keys', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
 ] as const satisfies readonly { id: SettingsSubsection; label: MessageKey; icon: ReactNode }[];
 
 const isApiPane = (sub: SettingsSubsection | undefined): boolean =>
-  sub === 'api' || sub === 'chaves-api';
+  sub === 'api' || sub === 'api-keys';
 
+/**
+ * `users` covers all three of its sub-tabs (t106), and that is the whole of what keeps Funções and
+ * Delegações behaving exactly as they did when they were top-level sections.
+ *
+ * `isStandalone` is what decides `editingLocked`, and `editingLocked` inerts the panel with a
+ * disabled fieldset. Funções and Delegações gate themselves on `role.manage` and
+ * `delegation.revoke` — NOT on `settings.manage`. Had they become sub-tabs of a parent that was not
+ * standalone, a principal holding `role.manage` without `settings.manage` would have found the
+ * whole panel greyed out: authority they hold, silently removed by a navigation change. That is
+ * the inherited-gate failure t102 flagged on the privacy registers, and it is asserted by test
+ * rather than left to this comment.
+ */
 const STANDALONE_SECTIONS: readonly SettingsSection[] = [
-  'utilizadores',
-  'privacidade',
-  'funcoes',
-  'delegacoes',
-  'integridade',
-  'dados',
-  'dispositivos',
+  'users',
+  'privacy',
+  'integrity',
+  'devices',
 ];
 
 /** The same rule one level down: Chaves API and Fornecedores de assinatura keep their own
- *  endpoints and their own gating, so they carry no savebar even though their parent does. */
+ *  endpoints and their own gating, so they carry no savebar even though their parent does.
+ *
+ *  `operations:data` is here because Gestão de dados WAS a standalone top-level section (t105 moved
+ *  it under Operações). Dropping it from `STANDALONE_SECTIONS` without adding it here would have
+ *  handed it its new parent's gating instead of its own: the panel would be wrapped in the
+ *  `settings.manage` disabled fieldset, so a principal holding `data.manage`/`backup.manage`
+ *  without `settings.manage` would find backups and key rotation greyed out — authority they hold,
+ *  removed by a navigation change. That is the exact inherited-gate hole t102 flagged on the
+ *  privacy registers, and it is asserted by test rather than left to this comment. */
 const STANDALONE_SUBSECTIONS: readonly string[] = [
-  'operacoes:chaves-api',
-  'assinaturas:fornecedores',
+  'operations:api-keys',
+  'operations:data',
+  'signing:providers',
 ];
 
 const isStandalone = (section: SettingsSection, sub: SettingsSubsection | undefined): boolean =>
@@ -679,11 +737,7 @@ const isStandalone = (section: SettingsSection, sub: SettingsSubsection | undefi
  * Prestadores is a four-column read-only table whose Notas column is wrapping prose already
  * at 61ch and which never scrolls (61ch → 96ch if widened — worse, not better).
  */
-const WIDE_SUBSECTIONS: readonly string[] = [
-  'assinaturas:tsl',
-  'assinaturas:tsa',
-  'assinaturas:fornecedores',
-];
+const WIDE_SUBSECTIONS: readonly string[] = ['signing:tsl', 'signing:tsa', 'signing:providers'];
 
 const isWideSubsection = (section: SettingsSection, sub: SettingsSubsection | undefined): boolean =>
   sub !== undefined && WIDE_SUBSECTIONS.includes(`${section}:${sub}`);
@@ -715,26 +769,39 @@ const ENTITY_COLUMN_LABEL_KEYS: Record<RegisteredEntityColumn, MessageKey> = {
   Actions: 'entities.columns.actions',
 };
 
-const isSettingsSection = (v: string | null): v is SettingsSection =>
+const isSettingsSection = (v: string | undefined): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
 
 /** Retired sub-tabs, kept resolvable so their deep links still land where the content went.
- *  `identidade` (the organisation name printed ON generated documents) merged into
+ *  `identity` (the organisation name printed ON generated documents) merged into
  *  Documentos as its own card — same subject matter, one fewer sub-tab. The old link
  *  therefore opens Documentos and scrolls to the moved card rather than 404ing. */
 const RETIRED_SECTIONS: Record<string, { section: SettingsSection; sub?: SettingsSubsection }> = {
-  identidade: { section: 'documentos' },
-  email: { section: 'operacoes', sub: 'email' },
-  'chaves-api': { section: 'operacoes', sub: 'chaves-api' },
-  // Not a retired address — a courtesy one. `?sec=mcp` is the link an operator is most likely to
-  // guess or hand-write for a tab called MCP, so it resolves rather than falling back to Aparência.
-  mcp: { section: 'operacoes', sub: 'mcp' },
-  api: { section: 'operacoes', sub: 'api' },
-  'fornecedores-assinatura': { section: 'assinaturas', sub: 'fornecedores' },
+  identity: { section: 'documents' },
+  email: { section: 'operations', sub: 'email' },
+  'api-keys': { section: 'operations', sub: 'api-keys' },
+  // Not a retired address — a courtesy one. `/settings/mcp` is the link an operator is
+  // most likely to guess or hand-write for a tab called MCP, so it resolves rather than
+  // falling back to Aparência.
+  mcp: { section: 'operations', sub: 'mcp' },
+  api: { section: 'operations', sub: 'api' },
+  'signing-providers': { section: 'signing', sub: 'providers' },
+  // t105: Gestão de dados moved from a top-level section to a sub-tab of Operações. `/settings/data`
+  // was a real, linkable address — and the pt-PT original `/configuracoes/dados` reaches it through
+  // the same table — so both keep resolving to the pane rather than falling back to Aparência.
+  data: { section: 'operations', sub: 'data' },
+  // t106: Funções and Delegações moved from top-level sections to sub-tabs of Utilizadores.
+  // `/settings/roles` and `/settings/delegations` were both real, linkable addresses — and the
+  // pt-PT originals `/configuracoes/funcoes` and `/configuracoes/delegacoes` reach these two
+  // entries through the positional slug translation in `app/legacySlugs.ts`, so BOTH spellings of
+  // both addresses keep landing on the panel they always landed on. Neither may 404.
+  roles: { section: 'users', sub: 'roles' },
+  delegations: { section: 'users', sub: 'delegations' },
 };
 
-/** Anchor for the moved Identidade card, targeted by the retired `?sec=identidade` link. */
-const IDENTITY_ANCHOR_ID = 'settings-identidade';
+/** Anchor for the moved Identidade card, targeted by the retired `/settings/identity`
+ *  link. */
+const IDENTITY_ANCHOR_ID = 'settings-identity';
 
 function providerModeLabel(provider: SigningProviderMetadata, t: ReturnType<typeof useT>): string {
   switch (provider.mode) {
@@ -1015,54 +1082,61 @@ function PlatformLogTailPanel() {
 export function SettingsPage() {
   const t = useT();
   const toast = useToast();
-  const [params, setParams] = useSearchParams();
-  // Aparência is the default and carries no `sec` param (so `/configuracoes` lands on it).
-  const secParam = params.get('sec');
-  const retired = secParam === null ? undefined : RETIRED_SECTIONS[secParam];
-  const section: SettingsSection =
-    retired?.section ?? (isSettingsSection(secParam) ? secParam : 'aparencia');
-  // The second level, for the two sections that have one. Like `sec`, the first sub-tab is the
-  // default and carries no param; an unknown `sub` falls back to it rather than blanking the
-  // panel. A retired `?sec=` link names its own destination sub-tab and wins over any `sub`.
+  const [params] = useSearchParams();
+  // Aparência is the default and carries no segment (so `/settings` lands on it). The
+  // section is read off the path on every render, so a deep link paints the right tab at once.
+  // A retired address (`/settings/email`) still resolves — to the sub-tab its content
+  // moved to — because the old query-string form redirected here and must keep landing.
+  const {
+    section: rawSection,
+    raw: secSegment,
+    select: selectRawSection,
+  } = useSectionNav<SettingsSection>({
+    base: '/settings',
+    // Retired ids are not `SettingsSection`s, so they cannot be resolved here; the raw
+    // segment is re-read below for the alias table. Anything unknown falls back to Aparência.
+    parse: (raw) => (isSettingsSection(raw) ? raw : 'appearance'),
+    fallback: 'appearance',
+    replace: true,
+    // The `?user=` state redirects straight out to the edit screen, so it must never be
+    // carried onto another section's address.
+    dropParams: ['user'],
+  });
+  const retired = secSegment === undefined ? undefined : RETIRED_SECTIONS[secSegment];
+  const section: SettingsSection = retired?.section ?? rawSection;
+  // The second level, for the two sections that have one. Like the section, the first sub-tab is
+  // the default and carries no segment; an unknown one falls back to it rather than blanking the
+  // panel. A retired address names its own destination sub-tab and wins over any sub segment.
   const subNav = SUBSECTION_NAV[section];
-  const subParam = params.get('sub');
-  // Validity is decided by SETTINGS_SUBSECTIONS, not by the strip: `chaves-api` is a real,
+  // Anchored on the RESOLVED section, so selecting a sub-tab from a retired address writes the
+  // real one (`/settings/email` → `/settings/operations/mcp`) rather than compounding it.
+  // A PUSH, so the browser Back button walks back through the sub-tabs the operator opened
+  // (the t34/t62 rule: navigation the user performed must be undoable).
+  const { section: subSegment, select: selectRawSub } = useSectionNav<string>({
+    base: `/settings/${section}`,
+    parse: (raw) => raw ?? '',
+    fallback: '',
+  });
+  // Validity is decided by SETTINGS_SUBSECTIONS, not by the strip: `api-keys` is a real,
   // bookmarkable address that no longer has a button of its own (it is a pane of the API tab),
   // and resolving it through the strip would silently redirect an existing bookmark to Plataforma.
   const validSubs: readonly string[] | undefined =
-    section === 'operacoes' || section === 'assinaturas'
+    section === 'operations' || section === 'signing' || section === 'users'
       ? SETTINGS_SUBSECTIONS[section]
       : undefined;
   const sub: SettingsSubsection | undefined = subNav
     ? (retired?.sub ??
-      (validSubs?.includes(subParam ?? '') ? (subParam as SettingsSubsection) : subNav[0].id))
+      (validSubs?.includes(subSegment) ? (subSegment as SettingsSubsection) : subNav[0].id))
     : undefined;
-  const selectedUser = section === 'utilizadores' ? params.get('user') : null;
-  const selectSection = (next: SettingsSection) =>
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        if (next === 'aparencia') p.delete('sec');
-        else p.set('sec', next);
-        if (next !== 'utilizadores') p.delete('user');
-        // A `sub` belongs to the section that declared it; leaving the section drops it so the
-        // new section opens on its own default rather than on a stale child id.
-        p.delete('sub');
-        return p;
-      },
-      { replace: true },
-    );
-  // Sub-tab selection PUSHES a history entry, so the browser Back button walks back through the
-  // sub-tabs the operator opened (the t34/t62 rule: navigation the user performed must be
-  // undoable). It also normalises `sec` — a retired `?sec=email` link becomes the real address.
+  // Scoped to the ROSTER sub-tab, not to the whole Utilizadores section (t106). `?user=` is the
+  // roster's own legacy state and redirects out to the edit screen; left section-wide it would
+  // fire on `/settings/users/roles?user=u1` too, throwing an operator off the Funções panel.
+  const selectedUser = section === 'users' && sub === 'users' ? params.get('user') : null;
+  // Leaving a section drops its sub-tab: the base is rebuilt from `/settings`, so the new
+  // section opens on its own default rather than on a stale child id.
+  const selectSection = (next: SettingsSection) => selectRawSection(next);
   const selectSub = (next: SettingsSubsection) =>
-    setParams((prev) => {
-      const p = new URLSearchParams(prev);
-      p.set('sec', section);
-      if (subNav && next === subNav[0].id) p.delete('sub');
-      else p.set('sub', next);
-      return p;
-    });
+    selectRawSub(subNav && next === subNav[0].id ? '' : next);
   // The fragment of the current location, carried through the `?user=` → edit-screen redirect.
   const { hash } = useLocation();
   const settings = useSettings();
@@ -1082,7 +1156,7 @@ export function SettingsPage() {
   // Lock only the editable working-copy sections (not the self-gating standalone sub-tabs,
   // nor the read-only "Sobre").
   const standalone = isStandalone(section, sub);
-  const editingLocked = !canManageSettings && !standalone && section !== 'sobre';
+  const editingLocked = !canManageSettings && !standalone && section !== 'about';
 
   // The committed (persisted) document, tracked in a ref so the unmount cleanup can
   // restore it if the operator navigated away mid-preview without saving.
@@ -1368,9 +1442,9 @@ export function SettingsPage() {
       {subNav && sub ? (
         <SubNav
           items={subNav.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
-          // `chaves-api` is a pane of the API tab, so the API button is the one that reads as
+          // `api-keys` is a pane of the API tab, so the API button is the one that reads as
           // active while it is open — otherwise the strip would show nothing selected.
-          active={sub === 'chaves-api' ? 'api' : sub}
+          active={sub === 'api-keys' ? 'api' : sub}
           onSelect={selectSub}
           ariaLabel={t(SUBSECTION_ARIA[section] ?? 'settings.subnav.aria')}
         />
@@ -1379,7 +1453,7 @@ export function SettingsPage() {
       {/* The API tab's own strip. Outside the fieldset for the same reason the level above is:
           a reader looking at the inerted server pane must still be able to reach the keys pane,
           which is not locked at all. */}
-      {section === 'operacoes' && isApiPane(sub) ? (
+      {section === 'operations' && isApiPane(sub) ? (
         <SubNav
           items={API_PANES.map((p) => ({ id: p.id, label: t(p.label), icon: p.icon }))}
           active={sub as string}
@@ -1405,7 +1479,7 @@ export function SettingsPage() {
               says so: the appearance card edits the instance-wide settings document (plus the
               browser-local colour overrides), while the language card edits the signed-in user's
               own record. Same tab, different blast radius. */}
-          {section === 'aparencia' ? (
+          {section === 'appearance' ? (
             <div className="stack">
               <Card title={t('settings.appearance.cardTitle')}>
                 <div className="form settings-rows">
@@ -1464,16 +1538,31 @@ export function SettingsPage() {
                     />
                   </Field>
 
-                  <div className="form__actions">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      icon={<Icon.Shuffle />}
-                      disabled={!a.leather_texture}
-                      onClick={() => grainStore.reroll()}
-                    >
-                      {t('settings.appearance.reroll')}
-                    </Button>
+                  {/* Grão — a named group rather than a loose action row (t100). The re-roll is
+                    not a setting the card saves: it redraws the texture for this session only
+                    (grainStore holds no persisted field), so it does not read as one more
+                    banded row. Same `settings-group` shape as the colours block below, which
+                    is the other per-browser, non-saved control on this card. */}
+                  <div className="settings-group">
+                    <div className="field__labelrow">
+                      <p className="settings-group__title">
+                        {t('settings.appearance.grain.title')}
+                      </p>
+                      <FieldHelp text={t('settings.appearance.grain.help')} />
+                    </div>
+                    <p className="field__hint">{t('settings.appearance.grain.hint')}</p>
+
+                    <div className="form__actions">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.Shuffle />}
+                        disabled={!a.leather_texture}
+                        onClick={() => grainStore.reroll()}
+                      >
+                        {t('settings.appearance.reroll')}
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Custom colours — operator-set primary/secondary/background/surface, with
@@ -1548,8 +1637,9 @@ export function SettingsPage() {
               what appears ON generated documents — the same subject matter. It lives here
               now as its own card (t36's grouping idiom: one card per concern, stacked),
               kept as a distinct heading rather than interleaved with the document defaults
-              so it stays findable. `?sec=identidade` still resolves here, anchored below. */}
-          {section === 'documentos' ? (
+              so it stays findable. `/settings/identity` still resolves here, anchored
+              below. */}
+          {section === 'documents' ? (
             <div className="stack">
               <div id={IDENTITY_ANCHOR_ID}>
                 <Card title={t('settings.identity.cardTitle')}>
@@ -1628,14 +1718,14 @@ export function SettingsPage() {
               columns where two rows can be compared without scrolling. The read-only inventories
               (provider modes, CMD) are last and visually separate, because nothing there is
               editable here. */}
-          {section === 'assinaturas' ? (
+          {section === 'signing' ? (
             <div className="stack">
               {/* Fornecedores de assinatura — the credentials manager that used to be a sibling
                   top-level sub-tab. It keeps its own endpoints and its own gating, so it is
                   standalone (no savebar) even though its five siblings are working-copy cards. */}
-              {sub === 'fornecedores' ? <ProviderCredentialsSection /> : null}
+              {sub === 'providers' ? <ProviderCredentialsSection /> : null}
 
-              {sub === 'politica' ? (
+              {sub === 'policy' ? (
                 <Card title={t('settings.signing.policy.cardTitle')}>
                   <div className="form settings-rows">
                     <Field
@@ -1728,13 +1818,34 @@ export function SettingsPage() {
                         caption={t('settings.signing.tslSources.caption')}
                         head={
                           <tr>
-                            <th>{t('settings.signing.source.name')}</th>
-                            <th>{t('settings.signing.table.status')}</th>
-                            <th>{t('settings.signing.source.url')}</th>
-                            <th>{t('settings.signing.source.path')}</th>
-                            <th>{t('settings.signing.source.country')}</th>
-                            <th>{t('settings.signing.source.scheme')}</th>
-                            <th>{t('settings.signing.table.actions')}</th>
+                            <ColumnHead
+                              label={t('settings.signing.source.name')}
+                              help={t('settings.signing.tslSources.help.name')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.table.status')}
+                              help={t('settings.signing.tslSources.help.status')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.source.url')}
+                              help={t('settings.signing.tslSources.help.url')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.source.path')}
+                              help={t('settings.signing.tslSources.help.path')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.source.country')}
+                              help={t('settings.signing.tslSources.help.country')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.source.scheme')}
+                              help={t('settings.signing.tslSources.help.scheme')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.table.actions')}
+                              help={t('settings.signing.tslSources.help.actions')}
+                            />
                           </tr>
                         }
                       >
@@ -1886,13 +1997,34 @@ export function SettingsPage() {
                         caption={t('settings.signing.tsaProviders.caption')}
                         head={
                           <tr>
-                            <th>{t('settings.signing.source.name')}</th>
-                            <th>{t('settings.signing.table.status')}</th>
-                            <th>{t('settings.signing.source.url')}</th>
-                            <th>{t('settings.signing.source.path')}</th>
-                            <th>{t('settings.signing.tsaProviders.policy')}</th>
-                            <th>{t('settings.signing.table.limits')}</th>
-                            <th>{t('settings.signing.table.actions')}</th>
+                            <ColumnHead
+                              label={t('settings.signing.source.name')}
+                              help={t('settings.signing.tsaProviders.help.name')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.table.status')}
+                              help={t('settings.signing.tsaProviders.help.status')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.source.url')}
+                              help={t('settings.signing.tsaProviders.help.url')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.source.path')}
+                              help={t('settings.signing.tsaProviders.help.path')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.tsaProviders.policy')}
+                              help={t('settings.signing.tsaProviders.help.policy')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.table.limits')}
+                              help={t('settings.signing.tsaProviders.help.limits')}
+                            />
+                            <ColumnHead
+                              label={t('settings.signing.table.actions')}
+                              help={t('settings.signing.tsaProviders.help.actions')}
+                            />
                           </tr>
                         }
                       >
@@ -2002,7 +2134,7 @@ export function SettingsPage() {
                 </Card>
               ) : null}
 
-              {sub === 'prestadores' ? (
+              {sub === 'trust-services' ? (
                 <Card title={t('settings.signing.providers.title')}>
                   <div className="form settings-rows">
                     <p className="field__hint">{t('settings.signing.providers.hint')}</p>
@@ -2010,10 +2142,22 @@ export function SettingsPage() {
                       caption={t('settings.signing.providers.caption')}
                       head={
                         <tr>
-                          <th>{t('settings.signing.table.provider')}</th>
-                          <th>{t('settings.signing.table.mode')}</th>
-                          <th>{t('settings.signing.table.status')}</th>
-                          <th>{t('settings.signing.table.notes')}</th>
+                          <ColumnHead
+                            label={t('settings.signing.table.provider')}
+                            help={t('settings.signing.providers.help.provider')}
+                          />
+                          <ColumnHead
+                            label={t('settings.signing.table.mode')}
+                            help={t('settings.signing.providers.help.mode')}
+                          />
+                          <ColumnHead
+                            label={t('settings.signing.table.status')}
+                            help={t('settings.signing.providers.help.status')}
+                          />
+                          <ColumnHead
+                            label={t('settings.signing.table.notes')}
+                            help={t('settings.signing.providers.help.notes')}
+                          />
                         </tr>
                       }
                     >
@@ -2092,26 +2236,41 @@ export function SettingsPage() {
           ) : null}
 
           {/* Gestão ------------------------------------------------------------------ */}
-          {section === 'gestao' ? (
+          {section === 'management' ? (
             <div className="stack">
               <Card title={t('settings.management.cardTitle')}>
                 <div className="form settings-rows">
+                  {/* The AI/MCP gate moved to Operações › IA e MCP, which is now its only
+                      writer. What is left here is a read-only pointer — state, not a control —
+                      so the two screens cannot disagree. Kept behind the same
+                      `canManageSettings` condition the toggle itself carried, so a reader
+                      without `settings.manage` sees exactly what they saw before: nothing. */}
                   {canManageSettings ? (
-                    <>
-                      <Toggle
-                        label={t('settings.management.ai.label')}
-                        checked={draft.ai.enabled}
-                        onChange={(v) => setAi('enabled', v)}
-                      />
-                      <p className="field__hint">{t('settings.management.ai.hint')}</p>
-                    </>
+                    <dl className="deflist deflist--tight">
+                      <div>
+                        <dt>{t('settings.management.ai.label')}</dt>
+                        <dd>
+                          <Badge tone={draft.ai.enabled ? 'ok' : 'neutral'}>
+                            {draft.ai.enabled
+                              ? t('settings.platform.enabled.yes')
+                              : t('settings.platform.enabled.no')}
+                          </Badge>{' '}
+                          {t('settings.management.ai.moved')}
+                        </dd>
+                      </div>
+                    </dl>
                   ) : null}
                   <p className="field__hint">{t('settings.management.note')}</p>
                   <div className="row-wrap">
-                    <ButtonLink to="/configuracoes?sec=utilizadores" icon={<Icon.Users />}>
+                    {canManageSettings ? (
+                      <ButtonLink to={MCP_TAB_PATH} icon={<Icon.Sliders />}>
+                        {t('settings.subnav.mcp')}
+                      </ButtonLink>
+                    ) : null}
+                    <ButtonLink to="/settings/users" icon={<Icon.Users />}>
                       {t('settings.management.usersLink')}
                     </ButtonLink>
-                    <ButtonLink to="/ferramentas" icon={<Icon.Wrench />}>
+                    <ButtonLink to="/tools" icon={<Icon.Wrench />}>
                       {t('settings.management.toolsLink')}
                     </ButtonLink>
                   </div>
@@ -2384,20 +2543,49 @@ export function SettingsPage() {
           ) : null}
 
           {/* Operações -------------------------------------------------------------- */}
-          {section === 'operacoes' ? (
+          {section === 'operations' ? (
             <div className="stack">
-              {sub === 'plataforma' ? (
+              {/* Serviços and Registos: the same panels, the same working copy, the same
+                  endpoints and the same `settings.manage` fieldset as when they were a third
+                  level inside Plataforma — only which one shows is now decided by the address
+                  rather than by component state. */}
+              {sub === 'services' || sub === 'logs' ? (
                 <div className="stack">
                   <PlatformOperationsSection
+                    tab={sub}
                     value={draft.platform}
                     audit={committed.platform.audit}
                     onChange={setPlatform}
                     logsPanel={<PlatformLogTailPanel />}
                   />
-                  {/* The connector egress boundary sits with the other platform-operations
-                      controls: it is deployment-adjacent, and `settings.manage` at Global — the
-                      highest privilege this document is gated by — is what may move it. */}
-                  <ConnectorEgressSection value={draft.connectors} onChange={setConnectors} />
+                  {/* The connector egress boundary stays with Serviços: it is deployment-adjacent,
+                      and `settings.manage` at Global — the highest privilege this document is
+                      gated by — is what may move it. */}
+                  {sub === 'services' ? (
+                    <ConnectorEgressSection value={draft.connectors} onChange={setConnectors} />
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* Base de dados and Redis (t105). Read-only environment surfaces, not editors —
+                  every value on both panes is resolved once at process start, and several embed a
+                  password. See the header comments in each file for the classification. */}
+              {sub === 'database' ? <DatabaseSection /> : null}
+              {sub === 'cache' ? <CacheSection /> : null}
+
+              {/* Gestão de dados (t105), promoted from a top-level section. STANDALONE: it manages
+                  its own data behind its own gates, so `editingLocked` leaves it alone exactly as
+                  it did when it was top-level.
+
+                  The ZK object-root declaration renders BEFORE it rather than inside it.
+                  `GestaoDadosSection` owns a SubNav of three status panes (Armazenamento / Cópias /
+                  Chaves), and an instance-configuration control is not a footnote to whichever of
+                  those happens to be open. Keeping it a sibling also keeps that file under a single
+                  writer while t104 converts its readouts to tables. */}
+              {sub === 'data' ? (
+                <div className="stack">
+                  <ZkObjectRootSection />
+                  <GestaoDadosSection />
                 </div>
               ) : null}
 
@@ -2423,6 +2611,7 @@ export function SettingsPage() {
                   aiEnabled={draft.ai.enabled}
                   canManage={canManageSettings}
                   onChange={setPlatform}
+                  onAiEnabledChange={(enabled) => setAi('enabled', enabled)}
                 />
               ) : null}
 
@@ -2431,12 +2620,12 @@ export function SettingsPage() {
                   everything else; the password and the test send are its own endpoints. */}
               {sub === 'email' ? <EmailSection email={draft.email} onChange={setEmail} /> : null}
 
-              {/* Chaves API — the API tab's second pane since t82b, but STILL its own `?sub=`
+              {/* Chaves API — the API tab's second pane since t82b, but STILL its own
                   address and still in STANDALONE_SUBSECTIONS, which is what keeps its
                   `user.manage` gating and its no-savebar/no-fieldset treatment byte-identical.
                   Its component is untouched: the plaintext secret is still shown once, on
                   create/rotate only, and the table still renders the non-secret prefix alone. */}
-              {sub === 'chaves-api' ? <ApiKeysSection /> : null}
+              {sub === 'api-keys' ? <ApiKeysSection /> : null}
             </div>
           ) : null}
 
@@ -2447,12 +2636,12 @@ export function SettingsPage() {
             a list, and two addresses for one action is a defect rather than a convenience. The
             old `?user=novo` and `?user=:id` states redirect OUT to those screens, so bookmarks
             resolve and there is exactly one place each action happens. */}
-          {section === 'utilizadores' ? (
+          {section === 'users' && sub === 'users' ? (
             selectedUser === 'novo' ? (
               <Navigate to={NEW_USER_PATH} replace />
             ) : selectedUser ? (
               // The fragment travels with the redirect: a bookmarked
-              // `?sec=utilizadores&user=u1#acesso` must still land on the access section.
+              // `/settings/users?user=u1#acesso` must still land on the access section.
               <Navigate to={editUserPath(selectedUser, hash)} replace />
             ) : (
               <UsersList />
@@ -2460,32 +2649,33 @@ export function SettingsPage() {
           ) : null}
 
           {/* Email (SMTP), Chaves API and Fornecedores de assinatura moved one level down in
-              t73 — they render inside Operações / Assinaturas above, and their old `?sec=`
+              t73 — they render inside Operações / Assinaturas above, and their old
               addresses resolve there via RETIRED_SECTIONS. */}
 
           {/* Dispositivos — companion phone pairing (wp27) -------------------------- */}
-          {section === 'dispositivos' ? <PairingPanel /> : null}
+          {section === 'devices' ? <PairingPanel /> : null}
 
           {/* Privacidade e conformidade ------------------------------------------- */}
-          {section === 'privacidade' ? <PrivacyComplianceSection /> : null}
+          {section === 'privacy' ? <PrivacyComplianceSection /> : null}
 
-          {/* Funções e permissões (t64-E6) ------------------------------------------ */}
-          {section === 'funcoes' ? <FuncoesSection /> : null}
+          {/* Funções e permissões (t64-E6) — a sub-tab of Utilizadores since t106 -------- */}
+          {/* The components are mounted, not changed: FuncoesSection still gates itself on
+              `role.manage` and DelegacoesSection on `delegation.revoke`/grantor identity, exactly
+              as they did as top-level sections. Moving where a panel hangs must not move who may
+              use it, in either direction. */}
+          {section === 'users' && sub === 'roles' ? <FuncoesSection /> : null}
 
-          {/* Delegações (t64-E6) ---------------------------------------------------- */}
-          {section === 'delegacoes' ? <DelegacoesSection /> : null}
+          {/* Delegações (t64-E6) — a sub-tab of Utilizadores since t106 ------------------ */}
+          {section === 'users' && sub === 'delegations' ? <DelegacoesSection /> : null}
 
           {/* Livros & Integridade ---------------------------------------------------- */}
-          {section === 'integridade' ? <LivrosIntegridadeSection /> : null}
-
-          {/* Gestão de Dados --------------------------------------------------------- */}
-          {section === 'dados' ? <GestaoDadosSection /> : null}
+          {section === 'integrity' ? <LivrosIntegridadeSection /> : null}
 
           {/* Sobre ------------------------------------------------------------------- */}
           {/* Name/value version facts are genuinely tabular, so they render as a table with a
               hidden caption naming it for a screen reader. Read-only throughout: an operator
               transcribes these into a support report, never edits them here. */}
-          {section === 'sobre' ? (
+          {section === 'about' ? (
             <Card title={t('settings.about.cardTitle')}>
               <Table
                 caption={t('settings.about.tableCaption')}

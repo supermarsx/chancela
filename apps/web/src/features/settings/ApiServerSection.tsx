@@ -13,7 +13,8 @@
  * is `settings.manage` working-copy state under the page's disabled fieldset. Folding the keys
  * table into this panel would put it inside that fieldset and thereby take API-key management away
  * from a `user.manage` holder who lacks `settings.manage` — a silent narrowing of who may rotate a
- * credential. The tab therefore splits: `?sub=api` is this pane, `?sub=chaves-api` is the keys
+ * credential. The tab therefore splits: `.../operations/api` is this pane and
+ * `.../operations/chaves-api` is the keys
  * pane, both under one "API" button. The keys address is unchanged, so its bookmarks and its
  * standalone (no-savebar, no-fieldset) treatment survive byte-for-byte.
  *
@@ -44,7 +45,8 @@ import {
 } from '../../ui';
 import {
   API_SERVICE_ID,
-  PLATFORM_TAB_PATH,
+  LOGS_TAB_PATH,
+  SERVICES_TAB_PATH,
   ServiceRow,
   effectiveLogLevel,
   logLevelOptions,
@@ -233,8 +235,11 @@ export function ApiServerSection({
           </div>
         </dl>
         <div className="row-wrap">
-          <ButtonLink to={PLATFORM_TAB_PATH} icon={<Icon.Power />}>
-            {t('settings.subnav.platform')}
+          <ButtonLink to={SERVICES_TAB_PATH} icon={<Icon.Power />}>
+            {t('settings.platform.tab.services')}
+          </ButtonLink>
+          <ButtonLink to={LOGS_TAB_PATH} icon={<Icon.Layers />}>
+            {t('settings.platform.tab.logs')}
           </ButtonLink>
         </div>
       </Card>

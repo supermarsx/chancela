@@ -44,8 +44,8 @@ const SOURCES = import.meta.glob('../**/*.tsx', {
  * `./Name.tsx` by the glob; the others are sections mounted by `SettingsPage` from their own
  * feature folders.
  *
- * `NewUserPage` and `EditUserPage` are the two that are not tabs: creating (`/utilizadores/novo`,
- * t71) and editing (`/utilizadores/:id`, t89) a user each live on their own route. They are listed
+ * `NewUserPage` and `EditUserPage` are the two that are not tabs: creating (`/users/new`,
+ * t71) and editing (`/users/:id`, t89) a user each live on their own route. They are listed
  * anyway because they are still the create and edit forms *for* the Utilizadores tab, and a screen
  * that does not match the tab it belongs to is exactly the inconsistency this gate exists to
  * prevent — the more so now that they are two halves of one job and must read alike.
