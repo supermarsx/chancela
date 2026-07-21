@@ -1,0 +1,80 @@
+[
+  {
+    "type": "Heading",
+    "level": 1,
+    "text": "Ata n.º 1 — Assembleia Geral"
+  },
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Aos oito dias do mês de julho de dois mil e vinte e seis, reuniu na sede social da ",
+        "bold": false,
+        "italic": false
+      },
+      {
+        "text": "Encosto Estratégico Lda",
+        "bold": true,
+        "italic": false
+      },
+      {
+        "text": " a assembleia geral de sócios, regularmente convocada.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  },
+  {
+    "type": "Heading",
+    "level": 2,
+    "text": "Ordem de trabalhos"
+  },
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Ponto único: apreciação e votação do relatório de gestão e das contas do exercício.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  },
+  {
+    "type": "Rule"
+  },
+  {
+    "type": "Heading",
+    "level": 2,
+    "text": "Deliberações"
+  },
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "O relatório de gestão foi aprovado por ",
+        "bold": false,
+        "italic": false
+      },
+      {
+        "text": "unanimidade",
+        "bold": false,
+        "italic": true
+      },
+      {
+        "text": " dos votos representados, sem qualquer voto contra e sem abstenções.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  },
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Nada mais havendo a tratar, foi encerrada a sessão, da qual se lavrou a presente ata.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  }
+]

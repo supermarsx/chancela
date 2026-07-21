@@ -1,0 +1,41 @@
+[
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Primeiro parágrafo.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  },
+  {
+    "type": "Rule"
+  },
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Segundo parágrafo.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  },
+  {
+    "type": "Rule"
+  },
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Terceiro parágrafo, com https://example.test como texto literal.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  },
+  {
+    "type": "Rule"
+  }
+]

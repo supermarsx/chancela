@@ -1,0 +1,77 @@
+[
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Texto normal, ",
+        "bold": false,
+        "italic": false
+      },
+      {
+        "text": "negrito",
+        "bold": true,
+        "italic": false
+      },
+      {
+        "text": ", ",
+        "bold": false,
+        "italic": false
+      },
+      {
+        "text": "itálico",
+        "bold": false,
+        "italic": true
+      },
+      {
+        "text": " e ",
+        "bold": false,
+        "italic": false
+      },
+      {
+        "text": "ambos",
+        "bold": true,
+        "italic": true
+      },
+      {
+        "text": " na mesma frase.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  },
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Negrito com ",
+        "bold": true,
+        "italic": false
+      },
+      {
+        "text": "itálico",
+        "bold": true,
+        "italic": true
+      },
+      {
+        "text": " no meio",
+        "bold": true,
+        "italic": false
+      },
+      {
+        "text": " e depois texto normal.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  },
+  {
+    "type": "Paragraph",
+    "runs": [
+      {
+        "text": "Uma linha continuada por quebra suave.",
+        "bold": false,
+        "italic": false
+      }
+    ]
+  }
+]

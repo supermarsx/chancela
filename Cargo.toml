@@ -108,6 +108,15 @@ tower-http = { version = "0.7", features = ["cors", "fs"] }
 # serde::Serialize record. Apache-2.0, serde-only (no new transitive-dep risk to the der-0.7 pins).
 # Pinned per plan §1-D1. See .orchestration/plans/t48.md §1.
 minijinja = "2.21.0"
+# pulldown-cmark (t74 §2): the CommonMark parser behind `chancela_templates::markdown`, which
+# compiles an operator-authored ata body into the frozen `Block` set. The version is pinned
+# EXACTLY (`=`, no caret) because the compiled `Vec<Block>` is bound into the seal preimage: a
+# patch-level change in the parser that perturbs output would change what a document says. A
+# deliberate parser bump ships as `md-block/v2` with `v1` retained; the committed golden corpus
+# (`crates/chancela-templates/golden/md-block-v1/`) fails CI first if anyone bumps it silently.
+# `default-features = false` drops the crate's HTML writer entirely — there is no HTML on this
+# path and the dependency is configured so one cannot be produced. MIT.
+pulldown-cmark = { version = "=0.13.4", default-features = false }
 # clap (t72): the argument parser for the `chancela` host-level ops CLI (`chancela-cli`). Derive
 # feature only — the whole Docker-style command tree (nested subcommands, consistent flags, --help)
 # is declared with `#[derive(Parser/Subcommand/Args)]`. No other crate uses it. MIT/Apache-2.0.

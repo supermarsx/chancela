@@ -1,0 +1,42 @@
+[
+  {
+    "type": "Heading",
+    "level": 1,
+    "text": "Nível um"
+  },
+  {
+    "type": "Heading",
+    "level": 2,
+    "text": "Nível dois"
+  },
+  {
+    "type": "Heading",
+    "level": 3,
+    "text": "Nível três"
+  },
+  {
+    "type": "Heading",
+    "level": 4,
+    "text": "Nível quatro"
+  },
+  {
+    "type": "Heading",
+    "level": 5,
+    "text": "Nível cinco"
+  },
+  {
+    "type": "Heading",
+    "level": 6,
+    "text": "Nível seis"
+  },
+  {
+    "type": "Heading",
+    "level": 1,
+    "text": "Título setext"
+  },
+  {
+    "type": "Heading",
+    "level": 2,
+    "text": "Subtítulo setext"
+  }
+]

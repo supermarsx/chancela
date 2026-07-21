@@ -33,7 +33,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub mod authoring;
+pub mod body_render;
 pub mod catalog_metadata_lint;
+pub mod markdown;
 pub mod thresholds;
 pub use thresholds::{
     LEGAL_THRESHOLDS, LegalThreshold, ThresholdValue, find_threshold, scan_threshold_references,
@@ -74,6 +76,30 @@ pub struct TemplateSpec {
     pub blocks: Vec<BlockSpec>,
     /// The locale the prose is authored in (v1: `"pt-PT"`, UX-21).
     pub locale: String,
+}
+
+/// The **canonical serialization** of a template spec — the exact bytes a spec digest is taken
+/// over (t74 §8 hardening).
+///
+/// ## Why a canonical form rather than plain `to_string`
+///
+/// The digest has to be stable for *the same template* across builds and machines, and different
+/// for *a changed template*. Serializing the struct directly would satisfy the second but not the
+/// first: `serde_json` emits struct fields in declaration order, so merely **reordering fields in
+/// the Rust source** — a refactor with no behavioural content — would change every digest and
+/// falsely accuse every shipped template of having been edited.
+///
+/// Round-tripping through [`serde_json::Value`] removes that coupling: this workspace does not
+/// enable serde_json's `preserve_order` feature, so `Value::Object` is a `BTreeMap` and keys
+/// re-serialize in sorted order regardless of declaration order. Sequence order is preserved,
+/// which is correct — `blocks` is an *ordered* layout and reordering it genuinely is a different
+/// template.
+///
+/// The digest itself is taken by the caller (the API hashes these bytes with SHA-256), so this
+/// crate stays free of a hashing dependency.
+pub fn canonical_spec_json(spec: &TemplateSpec) -> Result<String, serde_json::Error> {
+    let value = serde_json::to_value(spec)?;
+    serde_json::to_string(&value)
 }
 
 /// Where a template law reference came from.
