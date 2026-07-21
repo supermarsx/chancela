@@ -612,6 +612,84 @@ impl PostgresBackend {
             .map(|row| row.get::<_, Vec<u8>>(0)))
     }
 
+    /// Postgres twin of `Store::insert_email_delivery` (t108). A plain `INSERT` — each attempt is
+    /// its own row, so no retry overwrites the outcome it retried.
+    pub(crate) fn insert_email_delivery(
+        &self,
+        delivery: &StoredEmailDelivery,
+    ) -> Result<(), StoreError> {
+        let created_at = delivery
+            .created_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        // `tls` / `authenticated` are 0/1 in a BIGINT column on this backend; see the note in
+        // `row_to_email_delivery`.
+        let tls = delivery.tls.map(i64::from);
+        let authenticated = delivery.authenticated.map(i64::from);
+        let mut client = self.write()?;
+        client.execute(
+            "INSERT INTO email_deliveries \
+             (id, template_id, user_id, recipient, status, attempt, previous_id, token_subject, \
+              token_purpose, tls, authenticated, failure_stage, failure_kind, failure_code, \
+              failure_detail, created_at, event_seq, actor) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, \
+                     $18)",
+            &[
+                &delivery.id,
+                &delivery.template_id,
+                &delivery.user_id,
+                &delivery.recipient,
+                &delivery.status,
+                &delivery.attempt,
+                &delivery.previous_id,
+                &delivery.token_subject,
+                &delivery.token_purpose,
+                &tls,
+                &authenticated,
+                &delivery.failure_stage,
+                &delivery.failure_kind,
+                &delivery.failure_code,
+                &delivery.failure_detail,
+                &created_at,
+                &delivery.event_seq,
+                &delivery.actor,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Postgres twin of `Store::email_deliveries`.
+    pub(crate) fn email_deliveries(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<StoredEmailDelivery>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT id, template_id, user_id, recipient, status, attempt, previous_id, \
+             token_subject, token_purpose, tls, authenticated, failure_stage, failure_kind, \
+             failure_code, failure_detail, created_at, event_seq, actor \
+             FROM email_deliveries ORDER BY created_at DESC, ctid DESC LIMIT $1",
+            &[&limit],
+        )?;
+        rows.iter().map(row_to_email_delivery).collect()
+    }
+
+    /// Postgres twin of `Store::email_delivery`.
+    pub(crate) fn email_delivery(
+        &self,
+        id: &str,
+    ) -> Result<Option<StoredEmailDelivery>, StoreError> {
+        let mut client = self.read()?;
+        let row = client.query_opt(
+            "SELECT id, template_id, user_id, recipient, status, attempt, previous_id, \
+             token_subject, token_purpose, tls, authenticated, failure_stage, failure_kind, \
+             failure_code, failure_detail, created_at, event_seq, actor \
+             FROM email_deliveries WHERE id = $1",
+            &[&id],
+        )?;
+        row.as_ref().map(row_to_email_delivery).transpose()
+    }
+
     pub(crate) fn generated_document_dispatch_evidence(
         &self,
         document_id: &str,
@@ -1234,6 +1312,32 @@ pub(crate) fn row_to_document(row: &Row) -> Result<StoredDocument, StoreError> {
         pdf_bytes: row.get(6),
         // NULL for rows written before schema v24 — `None` means "no spec was recorded".
         template_spec_json: row.get(7),
+    })
+}
+
+/// Postgres twin of `crate::row_to_email_delivery` (t108).
+pub(crate) fn row_to_email_delivery(row: &Row) -> Result<StoredEmailDelivery, StoreError> {
+    Ok(StoredEmailDelivery {
+        id: row.get(0),
+        template_id: row.get(1),
+        user_id: row.get(2),
+        recipient: row.get(3),
+        status: row.get(4),
+        attempt: row.get(5),
+        previous_id: row.get(6),
+        token_subject: row.get(7),
+        token_purpose: row.get(8),
+        // 0/1 in a BIGINT column: the dialect maps SQLite `INTEGER` to `BIGINT`, so a column read
+        // as `bool` here would diverge from the SQLite backend rather than fail loudly.
+        tls: row.get::<_, Option<i64>>(9).map(|v| v != 0),
+        authenticated: row.get::<_, Option<i64>>(10).map(|v| v != 0),
+        failure_stage: row.get(11),
+        failure_kind: row.get(12),
+        failure_code: row.get(13),
+        failure_detail: row.get(14),
+        created_at: parse_rfc3339(&row.get::<_, String>(15))?,
+        event_seq: row.get(16),
+        actor: row.get(17),
     })
 }
 

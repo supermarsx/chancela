@@ -117,6 +117,7 @@ const TABLE_LADDER: &[(i64, &str)] = &[
     (20, "group_template_library_revisions"),
     (22, "pairing_devices"),
     (23, "instrument_signatures"),
+    (25, "email_deliveries"),
 ];
 
 /// Every column added by an `ALTER TABLE … ADD COLUMN` guard in `configure_and_migrate`

@@ -1124,6 +1124,73 @@ pub struct StoredDocument {
     pub template_spec_json: Option<String>,
 }
 
+/// One outbound message **attempt** and how it ended (schema v25, t108).
+///
+/// This is a **delivery record, not a queue**: a row is written after a synchronous send returns
+/// and is terminal at insert. A retry inserts a new row linked by `previous_id`; nothing here is
+/// ever updated in place, so no attempt's outcome is overwritten by a later one.
+///
+/// ## The two things this type structurally cannot hold
+///
+/// - **The rendered message.** There is no field for it, so a delivery record can never carry body
+///   content into a support thread — the same line [`SmtpTrace`](https://docs.rs) holds by
+///   summarising a body as a byte count rather than reproducing it.
+/// - **A bearer credential.** [`token_subject`](Self::token_subject) and
+///   [`token_purpose`](Self::token_purpose) say *which* credential a message carried without
+///   carrying it. This is enforced by the token design rather than by discipline: the auth-token
+///   store keeps `sha256(secret)`, so once issuance returns, no component can reproduce the secret
+///   in order to store it here. The consequence is that a token-bearing message is **not
+///   resendable** — only re-issuable, which is a different operation with different authority.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredEmailDelivery {
+    /// Identity of this attempt.
+    pub id: String,
+    /// Which message this was — e.g. `user.welcome`. Not a rendered body; a template identifier.
+    pub template_id: String,
+    /// The account the message concerns, when there is one. An invitation to an address that has
+    /// no account yet legitimately has none.
+    pub user_id: Option<String>,
+    /// Where it was addressed.
+    ///
+    /// This is the one piece of personal data in the record, and it is here — in a **mutable**
+    /// table — precisely so it can be erased on request. A hash-chained ledger event never can,
+    /// which is why the ledger records only the domain.
+    pub recipient: String,
+    /// `sent` or `failed`. There is deliberately no `queued`: nothing drains a queue, so the value
+    /// would be a promise the system does not keep.
+    pub status: String,
+    /// 1 for a first attempt, incrementing along the `previous_id` chain.
+    pub attempt: i64,
+    /// The attempt this one retried, if any.
+    pub previous_id: Option<String>,
+    /// The bearer credential's subject, never the credential. Canonical form of the auth-token
+    /// subject (a user id or an email address).
+    pub token_subject: Option<String>,
+    /// The bearer credential's purpose (invite, recovery, …), never the credential.
+    pub token_purpose: Option<String>,
+    /// Whether the session ran inside TLS. `None` when no session was established.
+    pub tls: Option<bool>,
+    /// Whether the session authenticated. `None` when no session was established.
+    pub authenticated: Option<bool>,
+    /// Where it failed: the SMTP stage vocabulary, plus `not_configured` for an attempt that never
+    /// reached a socket.
+    pub failure_stage: Option<String>,
+    /// What kind of failure it was.
+    pub failure_kind: Option<String>,
+    /// The relay's reply code, when it replied.
+    pub failure_code: Option<i64>,
+    /// **The relay's own words** — kept here and never in a ledger event, because an `RCPT TO`
+    /// rejection routinely quotes the recipient's address back and the chain cannot be erased.
+    pub failure_detail: Option<String>,
+    /// When the attempt was made.
+    pub created_at: OffsetDateTime,
+    /// The ledger event appended for this same attempt, so the immutable record and the erasable
+    /// one can be reconciled.
+    pub event_seq: Option<i64>,
+    /// The resolved ledger actor who caused the send.
+    pub actor: String,
+}
+
 /// Metadata-only dispatch evidence recorded by an operator for a generated document. This table is
 /// for generated absent-owner communications only; it does not store bytes and does not mutate the
 /// canonical generated document or sealed act.
@@ -2537,6 +2604,95 @@ impl Store {
              FROM documents WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_document)
+            .optional()?
+            .transpose()
+    }
+
+    /// Record one outbound message attempt and how it ended (t108).
+    ///
+    /// A plain `INSERT`, never an upsert: each attempt is its own row, so a retry cannot overwrite
+    /// the outcome of the attempt it retried. That is the whole reason an operator can see *that*
+    /// a first invitation bounced rather than only that a later one succeeded.
+    pub fn insert_email_delivery(&self, delivery: &StoredEmailDelivery) -> Result<(), StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.insert_email_delivery(delivery);
+        }
+        let created_at = delivery
+            .created_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let guard = self.locked_conn()?;
+        guard.execute(
+            "INSERT INTO email_deliveries \
+             (id, template_id, user_id, recipient, status, attempt, previous_id, token_subject, \
+              token_purpose, tls, authenticated, failure_stage, failure_kind, failure_code, \
+              failure_detail, created_at, event_seq, actor) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
+                     ?18)",
+            params![
+                delivery.id.as_str(),
+                delivery.template_id.as_str(),
+                delivery.user_id.as_deref(),
+                delivery.recipient.as_str(),
+                delivery.status.as_str(),
+                delivery.attempt,
+                delivery.previous_id.as_deref(),
+                delivery.token_subject.as_deref(),
+                delivery.token_purpose.as_deref(),
+                delivery.tls.map(i64::from),
+                delivery.authenticated.map(i64::from),
+                delivery.failure_stage.as_deref(),
+                delivery.failure_kind.as_deref(),
+                delivery.failure_code,
+                delivery.failure_detail.as_deref(),
+                created_at.as_str(),
+                delivery.event_seq,
+                delivery.actor.as_str(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The most recent delivery attempts, newest first, capped at `limit`.
+    ///
+    /// Bounded on purpose: the delivery history grows without limit and an admin list that read all
+    /// of it would degrade quietly as an instance ages.
+    pub fn email_deliveries(&self, limit: i64) -> Result<Vec<StoredEmailDelivery>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.email_deliveries(limit);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT id, template_id, user_id, recipient, status, attempt, previous_id, \
+             token_subject, token_purpose, tls, authenticated, failure_stage, failure_kind, \
+             failure_code, failure_detail, created_at, event_seq, actor \
+             FROM email_deliveries ORDER BY created_at DESC, rowid DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], row_to_email_delivery)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
+    /// Fetch one delivery attempt by id — the read a resend needs, to re-render from the recorded
+    /// template and subject rather than from anything the caller supplied.
+    pub fn email_delivery(&self, id: &str) -> Result<Option<StoredEmailDelivery>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.email_delivery(id);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT id, template_id, user_id, recipient, status, attempt, previous_id, \
+             token_subject, token_purpose, tls, authenticated, failure_stage, failure_kind, \
+             failure_code, failure_detail, created_at, event_seq, actor \
+             FROM email_deliveries WHERE id = ?1",
+        )?;
+        stmt.query_row(params![id], row_to_email_delivery)
             .optional()?
             .transpose()
     }
@@ -6070,6 +6226,56 @@ fn row_to_document(
             created_at: parse_rfc3339(&created_at_raw)?,
             pdf_bytes,
             template_spec_json,
+        })
+    })())
+}
+
+/// Map one `email_deliveries` row to [`StoredEmailDelivery`] (t108).
+#[allow(clippy::type_complexity)]
+fn row_to_email_delivery(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredEmailDelivery, StoreError>> {
+    let id: String = row.get(0)?;
+    let template_id: String = row.get(1)?;
+    let user_id: Option<String> = row.get(2)?;
+    let recipient: String = row.get(3)?;
+    let status: String = row.get(4)?;
+    let attempt: i64 = row.get(5)?;
+    let previous_id: Option<String> = row.get(6)?;
+    let token_subject: Option<String> = row.get(7)?;
+    let token_purpose: Option<String> = row.get(8)?;
+    // Stored as 0/1 rather than a boolean type: the SQLite→Postgres dialect maps `INTEGER` to
+    // `BIGINT`, so a column declared `INTEGER` and read as `bool` would work on one backend and
+    // fail on the other. Mapped explicitly on both sides instead.
+    let tls: Option<bool> = row.get::<_, Option<i64>>(9)?.map(|v| v != 0);
+    let authenticated: Option<bool> = row.get::<_, Option<i64>>(10)?.map(|v| v != 0);
+    let failure_stage: Option<String> = row.get(11)?;
+    let failure_kind: Option<String> = row.get(12)?;
+    let failure_code: Option<i64> = row.get(13)?;
+    let failure_detail: Option<String> = row.get(14)?;
+    let created_at_raw: String = row.get(15)?;
+    let event_seq: Option<i64> = row.get(16)?;
+    let actor: String = row.get(17)?;
+    Ok((|| {
+        Ok(StoredEmailDelivery {
+            id,
+            template_id,
+            user_id,
+            recipient,
+            status,
+            attempt,
+            previous_id,
+            token_subject,
+            token_purpose,
+            tls,
+            authenticated,
+            failure_stage,
+            failure_kind,
+            failure_code,
+            failure_detail,
+            created_at: parse_rfc3339(&created_at_raw)?,
+            event_seq,
+            actor,
         })
     })())
 }

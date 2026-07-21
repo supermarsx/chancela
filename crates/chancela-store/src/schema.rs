@@ -121,7 +121,33 @@
 ///   **Nullable on purpose:** rows written before v24 have no spec body, which is a legitimate
 ///   historical state, not corruption — nothing backfills a fabricated value, and verification
 ///   distinguishes "absent" from "wrong". Forward-only, additive.
-pub const SCHEMA_VERSION: i64 = 24;
+/// - **v25** — adds `email_deliveries` (t108): one row per outbound message *attempt*, recording
+///   what happened to it. Before this, the outcome of the only real mail the product sends was
+///   recorded nowhere durable — `create_user` called the sender inline and dropped the `Result`
+///   into a log line — so an operator could not answer "did this person receive their invitation?"
+///   at all. The ledger cannot answer it either: `Ledger::append` hashes the payload and drops the
+///   bytes, so an event records *that* a send ended, never to whom or why it failed.
+///
+///   **It is a delivery record, not a queue.** A row is written *after* a synchronous send returns
+///   and is terminal at insert — `sent` or `failed`. There is deliberately no `queued` state, and
+///   therefore no worker is implied and nothing waits for a process that does not exist. A retry
+///   writes a **new** row linked by `previous_id` rather than mutating the original, so the history
+///   of attempts is preserved rather than overwritten.
+///
+///   **Two things it structurally cannot hold.** There is no column for the rendered message, so a
+///   row can never carry body content (the same line `SmtpTrace` holds by summarising a body as a
+///   byte count). And it references a bearer credential only by `token_subject` + `token_purpose`,
+///   never the token: `AuthTokenStore` keeps `sha256(secret)`, so after issuance no component can
+///   reproduce the secret to store it. A consequence, recorded here because it is easy to
+///   re-litigate later: a token-bearing message is **not resendable**, only re-issuable.
+///
+///   `recipient` is the one piece of personal data here, and it is in a **mutable** table on
+///   purpose — it can be erased on request, which a hash-chained event never can. The relay's own
+///   failure text lives here for the same reason: it routinely quotes the recipient's address back
+///   (`550 5.1.1 <…>: Recipient address rejected`), so it must never enter the ledger.
+///   Forward-only, additive: existing databases gain the table via [`ALL`] and advance their stamp
+///   on next open.
+pub const SCHEMA_VERSION: i64 = 25;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -530,6 +556,54 @@ CREATE TABLE IF NOT EXISTS generated_document_dispatch_evidence (
 /// reads without scanning every generated document's evidence rows.
 pub const CREATE_GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ACT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_generated_document_dispatch_evidence_act ON generated_document_dispatch_evidence (act_id);";
 
+/// `email_deliveries` — one row per outbound message **attempt** and how it ended (schema v25,
+/// t108). See [`SCHEMA_VERSION`]'s v25 note for why this is a delivery record and not a queue.
+///
+/// Column notes worth having beside the DDL rather than in a log nobody reads:
+///
+/// - `status` is `sent` or `failed` only. A `queued` value would be a promise that something will
+///   drain it, and nothing does.
+/// - `attempt` / `previous_id` chain a retry to the attempt it retried. A retry inserts; it never
+///   updates, so no attempt's outcome is ever overwritten by a later one.
+/// - `failure_stage` / `failure_kind` are the SMTP vocabulary plus `not_configured` for the case
+///   that never reached a socket. `failure_detail` is the relay's own words — kept **here** and
+///   never in a ledger event, because it quotes the recipient's address back.
+/// - `token_subject` / `token_purpose` reference a bearer credential without carrying it. There is
+///   no column that could hold a token or a rendered body, which is the point.
+/// - `event_seq` links the row to the ledger event appended for the same attempt, so the immutable
+///   record and the erasable one can be reconciled.
+pub const CREATE_EMAIL_DELIVERIES: &str = "\
+CREATE TABLE IF NOT EXISTS email_deliveries (
+    id             TEXT PRIMARY KEY,
+    template_id    TEXT NOT NULL,
+    user_id        TEXT,
+    recipient      TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    attempt        INTEGER NOT NULL,
+    previous_id    TEXT,
+    token_subject  TEXT,
+    token_purpose  TEXT,
+    tls            INTEGER,
+    authenticated  INTEGER,
+    failure_stage  TEXT,
+    failure_kind   TEXT,
+    failure_code   INTEGER,
+    failure_detail TEXT,
+    created_at     TEXT NOT NULL,
+    event_seq      INTEGER,
+    actor          TEXT NOT NULL
+) STRICT;";
+
+/// Index over `email_deliveries.status` — the admin list's default read is "show me what failed",
+/// and it must not degrade into a full scan as the delivery history grows without bound.
+pub const CREATE_EMAIL_DELIVERIES_STATUS_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_email_deliveries_status ON email_deliveries (status);";
+
+/// Index over `email_deliveries.user_id` — answers "what mail has this account been sent?" from the
+/// user's own admin page without scanning every delivery ever recorded.
+pub const CREATE_EMAIL_DELIVERIES_USER_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_email_deliveries_user ON email_deliveries (user_id);";
+
 /// `paper_book_imports` — preserved historical paper-book import packages (schema v8).
 ///
 /// This table retains the operator-supplied scan/package bytes with fixity and descriptive
@@ -920,6 +994,9 @@ pub const ALL: &[&str] = &[
     CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS,
     CREATE_GROUP_TEMPLATE_LIBRARY_REVISIONS_LIBRARY_IDX,
     CREATE_PAIRING_DEVICES,
+    CREATE_EMAIL_DELIVERIES,
+    CREATE_EMAIL_DELIVERIES_STATUS_IDX,
+    CREATE_EMAIL_DELIVERIES_USER_IDX,
 ];
 
 /// Every application table a **Postgres logical backup** exports and restores, in a stable order
@@ -977,6 +1054,10 @@ pub const LOGICAL_BACKUP_TABLES: &[&str] = &[
     "company_groups",
     "group_template_libraries",
     "group_template_library_revisions",
+    // Added with the table itself (v25), not after the third time this list was found short: a
+    // delivery history missing from a Postgres restore would leave an instance unable to say what
+    // mail it had ever sent, while the same restore on SQLite kept every row.
+    "email_deliveries",
 ];
 
 /// The table names the DDL declares, parsed out of `CREATE TABLE IF NOT EXISTS <name>`. Index
