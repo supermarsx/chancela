@@ -4,7 +4,7 @@
  * its own dedicated route (`/entidades/nova`, `/entidades/importar`) — so the list is no
  * longer squeezed by an always-visible aside form (t13 items 1–2).
  */
-import { useDeferredValue, useMemo, useState, type ReactNode } from 'react';
+import { useDeferredValue, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useBooks, useEntities, useSettings } from '../../api/hooks';
 import {
@@ -30,9 +30,11 @@ import {
   type RegisteredEntityColumn,
 } from '../../api/types';
 import { t as translateNow, useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
+import { NO_DATE, formatDate, formatTimestamp } from '../../format';
 import {
   Badge,
   Card,
+  DateOnly,
   EmptyState,
   ErrorNote,
   Field,
@@ -273,20 +275,14 @@ export function activityCategory(kind: string): Exclude<ActivityFilter, 'all' | 
   return 'other';
 }
 
-export function formatActivityTimestamp(value: string, locale: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(date);
-}
-
-export function formatActivityDate(value: string, locale: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(date);
-}
-
-export function formatDateValue(value: string | null | undefined, fallback = '—'): string {
-  return value ?? fallback;
+/**
+ * A registry field that is a calendar day (constitution date, validity, retrieval). These
+ * used to be echoed to the page verbatim, which is how a raw wire date reached a reader;
+ * they now go through the shared locale-aware formatter like everything else.
+ */
+export function formatDateValue(value: string | null | undefined, fallback = NO_DATE): string {
+  if (value === null || value === undefined || value === '') return fallback;
+  return formatDate(value);
 }
 
 export function caeLabel(cae: EntityRegistrySummary['cae'][number]): string {
@@ -328,9 +324,11 @@ export function indexBooksByEntity(books: BookView[] | undefined): Map<string, B
 }
 
 export function bookDateSummary(book: BookView): string {
-  const opened = book.opening_date ? `Aberto em ${book.opening_date}` : 'Sem data de abertura';
+  const opened = book.opening_date
+    ? `Aberto em ${formatDate(book.opening_date)}`
+    : 'Sem data de abertura';
   if (!book.closing_date) return opened;
-  return `${opened} · Encerrado em ${book.closing_date}`;
+  return `${opened} · Encerrado em ${formatDate(book.closing_date)}`;
 }
 
 export function emptyBookStateCounts(): Record<BookState, number> {
@@ -617,13 +615,7 @@ function BookSummary({
   );
 }
 
-function ActivitySummary({
-  activity,
-  locale,
-}: {
-  activity: LedgerEventView | null;
-  locale: string;
-}) {
+function ActivitySummary({ activity }: { activity: LedgerEventView | null }) {
   if (!activity) {
     return (
       <CellLine title={translateNow('uiLiteral.entitiesPage.semAtividadeNoArquivo')}>
@@ -633,20 +625,20 @@ function ActivitySummary({
       </CellLine>
     );
   }
-  const timestamp = formatActivityTimestamp(activity.timestamp, locale);
-  const activityDate = formatActivityDate(activity.timestamp, locale);
   // The wire id joins the hover line: it is what the Arquivo "Tipo de evento" filter takes.
+  // The hover carries the full evidentiary instant; the cell itself stays a compact date,
+  // because this column is scanned, not read.
   const title = joinCellParts([
     activityLabel(activity.kind),
     activity.kind,
-    timestamp,
+    formatTimestamp(activity.timestamp),
     activity.actor,
   ]);
   return (
     <CellLine title={title} className="entity-cell-line--compact entity-cell-line--activity">
       <Badge tone={activityTone(activity.kind)}>{activityLabel(activity.kind)}</Badge>
       <span className="entity-cell-line__text muted">
-        <time dateTime={activity.timestamp}>{activityDate}</time>
+        <DateOnly value={activity.timestamp} />
       </span>
     </CellLine>
   );
@@ -703,6 +695,42 @@ function LastRegistryChange({ registry }: { registry: EntityRegistrySummary | nu
   );
 }
 
+/**
+ * The width token each column consumes (declared on `.entities-table` in the theme).
+ * `Name` is the one column left `auto` so it absorbs the table's slack; its token is
+ * therefore only a FLOOR, and it takes part in the sum below like every other column.
+ */
+const ENTITY_COLUMN_WIDTH_VARS: Record<RegisteredEntityColumn, string> = {
+  Name: '--ec-name',
+  Nipc: '--ec-nipc',
+  Seat: '--ec-seat',
+  Type: '--ec-type',
+  Matricula: '--ec-matricula',
+  Constitution: '--ec-constitution',
+  Capital: '--ec-capital',
+  Cae: '--ec-cae',
+  Registry: '--ec-registry',
+  LastRegistryChange: '--ec-last-registry-change',
+  FiscalYearEnd: '--ec-fiscal-year-end',
+  LastBook: '--ec-last-book',
+  LastActivity: '--ec-last-activity',
+  Actions: '--ec-actions',
+};
+
+/**
+ * The narrowest the table may become before `.table-wrap` scrolls instead of crushing.
+ *
+ * The column set is a user setting (five by default, up to fourteen), so this floor
+ * cannot live in the stylesheet as a constant the way the Minutas catalog's `62rem`
+ * can — it is the sum of the visible columns' own width tokens. Composed as a `calc()`
+ * over the CSS custom properties rather than in JS, so the widths stay declared in ONE
+ * place (the theme) and a token change needs no matching change here.
+ */
+function tableFloor(columns: readonly RegisteredEntityColumn[]): string {
+  const terms = columns.map((column) => `var(${ENTITY_COLUMN_WIDTH_VARS[column]})`);
+  return `calc(${terms.join(' + ')})`;
+}
+
 function normalizeVisibleColumns(
   columns: readonly RegisteredEntityColumn[],
 ): RegisteredEntityColumn[] {
@@ -723,7 +751,6 @@ function EntityColumnCell({
   lastBook,
   stateCounts,
   activity,
-  locale,
   loadingBooks,
   booksError,
   onOpen,
@@ -736,7 +763,6 @@ function EntityColumnCell({
   lastBook: BookView | null;
   stateCounts: Record<BookState, number>;
   activity: LedgerEventView | null;
-  locale: string;
   loadingBooks: boolean;
   booksError: unknown;
   onOpen: () => void;
@@ -837,7 +863,7 @@ function EntityColumnCell({
     case 'LastActivity':
       return (
         <EntityTableCell column={column}>
-          <ActivitySummary activity={activity} locale={locale} />
+          <ActivitySummary activity={activity} />
         </EntityTableCell>
       );
     case 'Actions':
@@ -1184,7 +1210,10 @@ export function EntitiesPage() {
                 <p>{t('entities.filters.empty.body')}</p>
               </EmptyState>
             ) : (
-              <div className="entities-table">
+              <div
+                className="entities-table"
+                style={{ '--entities-table-floor': tableFloor(visibleColumns) } as CSSProperties}
+              >
                 <Table
                   head={
                     <tr>
@@ -1220,7 +1249,6 @@ export function EntitiesPage() {
                             lastBook={lastBook}
                             stateCounts={stateCounts}
                             activity={activity}
-                            locale={locale}
                             loadingBooks={!hasActivitySummary && books.isLoading}
                             booksError={hasActivitySummary ? null : books.error}
                             onOpen={() => navigate(`/entidades/${ent.id}`)}

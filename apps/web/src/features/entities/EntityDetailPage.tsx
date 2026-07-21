@@ -1,15 +1,28 @@
 /**
- * A single entity, full width. Its "Registo comercial" provenance now spans the whole
- * column (t13 item 3), with the certidão import moved behind a neat button that opens
- * `/entidades/:id/importar`. Opening a book against this entity is likewise a neat
- * button that carries the entity through to the open-book page.
+ * A single entity, full width, split into sub-tabs: Livros · Identificação ·
+ * Exercício fiscal · Registo comercial · Inscrições e averbamentos · Cronologia e grafo.
+ *
+ * Seventh surface on the shared `<SubNav>` (`apps/web/src/ui/SubNav.tsx`) + the `?sec=`
+ * deep-link convention established by Configurações and reused by Ferramentas, Privacidade,
+ * o livro (t25), o arquivo (t32) and o validador PDF (t35). Same `route-transition` fade
+ * keyed on the active id, same "the default section carries no `sec` param" rule
+ * (`/entidades/:id` still lands on Livros), same deliberate `role="group"` + `aria-pressed`
+ * semantics rather than an ARIA tablist — that divergence belongs in `SubNav` for all seven
+ * surfaces at once, not here.
+ *
+ * Unlike the book sub-nav, selecting a tab **pushes** a history entry: browser Back returns
+ * to the previous tab instead of leaving the entity, which is the trap t34 had to undo in
+ * the legislação reader.
+ *
+ * The certidão import stays a neat button on the Registo comercial tab (`/entidades/:id/importar`);
+ * opening a book is likewise a button on Livros that carries the entity through.
  */
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useBooks, useEntity, useUpdateEntity } from '../../api/hooks';
 import { entityFamilyLabels, entityKindLabels } from '../../api/labels';
 import type { Entity } from '../../api/types';
-import { useT, type TFunction } from '../../i18n';
+import { useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Card,
   ErrorNote,
@@ -21,9 +34,16 @@ import {
   Skeleton,
   SkeletonDeflist,
   SkeletonTable,
+  SubNav,
   useToast,
 } from '../../ui';
-import { GateButton, GateButtonLink, scopeEntity } from '../session/permissions';
+import {
+  GateButton,
+  GateButtonLink,
+  PermissionDeniedNote,
+  scopeEntity,
+  useCan,
+} from '../session/permissions';
 import { BooksTable } from '../books/BooksTable';
 import { RegistryProvenance } from '../registry/RegistryProvenance';
 import { EntityChronologyPanel } from './EntityChronologyPanel';
@@ -32,6 +52,32 @@ import { NipcBadge } from './NipcBadge';
 import { PrintButton } from './PrintButton';
 import { EntityPrintDocument } from './EntityPrintDocument';
 import { entityFieldHelp } from './fieldHelp';
+
+/**
+ * The entity sub-tabs, in the order the operator asked for. Labels reuse the section titles
+ * they head, exactly as the Configurações and Livros sub-navs do; only "Inscrições e
+ * averbamentos" gets a shorter label than its card, whose title is the full
+ * "Inscrições, averbamentos e anotações".
+ */
+type EntitySection =
+  | 'livros'
+  | 'identificacao'
+  | 'fiscal'
+  | 'registo'
+  | 'inscricoes'
+  | 'cronologia';
+
+const ENTITY_SECTIONS: { id: EntitySection; label: MessageKey; icon: ReactNode }[] = [
+  { id: 'livros', label: 'entities.booksCard', icon: <Icon.BookClosed /> },
+  { id: 'identificacao', label: 'entities.identificationCard', icon: <Icon.IdCard /> },
+  { id: 'fiscal', label: 'entities.fiscalYearEnd.cardTitle', icon: <Icon.Calendar /> },
+  { id: 'registo', label: 'entities.registrySection', icon: <Icon.Seal /> },
+  { id: 'inscricoes', label: 'entities.subnav.inscricoes', icon: <Icon.Layers /> },
+  { id: 'cronologia', label: 'entities.chronology.title', icon: <Icon.Shuffle /> },
+];
+
+const isEntitySection = (value: string | null): value is EntitySection =>
+  ENTITY_SECTIONS.some((section) => section.id === value);
 
 function displayFiscalYearEnd(value: string | null | undefined, t: TFunction) {
   return value ? value : t('entities.fiscalYearEnd.default');
@@ -150,9 +196,28 @@ function FiscalYearEndEditor({ entity }: { entity: Entity }) {
 
 export function EntityDetailPage() {
   const t = useT();
+  const can = useCan();
   const { id = '' } = useParams();
+  const [params, setParams] = useSearchParams();
+  // Livros is the default and carries no `sec` param, so `/entidades/:id` still lands on it.
+  const secParam = params.get('sec');
+  const section: EntitySection = isEntitySection(secParam) ? secParam : 'livros';
+  // A PUSH, not a replace: the tab is a place the operator navigated to, so browser Back
+  // must return to the previous tab rather than leaving the entity altogether (t34).
+  const selectSection = (next: EntitySection) =>
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next === 'livros') p.delete('sec');
+      else p.set('sec', next);
+      return p;
+    });
+
+  // `GET /v1/books` is gated `book.read@Global`, which a principal holding only
+  // `entity.read` on this entity may not have. Don't fire a request we know would 403 —
+  // the Livros tab renders a permission note instead (the book-detail retention pattern).
+  const canReadBooks = can('book.read');
   const entity = useEntity(id);
-  const books = useBooks(id);
+  const books = useBooks(id, canReadBooks);
 
   if (entity.isLoading) {
     return (
@@ -182,95 +247,127 @@ export function EntityDetailPage() {
         }
         title={ent.name}
         actions={<PrintButton />}
-      />
-
-      <Card title={t('entities.identificationCard')}>
-        <dl className="deflist">
-          <div>
-            <dt>
-              <HelpTerm label={t('entities.field.nipc')} help={entityFieldHelp.nipc} />
-            </dt>
-            <dd>
-              <span className="nipc-cell">
-                <code className="mono">{ent.nipc}</code>
-                {!ent.nipc_validated ? <NipcBadge /> : null}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt>
-              <HelpTerm label={t('entities.field.seat')} help={entityFieldHelp.seat} />
-            </dt>
-            <dd>{ent.seat}</dd>
-          </div>
-          <div>
-            <dt>
-              <HelpTerm label={t('entities.field.legalForm')} help={entityFieldHelp.legalForm} />
-            </dt>
-            <dd>{entityKindLabels[ent.kind]}</dd>
-          </div>
-          <div>
-            <dt>{t('entities.field.family')}</dt>
-            <dd>{entityFamilyLabels[ent.family]}</dd>
-          </div>
-          <div>
-            <dt>
-              <HelpTerm
-                label={t('entities.fiscalYearEnd.fieldLabel')}
-                help={entityFieldHelp.fiscalYearEnd}
-              />
-            </dt>
-            <dd>
-              <code className="mono">{displayFiscalYearEnd(ent.fiscal_year_end, t)}</code>
-            </dd>
-          </div>
-        </dl>
-      </Card>
-
-      <FiscalYearEndEditor entity={ent} />
-      <EntityStatuteEditor entity={ent} />
-
-      <section className="stack">
-        <div className="section-head">
-          <h3 className="section-subtitle">{t('entities.registrySection')}</h3>
-          <GateButtonLink
-            perm="entity.registry.import"
-            scope={scopeEntity(ent.id)}
-            to={`/entidades/${ent.id}/importar`}
-            icon={<Icon.Tray />}
-          >
-            {t('entities.importButton')}
-          </GateButtonLink>
-        </div>
-        <RegistryProvenance entityId={ent.id} />
-      </section>
-
-      <EntityChronologyPanel entityId={ent.id} />
-
-      <Card
-        title={t('entities.booksCard')}
-        actions={
-          <GateButtonLink
-            perm="book.open"
-            scope={scopeEntity(ent.id)}
-            to={`/livros/novo?entidade=${ent.id}`}
-            variant="primary"
-            icon={<Icon.BookPlus />}
-          >
-            {t('entities.openBookButton')}
-          </GateButtonLink>
-        }
       >
-        {books.isLoading ? (
-          <SkeletonTable cols={5} />
-        ) : books.error ? (
-          <ErrorNote error={books.error} />
-        ) : (
-          <BooksTable books={books.data ?? []} />
-        )}
-      </Card>
+        <SubNav
+          items={ENTITY_SECTIONS.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
+          active={section}
+          onSelect={selectSection}
+          ariaLabel={t('entities.subnav.aria')}
+        />
+      </PageHeader>
 
-      {/* Print-only filing abstract (portaled to <body>, hidden on screen). */}
+      {/* One section at a time; the panel replays the route-enter fade on each switch. */}
+      <div className="route-transition stack" key={section}>
+        {section === 'livros' ? (
+          <Card
+            title={t('entities.booksCard')}
+            actions={
+              <GateButtonLink
+                perm="book.open"
+                scope={scopeEntity(ent.id)}
+                to={`/livros/novo?entidade=${ent.id}`}
+                variant="primary"
+                icon={<Icon.BookPlus />}
+              >
+                {t('entities.openBookButton')}
+              </GateButtonLink>
+            }
+          >
+            {!canReadBooks ? (
+              <PermissionDeniedNote />
+            ) : books.isLoading ? (
+              <SkeletonTable cols={5} />
+            ) : books.error ? (
+              <ErrorNote error={books.error} />
+            ) : (
+              <BooksTable books={books.data ?? []} />
+            )}
+          </Card>
+        ) : null}
+
+        {section === 'identificacao' ? (
+          <>
+            <Card title={t('entities.identificationCard')}>
+              <dl className="deflist">
+                <div>
+                  <dt>
+                    <HelpTerm label={t('entities.field.nipc')} help={entityFieldHelp.nipc} />
+                  </dt>
+                  <dd>
+                    <span className="nipc-cell">
+                      <code className="mono">{ent.nipc}</code>
+                      {!ent.nipc_validated ? <NipcBadge /> : null}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    <HelpTerm label={t('entities.field.seat')} help={entityFieldHelp.seat} />
+                  </dt>
+                  <dd>{ent.seat}</dd>
+                </div>
+                <div>
+                  <dt>
+                    <HelpTerm
+                      label={t('entities.field.legalForm')}
+                      help={entityFieldHelp.legalForm}
+                    />
+                  </dt>
+                  <dd>{entityKindLabels[ent.kind]}</dd>
+                </div>
+                <div>
+                  <dt>{t('entities.field.family')}</dt>
+                  <dd>{entityFamilyLabels[ent.family]}</dd>
+                </div>
+                <div>
+                  <dt>
+                    <HelpTerm
+                      label={t('entities.fiscalYearEnd.fieldLabel')}
+                      help={entityFieldHelp.fiscalYearEnd}
+                    />
+                  </dt>
+                  <dd>
+                    <code className="mono">{displayFiscalYearEnd(ent.fiscal_year_end, t)}</code>
+                  </dd>
+                </div>
+              </dl>
+            </Card>
+            {/* Estatutos has no tab of its own in the requested set. It lives here because it
+                is the rest of "what this entity is": the derived compliance profile (rule pack,
+                family, allowed channels, signature policy) plus the statute overlay that
+                tightens the legal minimums. */}
+            <EntityStatuteEditor entity={ent} />
+          </>
+        ) : null}
+
+        {section === 'fiscal' ? <FiscalYearEndEditor entity={ent} /> : null}
+
+        {section === 'registo' ? (
+          <section className="stack">
+            <div className="section-head">
+              <h3 className="section-subtitle">{t('entities.registrySection')}</h3>
+              <GateButtonLink
+                perm="entity.registry.import"
+                scope={scopeEntity(ent.id)}
+                to={`/entidades/${ent.id}/importar`}
+                icon={<Icon.Tray />}
+              >
+                {t('entities.importButton')}
+              </GateButtonLink>
+            </div>
+            <RegistryProvenance entityId={ent.id} part="commercial" />
+          </section>
+        ) : null}
+
+        {section === 'inscricoes' ? (
+          <RegistryProvenance entityId={ent.id} part="inscriptions" />
+        ) : null}
+
+        {section === 'cronologia' ? <EntityChronologyPanel entityId={ent.id} /> : null}
+      </div>
+
+      {/* Print-only filing abstract (portaled to <body>, hidden on screen). Kept outside the
+          tab panel so "Imprimir" yields the whole filing abstract from any tab. */}
       <EntityPrintDocument entityId={ent.id} />
     </div>
   );

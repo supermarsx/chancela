@@ -16,8 +16,9 @@
  * back to the raw text. Every value is best-effort — an absent field is simply omitted.
  */
 import type { ReactNode } from 'react';
+import { formatDate } from '../../format';
 import { useT } from '../../i18n';
-import { Badge, FieldHelp, Table, Truncate } from '../../ui';
+import { Badge, DateOnly, FieldHelp, Table, Truncate } from '../../ui';
 import { registryFieldHelp } from './fieldHelp';
 import type {
   AddressView,
@@ -236,7 +237,9 @@ function ConstitutionCard({
           term={t('registry.detail.deliberationDate')}
           help={registryFieldHelp.deliberationDate}
         >
-          {payload.deliberation_date}
+          {/* The server normalizes every parsed certidão date to ISO; it is a calendar day, so
+              it renders date-only rather than as a raw `2026-05-11`. */}
+          {payload.deliberation_date ? <DateOnly value={payload.deliberation_date} /> : null}
         </DefRow>
       </dl>
 
@@ -287,7 +290,7 @@ function DesignationCard({
             term={t('registry.detail.deliberationDate')}
             help={registryFieldHelp.deliberationDate}
           >
-            {payload.deliberation_date}
+            <DateOnly value={payload.deliberation_date} />
           </DefRow>
         </dl>
       ) : null}
@@ -306,7 +309,9 @@ function CessationCard({
       {payload.members.length > 0 ? <MemberList members={payload.members} /> : null}
       <dl className="deflist deflist--pairs">
         <DefRow term={t('registry.detail.cessationCause')}>{payload.cause}</DefRow>
-        <DefRow term={t('registry.detail.cessationDate')}>{payload.date}</DefRow>
+        <DefRow term={t('registry.detail.cessationDate')}>
+          {payload.date ? <DateOnly value={payload.date} /> : null}
+        </DefRow>
       </dl>
     </div>
   );
@@ -331,7 +336,7 @@ function AmendmentCard({
           term={t('registry.detail.deliberationDate')}
           help={registryFieldHelp.deliberationDate}
         >
-          {payload.deliberation_date}
+          {payload.deliberation_date ? <DateOnly value={payload.deliberation_date} /> : null}
         </DefRow>
         <DefRow term={t('registry.detail.newObjecto')} help={registryFieldHelp.objeto} wide>
           {payload.new_objecto}
@@ -368,7 +373,9 @@ function ApresentacaoLine({ apresentacao }: { apresentacao: ApresentacaoView }) 
   const t = useT();
   const stub = [
     apresentacao.number ? `AP. ${apresentacao.number}` : null,
-    apresentacao.date,
+    // The parsed apresentação day (ISO from the server) and its clock time are separate fields;
+    // only the day goes through the shared date formatter, the time is printed as recorded.
+    apresentacao.date ? formatDate(apresentacao.date) : null,
     apresentacao.time,
   ]
     .filter(Boolean)
@@ -450,11 +457,7 @@ export function AnotacoesList({ anotacoes }: { anotacoes: RegistryAnnotationView
             <span className="registry-anotacao__num mono">
               {a.number ? t('registry.anotacoes.item', { number: a.number }) : `#${i + 1}`}
             </span>
-            {a.date ? (
-              <time className="registry-anotacao__date mono" dateTime={a.date}>
-                {a.date}
-              </time>
-            ) : null}
+            {a.date ? <DateOnly value={a.date} className="registry-anotacao__date mono" /> : null}
           </div>
           <p className="registry-anotacao__text">{a.text}</p>
           {a.publication_url ? (

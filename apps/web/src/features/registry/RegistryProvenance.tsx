@@ -11,13 +11,28 @@
  *
  * The provenance only ever carries the masked code; the full código de acesso is never
  * present in this response and so never reaches the DOM.
+ *
+ * `part` selects which of those groups to render (see {@link RegistryPart}); it defaults to
+ * the whole document, so call-sites that want one column are unchanged.
  */
 import { useParams } from 'react-router-dom';
 import { useEntityRegistry } from '../../api/hooks';
 import { legalFormLabel } from '../../api/labels';
 import { ApiError } from '../../api/client';
+import { formatDate } from '../../format';
 import { useT } from '../../i18n';
-import { Badge, Card, Digest, EmptyState, ErrorNote, FieldHelp, Loading, Truncate } from '../../ui';
+import {
+  Badge,
+  Card,
+  DateOnly,
+  DateTime,
+  Digest,
+  EmptyState,
+  ErrorNote,
+  FieldHelp,
+  Loading,
+  Truncate,
+} from '../../ui';
 import { CaeRefList } from '../cae/CaeRefList';
 import { AnotacoesList, InscriptionDetailBody } from './InscriptionDetail';
 import { registryFieldHelp } from './fieldHelp';
@@ -77,11 +92,13 @@ function Officer({ officer }: { officer: RegistryOfficerView }) {
         )}
       </div>
       <p className="registry-officer__dates muted">
+        {/* Appointment/cessation are calendar days the server already normalized to ISO; they go
+            through the shared formatter as the `date` interpolation rather than raw. */}
         {officer.appointment_date
-          ? t('registry.officer.appointment', { date: officer.appointment_date })
+          ? t('registry.officer.appointment', { date: formatDate(officer.appointment_date) })
           : t('registry.officer.appointmentNone')}
         {officer.cessation_date
-          ? ` · ${t('registry.officer.cessation', { date: officer.cessation_date })}`
+          ? ` · ${t('registry.officer.cessation', { date: formatDate(officer.cessation_date) })}`
           : null}
         {officer.source_event
           ? ` · ${t('registry.officer.inscricao', { event: officer.source_event })}`
@@ -107,9 +124,7 @@ function Inscricao({ event, index }: { event: RegistryEventView; index: number }
         <span className="registry-inscricao__num">{event.number ?? `#${index + 1}`}</span>
         {event.kind_hint ? <Badge tone="accent">{event.kind_hint}</Badge> : null}
         {event.date ? (
-          <time className="registry-inscricao__date mono" dateTime={event.date}>
-            {event.date}
-          </time>
+          <DateOnly value={event.date} className="registry-inscricao__date mono" />
         ) : null}
       </div>
       {event.detail ? (
@@ -155,21 +170,36 @@ function ValidityBadge({ provenance }: { provenance: RegistryProvenanceView }) {
   return null;
 }
 
-function ExtractBody({ extract }: { extract: RegistryExtractView }) {
+/**
+ * Which slice of the extract to render. The entity detail page splits the certidão across
+ * two sub-tabs — `commercial` (where the data came from and what it said) and
+ * `inscriptions` (the event feed) — while every other call-site keeps the whole document
+ * in one column with `all`.
+ */
+export type RegistryPart = 'all' | 'commercial' | 'inscriptions';
+
+/**
+ * Proveniência · Dados do registo · Órgãos sociais — where the certidão came from and the
+ * identification it carried. One coherent group: the "Dados do registo" card is the payload
+ * the provenance above it vouches for.
+ */
+function CommercialCards({ extract }: { extract: RegistryExtractView }) {
   const t = useT();
   const p = extract.provenance;
   const formaJuridica =
     extract.forma_juridica ?? (extract.legal_form ? legalFormLabel(extract.legal_form) : null);
 
   return (
-    <div className="stack">
+    <>
       <Card title={t('registry.provenance.title')} actions={<ValidityBadge provenance={p} />}>
         <dl className="deflist">
           <Row term={t('registry.provenance.accessCode')} help={registryFieldHelp.accessCodeMasked}>
             <code className="mono">{p.access_code_masked}</code>
           </Row>
           <Row term={t('registry.provenance.retrievedAt')} help={registryFieldHelp.retrievedAt}>
-            <span className="mono">{p.retrieved_at}</span>
+            {/* The retrieval instant is the audit trail for this import — evidentiary, so it
+                carries seconds and the zone, with the exact stamp in the `datetime` attribute. */}
+            <DateTime value={p.retrieved_at} evidentiary className="mono" />
           </Row>
           <Row term={t('registry.provenance.conservatoria')} help={registryFieldHelp.conservatoria}>
             {p.conservatoria}
@@ -178,10 +208,10 @@ function ExtractBody({ extract }: { extract: RegistryExtractView }) {
             {p.oficial}
           </Row>
           <Row term={t('registry.provenance.subscribedOn')} help={registryFieldHelp.subscribedOn}>
-            {p.subscribed_on ? <span className="mono">{p.subscribed_on}</span> : null}
+            {p.subscribed_on ? <DateOnly value={p.subscribed_on} className="mono" /> : null}
           </Row>
           <Row term={t('registry.provenance.validUntil')} help={registryFieldHelp.validUntil}>
-            {p.valid_until ? <span className="mono">{p.valid_until}</span> : null}
+            {p.valid_until ? <DateOnly value={p.valid_until} className="mono" /> : null}
           </Row>
           <Row term={t('registry.provenance.source')} help={registryFieldHelp.source}>
             <Truncate text={p.source_url} href={p.source_url} mono />
@@ -210,7 +240,7 @@ function ExtractBody({ extract }: { extract: RegistryExtractView }) {
             term={t('registry.field.dataConstituicao')}
             help={registryFieldHelp.dataConstituicao}
           >
-            {extract.data_constituicao}
+            {extract.data_constituicao ? <DateOnly value={extract.data_constituicao} /> : null}
           </Row>
           <Row term={t('registry.field.capital')} help={registryFieldHelp.capital}>
             {extract.capital}
@@ -236,7 +266,29 @@ function ExtractBody({ extract }: { extract: RegistryExtractView }) {
           </ul>
         </Card>
       ) : null}
+    </>
+  );
+}
 
+/**
+ * The event feed: the numbered inscrições/averbamentos in printed order, followed by the
+ * anotações. Anotações stay beside them rather than in a tab of their own — they are marginal
+ * notes on the same certidão (the list card is already titled "Inscrições, averbamentos e
+ * anotações") and reading one without the other loses the cross-reference.
+ *
+ * When `standalone`, the anotações card always renders — with an honest empty line when the
+ * certidão carried none — because it heads a named section the operator navigated to.
+ */
+function InscriptionCards({
+  extract,
+  standalone,
+}: {
+  extract: RegistryExtractView;
+  standalone: boolean;
+}) {
+  const t = useT();
+  return (
+    <>
       <Card title={t('registry.inscricoes.title')}>
         {extract.inscricoes.length === 0 ? (
           <p className="muted">{t('registry.inscricoes.emptyLegible')}</p>
@@ -253,12 +305,33 @@ function ExtractBody({ extract }: { extract: RegistryExtractView }) {
         <Card title={t('registry.anotacoes.title')}>
           <AnotacoesList anotacoes={extract.anotacoes} />
         </Card>
+      ) : standalone ? (
+        <Card title={t('registry.anotacoes.title')}>
+          <p className="muted">{t('registry.anotacoes.empty')}</p>
+        </Card>
+      ) : null}
+    </>
+  );
+}
+
+function ExtractBody({ extract, part }: { extract: RegistryExtractView; part: RegistryPart }) {
+  return (
+    <div className="stack">
+      {part !== 'inscriptions' ? <CommercialCards extract={extract} /> : null}
+      {part !== 'commercial' ? (
+        <InscriptionCards extract={extract} standalone={part === 'inscriptions'} />
       ) : null}
     </div>
   );
 }
 
-export function RegistryProvenance({ entityId }: { entityId: string }) {
+export function RegistryProvenance({
+  entityId,
+  part = 'all',
+}: {
+  entityId: string;
+  part?: RegistryPart;
+}) {
   const t = useT();
   const { id: routeId = '' } = useParams();
   const id = entityId || routeId;
@@ -285,5 +358,5 @@ export function RegistryProvenance({ entityId }: { entityId: string }) {
   }
 
   if (!registry.data) return null;
-  return <ExtractBody extract={registry.data} />;
+  return <ExtractBody extract={registry.data} part={part} />;
 }

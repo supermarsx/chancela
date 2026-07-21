@@ -13,6 +13,7 @@ import {
   Badge,
   Button,
   Card,
+  DateOnly,
   EmptyState,
   ErrorNote,
   Icon,
@@ -126,9 +127,8 @@ function ChronologyVisualTimeline({
           <div className="chronology-rail__body">
             <div className="chronology-rail__head">
               {event.date ? (
-                <time className="mono" dateTime={event.date}>
-                  {event.date}
-                </time>
+                // A registry event is a calendar DAY, not an instant: no time component.
+                <DateOnly value={event.date} className="mono" />
               ) : (
                 <span className="muted">{t('entities.chronology.none')}</span>
               )}
@@ -170,9 +170,7 @@ function ChronologyTimeline({ view, t }: { view: EntityChronologyView; t: TFunct
             <tr key={`${event.source_inscription}-${event.kind}-${event.date ?? index}`}>
               <td>
                 {event.date ? (
-                  <time className="mono" dateTime={event.date}>
-                    {event.date}
-                  </time>
+                  <DateOnly value={event.date} className="mono" />
                 ) : (
                   t('entities.chronology.none')
                 )}
@@ -399,13 +397,7 @@ function SealedActProjectionSection({
             {projection.events.map((event, index) => (
               <tr key={`${event.act_id}-${event.kind}-${index}`}>
                 <td>
-                  {event.date ? (
-                    <time className="mono" dateTime={event.date}>
-                      {event.date}
-                    </time>
-                  ) : (
-                    '—'
-                  )}
+                  <DateOnly value={event.date} className="mono" />
                 </td>
                 <td>
                   <code className="mono">{event.kind}</code>

@@ -10977,3 +10977,66 @@ input[type='radio']:disabled {
 .color-customizer__status {
   align-self: center;
 }
+
+/* --- SMTP test-send technical detail (t70) -------------------------------------------------
+   The expandable protocol trace beneath the test-send summary in the email settings card.
+   Follows the `.entities-advanced-filters` disclosure idiom rather than inventing a second one:
+   a small uppercase accent summary, body revealed on open. */
+
+.trace-detail {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.trace-detail > summary {
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.trace-detail[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+.trace-detail h4 {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 0.4rem;
+}
+
+.trace-capabilities {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.trace-capabilities code {
+  border: 1px solid var(--border);
+  padding: 0.1rem 0.35rem;
+}
+
+/* The conversation. Scrolls inside itself: a relay banner can be arbitrarily wide, and the
+   settings column must not gain a horizontal scrollbar because of it. `pre-wrap` would hide the
+   line structure, which is the one thing a transcript is read for. */
+.trace-transcript {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  margin: 0 0 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre;
+}

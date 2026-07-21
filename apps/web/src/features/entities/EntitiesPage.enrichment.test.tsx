@@ -9,6 +9,7 @@ import {
   type LedgerEventView,
 } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
+import { formatDate } from '../../format';
 import { EntitiesPage } from './EntitiesPage';
 
 /**
@@ -333,14 +334,14 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getByRole('columnheader', { name: 'Último livro' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Última atividade' })).toBeTruthy();
     expect(screen.getByText('99999/20200101')).toBeTruthy();
-    expect(screen.getByText('2020-01-01')).toBeTruthy();
+    expect(screen.getByText(formatDate('2020-01-01'))).toBeTruthy();
     expect(screen.getByText('5.000,00 EUR')).toBeTruthy();
     expect(screen.getByText('68110 principal')).toBeTruthy();
     expect(screen.getByText('Compra e venda de bens imobiliários.')).toBeTruthy();
     expect(screen.queryByText('+1 CAE')).toBeNull();
     expect(screen.getAllByText('Dentro da validade').length).toBeGreaterThan(1);
     // Scoped past the tooltip bubbles: a cell whose reveal restates its text matches twice.
-    expect(screen.getAllByText(/Válido até 2027-07-05/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(`Válido até ${formatDate('2027-07-05')}`, { exact: false }).length).toBeGreaterThan(0);
     expect(screen.getByText('CONSTITUIÇÃO DE SOCIEDADE')).toBeTruthy();
     expect(screen.getByText('06-30')).toBeTruthy();
     expect(screen.getByText('12-31 (por omissão)')).toBeTruthy();
@@ -370,7 +371,7 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getAllByText('Aberto').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Assembleia anual 2026/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Última ata\s+4/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Aberto em 2026-01-10/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(`Aberto em ${formatDate('2026-01-10')}`, { exact: false }).length).toBeGreaterThan(0);
     expect(screen.getByText('1 livro · Aberto: 1')).toBeTruthy();
 
     const activityLine = cells[12].querySelector('.entity-cell-line');

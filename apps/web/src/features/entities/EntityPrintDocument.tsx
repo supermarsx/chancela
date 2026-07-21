@@ -31,7 +31,8 @@ import {
   entityKindLabels,
   legalFormLabel,
 } from '../../api/labels';
-import { useT, useLocale } from '../../i18n';
+import { formatDate, formatTimestamp } from '../../format';
+import { useT } from '../../i18n';
 import type {
   AddressView,
   Entity,
@@ -41,15 +42,6 @@ import type {
   RegistryExtractView,
   RegistryOfficerView,
 } from '../../api/types';
-
-/** "7 de julho de 2026" — the day the abstract is printed, in the active locale. */
-function printedOn(locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date());
-}
 
 /** A print `<dl>` pair, skipped when empty. `wide` spans both columns. */
 function PrintRow({ term, wide, value }: { term: string; wide?: boolean; value: React.ReactNode }) {
@@ -66,10 +58,10 @@ function PrintOfficer({ officer }: { officer: RegistryOfficerView }) {
   const t = useT();
   const dates = [
     officer.appointment_date
-      ? t('entities.print.officer.appointment', { date: officer.appointment_date })
+      ? t('entities.print.officer.appointment', { date: formatDate(officer.appointment_date) })
       : null,
     officer.cessation_date
-      ? t('entities.print.officer.cessation', { date: officer.cessation_date })
+      ? t('entities.print.officer.cessation', { date: formatDate(officer.cessation_date) })
       : null,
     officer.source_event
       ? t('entities.print.officer.inscricao', { event: officer.source_event })
@@ -121,7 +113,10 @@ function PrintConstitution({
           term={t('registry.field.capital')}
           value={payload.capital ? moneyText(payload.capital) : null}
         />
-        <PrintRow term={t('registry.detail.deliberationDate')} value={payload.deliberation_date} />
+        <PrintRow
+          term={t('registry.detail.deliberationDate')}
+          value={payload.deliberation_date ? formatDate(payload.deliberation_date) : null}
+        />
         <PrintRow
           term={t('registry.field.sede')}
           wide
@@ -189,7 +184,9 @@ function PrintInscricao({ event, index }: { event: RegistryEventView; index: num
       <div className="print-inscricao__head">
         <span className="print-inscricao__num">{event.number ?? `#${index + 1}`}</span>
         {event.kind_hint ? <span className="print-inscricao__kind">{event.kind_hint}</span> : null}
-        {event.date ? <span className="print-inscricao__date">{event.date}</span> : null}
+        {event.date ? (
+          <span className="print-inscricao__date">{formatDate(event.date)}</span>
+        ) : null}
       </div>
       {apresentacao ? (
         <div className="print-inscricao__meta">
@@ -220,7 +217,10 @@ function ExtractDocument({ extract }: { extract: RegistryExtractView }) {
           />
           <PrintRow term={t('registry.field.matricula')} value={extract.matricula} />
           <PrintRow term={t('registry.field.legalForm')} value={formaJuridica} />
-          <PrintRow term={t('registry.field.dataConstituicao')} value={extract.data_constituicao} />
+          <PrintRow
+            term={t('registry.field.dataConstituicao')}
+            value={extract.data_constituicao ? formatDate(extract.data_constituicao) : null}
+          />
           <PrintRow term={t('registry.field.capital')} value={extract.capital} />
           <PrintRow term={t('registry.field.sede')} wide value={extract.sede} />
           <PrintRow term={t('registry.field.objeto')} wide value={extract.objeto} />
@@ -286,7 +286,9 @@ function ExtractDocument({ extract }: { extract: RegistryExtractView }) {
                   <span className="print-anotacao__num">
                     {a.number ? t('registry.anotacoes.item', { number: a.number }) : `#${i + 1}`}
                   </span>
-                  {a.date ? <span className="print-anotacao__date">{a.date}</span> : null}
+                  {a.date ? (
+                    <span className="print-anotacao__date">{formatDate(a.date)}</span>
+                  ) : null}
                 </div>
                 <p className="print-inscricao__text">{a.text}</p>
               </li>
@@ -304,17 +306,25 @@ function ExtractDocument({ extract }: { extract: RegistryExtractView }) {
           />
           <PrintRow
             term={t('registry.provenance.retrievedAt')}
-            value={<span className="print-mono">{p.retrieved_at}</span>}
+            /* The retrieval instant is the print sheet's provenance — evidentiary form, so a
+               reader off-screen still knows the second and the zone it was captured in. */
+            value={<span className="print-mono">{formatTimestamp(p.retrieved_at)}</span>}
           />
           <PrintRow term={t('registry.provenance.conservatoria')} value={p.conservatoria} />
           <PrintRow term={t('registry.provenance.oficial')} value={p.oficial} />
           <PrintRow
             term={t('registry.provenance.subscribedOn')}
-            value={p.subscribed_on ? <span className="print-mono">{p.subscribed_on}</span> : null}
+            value={
+              p.subscribed_on ? (
+                <span className="print-mono">{formatDate(p.subscribed_on)}</span>
+              ) : null
+            }
           />
           <PrintRow
             term={t('registry.provenance.validUntil')}
-            value={p.valid_until ? <span className="print-mono">{p.valid_until}</span> : null}
+            value={
+              p.valid_until ? <span className="print-mono">{formatDate(p.valid_until)}</span> : null
+            }
           />
           <PrintRow
             term={t('registry.provenance.source')}
@@ -359,7 +369,6 @@ function IdentificationDocument({ entity }: { entity: Entity }) {
 
 export function EntityPrintDocument({ entityId }: { entityId: string }) {
   const t = useT();
-  const locale = useLocale();
   const entity = useEntity(entityId);
   const registry = useEntityRegistry(entityId);
 
@@ -407,7 +416,9 @@ export function EntityPrintDocument({ entityId }: { entityId: string }) {
       )}
 
       <p className="print-printed-on">
-        {t('entities.print.printedOn', { date: printedOn(locale) })}
+        {/* "7 de julho de 2026" — the day the abstract was printed. A printed sheet is read
+            away from the app, so every date here is absolute; never a relative form. */}
+        {t('entities.print.printedOn', { date: formatDate(new Date()) })}
       </p>
     </article>
   );

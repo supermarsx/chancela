@@ -418,8 +418,18 @@ export function useRequestRegistryAutoUpdate() {
 
 // --- Books ----------------------------------------------------------------------
 
-export function useBooks(entityId?: string) {
-  return useQuery({ queryKey: keys.books(entityId), queryFn: () => api.listBooks(entityId) });
+/**
+ * `GET /v1/books` is gated `book.read@Global`, which a principal holding only
+ * `entity.read` on one entity may not have. Call-sites that render the list beside a
+ * permission note pass `enabled=false` so no request is fired and no 403 is provoked
+ * (same convention as `usePrivacyRetentionDueCandidates`).
+ */
+export function useBooks(entityId?: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.books(entityId),
+    queryFn: () => api.listBooks(entityId),
+    enabled,
+  });
 }
 
 export function useBook(id: string) {

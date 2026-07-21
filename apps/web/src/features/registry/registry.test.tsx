@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
+import { formatDate } from '../../format';
 import { ImportFromRegistryForm } from './ImportFromRegistryForm';
 import { RegistryImportPanel } from './RegistryImportPanel';
 import { RegistryProvenance } from './RegistryProvenance';
@@ -632,7 +633,7 @@ describe('RegistryProvenance — structured inscriptions', () => {
     expect(screen.getByText('4000-100 PORTO')).toBeTruthy();
 
     // Deliberation date + forma de obrigar.
-    expect(screen.getByText('2026-05-11')).toBeTruthy();
+    expect(screen.getByText(formatDate('2026-05-11'))).toBeTruthy();
     expect(screen.getByText('Obriga-se com a assinatura de um gerente.')).toBeTruthy();
     expect(document.body.textContent).toContain(registryFieldHelp.naturezaJuridica);
     expect(document.body.textContent).toContain(registryFieldHelp.fiscalYearEnd);
@@ -690,7 +691,7 @@ describe('RegistryProvenance — structured inscriptions', () => {
 
     expect(await screen.findByText('Certidão expirada')).toBeTruthy();
     // The validity window + conservatória/oficial surface in the provenance card.
-    expect(screen.getByText('2025-01-01')).toBeTruthy();
+    expect(screen.getByText(formatDate('2025-01-01'))).toBeTruthy();
     expect(screen.getAllByText('Conservatória do Registo Comercial Porto').length).toBeGreaterThan(
       0,
     );

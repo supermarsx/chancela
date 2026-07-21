@@ -27,8 +27,6 @@ import {
   entityMatchesRegistryFreshnessFilter,
   entityMatchesRegistryImportFilter,
   entityMatchesValidationFilter,
-  formatActivityDate,
-  formatActivityTimestamp,
   formatDateValue,
   indexBooksByEntity,
   registryFreshnessLabel,
@@ -108,9 +106,12 @@ describe('entity list view-model helpers', () => {
       'neutral',
     ]);
     expect(bookDateSummary(book())).toBe('Sem data de abertura');
-    expect(bookDateSummary(book({ opening_date: '2026-01-01' }))).toBe('Aberto em 2026-01-01');
+    // Dates render through the shared locale-aware formatter (t66), not as raw wire strings.
+    expect(bookDateSummary(book({ opening_date: '2026-01-01' }))).toBe(
+      'Aberto em 1 de janeiro de 2026',
+    );
     expect(bookDateSummary(book({ opening_date: '2026-01-01', closing_date: '2026-02-01' }))).toBe(
-      'Aberto em 2026-01-01 · Encerrado em 2026-02-01',
+      'Aberto em 1 de janeiro de 2026 · Encerrado em 1 de fevereiro de 2026',
     );
 
     expect(emptyBookStateCounts()).toEqual({ Created: 0, Open: 0, Closed: 0 });
@@ -166,15 +167,11 @@ describe('entity list view-model helpers', () => {
   });
 
   it('formats registry evidence and dates with explicit invalid and unknown fallbacks', () => {
-    expect(formatActivityTimestamp('bad', 'en-GB')).toBe('bad');
-    expect(formatActivityDate('bad', 'en-GB')).toBe('bad');
-    expect(formatActivityTimestamp('2026-07-16T10:00:00Z', 'en-GB')).not.toBe(
-      '2026-07-16T10:00:00Z',
-    );
-    expect(formatActivityDate('2026-07-16T10:00:00Z', 'en-GB')).not.toBe('2026-07-16T10:00:00Z');
     expect(formatDateValue(null)).toBe('—');
     expect(formatDateValue(undefined, 'missing')).toBe('missing');
-    expect(formatDateValue('value')).toBe('value');
+    // An unparseable value is no longer echoed back to the page verbatim.
+    expect(formatDateValue('value')).toBe('—');
+    expect(formatDateValue('2026-07-16T10:00:00Z')).toBe('16 de julho de 2026');
 
     const principal = {
       code: '62010',

@@ -1,12 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { Route, Routes } from 'react-router-dom';
-import { renderWithProviders, fetchTable } from '../../test/utils';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
+import { makeClient, renderWithProviders, fetchTable } from '../../test/utils';
+import { ToastProvider } from '../../ui/toast';
+import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
 import { EntitiesPage } from './EntitiesPage';
 import { NewEntityPage } from './NewEntityPage';
 import { EntityDetailPage } from './EntityDetailPage';
 import { entityFieldHelp } from './fieldHelp';
-import { DEFAULT_SETTINGS, type Entity, type LedgerEventView } from '../../api/types';
+import {
+  DEFAULT_SETTINGS,
+  type Entity,
+  type LedgerEventView,
+  type RegistryExtractView,
+} from '../../api/types';
 
 /**
  * The text a cell reveals BEYOND what it displays — the themed tooltip bubble it points at
@@ -203,6 +211,74 @@ describe('EntitiesPage', () => {
     expect(within(advanced).getByLabelText('Última alteração')).toBeTruthy();
   });
 
+  it('sizes each entity column to what it holds, leaving only the name elastic', async () => {
+    const css = await themeCss();
+
+    // Every fixed-shape column declares its own width. Without these the `table-layout:
+    // fixed` above splits the table EQUALLY (CSS 2.1 §17.5.2.1), which is what made a
+    // 9-digit NIPC as wide as a company name while the name itself clipped.
+    const sized = [
+      ['Nipc', '--ec-nipc'],
+      ['Seat', '--ec-seat'],
+      ['Type', '--ec-type'],
+      ['Matricula', '--ec-matricula'],
+      ['Constitution', '--ec-constitution'],
+      ['Capital', '--ec-capital'],
+      ['Cae', '--ec-cae'],
+      ['Registry', '--ec-registry'],
+      ['LastRegistryChange', '--ec-last-registry-change'],
+      ['FiscalYearEnd', '--ec-fiscal-year-end'],
+      ['LastBook', '--ec-last-book'],
+      ['LastActivity', '--ec-last-activity'],
+      ['Actions', '--ec-actions'],
+    ] as const;
+    for (const [column, token] of sized) {
+      const rule =
+        css.match(
+          new RegExp(`\\.table th\\[data-entity-column='${column}'\\]\\s*{(?<body>[^}]*)}`, 's'),
+        )?.groups?.body ?? '';
+      expect(rule, column).toContain(`width: var(${token});`);
+      // Relative units only — a pixel width would not track the user's text size.
+      expect(css, token).toMatch(new RegExp(`${token}:\\s*[\\d.]+rem;`));
+    }
+
+    // `Name` must stay `auto`: it is the single column that absorbs the leftover width.
+    expect(css).not.toMatch(/\.table th\[data-entity-column='Name'\]\s*{[^}]*width:/s);
+
+    // The floor is composed from the same tokens for whichever columns are visible, so a
+    // wide set scrolls at its natural size instead of collapsing.
+    const tableRule = css.match(/\.entities-table \.table\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    expect(tableRule).toContain('table-layout: fixed;');
+    expect(tableRule).toContain('min-width: var(--entities-table-floor, 0);');
+
+    // A NIPC is never half-shown: the flag wraps beneath it rather than clipping either.
+    const nipcRule = css.match(/\.entity-cell-line--nipc\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    expect(nipcRule).toContain('flex-wrap: wrap;');
+    // …and the fixed-width date in Última atividade outlives its unbounded event label.
+    const activityDateRule =
+      css.match(/\.entity-cell-line--activity \.entity-cell-line__text\s*{(?<body>[^}]*)}/s)?.groups
+        ?.body ?? '';
+    expect(activityDateRule).toContain('flex: 0 0 auto;');
+  });
+
+  it('composes the table width floor from the visible columns', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [ENTITY] },
+      ]),
+    );
+    renderWithProviders(<EntitiesPage />, ['/entidades']);
+    const table = await screen.findByRole('table');
+    const box = table.closest('.entities-table') as HTMLElement;
+    // The default column set (Name, Nipc, Type, LastActivity, Actions) — the floor names
+    // exactly those tokens, so the table never shrinks below the sum of its own columns.
+    expect(box.style.getPropertyValue('--entities-table-floor')).toBe(
+      'calc(var(--ec-name) + var(--ec-nipc) + var(--ec-type) + var(--ec-last-activity) + var(--ec-actions))',
+    );
+  });
+
   it('pins entity table and filter CSS to single-line no-overflow rules', async () => {
     const css = await themeCss();
     const filterRule = css.match(/\.entities-filters\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
@@ -246,7 +322,10 @@ describe('EntitiesPage', () => {
     expect(advancedBodyRule).toContain('min-width: 0;');
     expect(filterButtonRule).toContain('max-width: 100%;');
     expect(filterButtonRule).toContain('overflow: hidden;');
-    expect(tableWrapRule).toContain('overflow-x: hidden;');
+    // The wrap SCROLLS rather than clips (t72): a column set wider than the card used to
+    // be crushed to equal stubs and then hidden, which lost content outright. It is the
+    // `.entities-table` box outside it that stays clipped to the card.
+    expect(tableWrapRule).toContain('overflow-x: auto;');
     expect(tableCellRule).toContain('white-space: nowrap;');
     expect(truncateRule).toContain('white-space: nowrap;');
     expect(truncateRule).not.toContain('-webkit-line-clamp');
@@ -512,7 +591,7 @@ describe('EntityDetailPage', () => {
       <Routes>
         <Route path="/entidades/:id" element={<EntityDetailPage />} />
       </Routes>,
-      ['/entidades/new-ent-1'],
+      ['/entidades/new-ent-1?sec=identificacao'],
     );
 
     expect((await screen.findAllByText('12-31 (por omissão)')).length).toBeGreaterThan(0);
@@ -531,7 +610,7 @@ describe('EntityDetailPage', () => {
       <Routes>
         <Route path="/entidades/:id" element={<EntityDetailPage />} />
       </Routes>,
-      ['/entidades/new-ent-1'],
+      ['/entidades/new-ent-1?sec=fiscal'],
     );
 
     expect((await screen.findAllByText('12-31 (por omissão)')).length).toBeGreaterThan(0);
@@ -558,7 +637,7 @@ describe('EntityDetailPage', () => {
       <Routes>
         <Route path="/entidades/:id" element={<EntityDetailPage />} />
       </Routes>,
-      ['/entidades/new-ent-1'],
+      ['/entidades/new-ent-1?sec=fiscal'],
     );
 
     const input = (await screen.findByLabelText('Fecho do exercício (MM-DD)')) as HTMLInputElement;
@@ -795,10 +874,11 @@ describe('EntityDetailPage', () => {
       <Routes>
         <Route path="/entidades/:id" element={<EntityDetailPage />} />
       </Routes>,
-      ['/entidades/new-ent-1'],
+      ['/entidades/new-ent-1?sec=cronologia'],
     );
 
-    expect(await screen.findByText('Cronologia e grafo')).toBeTruthy();
+    // Twice: the sub-nav pill and the card it heads.
+    expect((await screen.findAllByText('Cronologia e grafo')).length).toBe(2);
     expect((await screen.findAllByText('Constituição de sociedade')).length).toBeGreaterThan(1);
     expect(screen.getAllByText('Maria Silva').length).toBeGreaterThan(1);
     expect(screen.getAllByText('Insc. 1').length).toBeGreaterThan(1);
@@ -844,5 +924,287 @@ describe('EntityDetailPage', () => {
     ).toContain('timeline');
     expect(urls.some((url) => url.includes(`/v1/entities/${ENTITY.id}/chronology`))).toBe(true);
     expect(calls.some((c) => c.url.includes('/chronology'))).toBe(false);
+  });
+});
+
+/**
+ * The entity detail sub-tabs (t62): the seventh surface on the shared `<SubNav>` + `?sec=`
+ * convention. These pin the deep-link contract, the fact that every pre-existing action
+ * still has a home, and that the sparse sections tell the truth instead of inventing content.
+ */
+describe('EntityDetailPage — sub-tabs', () => {
+  const SUBNAV = 'Secções da entidade';
+  const TAB_LABELS = [
+    'Livros',
+    'Identificação',
+    'Exercício fiscal',
+    'Registo comercial',
+    'Inscrições e averbamentos',
+    'Cronologia e grafo',
+  ];
+
+  /**
+   * Renders the router's live query string and the last navigation type, so both halves of
+   * the deep-link contract are assertable: the URL carries the tab, and reaching it PUSHED
+   * a history entry (MemoryRouter keeps its own history, so `window.history.back()` cannot
+   * be used to probe it).
+   */
+  function SearchProbe() {
+    return (
+      <>
+        <span data-testid="search-probe">{useLocation().search}</span>
+        <span data-testid="navtype-probe">{useNavigationType()}</span>
+      </>
+    );
+  }
+
+  /**
+   * The active tab panel. Queries are scoped to it because `EntityPrintDocument` renders the
+   * same firma, NIPC, sede and "Dados do registo" heading into a portaled print-only sheet.
+   */
+  function panel() {
+    const el = document.querySelector('.route-transition');
+    if (!el) throw new Error('no tab panel rendered');
+    return within(el as HTMLElement);
+  }
+
+  const EXTRACT: RegistryExtractView = {
+    matricula: '503004642',
+    nipc: '503004642',
+    firma: 'Encosto Estratégico, Lda.',
+    forma_juridica: 'Sociedade por quotas',
+    legal_form: 'SociedadePorQuotas',
+    sede: 'Rua das Amoreiras 1, Lisboa',
+    cae: [],
+    objeto: 'Consultoria de gestão',
+    capital: 'EUR 5.000,00',
+    data_constituicao: '2019-04-02',
+    orgaos: [
+      {
+        name: 'Amélia Marques',
+        role: 'Gerente',
+        appointment_date: '2019-04-02',
+        cessation_date: null,
+        source_event: '1',
+      },
+    ],
+    inscricoes: [
+      {
+        number: 'AP. 1/20190402',
+        kind_hint: 'Constituição',
+        apresentacao: 'Ap. 1/20190402',
+        date: '2019-04-02',
+        text: 'Constituição de sociedade por quotas.',
+        detail: null,
+      },
+    ],
+    anotacoes: [],
+    provenance: {
+      access_code_masked: '1234-****-9012',
+      retrieved_at: '2026-07-01T10:00:00Z',
+      source_url: 'https://eportugal.gov.pt/certidao',
+      raw_digest: 'c'.repeat(64),
+      conservatoria: 'Conservatória do Registo Comercial de Lisboa',
+      oficial: 'Ana Costa',
+      subscribed_on: '2026-06-30',
+      valid_until: '2026-12-30',
+      expired: false,
+    },
+  };
+
+  /** The page's stub, optionally serving a real certidão instead of the 404 empty state. */
+  function detailFetch(extract?: RegistryExtractView) {
+    const base = entityDetailFetch(ENTITY);
+    if (!extract) return base;
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes(`/v1/entities/${ENTITY.id}/registry`)) {
+        return Promise.resolve(jsonResponse(extract));
+      }
+      return base.fn(input, init);
+    }) as typeof fetch;
+    return { fn, calls: base.calls };
+  }
+
+  function renderAtEntity(entry = '/entidades/new-ent-1') {
+    return renderWithProviders(
+      <Routes>
+        <Route path="/entidades/:id" element={<EntityDetailPage />} />
+      </Routes>,
+      [entry],
+    );
+  }
+
+  it('reuses the shared SubNav pill with the six sections in the requested order', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    renderAtEntity();
+
+    const subnav = await screen.findByRole('group', { name: SUBNAV });
+    expect(within(subnav).getAllByRole('button').map((b) => b.textContent)).toEqual(TAB_LABELS);
+  });
+
+  it('lands on Livros with no sec param, and marks only that tab pressed', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    renderAtEntity();
+
+    const subnav = await screen.findByRole('group', { name: SUBNAV });
+    expect(within(subnav).getByRole('button', { name: 'Livros' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    for (const label of TAB_LABELS.slice(1)) {
+      expect(within(subnav).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe(
+        'false',
+      );
+    }
+    // The "Abrir livro" action survived the reorganisation.
+    expect(screen.getByRole('link', { name: /abrir livro/i })).toBeTruthy();
+  });
+
+  it('reflects the chosen tab in the URL as ?sec= and PUSHES it so Back returns to it', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    // MemoryRouter keeps history in memory, so a sibling probe reports the live search.
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <ToastProvider>
+          <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
+            <MemoryRouter initialEntries={['/entidades/new-ent-1']}>
+              <SearchProbe />
+              <Routes>
+                <Route path="/entidades/:id" element={<EntityDetailPage />} />
+              </Routes>
+            </MemoryRouter>
+          </StaticPermissionsProvider>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+
+    const subnav = await screen.findByRole('group', { name: SUBNAV });
+    expect(screen.getByTestId('search-probe').textContent).toBe('');
+
+    fireEvent.click(within(subnav).getByRole('button', { name: 'Exercício fiscal' }));
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('?sec=fiscal'));
+
+    // Each tab is a PUSH, so browser Back returns to the previous tab rather than leaving the
+    // entity — the trap t34 had to undo in the legislação reader, where `replace: true`
+    // destroyed the history entry.
+    expect(screen.getByTestId('navtype-probe').textContent).toBe('PUSH');
+    expect(panel().getByLabelText('Fecho do exercício (MM-DD)')).toBeTruthy();
+
+    fireEvent.click(within(subnav).getByRole('button', { name: 'Registo comercial' }));
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('?sec=registo'));
+    expect(screen.getByTestId('navtype-probe').textContent).toBe('PUSH');
+
+    // Back to the default section drops the param rather than writing `?sec=livros`.
+    fireEvent.click(within(subnav).getByRole('button', { name: 'Livros' }));
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe(''));
+  });
+
+  it('deep-links straight into Identificação, which also carries the statute overlay', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    renderAtEntity('/entidades/new-ent-1?sec=identificacao');
+
+    expect(await screen.findByRole('group', { name: SUBNAV })).toBeTruthy();
+    expect(panel().getByText('503004642')).toBeTruthy();
+    expect(panel().getByText('Lisboa')).toBeTruthy();
+    // Estatutos has no tab of its own; it belongs to "what this entity is".
+    expect(panel().getByText('Estatutos')).toBeTruthy();
+    expect(panel().queryByLabelText('Fecho do exercício (MM-DD)')).toBeNull();
+  });
+
+  it('deep-links straight into Registo comercial with the import action and the registry payload', async () => {
+    vi.stubGlobal('fetch', detailFetch(EXTRACT).fn);
+    renderAtEntity('/entidades/new-ent-1?sec=registo');
+
+    await waitFor(() => expect(panel().getByText('Dados do registo')).toBeTruthy());
+    expect(panel().getByText('Conservatória do Registo Comercial de Lisboa')).toBeTruthy();
+    expect(panel().getByText('Órgãos sociais')).toBeTruthy();
+    // The certidão import action survived the reorganisation.
+    expect(panel().getByRole('link', { name: /importar do registo/i })).toBeTruthy();
+    // The event feed is the NEXT tab, not this one.
+    expect(panel().queryByText('Inscrições, averbamentos e anotações')).toBeNull();
+  });
+
+  it('deep-links straight into Inscrições e averbamentos, keeping anotações beside them', async () => {
+    vi.stubGlobal('fetch', detailFetch(EXTRACT).fn);
+    renderAtEntity('/entidades/new-ent-1?sec=inscricoes');
+
+    await waitFor(() =>
+      expect(panel().getByText('Inscrições, averbamentos e anotações')).toBeTruthy(),
+    );
+    expect(panel().getByText('Constituição de sociedade por quotas.')).toBeTruthy();
+    // Anotações is a named section, so an empty one says so rather than vanishing.
+    expect(panel().getByText('Anotações')).toBeTruthy();
+    expect(panel().getByText('A certidão não continha anotações.')).toBeTruthy();
+    expect(panel().queryByText('Dados do registo')).toBeNull();
+  });
+
+  it('renders an honest empty state on both registry tabs when nothing was imported', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    const { unmount } = renderAtEntity('/entidades/new-ent-1?sec=registo');
+    expect(await screen.findByText('Sem dados do registo')).toBeTruthy();
+    unmount();
+
+    renderAtEntity('/entidades/new-ent-1?sec=inscricoes');
+    expect(await screen.findByText('Sem dados do registo')).toBeTruthy();
+  });
+
+  it('lets the Cronologia tab look as sparse as the parser actually left it', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    renderAtEntity('/entidades/new-ent-1?sec=cronologia');
+
+    // The certidão parser extracts almost nothing today, so a 404 chronology is the honest
+    // answer. No invented timeline, no placeholder graph.
+    expect(await screen.findByText('Sem cronologia')).toBeTruthy();
+    expect(document.querySelector('.chronology-rail__item')).toBeNull();
+  });
+
+  it('falls back to Livros for an unknown sec value rather than rendering nothing', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    renderAtEntity('/entidades/new-ent-1?sec=inventado');
+
+    const subnav = await screen.findByRole('group', { name: SUBNAV });
+    expect(within(subnav).getByRole('button', { name: 'Livros' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('link', { name: /abrir livro/i })).toBeTruthy();
+  });
+
+  it('withholds the book list with a permission note instead of firing a request that would 403', async () => {
+    // `GET /v1/books` is gated `book.read@Global`; a principal with only `entity.read` on this
+    // entity must see why the list is missing, not a 403 in the console.
+    const { fn, calls } = detailFetch();
+    vi.stubGlobal('fetch', fn);
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <ToastProvider>
+          <StaticPermissionsProvider
+            value={{
+              can: (perm: string) => perm !== 'book.read',
+              canAny: (perm: string) => perm !== 'book.read',
+              grants: [],
+              ready: true,
+            }}
+          >
+            <MemoryRouter initialEntries={['/entidades/new-ent-1']}>
+              <Routes>
+                <Route path="/entidades/:id" element={<EntityDetailPage />} />
+              </Routes>
+            </MemoryRouter>
+          </StaticPermissionsProvider>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('Sem permissão')).toBeTruthy();
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/v1/entities/'))).toBe(true));
+    expect(calls.some((c) => c.url.includes('/v1/books'))).toBe(false);
+  });
+
+  it('keeps the print abstract mounted from any tab', async () => {
+    vi.stubGlobal('fetch', detailFetch().fn);
+    renderAtEntity('/entidades/new-ent-1?sec=cronologia');
+
+    expect(await screen.findByRole('button', { name: /imprimir/i })).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('.print-doc')).toBeTruthy());
   });
 });
