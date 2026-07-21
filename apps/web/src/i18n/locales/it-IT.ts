@@ -4634,6 +4634,61 @@ export const itIT: Catalog = {
   'settings.email.help.allowInsecure':
     'Autorizza esplicitamente l’invio senza TLS. Senza questa conferma la configurazione senza cifratura viene rifiutata.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Lingua dell’interfaccia',
+  'settings.language.lede':
+    'Una preferenza del suo account: vale per lei in qualsiasi browser da cui acceda, e per nessun altro su questa istanza.',
+  'settings.language.field.label': 'Lingua',
+  'settings.language.field.hint':
+    'Scelga una lingua fissa, oppure lasci automatico per seguire il browser.',
+  'settings.language.help':
+    'Salvata sul suo account. Una lingua fissa viene sempre usata; “automatico” negozia con le lingue dichiarate dal browser.',
+  'settings.language.auto': 'Automatico (segui questo browser)',
+  'settings.language.autoResolves':
+    'Su questo browser “automatico” mostra {locale}. La preferenza salvata resta “automatico”, quindi su un altro computer seguirà quel browser.',
+  'settings.language.notTheme':
+    'Il tema segue il sistema operativo; la lingua segue il browser. Sono meccanismi diversi, per quanto simili appaiano le opzioni.',
+  'settings.language.notDocuments':
+    'Non cambia la lingua in cui sono redatti i documenti generati — quella è la lingua dei verbali stessi e si imposta in Documentos.',
+  'settings.language.signInScreen':
+    'La schermata di accesso usa sempre la lingua configurata per l’istanza: non c’è ancora un utente la cui preferenza possa essere seguita.',
+  'settings.language.signedOut.title': 'Accesso non effettuato',
+  'settings.language.signedOut.body':
+    'Acceda per scegliere la sua lingua. Senza utente vale la lingua configurata per l’istanza.',
+  'settings.language.savedToast': 'Lingua dell’interfaccia salvata',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Caricamento dell’editor…',
+  'acts.body.editor.loadFailed': 'L’editor non è stato caricato',
+  'acts.body.editor.loadFailedBody':
+    'Ricarichi la pagina. Finché l’editor non si carica, il corpo del verbale non può essere scritto qui — nulla di quanto già scritto è andato perduto.',
+  'acts.body.editor.subset':
+    'Sono accettati titoli, paragrafi, grassetto, corsivo e linee di separazione. Tabelle, immagini, collegamenti, elenchi, blocchi di codice e HTML vengono rifiutati dal server, non rimossi in silenzio.',
+  'acts.body.editor.placeholders':
+    'I campi {{ … }} sono solo evidenziati, mai bloccati: può cancellarli, spostarli o riscriverli come qualsiasi altro testo.',
+  'acts.body.editor.bytes': '{used} di {max} byte',
+  'acts.body.editor.bytesOver':
+    '{used} di {max} byte — oltre il limite. Accorci il testo; nulla viene troncato al posto suo.',
+  'acts.body.rejected.title': 'Questo testo non verrà compilato',
+  'acts.body.rejected.at': 'alla riga {line}, colonna {column}.',
+  'acts.body.rejected.remedy':
+    'Corregga o rimuova quella costruzione. Il server la rifiuta invece di cancellarla, così non approverà mai un testo che il documento sigillato non contiene.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Parte di ciò che ha incollato non entra in un verbale',
+  'acts.body.paste.removed': '{construct} ({count}) — abbiamo rimosso. Non c’era testo da conservare.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — abbiamo convertito in paragrafi. Il testo è rimasto, la struttura no.',
+  'acts.body.paste.why':
+    'Un verbale accetta solo titoli, paragrafi, grassetto, corsivo e linee di separazione. Preferiamo dirle che cosa è cambiato piuttosto che lasciarle scoprire più tardi che mancava.',
+  'acts.body.paste.dismiss': 'Ho capito',
+  'acts.body.construct.table': 'Tabella',
+  'acts.body.construct.image': 'Immagine',
+  'acts.body.construct.list': 'Elenco',
+  'acts.body.construct.code': 'Blocco di codice',
+  'acts.body.construct.quote': 'Citazione',
+  'acts.body.construct.link': 'Collegamento',
+
   'settings.providerCredentials.cardTitle': 'Provider di firma',
   'settings.providerCredentials.lede':
     'Gestisci le credenziali dei provider di firma, con più chiavi per provider, priorità e failover.',

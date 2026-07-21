@@ -4557,6 +4557,61 @@ export const enGB: Catalog = {
   'settings.email.help.allowInsecure':
     'Explicitly authorises sending without TLS. Without this acknowledgement, an unencrypted configuration is refused.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Interface language',
+  'settings.language.lede':
+    'A preference on your account: it applies to you in any browser you sign in from, and to no one else on this instance.',
+  'settings.language.field.label': 'Language',
+  'settings.language.field.hint':
+    'Choose a fixed language, or leave it automatic to follow the browser.',
+  'settings.language.help':
+    'Stored on your account. A fixed language is always used; “automatic” negotiates against the languages your browser advertises.',
+  'settings.language.auto': 'Automatic (follow this browser)',
+  'settings.language.autoResolves':
+    'On this browser, “automatic” shows {locale}. The stored preference remains “automatic”, so on another computer it will follow that browser instead.',
+  'settings.language.notTheme':
+    'The theme follows the operating system; the language follows the browser. They are different mechanisms, however alike the options appear.',
+  'settings.language.notDocuments':
+    'This does not change the language generated documents are written in — that is the language of the minutes themselves, and it is set under Documentos.',
+  'settings.language.signInScreen':
+    'The sign-in screen always uses the language configured for the instance: there is no user yet whose preference could be followed.',
+  'settings.language.signedOut.title': 'Not signed in',
+  'settings.language.signedOut.body':
+    'Sign in to choose your language. With no user, the language configured for the instance applies.',
+  'settings.language.savedToast': 'Interface language saved',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Loading the editor…',
+  'acts.body.editor.loadFailed': 'The editor did not load',
+  'acts.body.editor.loadFailedBody':
+    'Reload the page. Until the editor loads, the ata body cannot be written here — nothing you have already written is lost.',
+  'acts.body.editor.subset':
+    'Headings, paragraphs, bold, italic and horizontal rules are accepted. Tables, images, links, lists, code blocks and HTML are refused by the server, not silently removed.',
+  'acts.body.editor.placeholders':
+    'The {{ … }} fields are only highlighted, never locked: you may delete, move or retype them like any other text.',
+  'acts.body.editor.bytes': '{used} of {max} bytes',
+  'acts.body.editor.bytesOver':
+    '{used} of {max} bytes — over the limit. Shorten the text; nothing is truncated for you.',
+  'acts.body.rejected.title': 'This text will not compile',
+  'acts.body.rejected.at': 'at line {line}, column {column}.',
+  'acts.body.rejected.remedy':
+    'Correct or remove that construct. The server refuses it rather than deleting it, so you never approve text the sealed document does not contain.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Some of what you pasted does not fit an ata',
+  'acts.body.paste.removed': '{construct} ({count}) — removed. There was no text to keep.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — turned into paragraphs. The words remained; the structure did not.',
+  'acts.body.paste.why':
+    'An ata holds only headings, paragraphs, bold, italic and horizontal rules. We would rather tell you what changed than let you discover it was missing.',
+  'acts.body.paste.dismiss': 'Understood',
+  'acts.body.construct.table': 'Table',
+  'acts.body.construct.image': 'Image',
+  'acts.body.construct.list': 'List',
+  'acts.body.construct.code': 'Code block',
+  'acts.body.construct.quote': 'Quotation',
+  'acts.body.construct.link': 'Link',
+
   'settings.providerCredentials.cardTitle': 'Signing providers',
   'settings.providerCredentials.lede':
     'Manage signing-provider credentials, with multiple keys per provider, priority, and failover.',

@@ -4614,6 +4614,61 @@ export const plPL: Catalog = {
   'settings.email.help.allowInsecure':
     'Wyraźnie zezwala na wysyłkę bez TLS. Bez tego potwierdzenia konfiguracja bez szyfrowania jest odrzucana.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Język interfejsu',
+  'settings.language.lede':
+    'Ustawienie Twojego konta: obowiązuje Ciebie w każdej przeglądarce, z której się logujesz, i nikogo innego w tej instancji.',
+  'settings.language.field.label': 'Język',
+  'settings.language.field.hint':
+    'Wybierz stały język albo pozostaw automatyczny, aby podążać za przeglądarką.',
+  'settings.language.help':
+    'Zapisywane na koncie. Stały język jest używany zawsze; „automatyczny” negocjuje z językami zgłaszanymi przez przeglądarkę.',
+  'settings.language.auto': 'Automatycznie (podążaj za tą przeglądarką)',
+  'settings.language.autoResolves':
+    'W tej przeglądarce „automatycznie” daje {locale}. Zapisany wybór to nadal „automatycznie”, więc na innym komputerze podąży za tamtą przeglądarką.',
+  'settings.language.notTheme':
+    'Motyw podąża za systemem operacyjnym, a język za przeglądarką. To odmienne mechanizmy, choć opcje wyglądają podobnie.',
+  'settings.language.notDocuments':
+    'Nie zmienia to języka, w którym redagowane są generowane dokumenty — to język samych protokołów, ustawiany w sekcji Documentos.',
+  'settings.language.signInScreen':
+    'Ekran logowania zawsze używa języka skonfigurowanego dla instancji: nie ma jeszcze użytkownika, którego preferencję można by uwzględnić.',
+  'settings.language.signedOut.title': 'Nie zalogowano',
+  'settings.language.signedOut.body':
+    'Zaloguj się, aby wybrać język. Bez użytkownika obowiązuje język skonfigurowany dla instancji.',
+  'settings.language.savedToast': 'Zapisano język interfejsu',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Trwa wczytywanie edytora…',
+  'acts.body.editor.loadFailed': 'Edytor się nie wczytał',
+  'acts.body.editor.loadFailedBody':
+    'Odśwież stronę. Dopóki edytor się nie wczyta, treści protokołu nie da się tu pisać — nic z tego, co już napisano, nie przepadło.',
+  'acts.body.editor.subset':
+    'Przyjmowane są nagłówki, akapity, pogrubienie, kursywa i linie oddzielające. Tabele, obrazy, odnośniki, listy, bloki kodu i HTML serwer odrzuca, zamiast usuwać je po cichu.',
+  'acts.body.editor.placeholders':
+    'Pola {{ … }} są jedynie wyróżniane, nigdy blokowane: możesz je usunąć, przenieść lub napisać od nowa jak każdy inny tekst.',
+  'acts.body.editor.bytes': '{used} z {max} bajtów',
+  'acts.body.editor.bytesOver':
+    '{used} z {max} bajtów — powyżej limitu. Skróć tekst; nic nie zostanie obcięte za Ciebie.',
+  'acts.body.rejected.title': 'Ten tekst się nie skompiluje',
+  'acts.body.rejected.at': 'w wierszu {line}, kolumnie {column}.',
+  'acts.body.rejected.remedy':
+    'Popraw lub usuń tę konstrukcję. Serwer ją odrzuca, zamiast kasować, abyś nigdy nie zatwierdził tekstu, którego zapieczętowany dokument nie zawiera.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Część wklejonej treści nie mieści się w protokole',
+  'acts.body.paste.removed': '{construct} ({count}) — usunięto. Nie było tekstu do zachowania.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — zamieniono na akapity. Tekst został, struktura nie.',
+  'acts.body.paste.why':
+    'Protokół mieści wyłącznie nagłówki, akapity, pogrubienie, kursywę i linie oddzielające. Wolimy powiedzieć, co się zmieniło, niż pozwolić Ci odkryć brak później.',
+  'acts.body.paste.dismiss': 'Rozumiem',
+  'acts.body.construct.table': 'Tabela',
+  'acts.body.construct.image': 'Obraz',
+  'acts.body.construct.list': 'Lista',
+  'acts.body.construct.code': 'Blok kodu',
+  'acts.body.construct.quote': 'Cytat',
+  'acts.body.construct.link': 'Odnośnik',
+
   'settings.providerCredentials.cardTitle': 'Dostawcy podpisu',
   'settings.providerCredentials.lede':
     'Zarządzaj poświadczeniami dostawców podpisu, z wieloma kluczami na dostawcę, priorytetem i przełączaniem awaryjnym.',

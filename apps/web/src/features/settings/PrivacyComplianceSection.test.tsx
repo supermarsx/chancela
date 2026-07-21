@@ -342,7 +342,13 @@ describe('PrivacyComplianceSection', () => {
     hooks.transfers.data = [transfer];
     renderWithProviders(<PrivacyComplianceSection />);
 
-    expect(screen.getByText('invalid-local-date')).toBeTruthy();
+    // `updated_at` on this fixture is deliberately unparseable. The old local formatter echoed
+    // such a value straight back to the page — that leak is the whole reason the shared date
+    // family exists — so the contract is now an em-dash placeholder and, crucially, no trace of
+    // the raw string anywhere in the document.
+    expect(screen.queryByText('invalid-local-date')).toBeNull();
+    expect(document.body.textContent).not.toContain('invalid-local-date');
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText('Risco de Alpha Processor'), {
       target: { value: 'high' },
     });

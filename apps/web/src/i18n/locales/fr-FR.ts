@@ -4651,6 +4651,62 @@ export const frFR: Catalog = {
   'settings.email.help.allowInsecure':
     'Autorise explicitement l’envoi sans TLS. Sans cette confirmation, une configuration sans chiffrement est refusée.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Langue de l’interface',
+  'settings.language.lede':
+    'Une préférence liée à votre compte : elle s’applique à vous dans tout navigateur où vous vous connectez, et à personne d’autre sur cette instance.',
+  'settings.language.field.label': 'Langue',
+  'settings.language.field.hint':
+    'Choisissez une langue fixe, ou laissez sur automatique pour suivre le navigateur.',
+  'settings.language.help':
+    'Enregistrée sur votre compte. Une langue fixe est toujours utilisée ; « automatique » négocie avec les langues annoncées par le navigateur.',
+  'settings.language.auto': 'Automatique (suivre ce navigateur)',
+  'settings.language.autoResolves':
+    'Sur ce navigateur, « automatique » affiche {locale}. La préférence enregistrée reste « automatique » : sur un autre ordinateur, elle suivra ce navigateur-là.',
+  'settings.language.notTheme':
+    'Le thème suit le système d’exploitation ; la langue suit le navigateur. Ce sont des mécanismes différents, si semblables que paraissent les options.',
+  'settings.language.notDocuments':
+    'Cela ne change pas la langue de rédaction des documents générés — c’est la langue des procès-verbaux eux-mêmes, définie sous Documentos.',
+  'settings.language.signInScreen':
+    'L’écran de connexion utilise toujours la langue configurée pour l’instance : aucun utilisateur n’a encore de préférence à suivre.',
+  'settings.language.signedOut.title': 'Non connecté',
+  'settings.language.signedOut.body':
+    'Connectez-vous pour choisir votre langue. Sans utilisateur, la langue configurée pour l’instance s’applique.',
+  'settings.language.savedToast': 'Langue de l’interface enregistrée',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Chargement de l’éditeur…',
+  'acts.body.editor.loadFailed': 'L’éditeur n’a pas été chargé',
+  'acts.body.editor.loadFailedBody':
+    'Rechargez la page. Tant que l’éditeur n’est pas chargé, le corps du procès-verbal ne peut pas être saisi ici — rien de ce que vous avez déjà écrit n’est perdu.',
+  'acts.body.editor.subset':
+    'Les titres, paragraphes, gras, italique et filets sont acceptés. Les tableaux, images, liens, listes, blocs de code et le HTML sont refusés par le serveur, et non supprimés en silence.',
+  'acts.body.editor.placeholders':
+    'Les champs {{ … }} sont seulement mis en évidence, jamais verrouillés : vous pouvez les supprimer, les déplacer ou les retaper comme n’importe quel autre texte.',
+  'acts.body.editor.bytes': '{used} sur {max} octets',
+  'acts.body.editor.bytesOver':
+    '{used} sur {max} octets — au-delà de la limite. Raccourcissez le texte ; rien n’est tronqué à votre place.',
+  'acts.body.rejected.title': 'Ce texte ne compilera pas',
+  'acts.body.rejected.at': 'à la ligne {line}, colonne {column}.',
+  'acts.body.rejected.remedy':
+    'Corrigez ou retirez cette construction. Le serveur la refuse au lieu de l’effacer, pour que vous n’approuviez jamais un texte absent du document scellé.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Une partie de ce que vous avez collé n’entre pas dans un procès-verbal',
+  'acts.body.paste.removed':
+    '{construct} ({count}) — nous avons supprimé. Il n’y avait aucun texte à conserver.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — nous avons converti en paragraphes. Le texte est resté, la structure non.',
+  'acts.body.paste.why':
+    'Un procès-verbal n’accepte que titres, paragraphes, gras, italique et filets. Nous préférons vous dire ce qui a changé plutôt que vous laisser constater un manque plus tard.',
+  'acts.body.paste.dismiss': 'Compris',
+  'acts.body.construct.table': 'Tableau',
+  'acts.body.construct.image': 'Image',
+  'acts.body.construct.list': 'Liste',
+  'acts.body.construct.code': 'Bloc de code',
+  'acts.body.construct.quote': 'Citation',
+  'acts.body.construct.link': 'Lien',
+
   'settings.providerCredentials.cardTitle': 'Fournisseurs de signature',
   'settings.providerCredentials.lede':
     'Gérez les identifiants des fournisseurs de signature, avec plusieurs clés par fournisseur, priorité et bascule automatique.',

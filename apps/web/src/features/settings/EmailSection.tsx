@@ -44,6 +44,7 @@ import {
 } from '../../ui';
 import { GateButton, useCan } from '../session/permissions';
 import { emailFieldHelp } from './fieldHelp';
+import { EmailTestDetail } from './EmailTestDetail';
 
 type Props = {
   /** The working copy's email slice, owned by `SettingsPage`. */
@@ -157,7 +158,7 @@ export function EmailSection({ email, onChange }: Props) {
       <Card title={t('settings.email.cardTitle')}>
         <p className="lede">{t('settings.email.lede')}</p>
 
-        <div className="form">
+        <div className="form settings-rows">
           <Field
             label={t('settings.email.enabled.label')}
             hint={t('settings.email.enabled.hint')}
@@ -318,7 +319,7 @@ export function EmailSection({ email, onChange }: Props) {
         {setPassword.error ? <ErrorNote error={setPassword.error} /> : null}
         {clearPassword.error ? <ErrorNote error={clearPassword.error} /> : null}
 
-        <div className="form">
+        <div className="form settings-rows">
           <Field
             label={t('settings.email.password.label')}
             htmlFor="set-email-password"
@@ -368,7 +369,7 @@ export function EmailSection({ email, onChange }: Props) {
           </InlineWarning>
         ))}
 
-        <div className="form">
+        <div className="form settings-rows">
           <Field
             label={t('settings.email.test.to.label')}
             htmlFor="set-email-test-to"
@@ -400,6 +401,9 @@ export function EmailSection({ email, onChange }: Props) {
         {test.error ? <ErrorNote error={test.error} /> : null}
         {/* ...while a RELAY-level failure arrives as a successful response describing a failure. */}
         {test.data ? <TestOutcome result={test.data} t={t} /> : null}
+        {/* t70: the full protocol trace, collapsed beneath the plain-language verdict above. Kept
+            in its own component so this file owns the summary and that one owns the detail. */}
+        {test.data ? <EmailTestDetail result={test.data} /> : null}
       </Card>
     </>
   );

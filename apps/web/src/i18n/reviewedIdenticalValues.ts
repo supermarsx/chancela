@@ -5,6 +5,32 @@
  * cognates, and (for pt-BR) shared Portuguese. The hard i18n gate requires the current unique
  * value set to equal this explicit ledger: any new copied value or removed reviewed value fails.
  * Machine-quality locales still require native review as documented in TRANSLATIONS.md.
+ *
+ * ## Before you add an entry: is the identity a cognate, or an untranslated gap?
+ *
+ * Only the first belongs here. `Tabela`, `Lista` and `Citação` are the ordinary words in Polish,
+ * Swedish and Brazilian Portuguese — registering them is correct, and forcing a synonym to satisfy
+ * the gate would make the copy worse. A value identical merely because nobody translated it is a
+ * **translation bug**, and the fix is the translation. Judge per value: a recent batch of fourteen
+ * collisions split eight-to-six.
+ *
+ * The reason this is worth a moment rather than a reflex: **registering an untranslated gap is
+ * worse than leaving the gate red.** A red gate tells you something is wrong; an entry here tells
+ * everyone afterwards that the identity was reviewed and intended. It converts a visible failure
+ * into an invisible one, in a file whose whole purpose is to record deliberate decisions.
+ *
+ * ## How to add: BY NAME. Do not regenerate this file.
+ *
+ * An earlier note (t23) advised regenerating this file programmatically from the live catalogs
+ * rather than hand-editing it. **That advice is backwards in a tree with several agents mid-write,
+ * and following it is what caused the collision it warns about.** A regeneration is a whole-file
+ * rewrite whose contents depend on whatever every other agent happens to have on disk at that
+ * instant — so it silently adopts a peer's half-finished catalog edit as reviewed fact.
+ *
+ * Add the specific values you need, then verify the diff is purely additive
+ * (`git diff --numstat` — insertions only, zero deletions). That way the change can only ever be
+ * the entries you intended. Order within each array follows the gate's own
+ * `localeCompare(…, 'pt')` sort.
  */
 export const REVIEWED_IDENTICAL_VALUES = {
   'en-US': [
@@ -401,6 +427,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Biblioteca de minutas do grupo arquivada',
     'Biblioteca de minutas do grupo atualizada',
     'Biblioteca de minutas do grupo criada',
+    'Bloco de código',
     'Blocos',
     'bloqueado',
     'Bloqueado',
@@ -469,6 +496,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Chave primária',
     'Chave privada em repouso',
     'Chaves VRI/TU',
+    'Citação',
     'Citação fixada.',
     'Citações copiadas.',
     'Citações selecionadas',
@@ -957,6 +985,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Linhas pendentes/incertas',
     'Linhas: {count}',
     'Lisboa',
+    'Lista',
     'Lista de confiança',
     'Lista de confiança TSL',
     'Livro',
@@ -1508,6 +1537,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Supervisor necessário',
     'Suspender',
     'Suspensa',
+    'Tabela',
     'Tabela de entidades',
     'Tamanho',
     'Tamanho declarado',
@@ -1903,6 +1933,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Informativo',
     'Intervalo:',
     'Lisboa',
+    'Lista',
     'Lote local',
     'Marcador %%EOF',
     'Maximizar',
@@ -2262,6 +2293,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Encosto Estratégico, Lda.',
     'https://…',
     'https://…/cae_dataset.json',
+    'Lista',
     'MCP',
     'min',
     'NIPC {nipc}',
@@ -2278,6 +2310,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'SCAP (AMA)',
     'SQLCipher',
     'startxref',
+    'Tabela',
     'TSA/QTST',
     'TST',
     'VRI',
@@ -2381,6 +2414,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'https://…',
     'https://…/cae_dataset.json',
     'Info',
+    'Lista',
     'MCP',
     'min',
     'Motor',

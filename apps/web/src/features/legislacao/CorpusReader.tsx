@@ -30,10 +30,22 @@
  * An open selection takes precedence over the search results, so the search term is preserved as
  * the context to come back TO; editing the search box abandons the selection.
  *
+ * ## Reading a long law (t67)
+ * The search box is **persistent**: it sticks to the top of the reader while a diploma's full text
+ * is read, and the settled query is mirrored into `?q=` (with `replace`, from the debounce) so it
+ * survives a reload and can be shared. That mirror runs in ONE direction and is self-healing —
+ * see the effect for why a URL → box direction is unsound here rather than merely unnecessary.
+ * An active query is stated in words next to the box with its "Limpar" way out.
+ * Beside the text, {@link ArticleIndex} is a sticky, independently-scrolling `<nav>` of the open
+ * diploma's articles: the article being read is `aria-current="location"` (tracked by the URL in
+ * the single-article view, by an `IntersectionObserver` over the `#artigo-<n>` anchors in the
+ * diploma view) and is kept in view inside the rail. On narrow viewports the rail is not floated —
+ * it reorders above the text as a capped jump list, so it never overlaps the statute.
+ *
  * An old server that predates the corpus API surfaces the endpoint error honestly via
  * {@link ErrorNote}.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   useLawCorpus,
@@ -54,6 +66,7 @@ import type { TFunction } from '../../i18n';
 import {
   Badge,
   Button,
+  DateTime,
   EmptyState,
   ErrorNote,
   FieldHelp,
@@ -64,6 +77,7 @@ import {
   abbreviateDigest,
   useToast,
 } from '../../ui';
+import { formatTimestamp } from '../../format';
 import { ExternalLink } from './links';
 
 /**
@@ -195,7 +209,8 @@ function AuthenticityCaveat({ corpus }: { corpus: LawCorpusView }) {
       <p>
         {t('legislacao.corpus.authenticity.body', {
           origin,
-          date: corpus.generated_at.slice(0, 10),
+          // A provenance stamp is an instant, not a calendar day.
+          date: formatTimestamp(corpus.generated_at),
           digest: abbreviateDigest(corpus.digest, 8),
           verified: corpus.counts.verified,
           pending: corpus.counts.pending,
@@ -206,7 +221,7 @@ function AuthenticityCaveat({ corpus }: { corpus: LawCorpusView }) {
         <p className="muted">
           {t('legislacao.corpus.provenance', {
             source: corpus.provenance.source_kind,
-            date: corpus.provenance.retrieved_at.slice(0, 10),
+            date: formatTimestamp(corpus.provenance.retrieved_at),
           })}{' '}
           <ExternalLink href={corpus.provenance.source_url}>
             {corpus.provenance.source_url}
@@ -334,7 +349,9 @@ function Citation({ article }: { article: LawArticleView }) {
       {s.retrieved_at ? (
         <div>
           <dt>{t('legislacao.corpus.article.retrieved')}</dt>
-          <dd>{s.retrieved_at.slice(0, 10)}</dd>
+          <dd>
+            <DateTime value={s.retrieved_at} evidentiary />
+          </dd>
         </div>
       ) : null}
     </dl>
@@ -577,6 +594,120 @@ function SearchResults({
   );
 }
 
+// --- Article index (the bookmark rail) --------------------------------------------------------
+
+/**
+ * Follows the reader's scroll and reports which of the on-page articles is currently being read.
+ *
+ * Only meaningful in the diploma view, where every article is rendered on the page under its
+ * `#artigo-<number>` anchor; the single-article view already names the current article in the URL.
+ * Falls back to "no answer" wherever `IntersectionObserver` is absent (jsdom, very old shells),
+ * which simply leaves the first article marked rather than breaking the index.
+ */
+function useReadingArticle(numbers: string[], enabled: boolean): string {
+  const [active, setActive] = useState('');
+  const key = numbers.join('|');
+
+  useEffect(() => {
+    if (!enabled || typeof IntersectionObserver === 'undefined') return;
+    const order = key ? key.split('|') : [];
+    const elements = order
+      .map((number) => document.getElementById(`artigo-${number}`))
+      .filter((element): element is HTMLElement => element !== null);
+    if (elements.length === 0) return;
+
+    // The band is the upper third of the viewport: the article whose body is under the reader's
+    // eye, not merely the one that happens to touch the bottom edge.
+    const visible = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const number = entry.target.id.slice('artigo-'.length);
+          if (entry.isIntersecting) visible.add(number);
+          else visible.delete(number);
+        }
+        const first = order.find((number) => visible.has(number));
+        if (first) setActive(first);
+      },
+      { rootMargin: '-10% 0px -65% 0px', threshold: 0 },
+    );
+    for (const element of elements) observer.observe(element);
+    return () => observer.disconnect();
+  }, [key, enabled]);
+
+  return active;
+}
+
+/**
+ * The open diploma's article index — a persistent, bookmark-like rail beside the text.
+ *
+ * It is a `<nav>` landmark wrapping a labelled list of real `<button>`s, so it is reachable and
+ * announced sensibly by keyboard/AT. Clicking an entry goes through the reader's existing
+ * `?artigo=` navigation (a pushed history entry, so Back undoes it) — there is no second
+ * navigation path. The current entry carries `aria-current="location"` and is scrolled into view
+ * inside the rail as the reader moves, and the rail scrolls on its own (`overflow-y: auto`,
+ * capped height) so a 300-article code never stretches the page.
+ *
+ * Responsive form: the rail is not floated on narrow viewports — the layout collapses to a single
+ * column and the index reorders ABOVE the text as a capped, scrollable jump list, so it can never
+ * overlap the statutory text (see `.leg-corpus__index` in `theme.css`).
+ */
+function ArticleIndex({
+  diplomaId,
+  articleNumber,
+  onOpenArticle,
+}: {
+  diplomaId: string;
+  articleNumber: string;
+  onOpenArticle: (diplomaId: string, number: string) => void;
+}) {
+  const t = useT();
+  const q = useLawDiploma(diplomaId);
+  const articles = q.data?.articles ?? [];
+  const numbers = articles.map((a) => a.number);
+  const reading = useReadingArticle(numbers, articleNumber === '');
+  const current = articleNumber || reading || numbers[0] || '';
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const element = activeRef.current;
+    // `scrollIntoView` is unimplemented in jsdom; `block: 'nearest'` keeps the rail from yanking
+    // the page around when the entry is already visible.
+    if (element && typeof element.scrollIntoView === 'function') {
+      element.scrollIntoView({ block: 'nearest' });
+    }
+  }, [current]);
+
+  if (articles.length === 0) return null;
+
+  return (
+    <nav className="leg-corpus__index" aria-label={t('legislacao.corpus.index.aria')}>
+      <h4 className="leg-corpus__index-title">{t('legislacao.corpus.index.title')}</h4>
+      <ul className="leg-corpus__index-list" aria-label={t('legislacao.corpus.index.title')}>
+        {articles.map((a) => {
+          const isCurrent = a.number === current;
+          return (
+            <li key={a.number}>
+              <button
+                type="button"
+                className="leg-corpus__index-item"
+                ref={isCurrent ? activeRef : undefined}
+                aria-current={isCurrent ? 'location' : undefined}
+                onClick={() => onOpenArticle(diplomaId, a.number)}
+              >
+                <span className="leg-corpus__index-label">{a.label}</span>
+                {a.heading.trim() ? (
+                  <span className="leg-corpus__index-heading muted">{a.heading}</span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
 // --- The reader ------------------------------------------------------------------------------
 
 export function CorpusReader() {
@@ -587,21 +718,47 @@ export function CorpusReader() {
 
   const diplomaId = params.get('diploma') ?? '';
   const articleNumber = params.get('artigo') ?? '';
-  const initialQuery = params.get('q') ?? '';
-  const [term, setTerm] = useState(initialQuery);
-  const [debounced, setDebounced] = useState(initialQuery);
+  const urlQuery = params.get('q') ?? '';
+  const [term, setTerm] = useState(urlQuery);
+  const [debounced, setDebounced] = useState(urlQuery);
   const [citations, setCitations] = useState<LawCitationView[]>([]);
   const [citationNotice, setCitationNotice] = useState(t('legislacao.citations.notice'));
-
-  // Debounce the search box, mirroring the CAE explorer / curated-shelf idiom. The query is
-  // seeded from `?q=` on mount (so a search is deep-linkable IN) but kept as local state —
-  // it is deliberately NOT written back to the URL, so it never races the diploma/article
-  // navigation params below (react-router coalesces same-tick `setParams` calls). It survives
-  // opening a law, which is what makes "Voltar" land back on the results.
+  // Debounce the search box, mirroring the CAE explorer / curated-shelf idiom.
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(term), 200);
     return () => window.clearTimeout(timer);
   }, [term]);
+
+  /**
+   * Box → URL, and ONE direction only.
+   *
+   * The settled query is mirrored into `?q=` so a search survives a reload and can be shared,
+   * with `replace` so typing never piles up history entries. It is deliberately **self-healing**
+   * rather than fire-once: the condition is "the URL disagrees with the settled query", so if a
+   * diploma/article navigation lands in the same tick and wins with stale params — react-router
+   * coalesces same-tick `setParams` calls, which is what the original author warned about — the
+   * dropped `q` is simply rewritten on the next pass. Each run makes the two equal, so it
+   * terminates.
+   *
+   * There is deliberately **no URL → box direction.** It looks symmetrical and is not: every `q`
+   * write here and in `changeTerm` uses `replace`, so no history entry ever differs from its
+   * neighbour by `q` alone and there is nothing for a Back to restore. The only thing such an
+   * effect can actually observe is the transient stale-params write above — and treating that as
+   * user intent wipes the search box mid-read, which flipped the header control from "Voltar aos
+   * resultados" to "Voltar aos diplomas" in roughly two runs out of three.
+   */
+  useEffect(() => {
+    if (urlQuery === debounced) return;
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (debounced) p.set('q', debounced);
+        else p.delete('q');
+        return p;
+      },
+      { replace: true },
+    );
+  }, [debounced, urlQuery, setParams]);
 
   // Opening a diploma/article PUSHES a history entry (never `replace`) — the selection is the
   // reader's navigation state, so the browser Back button must undo it and return to the list
@@ -711,6 +868,38 @@ export function CorpusReader() {
       </header>
       <div className="panel__body stack--tight">
         <p className="leg-corpus__lede muted">{t('legislacao.corpus.lede')}</p>
+
+        {/* The search never leaves: it sticks to the top of the reader's scroll so it is on
+            screen while a law's full text is being read, and an active query is stated in words
+            with its way out beside it — a box that silently narrows a legal corpus is a trap. */}
+        <div className="leg-corpus__searchbar">
+          <div className="leg-search">
+            <Input
+              type="search"
+              value={term}
+              onChange={(e) => changeTerm(e.target.value)}
+              placeholder={t('legislacao.corpus.search.placeholder')}
+              aria-label={t('legislacao.corpus.search.aria')}
+              autoComplete="off"
+            />
+            {searching ? (
+              <div className="leg-search__status">
+                <span className="leg-corpus__filter" role="status">
+                  {t('legislacao.corpus.search.active', { term: query })}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="leg-search__clear"
+                  onClick={() => changeTerm('')}
+                >
+                  {t('legislacao.corpus.search.clear')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
         <CitationShelf
           citations={citations}
           notice={citationNotice}
@@ -718,49 +907,37 @@ export function CorpusReader() {
           onClear={() => setCitations([])}
         />
 
-        <div className="leg-search">
-          <Input
-            type="search"
-            value={term}
-            onChange={(e) => changeTerm(e.target.value)}
-            placeholder={t('legislacao.corpus.search.placeholder')}
-            aria-label={t('legislacao.corpus.search.aria')}
-            autoComplete="off"
-          />
-          {searching ? (
-            <div className="leg-search__status">
-              <Button
-                type="button"
-                variant="ghost"
-                className="leg-search__clear"
-                onClick={() => changeTerm('')}
-              >
-                {t('legislacao.corpus.search.clear')}
-              </Button>
-            </div>
+        <div className={`leg-corpus__layout${reading ? ' leg-corpus__layout--indexed' : ''}`}>
+          <div className="leg-corpus__main">
+            {diplomaId && articleNumber ? (
+              <ArticleView
+                diplomaId={diplomaId}
+                articleNumber={articleNumber}
+                onPinArticle={pinArticle}
+                pinPending={resolver.isPending}
+                onBackToDiploma={openDiploma}
+              />
+            ) : diplomaId ? (
+              <DiplomaDetail
+                diplomaId={diplomaId}
+                onOpenArticle={openArticle}
+                onPinArticle={pinArticle}
+                pinPending={resolver.isPending}
+              />
+            ) : searching ? (
+              <SearchResults term={query} onOpen={openArticle} />
+            ) : (
+              <CorpusOverview onOpenDiploma={openDiploma} />
+            )}
+          </div>
+          {reading ? (
+            <ArticleIndex
+              diplomaId={diplomaId}
+              articleNumber={articleNumber}
+              onOpenArticle={openArticle}
+            />
           ) : null}
         </div>
-
-        {diplomaId && articleNumber ? (
-          <ArticleView
-            diplomaId={diplomaId}
-            articleNumber={articleNumber}
-            onPinArticle={pinArticle}
-            pinPending={resolver.isPending}
-            onBackToDiploma={openDiploma}
-          />
-        ) : diplomaId ? (
-          <DiplomaDetail
-            diplomaId={diplomaId}
-            onOpenArticle={openArticle}
-            onPinArticle={pinArticle}
-            pinPending={resolver.isPending}
-          />
-        ) : searching ? (
-          <SearchResults term={query} onOpen={openArticle} />
-        ) : (
-          <CorpusOverview onOpenDiploma={openDiploma} />
-        )}
       </div>
     </section>
   );

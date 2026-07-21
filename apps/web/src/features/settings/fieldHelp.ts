@@ -124,4 +124,7 @@ export const emailFieldHelp = {
   get helo_name() {
     return t('settings.email.help.heloName');
   },
+  get allow_insecure() {
+    return t('settings.email.help.allowInsecure');
+  },
 } satisfies Record<string, string>;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { formatDate, formatTimestamp } from '../../format';
 import { renderWithProviders } from '../../test/utils';
 import { LegislacaoPage } from './LegislacaoPage';
 import { CorpusReader } from './CorpusReader';
@@ -24,6 +25,15 @@ import type {
 // nothing tries to reach the OS / a real tab under jsdom.
 vi.mock('../../desktop/openExternal', () => ({ openExternal: vi.fn() }));
 import { openExternal } from '../../desktop/openExternal';
+
+/** The stylesheet as text — the reader's responsive rules are CSS-only, so they are read here. */
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8');
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -183,7 +193,10 @@ describe('Legislação — page', () => {
     expect(card).not.toBeNull();
     const scope = within(card as HTMLElement);
     expect(scope.getByText(/Alterado por Lei n\.º 8\/2022/)).toBeTruthy();
-    expect(scope.getByText(`Revisto em ${REVIEWED_ON}`)).toBeTruthy();
+    // `REVIEWED_ON` is an editorial calendar DAY, so it renders through the shared locale-aware
+    // formatter rather than as the raw `2026-07-07` wire string. Derived from the formatter, so
+    // this cannot pass on a wrong day and does not depend on the runner's locale or zone.
+    expect(scope.getByText(`Revisto em ${formatDate(REVIEWED_ON)}`)).toBeTruthy();
   });
 
   it('routes the official-source link through openExternal on a plain click', () => {
@@ -566,7 +579,13 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
 
     // The origem/autenticidade caveat discloses the corpus provenance/integrity.
     expect(await screen.findByText('Origem e autenticidade')).toBeTruthy();
-    expect(screen.getByText(/gerado em 2026-07-08/)).toBeTruthy();
+    // A provenance stamp is an INSTANT, not a calendar day: it renders at evidentiary
+    // precision (seconds + zone) rather than as a `.slice(0, 10)` truncation, which silently
+    // discarded the time and so displayed the previous day for readers west of the meridian.
+    // A substring matcher rather than a RegExp: the formatted output contains `/`, `,` and a
+    // zone like `GMT+1`, all of which are regex-special and would need escaping.
+    const generatedAt = `gerado em ${formatTimestamp('2026-07-08T00:00:00Z')}`;
+    expect(screen.getByText((content) => content.includes(generatedAt))).toBeTruthy();
 
     // Both diplomas are listed; the fully-verified one badges Verified, the pending one Pending —
     // and the two badges carry visually-distinct tone classes.
@@ -704,6 +723,18 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
 
   // --- Getting back out of a law's full text (t34) ---------------------------------------------
 
+  /** Exposes the router's query string, so URL-preserved state is asserted on the real URL. */
+  function LocationProbe() {
+    const location = useLocation();
+    return <span data-testid="search-params">{location.search}</span>;
+  }
+
+  /** The reader's sticky search band — scopes "Limpar" away from the citation shelf's own. */
+  function searchBar(): HTMLElement {
+    const box = screen.getByLabelText('Pesquisar em toda a legislação');
+    return box.closest('.leg-corpus__searchbar') as HTMLElement;
+  }
+
   /** Stands in for the browser's Back button inside the MemoryRouter. */
   function BrowserBack() {
     const navigate = useNavigate();
@@ -792,5 +823,145 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Voltar aos diplomas' }));
     expect(await screen.findByText('Origem e autenticidade')).toBeTruthy();
+  });
+
+  // --- A search that never scrolls away + the article index (t67) -------------------------------
+
+  it('keeps the search box mounted when a diploma opens, and states what is filtered', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />);
+
+    const box = (await screen.findByLabelText(
+      'Pesquisar em toda a legislação',
+    )) as HTMLInputElement;
+    fireEvent.change(box, { target: { value: 'assinatura' } });
+    expect(await screen.findByText('2 resultados')).toBeTruthy();
+    // An active filter is stated in words, with its way out beside it.
+    expect(screen.getByText('A filtrar por «assinatura»')).toBeTruthy();
+    expect(within(searchBar()).getByRole('button', { name: 'Limpar' })).toBeTruthy();
+
+    // Opening a law does NOT unmount or reset the search — it stays on screen, still filled,
+    // still declaring the active filter, inside the reader's sticky search bar.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Abrir Artigo 25.º — Efeitos legais das assinaturas eletrónicas',
+      }),
+    );
+    expect(
+      await screen.findByText(/efeito legal equivalente ao de uma assinatura manuscrita/),
+    ).toBeTruthy();
+    const still = screen.getByLabelText('Pesquisar em toda a legislação') as HTMLInputElement;
+    expect(still).toBe(box);
+    expect(still.value).toBe('assinatura');
+    expect(screen.getByText('A filtrar por «assinatura»')).toBeTruthy();
+    expect(still.closest('.leg-corpus__searchbar')).not.toBeNull();
+  });
+
+  it('mirrors the settled query into ?q= so the search survives a reload', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(
+      <>
+        <LocationProbe />
+        <CorpusReader />
+      </>,
+    );
+    const url = () => new URLSearchParams(screen.getByTestId('search-params').textContent ?? '');
+
+    fireEvent.change(await screen.findByLabelText('Pesquisar em toda a legislação'), {
+      target: { value: 'assinatura' },
+    });
+    await waitFor(() => expect(url().get('q')).toBe('assinatura'));
+
+    // Opening a law keeps `?q=` alongside the selection — a reload lands on the same filter.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Abrir Artigo 25.º — Efeitos legais das assinaturas eletrónicas',
+      }),
+    );
+    await waitFor(() => {
+      expect(url().get('q')).toBe('assinatura');
+      expect(url().get('artigo')).toBe('25');
+    });
+
+    // Clearing the filter takes `?q=` out again, so the URL never claims a filter that the
+    // corpus is no longer under.
+    fireEvent.click(within(searchBar()).getByRole('button', { name: 'Limpar' }));
+    await waitFor(() => expect(url().get('q')).toBeNull());
+  });
+
+  it('lists the open diploma articles in a labelled nav index and marks the current one', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />, ['/?diploma=eidas-910-2014&artigo=6']);
+
+    const index = await screen.findByRole('navigation', {
+      name: 'Índice de artigos do diploma',
+    });
+    const entries = within(index).getAllByRole('button');
+    expect(entries.map((b) => b.textContent)).toEqual([
+      'Artigo 25.ºEfeitos legais das assinaturas eletrónicas',
+      'Artigo 6.ºReconhecimento mútuo',
+    ]);
+    // Every entry is a real focusable button inside a labelled list; only the open article is
+    // marked current.
+    expect(within(index).getByRole('list', { name: 'Artigos' })).toBeTruthy();
+    expect(entries.filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1);
+    expect(entries[1].getAttribute('aria-current')).toBe('location');
+    entries[0].focus();
+    expect(document.activeElement).toBe(entries[0]);
+
+    // No index at all before a diploma is open — there is nothing to index.
+    cleanup();
+    renderWithProviders(<CorpusReader />);
+    expect(await screen.findByText('Origem e autenticidade')).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Índice de artigos do diploma' })).toBeNull();
+  });
+
+  it('navigates from the index by pushing history, so Back returns to where reading started', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(
+      <>
+        <BrowserBack />
+        <CorpusReader />
+      </>,
+      ['/?diploma=eidas-910-2014'],
+    );
+
+    const index = await screen.findByRole('navigation', {
+      name: 'Índice de artigos do diploma',
+    });
+    fireEvent.click(within(index).getByRole('button', { name: /Artigo 6\.º/ }));
+
+    // It goes through the existing ?artigo= mechanism — the single-article view opens…
+    expect(
+      await screen.findByText(/reconhecidos para efeitos da autenticação transfronteiriça/),
+    ).toBeTruthy();
+    const marked = within(
+      screen.getByRole('navigation', { name: 'Índice de artigos do diploma' }),
+    ).getAllByRole('button');
+    expect(marked[1].getAttribute('aria-current')).toBe('location');
+
+    // …and it PUSHED, so Back returns to the whole diploma rather than leaving the reader.
+    fireEvent.click(screen.getByRole('button', { name: 'browser-back' }));
+    expect(
+      await screen.findByRole('button', {
+        name: 'Abrir Artigo 25.º — Efeitos legais das assinaturas eletrónicas',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('floats the index only when there is room, and caps both forms so they scroll', async () => {
+    const css = await themeCss();
+    // Wide: a second, sticky, independently-scrolling column beside the text.
+    expect(css).toMatch(/@media \(min-width: 60rem\) \{\s*\.leg-corpus__layout--indexed \{/);
+    const rail = css.slice(css.indexOf('.leg-corpus__index {'));
+    expect(rail).toMatch(/position: sticky;/);
+    expect(rail).toMatch(/overflow-y: auto;/);
+    // Narrow: it stops floating and reorders ABOVE the text as a capped jump list, so it can
+    // never overlap the statutory text.
+    const narrow = css.slice(css.indexOf('@media (max-width: 59.99rem)'));
+    expect(narrow.slice(0, 200)).toMatch(/position: static;/);
+    expect(narrow.slice(0, 200)).toMatch(/order: -1;/);
+    // The reader opts out of `.panel`'s clipping, without which neither sticky element works.
+    expect(css).toMatch(/\.leg-corpus \{[^}]*overflow: visible;/);
   });
 });

@@ -39,7 +39,16 @@ import { useSearchParams } from 'react-router-dom';
 import { ApiError, lawPdfPath } from '../../api/client';
 import { useFetchLawPdf, useLawArchive, type LawArchiveState } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Badge, Button, EmptyState, Input, abbreviateDigest, useToast } from '../../ui';
+import { formatDate } from '../../format';
+import {
+  Badge,
+  Button,
+  DateTime,
+  EmptyState,
+  Input,
+  abbreviateDigest,
+  useToast,
+} from '../../ui';
 import { ExternalLink } from './links';
 import {
   DIPLOMAS,
@@ -171,12 +180,19 @@ function DiplomaCard({
               {t('legislacao.amendedBy', { amendment: diploma.lastAmended })}
             </Badge>
           ) : null}
-          <Badge tone="neutral">{t('legislacao.reviewedOn', { date: diploma.reviewedOn })}</Badge>
+          <Badge tone="neutral">
+            {t('legislacao.reviewedOn', { date: formatDate(diploma.reviewedOn) })}
+          </Badge>
           {stored ? (
             <Badge tone="ok">
               {t('legislacao.storedBadge')}
               {entry?.stored_digest ? ` · ${abbreviateDigest(entry.stored_digest, 6)}` : ''}
-              {entry?.retrieved_at ? ` · ${entry.retrieved_at.slice(0, 10)}` : ''}
+              {entry?.retrieved_at ? (
+                <>
+                  {' · '}
+                  <DateTime value={entry.retrieved_at} />
+                </>
+              ) : null}
             </Badge>
           ) : null}
         </div>

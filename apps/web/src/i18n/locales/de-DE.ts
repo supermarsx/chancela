@@ -4660,6 +4660,61 @@ export const deDE: Catalog = {
   'settings.email.help.allowInsecure':
     'Erlaubt den Versand ohne TLS ausdrücklich. Ohne diese Bestätigung wird eine unverschlüsselte Konfiguration abgelehnt.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Sprache der Oberfläche',
+  'settings.language.lede':
+    'Eine Einstellung Ihres Kontos: Sie gilt für Sie in jedem Browser, in dem Sie sich anmelden, und für niemanden sonst auf dieser Instanz.',
+  'settings.language.field.label': 'Sprache',
+  'settings.language.field.hint':
+    'Wählen Sie eine feste Sprache, oder belassen Sie es bei automatisch, um dem Browser zu folgen.',
+  'settings.language.help':
+    'Im Konto gespeichert. Eine feste Sprache wird immer verwendet; „automatisch“ verhandelt mit den Sprachen, die der Browser meldet.',
+  'settings.language.auto': 'Automatisch (diesem Browser folgen)',
+  'settings.language.autoResolves':
+    'In diesem Browser zeigt „automatisch“ {locale}. Gespeichert bleibt „automatisch“, an einem anderen Rechner folgt es also dessen Browser.',
+  'settings.language.notTheme':
+    'Das Design folgt dem Betriebssystem, die Sprache dem Browser. Das sind verschiedene Mechanismen, so ähnlich die Optionen auch aussehen.',
+  'settings.language.notDocuments':
+    'Dies ändert nicht die Sprache, in der erzeugte Dokumente verfasst sind — das ist die Sprache der Protokolle selbst und wird unter Documentos festgelegt.',
+  'settings.language.signInScreen':
+    'Der Anmeldebildschirm verwendet immer die für die Instanz konfigurierte Sprache: es gibt noch keinen Benutzer, dessen Wunsch man folgen könnte.',
+  'settings.language.signedOut.title': 'Nicht angemeldet',
+  'settings.language.signedOut.body':
+    'Melden Sie sich an, um Ihre Sprache zu wählen. Ohne Benutzer gilt die für die Instanz konfigurierte Sprache.',
+  'settings.language.savedToast': 'Sprache der Oberfläche gespeichert',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Editor wird geladen…',
+  'acts.body.editor.loadFailed': 'Der Editor wurde nicht geladen',
+  'acts.body.editor.loadFailedBody':
+    'Laden Sie die Seite neu. Solange der Editor nicht geladen ist, kann der Protokolltext hier nicht geschrieben werden — nichts von dem bereits Geschriebenen ist verloren.',
+  'acts.body.editor.subset':
+    'Überschriften, Absätze, Fett, Kursiv und Trennlinien werden angenommen. Tabellen, Bilder, Links, Listen, Codeblöcke und HTML weist der Server zurück, statt sie stillschweigend zu entfernen.',
+  'acts.body.editor.placeholders':
+    'Die Felder {{ … }} werden nur hervorgehoben, nie gesperrt: Sie können sie löschen, verschieben oder neu tippen wie jeden anderen Text.',
+  'acts.body.editor.bytes': '{used} von {max} Bytes',
+  'acts.body.editor.bytesOver':
+    '{used} von {max} Bytes — über dem Limit. Kürzen Sie den Text; es wird nichts für Sie abgeschnitten.',
+  'acts.body.rejected.title': 'Dieser Text wird nicht übersetzt werden',
+  'acts.body.rejected.at': 'in Zeile {line}, Spalte {column}.',
+  'acts.body.rejected.remedy':
+    'Berichtigen oder entfernen Sie diese Konstruktion. Der Server weist sie zurück, statt sie zu löschen, damit Sie nie einen Text freigeben, den das gesiegelte Dokument nicht enthält.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Ein Teil des Eingefügten passt nicht in ein Protokoll',
+  'acts.body.paste.removed': '{construct} ({count}) — entfernt. Es gab keinen Text zu behalten.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — in Absätze umgewandelt. Der Text blieb, die Struktur nicht.',
+  'acts.body.paste.why':
+    'Ein Protokoll trägt nur Überschriften, Absätze, Fett, Kursiv und Trennlinien. Wir sagen Ihnen lieber, was sich geändert hat, als Sie später eine Lücke entdecken zu lassen.',
+  'acts.body.paste.dismiss': 'Verstanden',
+  'acts.body.construct.table': 'Tabelle',
+  'acts.body.construct.image': 'Bild',
+  'acts.body.construct.list': 'Liste',
+  'acts.body.construct.code': 'Codeblock',
+  'acts.body.construct.quote': 'Zitat',
+  'acts.body.construct.link': 'Link',
+
   'settings.providerCredentials.cardTitle': 'Signaturanbieter',
   'settings.providerCredentials.lede':
     'Verwalten Sie die Zugangsdaten der Signaturanbieter, mit mehreren Schlüsseln pro Anbieter, Priorität und Failover.',
@@ -5583,7 +5638,7 @@ export const deDE: Catalog = {
   "users.create.role.default": "Server-Voreinstellung (Gestor, global)",
   "users.create.role.optionBlocked": "{role} — über Ihrer Befugnis",
   "users.create.role.carries": "Diese Rolle umfasst",
-  "users.create.role.aboveCeiling": "Sie können {role} nicht vergeben: Sie enthält Berechtigungen, die Sie in diesem Geltungsbereich nicht besitzen ({permissions}).",
+  "users.create.role.aboveCeiling": "Sie können {role} nicht vergeben: Diese Rolle enthält Berechtigungen, die Sie in diesem Geltungsbereich nicht besitzen ({permissions}).",
   "users.create.role.defaultNote": "Ohne gewählte Rolle erhält das Konto die Server-Voreinstellung: Gestor, im globalen Geltungsbereich.",
   "users.create.credentialsCard": "Zugangsdaten",
   "users.create.credentialsLede": "Legen Sie das erste Passwort fest und geben Sie es über einen sicheren Weg weiter. Es wird nie per E-Mail verschickt.",

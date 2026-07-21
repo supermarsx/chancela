@@ -30,6 +30,7 @@ import {
   Badge,
   Button,
   Card,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -81,13 +82,6 @@ const DSR_REQUEST_STATUS_LABELS: Record<DsrRequestStatus, string> = {
   pending: 'Pendente',
   completed: 'Concluído',
 };
-
-function formatDateTime(value?: string): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('pt-PT', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
 
 function IdentitySection({ user }: { user: UserView }) {
   const t = useT();
@@ -344,9 +338,14 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
                     {DSR_REQUEST_STATUS_LABELS[request.status]}
                   </Badge>
                 </td>
-                <td>{formatDateTime(request.created_at)}</td>
+                <td>
+                  {/* A data-subject request is a privacy-compliance record: evidentiary. */}
+                  <DateTime value={request.created_at} evidentiary />
+                </td>
                 <td>{request.created_by}</td>
-                <td>{formatDateTime(request.completed_at)}</td>
+                <td>
+                  <DateTime value={request.completed_at} evidentiary />
+                </td>
                 <td className="users-actions">
                   {request.status === 'pending' ? (
                     <GateButton

@@ -28,6 +28,7 @@ const AMELIA: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 
 const GRANTS: PermissionGrant[] = [

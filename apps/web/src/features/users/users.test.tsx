@@ -13,10 +13,10 @@ const saveFileMock = vi.hoisted(() => ({
 
 vi.mock('../../desktop/saveFile', () => saveFileMock);
 
-import { LegacyNewUserRedirect, LegacyUserRedirect, LegacyUsersRedirect } from '../../app/router';
+import { LegacyUserRedirect, LegacyUsersRedirect } from '../../app/router';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import { UsersList } from './UserListPage';
-import { NewUserPanel } from './NewUserPage';
+import { NewUserPage } from './NewUserPage';
 import { EditUserPanel } from './EditUserPage';
 import { isValidUsername, usernameError } from './username';
 import type { DsrRequestView, DsrRequestType, UserView } from '../../api/types';
@@ -65,6 +65,7 @@ const AMELIA: UserView = {
   has_secret: false,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 
 interface Recorded {
@@ -153,8 +154,9 @@ describe('UsersList (Configurações → Utilizadores)', () => {
       ['/configuracoes?sec=utilizadores'],
     );
 
+    // t71: the roster's create action leaves Configurações for the dedicated create screen.
     const novo = await screen.findByRole('link', { name: /novo utilizador/i });
-    expect(novo.getAttribute('href')).toBe('/configuracoes?sec=utilizadores&user=novo');
+    expect(novo.getAttribute('href')).toBe('/utilizadores/novo');
 
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
@@ -187,12 +189,12 @@ describe('UsersList (Configurações → Utilizadores)', () => {
   });
 });
 
-describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
+describe('NewUserPage (/utilizadores/novo)', () => {
   it('renders a client-side validation error for an invalid username and disables submit', async () => {
     const { fn } = recordingFetch(() => jsonResponse([]));
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<NewUserPanel />, ['/configuracoes?sec=utilizadores&user=novo']);
+    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
 
     const input = await screen.findByLabelText('Nome de utilizador');
     fireEvent.change(input, { target: { value: 'Amelia' } });
@@ -209,7 +211,7 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<NewUserPanel />, ['/configuracoes?sec=utilizadores&user=novo']);
+    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
 
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'amelia.marques' },
@@ -250,7 +252,7 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<NewUserPanel />, ['/configuracoes?sec=utilizadores&user=novo']);
+    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
 
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'amelia.marques' },
@@ -266,6 +268,178 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
     // The 409 message shows inline against the field and in the error toast (R7).
     expect((await screen.findAllByText(/already exists/)).length).toBeGreaterThanOrEqual(1);
   });
+
+  /** Serve the reads the create screen makes: the role catalog and the SMTP status. */
+  function createScreenFetch(
+    roles: { id: string; name: string; permissions: string[]; protected: boolean }[],
+    emailDeliverable: boolean,
+  ) {
+    return recordingFetch((r) => {
+      if (r.method === 'POST') return jsonResponse(AMELIA, 201);
+      if (r.url.includes('/v1/settings/email/status')) {
+        return jsonResponse({
+          password_configured: emailDeliverable,
+          deliverable: emailDeliverable,
+          encrypted: true,
+          warnings: [],
+        });
+      }
+      if (r.url.includes('/v1/roles')) return jsonResponse(roles);
+      return jsonResponse([]);
+    });
+  }
+
+  const LEITOR = { id: 'r-leitor', name: 'Leitor', permissions: ['entity.read'], protected: false };
+  const OWNERISH = {
+    id: 'r-owner',
+    name: 'Proprietário',
+    permissions: ['entity.read', 'data.wipe'],
+    protected: true,
+  };
+
+  /** A creator holding `entity.read`@global and nothing else — Owner is above their ceiling. */
+  function renderAsNarrowCreator(fn: typeof fetch) {
+    vi.stubGlobal('fetch', fn);
+    return renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission === 'entity.read')}
+      >
+        <NewUserPage />
+      </StaticPermissionsProvider>,
+      ['/utilizadores/novo'],
+    );
+  }
+
+  async function fillRequired() {
+    fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
+      target: { value: 'amelia.marques' },
+    });
+    fireEvent.change(screen.getByLabelText('Nova palavra-passe'), {
+      target: { value: 'Str0ng!Vault9' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'Str0ng!Vault9' },
+    });
+  }
+
+  it('offers a grantable role and blocks one above the creators ceiling, naming it', async () => {
+    const { fn } = createScreenFetch([LEITOR, OWNERISH], true);
+    renderAsNarrowCreator(fn);
+
+    const picker = (await screen.findByLabelText('Função')) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(Array.from(picker.options).some((o) => o.value === 'r-leitor')).toBe(true),
+    );
+    const options = Array.from(picker.options);
+
+    // The role whose whole permission set the creator holds is selectable.
+    expect(options.find((o) => o.value === 'r-leitor')?.disabled).toBe(false);
+
+    // The one carrying a verb they lack stays VISIBLE but unselectable, and says why —
+    // a disabled option with a reason beats a 403 on submit.
+    const owner = options.find((o) => o.value === 'r-owner');
+    expect(owner?.disabled).toBe(true);
+    expect(owner?.textContent).toContain('Proprietário');
+    expect(owner?.textContent).toMatch(/acima da sua autoridade/i);
+  });
+
+  it('sends the chosen role in the SAME request as the create', async () => {
+    const { fn, calls } = createScreenFetch([LEITOR, OWNERISH], true);
+    renderAsNarrowCreator(fn);
+
+    await fillRequired();
+    fireEvent.change(await screen.findByLabelText('Função'), { target: { value: 'r-leitor' } });
+    fireEvent.click(screen.getByRole('button', { name: /criar utilizador/i }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    // One request carries both the account and its authority — no second round trip that
+    // could leave the user created-but-roleless.
+    expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({
+      username: 'amelia.marques',
+      role: { role_id: 'r-leitor', scope: { kind: 'global' } },
+    });
+    expect(calls.filter((c) => c.method === 'POST').length).toBe(1);
+  });
+
+  it('disables the welcome tickbox when SMTP cannot deliver, and explains why', async () => {
+    const { fn } = createScreenFetch([LEITOR], false);
+    renderAsNarrowCreator(fn);
+
+    const tickbox = (await screen.findByLabelText(/mensagem de boas-vindas/i)) as HTMLInputElement;
+    expect(tickbox.disabled).toBe(true);
+    expect(screen.getByText(/envio de e-mail não está configurado/i)).toBeTruthy();
+    // The explanation points at the settings page rather than failing at submit.
+    expect(screen.getByRole('link', { name: /configurar e-mail/i }).getAttribute('href')).toBe(
+      '/configuracoes?sec=email',
+    );
+  });
+
+  it('keeps the tickbox disabled until an address is entered, then sends the flag', async () => {
+    const { fn, calls } = createScreenFetch([LEITOR], true);
+    renderAsNarrowCreator(fn);
+
+    const tickbox = (await screen.findByLabelText(/mensagem de boas-vindas/i)) as HTMLInputElement;
+    // Deliverable SMTP, but nowhere to send it yet.
+    expect(tickbox.disabled).toBe(true);
+
+    await fillRequired();
+    fireEvent.change(screen.getByLabelText('E-mail (opcional)'), {
+      target: { value: 'amelia@example.pt' },
+    });
+    await waitFor(() => expect(tickbox.disabled).toBe(false));
+    fireEvent.click(tickbox);
+    fireEvent.click(screen.getByRole('button', { name: /criar utilizador/i }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({
+      email: 'amelia@example.pt',
+      send_welcome_email: true,
+    });
+  });
+
+  it('defaults the language to auto and sends a chosen locale', async () => {
+    const { fn, calls } = createScreenFetch([LEITOR], true);
+    renderAsNarrowCreator(fn);
+
+    const picker = (await screen.findByLabelText('Idioma')) as HTMLSelectElement;
+    // `auto` is the default: a new account keeps following its user's environment until
+    // somebody deliberately pins it.
+    expect(picker.value).toBe('auto');
+
+    await fillRequired();
+    fireEvent.change(picker, { target: { value: 'de-DE' } });
+    fireEvent.click(screen.getByRole('button', { name: /criar utilizador/i }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({ language: 'de-DE' });
+  });
+
+  it('sends language auto untouched rather than resolving it to a detected locale', async () => {
+    const { fn, calls } = createScreenFetch([LEITOR], true);
+    renderAsNarrowCreator(fn);
+
+    await fillRequired();
+    fireEvent.click(screen.getByRole('button', { name: /criar utilizador/i }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    // The literal string, NOT whatever locale happened to be active — storing the detected
+    // value would silently turn "follow my environment" into "pin me to this one".
+    expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({ language: 'auto' });
+  });
+
+  it('never echoes the submitted password back into the form', async () => {
+    const { fn } = createScreenFetch([LEITOR], true);
+    renderAsNarrowCreator(fn);
+
+    await fillRequired();
+
+    // The secret lives only in the two password inputs, which are type=password — it is
+    // never rendered as text anywhere on the screen.
+    expect(screen.queryByText('Str0ng!Vault9')).toBeNull();
+    for (const input of ['Nova palavra-passe', 'Confirmar palavra-passe']) {
+      expect((screen.getByLabelText(input) as HTMLInputElement).type).toBe('password');
+    }
+  });
 });
 
 const BRUNO: UserView = {
@@ -277,6 +451,7 @@ const BRUNO: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 
 describe('EditUserPanel (Configurações → Utilizadores → user) — identity + access manager', () => {
@@ -594,19 +769,6 @@ describe('legacy /utilizadores routes', () => {
     );
   });
 
-  it('redirects /utilizadores/novo to the settings create state', async () => {
-    renderWithProviders(
-      <Routes>
-        <Route path="/utilizadores/novo" element={<LegacyNewUserRedirect />} />
-        <Route path="/configuracoes" element={<LocationProbe />} />
-      </Routes>,
-      ['/utilizadores/novo#convite'],
-    );
-
-    expect((await screen.findByLabelText('location')).textContent).toBe(
-      '/configuracoes?sec=utilizadores&user=novo#convite',
-    );
-  });
 
   it('redirects /utilizadores/:id and preserves #acesso', async () => {
     renderWithProviders(
@@ -648,6 +810,7 @@ const OPERATOR: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 
 describe('EditUserPanel — cross-user password change proof + 403 (t51)', () => {

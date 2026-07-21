@@ -99,7 +99,7 @@ function RoleEditor({
   return (
     <Card title={initial ? t('rbac.role.edit.title') : t('rbac.role.create.title')}>
       <form
-        className="form"
+        className="form settings-rows"
         onSubmit={(e) => {
           e.preventDefault();
           submit();

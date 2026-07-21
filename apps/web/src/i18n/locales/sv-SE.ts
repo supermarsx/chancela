@@ -4607,6 +4607,61 @@ export const svSE: Catalog = {
   'settings.email.help.allowInsecure':
     'Tillåter uttryckligen utskick utan TLS. Utan denna bekräftelse avvisas en okrypterad konfiguration.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Gränssnittets språk',
+  'settings.language.lede':
+    'En inställning på ditt konto: den gäller dig i varje webbläsare du loggar in från, och ingen annan på den här instansen.',
+  'settings.language.field.label': 'Språk',
+  'settings.language.field.hint':
+    'Välj ett fast språk, eller låt det stå på automatiskt för att följa webbläsaren.',
+  'settings.language.help':
+    'Sparas på ditt konto. Ett fast språk används alltid; ”automatiskt” förhandlar med de språk webbläsaren uppger.',
+  'settings.language.auto': 'Automatiskt (följ den här webbläsaren)',
+  'settings.language.autoResolves':
+    'I den här webbläsaren visar ”automatiskt” {locale}. Det sparade valet är fortfarande ”automatiskt”, så på en annan dator följer det den webbläsaren.',
+  'settings.language.notTheme':
+    'Temat följer operativsystemet; språket följer webbläsaren. Det är olika mekanismer, hur lika alternativen än ser ut.',
+  'settings.language.notDocuments':
+    'Detta ändrar inte språket som genererade dokument är skrivna på — det är protokollens eget språk och ställs in under Documentos.',
+  'settings.language.signInScreen':
+    'Inloggningsskärmen använder alltid det språk som är konfigurerat för instansen: det finns ännu ingen användare vars önskemål kunde följas.',
+  'settings.language.signedOut.title': 'Inte inloggad',
+  'settings.language.signedOut.body':
+    'Logga in för att välja ditt språk. Utan användare gäller det språk som är konfigurerat för instansen.',
+  'settings.language.savedToast': 'Gränssnittets språk sparat',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Redigeraren läses in…',
+  'acts.body.editor.loadFailed': 'Redigeraren lästes inte in',
+  'acts.body.editor.loadFailedBody':
+    'Läs in sidan på nytt. Så länge redigeraren inte är inläst kan protokollets text inte skrivas här — inget av det du redan skrivit har gått förlorat.',
+  'acts.body.editor.subset':
+    'Rubriker, stycken, fet stil, kursiv stil och avgränsande linjer accepteras. Tabeller, bilder, länkar, listor, kodblock och HTML avvisas av servern i stället för att tyst tas bort.',
+  'acts.body.editor.placeholders':
+    'Fälten {{ … }} markeras bara, låses aldrig: du kan radera, flytta eller skriva om dem som vilken annan text som helst.',
+  'acts.body.editor.bytes': '{used} av {max} byte',
+  'acts.body.editor.bytesOver':
+    '{used} av {max} byte — över gränsen. Korta ned texten; ingenting kapas åt dig.',
+  'acts.body.rejected.title': 'Den här texten kommer inte att gå att kompilera',
+  'acts.body.rejected.at': 'på rad {line}, kolumn {column}.',
+  'acts.body.rejected.remedy':
+    'Rätta eller ta bort den konstruktionen. Servern avvisar den i stället för att radera den, så att du aldrig godkänner text som det förseglade dokumentet saknar.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'En del av det du klistrade in ryms inte i ett protokoll',
+  'acts.body.paste.removed': '{construct} ({count}) — borttaget. Det fanns ingen text att behålla.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — omgjort till stycken. Texten blev kvar, strukturen inte.',
+  'acts.body.paste.why':
+    'Ett protokoll rymmer bara rubriker, stycken, fet stil, kursiv stil och avgränsande linjer. Vi berättar hellre vad som ändrades än låter dig upptäcka en lucka senare.',
+  'acts.body.paste.dismiss': 'Uppfattat',
+  'acts.body.construct.table': 'Tabell',
+  'acts.body.construct.image': 'Bild',
+  'acts.body.construct.list': 'Lista',
+  'acts.body.construct.code': 'Kodblock',
+  'acts.body.construct.quote': 'Citat',
+  'acts.body.construct.link': 'Länk',
+
   'settings.providerCredentials.cardTitle': 'Signeringsleverantörer',
   'settings.providerCredentials.lede':
     'Hantera signeringsleverantörernas autentiseringsuppgifter, med flera nycklar per leverantör, prioritet och redundansväxling.',

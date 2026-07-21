@@ -36,6 +36,35 @@ describe('formatAtaNumber', () => {
 // straight off the wire. Every assertion below exists so that string never reaches a reader.
 const NANOS = '2026-07-20T22:41:06.589989639Z';
 
+describe('a calendar day names the same day in every time zone', () => {
+  // The bug this guards: `new Date('2026-07-07')` parses as UTC midnight, so west of UTC the
+  // day shifted back by one. pt-BR is a shipped locale and Brazil is UTC-3, so every opening
+  // and meeting date rendered a day early there. It is invisible at UTC+0/+1, which is why no
+  // existing test caught it — the whole suite runs in one zone.
+  it('does not shift a bare YYYY-MM-DD to the previous day', () => {
+    // Derived from the formatter, never a hardcoded pt-PT literal, so this cannot pass here
+    // and fail in CI under another locale.
+    const expected = new Intl.DateTimeFormat('pt-PT', { dateStyle: 'long' }).format(
+      new Date(2026, 6, 7),
+    );
+    expect(formatDate('2026-07-07')).toBe(expected);
+  });
+
+  it('still renders a true instant in the viewer zone, rather than floating it', () => {
+    const instant = '2026-07-20T22:41:06.589989639Z';
+    const expected = new Intl.DateTimeFormat('pt-PT', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(instant));
+    expect(formatDateTime(instant)).toBe(expected);
+  });
+
+  it('passes a date-only string through to the datetime attribute untouched', () => {
+    // The `T00:00:00` is a parsing device. It must never be stored, displayed, or emitted.
+    expect(isoAttribute('2026-07-07')).toBe('2026-07-07');
+  });
+});
+
 describe('date and timestamp formatting', () => {
   afterEach(() => {
     i18nStore.setActiveLocale('pt-PT');

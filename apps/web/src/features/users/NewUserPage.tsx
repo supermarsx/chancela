@@ -1,31 +1,389 @@
 /**
- * Create a user inside Configurações → Utilizadores (`?sec=utilizadores&user=novo`). The
- * legacy `/utilizadores/novo` route redirects there. This file keeps only the reusable panel
- * that Settings mounts inline.
+ * Create a user — a dedicated screen at `/utilizadores/novo` (t71).
  *
- * The form itself lives in the reusable {@link UserCreateForm}; Settings is the authenticated
- * host. The signed-out entry-screen bootstrap path (t50 W3) mounts the same `UserCreateForm`
- * with its own `onCreated` (create password sign-in) — `POST /v1/users` is bootstrap-only when
- * signed out and session-gated otherwise, so that gating lives in W3's host, not here.
+ * ## Why a screen and not the old inline panel — this REVERSES plan t50
+ * t50 deliberately collapsed `/utilizadores/novo` into a `Card` inside Configurações
+ * (`?sec=utilizadores&user=novo`), and this file used to document that decision. It is reversed
+ * here, on purpose: a create that also grants authority is not a two-field afterthought — it needs
+ * room for the role, the scope, and the consequences of both. So creation gets its own editorial
+ * route again, following the `/entidades/nova` precedent, while the roster STAYS in Configurações.
+ * The old `?user=novo` state now redirects out to this route, and `NewUserPanel` is gone rather
+ * than left alive, so there is exactly one place a user is created. `/utilizadores` and
+ * `/utilizadores/:id` still redirect into Settings — that part of t50 stands.
+ *
+ * ## Layout
+ * Grouped cards, each an ordinary `form settings-rows` of `Field` rows — label / control / help
+ * down a single column, so the eye scans one column of labels and one of controls. Deliberately
+ * NOT a `<table>`: a form is not tabular data and a `<th>` here would misdescribe the content.
+ * Four concerns, four cards: identity, access, credentials, notification.
+ *
+ * ## The role is the security-sensitive part
+ * The picker only offers roles the creator may actually grant. "May grant" is the same subset rule
+ * the server enforces — every permission inside the role must be one the creator holds at a scope
+ * covering the target scope — evaluated here with the client mirror (`useCan`) purely so the
+ * operator sees *why* a role is unavailable instead of collecting a 403 on submit. The server is
+ * the real guard: `POST /v1/users` re-runs `role.assign`@scope + the subset invariant and refuses
+ * regardless of what this UI offered. Over-ceiling roles stay visible but disabled, with the
+ * offending permissions named, because a hidden option teaches an operator nothing.
+ *
+ * ## Atomicity
+ * The role travels in the create request, so the user and the grant are one write: a refused role
+ * leaves no user behind, and there is no window in which the account exists without its authority.
+ *
+ * ## Language
+ * `auto` (keep detecting) or a fixed locale, defaulting to `auto`. It is also the language the
+ * welcome e-mail renders in — `auto` falls back to the platform default, because a server-rendered
+ * message has no browser to detect from, and never to the creating operator's language: an admin
+ * working in en-GB must not send a Portuguese colleague an English welcome.
+ *
+ * ## The welcome e-mail
+ * Opt-in, and honest about what it can carry: there is no credential-delivery mechanism with
+ * expiry in this codebase, so the message never carries a password, token or magic link — it only
+ * says the account exists and that an administrator will provide credentials separately. It is
+ * disabled (with the reason, and a link to the settings page) when SMTP cannot deliver, and when
+ * no e-mail address has been entered.
  */
+import { useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useCreateUser, useEmailStatus, useRoles } from '../../api/hooks';
+import { localeLabels, optionsFrom } from '../../api/labels';
+import { LANGUAGE_AUTO, LOCALES } from '../../api/types';
+import { ApiError } from '../../api/client';
 import { useT } from '../../i18n';
-import { Card, useToast } from '../../ui';
-import { UserCreateForm } from './UserCreateForm';
-import type { UserView } from '../../api/types';
+import {
+  Button,
+  ButtonLink,
+  Card,
+  ErrorNote,
+  Field,
+  Icon,
+  InlineWarning,
+  Input,
+  PageHeader,
+  Select,
+  useToast,
+} from '../../ui';
+import { useCan } from '../session/permissions';
+import { ScopePicker } from '../rbac/ScopePicker';
+import { isValidUsername, usernameError } from './username';
+import type { PermissionScope, RoleView, UserLanguage, UserView } from '../../api/types';
 
-export function NewUserPanel({ onCreated }: { onCreated?: (user: UserView) => void }) {
+/** Whether a scope carries a concrete target (an entity/book scope needs a chosen id). */
+function scopeReady(scope: PermissionScope): boolean {
+  return scope.kind === 'global' || scope.id !== '';
+}
+
+/**
+ * The permissions in `role` that the creator does NOT hold at `scope` — i.e. exactly why this role
+ * is above their ceiling. Empty ⇒ grantable. This mirrors the server's per-permission subset check
+ * (`Authorizer::can_assign_role`); it never widens what the server allows, it only explains it.
+ */
+function excessPermissions(
+  role: RoleView,
+  scope: PermissionScope,
+  can: (permission: string, scope: PermissionScope) => boolean,
+): string[] {
+  return role.permissions.filter((permission) => !can(permission, scope));
+}
+
+export function NewUserPage() {
   const t = useT();
   const toast = useToast();
+  const navigate = useNavigate();
+  const create = useCreateUser();
+  const can = useCan();
+  const roles = useRoles();
+  const emailStatus = useEmailStatus();
+
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [roleId, setRoleId] = useState('');
+  const [scope, setScope] = useState<PermissionScope>({ kind: 'global' });
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [sendWelcome, setSendWelcome] = useState(false);
+  // Defaults to `auto` — the account keeps following its user's environment unless someone
+  // deliberately pins it here.
+  const [language, setLanguage] = useState<UserLanguage>(LANGUAGE_AUTO);
+
+  const fieldError = usernameError(username);
+  // A server duplicate (409) belongs against the username field, not in a general error note.
+  const conflict =
+    create.error instanceof ApiError && create.error.status === 409 ? create.error.message : null;
+
+  const roleList = useMemo(() => roles.data ?? [], [roles.data]);
+  // Split at the ceiling, at the CURRENT scope — narrowing the scope can make a role grantable,
+  // so this is recomputed whenever either changes.
+  const roleOptions = useMemo(
+    () =>
+      roleList.map((role) => {
+        const excess = excessPermissions(role, scope, can);
+        return { role, excess, grantable: excess.length === 0 };
+      }),
+    [roleList, scope, can],
+  );
+  const selectedRole = roleOptions.find((o) => o.role.id === roleId);
+  // Changing the scope can invalidate an already-picked role; treat that as "nothing picked" so
+  // the submit is blocked rather than silently sending a role we know will be refused.
+  const roleRefused = selectedRole !== undefined && !selectedRole.grantable;
+
+  const emailTrimmed = email.trim();
+  const smtpDeliverable = emailStatus.data?.deliverable === true;
+  const welcomeBlockedReason = !smtpDeliverable
+    ? t('users.create.welcome.noSmtp')
+    : emailTrimmed === ''
+      ? t('users.create.welcome.noAddress')
+      : null;
+  const welcomeAvailable = welcomeBlockedReason === null;
+
+  const canSubmit =
+    !create.isPending &&
+    isValidUsername(username) &&
+    password.length > 0 &&
+    password === password2 &&
+    scopeReady(scope) &&
+    !roleRefused;
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!isValidUsername(username) || roleRefused || !scopeReady(scope)) return;
+    setPasswordError(null);
+    if (password.length === 0) {
+      setPasswordError(t('onboarding.password.required'));
+      return;
+    }
+    if (password !== password2) {
+      setPasswordError(t('users.secret.mismatch'));
+      return;
+    }
+    create.mutate(
+      {
+        username,
+        display_name: displayName.trim() || undefined,
+        email: emailTrimmed || undefined,
+        password,
+        // Omitted ⇒ the server's historical default role. Sent ⇒ granted in the same write.
+        role: roleId ? { role_id: roleId, scope } : undefined,
+        send_welcome_email: welcomeAvailable && sendWelcome,
+        language,
+      },
+      {
+        onSuccess: (user: UserView) => {
+          toast.success(t('toast.user.created'));
+          navigate(`/configuracoes?sec=utilizadores&user=${user.id}`);
+        },
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
 
   return (
-    <Card title={t('users.create.cardTitle')}>
-      <UserCreateForm
-        autoFocus
-        onCreated={(user) => {
-          toast.success(t('toast.user.created'));
-          onCreated?.(user);
-        }}
+    <div className="stack form-page">
+      <PageHeader
+        crumbs={
+          <>
+            <Link to="/configuracoes?sec=utilizadores">{t('users.breadcrumb.self')}</Link> ·{' '}
+            {t('users.new.crumb')}
+          </>
+        }
+        title={t('users.new.title')}
       />
-    </Card>
+
+      <form className="stack" onSubmit={onSubmit}>
+        {/* Identity ------------------------------------------------------------------ */}
+        <Card title={t('users.create.identityCard')}>
+          <p className="field__hint">{t('users.create.identityLede')}</p>
+          <div className="form settings-rows">
+            <Field
+              label={t('users.field.username.label')}
+              htmlFor="user-username"
+              hint={t('users.field.username.hint')}
+              error={fieldError ?? conflict}
+            >
+              <Input
+                id="user-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder={t('users.field.username.placeholder')}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                autoFocus
+              />
+            </Field>
+            <Field label={t('users.field.displayName.label')} htmlFor="user-display">
+              <Input
+                id="user-display"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder={t('users.field.displayName.placeholder')}
+                autoComplete="off"
+              />
+            </Field>
+            <Field
+              label={t('registry.email.label')}
+              htmlFor="user-email"
+              hint={t('users.create.emailHint')}
+            >
+              <Input
+                id="user-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t('registry.email.placeholder')}
+                autoComplete="email"
+              />
+            </Field>
+            <Field
+              label={t('users.language.label')}
+              htmlFor="user-language"
+              hint={
+                language === LANGUAGE_AUTO
+                  ? t('users.language.hint.auto')
+                  : t('users.language.hint.fixed')
+              }
+            >
+              <Select
+                id="user-language"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as UserLanguage)}
+                options={[
+                  { value: LANGUAGE_AUTO, label: t('users.language.auto') },
+                  ...optionsFrom(LOCALES, localeLabels),
+                ]}
+              />
+            </Field>
+          </div>
+        </Card>
+
+        {/* Access -------------------------------------------------------------------- */}
+        <Card title={t('users.create.accessCard')}>
+          <p className="field__hint">{t('users.create.accessLede')}</p>
+          <div className="form settings-rows">
+            <Field
+              label={t('users.create.scope.label')}
+              htmlFor="user-scope-kind"
+              hint={t('users.create.scope.hint')}
+            >
+              <ScopePicker value={scope} onChange={setScope} idPrefix="user-scope" />
+            </Field>
+            <Field
+              label={t('users.create.role.label')}
+              htmlFor="user-role"
+              hint={t('users.create.role.hint')}
+            >
+              <Select
+                id="user-role"
+                value={roleId}
+                onChange={(e) => setRoleId(e.target.value)}
+                options={[
+                  { value: '', label: t('users.create.role.default') },
+                  ...roleOptions.map(({ role, grantable }) => ({
+                    value: role.id,
+                    label: grantable
+                      ? role.name
+                      : t('users.create.role.optionBlocked', { role: role.name }),
+                    disabled: !grantable,
+                  })),
+                ]}
+              />
+            </Field>
+
+            {/* The authority the operator is about to hand over, inspectable before they do. */}
+            {selectedRole ? (
+              selectedRole.grantable ? (
+                <Field label={t('users.create.role.carries')} htmlFor="user-role-carries">
+                  <span className="rbac-matrix__perms" id="user-role-carries">
+                    {selectedRole.role.permissions.map((permission) => (
+                      <code className="mono" key={permission}>
+                        {permission}
+                      </code>
+                    ))}
+                  </span>
+                </Field>
+              ) : (
+                <InlineWarning tone="warn">
+                  {t('users.create.role.aboveCeiling', {
+                    role: selectedRole.role.name,
+                    permissions: selectedRole.excess.join(', '),
+                  })}
+                </InlineWarning>
+              )
+            ) : (
+              <InlineWarning tone="info">{t('users.create.role.defaultNote')}</InlineWarning>
+            )}
+          </div>
+        </Card>
+
+        {/* Credentials --------------------------------------------------------------- */}
+        <Card title={t('users.create.credentialsCard')}>
+          <p className="field__hint">{t('users.create.credentialsLede')}</p>
+          <div className="form settings-rows">
+            <Field
+              label={t('users.secret.new')}
+              htmlFor="user-password"
+              hint={t('users.secret.hint')}
+            >
+              <Input
+                id="user-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </Field>
+            <Field
+              label={t('users.secret.confirm')}
+              htmlFor="user-password-confirm"
+              error={passwordError}
+            >
+              <Input
+                id="user-password-confirm"
+                type="password"
+                value={password2}
+                onChange={(e) => setPassword2(e.target.value)}
+                autoComplete="new-password"
+              />
+            </Field>
+          </div>
+        </Card>
+
+        {/* Notification -------------------------------------------------------------- */}
+        <Card title={t('users.create.notifyCard')}>
+          <p className="field__hint">{t('users.create.notifyLede')}</p>
+          <div className="form settings-rows">
+            <label className="checkline">
+              <input
+                type="checkbox"
+                id="user-send-welcome"
+                checked={welcomeAvailable && sendWelcome}
+                disabled={!welcomeAvailable}
+                onChange={(e) => setSendWelcome(e.target.checked)}
+              />
+              {t('users.create.welcome.label')}
+            </label>
+            {welcomeBlockedReason ? (
+              <InlineWarning tone="info">
+                {welcomeBlockedReason}{' '}
+                <Link to="/configuracoes?sec=email">{t('users.create.welcome.settingsLink')}</Link>
+              </InlineWarning>
+            ) : null}
+          </div>
+        </Card>
+
+        {create.error && !conflict ? <ErrorNote error={create.error} /> : null}
+
+        <div className="form__actions">
+          <Button type="submit" variant="primary" icon={<Icon.Plus />} disabled={!canSubmit}>
+            {create.isPending ? t('users.create.submitting') : t('users.create.submit')}
+          </Button>
+          <ButtonLink to="/configuracoes?sec=utilizadores" variant="ghost" icon={<Icon.Close />}>
+            {t('common.cancel')}
+          </ButtonLink>
+        </div>
+      </form>
+    </div>
   );
 }

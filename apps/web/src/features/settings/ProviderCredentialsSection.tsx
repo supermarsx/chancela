@@ -470,7 +470,7 @@ function EntryForm({
       }
     >
       <form
-        className="form"
+        className="form settings-rows"
         onSubmit={(e) => {
           e.preventDefault();
           submit();

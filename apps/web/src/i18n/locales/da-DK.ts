@@ -4597,6 +4597,61 @@ export const daDK: Catalog = {
   'settings.email.help.allowInsecure':
     'Tillader udtrykkeligt afsendelse uden TLS. Uden denne bekræftelse afvises en ukrypteret konfiguration.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Grænsefladens sprog',
+  'settings.language.lede':
+    'En indstilling på din konto: den gælder for dig i enhver browser, du logger ind fra, og for ingen andre på denne instans.',
+  'settings.language.field.label': 'Sprog',
+  'settings.language.field.hint':
+    'Vælg et fast sprog, eller lad det stå på automatisk for at følge browseren.',
+  'settings.language.help':
+    'Gemt på din konto. Et fast sprog bruges altid; “automatisk” forhandler med de sprog, browseren oplyser.',
+  'settings.language.auto': 'Automatisk (følg denne browser)',
+  'settings.language.autoResolves':
+    'I denne browser viser “automatisk” {locale}. Det gemte valg er stadig “automatisk”, så på en anden computer følger det dén browser.',
+  'settings.language.notTheme':
+    'Temaet følger styresystemet; sproget følger browseren. Det er forskellige mekanismer, uanset hvor ens valgmulighederne ser ud.',
+  'settings.language.notDocuments':
+    'Dette ændrer ikke det sprog, genererede dokumenter er skrevet på — det er referaternes eget sprog, og det sættes under Documentos.',
+  'settings.language.signInScreen':
+    'Loginskærmen bruger altid det sprog, der er konfigureret for instansen: der er endnu ingen bruger, hvis ønske kunne følges.',
+  'settings.language.signedOut.title': 'Ikke logget ind',
+  'settings.language.signedOut.body':
+    'Log ind for at vælge dit sprog. Uden en bruger gælder det sprog, der er konfigureret for instansen.',
+  'settings.language.savedToast': 'Grænsefladens sprog gemt',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Editoren indlæses…',
+  'acts.body.editor.loadFailed': 'Editoren blev ikke indlæst',
+  'acts.body.editor.loadFailedBody':
+    'Genindlæs siden. Så længe editoren ikke er indlæst, kan referatets tekst ikke skrives her — intet af det, du allerede har skrevet, er gået tabt.',
+  'acts.body.editor.subset':
+    'Overskrifter, afsnit, fed, kursiv og skillelinjer accepteres. Tabeller, billeder, links, lister, kodeblokke og HTML afvises af serveren i stedet for at blive fjernet i stilhed.',
+  'acts.body.editor.placeholders':
+    'Felterne {{ … }} bliver kun fremhævet, aldrig låst: du kan slette dem, flytte dem eller skrive dem om som enhver anden tekst.',
+  'acts.body.editor.bytes': '{used} af {max} byte',
+  'acts.body.editor.bytesOver':
+    '{used} af {max} byte — over grænsen. Forkort teksten; intet bliver afkortet for dig.',
+  'acts.body.rejected.title': 'Denne tekst vil ikke kunne oversættes',
+  'acts.body.rejected.at': 'på linje {line}, kolonne {column}.',
+  'acts.body.rejected.remedy':
+    'Ret eller fjern den konstruktion. Serveren afviser den i stedet for at slette den, så du aldrig godkender tekst, som det forseglede dokument ikke indeholder.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'En del af det, du indsatte, passer ikke i et referat',
+  'acts.body.paste.removed': '{construct} ({count}) — fjernet. Der var ingen tekst at beholde.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — lavet om til afsnit. Teksten blev, strukturen gjorde ikke.',
+  'acts.body.paste.why':
+    'Et referat rummer kun overskrifter, afsnit, fed, kursiv og skillelinjer. Vi siger hellere, hvad der blev ændret, end at lade dig opdage et hul senere.',
+  'acts.body.paste.dismiss': 'Forstået',
+  'acts.body.construct.table': 'Tabel',
+  'acts.body.construct.image': 'Billede',
+  'acts.body.construct.list': 'Liste',
+  'acts.body.construct.code': 'Kodeblok',
+  'acts.body.construct.quote': 'Citat',
+  'acts.body.construct.link': 'Link',
+
   'settings.providerCredentials.cardTitle': 'Signeringsudbydere',
   'settings.providerCredentials.lede':
     'Administrer legitimationsoplysninger for signeringsudbydere med flere nøgler pr. udbyder, prioritet og failover.',

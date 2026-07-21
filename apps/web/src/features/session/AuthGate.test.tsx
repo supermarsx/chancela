@@ -34,6 +34,7 @@ const AMELIA_SESSION = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 
 function jsonResponse(body: unknown, status = 200): Response {

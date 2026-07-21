@@ -4641,6 +4641,62 @@ export const nlNL: Catalog = {
   'settings.email.help.allowInsecure':
     'Geeft uitdrukkelijk toestemming om zonder TLS te verzenden. Zonder deze bevestiging wordt een onversleutelde configuratie geweigerd.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Taal van de interface',
+  'settings.language.lede':
+    'Een voorkeur van uw account: hij geldt voor u in elke browser waarin u zich aanmeldt, en voor niemand anders op deze instantie.',
+  'settings.language.field.label': 'Taal',
+  'settings.language.field.hint':
+    'Kies een vaste taal, of laat het op automatisch staan om de browser te volgen.',
+  'settings.language.help':
+    'Bewaard bij uw account. Een vaste taal wordt altijd gebruikt; “automatisch” onderhandelt met de talen die de browser aankondigt.',
+  'settings.language.auto': 'Automatisch (deze browser volgen)',
+  'settings.language.autoResolves':
+    'In deze browser toont “automatisch” {locale}. De bewaarde voorkeur blijft “automatisch”, dus op een andere computer volgt hij díe browser.',
+  'settings.language.notTheme':
+    'Het thema volgt het besturingssysteem; de taal volgt de browser. Dat zijn verschillende mechanismen, hoe gelijk de opties er ook uitzien.',
+  'settings.language.notDocuments':
+    'Dit verandert niet de taal waarin gegenereerde documenten zijn opgesteld — dat is de taal van de notulen zelf en die stelt u in onder Documentos.',
+  'settings.language.signInScreen':
+    'Het aanmeldscherm gebruikt altijd de taal die voor de instantie is ingesteld: er is nog geen gebruiker wiens voorkeur gevolgd kan worden.',
+  'settings.language.signedOut.title': 'Niet aangemeld',
+  'settings.language.signedOut.body':
+    'Meld u aan om uw taal te kiezen. Zonder gebruiker geldt de taal die voor de instantie is ingesteld.',
+  'settings.language.savedToast': 'Taal van de interface bewaard',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'De editor wordt geladen…',
+  'acts.body.editor.loadFailed': 'De editor is niet geladen',
+  'acts.body.editor.loadFailedBody':
+    'Herlaad de pagina. Zolang de editor niet geladen is, kan de tekst van de notulen hier niet geschreven worden — niets van wat u al schreef is verloren.',
+  'acts.body.editor.subset':
+    'Koppen, alinea’s, vet, cursief en scheidingslijnen worden aanvaard. Tabellen, afbeeldingen, koppelingen, lijsten, codeblokken en HTML weigert de server, in plaats van ze stilzwijgend te verwijderen.',
+  'acts.body.editor.placeholders':
+    'De velden {{ … }} worden alleen gemarkeerd, nooit vergrendeld: u kunt ze verwijderen, verplaatsen of opnieuw typen zoals elke andere tekst.',
+  'acts.body.editor.bytes': '{used} van {max} bytes',
+  'acts.body.editor.bytesOver':
+    '{used} van {max} bytes — boven de limiet. Kort de tekst in; er wordt niets voor u afgekapt.',
+  'acts.body.rejected.title': 'Deze tekst zal niet compileren',
+  'acts.body.rejected.at': 'op regel {line}, kolom {column}.',
+  'acts.body.rejected.remedy':
+    'Herstel of verwijder die constructie. De server weigert haar in plaats van haar te wissen, zodat u nooit tekst goedkeurt die het verzegelde document niet bevat.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Een deel van wat u plakte past niet in notulen',
+  'acts.body.paste.removed':
+    '{construct} ({count}) — verwijderd. Er was geen tekst om te behouden.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — omgezet naar alinea’s. De tekst bleef, de structuur niet.',
+  'acts.body.paste.why':
+    'Notulen dragen alleen koppen, alinea’s, vet, cursief en scheidingslijnen. Wij vertellen u liever wat er veranderde dan u later een gat te laten ontdekken.',
+  'acts.body.paste.dismiss': 'Begrepen',
+  'acts.body.construct.table': 'Tabel',
+  'acts.body.construct.image': 'Afbeelding',
+  'acts.body.construct.list': 'Lijst',
+  'acts.body.construct.code': 'Codeblok',
+  'acts.body.construct.quote': 'Citaat',
+  'acts.body.construct.link': 'Koppeling',
+
   'settings.providerCredentials.cardTitle': 'Ondertekeningsproviders',
   'settings.providerCredentials.lede':
     'Beheer de referenties van ondertekeningsproviders, met meerdere sleutels per provider, prioriteit en failover.',

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useLocation, useNavigationType } from 'react-router-dom';
 import { SettingsPage } from './SettingsPage';
 import {
   DEFAULT_SETTINGS,
@@ -2459,14 +2460,7 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, ['/configuracoes']);
 
     // A segmented sub-tab per section (Gestão included).
-    for (const name of [
-      'Aparência',
-      'Documentos',
-      'Assinaturas',
-      'Gestão',
-      'Operações',
-      'Sobre',
-    ]) {
+    for (const name of ['Aparência', 'Documentos', 'Assinaturas', 'Gestão', 'Operações', 'Sobre']) {
       expect(await screen.findByRole('button', { name })).toBeTruthy();
     }
     // Aparência is the default section: its theme control is present…
@@ -2504,9 +2498,9 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('heading', { name: 'Identidade', level: 3 })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Documentos', level: 3 })).toBeTruthy();
     expect(screen.getByLabelText('URL de atualização do catálogo CAE')).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Documentos' }).getAttribute('aria-pressed'),
-    ).toBe('true');
+    expect(screen.getByRole('button', { name: 'Documentos' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
   });
 
   it('surfaces an initial settings read failure instead of loading forever', async () => {
@@ -3349,6 +3343,7 @@ describe('SettingsPage', () => {
         has_secret: true,
         has_attestation_key: false,
         has_recovery_phrase: false,
+        language: 'auto',
       },
     ];
     const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -3372,9 +3367,10 @@ describe('SettingsPage', () => {
     // The sub-tab button exists and the roster renders inline (the fictional example user).
     expect(await screen.findByRole('button', { name: 'Utilizadores' })).toBeTruthy();
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
-    // The inline "novo utilizador" action stays inside the settings users section.
+    // t71: the roster stays here, but creating a user leaves for its own screen — a create
+    // that also grants authority needs the room, and there is now exactly one place to do it.
     const novo = screen.getByRole('link', { name: /novo utilizador/i });
-    expect(novo.getAttribute('href')).toBe('/configuracoes?sec=utilizadores&user=novo');
+    expect(novo.getAttribute('href')).toBe('/utilizadores/novo');
   });
 
   it('hosts privacy/compliance processor and DPIA registers with search and filters', async () => {
@@ -5264,16 +5260,16 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsa']);
 
     const tsa = (await screen.findByLabelText(
       'URL da autoridade de selo temporal (TSA)',
     )) as HTMLInputElement;
     // The reset control is an icon-only button; its accessible name comes from the Tooltip
-    // `label` (aria-label), so `getByRole(..., { name })` still resolves it. Since t36 each
-    // default URL sits in the card for the grid it backs, so TSL comes first and TSA second.
+    // `label` (aria-label), so `getByRole(..., { name })` still resolves it. Since t73 the TSL
+    // and TSA grids are separate sub-tabs, so this panel holds exactly one default-URL reset.
     const reset = () =>
-      screen.getAllByRole('button', { name: 'Repor predefinição' })[1] as HTMLButtonElement;
+      screen.getByRole('button', { name: 'Repor predefinição' }) as HTMLButtonElement;
 
     // At the default value the reset is inert…
     expect(reset().disabled).toBe(true);
@@ -5291,9 +5287,13 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=prestadores']);
 
-    expect(await screen.findByText('Modos de prestador configurados')).toBeTruthy();
+    // By `heading`, not by text: since t73 the sub-tab that opens this card is a button carrying
+    // the very same words, so a bare text query would match two nodes.
+    expect(
+      await screen.findByRole('heading', { name: 'Modos de prestador configurados' }),
+    ).toBeTruthy();
     expect(screen.getByText(/Chave Móvel Digital \(CMD\/SCMD\)/)).toBeTruthy();
     expect(screen.getAllByText(/Cartão de Cidadão/).length).toBeGreaterThan(0);
     expect(screen.getByText(/CSC\/QTSP remote provider/)).toBeTruthy();
@@ -5307,7 +5307,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithoutProviderMetadata());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=prestadores']);
 
     expect(await screen.findByText(/Local soft certificate \(PKCS#12\/PFX\)/)).toBeTruthy();
   });
@@ -5316,12 +5316,12 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
 
     // Every source is now one grid row whose name is an editable cell, so the names read back as
     // input values rather than headings — that is the point of the redesign: two sources can be
     // compared down a column instead of across two stacked blocks.
-    expect(await screen.findByText('Fontes TSL')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Fontes TSL' })).toBeTruthy();
     expect(screen.getByDisplayValue('Portugal GNS Trusted List')).toBeTruthy();
     expect(screen.getByDisplayValue('EU List of Trusted Lists')).toBeTruthy();
     const cachedSource = screen.getByRole('group', { name: 'Operator cached TSL' });
@@ -5330,7 +5330,11 @@ describe('SettingsPage', () => {
       within(cachedSource).getByDisplayValue('F:\\Projects\\chancela\\fixtures\\operator-tsl.xml'),
     ).toBeTruthy();
 
-    expect(screen.getByText('Prestadores TSA')).toBeTruthy();
+    // TSL and TSA are neighbouring sub-tabs since t73; the working copy spans both, so stepping
+    // across the strip is how one reads the other half.
+    fireEvent.click(screen.getByRole('button', { name: 'Prestadores TSA' }));
+
+    expect(await screen.findByRole('heading', { name: 'Prestadores TSA' })).toBeTruthy();
     const backupTsa = screen.getByRole('group', { name: 'Backup Timestamp TSA' });
     expect(within(backupTsa).getByDisplayValue('http://tsa.backup.example.test/tsa')).toBeTruthy();
     expect(within(backupTsa).getByDisplayValue('1.2.3.4.5')).toBeTruthy();
@@ -5341,7 +5345,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
 
     const cachedSource = await screen.findByRole('group', { name: 'Operator cached TSL' });
     // One control per row, and its label states the row's current state (t36) — the row used to
@@ -5371,7 +5375,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsa']);
 
     const backupTsa = await screen.findByRole('group', { name: 'Backup Timestamp TSA' });
     fireEvent.click(within(backupTsa).getByRole('button', { name: 'Tornar predefinido' }));
@@ -5395,10 +5399,11 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithoutTrustSourceMetadata());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
 
     expect(await screen.findByDisplayValue('Portugal GNS Trusted List')).toBeTruthy();
-    expect(screen.getByDisplayValue('Portugal Cartao de Cidadao TSA')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Prestadores TSA' }));
+    expect(await screen.findByDisplayValue('Portugal Cartao de Cidadao TSA')).toBeTruthy();
   });
 
   it('adds, normalizes, disables, and removes trust sources with collision-free ids', async () => {
@@ -5426,7 +5431,7 @@ describe('SettingsPage', () => {
     });
     const { fn, calls } = settingsFetch(initial);
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas&sub=tsl']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Adicionar fonte TSL' }));
     const newSource = screen.getByRole('group', { name: 'Nova fonte TSL' });
@@ -5448,7 +5453,9 @@ describe('SettingsPage', () => {
     });
     fireEvent.click(within(newSource).getByRole('switch', { name: 'Inativa' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar TSA' }));
+    // TSA lives on its own sub-tab since t73; the draft carries across the strip untouched.
+    fireEvent.click(screen.getByRole('button', { name: 'Prestadores TSA' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Adicionar TSA' }));
     const newTsa = screen.getByRole('group', { name: 'Novo prestador TSA' });
     expect(within(newTsa).getByText('tsa-provider-3')).toBeTruthy();
     expect(
@@ -5495,18 +5502,22 @@ describe('SettingsPage', () => {
       policy: '1.2.3.4',
     });
 
-    fireEvent.click(
-      within(screen.getByRole('group', { name: 'Source Three' })).getByRole('button', {
-        name: 'Remover',
-      }),
-    );
+    // Remove each row from the sub-tab that owns it — TSA first (we are standing on it), then
+    // back across the strip for the TSL row.
     fireEvent.click(
       within(screen.getByRole('group', { name: 'TSA Three' })).getByRole('button', {
         name: 'Remover',
       }),
     );
-    expect(screen.queryByRole('group', { name: 'Source Three' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'TSA Three' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fontes TSL' }));
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Source Three' })).getByRole('button', {
+        name: 'Remover',
+      }),
+    );
+    expect(screen.queryByRole('group', { name: 'Source Three' })).toBeNull();
   });
 
   it('lists API keys as persisted metadata including returned rate limits', async () => {
@@ -5644,5 +5655,207 @@ describe('SettingsPage', () => {
     expect(screen.queryByText('Configuração')).toBeNull();
     expect(document.querySelector('.page-header__crumbs')).toBeNull();
     expect(document.title).toBe('Chancela — Livro de Atas Digital');
+  });
+});
+
+/**
+ * t73 — eight flat sub-tabs folded into two parents.
+ *
+ * Email and Chaves API moved under Operações; Fornecedores de assinatura joined the five signing
+ * cards, each now its own sub-tab, under Assinaturas. The second level is `?sec=<parent>&sub=`,
+ * rendered with the same shared `<SubNav>`; the three retired top-level addresses still resolve.
+ */
+describe('SettingsPage — second-level sub-tabs (t73)', () => {
+  /** Reports the live query string and how the last navigation happened (PUSH vs REPLACE). */
+  function NavProbe() {
+    return (
+      <>
+        <span data-testid="search-probe">{useLocation().search}</span>
+        <span data-testid="navtype-probe">{useNavigationType()}</span>
+      </>
+    );
+  }
+
+  const search = () => new URLSearchParams(screen.getByTestId('search-probe').textContent ?? '');
+
+  /** The page renders a loader until the settings document arrives; the strips come with it. */
+  const loaded = async () =>
+    within(await screen.findByRole('group', { name: 'Secções de configuração' }));
+
+  /** The parent strip and the child strip are two separate `role="group"` landmarks. */
+  const childStrip = (name: string) => within(screen.getByRole('group', { name }));
+  const labels = (scope: ReturnType<typeof within>): (string | undefined)[] =>
+    scope
+      .getAllByRole('button')
+      .map((b: HTMLElement) => b.textContent?.replace(/\s+/gu, ' ').trim());
+
+  it('collapses the eight former top-level sub-tabs into Operações and Assinaturas', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    // The three that moved are gone from the TOP strip…
+    const top = await loaded();
+    expect(top.getByRole('button', { name: 'Operações' })).toBeTruthy();
+    expect(top.getByRole('button', { name: 'Assinaturas' })).toBeTruthy();
+    expect(top.queryByRole('button', { name: 'Email' })).toBeNull();
+    expect(top.queryByRole('button', { name: 'Chaves API' })).toBeNull();
+    expect(top.queryByRole('button', { name: 'Fornecedores de assinatura' })).toBeNull();
+
+    // …and two of them are here, in Operações' own strip, behind the platform controls.
+    const operations = childStrip('Áreas de operações');
+    expect(labels(operations)).toEqual(['Plataforma', 'Email', 'Chaves API']);
+
+    // Plataforma is the default and carries no `sub` param, mirroring the `sec` rule.
+    expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
+    expect(
+      operations.getByRole('button', { name: 'Plataforma' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('lists the six Assinaturas sub-tabs in the requested order', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+    await loaded();
+
+    expect(labels(childStrip('Áreas de assinaturas'))).toEqual([
+      'Fornecedores de assinatura',
+      'Política de assinatura',
+      'Fontes TSL',
+      'Prestadores TSA',
+      'Modos de prestador configurados',
+      'Chave Móvel Digital (CMD)',
+    ]);
+    // The first is the default: bare `?sec=assinaturas` opens the credentials manager. Asserted
+    // on the strip, not on the card heading — that section loads its own data over its own
+    // endpoint, which this settings-document stub deliberately does not serve.
+    expect(
+      childStrip('Áreas de assinaturas')
+        .getByRole('button', { name: 'Fornecedores de assinatura' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('preserves every retired top-level address as a deep link into its new home', async () => {
+    // /configuracoes?sec=email → Operações › Email
+    vi.stubGlobal('fetch', settingsFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=email']);
+    await loaded();
+    expect(
+      childStrip('Áreas de operações')
+        .getByRole('button', { name: 'Email' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    cleanup();
+
+    // /configuracoes?sec=chaves-api → Operações › Chaves API
+    vi.stubGlobal('fetch', apiKeysFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+    await loaded();
+    expect(
+      childStrip('Áreas de operações')
+        .getByRole('button', { name: 'Chaves API' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    cleanup();
+
+    // /configuracoes?sec=fornecedores-assinatura → Assinaturas › Fornecedores
+    vi.stubGlobal('fetch', settingsFetch().fn);
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=fornecedores-assinatura']);
+    await loaded();
+    expect(
+      childStrip('Áreas de assinaturas')
+        .getByRole('button', { name: 'Fornecedores de assinatura' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('deep-links a sub-tab, pushes history when one is chosen, and drops `sub` on the default', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(
+      <>
+        <NavProbe />
+        <SettingsPage />
+      </>,
+      ['/configuracoes?sec=assinaturas&sub=tsl'],
+    );
+
+    // Deep-linkable: the URL alone selects the sub-tab.
+    expect(await screen.findByRole('heading', { name: 'Fontes TSL' })).toBeTruthy();
+
+    // Choosing another PUSHES, so browser Back is what undoes it (the t34/t62 rule).
+    fireEvent.click(
+      childStrip('Áreas de assinaturas').getByRole('button', {
+        name: 'Chave Móvel Digital (CMD)',
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Chave Móvel Digital (CMD)' })).toBeTruthy();
+    expect(search().get('sub')).toBe('cmd');
+    expect(screen.getByTestId('navtype-probe').textContent).toBe('PUSH');
+
+    // The default sub-tab carries no param at all, exactly like the default section.
+    fireEvent.click(
+      childStrip('Áreas de assinaturas').getByRole('button', {
+        name: 'Fornecedores de assinatura',
+      }),
+    );
+    expect(search().get('sub')).toBeNull();
+    expect(search().get('sec')).toBe('assinaturas');
+  });
+
+  it('falls back to the first sub-tab for an unknown `sub`, and drops it when the section changes', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(
+      <>
+        <NavProbe />
+        <SettingsPage />
+      </>,
+      ['/configuracoes?sec=assinaturas&sub=naoexiste'],
+    );
+
+    await loaded();
+    expect(
+      childStrip('Áreas de assinaturas')
+        .getByRole('button', { name: 'Fornecedores de assinatura' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+
+    // A `sub` belongs to the section that declared it: leaving Assinaturas discards it rather
+    // than carrying a stale child id into Operações.
+    fireEvent.click((await loaded()).getByRole('button', { name: 'Operações' }));
+    expect(search().get('sub')).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
+  });
+
+  it('keeps the sub-tab strip operable for a reader who may not edit the settings', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission !== 'settings.manage')}
+      >
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=assinaturas&sub=politica'],
+    );
+
+    // The editable card is inerted by the disabled fieldset, with the honest explanation…
+    expect(await screen.findByRole('heading', { name: 'Política de assinatura' })).toBeTruthy();
+    expect(screen.getByText('Sem permissão')).toBeTruthy();
+    const fieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(fieldset.disabled).toBe(true);
+    expect(fieldset.contains(screen.getByLabelText('Família de assinatura preferida'))).toBe(true);
+
+    // …but the strip lives OUTSIDE that fieldset, so navigating away is still possible.
+    const cmd = childStrip('Áreas de assinaturas').getByRole('button', {
+      name: 'Chave Móvel Digital (CMD)',
+    });
+    expect(fieldset.contains(cmd)).toBe(false);
+    expect(cmd.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(cmd);
+    expect(await screen.findByRole('heading', { name: 'Chave Móvel Digital (CMD)' })).toBeTruthy();
   });
 });

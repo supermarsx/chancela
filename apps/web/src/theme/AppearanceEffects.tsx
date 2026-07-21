@@ -8,17 +8,48 @@
  * unsaved edits; this component is the source of truth for the committed settings.
  */
 import { useEffect, useSyncExternalStore } from 'react';
-import { useSettings } from '../api/hooks';
-import { DEFAULT_SETTINGS } from '../api/types';
+import { useSession, useSettings } from '../api/hooks';
+import { DEFAULT_SETTINGS, LANGUAGE_AUTO } from '../api/types';
+import type { Locale, UserLanguage } from '../api/types';
 import { grainStore } from './grainStore';
 import { colorStore } from './colorStore';
 import { applyAppearance, applyColorOverrides, applyLocale } from './appearance';
 import { i18nStore } from '../i18n';
+import { browserLanguages, negotiateLocale } from '../i18n/negotiate';
+
+/**
+ * Which locale the interface renders in (t71).
+ *
+ * @param preference the signed-in user's stored preference, or `null` when signed out
+ * @param documentLocale the instance's `settings.documents.locale` — the floor, and the language
+ *   generated legal instruments are written in. Read only; never written back to.
+ */
+export function resolveUiLocale(preference: UserLanguage | null, documentLocale: Locale): Locale {
+  if (preference === null) return documentLocale;
+  if (preference === LANGUAGE_AUTO) return negotiateLocale(browserLanguages(), documentLocale);
+  return preference;
+}
 
 export function AppearanceEffects() {
   const { data } = useSettings();
   const appearance = data?.appearance ?? DEFAULT_SETTINGS.appearance;
-  const locale = data?.documents?.locale ?? DEFAULT_SETTINGS.documents.locale;
+  // The DOCUMENT locale — the language generated legal instruments are written in. It is the
+  // instance's setting, it is the floor for UI negotiation below, and a user's UI preference must
+  // NEVER propagate back into it: a Portuguese company's atas stay pt-PT however its operator
+  // reads the interface.
+  const documentLocale = data?.documents?.locale ?? DEFAULT_SETTINGS.documents.locale;
+
+  // The UI locale (t71). A pinned preference wins; `auto` negotiates against the browser and falls
+  // back to the document locale.
+  //
+  // Detection applies ONLY to a signed-in user. `auto` is a *user's* standing instruction, and
+  // signed out there is no user to have given one — so the instance's configured language governs
+  // the sign-in screen, as it always has. Detecting there would let a visitor's browser headers
+  // override a language the instance operator deliberately chose, for someone who has expressed no
+  // preference at all.
+  const session = useSession();
+  const user = session.data?.user ?? null;
+  const uiLocale = resolveUiLocale(user?.language ?? null, documentLocale);
 
   // Publish the per-session leather grain onto the root so BOTH the fixed background
   // layer and the button-texture layer read the same hide. Kept here (not only in
@@ -44,11 +75,11 @@ export function AppearanceEffects() {
   }, [colors]);
 
   useEffect(() => {
-    applyLocale(locale);
-    // Keep the i18n store's active locale in sync with the committed settings so the
-    // non-React `t()` (API client, enum-label shim) and the live catalog swap agree.
-    i18nStore.setActiveLocale(locale);
-  }, [locale]);
+    applyLocale(uiLocale);
+    // Keep the i18n store's active locale in sync so the non-React `t()` (API client, enum-label
+    // shim) and the live catalog swap agree.
+    i18nStore.setActiveLocale(uiLocale);
+  }, [uiLocale]);
 
   return null;
 }

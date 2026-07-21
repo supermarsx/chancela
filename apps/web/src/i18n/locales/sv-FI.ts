@@ -4610,6 +4610,61 @@ export const svFI: Catalog = {
   'settings.email.help.allowInsecure':
     'Tillåter uttryckligen utskick utan TLS. Utan denna bekräftelse avvisas en okrypterad konfiguration.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Användargränssnittets språk',
+  'settings.language.lede':
+    'En inställning knuten till ditt konto: den följer dig i alla webbläsare där du loggar in, och berör ingen annan på denna instans.',
+  'settings.language.field.label': 'Språk',
+  'settings.language.field.hint':
+    'Välj ett bestämt språk, eller lämna det på automatiskt så följs webbläsaren.',
+  'settings.language.help':
+    'Lagras på kontot. Ett bestämt språk används alltid; ”automatiskt” förhandlar mot de språk webbläsaren meddelar.',
+  'settings.language.auto': 'Automatiskt (följ denna webbläsare)',
+  'settings.language.autoResolves':
+    'I denna webbläsare ger ”automatiskt” {locale}. Det sparade valet förblir ”automatiskt”, så på en annan dator följs den datorns webbläsare.',
+  'settings.language.notTheme':
+    'Temat rättar sig efter operativsystemet, språket efter webbläsaren. Det rör sig om skilda mekanismer även om alternativen liknar varandra.',
+  'settings.language.notDocuments':
+    'Detta påverkar inte språket i de dokument som skapas — det är protokollens eget språk och bestäms under Documentos.',
+  'settings.language.signInScreen':
+    'Inloggningsvyn använder alltid instansens konfigurerade språk: det finns ännu ingen användare vars önskemål kunde beaktas.',
+  'settings.language.signedOut.title': 'Inte inloggad',
+  'settings.language.signedOut.body':
+    'Logga in för att välja språk. Utan inloggad användare gäller instansens konfigurerade språk.',
+  'settings.language.savedToast': 'Användargränssnittets språk sparat',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Redigeraren håller på att läsas in…',
+  'acts.body.editor.loadFailed': 'Redigeraren kunde inte läsas in',
+  'acts.body.editor.loadFailedBody':
+    'Ladda om sidan. Så länge redigeraren inte är inläst går protokolltexten inte att skriva här — ingenting av det du redan skrivit har försvunnit.',
+  'acts.body.editor.subset':
+    'Rubriker, stycken, fetstil, kursiv och avskiljande linjer godtas. Tabeller, bilder, länkar, listor, kodblock och HTML avvisar servern i stället för att avlägsna dem utan att säga till.',
+  'acts.body.editor.placeholders':
+    'Fälten {{ … }} enbart markeras och låses aldrig: du får radera, flytta eller skriva om dem precis som annan text.',
+  'acts.body.editor.bytes': '{used} av {max} byte',
+  'acts.body.editor.bytesOver':
+    '{used} av {max} byte — över gränsen. Korta av texten; ingenting klipps bort automatiskt.',
+  'acts.body.rejected.title': 'Den här texten går inte att kompilera',
+  'acts.body.rejected.at': 'på rad {line}, kolumn {column}.',
+  'acts.body.rejected.remedy':
+    'Åtgärda eller ta bort konstruktionen. Servern avvisar den i stället för att radera den, så att du aldrig godkänner text som saknas i det förseglade dokumentet.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Allt du klistrade in ryms inte i ett protokoll',
+  'acts.body.paste.removed': '{construct} ({count}) — avlägsnat. Det fanns ingen text att bevara.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — ombildat till stycken. Texten finns kvar, strukturen inte.',
+  'acts.body.paste.why':
+    'Ett protokoll bär endast rubriker, stycken, fetstil, kursiv och avskiljande linjer. Hellre än att du senare märker att något fattas berättar vi vad som ändrades.',
+  'acts.body.paste.dismiss': 'Jag förstår',
+  'acts.body.construct.table': 'Tabell',
+  'acts.body.construct.image': 'Bild',
+  'acts.body.construct.list': 'Förteckning',
+  'acts.body.construct.code': 'Kodblock',
+  'acts.body.construct.quote': 'Citat',
+  'acts.body.construct.link': 'Länk',
+
   'settings.providerCredentials.cardTitle': 'Signeringsleverantörer',
   'settings.providerCredentials.lede':
     'Hantera signeringsleverantörernas autentiseringsuppgifter, med flera nycklar per leverantör, prioritet och redundansväxling.',

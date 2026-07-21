@@ -40,6 +40,7 @@ import {
   Badge,
   Button,
   Card,
+  DateTime,
   EmptyState,
   ErrorNote,
   Field,
@@ -189,7 +190,7 @@ function GrantForm({ onClose }: { onClose: () => void }) {
   return (
     <Card title={t('rbac.deleg.grant')}>
       <form
-        className="form"
+        className="form settings-rows"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -413,16 +414,19 @@ function DelegationRow({ d, now }: { d: DelegationView; now: number }) {
       <td>{statusBadge}</td>
       <td>
         {d.starts_at ? (
-          <time className="mono" dateTime={d.starts_at}>
-            {d.starts_at}
-          </time>
+          // A delegation of authority is an evidentiary record: when it began, to the second.
+          <DateTime className="mono" value={d.starts_at} evidentiary />
         ) : (
           <span className="muted">{t('rbac.deleg.startsAt.missing')}</span>
         )}
       </td>
       <td>{basis ? basis : <span className="muted">{t('rbac.deleg.legalBasis.missing')}</span>}</td>
       <td>
-        {d.expires_at ? d.expires_at : <span className="muted">{t('rbac.deleg.noExpiry')}</span>}
+        {d.expires_at ? (
+          <DateTime className="mono" value={d.expires_at} evidentiary />
+        ) : (
+          <span className="muted">{t('rbac.deleg.noExpiry')}</span>
+        )}
       </td>
       <td className="users-actions">
         {d.revoked ? (

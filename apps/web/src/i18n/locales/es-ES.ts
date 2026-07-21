@@ -4630,6 +4630,61 @@ export const esES: Catalog = {
   'settings.email.help.allowInsecure':
     'Autoriza expresamente el envío sin TLS. Sin esta confirmación, se rechaza la configuración sin cifrado.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Idioma de la interfaz',
+  'settings.language.lede':
+    'Una preferencia de su cuenta: se aplica a usted en cualquier navegador desde el que inicie sesión, y a nadie más en esta instancia.',
+  'settings.language.field.label': 'Idioma',
+  'settings.language.field.hint':
+    'Elija un idioma fijo, o déjelo en automático para seguir al navegador.',
+  'settings.language.help':
+    'Se guarda en su cuenta. Un idioma fijo se usa siempre; «automático» negocia con los idiomas que anuncia el navegador.',
+  'settings.language.auto': 'Automático (según este navegador)',
+  'settings.language.autoResolves':
+    'En este navegador, «automático» muestra {locale}. La preferencia guardada sigue siendo «automático», así que en otro ordenador seguirá a ese navegador.',
+  'settings.language.notTheme':
+    'El tema sigue al sistema operativo; el idioma sigue al navegador. Son mecanismos distintos, por parecidas que sean las opciones.',
+  'settings.language.notDocuments':
+    'Esto no cambia el idioma de los documentos generados: ese es el idioma en que se redactan las actas y se define en Documentos.',
+  'settings.language.signInScreen':
+    'La pantalla de inicio de sesión usa siempre el idioma configurado en la instancia: todavía no hay usuario cuya preferencia seguir.',
+  'settings.language.signedOut.title': 'Sin sesión iniciada',
+  'settings.language.signedOut.body':
+    'Inicie sesión para elegir su idioma. Sin usuario, rige el idioma configurado en la instancia.',
+  'settings.language.savedToast': 'Idioma de la interfaz guardado',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Cargando el editor…',
+  'acts.body.editor.loadFailed': 'El editor no se cargó',
+  'acts.body.editor.loadFailedBody':
+    'Recargue la página. Mientras el editor no cargue, el cuerpo del acta no puede escribirse aquí; nada de lo ya escrito se ha perdido.',
+  'acts.body.editor.subset':
+    'Se aceptan títulos, párrafos, negrita, cursiva y líneas separadoras. Las tablas, imágenes, enlaces, listas, bloques de código y HTML los rechaza el servidor, no se eliminan en silencio.',
+  'acts.body.editor.placeholders':
+    'Los campos {{ … }} solo se resaltan, nunca se bloquean: puede borrarlos, moverlos o reescribirlos como cualquier otro texto.',
+  'acts.body.editor.bytes': '{used} bytes de un máximo de {max}',
+  'acts.body.editor.bytesOver':
+    '{used} de {max} bytes: por encima del límite. Acorte el texto; no se recorta nada por usted.',
+  'acts.body.rejected.title': 'Este texto no va a compilar',
+  'acts.body.rejected.at': 'en la línea {line}, columna {column}.',
+  'acts.body.rejected.remedy':
+    'Corrija o quite esa construcción. El servidor la rechaza en lugar de borrarla, para que no apruebe un texto que el documento sellado no contiene.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Parte de lo que ha pegado no cabe en un acta',
+  'acts.body.paste.removed': '{construct} ({count}): se eliminó. No había texto que conservar.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}): se convirtió en párrafos. El texto se mantuvo; la estructura no.',
+  'acts.body.paste.why':
+    'Un acta solo admite títulos, párrafos, negrita, cursiva y líneas separadoras. Preferimos decirle qué ha cambiado a que descubra más tarde que faltaba.',
+  'acts.body.paste.dismiss': 'Entendido',
+  'acts.body.construct.table': 'Tabla',
+  'acts.body.construct.image': 'Imagen',
+  'acts.body.construct.list': 'Lista',
+  'acts.body.construct.code': 'Bloque de código',
+  'acts.body.construct.quote': 'Cita',
+  'acts.body.construct.link': 'Enlace',
+
   'settings.providerCredentials.cardTitle': 'Proveedores de firma',
   'settings.providerCredentials.lede':
     'Gestione las credenciales de los proveedores de firma, con varias claves por proveedor, prioridad y conmutación por error.',

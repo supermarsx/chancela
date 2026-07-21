@@ -77,17 +77,13 @@ export function LegacyUsersRedirect() {
   return <Navigate to={usersSettingsPath(undefined, hash)} replace />;
 }
 
-export function LegacyNewUserRedirect() {
-  const { hash } = useLocation();
-  return <Navigate to={usersSettingsPath('novo', hash)} replace />;
-}
-
 export const routeModuleLoaders = {
   onboarding: () => import('../features/onboarding/OnboardingWizard'),
   externalSigner: () => import('../features/signing/ExternalSignerInvitePage'),
   dashboard: () => import('../features/dashboard/DashboardPage'),
   entities: () => import('../features/entities/EntitiesPage'),
   newEntity: () => import('../features/entities/NewEntityPage'),
+  newUser: () => import('../features/users/NewUserPage'),
   importEntity: () => import('../features/entities/ImportEntityPage'),
   entityDetail: () => import('../features/entities/EntityDetailPage'),
   entityRegistryImport: () => import('../features/entities/EntityRegistryImportPage'),
@@ -214,7 +210,13 @@ export const router = createBrowserRouter([
       },
       // Static `/novo` before `:id` (React Router ranks static above dynamic anyway —
       // mirrors the `entidades/nova` note above).
-      { path: 'utilizadores/novo', element: <LegacyNewUserRedirect /> },
+      // t71: creation is a real screen again (the roster stays in Configurações). The old
+      // `?user=novo` settings state now redirects HERE — the reverse of the t50 arrangement —
+      // so there is exactly one place a user is created.
+      {
+        path: 'utilizadores/novo',
+        element: lazyRoute(routeModuleLoaders.newUser, 'NewUserPage'),
+      },
       { path: 'utilizadores/:id/editar', element: <LegacyUserRedirect /> },
       { path: 'utilizadores/:id', element: <LegacyUserRedirect /> },
       {

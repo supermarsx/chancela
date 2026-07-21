@@ -15,7 +15,7 @@
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import {
   useHealth,
   useLedgerVerify,
@@ -86,6 +86,7 @@ import { DelegacoesSection } from '../rbac/DelegacoesSection';
 import { ApiKeysSection } from './ApiKeysSection';
 import { ConnectorEgressSection, parseAllowedHosts } from './ConnectorEgressSection';
 import { EmailSection } from './EmailSection';
+import { LanguagePreferenceSection } from './LanguagePreferenceSection';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
 import { PairingPanel } from '../pairing/PairingPanel';
 import { PlatformOperationsSection } from './PlatformOperationsSection';
@@ -97,6 +98,7 @@ import {
   Button,
   ButtonLink,
   Card,
+  DateTime,
   ErrorNote,
   Field,
   FieldHelp,
@@ -114,8 +116,7 @@ import {
   TooltipText,
 } from '../../ui';
 import { EditUserPanel } from '../users/EditUserPage';
-import { NewUserPanel } from '../users/NewUserPage';
-import { UsersList } from '../users/UserListPage';
+import { NEW_USER_PATH, UsersList } from '../users/UserListPage';
 
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
@@ -533,13 +534,10 @@ type SettingsSection =
   | 'aparencia'
   | 'documentos'
   | 'assinaturas'
-  | 'email'
   | 'gestao'
   | 'operacoes'
   | 'privacidade'
   | 'utilizadores'
-  | 'chaves-api'
-  | 'fornecedores-assinatura'
   | 'dispositivos'
   | 'funcoes'
   | 'delegacoes'
@@ -555,17 +553,10 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'aparencia', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
   { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
-  { id: 'email', label: 'settings.email.cardTitle', icon: <Icon.Tray /> },
   { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
   { id: 'operacoes', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
   { id: 'privacidade', label: 'settings.privacy.tab', icon: <Icon.Seal /> },
   { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
-  { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
-  {
-    id: 'fornecedores-assinatura',
-    label: 'settings.providerCredentials.cardTitle',
-    icon: <Icon.PenNib />,
-  },
   { id: 'dispositivos', label: 'pairing.tab', icon: <Icon.IdCard /> },
   { id: 'funcoes', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
   { id: 'delegacoes', label: 'rbac.delegacoes.tab', icon: <Icon.ArrowRight /> },
@@ -577,6 +568,50 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
 /** The sub-tabs that manage their OWN data (not the settings working copy), so the
  *  autosave savebar is not shown for them. The RBAC tabs (Funções, Delegações) self-gate
  *  their own `role.manage`/`delegation.*` affordances, so they are standalone too. */
+const SETTINGS_SUBSECTIONS = {
+  operacoes: ['plataforma', 'email', 'chaves-api'],
+  assinaturas: ['fornecedores', 'politica', 'tsl', 'tsa', 'prestadores', 'cmd'],
+} as const;
+
+type SettingsSubsection =
+  | (typeof SETTINGS_SUBSECTIONS)['operacoes'][number]
+  | (typeof SETTINGS_SUBSECTIONS)['assinaturas'][number];
+
+type SettingsSubsectionNav = { id: SettingsSubsection; label: MessageKey; icon: ReactNode };
+
+/**
+ * Second-level sub-tabs (t73). Two parents grew long enough to need their own strip, and three
+ * former top-level sub-tabs belonged inside them rather than beside them. Same primitive and same
+ * contract as every other tab strip: the shared `<SubNav>`, a deep-linkable query param, and
+ * "the first sub-tab is the default and carries no param". The second level uses `?sub=` because
+ * `?sec=` already names the parent. Every label reuses the card title it heads.
+ */
+const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> = {
+  operacoes: [
+    // Named "Plataforma", not "Operações": it is a CHILD of the Operações tab, and repeating the
+    // parent's name in its own strip reads as a broken loop.
+    { id: 'plataforma', label: 'settings.subnav.platform', icon: <Icon.Power /> },
+    { id: 'email', label: 'settings.email.cardTitle', icon: <Icon.Tray /> },
+    { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
+  ],
+  assinaturas: [
+    { id: 'fornecedores', label: 'settings.providerCredentials.cardTitle', icon: <Icon.IdCard /> },
+    { id: 'politica', label: 'settings.signing.policy.cardTitle', icon: <Icon.Scale /> },
+    { id: 'tsl', label: 'settings.signing.tslSources.title', icon: <Icon.Layers /> },
+    { id: 'tsa', label: 'settings.signing.tsaProviders.title', icon: <Icon.Calendar /> },
+    { id: 'prestadores', label: 'settings.signing.providers.title', icon: <Icon.Sliders /> },
+    { id: 'cmd', label: 'settings.signing.cmd.title', icon: <Icon.PenNib /> },
+  ],
+};
+
+/** Each strip gets its own aria-label, so the two levels are told apart by AT. Deliberately NOT
+ *  the wording of `settings.platform.subnav.aria`, which labels the THIRD-level strip inside
+ *  Plataforma — two identically-named landmarks on one page is a real defect. */
+const SUBSECTION_ARIA: Partial<Record<SettingsSection, MessageKey>> = {
+  operacoes: 'settings.subnav.operations.aria',
+  assinaturas: 'settings.subnav.signing.aria',
+};
+
 const STANDALONE_SECTIONS: readonly SettingsSection[] = [
   'utilizadores',
   'privacidade',
@@ -584,10 +619,19 @@ const STANDALONE_SECTIONS: readonly SettingsSection[] = [
   'delegacoes',
   'integridade',
   'dados',
-  'chaves-api',
-  'fornecedores-assinatura',
   'dispositivos',
 ];
+
+/** The same rule one level down: Chaves API and Fornecedores de assinatura keep their own
+ *  endpoints and their own gating, so they carry no savebar even though their parent does. */
+const STANDALONE_SUBSECTIONS: readonly string[] = [
+  'operacoes:chaves-api',
+  'assinaturas:fornecedores',
+];
+
+const isStandalone = (section: SettingsSection, sub: SettingsSubsection | undefined): boolean =>
+  STANDALONE_SECTIONS.includes(section) ||
+  (sub !== undefined && STANDALONE_SUBSECTIONS.includes(`${section}:${sub}`));
 
 /**
  * Whether autosave is enabled. Autosave is always-on today (t49) — there is no
@@ -623,7 +667,12 @@ const isSettingsSection = (v: string | null): v is SettingsSection =>
  *  `identidade` (the organisation name printed ON generated documents) merged into
  *  Documentos as its own card — same subject matter, one fewer sub-tab. The old link
  *  therefore opens Documentos and scrolls to the moved card rather than 404ing. */
-const RETIRED_SECTIONS: Record<string, SettingsSection> = { identidade: 'documentos' };
+const RETIRED_SECTIONS: Record<string, { section: SettingsSection; sub?: SettingsSubsection }> = {
+  identidade: { section: 'documentos' },
+  email: { section: 'operacoes', sub: 'email' },
+  'chaves-api': { section: 'operacoes', sub: 'chaves-api' },
+  'fornecedores-assinatura': { section: 'assinaturas', sub: 'fornecedores' },
+};
 
 /** Anchor for the moved Identidade card, targeted by the retired `?sec=identidade` link. */
 const IDENTITY_ANCHOR_ID = 'settings-identidade';
@@ -857,7 +906,8 @@ function PlatformLogTailPanel() {
                             {entry.seq}
                           </td>
                           <td className="mono" data-label={t('settings.platform.logs.column.time')}>
-                            <time dateTime={entry.timestamp}>{entry.timestamp}</time>
+                            {/* A platform log is an audit record: evidentiary. */}
+                            <DateTime value={entry.timestamp} evidentiary />
                           </td>
                           <td data-label={t('settings.platform.logs.column.service')}>
                             {platformLogServiceLabel(entry.service_id, t)}
@@ -911,7 +961,15 @@ export function SettingsPage() {
   const secParam = params.get('sec');
   const retired = secParam === null ? undefined : RETIRED_SECTIONS[secParam];
   const section: SettingsSection =
-    retired ?? (isSettingsSection(secParam) ? secParam : 'aparencia');
+    retired?.section ?? (isSettingsSection(secParam) ? secParam : 'aparencia');
+  // The second level, for the two sections that have one. Like `sec`, the first sub-tab is the
+  // default and carries no param; an unknown `sub` falls back to it rather than blanking the
+  // panel. A retired `?sec=` link names its own destination sub-tab and wins over any `sub`.
+  const subNav = SUBSECTION_NAV[section];
+  const subParam = params.get('sub');
+  const sub: SettingsSubsection | undefined = subNav
+    ? (retired?.sub ?? subNav.find((s) => s.id === subParam)?.id ?? subNav[0].id)
+    : undefined;
   const selectedUser = section === 'utilizadores' ? params.get('user') : null;
   const selectSection = (next: SettingsSection) =>
     setParams(
@@ -920,10 +978,24 @@ export function SettingsPage() {
         if (next === 'aparencia') p.delete('sec');
         else p.set('sec', next);
         if (next !== 'utilizadores') p.delete('user');
+        // A `sub` belongs to the section that declared it; leaving the section drops it so the
+        // new section opens on its own default rather than on a stale child id.
+        p.delete('sub');
         return p;
       },
       { replace: true },
     );
+  // Sub-tab selection PUSHES a history entry, so the browser Back button walks back through the
+  // sub-tabs the operator opened (the t34/t62 rule: navigation the user performed must be
+  // undoable). It also normalises `sec` — a retired `?sec=email` link becomes the real address.
+  const selectSub = (next: SettingsSubsection) =>
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set('sec', section);
+      if (subNav && next === subNav[0].id) p.delete('sub');
+      else p.set('sub', next);
+      return p;
+    });
   const selectUser = (next: string | null) =>
     setParams(
       (prev) => {
@@ -948,8 +1020,8 @@ export function SettingsPage() {
   const canManageSettings = can('settings.manage');
   // Lock only the editable working-copy sections (not the self-gating standalone sub-tabs,
   // nor the read-only "Sobre").
-  const editingLocked =
-    !canManageSettings && !STANDALONE_SECTIONS.includes(section) && section !== 'sobre';
+  const standalone = isStandalone(section, sub);
+  const editingLocked = !canManageSettings && !standalone && section !== 'sobre';
 
   // The committed (persisted) document, tracked in a ref so the unmount cleanup can
   // restore it if the operator navigated away mid-preview without saving.
@@ -1214,144 +1286,168 @@ export function SettingsPage() {
         </InlineWarning>
       ) : null}
 
+      {/* The second-level strip for the sections that have one (Operações, Assinaturas). It sits
+          OUTSIDE the fieldset on purpose: `editingLocked` inerts the fieldset, and a reader
+          without `settings.manage` must still be able to move between sub-tabs — including to
+          the standalone ones that are not locked at all. */}
+      {subNav && sub ? (
+        <SubNav
+          items={subNav.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
+          active={sub}
+          onSelect={selectSub}
+          ariaLabel={t(SUBSECTION_ARIA[section] ?? 'settings.subnav.aria')}
+        />
+      ) : null}
+
       {/* One section at a time; the working copy spans all of them and the save bar below
           is always reachable. The panel replays the route-enter fade on each switch. */}
       <fieldset className="settings-fieldset" disabled={editingLocked}>
-        <div className="route-transition settings-section" key={section}>
+        <div
+          className="route-transition settings-section"
+          key={sub ? `${section}:${sub}` : section}
+        >
           {/* Aparência --------------------------------------------------------------- */}
+          {/* Aparência ---------------------------------------------------------------- */}
+          {/* Two cards, because the tab carries two SCOPES and the split is the only thing that
+              says so: the appearance card edits the instance-wide settings document (plus the
+              browser-local colour overrides), while the language card edits the signed-in user's
+              own record. Same tab, different blast radius. */}
           {section === 'aparencia' ? (
-            <Card title={t('settings.appearance.cardTitle')}>
-              <div className="form">
-                <Field
-                  label={t('settings.appearance.theme.label')}
-                  htmlFor="set-theme"
-                  hint={t('settings.appearance.theme.hint')}
-                  help={t('settings.appearance.theme.help')}
-                >
-                  <Select
-                    id="set-theme"
-                    value={a.theme}
-                    onChange={(e) => setAppearance('theme', e.target.value as ThemeMode)}
-                    options={optionsFrom(THEME_MODES, themeModeLabels)}
-                  />
-                </Field>
-
-                <Toggle
-                  label={
-                    <>
-                      {t('settings.appearance.leatherBg.label')}{' '}
-                      <FieldHelp text={t('settings.appearance.leatherBg.help')} />
-                    </>
-                  }
-                  checked={a.leather_texture}
-                  onChange={(v) => setAppearance('leather_texture', v)}
-                />
-
-                <Toggle
-                  label={
-                    <>
-                      {t('settings.appearance.leatherButtons.label')}{' '}
-                      <FieldHelp text={t('settings.appearance.leatherButtons.help')} />
-                    </>
-                  }
-                  checked={a.button_texture}
-                  onChange={(v) => setAppearance('button_texture', v)}
-                />
-
-                <Field
-                  label={t('settings.appearance.intensity.label', { value: a.texture_intensity })}
-                  htmlFor="set-intensity"
-                  hint={t('settings.appearance.intensity.hint')}
-                  help={t('settings.appearance.intensity.help')}
-                >
-                  <input
-                    id="set-intensity"
-                    className="control control--range"
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={a.texture_intensity}
-                    disabled={!a.leather_texture}
-                    onChange={(e) => setAppearance('texture_intensity', Number(e.target.value))}
-                  />
-                </Field>
-
-                <div className="form__actions">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    icon={<Icon.Shuffle />}
-                    disabled={!a.leather_texture}
-                    onClick={() => grainStore.reroll()}
+            <div className="stack">
+              <Card title={t('settings.appearance.cardTitle')}>
+                <div className="form settings-rows">
+                  <Field
+                    label={t('settings.appearance.theme.label')}
+                    htmlFor="set-theme"
+                    hint={t('settings.appearance.theme.hint')}
+                    help={t('settings.appearance.theme.help')}
                   >
-                    {t('settings.appearance.reroll')}
-                  </Button>
-                </div>
+                    <Select
+                      id="set-theme"
+                      value={a.theme}
+                      onChange={(e) => setAppearance('theme', e.target.value as ThemeMode)}
+                      options={optionsFrom(THEME_MODES, themeModeLabels)}
+                    />
+                  </Field>
 
-                {/* Custom colours — operator-set primary/secondary/background/surface, with
-                    a reset to the app's default theme. Applied live via colorStore. */}
-                <div className="color-customizer">
-                  <div className="field__labelrow">
-                    <p className="color-customizer__title">
-                      {t('settings.appearance.colors.title')}
-                    </p>
-                    <FieldHelp text={t('settings.appearance.colors.help')} />
-                  </div>
-                  <p className="field__hint">{t('settings.appearance.colors.hint')}</p>
+                  <Toggle
+                    label={
+                      <>
+                        {t('settings.appearance.leatherBg.label')}{' '}
+                        <FieldHelp text={t('settings.appearance.leatherBg.help')} />
+                      </>
+                    }
+                    checked={a.leather_texture}
+                    onChange={(v) => setAppearance('leather_texture', v)}
+                  />
 
-                  <div className="color-customizer__grid">
-                    {COLOR_OVERRIDE_FIELDS.map((fieldKey) => {
-                      const inputId = `set-color-${fieldKey}`;
-                      const value = colors[fieldKey] ?? COLOR_SEEDS[fieldKey];
-                      const isSet = colors[fieldKey] !== undefined;
-                      return (
-                        <div key={fieldKey} className="color-customizer__field">
-                          <label className="field__label" htmlFor={inputId}>
-                            {t(`settings.appearance.colors.${fieldKey}.label`)}
-                          </label>
-                          <div className="color-customizer__row">
-                            <input
-                              id={inputId}
-                              className="color-customizer__swatch"
-                              type="color"
-                              value={value}
-                              onChange={(e) => colorStore.setField(fieldKey, e.target.value)}
-                            />
-                            {isSet ? (
-                              <IconButton
-                                type="button"
-                                variant="ghost"
-                                icon={<Icon.Refresh />}
-                                label={t('settings.appearance.colors.clearField')}
-                                onClick={() => colorStore.setField(fieldKey, undefined)}
-                              />
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <Toggle
+                    label={
+                      <>
+                        {t('settings.appearance.leatherButtons.label')}{' '}
+                        <FieldHelp text={t('settings.appearance.leatherButtons.help')} />
+                      </>
+                    }
+                    checked={a.button_texture}
+                    onChange={(v) => setAppearance('button_texture', v)}
+                  />
+
+                  <Field
+                    label={t('settings.appearance.intensity.label', { value: a.texture_intensity })}
+                    htmlFor="set-intensity"
+                    hint={t('settings.appearance.intensity.hint')}
+                    help={t('settings.appearance.intensity.help')}
+                  >
+                    <input
+                      id="set-intensity"
+                      className="control control--range"
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={a.texture_intensity}
+                      disabled={!a.leather_texture}
+                      onChange={(e) => setAppearance('texture_intensity', Number(e.target.value))}
+                    />
+                  </Field>
 
                   <div className="form__actions">
                     <Button
                       type="button"
-                      variant="ghost"
-                      icon={<Icon.Refresh />}
-                      disabled={!hasColorOverrides}
-                      onClick={() => colorStore.reset()}
+                      variant="secondary"
+                      icon={<Icon.Shuffle />}
+                      disabled={!a.leather_texture}
+                      onClick={() => grainStore.reroll()}
                     >
-                      {t('settings.appearance.colors.reset')}
+                      {t('settings.appearance.reroll')}
                     </Button>
-                    {!hasColorOverrides ? (
-                      <span className="field__hint color-customizer__status">
-                        {t('settings.appearance.colors.usingDefault')}
-                      </span>
-                    ) : null}
+                  </div>
+
+                  {/* Custom colours — operator-set primary/secondary/background/surface, with
+                    a reset to the app's default theme. Applied live via colorStore. */}
+                  <div className="color-customizer">
+                    <div className="field__labelrow">
+                      <p className="color-customizer__title">
+                        {t('settings.appearance.colors.title')}
+                      </p>
+                      <FieldHelp text={t('settings.appearance.colors.help')} />
+                    </div>
+                    <p className="field__hint">{t('settings.appearance.colors.hint')}</p>
+
+                    <div className="color-customizer__grid">
+                      {COLOR_OVERRIDE_FIELDS.map((fieldKey) => {
+                        const inputId = `set-color-${fieldKey}`;
+                        const value = colors[fieldKey] ?? COLOR_SEEDS[fieldKey];
+                        const isSet = colors[fieldKey] !== undefined;
+                        return (
+                          <div key={fieldKey} className="color-customizer__field">
+                            <label className="field__label" htmlFor={inputId}>
+                              {t(`settings.appearance.colors.${fieldKey}.label`)}
+                            </label>
+                            <div className="color-customizer__row">
+                              <input
+                                id={inputId}
+                                className="color-customizer__swatch"
+                                type="color"
+                                value={value}
+                                onChange={(e) => colorStore.setField(fieldKey, e.target.value)}
+                              />
+                              {isSet ? (
+                                <IconButton
+                                  type="button"
+                                  variant="ghost"
+                                  icon={<Icon.Refresh />}
+                                  label={t('settings.appearance.colors.clearField')}
+                                  onClick={() => colorStore.setField(fieldKey, undefined)}
+                                />
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="form__actions">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Refresh />}
+                        disabled={!hasColorOverrides}
+                        onClick={() => colorStore.reset()}
+                      >
+                        {t('settings.appearance.colors.reset')}
+                      </Button>
+                      {!hasColorOverrides ? (
+                        <span className="field__hint color-customizer__status">
+                          {t('settings.appearance.colors.usingDefault')}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+              <LanguagePreferenceSection />
+            </div>
           ) : null}
 
           {/* Documentos -------------------------------------------------------------- */}
@@ -1364,7 +1460,7 @@ export function SettingsPage() {
             <div className="stack">
               <div id={IDENTITY_ANCHOR_ID}>
                 <Card title={t('settings.identity.cardTitle')}>
-                  <div className="form">
+                  <div className="form settings-rows">
                     <Field
                       label={t('settings.identity.orgName.label')}
                       htmlFor="set-org-name"
@@ -1383,7 +1479,7 @@ export function SettingsPage() {
                 </Card>
               </div>
               <Card title={t('settings.documents.cardTitle')}>
-                <div className="form">
+                <div className="form settings-rows">
                   <Field
                     label={t('settings.documents.locale.label')}
                     htmlFor="set-locale"
@@ -1441,439 +1537,464 @@ export function SettingsPage() {
               editable here. */}
           {section === 'assinaturas' ? (
             <div className="stack">
-              <Card title={t('settings.signing.policy.cardTitle')}>
-                <div className="form">
-                  <Field
-                    label={t('settings.signing.family.label')}
-                    htmlFor="set-family"
-                    hint={t('settings.signing.family.hint')}
-                    help={t('settings.signing.family.help')}
-                  >
-                    <Select
-                      id="set-family"
-                      value={draft.signing.preferred_family}
-                      onChange={(e) =>
-                        setSigning('preferred_family', e.target.value as SignatureFamily)
+              {/* Fornecedores de assinatura — the credentials manager that used to be a sibling
+                  top-level sub-tab. It keeps its own endpoints and its own gating, so it is
+                  standalone (no savebar) even though its five siblings are working-copy cards. */}
+              {sub === 'fornecedores' ? <ProviderCredentialsSection /> : null}
+
+              {sub === 'politica' ? (
+                <Card title={t('settings.signing.policy.cardTitle')}>
+                  <div className="form settings-rows">
+                    <Field
+                      label={t('settings.signing.family.label')}
+                      htmlFor="set-family"
+                      hint={t('settings.signing.family.hint')}
+                      help={t('settings.signing.family.help')}
+                    >
+                      <Select
+                        id="set-family"
+                        value={draft.signing.preferred_family}
+                        onChange={(e) =>
+                          setSigning('preferred_family', e.target.value as SignatureFamily)
+                        }
+                        options={optionsFrom(SIGNATURE_FAMILIES, signatureFamilyLabels)}
+                      />
+                    </Field>
+                    <Toggle
+                      label={
+                        <>
+                          {t('settings.signing.requireQualified.label')}{' '}
+                          <FieldHelp text={t('settings.signing.requireQualified.help')} />
+                        </>
                       }
-                      options={optionsFrom(SIGNATURE_FAMILIES, signatureFamilyLabels)}
+                      checked={draft.signing.require_qualified_for_seal}
+                      onChange={(v) => setSigning('require_qualified_for_seal', v)}
                     />
-                  </Field>
-                  <Toggle
-                    label={
-                      <>
-                        {t('settings.signing.requireQualified.label')}{' '}
-                        <FieldHelp text={t('settings.signing.requireQualified.help')} />
-                      </>
-                    }
-                    checked={draft.signing.require_qualified_for_seal}
-                    onChange={(v) => setSigning('require_qualified_for_seal', v)}
-                  />
-                  <p className="field__hint">{t('settings.signing.requireQualified.hint')}</p>
-                  <p className="field__hint">{t('settings.signing.note')}</p>
-                </div>
-              </Card>
-
-              <Card title={t('settings.signing.tslSources.title')}>
-                <div className="form">
-                  <p className="field__hint">{t('settings.signing.tslSources.hint')}</p>
-
-                  <Field
-                    label={t('settings.signing.tslUrl.label')}
-                    htmlFor="set-tsl"
-                    hint={t('settings.signing.fallbackHint')}
-                    help={t('settings.signing.tslUrl.help')}
-                  >
-                    <div className="input-reset">
-                      <Input
-                        id="set-tsl"
-                        type="url"
-                        value={draft.signing.tsl_url ?? ''}
-                        placeholder={t('settings.signing.tslUrl.placeholder')}
-                        onChange={(e) => setSigning('tsl_url', e.target.value)}
-                      />
-                      <IconButton
-                        type="button"
-                        variant="ghost"
-                        icon={<Icon.Refresh />}
-                        label={t('settings.signing.reset')}
-                        disabled={
-                          (draft.signing.tsl_url ?? '') === (DEFAULT_SETTINGS.signing.tsl_url ?? '')
-                        }
-                        onClick={() =>
-                          setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '')
-                        }
-                      />
-                    </div>
-                  </Field>
-
-                  <div className="section-head">
-                    <p className="field__hint">{t('settings.signing.source.urlOrPath')}</p>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      icon={<Icon.Plus />}
-                      onClick={addTslSource}
-                    >
-                      {t('settings.signing.tslSources.add')}
-                    </Button>
+                    <p className="field__hint">{t('settings.signing.requireQualified.hint')}</p>
+                    <p className="field__hint">{t('settings.signing.note')}</p>
                   </div>
+                </Card>
+              ) : null}
 
-                  {draft.signing.tsl_sources.length === 0 ? (
-                    <InlineWarning tone="info" title={t('settings.signing.tslSources.empty.title')}>
-                      {t('settings.signing.tslSources.empty.body')}
-                    </InlineWarning>
-                  ) : (
-                    <Table
-                      caption={t('settings.signing.tslSources.caption')}
-                      head={
-                        <tr>
-                          <th>{t('settings.signing.source.name')}</th>
-                          <th>{t('settings.signing.table.status')}</th>
-                          <th>{t('settings.signing.source.url')}</th>
-                          <th>{t('settings.signing.source.path')}</th>
-                          <th>{t('settings.signing.source.country')}</th>
-                          <th>{t('settings.signing.source.scheme')}</th>
-                          <th>{t('settings.signing.table.actions')}</th>
-                        </tr>
-                      }
+              {sub === 'tsl' ? (
+                <Card title={t('settings.signing.tslSources.title')}>
+                  <div className="form settings-rows">
+                    <p className="field__hint">{t('settings.signing.tslSources.hint')}</p>
+
+                    <Field
+                      label={t('settings.signing.tslUrl.label')}
+                      htmlFor="set-tsl"
+                      hint={t('settings.signing.fallbackHint')}
+                      help={t('settings.signing.tslUrl.help')}
                     >
-                      {draft.signing.tsl_sources.map((source) => {
-                        const rowTitle = source.name.trim() || source.id;
-                        return (
-                          <tr key={source.id} role="group" aria-label={rowTitle}>
-                            <td data-label={t('settings.signing.source.name')}>
-                              <Input
-                                aria-label={t('settings.signing.source.name')}
-                                value={source.name}
-                                onChange={(e) =>
-                                  updateTslSource(source.id, { name: e.target.value })
-                                }
-                              />
-                              <TooltipText label={source.id} as="code" className="field__hint mono">
-                                {source.id}
-                              </TooltipText>
-                            </td>
-                            <td data-label={t('settings.signing.table.status')}>
-                              <Toggle
-                                label={
-                                  source.enabled
-                                    ? t('settings.signing.sourceStatus.enabled')
-                                    : t('settings.signing.sourceStatus.disabled')
-                                }
-                                checked={source.enabled}
-                                onChange={(enabled) => updateTslSource(source.id, { enabled })}
-                              />
-                            </td>
-                            <td data-label={t('settings.signing.source.url')}>
-                              <Input
-                                aria-label={t('settings.signing.source.url')}
-                                type="url"
-                                value={source.url ?? ''}
-                                placeholder={t('settings.signing.tslUrl.placeholder')}
-                                onChange={(e) => updateTslSource(source.id, { url: e.target.value })}
-                              />
-                            </td>
-                            <td data-label={t('settings.signing.source.path')}>
-                              <Input
-                                aria-label={t('settings.signing.source.path')}
-                                value={source.path ?? ''}
-                                onChange={(e) =>
-                                  updateTslSource(source.id, { path: e.target.value })
-                                }
-                              />
-                            </td>
-                            <td data-label={t('settings.signing.source.country')}>
-                              <Input
-                                aria-label={t('settings.signing.source.country')}
-                                value={source.country ?? ''}
-                                placeholder="PT"
-                                onChange={(e) =>
-                                  updateTslSource(source.id, { country: e.target.value })
-                                }
-                              />
-                            </td>
-                            <td data-label={t('settings.signing.source.scheme')}>
-                              <Input
-                                aria-label={t('settings.signing.source.scheme')}
-                                value={source.scheme ?? ''}
-                                placeholder="eidas"
-                                onChange={(e) =>
-                                  updateTslSource(source.id, { scheme: e.target.value })
-                                }
-                              />
-                            </td>
-                            <td data-label={t('settings.signing.table.actions')}>
-                              <IconButton
-                                type="button"
-                                variant="ghost"
-                                icon={<Icon.Trash />}
-                                label={t('common.remove')}
-                                onClick={() => removeTslSource(source.id)}
-                              />
-                            </td>
+                      <div className="input-reset">
+                        <Input
+                          id="set-tsl"
+                          type="url"
+                          value={draft.signing.tsl_url ?? ''}
+                          placeholder={t('settings.signing.tslUrl.placeholder')}
+                          onChange={(e) => setSigning('tsl_url', e.target.value)}
+                        />
+                        <IconButton
+                          type="button"
+                          variant="ghost"
+                          icon={<Icon.Refresh />}
+                          label={t('settings.signing.reset')}
+                          disabled={
+                            (draft.signing.tsl_url ?? '') ===
+                            (DEFAULT_SETTINGS.signing.tsl_url ?? '')
+                          }
+                          onClick={() =>
+                            setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '')
+                          }
+                        />
+                      </div>
+                    </Field>
+
+                    <div className="section-head">
+                      <p className="field__hint">{t('settings.signing.source.urlOrPath')}</p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.Plus />}
+                        onClick={addTslSource}
+                      >
+                        {t('settings.signing.tslSources.add')}
+                      </Button>
+                    </div>
+
+                    {draft.signing.tsl_sources.length === 0 ? (
+                      <InlineWarning
+                        tone="info"
+                        title={t('settings.signing.tslSources.empty.title')}
+                      >
+                        {t('settings.signing.tslSources.empty.body')}
+                      </InlineWarning>
+                    ) : (
+                      <Table
+                        caption={t('settings.signing.tslSources.caption')}
+                        head={
+                          <tr>
+                            <th>{t('settings.signing.source.name')}</th>
+                            <th>{t('settings.signing.table.status')}</th>
+                            <th>{t('settings.signing.source.url')}</th>
+                            <th>{t('settings.signing.source.path')}</th>
+                            <th>{t('settings.signing.source.country')}</th>
+                            <th>{t('settings.signing.source.scheme')}</th>
+                            <th>{t('settings.signing.table.actions')}</th>
                           </tr>
-                        );
-                      })}
-                    </Table>
-                  )}
-                </div>
-              </Card>
-
-              <Card title={t('settings.signing.tsaProviders.title')}>
-                <div className="form">
-                  <p className="field__hint">{t('settings.signing.tsaProviders.hint')}</p>
-
-                  <Field
-                    label={t('settings.signing.tsaUrl.label')}
-                    htmlFor="set-tsa"
-                    hint={t('settings.signing.fallbackHint')}
-                    help={t('settings.signing.tsaUrl.help')}
-                  >
-                    <div className="input-reset">
-                      <Input
-                        id="set-tsa"
-                        type="url"
-                        value={draft.signing.tsa_url ?? ''}
-                        placeholder={t('settings.signing.tsaUrl.placeholder')}
-                        onChange={(e) => setSigning('tsa_url', e.target.value)}
-                      />
-                      <IconButton
-                        type="button"
-                        variant="ghost"
-                        icon={<Icon.Refresh />}
-                        label={t('settings.signing.reset')}
-                        disabled={
-                          (draft.signing.tsa_url ?? '') === (DEFAULT_SETTINGS.signing.tsa_url ?? '')
                         }
-                        onClick={() =>
-                          setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '')
-                        }
-                      />
-                    </div>
-                  </Field>
-
-                  <div className="section-head">
-                    <p className="field__hint">{t('settings.signing.source.urlOrPath')}</p>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      icon={<Icon.Plus />}
-                      onClick={addTsaProvider}
-                    >
-                      {t('settings.signing.tsaProviders.add')}
-                    </Button>
-                  </div>
-
-                  {draft.signing.tsa_providers.length === 0 ? (
-                    <InlineWarning
-                      tone="info"
-                      title={t('settings.signing.tsaProviders.empty.title')}
-                    >
-                      {t('settings.signing.tsaProviders.empty.body')}
-                    </InlineWarning>
-                  ) : (
-                    <Table
-                      caption={t('settings.signing.tsaProviders.caption')}
-                      head={
-                        <tr>
-                          <th>{t('settings.signing.source.name')}</th>
-                          <th>{t('settings.signing.table.status')}</th>
-                          <th>{t('settings.signing.source.url')}</th>
-                          <th>{t('settings.signing.source.path')}</th>
-                          <th>{t('settings.signing.tsaProviders.policy')}</th>
-                          <th>{t('settings.signing.table.limits')}</th>
-                          <th>{t('settings.signing.table.actions')}</th>
-                        </tr>
-                      }
-                    >
-                      {draft.signing.tsa_providers.map((provider) => {
-                        const rowTitle = provider.name.trim() || provider.id;
-                        return (
-                          <tr key={provider.id} role="group" aria-label={rowTitle}>
-                            <td data-label={t('settings.signing.source.name')}>
-                              <Input
-                                aria-label={t('settings.signing.source.name')}
-                                value={provider.name}
-                                onChange={(e) =>
-                                  updateTsaProvider(provider.id, { name: e.target.value })
-                                }
-                              />
-                              <TooltipText
-                                label={provider.id}
-                                as="code"
-                                className="field__hint mono"
-                              >
-                                {provider.id}
-                              </TooltipText>
-                            </td>
-                            <td data-label={t('settings.signing.table.status')}>
-                              <Toggle
-                                label={
-                                  provider.enabled
-                                    ? t('settings.signing.sourceStatus.enabled')
-                                    : t('settings.signing.sourceStatus.disabled')
-                                }
-                                checked={provider.enabled}
-                                onChange={(enabled) =>
-                                  updateTsaProvider(provider.id, { enabled })
-                                }
-                              />
-                              {/* Exactly one enabled provider is the default, enforced by
-                                  `ensureOneEnabledDefaultProvider` on every edit — so this is a
-                                  badge OR a promote button, never both. */}
-                              {provider.enabled && provider.default ? (
-                                <Badge tone="accent">
-                                  {t('settings.signing.tsaProviders.defaultBadge')}
-                                </Badge>
-                              ) : (
-                                <Button
+                      >
+                        {draft.signing.tsl_sources.map((source) => {
+                          const rowTitle = source.name.trim() || source.id;
+                          return (
+                            <tr key={source.id} role="group" aria-label={rowTitle}>
+                              <td data-label={t('settings.signing.source.name')}>
+                                <Input
+                                  aria-label={t('settings.signing.source.name')}
+                                  value={source.name}
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { name: e.target.value })
+                                  }
+                                />
+                                <TooltipText
+                                  label={source.id}
+                                  as="code"
+                                  className="field__hint mono"
+                                >
+                                  {source.id}
+                                </TooltipText>
+                              </td>
+                              <td data-label={t('settings.signing.table.status')}>
+                                <Toggle
+                                  label={
+                                    source.enabled
+                                      ? t('settings.signing.sourceStatus.enabled')
+                                      : t('settings.signing.sourceStatus.disabled')
+                                  }
+                                  checked={source.enabled}
+                                  onChange={(enabled) => updateTslSource(source.id, { enabled })}
+                                />
+                              </td>
+                              <td data-label={t('settings.signing.source.url')}>
+                                <Input
+                                  aria-label={t('settings.signing.source.url')}
+                                  type="url"
+                                  value={source.url ?? ''}
+                                  placeholder={t('settings.signing.tslUrl.placeholder')}
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { url: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td data-label={t('settings.signing.source.path')}>
+                                <Input
+                                  aria-label={t('settings.signing.source.path')}
+                                  value={source.path ?? ''}
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { path: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td data-label={t('settings.signing.source.country')}>
+                                <Input
+                                  aria-label={t('settings.signing.source.country')}
+                                  value={source.country ?? ''}
+                                  placeholder="PT"
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { country: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td data-label={t('settings.signing.source.scheme')}>
+                                <Input
+                                  aria-label={t('settings.signing.source.scheme')}
+                                  value={source.scheme ?? ''}
+                                  placeholder="eidas"
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { scheme: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td data-label={t('settings.signing.table.actions')}>
+                                <IconButton
                                   type="button"
                                   variant="ghost"
-                                  icon={<Icon.Check />}
-                                  onClick={() => makeDefaultTsaProvider(provider.id)}
+                                  icon={<Icon.Trash />}
+                                  label={t('common.remove')}
+                                  onClick={() => removeTslSource(source.id)}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Table>
+                    )}
+                  </div>
+                </Card>
+              ) : null}
+
+              {sub === 'tsa' ? (
+                <Card title={t('settings.signing.tsaProviders.title')}>
+                  <div className="form settings-rows">
+                    <p className="field__hint">{t('settings.signing.tsaProviders.hint')}</p>
+
+                    <Field
+                      label={t('settings.signing.tsaUrl.label')}
+                      htmlFor="set-tsa"
+                      hint={t('settings.signing.fallbackHint')}
+                      help={t('settings.signing.tsaUrl.help')}
+                    >
+                      <div className="input-reset">
+                        <Input
+                          id="set-tsa"
+                          type="url"
+                          value={draft.signing.tsa_url ?? ''}
+                          placeholder={t('settings.signing.tsaUrl.placeholder')}
+                          onChange={(e) => setSigning('tsa_url', e.target.value)}
+                        />
+                        <IconButton
+                          type="button"
+                          variant="ghost"
+                          icon={<Icon.Refresh />}
+                          label={t('settings.signing.reset')}
+                          disabled={
+                            (draft.signing.tsa_url ?? '') ===
+                            (DEFAULT_SETTINGS.signing.tsa_url ?? '')
+                          }
+                          onClick={() =>
+                            setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '')
+                          }
+                        />
+                      </div>
+                    </Field>
+
+                    <div className="section-head">
+                      <p className="field__hint">{t('settings.signing.source.urlOrPath')}</p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.Plus />}
+                        onClick={addTsaProvider}
+                      >
+                        {t('settings.signing.tsaProviders.add')}
+                      </Button>
+                    </div>
+
+                    {draft.signing.tsa_providers.length === 0 ? (
+                      <InlineWarning
+                        tone="info"
+                        title={t('settings.signing.tsaProviders.empty.title')}
+                      >
+                        {t('settings.signing.tsaProviders.empty.body')}
+                      </InlineWarning>
+                    ) : (
+                      <Table
+                        caption={t('settings.signing.tsaProviders.caption')}
+                        head={
+                          <tr>
+                            <th>{t('settings.signing.source.name')}</th>
+                            <th>{t('settings.signing.table.status')}</th>
+                            <th>{t('settings.signing.source.url')}</th>
+                            <th>{t('settings.signing.source.path')}</th>
+                            <th>{t('settings.signing.tsaProviders.policy')}</th>
+                            <th>{t('settings.signing.table.limits')}</th>
+                            <th>{t('settings.signing.table.actions')}</th>
+                          </tr>
+                        }
+                      >
+                        {draft.signing.tsa_providers.map((provider) => {
+                          const rowTitle = provider.name.trim() || provider.id;
+                          return (
+                            <tr key={provider.id} role="group" aria-label={rowTitle}>
+                              <td data-label={t('settings.signing.source.name')}>
+                                <Input
+                                  aria-label={t('settings.signing.source.name')}
+                                  value={provider.name}
+                                  onChange={(e) =>
+                                    updateTsaProvider(provider.id, { name: e.target.value })
+                                  }
+                                />
+                                <TooltipText
+                                  label={provider.id}
+                                  as="code"
+                                  className="field__hint mono"
                                 >
-                                  {t('settings.signing.tsaProviders.makeDefault')}
-                                </Button>
-                              )}
+                                  {provider.id}
+                                </TooltipText>
+                              </td>
+                              <td data-label={t('settings.signing.table.status')}>
+                                <Toggle
+                                  label={
+                                    provider.enabled
+                                      ? t('settings.signing.sourceStatus.enabled')
+                                      : t('settings.signing.sourceStatus.disabled')
+                                  }
+                                  checked={provider.enabled}
+                                  onChange={(enabled) =>
+                                    updateTsaProvider(provider.id, { enabled })
+                                  }
+                                />
+                                {/* Exactly one enabled provider is the default, enforced by
+                                  `ensureOneEnabledDefaultProvider` on every edit — so this is a
+                                  badge OR a promote button, never both. */}
+                                {provider.enabled && provider.default ? (
+                                  <Badge tone="accent">
+                                    {t('settings.signing.tsaProviders.defaultBadge')}
+                                  </Badge>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    icon={<Icon.Check />}
+                                    onClick={() => makeDefaultTsaProvider(provider.id)}
+                                  >
+                                    {t('settings.signing.tsaProviders.makeDefault')}
+                                  </Button>
+                                )}
+                              </td>
+                              <td data-label={t('settings.signing.source.url')}>
+                                <Input
+                                  aria-label={t('settings.signing.source.url')}
+                                  type="url"
+                                  value={provider.url ?? ''}
+                                  placeholder={t('settings.signing.tsaUrl.placeholder')}
+                                  onChange={(e) =>
+                                    updateTsaProvider(provider.id, { url: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td data-label={t('settings.signing.source.path')}>
+                                <Input
+                                  aria-label={t('settings.signing.source.path')}
+                                  value={provider.path ?? ''}
+                                  onChange={(e) =>
+                                    updateTsaProvider(provider.id, { path: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td data-label={t('settings.signing.tsaProviders.policy')}>
+                                <Input
+                                  aria-label={t('settings.signing.tsaProviders.policy')}
+                                  value={provider.policy ?? ''}
+                                  placeholder="1.2.3.4"
+                                  onChange={(e) =>
+                                    updateTsaProvider(provider.id, { policy: e.target.value })
+                                  }
+                                />
+                              </td>
+                              {/* Server-owned, not editable here — shown so a row is complete. */}
+                              <td className="mono" data-label={t('settings.signing.table.limits')}>
+                                {t('settings.signing.table.limitsValue', {
+                                  digest: provider.digest,
+                                  timeout: provider.timeout_seconds,
+                                  maxBytes: provider.max_bytes,
+                                })}
+                              </td>
+                              <td data-label={t('settings.signing.table.actions')}>
+                                <IconButton
+                                  type="button"
+                                  variant="ghost"
+                                  icon={<Icon.Trash />}
+                                  label={t('common.remove')}
+                                  onClick={() => removeTsaProvider(provider.id)}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Table>
+                    )}
+                  </div>
+                </Card>
+              ) : null}
+
+              {sub === 'prestadores' ? (
+                <Card title={t('settings.signing.providers.title')}>
+                  <div className="form settings-rows">
+                    <p className="field__hint">{t('settings.signing.providers.hint')}</p>
+                    <Table
+                      caption={t('settings.signing.providers.caption')}
+                      head={
+                        <tr>
+                          <th>{t('settings.signing.table.provider')}</th>
+                          <th>{t('settings.signing.table.mode')}</th>
+                          <th>{t('settings.signing.table.status')}</th>
+                          <th>{t('settings.signing.table.notes')}</th>
+                        </tr>
+                      }
+                    >
+                      {draft.signing.providers.map((provider) => {
+                        const status = providerStatus(provider, t);
+                        return (
+                          <tr key={provider.id}>
+                            <td data-label={t('settings.signing.table.provider')}>
+                              {provider.label}
                             </td>
-                            <td data-label={t('settings.signing.source.url')}>
-                              <Input
-                                aria-label={t('settings.signing.source.url')}
-                                type="url"
-                                value={provider.url ?? ''}
-                                placeholder={t('settings.signing.tsaUrl.placeholder')}
-                                onChange={(e) =>
-                                  updateTsaProvider(provider.id, { url: e.target.value })
-                                }
-                              />
+                            <td data-label={t('settings.signing.table.mode')}>
+                              {providerModeLabel(provider, t)}
                             </td>
-                            <td data-label={t('settings.signing.source.path')}>
-                              <Input
-                                aria-label={t('settings.signing.source.path')}
-                                value={provider.path ?? ''}
-                                onChange={(e) =>
-                                  updateTsaProvider(provider.id, { path: e.target.value })
-                                }
-                              />
+                            <td data-label={t('settings.signing.table.status')}>
+                              <span className="row-wrap">
+                                <Badge tone={status.tone}>{status.label}</Badge>
+                                {provider.configured && provider.production_blocked ? (
+                                  <Badge tone="warn">
+                                    {t('settings.signing.providerStatus.incomplete')}
+                                  </Badge>
+                                ) : null}
+                                {provider.local_only ? (
+                                  <Badge tone="accent">
+                                    {t('settings.signing.providerStatus.localOnly')}
+                                  </Badge>
+                                ) : null}
+                              </span>
                             </td>
-                            <td data-label={t('settings.signing.tsaProviders.policy')}>
-                              <Input
-                                aria-label={t('settings.signing.tsaProviders.policy')}
-                                value={provider.policy ?? ''}
-                                placeholder="1.2.3.4"
-                                onChange={(e) =>
-                                  updateTsaProvider(provider.id, { policy: e.target.value })
-                                }
-                              />
-                            </td>
-                            {/* Server-owned, not editable here — shown so a row is complete. */}
-                            <td
-                              className="mono"
-                              data-label={t('settings.signing.table.limits')}
-                            >
-                              {t('settings.signing.table.limitsValue', {
-                                digest: provider.digest,
-                                timeout: provider.timeout_seconds,
-                                maxBytes: provider.max_bytes,
-                              })}
-                            </td>
-                            <td data-label={t('settings.signing.table.actions')}>
-                              <IconButton
-                                type="button"
-                                variant="ghost"
-                                icon={<Icon.Trash />}
-                                label={t('common.remove')}
-                                onClick={() => removeTsaProvider(provider.id)}
-                              />
-                            </td>
+                            <td data-label={t('settings.signing.table.notes')}>{provider.note}</td>
                           </tr>
                         );
                       })}
                     </Table>
-                  )}
-                </div>
-              </Card>
-
-              <Card title={t('settings.signing.providers.title')}>
-                <div className="form">
-                  <p className="field__hint">{t('settings.signing.providers.hint')}</p>
-                  <Table
-                    caption={t('settings.signing.providers.caption')}
-                    head={
-                      <tr>
-                        <th>{t('settings.signing.table.provider')}</th>
-                        <th>{t('settings.signing.table.mode')}</th>
-                        <th>{t('settings.signing.table.status')}</th>
-                        <th>{t('settings.signing.table.notes')}</th>
-                      </tr>
-                    }
-                  >
-                    {draft.signing.providers.map((provider) => {
-                      const status = providerStatus(provider, t);
-                      return (
-                        <tr key={provider.id}>
-                          <td data-label={t('settings.signing.table.provider')}>{provider.label}</td>
-                          <td data-label={t('settings.signing.table.mode')}>
-                            {providerModeLabel(provider, t)}
-                          </td>
-                          <td data-label={t('settings.signing.table.status')}>
-                            <span className="row-wrap">
-                              <Badge tone={status.tone}>{status.label}</Badge>
-                              {provider.configured && provider.production_blocked ? (
-                                <Badge tone="warn">
-                                  {t('settings.signing.providerStatus.incomplete')}
-                                </Badge>
-                              ) : null}
-                              {provider.local_only ? (
-                                <Badge tone="accent">
-                                  {t('settings.signing.providerStatus.localOnly')}
-                                </Badge>
-                              ) : null}
-                            </span>
-                          </td>
-                          <td data-label={t('settings.signing.table.notes')}>{provider.note}</td>
-                        </tr>
-                      );
-                    })}
-                  </Table>
-                </div>
-              </Card>
+                  </div>
+                </Card>
+              ) : null}
 
               {/* Chave Móvel Digital — read-only config. The non-secret selectors (env,
                   ApplicationId) plus the "AMA cert configured?" flag come from the server; the
                   AMA secret material itself is supplied via environment variables, never the
                   settings document, so it is surfaced here for transparency, not edited. */}
-              <Card title={t('settings.signing.cmd.title')}>
-                <div className="form">
-                  <p className="field__hint">{t('settings.signing.cmd.intro')}</p>
-                  <dl className="deflist">
-                    <div>
-                      <dt>{t('settings.signing.cmd.env')}</dt>
-                      <dd>
-                        {draft.signing.cmd.env === 'prod'
-                          ? t('settings.signing.cmd.envProd')
-                          : t('settings.signing.cmd.envPreprod')}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{t('settings.signing.cmd.applicationId')}</dt>
-                      <dd className="mono">
-                        {draft.signing.cmd.application_id ?? t('settings.signing.cmd.unset')}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{t('settings.signing.cmd.amaCert')}</dt>
-                      <dd>
-                        {draft.signing.cmd.ama_cert_configured ? (
-                          <Badge tone="ok">{t('settings.signing.cmd.configured')}</Badge>
-                        ) : (
-                          <Badge tone="warn">{t('settings.signing.cmd.notConfigured')}</Badge>
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </Card>
+              {sub === 'cmd' ? (
+                <Card title={t('settings.signing.cmd.title')}>
+                  <div className="form settings-rows">
+                    <p className="field__hint">{t('settings.signing.cmd.intro')}</p>
+                    <dl className="deflist">
+                      <div>
+                        <dt>{t('settings.signing.cmd.env')}</dt>
+                        <dd>
+                          {draft.signing.cmd.env === 'prod'
+                            ? t('settings.signing.cmd.envProd')
+                            : t('settings.signing.cmd.envPreprod')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('settings.signing.cmd.applicationId')}</dt>
+                        <dd className="mono">
+                          {draft.signing.cmd.application_id ?? t('settings.signing.cmd.unset')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('settings.signing.cmd.amaCert')}</dt>
+                        <dd>
+                          {draft.signing.cmd.ama_cert_configured ? (
+                            <Badge tone="ok">{t('settings.signing.cmd.configured')}</Badge>
+                          ) : (
+                            <Badge tone="warn">{t('settings.signing.cmd.notConfigured')}</Badge>
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </Card>
+              ) : null}
             </div>
           ) : null}
 
@@ -1881,7 +2002,7 @@ export function SettingsPage() {
           {section === 'gestao' ? (
             <div className="stack">
               <Card title={t('settings.management.cardTitle')}>
-                <div className="form">
+                <div className="form settings-rows">
                   {canManageSettings ? (
                     <>
                       <Toggle
@@ -1904,7 +2025,7 @@ export function SettingsPage() {
                 </div>
               </Card>
               <Card title={t('settings.reminders.cardTitle')}>
-                <div className="form">
+                <div className="form settings-rows">
                   <Toggle
                     label={t('settings.reminders.enabled.label')}
                     checked={reminderPolicy.enabled}
@@ -2010,7 +2131,7 @@ export function SettingsPage() {
                 </div>
               </Card>
               <Card title={t('settings.retainedExportCleanup.cardTitle')}>
-                <div className="form">
+                <div className="form settings-rows">
                   <p className="field__hint">{t('settings.retainedExportCleanup.note')}</p>
                   <div className="registry-auto-update-grid">
                     <Field
@@ -2065,7 +2186,7 @@ export function SettingsPage() {
                 </div>
               </Card>
               <Card title={t('settings.backupRecovery.cardTitle')}>
-                <div className="form">
+                <div className="form settings-rows">
                   <p className="field__hint">{t('settings.backupRecovery.note')}</p>
                   <div className="registry-auto-update-grid">
                     <Field
@@ -2148,7 +2269,7 @@ export function SettingsPage() {
                 onChange={setRegistryAutoUpdate}
               />
               <Card title={t('settings.entityTable.title')}>
-                <div className="form">
+                <div className="form settings-rows">
                   <p className="field__hint">{t('settings.entityTable.hint')}</p>
                   <div
                     className="checkbox-grid"
@@ -2172,58 +2293,66 @@ export function SettingsPage() {
           {/* Operações -------------------------------------------------------------- */}
           {section === 'operacoes' ? (
             <div className="stack">
-              <PlatformOperationsSection
-                value={draft.platform}
-                audit={committed.platform.audit}
-                canManage={canManageSettings}
-                onChange={setPlatform}
-                logsPanel={<PlatformLogTailPanel />}
-              />
-              {/* The connector egress boundary sits with the other platform-operations
-                  controls: it is deployment-adjacent, and `settings.manage` at Global — the
-                  highest privilege this document is gated by — is what may move it. */}
-              <ConnectorEgressSection value={draft.connectors} onChange={setConnectors} />
+              {sub === 'plataforma' ? (
+                <div className="stack">
+                  <PlatformOperationsSection
+                    value={draft.platform}
+                    audit={committed.platform.audit}
+                    canManage={canManageSettings}
+                    onChange={setPlatform}
+                    logsPanel={<PlatformLogTailPanel />}
+                  />
+                  {/* The connector egress boundary sits with the other platform-operations
+                      controls: it is deployment-adjacent, and `settings.manage` at Global — the
+                      highest privilege this document is gated by — is what may move it. */}
+                  <ConnectorEgressSection value={draft.connectors} onChange={setConnectors} />
+                </div>
+              ) : null}
+
+              {/* Email (SMTP) — t23. Relocated here by t73; the section's CONTENTS are untouched.
+                  The non-secret fields are part of the settings working copy and autosave with
+                  everything else; the password and the test send are its own endpoints. */}
+              {sub === 'email' ? <EmailSection email={draft.email} onChange={setEmail} /> : null}
+
+              {/* Chaves API — standalone (its own endpoints), relocated here by t73. */}
+              {sub === 'chaves-api' ? <ApiKeysSection /> : null}
             </div>
           ) : null}
 
           {/* Utilizadores ------------------------------------------------------------ */}
-          {/* The roster, create flow and edit/access managers are all hosted inside this
-            settings sub-tab. Legacy `/utilizadores/*` routes redirect here. */}
+          {/* The roster and the edit/access managers are hosted inside this settings sub-tab;
+            legacy `/utilizadores` and `/utilizadores/:id` routes redirect here. CREATION does
+            NOT live here any more (t71) — it grants authority, so it earned its own screen at
+            `/utilizadores/novo`, and the old `?user=novo` state redirects out to it so there is
+            exactly one place a user is created. */}
           {section === 'utilizadores' ? (
-            <div className="stack">
-              <UsersList />
-              {selectedUser ? (
-                <div className="stack">
-                  <div className="form__actions">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      icon={<Icon.Users />}
-                      onClick={() => selectUser(null)}
-                    >
-                      {t('users.breadcrumb.self')}
-                    </Button>
-                  </div>
-                  {selectedUser === 'novo' ? (
-                    <NewUserPanel onCreated={(user) => selectUser(user.id)} />
-                  ) : (
+            selectedUser === 'novo' ? (
+              <Navigate to={NEW_USER_PATH} replace />
+            ) : (
+              <div className="stack">
+                <UsersList />
+                {selectedUser ? (
+                  <div className="stack">
+                    <div className="form__actions">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.Users />}
+                        onClick={() => selectUser(null)}
+                      >
+                        {t('users.breadcrumb.self')}
+                      </Button>
+                    </div>
                     <EditUserPanel id={selectedUser} />
-                  )}
-                </div>
-              ) : null}
-            </div>
+                  </div>
+                ) : null}
+              </div>
+            )
           ) : null}
 
-          {/* Email (SMTP) — t23. The non-secret fields are part of the settings working copy and
-              autosave with everything else; the password and the test send are the section's own
-              endpoints, so it takes both the draft slice and manages that part itself. --------- */}
-          {section === 'email' ? <EmailSection email={draft.email} onChange={setEmail} /> : null}
-
-          {/* Chaves API ------------------------------------------------------------- */}
-          {section === 'chaves-api' ? <ApiKeysSection /> : null}
-
-          {/* Fornecedores de assinatura (wp13) -------------------------------------- */}
-          {section === 'fornecedores-assinatura' ? <ProviderCredentialsSection /> : null}
+          {/* Email (SMTP), Chaves API and Fornecedores de assinatura moved one level down in
+              t73 — they render inside Operações / Assinaturas above, and their old `?sec=`
+              addresses resolve there via RETIRED_SECTIONS. */}
 
           {/* Dispositivos — companion phone pairing (wp27) -------------------------- */}
           {section === 'dispositivos' ? <PairingPanel /> : null}
@@ -2302,8 +2431,7 @@ export function SettingsPage() {
               the "Guardar agora" flush; a clean form shows nothing.
           The standalone sub-tabs (Utilizadores, Integridade, Dados…) manage their own data
           and never touch the settings document, so the bar is hidden there entirely. */}
-      {!STANDALONE_SECTIONS.includes(section) &&
-      (AUTOSAVE_ENABLED ? autosave.status === 'error' : autosave.isDirty) ? (
+      {!standalone && (AUTOSAVE_ENABLED ? autosave.status === 'error' : autosave.isDirty) ? (
         <Card>
           <div className="stack--tight">
             {autosave.status === 'error' ? <ErrorNote error={autosave.error} /> : null}

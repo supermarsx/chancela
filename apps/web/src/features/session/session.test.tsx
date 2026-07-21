@@ -31,6 +31,7 @@ const AMELIA: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 const BRUNO: UserView = {
   id: 'u2',
@@ -41,6 +42,7 @@ const BRUNO: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 
 interface Recorded {
@@ -353,6 +355,7 @@ describe('AuthGate', () => {
       has_secret: true,
       has_attestation_key: false,
       has_recovery_phrase: false,
+      language: 'auto',
     };
     const { fn, calls } = serverStub({
       // t33-e2: "no user exists" is now `onboarding_required` alone — there is no `users: []`

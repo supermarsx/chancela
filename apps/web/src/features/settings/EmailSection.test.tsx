@@ -12,16 +12,49 @@
  * acknowledgement toggle, and re-enabling encryption must retire the acknowledgement.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { EmailSection } from './EmailSection';
 import { DEFAULT_SETTINGS } from '../../api/types';
-import type { EmailSettings, EmailStatusView, EmailTestResult } from '../../api/types';
+import type {
+  EmailSettings,
+  EmailStatusView,
+  EmailTestResult,
+  SmtpTrace,
+} from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 
 interface Call {
   url: string;
   method: string;
   body: string | null;
+}
+
+/**
+ * A test-send result as a *test* writes one: everything except t70's `trace`.
+ *
+ * `EmailTestResult.trace` is required, so without this every fixture below would have to spell out
+ * a full protocol trace — host, port, encryption, capabilities, steps, transcript — none of which
+ * any of these tests are about. `stubFetch` supplies a default. Keeping the shape in ONE place
+ * also means t70's next iteration on `SmtpTrace` is a one-line change here rather than seven.
+ *
+ * `trace` stays overridable for whichever test eventually does care about it.
+ */
+type TestResultFixture = Omit<EmailTestResult, 'trace'> & { trace?: SmtpTrace };
+
+/** A minimal, internally consistent trace: one session that connected and got as far as EHLO. */
+function smtpTrace(overrides: Partial<SmtpTrace> = {}): SmtpTrace {
+  return {
+    host: 'smtp.encosto-estrategico.pt',
+    port: 587,
+    encryption: 'starttls',
+    helo_name: 'chancela.encosto-estrategico.pt',
+    tls_established: true,
+    advertised_capabilities: ['STARTTLS', 'AUTH PLAIN LOGIN'],
+    steps: [{ stage: 'connect', outcome: 'ok', started_ms: 0, duration_ms: 4 }],
+    transcript: [{ direction: 'server', text: '220 smtp ready', at_ms: 4 }],
+    total_ms: 12,
+    ...overrides,
+  };
 }
 
 function statusView(overrides: Partial<EmailStatusView> = {}): EmailStatusView {
@@ -35,7 +68,7 @@ function statusView(overrides: Partial<EmailStatusView> = {}): EmailStatusView {
 }
 
 function stubFetch(
-  opts: { status?: EmailStatusView; test?: EmailTestResult; writeStatus?: number } = {},
+  opts: { status?: EmailStatusView; test?: TestResultFixture; writeStatus?: number } = {},
 ): { fn: typeof fetch; calls: Call[] } {
   const { status = statusView(), test, writeStatus = 200 } = opts;
   const calls: Call[] = [];
@@ -46,7 +79,11 @@ function stubFetch(
     const method = init?.method ?? 'GET';
     calls.push({ url, method, body: (init?.body as string) ?? null });
     if (url.includes('/v1/settings/email/test')) {
-      return Promise.resolve(json(test ?? { ok: true, tls: true, authenticated: true }));
+      const result: EmailTestResult = {
+        ...(test ?? { ok: true, tls: true, authenticated: true }),
+        trace: test?.trace ?? smtpTrace(),
+      };
+      return Promise.resolve(json(result));
     }
     if (url.includes('/v1/settings/email/password')) {
       // The server echoes the new status; a PUT means a password now exists.
@@ -172,10 +209,21 @@ describe('EmailSection', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Enviar teste' }));
 
-    expect(await screen.findByText('Ligação ao servidor')).toBeTruthy();
-    expect(screen.getByText('127.0.0.1:2525: No connection could be made')).toBeTruthy();
+    // Scoped to the summary warning (t70): the stage label and the relay's text now also appear in
+    // the technical-detail timeline below, so an unscoped query matches twice. What this test is
+    // about is the *summary* naming the connect stage, which is unchanged.
+    //
+    // Located by its own title rather than by `role="note"`: this section renders several notes
+    // (an `ErrorNote`, the cleartext warning, the server's configuration warnings), so "the first
+    // note on the page" would silently start asserting against a different warning the day one of
+    // those appears in this scenario. (t69's hardening, restored after the working-tree loss.)
+    const warning = (await screen.findByText('O envio falhou')).closest('.inline-warning');
+    expect(warning, 'the failure warning is rendered').toBeTruthy();
+    const summary = within(warning as HTMLElement);
+    expect(summary.getByText('Ligação ao servidor')).toBeTruthy();
+    expect(summary.getByText('127.0.0.1:2525: No connection could be made')).toBeTruthy();
     // The remedy points at the port/firewall, not at credentials.
-    expect(screen.getByText(/firewall/)).toBeTruthy();
+    expect(summary.getByText(/firewall/)).toBeTruthy();
   });
 
   it('confirms a successful send without overclaiming delivery', async () => {

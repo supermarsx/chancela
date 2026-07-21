@@ -1986,9 +1986,9 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
     fireEvent.click(submit);
 
     await waitFor(() => expect(recordedBodies).toHaveLength(1));
-    expect(recordedBodies[0]).toEqual({
+    const { dispatched_at: dispatchedAt, ...body } = recordedBodies[0] as Record<string, unknown>;
+    expect(body).toEqual({
       actor: 'web-operator',
-      dispatched_at: '2026-01-11T11:30:00.000Z',
       channel: 'Email',
       reference: 'email-outbox-77',
       recipients: ['Fração B'],
@@ -1996,6 +1996,19 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
       imported_document_id: 'import-1',
       operator_note: 'Operator-recorded evidence only.',
     });
+
+    // `datetime-local` carries a LOCAL wall-clock time, so the UTC instant it converts to
+    // depends on the runtime zone — asserting a literal `…T11:30:00.000Z` silently assumed a
+    // UTC runner and broke the moment the suite moved to America/Sao_Paulo. The real contract
+    // is the round trip: the recorded instant, read back as local time, must be the wall-clock
+    // the operator actually typed. That holds in every zone and still fails if the component
+    // mis-converts (e.g. by treating the input as if it were already UTC).
+    const dispatched = new Date(dispatchedAt as string);
+    expect(dispatched.getFullYear()).toBe(2026);
+    expect(dispatched.getMonth()).toBe(0);
+    expect(dispatched.getDate()).toBe(11);
+    expect(dispatched.getHours()).toBe(11);
+    expect(dispatched.getMinutes()).toBe(30);
   });
 
   it('keeps evidence submit permission-gated', async () => {

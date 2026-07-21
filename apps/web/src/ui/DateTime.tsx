@@ -84,6 +84,13 @@ export function DateTime({
  * tooltip is not decoration — "há 2 dias" alone is unusable in a record, so the exact
  * instant has to stay reachable by hover AND by keyboard, and the `aria-label` makes it
  * what a screen reader announces rather than the vague relative phrase.
+ *
+ * Both halves are rendered and `theme.css` swaps which one is visible: on screen the relative
+ * phrase, in PRINT the absolute instant. A tooltip and an `aria-label` do not exist on paper,
+ * so a printed "há 2 dias" would be an unanchored date in a document someone may hand to a
+ * third party. The `.datetime__relative` / `.datetime__absolute` rules in `theme.css` are
+ * INERT without these two spans, so the pair must always move together — shipping the
+ * stylesheet without them is how this silently regressed once.
  */
 export function RelativeDateTime({ value, className }: DateProps) {
   const locale = useActiveLocale();
@@ -93,7 +100,8 @@ export function RelativeDateTime({ value, className }: DateProps) {
   return (
     <Tooltip label={absolute}>
       <time dateTime={iso} className={className} tabIndex={0} aria-label={absolute}>
-        {formatRelative(value, undefined, locale)}
+        <span className="datetime__relative">{formatRelative(value, undefined, locale)}</span>
+        <span className="datetime__absolute">{absolute}</span>
       </time>
     </Tooltip>
   );

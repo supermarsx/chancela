@@ -21,6 +21,7 @@ const USER: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 
 const STRONG_PASSWORD = 'Str0ng!Vault9';
@@ -82,6 +83,7 @@ function wizardStub(): { fn: typeof fetch; calls: Recorded[] } {
         ...USER,
         has_secret: true,
         has_recovery_phrase: true,
+        language: 'auto',
         recovery_phrase: RECOVERY_PHRASE,
       });
     if (url.includes('/v1/session') && method === 'POST') {

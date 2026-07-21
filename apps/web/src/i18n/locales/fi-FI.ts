@@ -4614,6 +4614,61 @@ export const fiFI: Catalog = {
   'settings.email.help.allowInsecure':
     'Sallii nimenomaisesti lähetyksen ilman TLS:ää. Ilman tätä vahvistusta salaamaton määritys hylätään.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Käyttöliittymän kieli',
+  'settings.language.lede':
+    'Tilisi asetus: se koskee sinua kaikissa selaimissa, joista kirjaudut sisään, eikä ketään muuta tässä instanssissa.',
+  'settings.language.field.label': 'Kieli',
+  'settings.language.field.hint':
+    'Valitse kiinteä kieli tai jätä automaattiseksi, jolloin seurataan selainta.',
+  'settings.language.help':
+    'Tallennetaan tilillesi. Kiinteää kieltä käytetään aina; ”automaattinen” neuvottelee selaimen ilmoittamien kielten kanssa.',
+  'settings.language.auto': 'Automaattinen (seuraa tätä selainta)',
+  'settings.language.autoResolves':
+    'Tässä selaimessa ”automaattinen” näyttää kielen {locale}. Tallennettu valinta on yhä ”automaattinen”, joten toisella koneella seurataan sen selainta.',
+  'settings.language.notTheme':
+    'Teema seuraa käyttöjärjestelmää, kieli selainta. Nämä ovat eri mekanismeja, vaikka vaihtoehdot näyttävät samanlaisilta.',
+  'settings.language.notDocuments':
+    'Tämä ei muuta kieltä, jolla luodut asiakirjat kirjoitetaan — se on pöytäkirjojen oma kieli ja asetetaan kohdassa Documentos.',
+  'settings.language.signInScreen':
+    'Kirjautumisnäkymä käyttää aina instanssille määritettyä kieltä: käyttäjää, jonka toivetta seurata, ei vielä ole.',
+  'settings.language.signedOut.title': 'Ei kirjautuneena',
+  'settings.language.signedOut.body':
+    'Kirjaudu sisään valitaksesi kielen. Ilman käyttäjää pätee instanssille määritetty kieli.',
+  'settings.language.savedToast': 'Käyttöliittymän kieli tallennettu',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Editoria ladataan…',
+  'acts.body.editor.loadFailed': 'Editori ei latautunut',
+  'acts.body.editor.loadFailedBody':
+    'Lataa sivu uudelleen. Ennen kuin editori latautuu, pöytäkirjan tekstiä ei voi kirjoittaa tässä — mitään jo kirjoittamaasi ei ole menetetty.',
+  'acts.body.editor.subset':
+    'Otsikot, kappaleet, lihavointi, kursivointi ja erotinviivat hyväksytään. Taulukot, kuvat, linkit, luettelot, koodilohkot ja HTML hylätään palvelimella sen sijaan, että ne poistettaisiin äänettömästi.',
+  'acts.body.editor.placeholders':
+    'Kentät {{ … }} vain korostetaan, niitä ei koskaan lukita: voit poistaa, siirtää tai kirjoittaa ne uudelleen kuten minkä tahansa tekstin.',
+  'acts.body.editor.bytes': '{used} / {max} tavua',
+  'acts.body.editor.bytesOver':
+    '{used} / {max} tavua — yli rajan. Lyhennä tekstiä; mitään ei katkaista puolestasi.',
+  'acts.body.rejected.title': 'Tämä teksti ei käänny',
+  'acts.body.rejected.at': 'rivillä {line}, sarakkeessa {column}.',
+  'acts.body.rejected.remedy':
+    'Korjaa tai poista kyseinen rakenne. Palvelin hylkää sen sen sijaan että poistaisi, jottet koskaan hyväksy tekstiä, jota sinetöity asiakirja ei sisällä.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Osa liittämästäsi ei mahdu pöytäkirjaan',
+  'acts.body.paste.removed': '{construct} ({count}) — poistettu. Säilytettävää tekstiä ei ollut.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — muutettu kappaleiksi. Teksti jäi, rakenne ei.',
+  'acts.body.paste.why':
+    'Pöytäkirjaan mahtuu vain otsikoita, kappaleita, lihavointia, kursivointia ja erotinviivoja. Kerromme mieluummin mikä muuttui kuin annamme sinun huomata puutteen myöhemmin.',
+  'acts.body.paste.dismiss': 'Selvä',
+  'acts.body.construct.table': 'Taulukko',
+  'acts.body.construct.image': 'Kuva',
+  'acts.body.construct.list': 'Luettelo',
+  'acts.body.construct.code': 'Koodilohko',
+  'acts.body.construct.quote': 'Lainaus',
+  'acts.body.construct.link': 'Linkki',
+
   'settings.providerCredentials.cardTitle': 'Allekirjoituspalveluntarjoajat',
   'settings.providerCredentials.lede':
     'Hallitse allekirjoituspalveluntarjoajien tunnistetietoja, joilla on useita avaimia palveluntarjoajaa kohti, prioriteetti ja vikasieto.',

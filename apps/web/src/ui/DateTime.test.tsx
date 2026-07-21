@@ -59,12 +59,59 @@ describe('RelativeDateTime', () => {
     render(<RelativeDateTime value={twoHoursAgo} />);
     const element = timeElement();
 
-    expect(element.textContent).toBe('há 2 horas');
+    expect(element.querySelector('.datetime__relative')?.textContent).toBe('há 2 horas');
     expect(element.getAttribute('datetime')).toBe(twoHoursAgo);
     // "há 2 horas" alone is useless in a record, so the exact instant must be announced
     // to a screen reader and reachable by keyboard, not mouse-only.
     expect(element.getAttribute('aria-label')).toMatch(/\d{1,2}:\d{2}:\d{2}/);
     expect(element.tabIndex).toBe(0);
+  });
+});
+
+/**
+ * The web tsconfig has no `@types/node`, so `node:fs` is reached through the indirect
+ * dynamic-import convention documented in `app/motion.test.ts` — a static import runs fine
+ * under vitest but breaks `tsc -b`. Comments are stripped so prose ABOUT a rule can never
+ * satisfy a match.
+ */
+async function themeRules(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+describe('the print swap is wired end to end', () => {
+  // Asserting the markup alone passes with the @media print rule deleted; asserting the CSS
+  // alone passes with the spans deleted. The second is exactly how this shipped broken, the
+  // stylesheet landing in a commit that held its .tsx back. Both halves are pinned here.
+  it('hides the absolute half on screen', async () => {
+    expect(await themeRules()).toMatch(/\.datetime__absolute\s*\{\s*display:\s*none;/);
+  });
+
+  it('swaps relative out and absolute in for print', async () => {
+    const css = await themeRules();
+    const printBlock = css.slice(css.indexOf('@media print'));
+    expect(printBlock).toMatch(/\.datetime__relative\s*\{\s*display:\s*none;/);
+    expect(printBlock).toMatch(/\.datetime__absolute\s*\{\s*display:\s*inline;/);
+  });
+
+  it('renders the two spans the stylesheet targets, so the rules are never inert', () => {
+    render(<RelativeDateTime value={new Date().toISOString()} />);
+    expect(timeElement().querySelector('.datetime__relative')).not.toBeNull();
+    expect(timeElement().querySelector('.datetime__absolute')).not.toBeNull();
+  });
+});
+
+describe('RelativeDateTime in print', () => {
+  it('carries the absolute instant as real text, so it survives printing', () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    render(<RelativeDateTime value={twoDaysAgo} />);
+
+    const absolute = timeElement().querySelector('.datetime__absolute');
+    expect(absolute?.textContent).toMatch(/\d{1,2}:\d{2}:\d{2}/);
+    expect(timeElement().querySelector('.datetime__relative')?.textContent).toBe('anteontem');
   });
 });
 

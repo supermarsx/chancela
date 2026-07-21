@@ -69,6 +69,7 @@ import {
   type RetentionReviewClosureDecision,
   type TransferControlView,
 } from '../../api/types';
+import { formatTimestamp } from '../../format';
 import { t as translateNow, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
@@ -969,10 +970,15 @@ function retentionExecutionStatusTone(
   return 'warn';
 }
 
+/**
+ * Compliance receipts, DPIA stamps and retention executions are evidence, so they render at
+ * evidentiary precision — seconds plus the zone abbreviation. Kept as a thin local alias
+ * because a dozen call sites interpolate it into `t(...)` params as a plain string; the
+ * formatting itself lives in the shared date family. It previously hard-coded `'pt-PT'`,
+ * showing Portuguese dates to readers of the other thirteen shipped locales.
+ */
 function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('pt-PT', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  return formatTimestamp(value);
 }
 
 function latestReceipt<T extends { recorded_at: string }>(receipts: T[]): T | undefined {
@@ -1130,7 +1136,7 @@ function RegisterForm({
 
   return (
     <form
-      className="form"
+      className="form settings-rows"
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
         if (canSubmit) onSubmit();
@@ -1581,7 +1587,7 @@ function BreachPlaybookForm({
 
   return (
     <form
-      className="form"
+      className="form settings-rows"
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
         if (canSubmit) onSubmit();
@@ -1969,7 +1975,7 @@ function TransferControlForm({
 
   return (
     <form
-      className="form"
+      className="form settings-rows"
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
         if (canSubmit) onSubmit();
@@ -2360,7 +2366,7 @@ function RetentionPolicyForm({
 
   return (
     <form
-      className="form"
+      className="form settings-rows"
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
         if (canSubmit) onSubmit();
@@ -2508,7 +2514,7 @@ function RetentionDryRunPanel({
       }
     >
       <form
-        className="form"
+        className="form settings-rows"
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
           if (canSubmit) void onDryRun(form);

@@ -11,6 +11,7 @@ import { cleanup, render, screen, fireEvent, waitFor, within } from '@testing-li
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement } from 'react';
+import { formatTimestamp } from '../../format';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui';
 import {
@@ -115,6 +116,7 @@ const USER: UserView = {
   has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
+  language: 'auto',
 };
 
 // --- Subset honesty (permission-matrix editor) ----------------------------------
@@ -744,6 +746,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       has_secret: true,
       has_attestation_key: false,
       has_recovery_phrase: false,
+      language: 'auto',
       created_at: '2026-01-01',
     },
   ];
@@ -909,7 +912,12 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
     renderRbac(<DelegacoesSection />, GRANTOR());
 
     const legacyRow = (await screen.findByText('entity.read')).closest('tr')!;
-    expect(within(legacyRow).getByText('1970-01-01T00:00:00Z')).toBeTruthy();
+    // The start of a delegation renders through the shared evidentiary formatter, not as the
+    // raw wire string. Asserting the `datetime` attribute rather than the visible text pins the
+    // exact instant AND survives a formatting change — the visible form is locale- and
+    // zone-dependent, the attribute is neither.
+    const startsAt = within(legacyRow).getByText(formatTimestamp('1970-01-01T00:00:00Z'));
+    expect(startsAt.getAttribute('datetime')).toBe('1970-01-01T00:00:00Z');
     expect(within(legacyRow).getByText('Em falta (legado)')).toBeTruthy();
     // Named honestly in the row (and in the função filter, hence *All*).
     expect(screen.getAllByText('Função removida do catálogo').length).toBeGreaterThan(0);

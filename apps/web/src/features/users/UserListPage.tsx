@@ -24,6 +24,13 @@ export const usersSettingsPath = (user?: string, hash = '') => {
   return `/configuracoes${query}${hash}`;
 };
 
+/**
+ * The dedicated create screen (t71). Creation left Configurações — it grants authority, so it
+ * gets room — while the roster stayed. This is the single entry point; the old
+ * `?sec=utilizadores&user=novo` settings state redirects here.
+ */
+export const NEW_USER_PATH = '/utilizadores/novo';
+
 function UserRow({ user }: { user: UserView }) {
   const t = useT();
   const toast = useToast();
@@ -110,7 +117,7 @@ export function UsersList() {
       actions={
         <GateButtonLink
           perm="user.manage"
-          to={usersSettingsPath('novo')}
+          to={NEW_USER_PATH}
           variant="primary"
           icon={<Icon.Plus />}
         >

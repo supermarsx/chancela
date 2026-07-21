@@ -4675,6 +4675,61 @@ export const ptPT = {
   'settings.email.help.allowInsecure':
     'Autoriza expressamente o envio sem TLS. Sem esta confirmação, a configuração sem encriptação é recusada.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Idioma da interface',
+  'settings.language.lede':
+    'Preferência da sua conta: aplica-se a si em qualquer navegador onde inicie sessão, e não a mais ninguém nesta instância.',
+  'settings.language.field.label': 'Idioma',
+  'settings.language.field.hint':
+    'Escolha um idioma fixo, ou deixe em automático para seguir o navegador.',
+  'settings.language.help':
+    'Guardado na sua conta. Um idioma fixo é sempre usado; «automático» negoceia com os idiomas que o navegador anuncia.',
+  'settings.language.auto': 'Automático (seguir este navegador)',
+  'settings.language.autoResolves':
+    'Neste navegador, «automático» mostra {locale}. A preferência guardada continua a ser «automático», por isso noutro computador seguirá esse navegador.',
+  'settings.language.notTheme':
+    'O tema segue o sistema operativo; o idioma segue o navegador. São mecanismos diferentes, apesar de as opções se parecerem.',
+  'settings.language.notDocuments':
+    'Não altera o idioma dos documentos gerados — esse é o idioma em que as atas são escritas e define-se em Documentos.',
+  'settings.language.signInScreen':
+    'O ecrã de início de sessão usa sempre o idioma configurado na instância: ainda não há utilizador cuja preferência seguir.',
+  'settings.language.signedOut.title': 'Sem sessão iniciada',
+  'settings.language.signedOut.body':
+    'Inicie sessão para escolher o seu idioma. Sem utilizador, vale o idioma configurado na instância.',
+  'settings.language.savedToast': 'Idioma da interface guardado',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'A carregar o editor…',
+  'acts.body.editor.loadFailed': 'O editor não carregou',
+  'acts.body.editor.loadFailedBody':
+    'Recarregue a página. Enquanto o editor não carregar, o corpo da ata não pode ser escrito aqui — nada do que já escreveu se perdeu.',
+  'acts.body.editor.subset':
+    'Aceita títulos, parágrafos, negrito, itálico e linhas separadoras. Tabelas, imagens, ligações, listas, blocos de código e HTML são recusados pelo servidor, não removidos em silêncio.',
+  'acts.body.editor.placeholders':
+    'Os campos {{ … }} são apenas realçados, nunca bloqueados: pode apagá-los, movê-los ou reescrevê-los como qualquer outro texto.',
+  'acts.body.editor.bytes': '{used} de {max} bytes',
+  'acts.body.editor.bytesOver':
+    '{used} de {max} bytes — acima do limite. Encurte o texto; nada é cortado automaticamente.',
+  'acts.body.rejected.title': 'Este texto não vai compilar',
+  'acts.body.rejected.at': 'na linha {line}, coluna {column}.',
+  'acts.body.rejected.remedy':
+    'Corrija ou remova essa construção. O servidor recusa-a em vez de a apagar, para que não aprove um texto que o documento selado não contém.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'O que colou não cabe todo numa ata',
+  'acts.body.paste.removed': '{construct} ({count}) — removemos. Não havia texto a manter.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — convertemos em parágrafos. O texto ficou; a estrutura não.',
+  'acts.body.paste.why':
+    'Uma ata só admite títulos, parágrafos, negrito, itálico e linhas separadoras. Preferimos dizer-lhe o que mudou a deixá-lo descobrir que faltava.',
+  'acts.body.paste.dismiss': 'Percebi',
+  'acts.body.construct.table': 'Tabela',
+  'acts.body.construct.image': 'Imagem',
+  'acts.body.construct.list': 'Lista',
+  'acts.body.construct.code': 'Bloco de código',
+  'acts.body.construct.quote': 'Citação',
+  'acts.body.construct.link': 'Ligação',
+
   'settings.providerCredentials.cardTitle': 'Fornecedores de assinatura',
   'settings.providerCredentials.lede':
     'Faça a gestão das credenciais dos fornecedores de assinatura, com várias chaves por fornecedor, prioridade e recurso alternativo.',

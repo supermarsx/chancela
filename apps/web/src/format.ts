@@ -43,9 +43,19 @@ export type DateInput = string | number | Date | null | undefined;
  * RFC 3339 parses natively — `Date` truncates the sub-millisecond digits, which is why the
  * full original string is what goes into the `datetime` attribute rather than a re-emitted one.
  */
+/** A bare calendar day, carrying no time and no zone: `2026-07-07`. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 function parseInstant(value: DateInput): Date | null {
   if (value === null || value === undefined || value === '') return null;
-  const date = value instanceof Date ? value : new Date(value);
+  // A calendar day is NOT an instant. `new Date('2026-07-07')` is UTC midnight by spec, which
+  // renders as the PREVIOUS day for any viewer west of UTC — pt-BR readers saw every opening
+  // date a day early. Appending a bare time forces local-midnight parsing, so a calendar day
+  // names the same day in every zone. Values carrying a time or an offset are true instants
+  // and are left alone, so they still render in the viewer's zone.
+  const source =
+    typeof value === 'string' && DATE_ONLY.test(value) ? `${value}T00:00:00` : value;
+  const date = value instanceof Date ? value : new Date(source);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

@@ -122,6 +122,18 @@ export const LOCALES = [
 ] as const;
 export type Locale = (typeof LOCALES)[number];
 
+/**
+ * A user's language preference (t71): `'auto'` keeps following the environment, anything else
+ * pins a locale.
+ *
+ * `'auto'` is stored as `'auto'` and never resolved to the detected locale and written back —
+ * that would quietly convert "follow my environment" into "pin me to whatever I first loaded
+ * with". Detection happens at render time, every time. Server-rendered output (documents,
+ * e-mail) has no browser to detect from, so `'auto'` falls back to the platform default.
+ */
+export const LANGUAGE_AUTO = 'auto';
+export type UserLanguage = typeof LANGUAGE_AUTO | Locale;
+
 export const SIGNATURE_FAMILIES = [
   'CartaoCidadao',
   'ChaveMovelDigital',
@@ -3567,6 +3579,8 @@ export interface UserView {
   has_recovery_phrase: boolean;
   /** 32-hex fingerprint of the attestation key; omitted when none (t29). */
   attestation_key_fingerprint?: string;
+  /** The user's language preference (t71); `'auto'` for one who has never chosen. */
+  language: UserLanguage;
 }
 
 export interface CreateUserBody {
@@ -3574,12 +3588,34 @@ export interface CreateUserBody {
   display_name?: string;
   email?: string;
   password: string;
+  /**
+   * t71: the `(role, scope)` to grant in the SAME request as the create, so the operator never
+   * lands on a created-but-roleless account. The server applies exactly the checks
+   * `POST /v1/users/{id}/roles` applies (`role.assign` @ scope **plus** the subset invariant)
+   * before writing anything — a refused role creates no user. Omitted ⇒ the server's historical
+   * `Gestor@Global` default.
+   */
+  role?: { role_id: string; scope: PermissionScope };
+  /**
+   * t71: send the new account a welcome e-mail. The message carries **no** password, token or
+   * link (no credential-delivery mechanism with expiry exists) — it only announces the account.
+   * A send failure never fails the create.
+   */
+  send_welcome_email?: boolean;
+  /**
+   * t71: the new account's language preference. Also the language the welcome e-mail renders
+   * in; `'auto'` falls back to the platform default, since a server-rendered message has no
+   * browser to detect from.
+   */
+  language?: UserLanguage;
 }
 
 export interface UpdateUserBody {
   display_name?: string;
   email?: string | null;
   active?: boolean;
+  /** t71: `'auto'` is a real value here — it restores "keep detecting", it does not clear. */
+  language?: UserLanguage;
 }
 
 // --- RBAC permissions (§ t64-E3, FROZEN for the E5 web permissions context) ------
@@ -6753,6 +6789,79 @@ export interface SmtpFailure {
   tls: boolean;
 }
 
+/** How one protocol stage ended (t70). `refused` is the client declining — an unimplemented AUTH
+ *  mechanism, a STARTTLS downgrade, an address needing SMTPUTF8 — and is deliberately distinct from
+ *  `failed`, because nothing is wrong with the relay and the fix is on this side. */
+export const SMTP_STEP_OUTCOMES = ['ok', 'failed', 'skipped', 'refused'] as const;
+export type SmtpStepOutcome = (typeof SMTP_STEP_OUTCOMES)[number];
+
+/** One stage of the session, with the relay's own reply and its duration (t70).
+ *
+ *  Timing is per stage on purpose: a relay that refuses in 3ms and one that swallows the connection
+ *  for 20s are different problems, and a single "failed" hides that. */
+export interface SmtpTraceStep {
+  stage: SmtpStage;
+  outcome: SmtpStepOutcome;
+  /** The relay's SMTP reply code for this stage, when it answered. */
+  code?: number;
+  /** The RFC 3463 enhanced status code, when the reply carried one. */
+  enhanced_code?: string;
+  /** The relay's reply text verbatim, or — for `skipped`/`refused` — the client's own reason. */
+  detail?: string;
+  /** Milliseconds from the start of the session to the moment this stage began. */
+  started_ms: number;
+  /** How long the stage took. */
+  duration_ms: number;
+}
+
+/** What the TLS handshake negotiated (t70). Present only when a handshake succeeded.
+ *
+ *  "Is it encrypted?" is a yes/no already visible elsewhere; *which* protocol version and *whose*
+ *  certificate is what distinguishes a working relay from one quietly serving a self-signed
+ *  certificate or an interception box. */
+export interface SmtpTlsDetail {
+  protocol?: string;
+  cipher_suite?: string;
+  peer_subject?: string;
+  peer_issuer?: string;
+}
+
+/** One line of the conversation (t70). Client lines carrying credentials are placeholders, never
+ *  the real line — see `SmtpTrace`. */
+export interface SmtpTranscriptLine {
+  direction: 'client' | 'server';
+  text: string;
+  at_ms: number;
+}
+
+/** The full diagnostic record of one SMTP session (t70) — enough to debug a relay without server
+ *  access, which is the normal situation for a self-hosted deployment.
+ *
+ *  **It never contains the relay password.** Two independent server-side mechanisms guarantee that:
+ *  credential-bearing lines are recorded as fixed placeholders rather than reaching the recorder at
+ *  all, and every stored line is additionally scrubbed of the password and its base64 encodings for
+ *  the pathological case of a relay echoing the credential back in its own reply. */
+export interface SmtpTrace {
+  host: string;
+  port: number;
+  /** The peer address the connection actually landed on — a hostname resolving somewhere
+   *  unexpected is invisible otherwise. */
+  resolved_address?: string;
+  encryption: SmtpEncryption;
+  helo_name: string;
+  /** Whether TLS was *actually* established, as observed — not what the configuration asked for. */
+  tls_established: boolean;
+  tls?: SmtpTlsDetail;
+  /** The extensions the relay advertised in EHLO, verbatim. "Offered no AUTH" and "offered only
+   *  CRAM-MD5" are different problems with the same symptom. */
+  advertised_capabilities: string[];
+  /** The AUTH mechanism chosen, e.g. `PLAIN`. Absent when no authentication ran. */
+  auth_mechanism?: string;
+  steps: SmtpTraceStep[];
+  transcript: SmtpTranscriptLine[];
+  total_ms: number;
+}
+
 /** `POST /v1/settings/email/test` — a relay rejection is a 200 with `ok: false`, not an HTTP error. */
 export interface EmailTestResult {
   ok: boolean;
@@ -6760,6 +6869,9 @@ export interface EmailTestResult {
   authenticated: boolean;
   accepted_detail?: string;
   failure?: SmtpFailure;
+  /** The full protocol trace (t70). Present on success as well as failure: a send that works but
+   *  runs unencrypted, or takes 19 seconds, is worth seeing. */
+  trace: SmtpTrace;
 }
 
 /** Tenant-level gate for AI features and the MCP surface. Defaults disabled. */

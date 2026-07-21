@@ -4606,6 +4606,61 @@ export const ptBR: Catalog = {
   'settings.email.help.allowInsecure':
     'Autoriza expressamente o envio sem TLS. Sem essa confirmação, a configuração sem criptografia é rejeitada.',
 
+  // --- Aparência: the signed-in user’s own interface language (t69, on t71’s field) ---
+  'settings.language.cardTitle': 'Idioma do aplicativo',
+  'settings.language.lede':
+    'Preferência da sua conta: vale para você em qualquer navegador onde entrar, e para mais ninguém nesta instância.',
+  'settings.language.field.label': 'Idioma',
+  'settings.language.field.hint':
+    'Escolha um idioma fixo ou deixe no automático para acompanhar o navegador.',
+  'settings.language.help':
+    'Salvo na sua conta. Um idioma fixo é sempre usado; “automático” negocia com os idiomas que o navegador anuncia.',
+  'settings.language.auto': 'Automático (acompanhar este navegador)',
+  'settings.language.autoResolves':
+    'Neste navegador, “automático” exibe {locale}. A preferência salva continua sendo “automático”, então em outro computador ele acompanha aquele navegador.',
+  'settings.language.notTheme':
+    'O tema acompanha o sistema operacional; o idioma acompanha o navegador. São mecanismos diferentes, por mais parecidas que as opções sejam.',
+  'settings.language.notDocuments':
+    'Isto não muda o idioma dos documentos gerados — esse é o idioma em que as atas são escritas e fica definido em Documentos.',
+  'settings.language.signInScreen':
+    'A tela de entrada sempre usa o idioma configurado na instância: ainda não há alguém cuja preferência possa ser seguida.',
+  'settings.language.signedOut.title': 'Sem sessão ativa',
+  'settings.language.signedOut.body':
+    'Entre na sua conta para escolher o idioma. Sem alguém autenticado, vale o idioma configurado na instância.',
+  'settings.language.savedToast': 'Idioma da interface salvo',
+
+  // --- Ata body: the markdown source editor (t74-e6) ---
+  'acts.body.editor.loading': 'Carregando o editor…',
+  'acts.body.editor.loadFailed': 'O editor não foi carregado',
+  'acts.body.editor.loadFailedBody':
+    'Recarregue a página. Enquanto o editor não carregar, o corpo da ata não pode ser escrito aqui — nada do que você já escreveu se perdeu.',
+  'acts.body.editor.subset':
+    'Aceita títulos, parágrafos, negrito, itálico e linhas separadoras. Tabelas, imagens, links, listas, blocos de código e HTML são recusados pelo servidor, e não removidos em silêncio.',
+  'acts.body.editor.placeholders':
+    'Os campos {{ … }} são apenas destacados, nunca travados: você pode apagá-los, movê-los ou reescrevê-los como qualquer outro texto.',
+  'acts.body.editor.bytes': '{used} bytes de {max}',
+  'acts.body.editor.bytesOver':
+    '{used} bytes de {max} — passou do limite. Encurte o texto; nada é cortado automaticamente.',
+  'acts.body.rejected.title': 'Este texto não será compilado',
+  'acts.body.rejected.at': 'na linha {line}, na coluna {column}.',
+  'acts.body.rejected.remedy':
+    'Ajuste ou retire essa construção. O servidor recusa em vez de apagar, para que você não aprove um texto que o documento selado não contém.',
+
+  // --- Ata body: what a paste could not keep (t74-e6) ---
+  'acts.body.paste.title': 'Parte do que você colou não cabe numa ata',
+  'acts.body.paste.removed': '{construct} ({count}) — retiramos. Não havia texto a preservar.',
+  'acts.body.paste.downgraded':
+    '{construct} ({count}) — convertemos em parágrafos. O texto permaneceu; a estrutura não.',
+  'acts.body.paste.why':
+    'Uma ata aceita somente títulos, parágrafos, negrito, itálico e linhas separadoras. Preferimos avisar o que mudou a deixar você descobrir a falta depois.',
+  'acts.body.paste.dismiss': 'Entendi',
+  'acts.body.construct.table': 'Tabela',
+  'acts.body.construct.image': 'Imagem',
+  'acts.body.construct.list': 'Lista',
+  'acts.body.construct.code': 'Bloco de código',
+  'acts.body.construct.quote': 'Citação',
+  'acts.body.construct.link': 'Link',
+
   'settings.providerCredentials.cardTitle': 'Provedores de assinatura',
   'settings.providerCredentials.lede':
     'Gerencie as credenciais dos provedores de assinatura, com várias chaves por provedor, prioridade e alternância automática.',
