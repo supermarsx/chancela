@@ -33,7 +33,7 @@ test('signed-in operator records external signer slot evidence as technical evid
     unhandledCalls,
   });
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
 
   // The act is «Em assinatura»: the banner asserting the document is frozen is the signing
   // snapshot note (it becomes «Ata selada» only after sealing, which closes signing).

@@ -38,7 +38,7 @@ test('dashboard convocation reminder routes to convening guidance and records lo
   const patchBodies: UpdateActBody[] = [];
   await routeConveningDispatchFixtures(page, dispatchBodies, patchBodies);
 
-  await page.goto('/?painel=queue');
+  await page.goto('/dashboard/queue');
 
   const queue = page.getByRole('list', { name: 'Fila de trabalho do painel' });
   await expect(queue).toBeVisible();
@@ -47,9 +47,9 @@ test('dashboard convocation reminder routes to convening guidance and records lo
   await expect(queue).toContainText('Aviso consultivo local; não afirma suficiência legal');
 
   const action = queue.getByRole('link', { name: 'Rever convocatória' });
-  await expect(action).toHaveAttribute('href', `/atas/${ACT_ID}#convening-guidance`);
+  await expect(action).toHaveAttribute('href', `/acts/${ACT_ID}#convening-guidance`);
 
-  await Promise.all([page.waitForURL(`**/atas/${ACT_ID}#convening-guidance`), action.click()]);
+  await Promise.all([page.waitForURL(`**/acts/${ACT_ID}#convening-guidance`), action.click()]);
 
   const guidance = page.getByTestId('convening-guidance');
   await expect(guidance).toBeVisible();
@@ -392,7 +392,7 @@ function conveningReminderFixture(): DashboardReminder {
       kind: 'open_act_convening_notice',
       label_key: 'notifications.reminder.act.conveningNotice.action',
       api_href: DISPATCH_PATH,
-      route: `/atas/${ACT_ID}`,
+      route: `/acts/${ACT_ID}`,
     },
     i18n: {
       title_key: 'notifications.reminder.act.conveningNotice.title',

@@ -13,7 +13,7 @@ test('entity detail loads route-stubbed chronology rows, visualization paths, an
   await installClipboardStub(page);
   const state = await routeAppFixtures(page);
 
-  await page.goto(`/entidades/${ENTITY_ID}`);
+  await page.goto(`/entities/${ENTITY_ID}`);
 
   await expect(page.getByRole('heading', { name: ENTITY_NAME })).toBeVisible();
   await expect(page.getByText('Cronologia e grafo')).toBeVisible();
@@ -43,7 +43,7 @@ test('PDF validator shows technical JSON actions after a report body and downloa
   await installBrowserDownloadFallback(page);
   const state = await routeAppFixtures(page, { pdfValidation: 'valid' });
 
-  await page.goto('/ferramentas?tool=pdf');
+  await page.goto('/tools/pdf');
   await expect(page.getByRole('button', { name: 'Copiar JSON' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Guardar JSON' })).toHaveCount(0);
 
@@ -94,7 +94,7 @@ test('PDF validator fail-closed refusals do not expose technical JSON actions', 
   await installClipboardStub(page);
   const state = await routeAppFixtures(page, { pdfValidation: 'fail-closed' });
 
-  await page.goto('/ferramentas?tool=pdf');
+  await page.goto('/tools/pdf');
   await page.setInputFiles('#pdf-signature-validator-file', {
     name: 'mismatch.pdf',
     mimeType: 'application/pdf',

@@ -33,7 +33,7 @@ test('arquivo loads only the bounded first page and fetches older events by curs
     olderPage: ledgerPage([ledgerEvent(1000, { kind: 'cursor-page.event.1000' }), olderTailEvent]),
   });
 
-  await page.goto('/arquivo');
+  await page.goto('/archive');
 
   await expect(page.getByText('first-page.event.1100')).toBeVisible();
   await expect(page.getByText('first-page.event.1001')).toBeVisible();
@@ -62,7 +62,7 @@ test('arquivo filters and archive export use the current bounded newest-first qu
   const expectedFilterPath =
     '/v1/ledger/events/page?q=approved+digest&chain=book%3Abook-123456789&scope=act%3A88&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=50&order=desc';
 
-  await page.goto('/arquivo');
+  await page.goto('/archive');
   await expect(page.getByText('act.sealed')).toBeVisible();
 
   await page.getByRole('searchbox', { name: 'Pesquisar' }).fill('approved digest');

@@ -34,7 +34,7 @@ test('official signed-PDF handoff import is technical evidence only in the brows
     unhandledCalls,
   });
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
 
   // The act is «Em assinatura»: the banner asserting the document is frozen is the signing
   // snapshot note (it becomes «Ata selada» only after sealing, which closes signing).

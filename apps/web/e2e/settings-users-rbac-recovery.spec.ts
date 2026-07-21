@@ -15,10 +15,10 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
   const renamed = `E2E RBAC Revisto ${suffix}`;
   const password = 'Forte-Cofre7!Z';
 
-  await test.step('deep link /utilizadores lands on Configuracoes > Utilizadores', async () => {
-    await signInAt(page, '/utilizadores');
+  await test.step('deep link /users lands on Configuracoes > Utilizadores', async () => {
+    await signInAt(page, '/users');
 
-    await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores$/);
+    await expect(page).toHaveURL(/\/settings\/users$/);
     await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
     await expect(settingsSectionButton(page, 'Utilizadores')).toHaveAttribute(
       'aria-pressed',
@@ -30,7 +30,7 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
 
   await test.step('create and edit a user from the settings-hosted roster', async () => {
     await page.getByRole('link', { name: 'Novo utilizador' }).click();
-    await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores&user=novo$/);
+    await expect(page).toHaveURL(/\/settings\/users\?user=novo$/);
 
     await page.getByLabel('Nome de utilizador').fill(username);
     await page.getByLabel('Nome a apresentar (opcional)').fill(displayName);
@@ -38,7 +38,7 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await page.getByLabel('Confirmar palavra-passe').fill(password);
     await page.getByRole('button', { name: 'Criar utilizador' }).click();
 
-    await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores&user=[0-9a-f-]{36}$/);
+    await expect(page).toHaveURL(/\/settings\/users\?user=[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name: 'Identidade' })).toBeVisible();
     await expect(page.getByLabel('Nome a apresentar')).toHaveValue(displayName);
     await expect(userRow(page, username)).toContainText(displayName);
@@ -81,7 +81,7 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
   });
 
   await test.step('operator can see access badges and deactivate the user from settings', async () => {
-    await signInAt(page, '/configuracoes?sec=utilizadores');
+    await signInAt(page, '/settings/users');
 
     const row = userRow(page, username);
     await expect(row).toContainText(renamed);
@@ -109,7 +109,9 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
   });
 
   await test.step('recovery and data-management modals expose their confirmation gates', async () => {
-    await page.getByTestId('tab-bar').getByRole('link', { name: 'Configurações' }).click();
+    // Configurações is the cog at the right-hand end of the bar since t103, not a text tab, so
+    // it is scoped to the session cluster rather than to `tab-bar`.
+    await page.locator('.topbar__session').getByRole('link', { name: 'Configurações' }).click();
     await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
 
     await selectSettingsSection(page, 'Livros & Integridade', 'integridade');
@@ -131,7 +133,7 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await expect(wipe).toBeVisible();
     await expect(wipe.getByLabel('Escreva LIMPAR DADOS para confirmar')).toBeVisible();
     await expect(wipe.getByLabel('Palavra-passe')).toBeVisible();
-    await expect(wipe.getByText(/arquivo de exportação/)).toBeVisible();
+    await expect(wipe.getByText(/archive de exportação/)).toBeVisible();
     await expect(wipe.getByRole('button', { name: 'Limpar dados' })).toBeDisabled();
     await wipe.getByLabel('Escreva LIMPAR DADOS para confirmar').fill('LIMPAR');
     await expect(wipe.getByText('O texto não corresponde.')).toBeVisible();
@@ -182,14 +184,15 @@ test('data management recovery drill records isolated restore evidence without l
     }
   });
 
-  await signInAt(page, '/configuracoes?sec=dados');
+  await signInAt(page, '/settings/data');
   await selectSettingsSection(page, 'Gestão de Dados', 'dados');
   // Gestão de Dados opens on «Armazenamento»; backup and recovery drills are a sibling sub-tab.
   await dataSubTab(page, 'Cópias e recuperação').click();
   await expect(dataSubTab(page, 'Cópias e recuperação')).toHaveAttribute('aria-pressed', 'true');
 
   const backupResponsePromise = page.waitForResponse(
-    (response) => response.request().method() === 'POST' && apiPath(response.url()) === '/v1/backup',
+    (response) =>
+      response.request().method() === 'POST' && apiPath(response.url()) === '/v1/backup',
   );
   const backupButton = page.getByRole('button', { name: 'Criar backup' });
   await expect(backupButton).toBeEnabled();
@@ -265,7 +268,7 @@ function backupPathFromManifest(manifest: unknown): string {
 
 async function selectSettingsSection(page: Page, name: string, section: string): Promise<void> {
   await settingsSectionButton(page, name).click();
-  await expect(page).toHaveURL(new RegExp(`[?&]sec=${section}`));
+  await expect(page).toHaveURL(new RegExp(`/settings/${section}`));
 }
 
 function dataSubTab(page: Page, name: string): Locator {

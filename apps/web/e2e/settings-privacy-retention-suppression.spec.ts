@@ -39,9 +39,9 @@ test('Settings Privacidade suppresses retention candidates already covered by bo
 }) => {
   const routes = await routePrivacyRetentionFixtures(page);
 
-  await page.goto('/configuracoes?sec=privacidade');
+  await page.goto('/settings/privacy');
 
-  await expect(page).toHaveURL(/[?&]sec=privacidade/);
+  await expect(page).toHaveURL(/\/settings\/privacy/);
   await expect(page.getByTestId('session-trigger')).toContainText('Retention E2E');
   await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
   await expect(settingsSectionButton(page, 'Privacidade')).toHaveAttribute('aria-pressed', 'true');

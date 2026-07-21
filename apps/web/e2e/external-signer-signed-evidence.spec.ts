@@ -28,7 +28,7 @@ test('signed act external signer invite remains tracking-only and never exposes 
     signedPdfRequests,
   });
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
 
   await expect(page.getByRole('note').filter({ hasText: 'Ata selada' }).first()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
@@ -92,7 +92,7 @@ test('signed act external signer invite remains tracking-only and never exposes 
   await expect(inviteRow).not.toContainText(INVITE_TOKEN);
   expect(signedPdfRequests).toEqual([]);
 
-  await page.goto(`/assinatura-externa?token=${encodeURIComponent(INVITE_TOKEN)}`);
+  await page.goto(`/external-signature?token=${encodeURIComponent(INVITE_TOKEN)}`);
 
   await expect(page.getByRole('heading', { name: 'Convite externo' })).toBeVisible();
   await expect(page.getByText(ACT_TITLE)).toBeVisible();
@@ -287,7 +287,7 @@ function readJsonBody(value: unknown): Record<string, unknown> {
 }
 
 function externalInviteLink(page: Page, token: string): string {
-  return new URL(`/assinatura-externa?token=${encodeURIComponent(token)}`, page.url()).toString();
+  return new URL(`/external-signature?token=${encodeURIComponent(token)}`, page.url()).toString();
 }
 
 function abbreviatedDigest(value: string): string {

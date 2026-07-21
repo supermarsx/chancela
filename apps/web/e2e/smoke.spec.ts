@@ -15,8 +15,10 @@ test('boots the SPA with the leather background and the eight-tab bar', async ({
   await expect(page.getByTestId('leather-bg')).toBeAttached();
 
   // The centered secondary tab bar carries exactly the eight pinned PT-PT tabs.
+  // Six text tabs — the places you work. Ferramentas and Configurações left this group in t103
+  // and are now icon controls at the right-hand end of the bar, asserted just below.
   const tabs = page.getByTestId('tab-bar').getByRole('link');
-  await expect(tabs).toHaveCount(8);
+  await expect(tabs).toHaveCount(6);
   await expect(tabs).toHaveText([
     'Painel',
     'Entidades',
@@ -24,16 +26,21 @@ test('boots the SPA with the leather background and the eight-tab bar', async ({
     'Minutas',
     'Arquivo',
     'Operações',
-    'Ferramentas',
-    'Configurações',
   ]);
+
+  // The two utility glyphs, in order, before the alerts bell. Addressed by ACCESSIBLE NAME:
+  // they are icon-only, so if the `aria-label` were ever dropped in favour of a tooltip alone
+  // this assertion fails — which is the regression worth catching, since a tooltip is not a name.
+  const utilities = page.locator('.topbar__session');
+  await expect(utilities.getByRole('link', { name: 'Ferramentas' })).toBeVisible();
+  await expect(utilities.getByRole('link', { name: 'Configurações' })).toBeVisible();
 
   // The dashboard actually rendered (a real /v1/dashboard response parsed in-browser).
   await expect(page.getByRole('heading', { name: 'Vista geral' })).toBeVisible();
 });
 
 test('settings theme flip applies [data-theme] live', async ({ page }) => {
-  await signInAt(page, '/configuracoes');
+  await signInAt(page, '/settings');
   const html = page.locator('html');
   const theme = page.getByLabel('Tema');
 
@@ -48,8 +55,8 @@ test('settings theme flip applies [data-theme] live', async ({ page }) => {
   await expect(html).not.toHaveAttribute('data-theme', /.*/);
 });
 
-test('Configurações sub-tabs switch sections and deep-link via ?sec=', async ({ page }) => {
-  await signInAt(page, '/configuracoes');
+test('Configurações sub-tabs switch sections and deep-link via the path', async ({ page }) => {
+  await signInAt(page, '/settings');
 
   // Aparência is the default section (its theme control shows). The sub-tab pills use the
   // shared SubNav (gliding indicator, same guarded effect as Ferramentas) — repeated
@@ -60,7 +67,7 @@ test('Configurações sub-tabs switch sections and deep-link via ?sec=', async (
   // is gone (one section at a time).
   await page.getByRole('button', { name: 'Documentos' }).click();
   await expect(page.getByLabel('URL de atualização do catálogo CAE')).toBeVisible();
-  await expect(page).toHaveURL(/[?&]sec=documentos/);
+  await expect(page).toHaveURL(/\/settings\/documents/);
   await expect(page.getByLabel('Tema')).toHaveCount(0);
 
   // Switch to Sobre and back to Aparência — no crash across repeated indicator re-measures.
@@ -83,7 +90,7 @@ test('safe mode (?safe=1) shows the banner and bypasses the appearance layer', a
 });
 
 test('Legislação shelf filters live via search in Ferramentas', async ({ page }) => {
-  await signInAt(page, '/ferramentas?tool=legislacao&leg=prateleira');
+  await signInAt(page, '/tools/legislation/shelf');
 
   // The curated law shelf renders (a known theme heading, incl. the new t34 group).
   await expect(page.getByRole('heading', { name: 'Registo e identificação' })).toBeVisible();
@@ -104,7 +111,7 @@ test('Legislação shelf filters live via search in Ferramentas', async ({ page 
 test('legacy /templates redirects to the Minutas catalog', async ({ page }) => {
   await signInAt(page, '/templates');
 
-  await expect(page).toHaveURL(/\/minutas$/);
+  await expect(page).toHaveURL(/\/templates$/);
   await expect(page.getByRole('heading', { name: 'Minutas', exact: true })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: 'Pesquisa', exact: true })).toBeVisible();
 });
@@ -112,7 +119,7 @@ test('legacy /templates redirects to the Minutas catalog', async ({ page }) => {
 test('CAE search returns results from the catalog in Ferramentas', async ({ page }) => {
   // The former /cae page now redirects into the Ferramentas explorer (deep links kept).
   await signInAt(page, '/cae');
-  await expect(page).toHaveURL(/\/ferramentas/);
+  await expect(page).toHaveURL(/\/tools/);
 
   await page.getByLabel('Procurar no catálogo CAE').fill('68110');
 

@@ -29,7 +29,7 @@ test('data key rotation preflight reveals guarded execution and submits only the
   const executionBodies: DataKeyRotationExecuteBody[] = [];
   await routeDataKeyRotationFixtures(page, preflightBodies, executionBodies);
 
-  await page.goto('/configuracoes?sec=dados');
+  await page.goto('/settings/data');
 
   await expect(page.getByRole('heading', { name: 'Estado do armazenamento' })).toBeVisible();
   await expect(

@@ -36,8 +36,8 @@ test('records generated Convocatoria dispatch evidence against the real backend'
   const session = await createSessionForUsername(page.request, OPERATOR.username);
   const seeded = await seedGeneratedConveningAct(page.request, session.token);
 
-  await signInAt(page, `/atas/${seeded.act.id}`);
-  await expect(page).toHaveURL(new RegExp(`/atas/${seeded.act.id}$`));
+  await signInAt(page, `/acts/${seeded.act.id}`);
+  await expect(page).toHaveURL(new RegExp(`/acts/${seeded.act.id}$`));
   await expect(page.getByText('Minutas geradas')).toBeVisible();
 
   await page.locator('#post-act-template').selectOption(TEMPLATE_ID);
@@ -66,7 +66,7 @@ test('records generated Convocatoria dispatch evidence against the real backend'
   await expect(generatedList).toContainText(TEMPLATE_ID);
   await expect(generatedList).toContainText(generated.id);
 
-  await signInAt(page, '/?painel=queue');
+  await signInAt(page, '/dashboard/queue');
   const queue = page.getByRole('list', { name: 'Fila de trabalho do painel' });
   await expect(queue).toBeVisible();
   const reminder = queue
@@ -82,11 +82,11 @@ test('records generated Convocatoria dispatch evidence against the real backend'
   const reminderLink = reminder.getByRole('link', { name: seeded.entity.name });
   await expect(reminderLink).toHaveAttribute(
     'href',
-    `/atas/${seeded.act.id}?generated_document_id=${generated.id}&focus=dispatch-evidence#generated-dispatch-evidence`,
+    `/acts/${seeded.act.id}?generated_document_id=${generated.id}&focus=dispatch-evidence#generated-dispatch-evidence`,
   );
   await Promise.all([
     page.waitForURL(
-      `**/atas/${seeded.act.id}?generated_document_id=${generated.id}&focus=dispatch-evidence**`,
+      `**/acts/${seeded.act.id}?generated_document_id=${generated.id}&focus=dispatch-evidence**`,
     ),
     reminderLink.click(),
   ]);

@@ -47,7 +47,7 @@ test('dashboard reminder opens generated convening notice evidence and records m
   const recordedBodies: GeneratedDocumentDispatchEvidenceRequest[] = [];
   await routeGeneratedConveningDispatchFixtures(page, recordedBodies);
 
-  await page.goto('/?painel=queue');
+  await page.goto('/dashboard/queue');
 
   const queue = page.getByRole('list', { name: 'Fila de trabalho do painel' });
   await expect(queue).toBeVisible();
@@ -58,11 +58,11 @@ test('dashboard reminder opens generated convening notice evidence and records m
   const action = queue.getByRole('link', { name: ENTITY_NAME });
   await expect(action).toHaveAttribute(
     'href',
-    `/atas/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}&focus=dispatch-evidence#generated-dispatch-evidence`,
+    `/acts/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}&focus=dispatch-evidence#generated-dispatch-evidence`,
   );
 
   await Promise.all([
-    page.waitForURL(`**/atas/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}**`),
+    page.waitForURL(`**/acts/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}**`),
     action.click(),
   ]);
 
@@ -433,7 +433,7 @@ function generatedConveningReminderFixture(): DashboardReminder {
       kind: 'open_generated_convening_dispatch_evidence',
       label_key: 'notifications.reminder.absentOwnerDispatch.action',
       api_href: DISPATCH_EVIDENCE_PATH,
-      route: `/atas/${ACT_ID}`,
+      route: `/acts/${ACT_ID}`,
     },
     i18n: null,
   };

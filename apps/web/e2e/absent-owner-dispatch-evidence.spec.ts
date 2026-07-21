@@ -60,7 +60,7 @@ test('dashboard reminder opens generated absent-owner dispatch evidence and reco
     downloadedPaths,
   });
 
-  await page.goto('/?painel=queue');
+  await page.goto('/dashboard/queue');
 
   const queue = page.getByRole('list', { name: 'Fila de trabalho do painel' });
   await expect(queue).toBeVisible();
@@ -70,7 +70,7 @@ test('dashboard reminder opens generated absent-owner dispatch evidence and reco
     }),
   ).toHaveAttribute(
     'href',
-    `/atas/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}&focus=dispatch-evidence#generated-dispatch-evidence`,
+    `/acts/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}&focus=dispatch-evidence#generated-dispatch-evidence`,
   );
   await expect(queue).toContainText(
     'Fonte absent-owner-dispatch-evidence / condominium-generated-communication',
@@ -78,7 +78,7 @@ test('dashboard reminder opens generated absent-owner dispatch evidence and reco
   await expect(queue).toContainText('O lembrete é apenas consultivo.');
 
   await Promise.all([
-    page.waitForURL(`**/atas/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}**`),
+    page.waitForURL(`**/acts/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}**`),
     queue
       .getByRole('link', {
         name: `Evidência de expedição pendente: ${ACT_TITLE}`,
@@ -546,7 +546,7 @@ function absentOwnerReminderFixture(): DashboardReminder {
       kind: 'open_absent_owner_dispatch_evidence',
       label_key: 'notifications.reminder.absentOwnerDispatch.action',
       api_href: DISPATCH_EVIDENCE_PATH,
-      route: `/atas/${ACT_ID}`,
+      route: `/acts/${ACT_ID}`,
     },
     i18n: {
       title_key: 'notifications.reminder.absentOwnerDispatch.title',

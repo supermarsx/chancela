@@ -57,7 +57,7 @@ test('written-resolution evidence receipt patches metadata only and renders no-c
   const patchBodies: UpdateActBody[] = [];
   await routeWrittenResolutionEvidenceFixtures(page, patchBodies);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
 
   await expect(page.getByRole('heading', { name: /Deliberação por escrito/ })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Canal' })).toHaveValue('WrittenResolution');

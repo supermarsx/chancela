@@ -28,7 +28,7 @@ test('pending CSC/QTSP session resumes after reload and confirms through provide
   const audit = createAudit();
   await routePendingSessionFixtures(page, 'csc', audit);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
   await expect(page.getByLabel('Código de autorização')).toBeVisible();
   await expect(page.getByText('Código de ativação de teste já enviado')).toBeVisible();
 
@@ -64,7 +64,7 @@ test('legacy CMD pending session resumes after reload and confirms through CMD e
   const audit = createAudit();
   await routePendingSessionFixtures(page, 'cmd', audit);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
   await expect(page.getByLabel('Código SMS (OTP)')).toBeVisible();
   await expect(page.getByText('+351 9....678')).toBeVisible();
 
@@ -100,7 +100,7 @@ test('remote batch initiate opens per-document pending sessions without credenti
   const audit = createAudit();
   await routePendingSessionFixtures(page, 'remote-batch', audit);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
   const remoteBatch = page.getByLabel('Início remoto por documento');
   await expect(remoteBatch).toBeVisible();
   await expect(remoteBatch.getByText('Uma ativação por documento')).toBeVisible();

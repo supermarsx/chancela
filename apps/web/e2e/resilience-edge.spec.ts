@@ -41,7 +41,7 @@ test('HTML returned from /v1/dashboard is surfaced as a typed inline error', asy
       body: '<!doctype html><title>stale shell</title><main>not json</main>',
     });
   });
-  await signInAt(page, '/ferramentas?tool=legislacao');
+  await signInAt(page, '/tools/legislation');
 
   await tab(page, 'Painel').click();
 
@@ -55,7 +55,7 @@ test('HTML returned from /v1/dashboard is surfaced as a typed inline error', asy
 test('slow entity create keeps the submit button disabled while the POST is in flight', async ({
   page,
 }) => {
-  await signInAt(page, '/entidades/nova');
+  await signInAt(page, '/entities/new');
 
   let releasePost!: () => void;
   const postMayFinish = new Promise<void>((resolve) => {
@@ -103,7 +103,7 @@ test('malicious and long entity text is escaped on mobile without executing dial
     await dialog.dismiss();
   });
 
-  await signInAt(page, '/configuracoes');
+  await signInAt(page, '/settings');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route('**/v1/entities', async (route) => {
     if (
@@ -143,7 +143,7 @@ test('aborted archive PDF download shows an error and no fake success', async ({
   const downloads: string[] = [];
   page.on('download', (download) => downloads.push(download.suggestedFilename()));
 
-  await signInAt(page, '/arquivo');
+  await signInAt(page, '/archive');
   await expect(page.getByRole('heading', { name: 'Arquivo — registo cronológico' })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 
@@ -212,7 +212,7 @@ test('degraded backend shows recovery affordance and blocks ordinary create/arch
     await route.continue();
   });
 
-  await page.goto('/entidades/nova');
+  await page.goto('/entities/new');
 
   await expect(
     page.getByRole('alert').filter({ hasText: 'Sistema em modo só-leitura' }),
@@ -228,10 +228,10 @@ test('degraded backend shows recovery affordance and blocks ordinary create/arch
   await page.getByRole('button', { name: 'Criar entidade' }).click();
 
   await expect.poll(() => createAttempts).toBe(1);
-  await expect(page).toHaveURL(/\/entidades\/nova$/);
+  await expect(page).toHaveURL(/\/entities\/new$/);
   await expect(page.getByRole('button', { name: 'Criar entidade' })).toBeEnabled();
 
-  await page.goto(`/atas/${DEGRADED_ACT_ID}`);
+  await page.goto(`/acts/${DEGRADED_ACT_ID}`);
 
   await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
   const archiveButton = page.getByRole('button', { name: 'Arquivar ata' });
@@ -247,7 +247,7 @@ test('degraded backend shows recovery affordance and blocks ordinary create/arch
 
   await page.getByRole('link', { name: 'Abrir Livros & Integridade' }).click();
 
-  await expect(page).toHaveURL(/\/configuracoes\?sec=integridade$/);
+  await expect(page).toHaveURL(/\/settings\/integrity$/);
   await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
   await expect(page.getByText('Modo só-leitura ativo')).toBeVisible();
   await expect(page.getByText('hash mismatch at seq 3')).toBeVisible();
@@ -263,7 +263,7 @@ test('dashboard recent feed sorts newest first and caps at ten rows', async ({ p
   await routeDashboard(page, dashboardFixture(dashboardEdgeEvents()));
 
   // The ledger feed is no longer the landing panel's neighbour: address it by section.
-  await page.goto('/?painel=events');
+  await page.goto('/dashboard/events');
 
   await expect(page.getByRole('heading', { name: 'Vista geral' })).toBeVisible();
   const rows = panelByTitle(page, 'Últimos eventos do registo').locator('tbody tr');
@@ -290,7 +290,7 @@ test('dirty settings preview reverts and does not autosave after navigating away
   });
   await routeDashboard(page, dashboardFixture());
 
-  await page.goto('/configuracoes');
+  await page.goto('/settings');
   await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
 
   const html = page.locator('html');
@@ -321,7 +321,7 @@ test('settings without manage permission are disabled with an explicit denial no
   await routeAuthenticatedShell(page, ['settings.read']);
   await routeSettings(page);
 
-  await page.goto('/configuracoes?sec=identidade');
+  await page.goto('/settings/identity');
 
   await expect(page.getByText('Sem permissão', { exact: true })).toBeVisible();
   await expect(page.getByText('Não tem permissão para realizar esta operação.')).toBeVisible();
@@ -336,7 +336,7 @@ test('trust catalog search renders a deterministic empty state', async ({ page }
   await routeSettings(page);
   await routeTrustCatalog(page);
 
-  await page.goto('/ferramentas?tool=trust');
+  await page.goto('/tools/trust');
 
   const catalog = panelByTitle(page, 'Catálogo de confiança');
   await expect(catalog).toBeVisible();

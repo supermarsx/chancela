@@ -218,8 +218,8 @@ test('paper-book import preserves non-canonical package, OCR review, and dossier
   });
 
   await test.step('reload keeps reviewed OCR auxiliary and package download separate', async () => {
-    await page.goto(`/livros/${bookId}`);
-    await signInAt(page, `/livros/${bookId}`);
+    await page.goto(`/books/${bookId}`);
+    await signInAt(page, `/books/${bookId}`);
 
     const section = ocrSection(page, reviewedImport.importId);
     await expect(page.getByText(reviewedImport.filename)).toBeVisible();
@@ -256,21 +256,21 @@ async function createEntityAndBook(
 ): Promise<string> {
   await tab(page, 'Entidades').click();
   await page.getByRole('link', { name: 'Nova entidade' }).click();
-  await expect(page).toHaveURL(/\/entidades\/nova$/);
+  await expect(page).toHaveURL(/\/entities\/new$/);
   await page.getByLabel('Denominação').fill(entityName);
   await page.getByLabel('NIPC', { exact: true }).fill(nipc);
   await page.getByLabel('Sede').fill('Lisboa');
   await page.getByLabel('Forma jurídica').selectOption('SociedadeAnonima');
   await page.getByRole('button', { name: 'Criar entidade' }).click();
-  await expect(page).toHaveURL(/\/entidades\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/);
 
   await page.getByRole('link', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/livros\/novo\?entidade=[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/books\/new\?entidade=[0-9a-f-]{36}$/);
   await page.getByLabel('Finalidade').fill(`Atas em papel importadas ${suffix}`);
   await page.getByLabel('Data de abertura').fill('2026-01-15');
   await fillOpenBookTermSignatories(page);
   await page.getByRole('button', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}$/);
   return idFromUrl(page);
 }
 

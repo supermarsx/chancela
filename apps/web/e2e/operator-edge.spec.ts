@@ -56,26 +56,26 @@ test('legacy user-management URLs canonicalize into Configurações users only',
   await routeRolesAndScopeLookups(page);
   await routeDsr(page, TARGET_USER.id, { requests: [] });
 
-  await page.goto('/utilizadores');
-  await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores$/);
+  await page.goto('/users');
+  await expect(page).toHaveURL(/\/settings\/users$/);
   await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
   await expect(settingsSectionButton(page, 'Utilizadores')).toHaveAttribute('aria-pressed', 'true');
   await expect(panelByTitle(page, 'Utilizadores')).toBeVisible();
-  await expect(page.locator('main[data-route-key="/configuracoes"]')).toBeVisible();
+  await expect(page.locator('main[data-route-key="/settings"]')).toBeVisible();
 
-  await page.goto('/utilizadores/novo');
-  await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores&user=novo$/);
+  await page.goto('/users/new');
+  await expect(page).toHaveURL(/\/settings\/users\?user=novo$/);
   await expect(settingsSectionButton(page, 'Utilizadores')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Nome de utilizador')).toBeVisible();
-  await expect(page.locator('main[data-route-key="/configuracoes"]')).toBeVisible();
+  await expect(page.locator('main[data-route-key="/settings"]')).toBeVisible();
 
-  await page.goto(`/utilizadores/${TARGET_USER.id}#acesso`);
+  await page.goto(`/users/${TARGET_USER.id}#acesso`);
   await expect(page).toHaveURL(
-    new RegExp(`/configuracoes\\?sec=utilizadores&user=${TARGET_USER.id}#acesso$`),
+    new RegExp(`/settings/users\\?user=${TARGET_USER.id}#acesso$`),
   );
   await expect(page.getByRole('heading', { name: 'Identidade' })).toBeVisible();
   await expect(page.locator('section#acesso')).toBeVisible();
-  await expect(page.locator('main[data-route-key="/configuracoes"]')).toBeVisible();
+  await expect(page.locator('main[data-route-key="/settings"]')).toBeVisible();
 });
 
 test('DSR export and empty request list do not render secret-bearing JSON', async ({ page }) => {
@@ -89,7 +89,7 @@ test('DSR export and empty request list do not render secret-bearing JSON', asyn
     exportBody: dsrExportWithCredentialMarkers(),
   });
 
-  await page.goto(`/configuracoes?sec=utilizadores&user=${TARGET_USER.id}`);
+  await page.goto(`/settings/users?user=${TARGET_USER.id}`);
 
   const dsr = panelByTitle(page, 'Pedidos DSR / privacidade');
   await expect(dsr).toBeVisible();
@@ -121,7 +121,7 @@ test('DSR request-list error response does not leak diagnostic credential fields
     },
   });
 
-  await page.goto(`/configuracoes?sec=utilizadores&user=${TARGET_USER.id}`);
+  await page.goto(`/settings/users?user=${TARGET_USER.id}`);
 
   const dsr = panelByTitle(page, 'Pedidos DSR / privacidade');
   await expect(dsr).toBeVisible();
@@ -154,7 +154,7 @@ test('DSR request success list renders lifecycle fields without hidden credentia
   await routeRolesAndScopeLookups(page);
   await routeDsr(page, TARGET_USER.id, { requests: [pending, completed] });
 
-  await page.goto(`/configuracoes?sec=utilizadores&user=${TARGET_USER.id}`);
+  await page.goto(`/settings/users?user=${TARGET_USER.id}`);
 
   const dsr = panelByTitle(page, 'Pedidos DSR / privacidade');
   await expect(dsr).toBeVisible();
@@ -173,8 +173,8 @@ test('dashboard entrance sorts recent activity, caps at ten, and keeps six metri
   await routeDashboard(page, dashboardFixture(dashboardEdgeEvents()));
 
   // Atividades atuais is the landing panel, so the metrics and the ledger feed each need
-  // their own `?painel=` section.
-  await page.goto('/?painel=stats');
+  // their own `/dashboard/:tab` section.
+  await page.goto('/dashboard/stats');
 
   await expect(page.getByRole('heading', { name: 'Vista geral' })).toBeVisible();
 
@@ -191,7 +191,7 @@ test('dashboard entrance sorts recent activity, caps at ten, and keeps six metri
     [...boxes.map((box) => box.left)].sort((a, b) => a - b),
   );
 
-  await page.goto('/?painel=events');
+  await page.goto('/dashboard/events');
   const rows = panelByTitle(page, 'Últimos eventos do registo').locator('tbody tr');
   await expect(rows).toHaveCount(10);
   const rowTexts = await rows.evaluateAll((trs) => trs.map((tr) => tr.textContent ?? ''));
@@ -211,7 +211,7 @@ test('trust catalog keeps unsafe metadata inert and TSL/TSA searches accent-inse
   await routeHealth(page);
   await routeTrustCatalog(page);
 
-  await page.goto('/ferramentas?tool=trust');
+  await page.goto('/tools/trust');
 
   const catalog = panelByTitle(page, 'Catálogo de confiança');
   const tsa = panelByTitle(page, 'TSA / RFC 3161');

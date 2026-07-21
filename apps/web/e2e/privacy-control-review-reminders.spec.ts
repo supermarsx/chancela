@@ -21,7 +21,7 @@ import {
 } from '../src/api/types';
 
 const USER_ID = 'd7e7ce4d-cc50-48bc-a0df-8705f7f42691';
-const PRIVACY_SETTINGS_ROUTE = '/configuracoes?sec=privacidade';
+const PRIVACY_SETTINGS_ROUTE = '/settings/privacy';
 const PRIVACY_DPIA_REVIEW_RULE = 'privacy-dpia-review';
 const PRIVACY_BREACH_REVIEW_RULE = 'privacy-breach-playbook-review';
 const PRIVACY_TRANSFER_REVIEW_RULE = 'privacy-transfer-control-review';
@@ -40,7 +40,7 @@ test('privacy control review reminders stay local and follow the settings source
 
   await page.goto(PRIVACY_SETTINGS_ROUTE);
 
-  await expect(page).toHaveURL(/[?&]sec=privacidade/);
+  await expect(page).toHaveURL(/\/settings\/privacy/);
   await expect(page.getByTestId('session-trigger')).toContainText('Privacy Review E2E');
   await expect(settingsSectionButton(page, 'Privacidade')).toHaveAttribute('aria-pressed', 'true');
 
@@ -64,7 +64,7 @@ test('privacy control review reminders stay local and follow the settings source
   await expect(transferPanel).toContainText('Sem aprovação');
   await expect(transferPanel).toContainText('Sem execução de transferência');
 
-  await page.goto('/?painel=queue');
+  await page.goto('/dashboard/queue');
   const initialQueue = await dashboardQueue(page);
   await expect(initialQueue).toContainText('Biometric access DPIA');
   await expect(initialQueue).toContainText('Supplier token breach playbook');
@@ -91,7 +91,7 @@ test('privacy control review reminders stay local and follow the settings source
 
   const privacyGetsBeforeToggle = privacyRecordGetCount(routes);
 
-  await page.goto('/configuracoes?sec=gestao');
+  await page.goto('/settings/management');
   const privacyReviewSource = page.getByRole('switch', { name: 'Revisões de privacidade' });
   await expect(privacyReviewSource).toBeChecked();
   await page.getByText('Revisões de privacidade', { exact: true }).click();
@@ -101,7 +101,7 @@ test('privacy control review reminders stay local and follow the settings source
   expect(routes.settingsPuts[0].workflow.reminders.sources.privacy_control_reviews).toBe(false);
   expect(routes.storedSettings.workflow.reminders.sources.privacy_control_reviews).toBe(false);
 
-  await page.goto('/?painel=queue');
+  await page.goto('/dashboard/queue');
   await expect(page.getByText('Sem trabalho pendente derivado do painel.')).toBeVisible();
   await expect(page.getByText(PRIVACY_DPIA_REVIEW_RULE)).toHaveCount(0);
   await expect(page.getByText(PRIVACY_BREACH_REVIEW_RULE)).toHaveCount(0);

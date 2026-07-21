@@ -32,7 +32,7 @@ test('sealed act PDF export starts a browser download with the expected file met
   await installBrowserDownloadFallback(page);
   const mutations = await routeExportFixtures(page);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
   await expect(sealedActNotice(page)).toBeVisible();
 
   const downloadButton = page.getByRole('button', { name: 'Descarregar PDF' });
@@ -60,7 +60,7 @@ test('sealed act PDF save prompt cancellation stays visible without browser-down
   await installCancelledBrowserSavePicker(page);
   const mutations = await routeExportFixtures(page);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
   await expect(sealedActNotice(page)).toBeVisible();
   await expect(page.getByLabel('Data da reunião')).toBeDisabled();
 
@@ -96,7 +96,7 @@ test('book preservation package export starts a zip browser download', async ({ 
   await installBrowserDownloadFallback(page);
   const mutations = await routeExportFixtures(page);
 
-  await page.goto(`/livros/${BOOK_ID}`);
+  await page.goto(`/books/${BOOK_ID}`);
   await expect(page.getByText('Livro export/save E2E')).toBeVisible();
 
   const downloadButton = page.getByRole('button', { name: 'Pacote de preservação Chancela' });
@@ -122,7 +122,7 @@ test('act PDF export failure stays visible and does not mutate act state', async
   await installBrowserDownloadFallback(page);
   const mutations = await routeExportFixtures(page, { failActPdf: true });
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
   await expect(sealedActNotice(page)).toBeVisible();
   await expect(page.getByLabel('Data da reunião')).toBeDisabled();
 

@@ -36,7 +36,7 @@ test('seeded role drift requires explicit browser review and preserves custom st
   const reconciliationCalls: ReconciliationCall[] = [];
   await routeSeededRoleDriftFixtures(page, reconciliationCalls, { canManageRoles: true });
 
-  await page.goto('/configuracoes?sec=funcoes');
+  await page.goto('/settings/roles');
 
   await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Funções' })).toBeVisible();
@@ -82,7 +82,7 @@ test('seeded role drift review is disabled without role.manage', async ({ page }
   const reconciliationCalls: ReconciliationCall[] = [];
   await routeSeededRoleDriftFixtures(page, reconciliationCalls, { canManageRoles: false });
 
-  await page.goto('/configuracoes?sec=funcoes');
+  await page.goto('/settings/roles');
 
   const platformRow = roleRow(page, 'Platform Administrator');
   await expect(platformRow).toContainText('Revisão manual');

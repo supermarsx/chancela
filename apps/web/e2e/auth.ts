@@ -19,7 +19,7 @@ export const OPERATOR_PASSWORD = 'Str0ng!Vault9';
 
 /**
  * Navigate to `route` and end up signed in as the shared operator, on that route.
- * Fresh server → the guard redirects to `/bem-vindo` and we complete the wizard; otherwise
+ * Fresh server → the guard redirects to `/welcome` and we complete the wizard; otherwise
  * the sign-in surface is showing and we pick the operator.
  */
 export async function signInAt(page: Page, route = '/'): Promise<void> {
@@ -38,7 +38,7 @@ export async function signInAt(page: Page, route = '/'): Promise<void> {
 
 /**
  * Wait for the auth guard to settle into EITHER the wizard (fresh server → redirected to
- * `/bem-vindo`) or the sign-in surface, then report which. Racing the two locators avoids a
+ * `/welcome`) or the sign-in surface, then report which. Racing the two locators avoids a
  * flake where the client-side redirect has not yet fired right after `page.goto`.
  */
 async function settledOnWizard(page: Page): Promise<boolean> {

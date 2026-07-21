@@ -70,8 +70,8 @@ test('storage cleanup is settings.manage-gated and only deletes retained exports
     keep_latest: 0,
   });
 
-  await signInAt(page, '/configuracoes?sec=dados');
-  await expect(page).toHaveURL(/[?&]sec=dados/);
+  await signInAt(page, '/settings/data');
+  await expect(page).toHaveURL(/\/settings\/data/);
   await expect(page.getByRole('heading', { name: 'Estado do armazenamento' })).toBeVisible();
   await expect(page.getByText('Durável aberto')).toBeVisible();
   await expect(page.getByText('Apagar ficheiro de teste')).toBeVisible();

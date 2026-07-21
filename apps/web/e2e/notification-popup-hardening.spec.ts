@@ -62,7 +62,7 @@ test('notification action closes the popup before routing to the archive page', 
   await expect(dialog.getByRole('link', { name: 'Abrir arquivo' })).toBeVisible();
 
   await Promise.all([
-    page.waitForURL(/\/arquivo$/),
+    page.waitForURL(/\/archive$/),
     dialog.getByRole('link', { name: 'Abrir arquivo' }).click(),
   ]);
 

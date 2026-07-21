@@ -62,7 +62,7 @@ test('non-canonical imported document can be reviewed without losing conservativ
   const reviewBodies: ImportedDocumentReviewBody[] = [];
   await routeImportedReviewFixtures(page, reviewBodies);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
 
   await expect(page.getByRole('note').filter({ hasText: 'Ata selada' }).first()).toBeVisible();
   await expect(page.getByText('Documentos importados', { exact: true })).toBeVisible();
@@ -179,7 +179,7 @@ test('dashboard import-review notification routes to review, can be dismissed, a
   ).toBeVisible();
 
   await Promise.all([
-    page.waitForURL(`**/atas/${ACT_ID}`),
+    page.waitForURL(`**/acts/${ACT_ID}`),
     dialog.getByRole('link', { name: 'Abrir ata' }).click(),
   ]);
 

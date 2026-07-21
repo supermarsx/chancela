@@ -20,7 +20,7 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   page,
 }) => {
   // --- Onboard the first user + sign in (the app requires a session) ----------
-  // On a fresh server this runs the /bem-vindo wizard (creates the password-backed operator);
+  // On a fresh server this runs the /welcome wizard (creates the password-backed operator);
   // it lands signed in at the app home.
   await signInAt(page, '/');
   const username = OPERATOR.username;
@@ -33,7 +33,7 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   // --- Create an entity ------------------------------------------------------
   await tab('Entidades').click();
   await page.getByRole('link', { name: 'Nova entidade' }).click();
-  await expect(page).toHaveURL(/\/entidades\/nova$/);
+  await expect(page).toHaveURL(/\/entities\/new$/);
   await page.getByLabel('Denominação').fill('Encosto Estratégico, S.A.');
   // Exact match: the "NIPC sem validação" override switch also contains "NIPC".
   await page.getByLabel('NIPC', { exact: true }).fill('503004642'); // fake-but-valid check digit
@@ -41,25 +41,25 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   await page.getByLabel('Forma jurídica').selectOption('SociedadeAnonima');
   await page.getByRole('button', { name: 'Criar entidade' }).click();
   // Navigates to the new entity's detail page.
-  await expect(page).toHaveURL(/\/entidades\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/);
 
   // --- Open a book -----------------------------------------------------------
   await tab('Livros').click();
   await page.getByRole('link', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/livros\/novo$/);
+  await expect(page).toHaveURL(/\/books\/new$/);
   await page.getByLabel('Finalidade').fill('Atas da Assembleia Geral');
   await page.getByLabel('Data de abertura').fill('2026-01-15');
   await fillOpenBookTermSignatories(page);
   await page.getByRole('button', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}$/);
 
   // --- Draft an ata ----------------------------------------------------------
   await page.getByRole('link', { name: 'Nova ata' }).click();
-  await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}\/nova-ata$/);
+  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}\/new-act$/);
   await page.getByLabel('Título da ata').fill('Ata da Assembleia Geral Anual');
   await page.getByRole('button', { name: 'Nova ata' }).click();
   // Lands in the ata editor.
-  await expect(page).toHaveURL(/\/atas\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/acts\/[0-9a-f-]{36}$/);
 
   // --- Fill the ata and save -------------------------------------------------
   await page.getByLabel('Data da reunião').fill('2026-03-30');
@@ -121,7 +121,7 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
 
   // --- Arquivo: the chain is intact and the actor is the signed-in user ------
   await tab('Arquivo').click();
-  await expect(page).toHaveURL(/\/arquivo$/);
+  await expect(page).toHaveURL(/\/archive$/);
   await expect(page.getByText(/^Cadeia verificada/)).toBeVisible();
   // The sealed event is present and attributed to the signed-in username.
   await expect(page.getByText('act.sealed', { exact: true }).first()).toBeVisible();

@@ -47,10 +47,10 @@ test('sign out returns to the sign-in surface', async ({ page }) => {
   await expect(page.getByTestId('tab-bar')).toHaveCount(0);
 });
 
-test('/utilizadores redirects to the users settings section after sign-in', async ({ page }) => {
-  await signInAt(page, '/utilizadores');
+test('/users redirects to the users settings section after sign-in', async ({ page }) => {
+  await signInAt(page, '/users');
 
-  await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores$/);
+  await expect(page).toHaveURL(/\/settings\/users$/);
   await expect(page.getByRole('button', { name: 'Utilizadores' })).toBeVisible();
 });
 
@@ -62,11 +62,11 @@ test('settings-created users require passwords and switch current user with that
   const displayName = `E2E Auth ${suffix}`;
   const password = 'Forte-Cofre7!Z';
 
-  await signInAt(page, '/configuracoes?sec=utilizadores');
+  await signInAt(page, '/settings/users');
   await expect(page.getByRole('heading', { name: 'Utilizadores' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Novo utilizador' }).click();
-  await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores&user=novo$/);
+  await expect(page).toHaveURL(/\/settings\/users\?user=novo$/);
 
   await page.getByLabel('Nome de utilizador').fill(username);
   await page.getByLabel('Nome a apresentar (opcional)').fill(displayName);
@@ -82,7 +82,7 @@ test('settings-created users require passwords and switch current user with that
   await expect(create).toBeEnabled();
   await create.click();
 
-  await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores&user=[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/settings\/users\?user=[0-9a-f-]{36}$/);
   await expect(page.getByLabel('Nome a apresentar')).toHaveValue(displayName);
   await expect(userRow(page, username)).toContainText('Palavra-passe');
 

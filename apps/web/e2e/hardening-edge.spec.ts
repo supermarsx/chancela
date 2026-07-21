@@ -59,7 +59,7 @@ test('TSL catalog structured filters handle accent search, service filters, and 
   await routeSettings(page);
   await routeTrustCatalog(page);
 
-  await page.goto('/ferramentas?tool=trust');
+  await page.goto('/tools/trust');
 
   const catalog = panelByTitle(page, 'Catálogo de confiança');
   await expect(catalog).toBeVisible();
@@ -112,7 +112,7 @@ test('TSA catalog filters qualified timestamp records without live timestamp cal
   await routeSettings(page);
   await routeTrustCatalog(page);
 
-  await page.goto('/ferramentas?tool=trust');
+  await page.goto('/tools/trust');
 
   const tsa = panelByTitle(page, 'TSA / RFC 3161');
   await expect(tsa).toBeVisible();

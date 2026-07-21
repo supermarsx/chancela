@@ -11,10 +11,10 @@ test('operator can reach every operations area and manage a real tenant group', 
   await page.getByLabel('Sede').fill('Lisboa');
   await page.getByLabel('Forma jurídica').selectOption('SociedadeAnonima');
   await page.getByRole('button', { name: 'Criar entidade' }).click();
-  await expect(page).toHaveURL(/\/entidades\/[0-9a-f-]{36}$/u);
+  await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/u);
 
   await page.getByRole('link', { name: 'Operações' }).click();
-  await expect(page).toHaveURL(/\/operacoes/u);
+  await expect(page).toHaveURL(/\/operations/u);
   await expect(page.getByRole('heading', { name: 'Operações', exact: true })).toBeVisible();
   await expect(page.getByLabel('Organização')).toContainText('Operações E2E, S.A.');
 
@@ -38,12 +38,12 @@ test('operator can reach every operations area and manage a real tenant group', 
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Conectores e trabalhos' }).click();
-  await expect(page).toHaveURL(/[?&]view=connectors/u);
+  await expect(page).toHaveURL(/\/operations\/connectors/u);
   await expect(page.getByText('Apenas referências de credenciais')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Trabalhos duráveis' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Repositórios ZK' }).click();
-  await expect(page).toHaveURL(/[?&]view=repositories/u);
+  await expect(page).toHaveURL(/\/operations\/repositories/u);
   await expect(page.getByText('Zero knowledge é uma opção explícita')).toBeVisible();
   await page.getByLabel('Modo de cifragem').first().selectOption('zero_knowledge');
   await expect(page.getByText(/Não cria, recebe nem reconstrói partes secretas/u)).toBeVisible();

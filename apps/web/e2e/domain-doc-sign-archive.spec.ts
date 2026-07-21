@@ -156,7 +156,7 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
 
   await test.step('download the book preservation package separately from document copies', async () => {
     await page.getByRole('link', { name: 'Livro', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/livros/${escapeRegExp(bookId)}$`));
+    await expect(page).toHaveURL(new RegExp(`/books/${escapeRegExp(bookId)}$`));
     await expect(
       page.getByRole('button', { name: 'Pacote de preservação Chancela' }),
     ).toBeEnabled();
@@ -170,7 +170,7 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
     );
 
     await page.getByRole('link', { name: 'Abrir' }).click();
-    await expect(page).toHaveURL(new RegExp(`/atas/${escapeRegExp(actId)}$`));
+    await expect(page).toHaveURL(new RegExp(`/acts/${escapeRegExp(actId)}$`));
     // «Ata selada» is also the title of the follow-ups panel note, so target the act-level
     // sealed banner by its body copy.
     await expect(
@@ -191,7 +191,7 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
     await expect(page.getByRole('main').getByText('Ata arquivada.', { exact: true })).toBeVisible();
 
     await tab(page, 'Arquivo').click();
-    await expect(page).toHaveURL(/\/arquivo$/);
+    await expect(page).toHaveURL(/\/archive$/);
     await expect(page.getByText(/^Cadeia verificada/)).toBeVisible();
 
     await page.getByLabel('Filtrar por cadeia').selectOption(`book:${bookId}`);
@@ -285,28 +285,28 @@ async function createAct(
 ): Promise<{ bookId: string; actId: string }> {
   await tab(page, 'Entidades').click();
   await page.getByRole('link', { name: 'Nova entidade' }).click();
-  await expect(page).toHaveURL(/\/entidades\/nova$/);
+  await expect(page).toHaveURL(/\/entities\/new$/);
   await page.getByLabel('Denominação').fill(entityName);
   await page.getByLabel('NIPC', { exact: true }).fill(nipc);
   await page.getByLabel('Sede').fill('Lisboa');
   await page.getByLabel('Forma jurídica').selectOption('SociedadeAnonima');
   await page.getByRole('button', { name: 'Criar entidade' }).click();
-  await expect(page).toHaveURL(/\/entidades\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/);
 
   await page.getByRole('link', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/livros\/novo\?entidade=[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/books\/new\?entidade=[0-9a-f-]{36}$/);
   await page.getByLabel('Finalidade').fill(`Atas documentais ${suffix}`);
   await page.getByLabel('Data de abertura').fill('2026-02-02');
   await fillOpenBookTermSignatories(page);
   await page.getByRole('button', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}$/);
   const bookId = idFromUrl(page);
 
   await page.getByRole('link', { name: 'Nova ata' }).click();
-  await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}\/nova-ata$/);
+  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}\/new-act$/);
   await page.getByLabel('Título da ata').fill(actTitle);
   await page.getByRole('button', { name: 'Nova ata' }).click();
-  await expect(page).toHaveURL(/\/atas\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/acts\/[0-9a-f-]{36}$/);
   const actId = idFromUrl(page);
 
   return { bookId, actId };

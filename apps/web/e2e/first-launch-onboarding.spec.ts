@@ -12,7 +12,7 @@ test('fresh install requires strong password onboarding, recovery phrase, then o
   await test.step('fresh install redirects to onboarding', async () => {
     await ensureFreshInstall(page);
     await expect(page.getByRole('button', { name: 'Começar' })).toBeVisible();
-    await expect(page).toHaveURL(/\/bem-vindo$/);
+    await expect(page).toHaveURL(/\/welcome$/);
     await expect(page.getByTestId('tab-bar')).toHaveCount(0);
   });
 

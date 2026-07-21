@@ -35,7 +35,7 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   const settingsPuts: Settings[] = [];
   await routePlatformOperationsFixtures(page, controlRequests, settingsPuts);
 
-  await page.goto('/configuracoes?sec=operacoes');
+  await page.goto('/settings/operations');
 
   await expect(page.getByRole('heading', { name: 'Operações', exact: true })).toBeVisible();
   await expect(page.getByText(/não prometem controlo direto de processos/i)).toBeVisible();

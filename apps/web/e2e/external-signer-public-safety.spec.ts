@@ -12,10 +12,10 @@ test('external signer public page scrubs token from URL/history and does not off
 
   await mockExternalSignerInvite(page, requests);
 
-  await page.goto('/assinatura-externa');
+  await page.goto('/external-signature');
   await expect(page.getByText('Ligação sem token')).toBeVisible();
 
-  await page.goto(`/assinatura-externa?token=${encodeURIComponent(secretToken)}`);
+  await page.goto(`/external-signature?token=${encodeURIComponent(secretToken)}`);
   await expect(page.getByRole('heading', { name: 'Convite externo' })).toBeVisible();
   await expect(page.getByText('Ata pública externa')).toBeVisible();
   await expect(page).not.toHaveURL(/token=/);
@@ -87,7 +87,7 @@ test('external signer unavailable token is scrubbed and exposes no document acti
     await route.fulfill({ status: 500, body: 'unexpected document call' });
   });
 
-  await page.goto(`/assinatura-externa?token=${encodeURIComponent(revokedToken)}&utm_source=e2e`);
+  await page.goto(`/external-signature?token=${encodeURIComponent(revokedToken)}&utm_source=e2e`);
 
   await expect(page.getByText('Convite indisponível')).toBeVisible();
   await expect(

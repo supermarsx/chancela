@@ -31,7 +31,7 @@ test('local CC batch panel submits transient PIN and renders route-stubbed per-d
   const audit = createAudit();
   await routeLocalCcBatchFixtures(page, audit);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
 
   const batchPanel = page.getByLabel('Assinatura local em lote com Cartão de Cidadão');
   await expect(batchPanel).toBeVisible();
@@ -85,7 +85,7 @@ test('local CC batch panel omits blank PIN and reports per-document authenticati
   const audit = createAudit({ auth_mode: 'per_document_auth', auth_events: 2 });
   await routeLocalCcBatchFixtures(page, audit);
 
-  await page.goto(`/atas/${ACT_ID}`);
+  await page.goto(`/acts/${ACT_ID}`);
   const batchPanel = page.getByLabel('Assinatura local em lote com Cartão de Cidadão');
   await batchPanel.getByLabel('ID do ato').fill(MANUAL_ACT_ID);
   await batchPanel.getByRole('button', { name: 'Adicionar', exact: true }).click();

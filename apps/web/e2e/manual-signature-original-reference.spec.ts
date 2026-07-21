@@ -73,27 +73,27 @@ async function createSigningReadyAct(
 ): Promise<void> {
   await tab(page, 'Entidades').click();
   await page.getByRole('link', { name: 'Nova entidade' }).click();
-  await expect(page).toHaveURL(/\/entidades\/nova$/);
+  await expect(page).toHaveURL(/\/entities\/new$/);
   await page.getByLabel('Denominação').fill(entityName);
   await page.getByLabel('NIPC', { exact: true }).fill(nipc);
   await page.getByLabel('Sede').fill('Lisboa');
   await page.getByLabel('Forma jurídica').selectOption('SociedadeAnonima');
   await page.getByRole('button', { name: 'Criar entidade' }).click();
-  await expect(page).toHaveURL(/\/entidades\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/);
 
   await page.getByRole('link', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/livros\/novo\?entidade=[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/books\/new\?entidade=[0-9a-f-]{36}$/);
   await page.getByLabel('Finalidade').fill(`Atas com original manual ${suffix}`);
   await page.getByLabel('Data de abertura').fill('2026-04-02');
   await fillOpenBookTermSignatories(page);
   await page.getByRole('button', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}$/);
 
   await page.getByRole('link', { name: 'Nova ata' }).click();
-  await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}\/nova-ata$/);
+  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}\/new-act$/);
   await page.getByLabel('Título da ata').fill(actTitle);
   await page.getByRole('button', { name: 'Nova ata' }).click();
-  await expect(page).toHaveURL(/\/atas\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/acts\/[0-9a-f-]{36}$/);
 
   await fillSigningReadyAta(page);
   await page.getByRole('button', { name: 'Guardar' }).click();
