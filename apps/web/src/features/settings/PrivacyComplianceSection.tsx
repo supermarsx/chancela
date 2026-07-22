@@ -1145,9 +1145,7 @@ function DpiaTemplateGuidancePanel({
                 {template.operator_actions.map((action, index) => {
                   const actionKey = dpiaOperatorActionKey(index);
                   return (
-                    <li key={`operator-action-${index}`}>
-                      {actionKey ? t(actionKey) : action}
-                    </li>
+                    <li key={`operator-action-${index}`}>{actionKey ? t(actionKey) : action}</li>
                   );
                 })}
               </ul>
@@ -4124,7 +4122,13 @@ const PRIVACY_SUBTABS: { id: PrivacySubTab; labelKey: MessageKey; icon: ReactNod
 export function PrivacyComplianceSection() {
   const t = useT();
   const can = useCan();
-  const canManage = can('user.manage') || can('settings.manage');
+  // The privacy record registers (processors, DPIAs, breach playbooks, transfer controls) and
+  // the DPIA guidance template gate on `privacy.manage`; the retention family (policies, due
+  // candidates, resolutions, executions) gates on its own `retention.manage` (t27 granular
+  // split). A holder of either verb reaches the section; each sub-tab is gated by its own verb.
+  const canManagePrivacy = can('privacy.manage');
+  const canManageRetention = can('retention.manage');
+  const canManage = canManagePrivacy || canManageRetention;
   const [subTab, setSubTab] = useState<PrivacySubTab>('registers');
   const [retentionExecutionStatusFilter, setRetentionExecutionStatusFilter] = useState<
     RetentionExecutionStatus | 'all'
@@ -4133,17 +4137,17 @@ export function PrivacyComplianceSection() {
   const [retentionResolutionCandidateId, setRetentionResolutionCandidateId] = useState<
     string | null
   >(null);
-  const processors = usePrivacyProcessors(canManage);
-  const dpiaTemplate = usePrivacyDpiaTemplate(canManage);
-  const dpias = usePrivacyDpias(canManage);
-  const breachPlaybooks = usePrivacyBreachPlaybooks(canManage);
-  const transferControls = usePrivacyTransferControls(canManage);
-  const retentionPolicies = usePrivacyRetentionPolicies(canManage);
-  const retentionDueCandidates = usePrivacyRetentionDueCandidates(canManage);
-  const retentionCandidateResolutions = usePrivacyRetentionCandidateResolutions(canManage);
+  const processors = usePrivacyProcessors(canManagePrivacy);
+  const dpiaTemplate = usePrivacyDpiaTemplate(canManagePrivacy);
+  const dpias = usePrivacyDpias(canManagePrivacy);
+  const breachPlaybooks = usePrivacyBreachPlaybooks(canManagePrivacy);
+  const transferControls = usePrivacyTransferControls(canManagePrivacy);
+  const retentionPolicies = usePrivacyRetentionPolicies(canManageRetention);
+  const retentionDueCandidates = usePrivacyRetentionDueCandidates(canManageRetention);
+  const retentionCandidateResolutions = usePrivacyRetentionCandidateResolutions(canManageRetention);
   const retentionExecutions = usePrivacyRetentionExecutions(
     retentionExecutionStatusFilter,
-    canManage,
+    canManageRetention,
   );
   const createProcessor = useCreatePrivacyProcessor();
   const patchProcessor = usePatchPrivacyProcessor();
@@ -4251,53 +4255,61 @@ export function PrivacyComplianceSection() {
           <div className="stack">
             <p className="field__hint">{t('settings.privacy.subtab.registers.desc')}</p>
 
-            <RegisterPanel
-              kind="processor"
-              title={t('settings.privacy.register.processor.title')}
-              lede={t('settings.privacy.register.processor.lede')}
-              help={t('settings.privacy.help.processor')}
-              records={processors.data ?? []}
-              loading={processors.isLoading}
-              error={processors.error}
-              saving={createProcessor.isPending || patchProcessor.isPending}
-              onCreate={(body) => createProcessor.mutateAsync(body as CreateProcessorRecordBody)}
-              onPatch={(id, body) =>
-                patchProcessor.mutateAsync({ id, body: body as PatchProcessorRecordBody })
-              }
-            />
+            {!canManagePrivacy ? (
+              <PermissionDeniedNote />
+            ) : (
+              <>
+                <RegisterPanel
+                  kind="processor"
+                  title={t('settings.privacy.register.processor.title')}
+                  lede={t('settings.privacy.register.processor.lede')}
+                  help={t('settings.privacy.help.processor')}
+                  records={processors.data ?? []}
+                  loading={processors.isLoading}
+                  error={processors.error}
+                  saving={createProcessor.isPending || patchProcessor.isPending}
+                  onCreate={(body) =>
+                    createProcessor.mutateAsync(body as CreateProcessorRecordBody)
+                  }
+                  onPatch={(id, body) =>
+                    patchProcessor.mutateAsync({ id, body: body as PatchProcessorRecordBody })
+                  }
+                />
 
-            <RegisterPanel
-              kind="dpia"
-              title={t('settings.privacy.register.dpia.title')}
-              lede={t('settings.privacy.register.dpia.lede')}
-              help={t('settings.privacy.help.dpia')}
-              records={dpias.data ?? []}
-              loading={dpias.isLoading}
-              error={dpias.error}
-              saving={createDpia.isPending || patchDpia.isPending}
-              onCreate={(body) => createDpia.mutateAsync(body as CreateDpiaRecordBody)}
-              onPatch={(id, body) =>
-                patchDpia.mutateAsync({ id, body: body as PatchDpiaRecordBody })
-              }
-            />
+                <RegisterPanel
+                  kind="dpia"
+                  title={t('settings.privacy.register.dpia.title')}
+                  lede={t('settings.privacy.register.dpia.lede')}
+                  help={t('settings.privacy.help.dpia')}
+                  records={dpias.data ?? []}
+                  loading={dpias.isLoading}
+                  error={dpias.error}
+                  saving={createDpia.isPending || patchDpia.isPending}
+                  onCreate={(body) => createDpia.mutateAsync(body as CreateDpiaRecordBody)}
+                  onPatch={(id, body) =>
+                    patchDpia.mutateAsync({ id, body: body as PatchDpiaRecordBody })
+                  }
+                />
 
-            <BreachPlaybookPanel
-              records={breachPlaybooks.data ?? []}
-              loading={breachPlaybooks.isLoading}
-              error={breachPlaybooks.error}
-              saving={createBreachPlaybook.isPending || patchBreachPlaybook.isPending}
-              onCreate={(body) => createBreachPlaybook.mutateAsync(body)}
-              onPatch={(id, body) => patchBreachPlaybook.mutateAsync({ id, body })}
-            />
+                <BreachPlaybookPanel
+                  records={breachPlaybooks.data ?? []}
+                  loading={breachPlaybooks.isLoading}
+                  error={breachPlaybooks.error}
+                  saving={createBreachPlaybook.isPending || patchBreachPlaybook.isPending}
+                  onCreate={(body) => createBreachPlaybook.mutateAsync(body)}
+                  onPatch={(id, body) => patchBreachPlaybook.mutateAsync({ id, body })}
+                />
 
-            <TransferControlPanel
-              records={transferControls.data ?? []}
-              loading={transferControls.isLoading}
-              error={transferControls.error}
-              saving={createTransferControl.isPending || patchTransferControl.isPending}
-              onCreate={(body) => createTransferControl.mutateAsync(body)}
-              onPatch={(id, body) => patchTransferControl.mutateAsync({ id, body })}
-            />
+                <TransferControlPanel
+                  records={transferControls.data ?? []}
+                  loading={transferControls.isLoading}
+                  error={transferControls.error}
+                  saving={createTransferControl.isPending || patchTransferControl.isPending}
+                  onCreate={(body) => createTransferControl.mutateAsync(body)}
+                  onPatch={(id, body) => patchTransferControl.mutateAsync({ id, body })}
+                />
+              </>
+            )}
           </div>
         ) : null}
 
@@ -4305,32 +4317,36 @@ export function PrivacyComplianceSection() {
           <div className="stack">
             <p className="field__hint">{t('settings.privacy.subtab.retention.desc')}</p>
 
-            <RetentionPolicyPanel
-              records={retentionPolicies.data ?? []}
-              loading={retentionPolicies.isLoading}
-              error={retentionPolicies.error}
-              saving={createRetentionPolicy.isPending || patchRetentionPolicy.isPending}
-              runningDryRun={dryRunRetentionPolicy.isPending}
-              dryRunReport={dryRunRetentionPolicy.data ?? null}
-              dueCandidatesReport={retentionDueCandidates.data ?? null}
-              dueCandidatesLoading={retentionDueCandidates.isLoading}
-              dueCandidatesError={retentionDueCandidates.error}
-              candidateResolutionRecords={retentionCandidateResolutions.data ?? []}
-              candidateResolutionPending={recordRetentionCandidateResolution.isPending}
-              resolvingCandidateId={retentionResolutionCandidateId}
-              reviewRequestPending={dryRunRetentionPolicy.isPending}
-              requestingReviewCandidateId={retentionReviewCandidateId}
-              executionRecords={retentionExecutions.data ?? []}
-              executionLoading={retentionExecutions.isLoading}
-              executionError={retentionExecutions.error}
-              executionStatusFilter={retentionExecutionStatusFilter}
-              onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
-              onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
-              onDryRun={dryRunRetention}
-              onRecordResolution={recordRetentionResolution}
-              onRequestReview={requestRetentionReview}
-              onExecutionStatusFilterChange={setRetentionExecutionStatusFilter}
-            />
+            {!canManageRetention ? (
+              <PermissionDeniedNote />
+            ) : (
+              <RetentionPolicyPanel
+                records={retentionPolicies.data ?? []}
+                loading={retentionPolicies.isLoading}
+                error={retentionPolicies.error}
+                saving={createRetentionPolicy.isPending || patchRetentionPolicy.isPending}
+                runningDryRun={dryRunRetentionPolicy.isPending}
+                dryRunReport={dryRunRetentionPolicy.data ?? null}
+                dueCandidatesReport={retentionDueCandidates.data ?? null}
+                dueCandidatesLoading={retentionDueCandidates.isLoading}
+                dueCandidatesError={retentionDueCandidates.error}
+                candidateResolutionRecords={retentionCandidateResolutions.data ?? []}
+                candidateResolutionPending={recordRetentionCandidateResolution.isPending}
+                resolvingCandidateId={retentionResolutionCandidateId}
+                reviewRequestPending={dryRunRetentionPolicy.isPending}
+                requestingReviewCandidateId={retentionReviewCandidateId}
+                executionRecords={retentionExecutions.data ?? []}
+                executionLoading={retentionExecutions.isLoading}
+                executionError={retentionExecutions.error}
+                executionStatusFilter={retentionExecutionStatusFilter}
+                onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
+                onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
+                onDryRun={dryRunRetention}
+                onRecordResolution={recordRetentionResolution}
+                onRequestReview={requestRetentionReview}
+                onExecutionStatusFilterChange={setRetentionExecutionStatusFilter}
+              />
+            )}
           </div>
         ) : null}
 
@@ -4338,11 +4354,15 @@ export function PrivacyComplianceSection() {
           <div className="stack">
             <p className="field__hint">{t('settings.privacy.subtab.guidance.desc')}</p>
 
-            <DpiaTemplateGuidancePanel
-              template={dpiaTemplate.data ?? null}
-              loading={dpiaTemplate.isLoading}
-              error={dpiaTemplate.error}
-            />
+            {!canManagePrivacy ? (
+              <PermissionDeniedNote />
+            ) : (
+              <DpiaTemplateGuidancePanel
+                template={dpiaTemplate.data ?? null}
+                loading={dpiaTemplate.isLoading}
+                error={dpiaTemplate.error}
+              />
+            )}
           </div>
         ) : null}
       </div>

@@ -699,7 +699,7 @@ export function LivrosIntegridadeSection() {
           <p className="field__hint">{t('integrity.recovery.note')}</p>
           <div className="row-wrap">
             <GateButton
-              perm="ledger.recover"
+              perm="ledger.restore"
               type="button"
               variant="secondary"
               icon={<Icon.Refresh />}
@@ -714,7 +714,7 @@ export function LivrosIntegridadeSection() {
               {t('integrity.restore.title')}
             </GateButton>
             <GateButton
-              perm="ledger.recover"
+              perm="ledger.reanchor"
               type="button"
               variant="secondary"
               className="btn--danger"
