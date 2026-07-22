@@ -37,3 +37,4 @@ SPEC-COVERAGE.md
 # Scratch coverage snapshots taken while measuring
 /apps/web/coverage-*
 /Projectschancelatarget-tcmeasure
+/Projectschancelatarget-t14
