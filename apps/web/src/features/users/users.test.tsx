@@ -1634,6 +1634,7 @@ describe('EditUserPage — Segurança tab', () => {
     twoFactor?: Partial<TwoFactorStatus>,
   ) {
     const { fn } = recordingFetch((r) => {
+      if (r.url.endsWith('/v1/sessions')) return jsonResponse({ sessions: [] });
       if (r.url.endsWith('/v1/session')) return jsonResponse({ user: sessionUser });
       if (r.url.endsWith(`/v1/users/${user.id}/two-factor`)) {
         return jsonResponse({
@@ -1717,16 +1718,14 @@ describe('EditUserPage — Segurança tab', () => {
     expect(screen.getByRole('button', { name: 'Gerir em Acesso e auditoria' })).toBeTruthy();
   });
 
-  it('renders the real TOTP block now that t107 landed it, but still no sessions placeholder', async () => {
-    // TOTP has shipped against t107's frozen contract, so it is present (not a stub). The
-    // sessions panel is still a seam — its backend (enriched record + list/revoke) is funded but
-    // not built — so there is deliberately no "Sessões ativas" text or placeholder for it yet.
+  it('renders both real blocks now that t107 landed TOTP and sessions', async () => {
+    // Both seams are now filled against t107's frozen contracts — neither is a stub. On a self
+    // screen the tab shows the two-factor block and the active-sessions panel.
     renderSecurity(AMELIA, AMELIA);
     await screen.findByText('Segurança da conta');
 
-    const body = document.body.textContent ?? '';
-    expect(body).toMatch(/dois fatores/i); // TOTP block is real
-    expect(body).not.toMatch(/sess(ões|ão) ativ/i); // sessions still a seam, no fake list
+    expect(await screen.findByText('Autenticação de dois fatores')).toBeTruthy();
+    expect(screen.getByText('Sessões ativas')).toBeTruthy();
   });
 
   it('is visible without user.manage, unlike the DSR tab', async () => {
