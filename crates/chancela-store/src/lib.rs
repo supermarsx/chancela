@@ -56,7 +56,7 @@ use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use chancela_core::{
     Act, ActId, Book, BookId, CompanyGroup, Entity, EntityId, GroupId, GroupTemplateLibrary,
-    GroupTemplateLibraryRevision, TemplateLibraryId,
+    GroupTemplateLibraryRevision, TemplateLibraryId, TermoInstrument, TermoInstrumentId,
 };
 use chancela_ledger::{
     AppendError, ChainId, ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError,
@@ -3342,6 +3342,66 @@ impl Store {
         self.document_rows("pairing_devices")
     }
 
+    /// Load one drafted termo instrument by id, or `None` when unknown (`termo_instruments`, schema
+    /// v26, t23).
+    ///
+    /// The stored `json` is the serialized [`TermoInstrument`]; a `Draft`/`Signing`/`Sealed` termo
+    /// lives here between requests. The value is reconstructed via [`row_to_termo_instrument`], whose
+    /// deserialization surfaces as [`StoreError`].
+    pub fn load_termo_instrument(
+        &self,
+        id: TermoInstrumentId,
+    ) -> Result<Option<TermoInstrument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.termo_instrument(id);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare("SELECT json FROM termo_instruments WHERE id = ?1")?;
+        let json: Option<String> = stmt
+            .query_row(params![id.to_string()], |row| row.get::<_, String>(0))
+            .optional()?;
+        json.as_deref().map(row_to_termo_instrument).transpose()
+    }
+
+    /// Every drafted termo instrument for a book, in a deterministic id order (`termo_instruments`,
+    /// schema v26, t23). Empty when the book has none. Feeds the by-book termo feed.
+    pub fn termo_instruments_for_book(
+        &self,
+        book_id: BookId,
+    ) -> Result<Vec<TermoInstrument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.termo_instruments_for_book(book_id);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard
+            .prepare("SELECT json FROM termo_instruments WHERE book_id = ?1 ORDER BY id ASC")?;
+        let rows = stmt.query_map(params![book_id.to_string()], |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for json in rows {
+            out.push(row_to_termo_instrument(&json?)?);
+        }
+        Ok(out)
+    }
+
+    /// Every drafted termo instrument in the store, in a deterministic id order (`termo_instruments`,
+    /// schema v26, t23). The boot-time hydrate of the API's in-memory termo map reads this once.
+    pub fn all_termo_instruments(&self) -> Result<Vec<TermoInstrument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.all_termo_instruments();
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare("SELECT json FROM termo_instruments ORDER BY id ASC")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for json in rows {
+            out.push(row_to_termo_instrument(&json?)?);
+        }
+        Ok(out)
+    }
+
     /// Shared reader for the `(id, json)` document-in-relational sidecar tables (users/roles/
     /// delegations). `table` is a fixed internal identifier (never user input), so interpolating it
     /// into the query is safe. Ordered by id for a deterministic enumeration.
@@ -4049,6 +4109,57 @@ impl Tx<'_> {
                      json = EXCLUDED.json",
                     &[&id, &book_id, &json],
                 )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Upsert a drafted termo instrument (`termo_instruments`, with the indexed `book_id` scope
+    /// column and a `kind` column broken out for filtering; schema v26, t23). Idempotent on the termo
+    /// id (`INSERT OR REPLACE`), mirroring the aggregate writers, so a `PATCH` of a draft or its
+    /// freeze into `Signing` overwrites the same row rather than accumulating versions. `json` is the
+    /// serialized [`TermoInstrument`] and never enters the hash chain.
+    pub fn upsert_termo_instrument(&self, termo: &TermoInstrument) -> Result<(), StoreError> {
+        let id = termo.id.to_string();
+        let book_id = termo.book_id.to_string();
+        let kind = termo.kind.to_string();
+        let json = serde_json::to_string(termo)?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO termo_instruments (id, book_id, kind, json) \
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![id, book_id, kind, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO termo_instruments (id, book_id, kind, json) \
+                     VALUES ($1, $2, $3, $4) \
+                     ON CONFLICT (id) DO UPDATE SET book_id = EXCLUDED.book_id, \
+                     kind = EXCLUDED.kind, json = EXCLUDED.json",
+                    &[&id, &book_id, &kind, &json],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Delete a drafted termo instrument by id (`termo_instruments`, schema v26, t23). This is the
+    /// abandon path for a `Created` book whose termo is discarded before it ever enters the hash
+    /// chain — leaving no ledger trace, by design. A no-op when the id is absent.
+    pub fn delete_termo_instrument(&self, id: TermoInstrumentId) -> Result<(), StoreError> {
+        let id = id.to_string();
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?
+                    .execute("DELETE FROM termo_instruments WHERE id = ?1", params![id])?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut()
+                    .execute("DELETE FROM termo_instruments WHERE id = $1", &[&id])?;
             }
         }
         Ok(())
@@ -6947,6 +7058,16 @@ fn row_to_instrument_signature(
             },
         })
     })())
+}
+
+/// Deserialize a `termo_instruments.json` column back to a [`TermoInstrument`] (schema v26, t23).
+///
+/// A single JSON column, so unlike the multi-column [`row_to_instrument_signature`] this is a
+/// straight serde decode; a malformed value means the row was corrupted after
+/// [`Tx::upsert_termo_instrument`] wrote it. Shared by the SQLite and Postgres read paths so both
+/// dialects reconstruct the instrument identically.
+pub(crate) fn row_to_termo_instrument(json: &str) -> Result<TermoInstrument, StoreError> {
+    Ok(serde_json::from_str(json)?)
 }
 
 /// Map one `pending_cmd_sessions` row to a [`PendingCmdSession`]. Deferred inner `Result` (the

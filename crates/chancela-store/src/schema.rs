@@ -147,7 +147,20 @@
 ///   (`550 5.1.1 <…>: Recipient address rejected`), so it must never enter the ledger.
 ///   Forward-only, additive: existing databases gain the table via [`ALL`] and advance their stamp
 ///   on next open.
-pub const SCHEMA_VERSION: i64 = 25;
+/// - **v26** — adds `termo_instruments` (t23, finishing t8-A's undelivered store leg): draft
+///   persistence for the **termo de abertura/encerramento as a first-class signable instrument**.
+///   Until this table existed a drafted [`chancela_core::TermoInstrument`] had nowhere to live
+///   between requests, so the web still did a one-shot create+seal that produced a *static* termo
+///   with *declared* (never collected) signatures. Document-in-relational with a book scope column
+///   and a `kind` column broken out for filtering: `(id, book_id, kind, json)`, where `json` is the
+///   serialized instrument (opaque to the store) and `id` is its own `TermoInstrumentId` — distinct
+///   from the book's and from any act's, so the abertura and the encerramento of one book never
+///   collide on a single key. A `Draft`/`Signing`/`Sealed` termo rides in `json`; nothing here
+///   enters the hash chain — the `book.opened`/`book.closed` genesis digesting the *final, filled,
+///   signed* termo is the API's job, and the collected per-slot signatures live in the v23
+///   `instrument_signatures` history keyed on the same `TermoInstrumentId`. Forward-only, additive:
+///   existing databases gain the table via [`ALL`] and advance their stamp on next open.
+pub const SCHEMA_VERSION: i64 = 26;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -935,6 +948,46 @@ CREATE TABLE IF NOT EXISTS pairing_devices (
     json TEXT NOT NULL
 ) STRICT;";
 
+/// `termo_instruments` — draft persistence for the termo de abertura/encerramento as a first-class
+/// signable instrument (schema v26, t23; finishing t8-A's undelivered store leg).
+///
+/// ## Why this table exists
+///
+/// A drafted [`chancela_core::TermoInstrument`] had nowhere to live between requests, so the web
+/// still ran a one-shot create+seal that produced a **static** termo carrying **declared** (never
+/// collected) signatures. This table is where the drafted/frozen instrument lives so it can be
+/// filled, advanced to signing, and signed like an ata before it opens (or closes) its book.
+///
+/// ## Shape and scope
+///
+/// Document-in-relational with the book scope column broken out for the by-book feed and a `kind`
+/// column broken out so the abertura and encerramento of one book are filterable without parsing
+/// `json`. `json` is the serialized instrument, opaque to the store.
+///
+/// - `id` — the `TermoInstrumentId` (primary key; the upsert is idempotent on it). Deliberately
+///   **distinct** from the book id and any act id, so the abertura and the encerramento of the same
+///   book never collide on one document/signature key.
+/// - `book_id` — the book this instrument opens or closes, indexed for `termo_instruments_for_book`
+///   (mirrors how `books.entity_id` / `acts.book_id` are the one indexed scope column per table).
+/// - `kind` — `abertura` or `encerramento`, the [`chancela_core::TermoKind`] rendered as text.
+/// - `json` — the serialized [`chancela_core::TermoInstrument`] value.
+///
+/// **Nothing here enters the hash chain.** The `book.opened` / `book.closed` genesis that digests the
+/// *final, filled, signed* termo is the API's job, and the collected per-slot signatures live in the
+/// v23 `instrument_signatures` history keyed on the same `TermoInstrumentId`. Abandoning a `Created`
+/// book deletes its draft termo here and leaves no ledger trace, by design.
+pub const CREATE_TERMO_INSTRUMENTS: &str = "\
+CREATE TABLE IF NOT EXISTS termo_instruments (
+    id      TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    kind    TEXT NOT NULL,
+    json    TEXT NOT NULL
+) STRICT;";
+
+/// Index over `termo_instruments.book_id` — feeds the by-book termo feed (one book → its termos).
+pub const CREATE_TERMO_INSTRUMENTS_BOOK_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_termo_instruments_book ON termo_instruments (book_id);";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -997,6 +1050,8 @@ pub const ALL: &[&str] = &[
     CREATE_EMAIL_DELIVERIES,
     CREATE_EMAIL_DELIVERIES_STATUS_IDX,
     CREATE_EMAIL_DELIVERIES_USER_IDX,
+    CREATE_TERMO_INSTRUMENTS,
+    CREATE_TERMO_INSTRUMENTS_BOOK_IDX,
 ];
 
 /// Every application table a **Postgres logical backup** exports and restores, in a stable order
@@ -1058,6 +1113,10 @@ pub const LOGICAL_BACKUP_TABLES: &[&str] = &[
     // delivery history missing from a Postgres restore would leave an instance unable to say what
     // mail it had ever sent, while the same restore on SQLite kept every row.
     "email_deliveries",
+    // Added with the table itself (v26): a drafted/signing/sealed termo missing from a Postgres
+    // restore would silently drop a book's opening/closing instrument — its fillable text, fields
+    // and signatory slots — while the same restore on SQLite kept every row.
+    "termo_instruments",
 ];
 
 /// The table names the DDL declares, parsed out of `CREATE TABLE IF NOT EXISTS <name>`. Index

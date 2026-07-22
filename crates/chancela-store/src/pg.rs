@@ -89,13 +89,12 @@ use time::format_description::well_known::Rfc3339;
 use crate::{
     LedgerEventPage, LedgerEventPageQuery, LoadedState, PendingCmdSession, RawEventRow, StoreError,
     StoredCredentialRecord, StoredDocument, StoredEmailDelivery, StoredFollowUp,
-    StoredFollowUpStatus,
-    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
-    StoredImportedDocumentReviewHistoryEntry, StoredImportedDocumentReviewStatus,
-    StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
-    StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
-    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus, StoredSignedDocument, int_to_u32,
-    parse_date, parse_rfc3339, parse_uuid_newtype,
+    StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
+    StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
+    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
+    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
+    StoredPaperBookOcrDraft, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
+    StoredSignedDocument, int_to_u32, parse_date, parse_rfc3339, parse_uuid_newtype,
 };
 
 /// Fixed key for the process-wide writer advisory lock (§4). An arbitrary, stable 64-bit constant
@@ -1101,6 +1100,50 @@ impl PostgresBackend {
             &[&subject_id.to_string()],
         )?;
         rows.iter().map(row_to_instrument_signature).collect()
+    }
+
+    /// Load one drafted termo instrument by id (the Postgres twin of the SQLite
+    /// [`crate::Store::load_termo_instrument`], schema v26). `json` is the serialized
+    /// `TermoInstrument`, reconstructed via the shared [`crate::row_to_termo_instrument`].
+    pub(crate) fn termo_instrument(
+        &self,
+        id: chancela_core::TermoInstrumentId,
+    ) -> Result<Option<chancela_core::TermoInstrument>, StoreError> {
+        let mut client = self.read()?;
+        let row = client.query_opt(
+            "SELECT json FROM termo_instruments WHERE id = $1",
+            &[&id.to_string()],
+        )?;
+        row.map(|row| crate::row_to_termo_instrument(&row.get::<_, String>(0)))
+            .transpose()
+    }
+
+    /// Every drafted termo instrument for a book, in id order (the Postgres twin of the SQLite
+    /// [`crate::Store::termo_instruments_for_book`], schema v26).
+    pub(crate) fn termo_instruments_for_book(
+        &self,
+        book_id: chancela_core::BookId,
+    ) -> Result<Vec<chancela_core::TermoInstrument>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT json FROM termo_instruments WHERE book_id = $1 ORDER BY id ASC",
+            &[&book_id.to_string()],
+        )?;
+        rows.iter()
+            .map(|row| crate::row_to_termo_instrument(&row.get::<_, String>(0)))
+            .collect()
+    }
+
+    /// Every drafted termo instrument in the store, in id order (the Postgres twin of the SQLite
+    /// [`crate::Store::all_termo_instruments`], schema v26). The boot-time hydrate reads this once.
+    pub(crate) fn all_termo_instruments(
+        &self,
+    ) -> Result<Vec<chancela_core::TermoInstrument>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query("SELECT json FROM termo_instruments ORDER BY id ASC", &[])?;
+        rows.iter()
+            .map(|row| crate::row_to_termo_instrument(&row.get::<_, String>(0)))
+            .collect()
     }
 
     pub(crate) fn pending_cmd_session(

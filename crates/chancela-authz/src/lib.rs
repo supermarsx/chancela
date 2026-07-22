@@ -44,7 +44,8 @@ pub use role::{
     GUEST_ROLE_ID, LEGAL_COUNSEL_ROLE_ID, OWNER_ROLE_ID, PLATFORM_ADMIN_ROLE_ID, READER_ROLE_ID,
     RECORDS_MANAGER_ROLE_ID, RETIRED_GESTOR_ROLE_ID, RETIRED_SEEDED_ROLES,
     RETIRED_SIGNATARIO_ROLE_ID, REVIEWER_ROLE_ID, Role, RoleCatalog, RoleId, SIGNATORY_ROLE_ID,
-    SignupDefaultRefusal, TENANT_ADMIN_ROLE_ID, default_roles, is_seeded_role,
+    SignupDefaultRefusal, T27_VERB_SPLIT_GRANDFATHER, TENANT_ADMIN_ROLE_ID, default_roles,
+    grandfather_split_verbs, grandfather_split_verbs_catalog, is_seeded_role,
     retired_role_successor,
 };
 pub use scope::{

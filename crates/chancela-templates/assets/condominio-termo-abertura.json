@@ -34,5 +34,13 @@
       "role": "{{ role }}",
       "name": "{{ name }}"
     }
+  ],
+  "default_body": [
+    {
+      "text": "O presente livro destina-se ao registo das atas da assembleia de condóminos, lavradas e numeradas sequencialmente, nos termos do artigo 1432.º do Código Civil e do Decreto-Lei n.º 268/94, de 25 de outubro."
+    },
+    {
+      "text": "As atas integram a cadeia de registo desta escrituração digital, permitindo verificar a sua autenticidade e detetar qualquer adulteração. Em regime de folhas soltas, todas as folhas são numeradas e encadeadas entre si."
+    }
   ]
 }

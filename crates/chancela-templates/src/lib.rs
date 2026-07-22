@@ -76,6 +76,46 @@ pub struct TemplateSpec {
     pub blocks: Vec<BlockSpec>,
     /// The locale the prose is authored in (v1: `"pt-PT"`, UX-21).
     pub locale: String,
+    /// The editable **seed body** an instrument (a termo — and, later, an ata) is drafted with
+    /// before an operator fills it in. Empty for templates with no fillable body.
+    ///
+    /// This is deliberately **not** part of the rendered [`blocks`](Self::blocks) layout and
+    /// **not** part of [`canonical_spec_json`]: the seed does not determine any sealed bytes
+    /// (the operator's edited body does), so editing a seed must neither read as a change to a
+    /// template's render identity nor drift a shipped template's frozen digest. Hence
+    /// `#[serde(skip)]`. Read it through [`TemplateSpec::default_body`].
+    #[serde(skip)]
+    pub default_body: Vec<DefaultBodyClause>,
+}
+
+impl TemplateSpec {
+    /// The template's editable seed body — the clauses a fresh instrument's body is seeded
+    /// with. Empty when the template has no fillable body.
+    ///
+    /// Shared accessor: the API layer seeds a drafted
+    /// [`chancela_core::termo::TermoInstrument`] from these clauses (mapping each into a
+    /// `TermoClause::from_template`), and the ata body editor reuses the same source. Returning
+    /// a slice keeps callers insulated from the backing representation.
+    #[must_use]
+    pub fn default_body(&self) -> &[DefaultBodyClause] {
+        &self.default_body
+    }
+}
+
+/// One clause of a template's **seed body** ([`TemplateSpec::default_body`]).
+///
+/// A leaner mirror of [`chancela_core::termo::TermoClause`] carrying only what an asset author
+/// writes — an optional heading and the plain seed text. Clause ids and provenance are minted
+/// by the API layer when it seeds an instrument, not authored here. The text is rendered as a
+/// *value* and never compiled as a template.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DefaultBodyClause {
+    /// Optional heading rendered above the clause.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading: Option<String>,
+    /// The plain seed text.
+    pub text: String,
 }
 
 /// The **canonical serialization** of a template spec — the exact bytes a spec digest is taken
@@ -283,6 +323,10 @@ struct TemplateSpecDto {
     rule_pack_id: String,
     blocks: Vec<BlockSpec>,
     locale: String,
+    /// The editable seed body. Optional in the asset: a template with no fillable body simply
+    /// omits it and gets an empty seed.
+    #[serde(default)]
+    default_body: Vec<DefaultBodyClause>,
 }
 
 impl From<TemplateSpecDto> for TemplateSpec {
@@ -298,6 +342,7 @@ impl From<TemplateSpecDto> for TemplateSpec {
             law_references,
             blocks: dto.blocks,
             locale: dto.locale,
+            default_body: dto.default_body,
         }
     }
 }
@@ -1070,6 +1115,81 @@ mod tests {
         // Filter by (family, stage) surfaces it.
         let found = reg.find(EntityFamily::CommercialCompany, LifecycleStage::Ata);
         assert!(found.iter().any(|s| s.id == "csc-ata-ag/v1"));
+    }
+
+    /// Every shipped family's termo de abertura carries a seed body, and each seed clause is
+    /// plain text — never a minijinja fragment, because the API renders it as a *value* on a
+    /// `TermoClause` and never compiles it.
+    #[test]
+    fn every_termo_abertura_seeds_a_plain_text_default_body() {
+        let reg = load_registry().expect("registry loads");
+        for id in [
+            "csc-termo-abertura/v1",
+            "assoc-termo-abertura/v1",
+            "condominio-termo-abertura/v1",
+            "cooperativa-termo-abertura/v1",
+            "fundacao-termo-abertura/v1",
+        ] {
+            let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
+            let body = spec.default_body();
+            assert!(!body.is_empty(), "{id} has no seed body");
+            for clause in body {
+                assert!(
+                    !clause.text.trim().is_empty(),
+                    "{id} has a blank seed clause"
+                );
+                // No template syntax may leak into a seed: it is operator-editable value text.
+                assert!(
+                    !clause.text.contains("{{") && !clause.text.contains("{%"),
+                    "{id} seed clause carries minijinja syntax: {:?}",
+                    clause.text
+                );
+            }
+        }
+    }
+
+    /// The seed body is deliberately outside the digested canonical form: editing a seed must
+    /// not drift a shipped template's frozen digest (the seed does not determine sealed bytes).
+    #[test]
+    fn default_body_is_absent_from_the_canonical_spec() {
+        let reg = load_registry().expect("registry loads");
+        let spec = reg.get("csc-termo-abertura/v1").expect("abertura present");
+        assert!(!spec.default_body().is_empty(), "precondition: seed exists");
+        let canonical = canonical_spec_json(spec).expect("serializes");
+        assert!(
+            !canonical.contains("default_body"),
+            "the seed body must not enter the canonical (digested) spec: {canonical}"
+        );
+    }
+
+    /// A template with no fillable body simply has no seed — the field is optional in the asset.
+    #[test]
+    fn a_body_less_template_has_an_empty_default_body() {
+        let reg = load_registry().expect("registry loads");
+        let ata = reg.get("csc-ata-ag/v1").expect("ata present");
+        assert!(ata.default_body().is_empty());
+    }
+
+    /// E3: the loose-leaf/numbered-folhas rule on the CSC abertura is grounded in Código
+    /// Comercial art. 31.º n.º 2, not miscited to CSC art. 63.º. (The atas-numbering regime on
+    /// the same template legitimately still cites CSC art. 63.º — that is the atas provision.)
+    #[test]
+    fn csc_abertura_cites_ccom_art_31_for_the_loose_leaf_rule() {
+        let reg = load_registry().expect("registry loads");
+        let spec = reg.get("csc-termo-abertura/v1").expect("abertura present");
+        let blocks = serde_json::to_string(&spec.blocks).expect("blocks serialize");
+        assert!(
+            blocks.contains("folhas soltas")
+                && blocks.contains("artigo 31.º, n.º 2, do Código Comercial"),
+            "the loose-leaf clause must cite Código Comercial art. 31.º n.º 2"
+        );
+        assert!(
+            !blocks.contains("encadeadas entre si, nos termos do artigo 63"),
+            "the loose-leaf rule must no longer be miscited to CSC art. 63.º"
+        );
+        // And the seed carries the same corrected citation.
+        let seed = serde_json::to_string(spec.default_body()).expect("seed serializes");
+        assert!(seed.contains("artigo 31.º, n.º 2, do Código Comercial"));
     }
 
     #[test]

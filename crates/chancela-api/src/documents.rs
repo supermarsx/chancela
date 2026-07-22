@@ -26,6 +26,8 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+use chancela_core::book::BookId;
+use chancela_core::termo::{TermoClause, TermoInstrument, TermoKind};
 use chancela_core::{
     Act, ActBody, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel,
     DocumentModel, Entity, EntityFamily, LifecycleStage, MeetingChannel, NumberingScheme,
@@ -648,6 +650,8 @@ fn book_kind_label(kind: BookKind) -> &'static str {
         BookKind::GerenciaAdministracao => "Gerência / administração",
         BookKind::ConselhoFiscal => "Conselho fiscal",
         BookKind::Condominio => "Condomínio",
+        // Fallback for an unmodelled organ; the operator's custom label rides `Book::kind_label`.
+        BookKind::Other => "Outro tipo de livro",
     }
 }
 
@@ -883,6 +887,41 @@ pub(crate) fn generate_for_termo(
         owner,
         OffsetDateTime::now_utc(),
     )?))
+}
+
+/// The title a fresh termo de abertura draft carries, matching the one-shot render's heading so the
+/// two paths produce the same document heading.
+pub(crate) const TERMO_ABERTURA_TITLE: &str = "Termo de abertura do livro de atas";
+
+/// Seed a fresh `Draft` termo de abertura for a book, with its body pre-filled from the family's
+/// template `default_body` (t23-e2's seeds). The non-body fields (purpose, opening date, signatory
+/// slots) are filled by the caller/API-consumer via PATCH; only the default page capacity is set
+/// here (by [`chancela_core::termo::TermoFields::for_abertura`]).
+///
+/// A family without a termo-abertura template yields a draft with an **empty** body; the operator
+/// then writes the clauses. Nothing here touches the ledger — a draft is not on the hash chain.
+#[must_use]
+pub(crate) fn seed_draft_abertura(
+    book_id: BookId,
+    family: EntityFamily,
+    now: OffsetDateTime,
+) -> TermoInstrument {
+    let mut termo = TermoInstrument::draft(book_id, TermoKind::Abertura, TERMO_ABERTURA_TITLE, now);
+    if let Some(spec) = default_spec(family, LifecycleStage::TermoAbertura) {
+        termo.template_id = None; // pinned only at advance/freeze, not at seed.
+        termo.body = spec
+            .default_body()
+            .iter()
+            .map(|clause| TermoClause::from_template(clause.heading.clone(), clause.text.clone()))
+            .collect();
+    }
+    termo
+}
+
+/// The template id the family's termo de abertura freezes against (pinned at `advance`).
+#[must_use]
+pub(crate) fn abertura_template_id(family: EntityFamily) -> Option<&'static str> {
+    spine_template_id(family, LifecycleStage::TermoAbertura)
 }
 
 /// Build the render context for a termo de encerramento (book-closing instrument). Unlike the
@@ -8891,8 +8930,12 @@ mod spec_binding_tests {
                 "cb662056e942929723aeff193976bfc717f50f88113992c02cf7fc057359825b",
             ),
             (
+                // Re-pinned after t23-e2's authorized loose-leaf citation correction
+                // (art. 63.º CSC → Código Comercial art. 31.º n.º 2) edited this template's
+                // digested `blocks` prose in place. The `default_body` seed is `#[serde(skip)]`
+                // and does not affect this digest; only the prose correction moved it.
                 "csc-termo-abertura/v1",
-                "1a3816123757d219b9e859d5aac15da0d646cf089a58006afabdc54db12c1c5a",
+                "7c2e7943165b839889dc00f1d829efef6cb6223fa070956f1a5daead3f29c34c",
             ),
             (
                 "csc-termo-encerramento/v1",

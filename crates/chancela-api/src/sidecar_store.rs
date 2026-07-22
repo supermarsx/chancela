@@ -349,7 +349,34 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
     // and the reconcile deletes their rows. `retire_merged_roles` is idempotent, so a database that
     // has already been migrated takes this branch only via `ensure_seeded_defaults`, as before.
     let retired_any = crate::roles::retire_merged_roles(&mut roles);
-    if crate::roles::ensure_seeded_defaults(&mut roles) || retired_any {
+    let seeded = crate::roles::ensure_seeded_defaults(&mut roles);
+    // t27: grandfather the verb split onto the DB catalog too, so a Postgres deployment's
+    // operator-authored roles (and a pre-t27 seeded Platform Administrator, which
+    // `ensure_seeded_defaults` never rewrites) keep their privacy/retention reach after the split.
+    // Guarded by a per-node marker sidecar kept DISTINCT from the file catalog's marker
+    // (`ROLE_MIGRATIONS_STORE_FILE`) so the file seam — which reconciles the soon-discarded
+    // file-derived catalog on a Postgres boot — never pre-burns this guard. The marker is per-node;
+    // a shared-DB marker (a store `meta` KV write) is the multi-node follow-up. The reconcile is
+    // additive and anti-lockout, so an extra pass can only ever grant reach, never strip it.
+    let store_marker_path = state
+        .data_dir()
+        .map(|dir| dir.join(crate::roles::ROLE_MIGRATIONS_STORE_FILE));
+    let mut store_migrations = store_marker_path
+        .as_deref()
+        .map(crate::roles::load_role_migration_state)
+        .unwrap_or_default();
+    let migration =
+        crate::roles::reconcile_split_verb_grandfather(&mut roles, &mut store_migrations);
+    if migration.marker_changed
+        && let Some(path) = store_marker_path.as_deref()
+        && let Err(e) = crate::roles::write_role_migration_state_atomic(path, &store_migrations)
+    {
+        eprintln!(
+            "warning: failed to record role migrations to {} ({e})",
+            path.display()
+        );
+    }
+    if seeded || retired_any || migration.catalog_changed {
         let rows = roles
             .iter()
             .filter_map(|role| {

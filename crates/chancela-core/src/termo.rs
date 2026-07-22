@@ -276,6 +276,17 @@ pub struct TermoSignatorySlot {
     /// art. 31.º n.º 2 allow-list. This is *evidence*, not a software permission — see the
     /// capacity-vs-role distinction in the module docs of `chancela-authz`.
     pub capacity: SignatoryCapacity,
+    /// Free-text quality note, **required** when `capacity` is [`SignatoryCapacity::Other`] and
+    /// forbidden otherwise.
+    ///
+    /// **`ASSURANCE`.** `Other` is outside the art. 31.º n.º 2 allow-list: it is an escape hatch
+    /// for a legitimate but unmodelled qualidade, and this note says what that qualidade is. It
+    /// never satisfies the legal capacity requirement (which only the modelled capacities meet)
+    /// and never counts toward the management floor. Mirrors
+    /// [`crate::act::Attendee::quality_note`] — the free text stays out of the structured
+    /// `capacity`, so reporting over capacities remains a closed set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity_note: Option<String>,
     /// Required slots must sign for the instrument to complete. Optional co-signers (a
     /// secretário, say) are legitimate.
     pub required: bool,
@@ -305,6 +316,7 @@ impl TermoSignatorySlot {
             name: name.into(),
             email: None,
             capacity,
+            capacity_note: None,
             required: true,
             order,
             signed: false,
@@ -328,6 +340,14 @@ impl TermoSignatorySlot {
         self
     }
 
+    /// Attach the free-text quality note that [`SignatoryCapacity::Other`] requires. An
+    /// `ASSURANCE` value; see [`TermoSignatorySlot::capacity_note`].
+    #[must_use]
+    pub fn with_capacity_note(mut self, note: impl Into<String>) -> Self {
+        self.capacity_note = Some(note.into());
+        self
+    }
+
     fn validate(&self) -> Result<(), TermoError> {
         if self.name.trim().is_empty() {
             return Err(TermoError::EmptySignatoryName { slot_id: self.id });
@@ -338,11 +358,32 @@ impl TermoSignatorySlot {
                 max_chars: MAX_TERMO_TEXT_CHARS,
             });
         }
-        if !is_permitted_termo_capacity(self.capacity) {
-            return Err(TermoError::ForbiddenCapacity {
-                slot_id: self.id,
-                capacity: self.capacity,
-            });
+        // Capacity gate. [`is_permitted_termo_capacity`] — the art. 31.º n.º 2 allow-list — is
+        // one of the only two legally-required checks and stays a pure closed set that `Other`
+        // is never in. `Other` is admitted *alongside* it as an ASSURANCE escape hatch, and only
+        // with a non-empty note saying what the quality is. It never satisfies the legal capacity
+        // requirement and never counts as management (see [`is_management_capacity`]).
+        let note_present = self
+            .capacity_note
+            .as_deref()
+            .is_some_and(|note| !note.trim().is_empty());
+        match self.capacity {
+            SignatoryCapacity::Other => {
+                if !note_present {
+                    return Err(TermoError::MissingSignatoryCapacityNote { slot_id: self.id });
+                }
+            }
+            capacity if is_permitted_termo_capacity(capacity) => {
+                if note_present {
+                    return Err(TermoError::UnexpectedSignatoryCapacityNote { slot_id: self.id });
+                }
+            }
+            capacity => {
+                return Err(TermoError::ForbiddenCapacity {
+                    slot_id: self.id,
+                    capacity,
+                });
+            }
         }
         Ok(())
     }
@@ -353,6 +394,7 @@ impl TermoSignatorySlot {
         TermoSignatory {
             name: self.name.clone(),
             capacity: Some(self.capacity),
+            capacity_note: self.capacity_note.clone(),
             email: self.email.clone(),
         }
     }
@@ -365,6 +407,7 @@ impl TermoSignatorySlot {
             slot_id: self.id,
             name: self.name.clone(),
             capacity: self.capacity,
+            capacity_note: self.capacity_note.clone(),
             signed_at,
             signature_id: self.signature_id,
         })
@@ -445,6 +488,15 @@ pub struct TermoFields {
     /// from capacity exhaustion (which merely preselects [`ClosingReason::BookFull`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closing_reason: Option<ClosingReason>,
+    /// D5 — a free-text reference to a **paper/legacy predecessor book** that is not in the
+    /// system.
+    ///
+    /// **`ASSURANCE`.** The real successor link is [`crate::book::Book::predecessor`], a book id
+    /// that makes the verifiable chain; this note is only a human reference for a predecessor
+    /// with no digital record, and never stands in for that link. Abertura-oriented but not
+    /// gated by kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predecessor_note: Option<String>,
 }
 
 impl TermoFields {
@@ -471,6 +523,11 @@ impl TermoFields {
         }
         check_len("place", self.place.as_deref(), MAX_TERMO_TEXT_CHARS)?;
         check_len("purpose", self.purpose.as_deref(), MAX_TERMO_PURPOSE_CHARS)?;
+        check_len(
+            "predecessor_note",
+            self.predecessor_note.as_deref(),
+            MAX_TERMO_TEXT_CHARS,
+        )?;
 
         match kind {
             TermoKind::Abertura => {
@@ -1176,6 +1233,143 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    // ---- qualidade "Other" (D1): an ASSURANCE escape hatch, never the legal allow-list ----
+
+    #[test]
+    fn other_is_never_in_the_legal_capacity_allow_list() {
+        // The allow-list stays a pure closed set: `Other` is outside art. 31.º n.º 2, note or no
+        // note. Admissibility of an `Other` signatory is a separate, broader slot-level check.
+        assert!(!is_permitted_termo_capacity(SignatoryCapacity::Other));
+        assert!(!is_management_capacity(SignatoryCapacity::Other));
+    }
+
+    #[test]
+    fn an_other_signatory_needs_a_note_but_then_is_admitted() {
+        let mut termo = draft_abertura();
+        // Gerente (clears the floor) plus an out-of-list co-signer with no note yet.
+        termo.signatories = vec![
+            TermoSignatorySlot::required("Gerente", SignatoryCapacity::Manager, 0),
+            TermoSignatorySlot::required("Liquidatária", SignatoryCapacity::Other, 1),
+        ];
+        assert!(matches!(
+            termo.advance_to_signing("csc-termo-abertura", now()),
+            Err(TermoError::MissingSignatoryCapacityNote { .. })
+        ));
+        // With the required note it is admitted (the gerente still clears the floor).
+        termo.signatories[1] =
+            TermoSignatorySlot::required("Liquidatária", SignatoryCapacity::Other, 1)
+                .with_capacity_note("liquidatária judicial");
+        termo
+            .advance_to_signing("csc-termo-abertura", now())
+            .unwrap();
+    }
+
+    #[test]
+    fn a_blank_other_note_is_rejected() {
+        let mut termo = draft_abertura();
+        termo.signatories = vec![
+            TermoSignatorySlot::required("Gerente", SignatoryCapacity::Manager, 0),
+            TermoSignatorySlot::required("Outra", SignatoryCapacity::Other, 1)
+                .with_capacity_note("   "),
+        ];
+        assert!(matches!(
+            termo.advance_to_signing("csc-termo-abertura", now()),
+            Err(TermoError::MissingSignatoryCapacityNote { .. })
+        ));
+    }
+
+    #[test]
+    fn a_note_on_a_modelled_capacity_is_rejected() {
+        // The structured capacity stays a closed set: a stray note is an error, not silently
+        // dropped.
+        let mut termo = draft_abertura();
+        termo.signatories = vec![
+            TermoSignatorySlot::required("Gerente", SignatoryCapacity::Manager, 0)
+                .with_capacity_note("não aplicável"),
+        ];
+        assert!(matches!(
+            termo.advance_to_signing("csc-termo-abertura", now()),
+            Err(TermoError::UnexpectedSignatoryCapacityNote { .. })
+        ));
+    }
+
+    #[test]
+    fn an_other_only_slate_counts_as_a_signatory_but_never_clears_the_management_floor() {
+        let mut termo = draft_abertura();
+        termo.signatories = vec![
+            TermoSignatorySlot::required("Liquidatária", SignatoryCapacity::Other, 0)
+                .with_capacity_note("liquidatária judicial"),
+        ];
+        // It is a signatory (not NoSignatories / NoRequiredSlots) and passes the slot check…
+        assert_eq!(termo.required_slot_count(), 1);
+        assert!(!termo.satisfies_management_floor());
+        // …but a book cannot be opened on an out-of-list signatory alone.
+        assert!(matches!(
+            termo.advance_to_signing("csc-termo-abertura", now()),
+            Err(TermoError::ManagementFloorNotSatisfiable { .. })
+        ));
+    }
+
+    #[test]
+    fn the_other_note_is_projected_into_the_payload_as_assurance() {
+        let mut termo = draft_abertura();
+        termo.signatories = vec![
+            TermoSignatorySlot::required("Gerente", SignatoryCapacity::Manager, 0),
+            TermoSignatorySlot::required("Liquidatária", SignatoryCapacity::Other, 1)
+                .with_capacity_note("liquidatária judicial"),
+        ];
+        termo
+            .advance_to_signing("csc-termo-abertura", now())
+            .unwrap();
+        let g = termo.signatories[0].id;
+        let o = termo.signatories[1].id;
+        termo.mark_slot_signed(g, None, now()).unwrap();
+        termo.mark_slot_signed(o, None, now()).unwrap();
+        termo.seal(now()).unwrap();
+
+        let payload = termo
+            .project_abertura(
+                "Encosto Estratégico Lda",
+                "503004642",
+                "Lisboa",
+                crate::book::NumberingScheme::Sequential,
+            )
+            .unwrap();
+        let declared = payload
+            .required_signatory_records
+            .iter()
+            .find(|r| r.capacity == Some(SignatoryCapacity::Other))
+            .expect("the Other declared record survives");
+        assert_eq!(
+            declared.capacity_note.as_deref(),
+            Some("liquidatária judicial")
+        );
+        let collected = payload
+            .collected_signatures
+            .iter()
+            .find(|s| s.capacity == SignatoryCapacity::Other)
+            .expect("the Other collected signature survives");
+        assert_eq!(
+            collected.capacity_note.as_deref(),
+            Some("liquidatária judicial")
+        );
+    }
+
+    #[test]
+    fn predecessor_note_is_length_bounded() {
+        let mut termo = draft_abertura();
+        termo.fields.predecessor_note = Some("x".repeat(MAX_TERMO_TEXT_CHARS + 1));
+        assert!(matches!(
+            termo.validate(),
+            Err(TermoError::TextTooLong {
+                field: "predecessor_note",
+                ..
+            })
+        ));
+        termo.fields.predecessor_note = Some("Livro em papel n.º 3, arquivo físico".into());
+        termo.validate().unwrap();
     }
 
     // ---- the gerência floor (PRODUCT, over a LAW allow-list) ----

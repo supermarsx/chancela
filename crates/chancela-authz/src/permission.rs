@@ -101,6 +101,19 @@ pub enum Permission {
     LedgerRead,
     #[serde(rename = "ledger.recover")]
     LedgerRecover,
+    /// Re-anchor the ledger during recovery (`POST /v1/ledger/recovery/reanchor`, step-up). Split
+    /// (t27) off the broad `ledger.recover`: re-anchoring is a *mutating* recovery action, so it
+    /// gets its own verb while `ledger.recover` keeps the read-only recovery-evidence surface
+    /// (recovery drills, sync handoff preflight) it also gates. Granted by the grandfather
+    /// migration to every prior `ledger.recover` holder, so the split strips no authority.
+    #[serde(rename = "ledger.reanchor")]
+    LedgerReanchor,
+    /// Restore the ledger from a recovery bundle (`POST /v1/ledger/recovery/restore` and its
+    /// preflight, step-up). Split (t27) off `ledger.recover` alongside `ledger.reanchor`: the
+    /// mutating restore is its own authority, while read-only recovery evidence stays on
+    /// `ledger.recover`. Grandfathered to every prior `ledger.recover` holder.
+    #[serde(rename = "ledger.restore")]
+    LedgerRestore,
 
     // --- Data ---
     #[serde(rename = "data.backup")]
@@ -111,6 +124,23 @@ pub enum Permission {
     DataWipe,
     #[serde(rename = "data.start_over")]
     DataStartOver,
+
+    // --- Privacy & retention (GDPR / data protection) ---
+    /// Administer privacy / data-protection controls: the GDPR record families (processors, DPIAs,
+    /// the DPIA template, breach playbooks, transfer controls) **and** the data-subject-rights
+    /// surface (export, DSR requests, rectification, restriction, erasure). Split (t27) off the
+    /// `user.manage` | `settings.manage` pair these used to share, so privacy administration is its
+    /// own authority instead of riding user- or settings-management. Erasure keeps its step-up.
+    /// Grandfathered to every prior `user.manage` **or** `settings.manage` holder.
+    #[serde(rename = "privacy.manage")]
+    PrivacyManage,
+    /// Administer GDPR **retention** policies and their lifecycle (retention policies, due
+    /// candidates, executions, dry-run, resolutions). Split (t27) off the same
+    /// `user.manage` | `settings.manage` pair. Deliberately distinct from privacy records
+    /// (`privacy.manage`) and from notification-housekeeping intervals, which stay on
+    /// `settings.manage`. Grandfathered to every prior `user.manage` **or** `settings.manage` holder.
+    #[serde(rename = "retention.manage")]
+    RetentionManage,
 
     // --- Settings ---
     #[serde(rename = "settings.read")]
@@ -167,7 +197,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 45] = [
+    pub const ALL: [Permission; 49] = [
         Permission::TenantRead,
         Permission::TenantCreate,
         Permission::TenantAdmin,
@@ -194,10 +224,14 @@ impl Permission {
         Permission::TemplateManage,
         Permission::LedgerRead,
         Permission::LedgerRecover,
+        Permission::LedgerReanchor,
+        Permission::LedgerRestore,
         Permission::DataBackup,
         Permission::DataExport,
         Permission::DataWipe,
         Permission::DataStartOver,
+        Permission::PrivacyManage,
+        Permission::RetentionManage,
         Permission::SettingsRead,
         Permission::SettingsManage,
         Permission::PlatformLogsWrite,
@@ -240,7 +274,7 @@ impl Permission {
     ///
     /// Owner is excluded by `protected`, not by this list — it holds every permission anyway, but
     /// the refusal names protection so the message is honest about *why*.
-    pub const SELF_SIGNUP_FORBIDDEN: [Permission; 9] = [
+    pub const SELF_SIGNUP_FORBIDDEN: [Permission; 13] = [
         Permission::UserManage,
         Permission::RoleManage,
         Permission::RoleAssign,
@@ -250,6 +284,12 @@ impl Permission {
         Permission::DataStartOver,
         Permission::BookStartOver,
         Permission::LegalHoldManage,
+        // t27: each new verb is a privileged administrative authority (privacy/retention
+        // administration, ledger re-anchor/restore), so none may ride a self-signup default role.
+        Permission::PrivacyManage,
+        Permission::RetentionManage,
+        Permission::LedgerReanchor,
+        Permission::LedgerRestore,
     ];
 
     /// The stable dotted id (matches the serde representation).
@@ -282,10 +322,14 @@ impl Permission {
             Permission::TemplateManage => "template.manage",
             Permission::LedgerRead => "ledger.read",
             Permission::LedgerRecover => "ledger.recover",
+            Permission::LedgerReanchor => "ledger.reanchor",
+            Permission::LedgerRestore => "ledger.restore",
             Permission::DataBackup => "data.backup",
             Permission::DataExport => "data.export",
             Permission::DataWipe => "data.wipe",
             Permission::DataStartOver => "data.start_over",
+            Permission::PrivacyManage => "privacy.manage",
+            Permission::RetentionManage => "retention.manage",
             Permission::SettingsRead => "settings.read",
             Permission::SettingsManage => "settings.manage",
             Permission::PlatformLogsWrite => "platform.logs.write",
@@ -371,10 +415,14 @@ mod tests {
                 | Permission::TemplateManage
                 | Permission::LedgerRead
                 | Permission::LedgerRecover
+                | Permission::LedgerReanchor
+                | Permission::LedgerRestore
                 | Permission::DataBackup
                 | Permission::DataExport
                 | Permission::DataWipe
                 | Permission::DataStartOver
+                | Permission::PrivacyManage
+                | Permission::RetentionManage
                 | Permission::SettingsRead
                 | Permission::SettingsManage
                 | Permission::PlatformLogsWrite
@@ -421,10 +469,14 @@ mod tests {
             Permission::TemplateManage,
             Permission::LedgerRead,
             Permission::LedgerRecover,
+            Permission::LedgerReanchor,
+            Permission::LedgerRestore,
             Permission::DataBackup,
             Permission::DataExport,
             Permission::DataWipe,
             Permission::DataStartOver,
+            Permission::PrivacyManage,
+            Permission::RetentionManage,
             Permission::SettingsRead,
             Permission::SettingsManage,
             Permission::PlatformLogsWrite,
@@ -540,6 +592,39 @@ mod tests {
             assert!(Permission::ALL.contains(&p), "{p} missing from ALL");
             // Tenant verbs are ordinary (delegable) authorities, not RBAC meta.
             assert!(!p.is_meta(), "{p} must not be a meta permission");
+            let json = serde_json::to_string(&p).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Permission>(&json).unwrap(),
+                p,
+                "{p} does not round-trip"
+            );
+        }
+    }
+
+    /// t27: the four verbs split off `user.manage`/`settings.manage`/`ledger.recover`. Their dotted
+    /// ids are the wire/on-disk form the route classification, the web gates and the on-disk
+    /// `roles.json` migration all key off — freeze them here so a rename is a deliberate, breaking
+    /// change and not a silent one. They are ordinary (delegable) authorities, not RBAC meta, and
+    /// each is on the self-signup ceiling because each is a privileged administrative authority.
+    #[test]
+    fn t27_split_verbs_have_stable_dotted_ids_and_are_forbidden_to_signup() {
+        assert_eq!(Permission::PrivacyManage.as_str(), "privacy.manage");
+        assert_eq!(Permission::RetentionManage.as_str(), "retention.manage");
+        assert_eq!(Permission::LedgerReanchor.as_str(), "ledger.reanchor");
+        assert_eq!(Permission::LedgerRestore.as_str(), "ledger.restore");
+
+        for p in [
+            Permission::PrivacyManage,
+            Permission::RetentionManage,
+            Permission::LedgerReanchor,
+            Permission::LedgerRestore,
+        ] {
+            assert!(Permission::ALL.contains(&p), "{p} missing from ALL");
+            assert!(!p.is_meta(), "{p} must not be a meta permission");
+            assert!(
+                Permission::SELF_SIGNUP_FORBIDDEN.contains(&p),
+                "{p} is privileged and must be forbidden to a self-signup default role"
+            );
             let json = serde_json::to_string(&p).unwrap();
             assert_eq!(
                 serde_json::from_str::<Permission>(&json).unwrap(),

@@ -25,7 +25,7 @@
     },
     {
       "kind": "Paragraph",
-      "template": "As atas serão numeradas de forma sequencial e integram a cadeia de registo desta escrituração digital, permitindo verificar a sua autenticidade e detetar qualquer adulteração.{% if numbering_scheme == 'LooseLeaf' %} Em regime de folhas soltas, todas as folhas são numeradas e encadeadas entre si, nos termos do artigo 63.º do Código das Sociedades Comerciais.{% endif %}"
+      "template": "As atas serão numeradas de forma sequencial e integram a cadeia de registo desta escrituração digital, permitindo verificar a sua autenticidade e detetar qualquer adulteração.{% if numbering_scheme == 'LooseLeaf' %} Em regime de folhas soltas, todas as folhas são numeradas e encadeadas entre si, nos termos do artigo 31.º, n.º 2, do Código Comercial.{% endif %}"
     },
     { "kind": "Rule" },
     {
@@ -33,6 +33,14 @@
       "source": "required_signatories",
       "role": "{{ role }}",
       "name": "{{ name }}"
+    }
+  ],
+  "default_body": [
+    {
+      "text": "O presente livro destina-se ao registo das atas do órgão social a que respeita e conterá as atas lavradas e numeradas sequencialmente, nos termos do artigo 63.º do Código das Sociedades Comerciais."
+    },
+    {
+      "text": "As atas integram a cadeia de registo desta escrituração digital, permitindo verificar a sua autenticidade e detetar qualquer adulteração. Em regime de folhas soltas, todas as folhas são numeradas e encadeadas entre si, nos termos do artigo 31.º, n.º 2, do Código Comercial."
     }
   ]
 }

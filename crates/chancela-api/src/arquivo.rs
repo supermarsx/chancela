@@ -1387,6 +1387,8 @@ fn book_kind_label(kind: BookKind) -> &'static str {
         BookKind::GerenciaAdministracao => "Livro da gerencia/administracao",
         BookKind::ConselhoFiscal => "Livro do conselho fiscal",
         BookKind::Condominio => "Livro do condominio",
+        // Unmodelled organ; the operator's custom label rides `Book::kind_label`.
+        BookKind::Other => "Outro tipo de livro",
     }
 }
 

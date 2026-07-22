@@ -28,6 +28,10 @@ use chancela_core::book::{BookId, TermoDeAbertura};
 use chancela_core::book::{ClosingReason, TermoSignatory};
 #[cfg(test)]
 use chancela_core::entity::EntityId;
+use chancela_core::termo::{
+    ClauseOrigin, TermoClause, TermoCompletionPolicy, TermoCompletionSummary, TermoFields,
+    TermoInstrument, TermoKind, TermoSignatorySlot, TermoState,
+};
 use chancela_core::{
     Act, ActBody, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
     Block, BodyFormat, Book, BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient,
@@ -562,6 +566,13 @@ pub struct TermoSignatoryView {
     pub name: String,
     #[serde(default, alias = "role")]
     pub capacity: Option<SignatoryCapacity>,
+    /// Free-text qualidade note carried when `capacity` is [`SignatoryCapacity::Other`] (D1).
+    ///
+    /// **`ASSURANCE`.** States what an out-of-list qualidade actually is; never asserted as a
+    /// permitted legal capacity. `skip`-when-`None` so a record without it serializes exactly as
+    /// before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity_note: Option<String>,
     #[serde(default)]
     pub email: Option<String>,
 }
@@ -571,6 +582,7 @@ impl From<&TermoSignatory> for TermoSignatoryView {
         TermoSignatoryView {
             name: s.name.clone(),
             capacity: s.capacity,
+            capacity_note: s.capacity_note.clone(),
             email: s.email.clone(),
         }
     }
@@ -581,9 +593,231 @@ impl TermoSignatoryView {
         TermoSignatoryView {
             name: redacted(),
             capacity: None,
+            capacity_note: None,
             email: None,
         }
     }
+}
+
+/// Trim a free-text qualidade note down to an assurance value: whitespace-only ⇒ `None`.
+///
+/// The **legal** gate (an [`SignatoryCapacity::Other`] signatory *requires* a note; a note on a
+/// modeled capacity is *unexpected*) lives in `chancela-core`'s termo validation, which runs at
+/// open/freeze. Here we only canonicalize the raw wire string.
+pub(crate) fn normalize_capacity_note(note: Option<String>) -> Option<String> {
+    note.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty())
+}
+
+// --- Termo de abertura as its own signable instrument (two-phase flow, t23) ------------------
+
+/// Wire view of one fillable clause of a termo body.
+#[derive(Debug, Clone, Serialize)]
+pub struct TermoClauseView {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heading: Option<String>,
+    pub text: String,
+    pub origin: ClauseOrigin,
+}
+
+impl From<&TermoClause> for TermoClauseView {
+    fn from(c: &TermoClause) -> Self {
+        TermoClauseView {
+            id: c.id.to_string(),
+            heading: c.heading.clone(),
+            text: c.text.clone(),
+            origin: c.origin,
+        }
+    }
+}
+
+/// Wire view of a termo signatory *slot*: unlike [`TermoSignatoryView`] (a declared name), a slot
+/// has a required capacity and records whether a signature was actually collected.
+#[derive(Debug, Clone, Serialize)]
+pub struct TermoSlotView {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    pub capacity: SignatoryCapacity,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capacity_note: Option<String>,
+    pub required: bool,
+    pub order: u16,
+    pub signed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_id: Option<String>,
+}
+
+impl From<&TermoSignatorySlot> for TermoSlotView {
+    fn from(s: &TermoSignatorySlot) -> Self {
+        TermoSlotView {
+            id: s.id.to_string(),
+            name: s.name.clone(),
+            email: s.email.clone(),
+            capacity: s.capacity,
+            capacity_note: s.capacity_note.clone(),
+            required: s.required,
+            order: s.order,
+            signed: s.signed,
+            signed_at: s.signed_at.and_then(|t| t.format(&Rfc3339).ok()),
+            signature_id: s.signature_id.map(|id| id.to_string()),
+        }
+    }
+}
+
+/// Wire view of the non-body fillable termo fields (dates rendered as ISO strings, per §2.1).
+#[derive(Debug, Clone, Serialize)]
+pub struct TermoFieldsView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub book_number: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub place: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_capacity: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub predecessor_note: Option<String>,
+}
+
+impl From<&TermoFields> for TermoFieldsView {
+    fn from(f: &TermoFields) -> Self {
+        TermoFieldsView {
+            book_number: f.book_number,
+            place: f.place.clone(),
+            page_capacity: f.page_capacity,
+            purpose: f.purpose.clone(),
+            instrument_date: f.instrument_date.map(format_date),
+            predecessor_note: f.predecessor_note.clone(),
+        }
+    }
+}
+
+/// Read view of a termo instrument in any state. Preserves the collected-vs-declared distinction
+/// the domain keeps: `declared_signatories` are names on the draft; `collected_signatures` are the
+/// signatures actually gathered (empty for a legacy or one-shot termo).
+#[derive(Debug, Clone, Serialize)]
+pub struct TermoInstrumentView {
+    pub id: String,
+    pub book_id: String,
+    pub kind: TermoKind,
+    pub state: TermoState,
+    pub title: String,
+    pub body: Vec<TermoClauseView>,
+    pub fields: TermoFieldsView,
+    pub signatories: Vec<TermoSlotView>,
+    pub completion_policy: TermoCompletionPolicy,
+    pub completion: TermoCompletionSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_id: Option<String>,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_started_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sealed_at: Option<String>,
+    pub declared_signatories: Vec<TermoSignatoryView>,
+}
+
+impl From<&TermoInstrument> for TermoInstrumentView {
+    fn from(t: &TermoInstrument) -> Self {
+        TermoInstrumentView {
+            id: t.id.to_string(),
+            book_id: t.book_id.to_string(),
+            kind: t.kind,
+            state: t.state,
+            title: t.title.clone(),
+            body: t.body.iter().map(TermoClauseView::from).collect(),
+            fields: TermoFieldsView::from(&t.fields),
+            signatories: t.signatories.iter().map(TermoSlotView::from).collect(),
+            completion_policy: t.completion_policy,
+            completion: t.completion_summary(),
+            template_id: t.template_id.clone(),
+            created_at: t.created_at.format(&Rfc3339).unwrap_or_default(),
+            signing_started_at: t.signing_started_at.and_then(|d| d.format(&Rfc3339).ok()),
+            sealed_at: t.sealed_at.and_then(|d| d.format(&Rfc3339).ok()),
+            declared_signatories: t
+                .declared_signatory_records()
+                .iter()
+                .map(TermoSignatoryView::from)
+                .collect(),
+        }
+    }
+}
+
+/// A request to add/replace a signatory slot on a termo draft (PATCH). Mirrors
+/// [`TermoSignatorySlot`], but the system-managed collection fields are never accepted.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TermoSlotInput {
+    pub name: String,
+    #[serde(default)]
+    pub email: Option<String>,
+    pub capacity: SignatoryCapacity,
+    #[serde(default)]
+    pub capacity_note: Option<String>,
+    #[serde(default = "default_true")]
+    pub required: bool,
+    pub order: u16,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// A clause a PATCH sets on the body. `id` is optional (a new clause mints one).
+#[derive(Debug, Clone, Deserialize)]
+pub struct TermoClauseInput {
+    #[serde(default)]
+    pub heading: Option<String>,
+    pub text: String,
+}
+
+/// Body of `PATCH /v1/books/{id}/termo/abertura`. Every field is optional; absent fields are left
+/// unchanged. Rejected with `409` once the termo has left `Draft`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PatchTermoAbertura {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub body: Option<Vec<TermoClauseInput>>,
+    #[serde(default)]
+    pub book_number: Option<u32>,
+    #[serde(default)]
+    pub place: Option<String>,
+    #[serde(default)]
+    pub page_capacity: Option<u32>,
+    #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
+    pub opening_date: Option<String>,
+    #[serde(default)]
+    pub predecessor_note: Option<String>,
+    #[serde(default)]
+    pub signatories: Option<Vec<TermoSlotInput>>,
+    #[serde(default)]
+    pub completion_policy: Option<TermoCompletionPolicy>,
+}
+
+/// Body of `POST /v1/books/{id}/termo/abertura/sign`: record that a slot signed. `signature_id`
+/// references the collected signature artifact (from the signing pipeline); tests inject it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SignTermoSlot {
+    pub slot_id: Uuid,
+    #[serde(default)]
+    pub signature_id: Option<Uuid>,
+}
+
+/// Body of `POST /v1/books/{id}/termo/abertura/open`: seal the signed termo and open the book.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenBookFromTermo {
+    #[serde(default = "default_numbering")]
+    pub numbering_scheme: NumberingScheme,
+    #[serde(default = "default_actor")]
+    pub actor: String,
 }
 
 fn termo_signatory_records(
@@ -619,6 +853,7 @@ pub(crate) fn normalize_termo_signatories(
             TermoSignatoryInput::Structured(value) => TermoSignatory {
                 name: value.name.trim().to_owned(),
                 capacity: value.capacity,
+                capacity_note: normalize_capacity_note(value.capacity_note),
                 email: crate::email::normalize_optional_email(
                     value.email,
                     "required_signatories.email",
@@ -636,7 +871,8 @@ pub(crate) fn normalize_termo_signatories(
     Ok(out)
 }
 
-/// Body of `POST /v1/books` (create + open in one step, WFL-10/11).
+/// Body of `POST /v1/books` (create + open in one step, WFL-10/11; or, with `one_shot: false`,
+/// create a `Created` book + a `Draft` termo de abertura for the two-phase flow — D2/t23).
 #[derive(Deserialize)]
 pub struct CreateBook {
     pub entity_id: Uuid,
@@ -647,8 +883,26 @@ pub struct CreateBook {
     pub opening_date: String,
     pub required_signatories: Vec<TermoSignatoryInput>,
     pub predecessor: Option<Uuid>,
+    /// D5 — free-text reference to a paper/legacy predecessor book not in the system. Assurance
+    /// only; never a substitute for the [`Self::predecessor`] id link.
+    #[serde(default)]
+    pub predecessor_note: Option<String>,
+    /// D3 — operator's custom label, **required** when `kind` is [`BookKind::Other`] and rejected
+    /// otherwise. Assurance; never asserted as a legal book class.
+    #[serde(default)]
+    pub kind_label: Option<String>,
+    /// D2 — when `true` (the default, preserving today's behaviour byte-for-byte) the book is
+    /// created **and opened** in one commit with a static termo. When `false`, only a `Created`
+    /// book plus a `Draft` [`chancela_core::termo::TermoInstrument`] are minted; nothing enters the
+    /// hash chain until the termo is filled, signed and the book is explicitly opened.
+    #[serde(default = "default_one_shot")]
+    pub one_shot: bool,
     #[serde(default = "default_actor")]
     pub actor: String,
+}
+
+fn default_one_shot() -> bool {
+    true
 }
 
 /// Body of `POST /v1/books/{id}/close` (WFL-13).
@@ -3826,11 +4080,13 @@ mod tests {
                 TermoSignatory {
                     name: "Amélia Marques".to_owned(),
                     capacity: Some(SignatoryCapacity::Administrator),
+                    capacity_note: None,
                     email: Some("amelia@example.pt".to_owned()),
                 },
                 TermoSignatory {
                     name: "Rui Nunes".to_owned(),
                     capacity: None,
+                    capacity_note: None,
                     email: None,
                 },
             ],
@@ -3880,6 +4136,7 @@ mod tests {
             Some(vec![TermoSignatoryView {
                 name: "Administrador".to_owned(),
                 capacity: None,
+                capacity_note: None,
                 email: None,
             }])
         );
@@ -3911,6 +4168,7 @@ mod tests {
             TermoSignatory {
                 name: "Amélia Marques".to_owned(),
                 capacity: Some(SignatoryCapacity::Chair),
+                capacity_note: None,
                 email: Some("amelia@example.pt".to_owned()),
             }
         );
@@ -3924,6 +4182,7 @@ mod tests {
             vec![TermoSignatoryInput::Structured(TermoSignatoryView {
                 name: " ".to_owned(),
                 capacity: Some(SignatoryCapacity::Chair),
+                capacity_note: None,
                 email: None,
             })],
             "required_signatories",
@@ -3934,6 +4193,7 @@ mod tests {
             vec![TermoSignatoryInput::Structured(TermoSignatoryView {
                 name: "Amélia Marques".to_owned(),
                 capacity: None,
+                capacity_note: None,
                 email: Some("not-an-email".to_owned()),
             })],
             "required_signatories",

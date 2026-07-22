@@ -146,6 +146,12 @@ mod email;
 pub(crate) mod email_locales;
 pub(crate) mod email_template;
 mod entities;
+/// Server env-override registry (t14). `pub` so `chancela-server/main.rs` can call
+/// `chancela_api::env_overrides::apply_from_data_dir` before any other thread reads env.
+pub mod env_overrides;
+/// `GET`/`PUT /v1/platform/env` handler (t14): the RBAC / validation / narrow-only / ack-gate /
+/// audit enforcement over [`env_overrides`].
+mod env_overrides_handler;
 mod error;
 mod external_signing;
 mod external_validator_evidence;
@@ -185,6 +191,7 @@ mod settings;
 mod sidecar_store;
 mod signature;
 mod signature_pkcs12_stored;
+mod termo;
 // t95 P1-A: self-signup, invitations, and the role-edit call site of the self-signup default-role
 // ceiling. `pub` so the adversarial suite can drive the invite grant table directly.
 pub mod signup;
@@ -520,6 +527,12 @@ pub struct AppState {
     /// Per-actor notification triage for dashboard-derived notification ids. File-backed states load
     /// and write this through `notification-triage.json`; the dashboard generation itself is unchanged.
     pub notification_triage: Arc<RwLock<notifications::NotificationTriageTable>>,
+    /// How long a *dismissed* triage entry is retained before it is pruned (t17). `None` disables
+    /// time-based retention (the count cap still applies). `Default` is `None`; the running server
+    /// resolves it from `CHANCELA_NOTIFICATION_DISMISS_RETENTION_DAYS` (default 120 days) in
+    /// [`AppState::try_from_env`]. Used by the list read-filter and the on-write prune; the on-load
+    /// prune resolves the same env var directly in `notifications::load_notification_triage`.
+    pub notification_dismiss_retention: Option<time::Duration>,
     /// Where `privacy-processors.json` is persisted, or `None` for in-memory registers.
     pub processor_records_path: Option<Arc<PathBuf>>,
     /// Where `privacy-dpias.json` is persisted, or `None` for in-memory registers.
@@ -863,10 +876,28 @@ impl AppState {
         let roles_path = dir.join(roles::ROLES_FILE);
         let mut roles_catalog = roles::load_roles(&roles_path).unwrap_or_default();
         let retired_any = roles::retire_merged_roles(&mut roles_catalog);
-        if (roles::ensure_seeded_defaults(&mut roles_catalog) || retired_any)
+        let seeded = roles::ensure_seeded_defaults(&mut roles_catalog);
+        // t27: grandfather the verb split onto operator-authored roles so a role holding a broad
+        // parent (e.g. `settings.manage`) keeps its privacy/retention reach after the split.
+        // Version-guarded by a marker sidecar so this one-time GRANT runs exactly once and never
+        // re-adds a child verb an operator later deliberately removed.
+        let role_migrations_path = dir.join(roles::ROLE_MIGRATIONS_FILE);
+        let mut role_migrations = roles::load_role_migration_state(&role_migrations_path);
+        let migration =
+            roles::reconcile_split_verb_grandfather(&mut roles_catalog, &mut role_migrations);
+        if (seeded || retired_any || migration.catalog_changed)
             && let Err(e) = roles::write_roles_atomic(&roles_path, &roles_catalog)
         {
             eprintln!("warning: failed to seed {} ({e})", roles_path.display());
+        }
+        if migration.marker_changed
+            && let Err(e) =
+                roles::write_role_migration_state_atomic(&role_migrations_path, &role_migrations)
+        {
+            eprintln!(
+                "warning: failed to record role migrations to {} ({e})",
+                role_migrations_path.display()
+            );
         }
         let retired_holders_moved = roles::migrate_retired_roles(&mut loaded_users);
         if (roles::migrate_roles(&mut loaded_users) || retired_holders_moved)
@@ -1684,6 +1715,7 @@ impl AppState {
         // the per-IP rate limiter is ON by default here, and the absolute session cap is applied.
         state.rate_limit = rate_limit_config_from_env();
         state.session_max_lifetime = session_max_lifetime_from_env();
+        state.notification_dismiss_retention = notifications::notification_dismiss_retention();
         if state.persist_path.is_none() {
             state.cluster_shared = cluster_shared_state::SharedClusterState::from_env();
         }
@@ -1918,6 +1950,22 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/books/{id}", get(books::get_book))
         .route("/v1/books/{id}/close", post(books::close_book))
         .route("/v1/books/{id}/acts", get(books::list_book_acts))
+        .route(
+            "/v1/books/{id}/termo/abertura",
+            get(termo::get_abertura).patch(termo::patch_abertura),
+        )
+        .route(
+            "/v1/books/{id}/termo/abertura/advance",
+            post(termo::advance_abertura),
+        )
+        .route(
+            "/v1/books/{id}/termo/abertura/sign",
+            post(termo::sign_abertura),
+        )
+        .route(
+            "/v1/books/{id}/termo/abertura/open",
+            post(termo::open_from_termo),
+        )
         .route(
             "/v1/books/paper-import/validate",
             post(paper_import::validate_paper_book_import),
@@ -2421,6 +2469,11 @@ pub fn router(state: AppState) -> Router {
             post(smtp_settings::resend_email_delivery),
         )
         .route("/v1/platform/services", get(platform_ops::list_services))
+        .route(
+            "/v1/platform/env",
+            get(env_overrides_handler::get_server_env)
+                .put(env_overrides_handler::put_server_env),
+        )
         .route("/v1/platform/logs", get(platform_logs::list_logs))
         .route(
             "/v1/platform/logs/forwarded",
@@ -7479,6 +7532,259 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(ctype.starts_with("application/pdf"), "content-type={ctype}");
         assert!(bytes.starts_with(b"%PDF-"));
+    }
+
+    /// Seed a store-backed state with an entity and return `(state, token, entity_id, tmp)`. The
+    /// caller must keep `tmp` alive: dropping it deletes the store's data directory.
+    async fn state_with_entity() -> (AppState, String, String, TempDir) {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let token = auth_token(&state).await;
+        let (status, entity) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Encosto Estratégico, S.A.",
+                        "nipc": "503004642",
+                        "seat": "Lisboa",
+                        "kind": "SociedadeAnonima",
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{entity}");
+        let entity_id = entity["id"].as_str().expect("entity id").to_owned();
+        (state, token, entity_id, tmp)
+    }
+
+    #[tokio::test]
+    async fn two_phase_abertura_drafts_signs_then_open_fails_closed_without_real_signatures() {
+        let (state, token, entity_id, _tmp) = state_with_entity().await;
+
+        // Two-phase create: a `Created` book + a `Draft` termo, nothing on the chain yet.
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": [],
+                        "one_shot": false,
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{book}");
+        assert_eq!(book["state"], "Created");
+        let book_id = book["id"].as_str().expect("book id").to_owned();
+
+        // No genesis before the explicit open.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        assert!(
+            !events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "book.opened"),
+            "no book.opened before the explicit open: {events}"
+        );
+
+        // The draft termo exists, its body seeded from the template `default_body`.
+        let (status, termo) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/books/{book_id}/termo/abertura")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        assert_eq!(termo["kind"], "Abertura");
+        assert_eq!(termo["state"], "Draft");
+        assert!(
+            !termo["body"].as_array().expect("body").is_empty(),
+            "seeded body: {termo}"
+        );
+
+        // PATCH: add a management signatory (clears the gerência floor) plus an out-of-list
+        // co-signer with the required assurance note (D1).
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                body_json(
+                    "PATCH",
+                    &format!("/v1/books/{book_id}/termo/abertura"),
+                    json!({
+                        "signatories": [
+                            {"name": "Amélia Marques", "capacity": "Manager", "order": 0},
+                            {"name": "Liquidatária", "capacity": "Other",
+                             "capacity_note": "liquidatária judicial", "order": 1},
+                        ],
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        let slot0 = termo["signatories"][0]["id"]
+            .as_str()
+            .expect("slot 0 id")
+            .to_owned();
+        let slot1 = termo["signatories"][1]["id"]
+            .as_str()
+            .expect("slot 1 id")
+            .to_owned();
+        assert_eq!(
+            termo["signatories"][1]["capacity_note"], "liquidatária judicial",
+            "the Other note round-trips as assurance: {termo}"
+        );
+
+        // Freeze for signing.
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/advance"),
+                    json!({}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        assert_eq!(termo["state"], "Signing");
+
+        // Sequential order: slot 1 cannot sign before the earlier required slot 0.
+        let (status, _blocked) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/sign"),
+                    json!({"slot_id": slot1}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+
+        // Sign in order.
+        for slot in [&slot0, &slot1] {
+            let (status, _t) = send(
+                state.clone(),
+                with_session(
+                    post_json(
+                        &format!("/v1/books/{book_id}/termo/abertura/sign"),
+                        json!({"slot_id": slot}),
+                    ),
+                    &token,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+        }
+
+        // Open FAILS CLOSED: the slots carry only signature *references* (mark_slot_signed), not real
+        // cryptographic PAdES signatures over the termo PDF. The evidentiary guardrail refuses to seal
+        // a not-really-signed termo until real per-slot signing is wired (tracked follow-up).
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/open"),
+                    json!({"numbering_scheme": "Sequential"}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("not cryptographically signed"),
+            "fail-closed reason: {body}"
+        );
+
+        // The book stays Created and NOTHING entered the hash chain — no fake-signed seal.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        assert!(
+            !events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "book.opened"),
+            "no book.opened on a not-really-signed termo: {events}"
+        );
+        let (_, book) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/books/{book_id}")), &token),
+        )
+        .await;
+        assert_eq!(book["state"], "Created");
+        let (_, termo) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/books/{book_id}/termo/abertura")), &token),
+        )
+        .await;
+        assert_eq!(termo["state"], "Signing", "termo stays Signing, not fake-Sealed");
+    }
+
+    #[tokio::test]
+    async fn two_phase_advance_without_a_signatory_is_rejected() {
+        let (state, token, entity_id, _tmp) = state_with_entity().await;
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": [],
+                        "one_shot": false,
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let book_id = book["id"].as_str().expect("book id").to_owned();
+
+        // Freezing a termo with no signatory fails F6 (at-least-one-signatory).
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/advance"),
+                    json!({}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    }
+
+    #[tokio::test]
+    async fn one_shot_default_still_opens_in_one_step() {
+        // D2: an unchanged request (no `one_shot`) opens the book immediately, as before.
+        let (state, _entity, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let (status, book) = send(state, get(&format!("/v1/books/{book_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(book["state"], "Open");
     }
 
     #[tokio::test]

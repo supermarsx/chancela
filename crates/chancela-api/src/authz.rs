@@ -618,6 +618,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/books/{id}", RouteClass::Gated), // GET book.read@Book
     ("/v1/books/{id}/close", RouteClass::Gated), // POST book.close@Book
     ("/v1/books/{id}/acts", RouteClass::Gated), // GET book.read@Book
+    ("/v1/books/{id}/termo/abertura", RouteClass::Gated), // GET book.read@Book · PATCH book.open@Book
+    ("/v1/books/{id}/termo/abertura/advance", RouteClass::Gated), // POST book.open@Book (freeze)
+    ("/v1/books/{id}/termo/abertura/sign", RouteClass::Gated), // POST book.open@Book (collect signature)
+    ("/v1/books/{id}/termo/abertura/open", RouteClass::Gated), // POST book.open@Book (seal + open)
     ("/v1/books/paper-import/validate", RouteClass::Gated), // POST book.import@Global (read-only)
     ("/v1/books/paper-import", RouteClass::Gated), // GET/POST book.import@Global (list/preserve package)
     ("/v1/books/paper-import/{id}", RouteClass::Gated), // GET book.import@Global (metadata)
@@ -847,6 +851,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // POST settings.manage@Global (t108); re-issue of token mail is refused here and routed to user.invite
     ("/v1/platform/services", RouteClass::Gated),     // GET settings.read@Global
+    ("/v1/platform/env", RouteClass::Gated),          // GET settings.read@Global; PUT settings.manage@Global (t14)
     (
         "/v1/platform/services/{id}/actions/{action}",
         RouteClass::Gated,

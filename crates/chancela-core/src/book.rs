@@ -49,6 +49,14 @@ pub enum BookKind {
     ConselhoFiscal,
     /// Livro de atas do condomínio (DL 268/94).
     Condominio,
+    /// A book for an organ this vocabulary does not model.
+    ///
+    /// **`ASSURANCE`, additive.** A unit variant (so `BookKind` stays `Copy`); the operator's
+    /// custom label rides the sibling [`Book::kind_label`], never asserted as a legal book
+    /// class. Because the organ is unmodelled it has no defined one-book-per-organ uniqueness,
+    /// so WFL-14 does not apply to it — a decision enforced by the caller that creates books,
+    /// not by this enum. Old books deserialize unchanged; only new `Other` books carry it.
+    Other,
 }
 
 /// A book's lifecycle state (WFL-10 / DAT-04).
@@ -81,6 +89,13 @@ pub struct TermoSignatory {
     /// Capacity in which the person signs, when it maps to the modeled capacity enum.
     #[serde(default)]
     pub capacity: Option<SignatoryCapacity>,
+    /// Free-text quality note carried when `capacity` is [`SignatoryCapacity::Other`].
+    ///
+    /// **`ASSURANCE`.** Records what an out-of-list qualidade actually is; never asserted as a
+    /// permitted legal capacity. Append-only and `skip`-when-`None`, so a record without it
+    /// serializes byte-identically to before the field existed (genesis-digest safe).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity_note: Option<String>,
     /// Optional contact email for coordinating this signatory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
@@ -93,6 +108,7 @@ impl TermoSignatory {
         TermoSignatory {
             name: value.into(),
             capacity: None,
+            capacity_note: None,
             email: None,
         }
     }
@@ -100,9 +116,14 @@ impl TermoSignatory {
     /// Render a backward-compatible string for existing readers.
     #[must_use]
     pub fn legacy_label(&self) -> String {
-        match self.capacity {
-            Some(capacity) => format!("{} ({capacity:?})", self.name),
-            None => self.name.clone(),
+        match (self.capacity, self.capacity_note.as_deref()) {
+            // For an out-of-list quality the free-text note is more informative than the bare
+            // `Other`, so it labels the signatory instead.
+            (Some(SignatoryCapacity::Other), Some(note)) if !note.trim().is_empty() => {
+                format!("{} ({note})", self.name)
+            }
+            (Some(capacity), _) => format!("{} ({capacity:?})", self.name),
+            (None, _) => self.name.clone(),
         }
     }
 }
@@ -132,8 +153,15 @@ pub struct TermoCollectedSignature {
     pub slot_id: Uuid,
     /// Signatory name at the time of signing.
     pub name: String,
-    /// Capacity in which they signed (constrained to the CCom art. 31.º n.º 2 allow-list).
+    /// Capacity in which they signed (the CCom art. 31.º n.º 2 allow-list, or
+    /// [`SignatoryCapacity::Other`] with a `capacity_note`).
     pub capacity: SignatoryCapacity,
+    /// Free-text quality note carried when `capacity` is [`SignatoryCapacity::Other`].
+    ///
+    /// **`ASSURANCE`.** Append-only and `skip`-when-`None`, so a signature without it serializes
+    /// byte-identically to before the field existed (genesis-digest safe).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity_note: Option<String>,
     /// When the signature was collected.
     #[serde(with = "time::serde::rfc3339")]
     pub signed_at: OffsetDateTime,
@@ -357,6 +385,21 @@ pub struct Book {
     pub last_ata_number: u64,
     /// Predecessor book, when this book continues a full/closed one (WFL-13).
     pub predecessor: Option<BookId>,
+    /// D5 — a free-text reference to a **paper/legacy predecessor** not in the system.
+    ///
+    /// **`ASSURANCE`, additive.** Parallels [`Book::predecessor`] (the verifiable id link) for a
+    /// predecessor with no digital record; it never stands in for that link. `None` on every
+    /// book that predates the field. Not part of the genesis preimage (only the termo is).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predecessor_note: Option<String>,
+    /// D3 — the operator's custom label for a [`BookKind::Other`] book.
+    ///
+    /// **`ASSURANCE`, additive.** Required (non-empty) exactly when `kind` is `Other`, absent
+    /// otherwise — see [`Book::kind_label_is_consistent`]. Never asserted as a legal book class.
+    /// `None` on every modelled-kind book and every book that predates the field. Not part of
+    /// the genesis preimage (only the termo is).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind_label: Option<String>,
     /// Active legal hold, if retention-driven disposal is blocked for this book.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legal_hold: Option<LegalHold>,
@@ -401,6 +444,8 @@ impl Book {
             termo_encerramento: None,
             last_ata_number: 0,
             predecessor: None,
+            predecessor_note: None,
+            kind_label: None,
             legal_hold: None,
             book_number: None,
             // Deliberately `None`, not `Some(DEFAULT_PAGE_CAPACITY)`: a book gets a capacity
@@ -417,6 +462,31 @@ impl Book {
         let mut book = Book::new(entity_id, kind);
         book.predecessor = Some(predecessor);
         book
+    }
+
+    /// Create a book for an organ this vocabulary does not model (D3): [`BookKind::Other`] with
+    /// the operator's custom label. The label is an `ASSURANCE`, never a legal book class.
+    pub fn new_other(entity_id: EntityId, kind_label: impl Into<String>) -> Self {
+        let mut book = Book::new(entity_id, BookKind::Other);
+        book.kind_label = Some(kind_label.into());
+        book
+    }
+
+    /// Whether [`Book::kind_label`] is consistent with [`Book::kind`]: a non-empty label exactly
+    /// when the kind is [`BookKind::Other`], and no label otherwise.
+    ///
+    /// The invariant is stated here for callers (the API creates books) to enforce; construction
+    /// stays infallible, as it has always been.
+    #[must_use]
+    pub fn kind_label_is_consistent(&self) -> bool {
+        let has_label = self
+            .kind_label
+            .as_deref()
+            .is_some_and(|label| !label.trim().is_empty());
+        match self.kind {
+            BookKind::Other => has_label,
+            _ => !has_label,
+        }
     }
 
     /// Open the book with its termo de abertura (WFL-10/11).
@@ -602,6 +672,7 @@ mod tests {
             required_signatory_records: vec![TermoSignatory {
                 name: "Amélia Marques".into(),
                 capacity: Some(SignatoryCapacity::Chair),
+                capacity_note: None,
                 email: Some("amelia@example.pt".into()),
             }],
             ..TermoDeAbertura::default()
@@ -617,6 +688,7 @@ mod tests {
             required_signatory_records: vec![TermoSignatory {
                 name: "Rui Nunes".into(),
                 capacity: Some(SignatoryCapacity::Administrator),
+                capacity_note: None,
                 email: None,
             }],
             ..TermoDeEncerramento::default()
@@ -881,6 +953,7 @@ mod tests {
             slot_id: Uuid::nil(),
             name: "Amélia Marques".into(),
             capacity: SignatoryCapacity::Manager,
+            capacity_note: None,
             signed_at: datetime!(2026-07-19 10:00 UTC),
             signature_id: None,
         }];
@@ -1116,6 +1189,7 @@ mod tests {
         let record = TermoSignatory {
             name: "Amélia Marques".into(),
             capacity: Some(SignatoryCapacity::Administrator),
+            capacity_note: None,
             email: Some("amelia@example.pt".into()),
         };
 
@@ -1125,8 +1199,49 @@ mod tests {
             TermoSignatory {
                 name: "Administrador".into(),
                 capacity: None,
+                capacity_note: None,
                 email: None,
             }
+        );
+    }
+
+    #[test]
+    fn other_quality_labels_from_its_note() {
+        let record = TermoSignatory {
+            name: "Amélia Marques".into(),
+            capacity: Some(SignatoryCapacity::Other),
+            capacity_note: Some("liquidatária judicial".into()),
+            email: None,
+        };
+        // The free-text note is what labels an out-of-list quality, not the bare `Other`.
+        assert_eq!(
+            record.legacy_label(),
+            "Amélia Marques (liquidatária judicial)"
+        );
+    }
+
+    #[test]
+    fn other_kind_book_carries_a_consistent_label() {
+        let book = Book::new_other(
+            EntityId::new(),
+            "Livro de atas da comissão de trabalhadores",
+        );
+        assert_eq!(book.kind, BookKind::Other);
+        assert!(book.kind_label_is_consistent());
+        assert!(!book.kind_label.as_deref().unwrap_or_default().is_empty());
+
+        // A modelled kind must carry no label; an `Other` book must carry one.
+        let modelled = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        assert!(modelled.kind_label_is_consistent());
+        let mut stray = modelled;
+        stray.kind_label = Some("rótulo".into());
+        assert!(!stray.kind_label_is_consistent());
+        let mut unlabelled_other = Book::new(EntityId::new(), BookKind::Other);
+        assert!(!unlabelled_other.kind_label_is_consistent());
+        unlabelled_other.kind_label = Some("  ".into());
+        assert!(
+            !unlabelled_other.kind_label_is_consistent(),
+            "a blank label does not satisfy the Other invariant"
         );
     }
 }

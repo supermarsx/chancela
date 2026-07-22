@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use chancela_core::{
-    Act, ActId, AttendanceWeight, Attendee, Book, BookKind, Convening, ConveningRecipient,
+    Act, ActId, AttendanceWeight, Attendee, Book, BookId, BookKind, Convening, ConveningRecipient,
     DispatchChannel, Entity, EntityKind, LegalHold, MeetingChannel, Nipc, PresenceMode, SecondCall,
-    SignatoryCapacity,
+    SignatoryCapacity, TermoClause, TermoInstrument, TermoKind, TermoSignatorySlot, TermoState,
 };
 use chancela_ledger::{ChainId, Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
@@ -22,13 +22,12 @@ use chancela_store::{
     EraseTarget, GeneratedDocumentDispatchEvidenceUpsert, LedgerEventPageQuery,
     LedgerEventUpperBound, PaperBookOcrConversionDossierUpsert,
     PaperBookOcrConversionExecutionArtifactUpsert, Store, StoreError, StoreKeyRotationStatus,
-    StoreOpenOptions, StoredCredentialRecord, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
-    StoredEmailDelivery, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
-    StoredImportedDocumentMeta,
-    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
-    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
-    StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
-    StoredPaperBookOcrStatus,
+    StoreOpenOptions, StoredCredentialRecord, StoredDocument, StoredEmailDelivery, StoredFollowUp,
+    StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
+    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
+    StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
+    StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
+    StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
 };
 #[cfg(not(feature = "sqlcipher"))]
 use chancela_store::{StoreDatabaseFormat, StoreKeyConfigStatus, StoreKeyOpsPlan};
@@ -1557,8 +1556,10 @@ fn schema_version_is_current() {
     // edit of a shipped template cannot retroactively change what a past seal meant) landed as
     // schema v24; the outbound-message delivery record (`email_deliveries` — t108, so the outcome
     // of the only real mail the product sends is queryable rather than a discarded `Result`) landed
-    // as schema v25. A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 25);
+    // as schema v25; the draft persistence for the termo de abertura/encerramento as a first-class
+    // signable instrument (termo_instruments — t23, finishing t8-A's undelivered store leg) landed as
+    // schema v26. A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 26);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -3901,4 +3902,213 @@ fn email_delivery_round_trips_and_a_retry_appends_rather_than_overwrites() {
     // The bound is honoured.
     assert_eq!(store.email_deliveries(1).unwrap().len(), 1);
     assert!(store.email_delivery("nope").unwrap().is_none());
+}
+
+// --- termo instruments (schema v26, t23) ---------------------------------------------------------
+
+/// A fresh draft termo for `book_id`, seeded from the constructor (empty body, defaulted fields).
+fn sample_termo(book_id: BookId, kind: TermoKind, title: &str) -> TermoInstrument {
+    TermoInstrument::draft(
+        book_id,
+        kind,
+        title,
+        OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap(),
+    )
+}
+
+/// Read the `kind` scope column for a termo id straight out of SQLite, bypassing the json blob — so
+/// the test proves the broken-out column is actually populated, not just the serialized value.
+fn raw_termo_kind(dir: &Path, id: &str) -> Option<String> {
+    let raw = rusqlite::Connection::open(dir.join("chancela.db")).unwrap();
+    raw.query_row(
+        "SELECT kind FROM termo_instruments WHERE id = ?1",
+        [id],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+}
+
+#[test]
+fn termo_instrument_round_trips_upsert_load_and_delete() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let entity = sample_entity("Encosto Estrategico Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let termo = sample_termo(book.id, TermoKind::Abertura, "Termo de abertura");
+
+    // Absent before it is written.
+    assert_eq!(store.load_termo_instrument(termo.id).unwrap(), None);
+
+    store
+        .persist(|tx| tx.upsert_termo_instrument(&termo))
+        .expect("upsert the draft termo");
+
+    // Loads back byte-for-byte through the json column …
+    assert_eq!(
+        store.load_termo_instrument(termo.id).unwrap(),
+        Some(termo.clone()),
+        "the draft termo did not round-trip through the json column"
+    );
+    // … and the broken-out kind column carries the discriminant, not just the json.
+    assert_eq!(
+        raw_termo_kind(dir.path(), &termo.id.to_string()).as_deref(),
+        Some("abertura")
+    );
+
+    // Delete removes it; a second delete is a no-op, not an error.
+    store
+        .persist(|tx| tx.delete_termo_instrument(termo.id))
+        .expect("delete the termo");
+    assert_eq!(store.load_termo_instrument(termo.id).unwrap(), None);
+    store
+        .persist(|tx| tx.delete_termo_instrument(termo.id))
+        .expect("deleting an absent termo is a no-op");
+}
+
+#[test]
+fn termo_instruments_are_listed_and_filtered_by_book() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let entity = sample_entity("Encosto Estrategico Lda");
+    let book_a = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let book_b = Book::new(entity.id, BookKind::GerenciaAdministracao);
+
+    // Book A carries both termos; book B carries only an abertura.
+    let a_abertura = sample_termo(book_a.id, TermoKind::Abertura, "Abertura A");
+    let a_encerramento = sample_termo(book_a.id, TermoKind::Encerramento, "Encerramento A");
+    let b_abertura = sample_termo(book_b.id, TermoKind::Abertura, "Abertura B");
+
+    store
+        .persist(|tx| {
+            tx.upsert_termo_instrument(&a_abertura)?;
+            tx.upsert_termo_instrument(&a_encerramento)?;
+            tx.upsert_termo_instrument(&b_abertura)
+        })
+        .expect("seed three termos across two books");
+
+    // The by-book feed returns only that book's termos, ordered by id.
+    let mut for_a = store.termo_instruments_for_book(book_a.id).unwrap();
+    assert_eq!(for_a.len(), 2, "book A must return exactly its two termos");
+    assert!(
+        for_a.iter().all(|t| t.book_id == book_a.id),
+        "the feed leaked another book's termo"
+    );
+    let mut expected_a = vec![a_abertura.clone(), a_encerramento.clone()];
+    for_a.sort_by_key(|t| t.id.0);
+    expected_a.sort_by_key(|t| t.id.0);
+    assert_eq!(for_a, expected_a);
+
+    let for_b = store.termo_instruments_for_book(book_b.id).unwrap();
+    assert_eq!(for_b, vec![b_abertura.clone()]);
+
+    // A book with no termos returns empty, not an error.
+    let book_c = Book::new(entity.id, BookKind::ConselhoFiscal);
+    assert!(
+        store
+            .termo_instruments_for_book(book_c.id)
+            .unwrap()
+            .is_empty()
+    );
+
+    // The whole-store hydrate sees all three.
+    assert_eq!(store.all_termo_instruments().unwrap().len(), 3);
+}
+
+#[test]
+fn upserting_the_same_termo_id_overwrites_rather_than_duplicating() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let entity = sample_entity("Encosto Estrategico Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let draft = sample_termo(book.id, TermoKind::Abertura, "Rascunho");
+
+    store
+        .persist(|tx| tx.upsert_termo_instrument(&draft))
+        .expect("write the draft");
+
+    // The same instrument, frozen into Signing and edited (title/body/fields/signatories) — the
+    // exact shape a PATCH-then-advance produces. Same id, so it must overwrite the one row.
+    let mut frozen = draft.clone();
+    frozen.state = TermoState::Signing;
+    frozen.title = "Termo de abertura (congelado)".to_owned();
+    frozen.body = vec![TermoClause::user_added(
+        Some("Cláusula".to_owned()),
+        "O presente livro fica aberto.",
+    )];
+    frozen.signatories = vec![TermoSignatorySlot::required(
+        "Amélia Marques",
+        SignatoryCapacity::Manager,
+        1,
+    )];
+    frozen.template_id = Some("csc-termo-abertura/v1".to_owned());
+    frozen.signing_started_at = Some(OffsetDateTime::from_unix_timestamp(1_770_000_500).unwrap());
+    assert_eq!(
+        frozen.id, draft.id,
+        "the freeze keeps the same instrument id"
+    );
+
+    store
+        .persist(|tx| tx.upsert_termo_instrument(&frozen))
+        .expect("overwrite with the frozen version");
+
+    // The latest write wins, and there is still exactly one row for the book (no duplicate).
+    assert_eq!(
+        store.load_termo_instrument(draft.id).unwrap(),
+        Some(frozen.clone())
+    );
+    assert_eq!(store.termo_instruments_for_book(book.id).unwrap().len(), 1);
+    assert_eq!(store.all_termo_instruments().unwrap().len(), 1);
+}
+
+#[test]
+fn a_sealed_termo_survives_a_full_reopen() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Encosto Estrategico Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+
+    // A fully populated, sealed termo: non-empty body, a signatory slot recorded as signed, and the
+    // lifecycle timestamps — the state the instrument is in once it has opened its book.
+    let mut sealed = sample_termo(book.id, TermoKind::Abertura, "Termo de abertura");
+    sealed.state = TermoState::Sealed;
+    sealed.body = vec![
+        TermoClause::from_template(None, "Aos vinte e dois dias do mês de julho de 2026…"),
+        TermoClause::user_added(
+            Some("Encerramento".to_owned()),
+            "…fica aberto o presente livro.",
+        ),
+    ];
+    sealed.signatories = vec![TermoSignatorySlot::required(
+        "Amélia Marques",
+        SignatoryCapacity::Manager,
+        1,
+    )];
+    sealed.template_id = Some("csc-termo-abertura/v1".to_owned());
+    sealed.signing_started_at = Some(OffsetDateTime::from_unix_timestamp(1_770_000_500).unwrap());
+    sealed.sealed_at = Some(OffsetDateTime::from_unix_timestamp(1_770_000_900).unwrap());
+
+    let id = sealed.id;
+    {
+        let store = Store::open(dir.path()).expect("open");
+        store
+            .persist(|tx| tx.upsert_termo_instrument(&sealed))
+            .expect("persist the sealed termo");
+    }
+
+    // Reopen the process: no migration runs, the stamp is current, and the instrument comes back
+    // whole — every clause, the signatory slot, and all three timestamps.
+    let store = Store::open(dir.path()).expect("reopen");
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let stamp: String = raw
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamp, chancela_store::schema::SCHEMA_VERSION.to_string());
+    assert_eq!(
+        store.load_termo_instrument(id).unwrap(),
+        Some(sealed),
+        "the sealed termo did not survive a reopen intact"
+    );
 }

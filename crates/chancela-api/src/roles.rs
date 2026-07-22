@@ -200,6 +200,162 @@ fn tmp_path(path: &Path, fallback: &str) -> PathBuf {
     path.with_file_name(name)
 }
 
+// =================================================================================================
+// One-time role-catalog data migrations (t27 verb-split grandfather).
+//
+// Unlike the t87 role-merge migration above — which is *data-idempotent* (a retired role, once
+// dropped, is gone, so a re-run finds nothing) — the t27 verb split is a **grant**: it adds a child
+// verb to any role that holds the broad parent. Running it unconditionally on every boot would
+// silently restore a child verb an operator *deliberately removed* while keeping the parent. So it
+// is gated by a persisted, schema-versioned marker so it runs **exactly once** per catalog store.
+// =================================================================================================
+
+/// Marker sidecar recording which one-time role migrations have run against the **file** catalog
+/// (`roles.json`). Sits beside `roles.json` in the data dir.
+pub const ROLE_MIGRATIONS_FILE: &str = "role-migrations.json";
+
+/// Marker sidecar for the **store-backed** catalog (the Postgres `roles` table). Kept distinct from
+/// [`ROLE_MIGRATIONS_FILE`] so the file seam (which reconciles the soon-to-be-discarded file-derived
+/// catalog on a Postgres boot) can never pre-burn the guard the DB catalog's own reconciliation
+/// needs. Each marker attests exactly one catalog store.
+pub(crate) const ROLE_MIGRATIONS_STORE_FILE: &str = "role-migrations.store.json";
+
+/// Schema version of the marker envelope. An older build meeting a newer marker falls back to
+/// "nothing recorded" (see [`load_role_migration_state`]); bump only on an incompatible layout.
+const ROLE_MIGRATION_SCHEMA_VERSION: u32 = 1;
+
+/// Marker id for the **t27 verb-split grandfather** reconciliation ([`reconcile_split_verb_grandfather`]).
+pub(crate) const T27_SPLIT_VERB_GRANDFATHER_MIGRATION: &str = "t27_split_verb_grandfather";
+
+/// The set of one-time role-catalog data migrations already applied to a given catalog store.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RoleMigrationState {
+    applied: BTreeSet<String>,
+}
+
+impl RoleMigrationState {
+    fn has_run(&self, migration: &str) -> bool {
+        self.applied.contains(migration)
+    }
+
+    fn mark(&mut self, migration: &str) {
+        self.applied.insert(migration.to_owned());
+    }
+}
+
+/// On-disk envelope for [`RoleMigrationState`] (schema-versioned, mirroring the platform-log ring).
+#[derive(Debug, Serialize, Deserialize)]
+struct RoleMigrationStateFile {
+    schema_version: u32,
+    #[serde(default)]
+    applied: BTreeSet<String>,
+}
+
+/// The result of a one-time reconciliation pass: whether the **catalog** changed (so the caller
+/// rewrites the role catalog) and whether the **marker** changed (so the caller rewrites the marker
+/// sidecar). The two are independent — a fresh seed already lists the child verbs, so the catalog is
+/// unchanged, but the marker must still be written so the pass never runs again.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct RoleMigrationOutcome {
+    pub catalog_changed: bool,
+    pub marker_changed: bool,
+}
+
+/// Load the applied-migrations marker, or an **empty** set when the file is absent, malformed, or
+/// written by a newer build. Falling back to empty means an unguarded pass would *run* — deliberate:
+/// every migration behind this marker is purely **additive** (it only grants a verb back to a role
+/// that already holds the broad parent), so running one extra time can never strip authority. The
+/// marker's sole job is to stop a grant from *undoing an operator's later removal*, and a marker we
+/// cannot read tells us nothing about such a removal — so we prefer the anti-lockout side and let the
+/// additive pass run, exactly as the seed/merge loaders fall back to their defaults.
+pub(crate) fn load_role_migration_state(path: &Path) -> RoleMigrationState {
+    let Ok(bytes) = std::fs::read(path) else {
+        return RoleMigrationState::default();
+    };
+    match serde_json::from_slice::<RoleMigrationStateFile>(&bytes) {
+        Ok(file) if file.schema_version <= ROLE_MIGRATION_SCHEMA_VERSION => RoleMigrationState {
+            applied: file.applied,
+        },
+        Ok(file) => {
+            eprintln!(
+                "warning: {} has unsupported role-migration schema version {}; treating every \
+                 one-time role migration as not-yet-applied (they are additive and anti-lockout)",
+                path.display(),
+                file.schema_version
+            );
+            RoleMigrationState::default()
+        }
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid role-migration document ({e}); treating every one-time \
+                 role migration as not-yet-applied (they are additive and anti-lockout)",
+                path.display()
+            );
+            RoleMigrationState::default()
+        }
+    }
+}
+
+/// Atomically persist the applied-migrations marker (tmp file + rename), mirroring
+/// [`write_roles_atomic`].
+pub(crate) fn write_role_migration_state_atomic(
+    path: &Path,
+    state: &RoleMigrationState,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = RoleMigrationStateFile {
+        schema_version: ROLE_MIGRATION_SCHEMA_VERSION,
+        applied: state.applied.clone(),
+    };
+    let json = serde_json::to_vec_pretty(&file).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, ROLE_MIGRATIONS_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+/// **t27 verb-split grandfather, on-disk half — version-guarded so it runs at most once.**
+///
+/// t27 split four broad verbs into narrow children (`privacy.manage`/`retention.manage` off
+/// `user.manage`\|`settings.manage`; `ledger.reanchor`/`ledger.restore` off `ledger.recover`).
+/// Splitting a broad verb strips authority from everyone who held it unless the child is granted
+/// back — [`chancela_authz::grandfather_split_verbs_catalog`] is that grant, applied to any role
+/// holding a parent (the protected Owner is skipped: it already holds every verb via
+/// `Permission::ALL`, and its permission-set is locked).
+///
+/// The guard: if `state` already records [`T27_SPLIT_VERB_GRANDFATHER_MIGRATION`], this is a no-op
+/// ([`RoleMigrationOutcome::default`]). Otherwise it reconciles the catalog and records the marker.
+/// Recording it even when the catalog was unchanged (a fresh seed already lists the children) is what
+/// makes the grant run exactly once: a later boot, after an operator removed `privacy.manage` from a
+/// role that still holds `user.manage`, will not silently restore it.
+///
+/// **Zero UserView/ledger impact:** only the role catalog's permission-sets are touched — no user
+/// record, no `role_assignments`, no ledger event.
+#[must_use]
+pub(crate) fn reconcile_split_verb_grandfather(
+    catalog: &mut RoleCatalog,
+    state: &mut RoleMigrationState,
+) -> RoleMigrationOutcome {
+    if state.has_run(T27_SPLIT_VERB_GRANDFATHER_MIGRATION) {
+        return RoleMigrationOutcome::default();
+    }
+    let catalog_changed = chancela_authz::grandfather_split_verbs_catalog(catalog);
+    state.mark(T27_SPLIT_VERB_GRANDFATHER_MIGRATION);
+    RoleMigrationOutcome {
+        catalog_changed,
+        marker_changed: true,
+    }
+}
+
 /// **Role migration (no lockout — CRITICAL).** Bring a legacy `users.json` forward by giving every
 /// user with **no** role assignments a sensible default, in a single idempotent pass:
 ///
@@ -1893,5 +2049,205 @@ mod tests {
             bootstrap_assignment(false),
             RoleAssignment::new(COMPANY_OWNER_ROLE_ID, Scope::Global)
         );
+    }
+
+    // --- t27 verb-split grandfather (version-guarded on-disk reconciliation) --------------------
+
+    /// A fresh seed already lists every child verb (Owner via `Permission::ALL`, Platform
+    /// Administrator explicitly), so the reconcile changes no permission — but it must STILL burn the
+    /// marker so the one-time grant never runs again, and a second pass is a total no-op.
+    #[test]
+    fn t27_grandfather_reconcile_is_noop_on_a_fresh_seed_but_still_records_the_marker() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        let mut state = RoleMigrationState::default();
+
+        let outcome = reconcile_split_verb_grandfather(&mut cat, &mut state);
+        assert!(
+            !outcome.catalog_changed,
+            "the seed already holds every child verb"
+        );
+        assert!(
+            outcome.marker_changed,
+            "the marker must be recorded even when nothing changed, or the grant re-runs forever"
+        );
+        assert!(state.has_run(T27_SPLIT_VERB_GRANDFATHER_MIGRATION));
+
+        // Second pass against the now-marked state: complete no-op.
+        assert_eq!(
+            reconcile_split_verb_grandfather(&mut cat, &mut state),
+            RoleMigrationOutcome::default()
+        );
+    }
+
+    /// The reason the reconcile exists: a role an operator built BEFORE the split, holding a broad
+    /// parent, gains exactly the split children of that parent — and none of the others.
+    #[test]
+    fn t27_grandfather_reconcile_grants_children_to_pre_split_operator_roles() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        let settings_role = custom_role(0x5E11, "Ops", &[Permission::SettingsManage]);
+        let recover_role = custom_role(0x5EC0, "Recovery", &[Permission::LedgerRecover]);
+        cat.insert(settings_role.clone());
+        cat.insert(recover_role.clone());
+
+        let mut state = RoleMigrationState::default();
+        assert!(reconcile_split_verb_grandfather(&mut cat, &mut state).catalog_changed);
+
+        let settings_now = &cat.get(settings_role.id).unwrap().permission_set;
+        assert!(settings_now.contains(&Permission::PrivacyManage));
+        assert!(settings_now.contains(&Permission::RetentionManage));
+        // `settings.manage` is not a ledger parent, so no ledger children appear.
+        assert!(!settings_now.contains(&Permission::LedgerReanchor));
+        assert!(!settings_now.contains(&Permission::LedgerRestore));
+
+        let recover_now = &cat.get(recover_role.id).unwrap().permission_set;
+        assert!(recover_now.contains(&Permission::LedgerReanchor));
+        assert!(recover_now.contains(&Permission::LedgerRestore));
+        // `ledger.recover` is not a privacy/retention parent.
+        assert!(!recover_now.contains(&Permission::PrivacyManage));
+        assert!(!recover_now.contains(&Permission::RetentionManage));
+    }
+
+    /// The protected Owner is never touched — its permission-set is locked and already holds every
+    /// verb via `Permission::ALL`. (`grandfather_split_verbs` skips protected roles; this pins that
+    /// the on-disk wrapper preserves it.)
+    #[test]
+    fn t27_grandfather_reconcile_leaves_the_protected_owner_untouched() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        let mut state = RoleMigrationState::default();
+        let _ = reconcile_split_verb_grandfather(&mut cat, &mut state);
+        assert_eq!(cat.owner().unwrap(), &Role::owner());
+        assert!(cat.owner().unwrap().protected);
+    }
+
+    /// The whole point of the marker: a purely-additive grant must not undo an operator's later
+    /// removal. Grant the child once, let the operator remove it while keeping the parent, then
+    /// re-run — the removal must stand because the marker records the grant as already applied.
+    #[test]
+    fn t27_marker_stops_the_grant_from_undoing_a_later_operator_removal() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        let role = custom_role(0x5E11, "Ops", &[Permission::SettingsManage]);
+        cat.insert(role.clone());
+
+        let mut state = RoleMigrationState::default();
+        assert!(reconcile_split_verb_grandfather(&mut cat, &mut state).catalog_changed);
+        assert!(
+            cat.get(role.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::PrivacyManage)
+        );
+
+        // The operator deliberately removes privacy.manage while keeping settings.manage.
+        let mut edited = cat.get(role.id).unwrap().clone();
+        assert!(edited.permission_set.remove(&Permission::PrivacyManage));
+        cat.insert(edited);
+
+        // Next pass with the marker recorded: no silent re-grant.
+        assert_eq!(
+            reconcile_split_verb_grandfather(&mut cat, &mut state),
+            RoleMigrationOutcome::default()
+        );
+        assert!(
+            !cat.get(role.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::PrivacyManage)
+        );
+    }
+
+    /// The marker round-trips through disk, and a marker that is absent, malformed, or written by a
+    /// NEWER build all read back as "nothing applied" — so an additive, anti-lockout pass will run
+    /// rather than being wrongly skipped.
+    #[test]
+    fn role_migration_marker_disk_round_trip_and_tolerant_load() {
+        let dir = std::env::temp_dir().join(format!("chancela-rolemig-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(ROLE_MIGRATIONS_FILE);
+
+        // Absent → empty.
+        assert!(!load_role_migration_state(&path).has_run(T27_SPLIT_VERB_GRANDFATHER_MIGRATION));
+
+        let mut state = RoleMigrationState::default();
+        state.mark(T27_SPLIT_VERB_GRANDFATHER_MIGRATION);
+        write_role_migration_state_atomic(&path, &state).expect("write marker");
+        assert!(load_role_migration_state(&path).has_run(T27_SPLIT_VERB_GRANDFATHER_MIGRATION));
+
+        // Malformed → empty (fall back to running the additive pass).
+        std::fs::write(&path, b"not json").unwrap();
+        assert!(!load_role_migration_state(&path).has_run(T27_SPLIT_VERB_GRANDFATHER_MIGRATION));
+
+        // Newer schema version → empty (an older build must not trust a layout it cannot read).
+        std::fs::write(
+            &path,
+            br#"{"schema_version":999,"applied":["t27_split_verb_grandfather"]}"#,
+        )
+        .unwrap();
+        assert!(!load_role_migration_state(&path).has_run(T27_SPLIT_VERB_GRANDFATHER_MIGRATION));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// End-to-end over real files, mirroring the boot seam: boot 1 grants the child and writes both
+    /// sidecars; the operator removes it; boot 2 sees the persisted marker and leaves the removal
+    /// intact. This is the "runs exactly once across reboots" guarantee.
+    #[test]
+    fn t27_grandfather_runs_once_across_reboots_via_the_persisted_marker() {
+        fn boot(roles_path: &Path, marker_path: &Path) -> RoleMigrationOutcome {
+            let mut cat = load_roles(roles_path).expect("roles.json present");
+            let mut state = load_role_migration_state(marker_path);
+            let outcome = reconcile_split_verb_grandfather(&mut cat, &mut state);
+            if outcome.catalog_changed {
+                write_roles_atomic(roles_path, &cat).unwrap();
+            }
+            if outcome.marker_changed {
+                write_role_migration_state_atomic(marker_path, &state).unwrap();
+            }
+            outcome
+        }
+
+        let dir = std::env::temp_dir().join(format!("chancela-rolemig-boot-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let roles_path = dir.join(ROLES_FILE);
+        let marker_path = dir.join(ROLE_MIGRATIONS_FILE);
+
+        // A pre-t27 catalog on disk: seeded defaults + one operator role holding settings.manage.
+        let mut cat = RoleCatalog::seeded_defaults();
+        let role = custom_role(0x5E11, "Ops", &[Permission::SettingsManage]);
+        cat.insert(role.clone());
+        write_roles_atomic(&roles_path, &cat).unwrap();
+
+        let first = boot(&roles_path, &marker_path);
+        assert!(first.catalog_changed && first.marker_changed);
+        assert!(
+            load_roles(&roles_path)
+                .unwrap()
+                .get(role.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::PrivacyManage)
+        );
+
+        // Operator removes privacy.manage between boots.
+        let mut cat = load_roles(&roles_path).unwrap();
+        let mut edited = cat.get(role.id).unwrap().clone();
+        edited.permission_set.remove(&Permission::PrivacyManage);
+        cat.insert(edited);
+        write_roles_atomic(&roles_path, &cat).unwrap();
+
+        // Boot 2: the marker guards, so the removal stands.
+        assert_eq!(
+            boot(&roles_path, &marker_path),
+            RoleMigrationOutcome::default()
+        );
+        assert!(
+            !load_roles(&roles_path)
+                .unwrap()
+                .get(role.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::PrivacyManage)
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

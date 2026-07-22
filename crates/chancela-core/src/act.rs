@@ -70,6 +70,27 @@ pub enum ActState {
     Archived,
 }
 
+/// The pre-signature drafting states, ordered earliest → latest.
+///
+/// Backward movement is free among exactly these because nothing here is frozen: no signing
+/// snapshot has been minted, no page count frozen and no signature collected, so
+/// [`Act::is_mutable`] is true throughout and a reversion moves only the workflow marker.
+/// `Signing` and everything after it are deliberately excluded — see [`Act::revert_to`] and
+/// [`Act::reopen_for_correction`].
+const REVERSIBLE_STATES: [ActState; 5] = [
+    ActState::Draft,
+    ActState::Review,
+    ActState::Convened,
+    ActState::Deliberated,
+    ActState::TextApproved,
+];
+
+/// Position of `state` within [`REVERSIBLE_STATES`], or `None` if it is not a reversible
+/// drafting state (`Signing`/`Sealed`/`Archived`). Used to order reversion targets.
+fn reversible_index(state: ActState) -> Option<usize> {
+    REVERSIBLE_STATES.iter().position(|&s| s == state)
+}
+
 /// Human-review status for AI-assisted act text. `Accepted` means only that a person reviewed the
 /// AI-assisted draft; it is not a legal-validity assertion.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1268,6 +1289,45 @@ impl Act {
         }
     }
 
+    /// Revert to any strictly-earlier pre-signature drafting state (WFL-01 back-edge).
+    ///
+    /// The backward counterpart to [`Act::advance_to`]. Legal iff the act is currently in one of
+    /// the reversible drafting states {`Review`, `Convened`, `Deliberated`, `TextApproved`} and
+    /// `to` is a *strictly-earlier* reversible state (down to `Draft`). This is a **jump**, not a
+    /// single step: one call may return an act all the way from `TextApproved` to `Draft`. A
+    /// caller ledgers **one `act.reverted` event per invocation** — never disguised as an
+    /// `act.advanced`; a backward hop must read as a reversion in the audit trail.
+    ///
+    /// Reversion among these states is free because every one of them is pre-signature:
+    /// [`Act::is_mutable`] is true throughout, no signing snapshot has been minted and no page
+    /// count frozen, so this moves **only** the workflow marker — it never touches content, the
+    /// frozen page count, the signatory set, or any snapshot.
+    ///
+    /// `Signing` is refused with [`ActError::RevertFromSigning`], which points the caller at
+    /// [`Act::reopen_for_correction`] — the guarded `Signing → TextApproved` path that supersedes
+    /// the canonical snapshot and releases the page reservation, and is itself refused once any
+    /// signature has been collected. Routing a `Signing` reversal through here would bypass those
+    /// guards, so it is deliberately closed.
+    ///
+    /// `Sealed`/`Archived` are refused outright ([`ActError::InvalidTransition`]): a sealed ata is
+    /// a correctly-signed PDF/A and is **never un-sealed**. Going "back" from a sealed act is only
+    /// ever a new act that retifies it (WFL-21), leaving the sealed original intact.
+    pub fn revert_to(&mut self, to: ActState) -> Result<(), ActError> {
+        if self.state == ActState::Signing {
+            return Err(ActError::RevertFromSigning);
+        }
+        match (reversible_index(self.state), reversible_index(to)) {
+            (Some(from), Some(target)) if target < from => {
+                self.state = to;
+                Ok(())
+            }
+            _ => Err(ActError::InvalidTransition {
+                from: self.state,
+                to,
+            }),
+        }
+    }
+
     /// Reopen a `Signing` act for correction (`Signing → TextApproved`).
     ///
     /// The one reverse edge in the lifecycle, and deliberately the *only* one. It exists because
@@ -1636,6 +1696,155 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn revert_to_jumps_back_to_any_earlier_pre_signature_state() {
+        // Single-step back.
+        let mut act = draft();
+        act.advance_to(ActState::Review).unwrap();
+        act.revert_to(ActState::Draft).unwrap();
+        assert_eq!(act.state, ActState::Draft);
+
+        // Jump: TextApproved all the way back to Draft in one call (D1 = jump, not single-step).
+        let mut act = draft();
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+        ] {
+            act.advance_to(state).unwrap();
+        }
+        act.revert_to(ActState::Draft).unwrap();
+        assert_eq!(act.state, ActState::Draft);
+
+        // Jump to an intermediate earlier state, then advance forward again.
+        for state in [ActState::Review, ActState::Convened, ActState::Deliberated] {
+            act.advance_to(state).unwrap();
+        }
+        act.revert_to(ActState::Review).unwrap();
+        assert_eq!(act.state, ActState::Review);
+    }
+
+    #[test]
+    fn revert_to_refuses_same_state_and_forward_targets() {
+        let mut act = draft();
+        act.advance_to(ActState::Review).unwrap();
+        act.advance_to(ActState::Convened).unwrap();
+
+        // Same state is not "earlier".
+        assert!(matches!(
+            act.revert_to(ActState::Convened),
+            Err(ActError::InvalidTransition {
+                from: ActState::Convened,
+                to: ActState::Convened
+            })
+        ));
+        // A forward target is not a reversion.
+        assert!(matches!(
+            act.revert_to(ActState::Deliberated),
+            Err(ActError::InvalidTransition { .. })
+        ));
+        // Signing is never a reversion target (nor a reversible state).
+        assert!(matches!(
+            act.revert_to(ActState::Signing),
+            Err(ActError::InvalidTransition {
+                to: ActState::Signing,
+                ..
+            })
+        ));
+        // Draft has nothing before it.
+        let mut act = draft();
+        assert!(matches!(
+            act.revert_to(ActState::Draft),
+            Err(ActError::InvalidTransition { .. })
+        ));
+        assert_eq!(act.state, ActState::Draft);
+    }
+
+    #[test]
+    fn revert_to_refuses_signing_and_points_at_reopen() {
+        let mut act = signing_act();
+        let err = act.revert_to(ActState::TextApproved).unwrap_err();
+        assert_eq!(err, ActError::RevertFromSigning);
+        // Signing must be walked back through the guarded reopen path, not this one.
+        assert!(err.to_string().contains("reopen_for_correction"));
+        // Refused means untouched: still frozen in Signing.
+        assert_eq!(act.state, ActState::Signing);
+        assert!(!act.is_mutable());
+    }
+
+    #[test]
+    fn revert_to_never_un_seals_a_sealed_or_archived_act() {
+        let mut act = signing_act();
+        act.mark_sealed(1, [0u8; 32], 0, seal_metadata()).unwrap();
+        assert!(matches!(
+            act.revert_to(ActState::TextApproved),
+            Err(ActError::InvalidTransition {
+                from: ActState::Sealed,
+                to: ActState::TextApproved
+            })
+        ));
+        assert_eq!(act.state, ActState::Sealed);
+
+        act.archive().unwrap();
+        assert!(matches!(
+            act.revert_to(ActState::Draft),
+            Err(ActError::InvalidTransition {
+                from: ActState::Archived,
+                ..
+            })
+        ));
+        assert_eq!(act.state, ActState::Archived);
+    }
+
+    #[test]
+    fn revert_to_moves_only_the_workflow_marker() {
+        let mut act = draft();
+        act.add_signatory(slot("Ana Presidente", false)).unwrap();
+        act.set_deliberations("Aprovadas as contas.").unwrap();
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+        ] {
+            act.advance_to(state).unwrap();
+        }
+        act.page_count = Some(5);
+        let before = act.clone();
+
+        act.revert_to(ActState::Draft).unwrap();
+
+        // Only the state changed: content, signatories and the frozen page count are untouched.
+        assert_eq!(act.state, ActState::Draft);
+        assert_eq!(act.deliberations, before.deliberations);
+        assert_eq!(act.signatories, before.signatories);
+        assert_eq!(act.page_count, before.page_count);
+        assert_eq!(
+            act.superseded_signing_snapshots,
+            before.superseded_signing_snapshots
+        );
+    }
+
+    #[test]
+    fn actstate_serialization_is_unchanged_so_no_ledger_preimage_moves() {
+        // Guard: adding `revert_to` must not touch the `ActState` enum. Any reorder, rename or
+        // added variant would move ledger digests that bind these tokens — assert the wire form
+        // of every variant is exactly what it has always been.
+        for (state, wire) in [
+            (ActState::Draft, "\"Draft\""),
+            (ActState::Review, "\"Review\""),
+            (ActState::Convened, "\"Convened\""),
+            (ActState::Deliberated, "\"Deliberated\""),
+            (ActState::TextApproved, "\"TextApproved\""),
+            (ActState::Signing, "\"Signing\""),
+            (ActState::Sealed, "\"Sealed\""),
+            (ActState::Archived, "\"Archived\""),
+        ] {
+            assert_eq!(serde_json::to_string(&state).unwrap(), wire);
+        }
     }
 
     #[test]

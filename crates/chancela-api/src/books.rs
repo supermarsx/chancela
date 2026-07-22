@@ -11,7 +11,8 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_core::{
-    Book, BookId, EntityId, LegalHold, TermoDeAbertura, TermoDeEncerramento, open_and_seal_book,
+    Book, BookId, BookKind, EntityId, LegalHold, TermoDeAbertura, TermoDeEncerramento,
+    open_and_seal_book,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -62,7 +63,59 @@ pub struct LegalHoldOperatorWorkflowView {
     legal_compliance_claimed: bool,
 }
 
-/// `POST /v1/books` — create a book and open it with a termo de abertura (WFL-10/11).
+/// Validate the D3 custom-label rule: `kind == Other` **requires** a non-empty `kind_label`, and any
+/// other kind **forbids** one. Returns the trimmed label (assurance value) or `None`.
+fn resolve_kind_label(
+    kind: BookKind,
+    kind_label: Option<String>,
+) -> Result<Option<String>, ApiError> {
+    let trimmed = kind_label
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    match kind {
+        BookKind::Other if trimmed.is_none() => Err(ApiError::Unprocessable(
+            "kind_label is required when kind is Other".to_owned(),
+        )),
+        BookKind::Other => Ok(trimmed),
+        _ if trimmed.is_some() => Err(ApiError::Unprocessable(
+            "kind_label is only allowed when kind is Other".to_owned(),
+        )),
+        _ => Ok(None),
+    }
+}
+
+/// Build a `Created` book from the request identity fields, honouring D3 (`kind_label` for `Other`)
+/// and D5 (`predecessor_note` assurance). Shared by the one-shot and two-phase paths so both mint
+/// the book identically; `Book::new_successor` is inlined as `Book::new` + a predecessor id.
+fn build_created_book(
+    entity_id: EntityId,
+    kind: BookKind,
+    kind_label: Option<String>,
+    predecessor: Option<Uuid>,
+    predecessor_note: Option<String>,
+) -> Result<Book, ApiError> {
+    let label = resolve_kind_label(kind, kind_label)?;
+    let mut book = match &label {
+        Some(label) => Book::new_other(entity_id, label.clone()),
+        None => Book::new(entity_id, kind),
+    };
+    if let Some(p) = predecessor {
+        book.predecessor = Some(BookId(p));
+    }
+    book.predecessor_note = predecessor_note
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    Ok(book)
+}
+
+/// `POST /v1/books` — create a book and, by default (`one_shot: true`, D2), open it in one commit
+/// with a termo de abertura (WFL-10/11). With `one_shot: false`, create only a `Created` book plus a
+/// `Draft` termo de abertura for the two-phase flow (nothing enters the hash chain until the termo is
+/// filled, signed and the book is explicitly opened).
 pub async fn create_book(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -77,16 +130,11 @@ pub async fn create_book(
         opening_date,
         required_signatories,
         predecessor,
+        predecessor_note,
+        kind_label,
+        one_shot,
         actor: req_actor,
     } = req;
-    // Fail fast on a bad date before taking any lock or minting a book.
-    let opening_date = crate::dto::parse_date(&opening_date)?;
-    let required_signatory_records =
-        normalize_termo_signatories(required_signatories, "required_signatories")?;
-    let required_signatories = required_signatory_records
-        .iter()
-        .map(chancela_core::book::TermoSignatory::legacy_label)
-        .collect();
     let entity_id = EntityId(entity_id);
     // RBAC (t64-E3): opening a book is scoped to the owning entity (resolved from the body).
     require_permission(
@@ -97,6 +145,31 @@ pub async fn create_book(
     )
     .await?;
     let actor = actor.resolve(&req_actor);
+
+    if !one_shot {
+        return create_book_two_phase(
+            &state,
+            entity_id,
+            kind,
+            kind_label,
+            purpose,
+            opening_date,
+            predecessor,
+            predecessor_note,
+            &actor,
+        )
+        .await;
+    }
+
+    // --- One-shot (D2 default): create + open + seal in a single commit, byte-for-byte as before.
+    // Fail fast on a bad date before taking any lock or minting a book.
+    let opening_date = crate::dto::parse_date(&opening_date)?;
+    let required_signatory_records =
+        normalize_termo_signatories(required_signatories, "required_signatories")?;
+    let required_signatories = required_signatory_records
+        .iter()
+        .map(chancela_core::book::TermoSignatory::legacy_label)
+        .collect();
 
     // entities → books → ledger.
     let entities = state.entities.read().await;
@@ -116,10 +189,7 @@ pub async fn create_book(
         required_signatory_records,
         ..Default::default()
     };
-    let mut book = match predecessor {
-        Some(p) => Book::new_successor(entity_id, kind, BookId(p)),
-        None => Book::new(entity_id, kind),
-    };
+    let mut book = build_created_book(entity_id, kind, kind_label, predecessor, predecessor_note)?;
     // Appends the `book.opened` genesis event; a fresh book always opens cleanly.
     open_and_seal_book(&mut book, entity, termo, &actor, &mut ledger)?;
 
@@ -179,6 +249,68 @@ pub async fn create_book(
         }
     }
     state.attest_latest(&attestor, &ledger).await;
+
+    let view = BookView::from(&book);
+    books.insert(book.id, book);
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// Two-phase create (`one_shot: false`): mint a `Created` book plus a `Draft` termo de abertura,
+/// persisted together, WITHOUT any ledger append. The termo is then filled/signed/opened through the
+/// termo endpoints. RBAC (`book.open`) and the actor are already resolved by the caller.
+#[allow(clippy::too_many_arguments)]
+async fn create_book_two_phase(
+    state: &AppState,
+    entity_id: EntityId,
+    kind: BookKind,
+    kind_label: Option<String>,
+    purpose: String,
+    opening_date: String,
+    predecessor: Option<Uuid>,
+    predecessor_note: Option<String>,
+    actor: &str,
+) -> Result<(StatusCode, Json<BookView>), ApiError> {
+    let _ = actor; // no ledger append at this phase; kept for signature symmetry with one-shot.
+    // A two-phase draft may leave the opening date for a later PATCH; seed it only if supplied.
+    let opening_date = {
+        let trimmed = opening_date.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(crate::dto::parse_date(trimmed)?)
+        }
+    };
+
+    // entities → books → ledger (ledger held only to serialize the durable write, no append).
+    let entities = state.entities.read().await;
+    let entity = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
+    let family = entity.family;
+    let mut books = state.books.write().await;
+    let mut ledger = state.ledger.write().await;
+
+    let book = build_created_book(entity_id, kind, kind_label, predecessor, predecessor_note)?;
+
+    // Seed the Draft termo from the family's template `default_body`; the operator fills the rest via
+    // PATCH. Signatory slots are added later (they carry a required capacity + order the create body
+    // does not model).
+    let mut termo =
+        crate::documents::seed_draft_abertura(book.id, family, OffsetDateTime::now_utc());
+    let purpose = purpose.trim();
+    if !purpose.is_empty() {
+        termo.fields.purpose = Some(purpose.to_owned());
+    }
+    termo.fields.instrument_date = opening_date;
+    termo.fields.predecessor_note = book.predecessor_note.clone();
+
+    // Persist the Created book + Draft termo atomically; NOTHING enters the hash chain here.
+    let book_for_store = book.clone();
+    let termo_for_store = termo.clone();
+    state
+        .persist_write_through(&mut ledger, 0, move |tx| {
+            tx.upsert_book(&book_for_store)?;
+            tx.upsert_termo_instrument(&termo_for_store)
+        })
+        .await?;
 
     let view = BookView::from(&book);
     books.insert(book.id, book);

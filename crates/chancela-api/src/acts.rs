@@ -1947,7 +1947,7 @@ mod tests {
             "body": { "format": "Markdown", "source": "# Ata\n\nTexto." }
         }))
         .expect("patch body");
-        patch_act(
+        let _ = patch_act(
             State(state.clone()),
             Path(act.id.0),
             actor.clone(),
@@ -1973,7 +1973,7 @@ mod tests {
         for target in ["Review", "Convened", "Deliberated", "TextApproved"] {
             let req: AdvanceAct =
                 serde_json::from_value(json!({ "to": target })).expect("advance body");
-            advance_act(
+            let _ = advance_act(
                 State(state.clone()),
                 Path(act.id.0),
                 actor.clone(),

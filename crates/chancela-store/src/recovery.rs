@@ -2045,9 +2045,11 @@ fn format_rfc3339(at: OffsetDateTime) -> String {
 /// and recorded in the ledgered [`WipeRecord`], so a table missing here is both undeleted *and*
 /// undisclosed. It must stay in lockstep with [`clear_domain`].
 ///
-/// `signed_documents` and `instrument_signatures` are listed: a wipe that promises to delete
-/// "entidades, livros, atas e documentos" must not leave the signed PDFs — the most sensitive
-/// artifact the product holds — sitting in the database while the UI reports the data as gone.
+/// `signed_documents`, `instrument_signatures` and `termo_instruments` are listed: a wipe that
+/// promises to delete "entidades, livros, atas e documentos" must not leave the signed PDFs — the
+/// most sensitive artifact the product holds — nor a book's opening/closing instrument (which once
+/// frozen carries the same signed bytes) sitting in the database while the UI reports the data as
+/// gone.
 fn domain_table_names() -> Vec<String> {
     [
         "group_template_library_revisions",
@@ -2058,6 +2060,8 @@ fn domain_table_names() -> Vec<String> {
         "acts",
         "registry_extracts",
         "documents",
+        // The book-scoped opening/closing instrument (drafted or sealed) is domain content too.
+        "termo_instruments",
         // The signature history first, then the current artifact it is the history for.
         "instrument_signatures",
         "signed_documents",
@@ -2080,6 +2084,7 @@ fn clear_domain(tx: &Tx<'_>) -> Result<(), StoreError> {
          DELETE FROM group_template_libraries; DELETE FROM company_groups; \
          DELETE FROM entities; DELETE FROM books; DELETE FROM acts; \
          DELETE FROM registry_extracts; DELETE FROM documents; \
+         DELETE FROM termo_instruments; \
          DELETE FROM instrument_signatures; DELETE FROM signed_documents; \
          DELETE FROM follow_ups;",
     )

@@ -328,6 +328,7 @@ fn book_kind_label(kind: BookKind) -> &'static str {
         BookKind::GerenciaAdministracao => "Gerência / administração",
         BookKind::ConselhoFiscal => "Conselho fiscal",
         BookKind::Condominio => "Condomínio",
+        BookKind::Other => "Outro tipo de livro",
     }
 }
 

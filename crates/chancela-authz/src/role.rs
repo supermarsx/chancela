@@ -220,8 +220,11 @@ impl Role {
 
     /// The seeded **Platform Administrator** role: broad administrative authority, including RBAC
     /// meta-permissions, full tenant provisioning/administration (`tenant.create`/`tenant.read`/
-    /// `tenant.admin`), and the two t22 security-configuration verbs `legal_hold.manage` and
-    /// `trust.manage`, but not the Owner-only destructive reset/wipe verbs.
+    /// `tenant.admin`), the two t22 security-configuration verbs `legal_hold.manage` and
+    /// `trust.manage`, and the four t27 verbs split off the broad authorities it already held
+    /// (`privacy.manage`/`retention.manage` from `user.manage`|`settings.manage`;
+    /// `ledger.reanchor`/`ledger.restore` from `ledger.recover`) — so the split preserves its exact
+    /// reach. It still lacks the Owner-only destructive reset/wipe verbs.
     #[must_use]
     pub fn platform_administrator() -> Self {
         Role {
@@ -254,8 +257,14 @@ impl Role {
                 Permission::TemplateManage,
                 Permission::LedgerRead,
                 Permission::LedgerRecover,
+                // t27: grandfathered from `ledger.recover`, which this role holds.
+                Permission::LedgerReanchor,
+                Permission::LedgerRestore,
                 Permission::DataBackup,
                 Permission::DataExport,
+                // t27: grandfathered from `user.manage` / `settings.manage`, both held below.
+                Permission::PrivacyManage,
+                Permission::RetentionManage,
                 Permission::SettingsRead,
                 Permission::SettingsManage,
                 Permission::PlatformLogsWrite,
@@ -679,6 +688,82 @@ impl FromIterator<Role> for RoleCatalog {
     }
 }
 
+/// The t27 verb-split **grandfather map**: holding **any** verb in `parents` grants `child`.
+///
+/// Splitting a broad verb into a narrow one (§ t27) strips authority from everyone who held the
+/// broad verb — unless the narrow verb is granted back to them. This table is that grant. It is
+/// applied in two places, from this single source of truth:
+///
+/// 1. **Seeded roles (code):** the constructors already bake the result in — Owner holds every verb
+///    via [`Permission::ALL`], and [`Role::platform_administrator`] lists the four explicitly
+///    because it held every parent. No other seeded role holds a parent, so none gains a child.
+/// 2. **Operator-authored roles (on disk):** a `roles.json` loaded off disk is reconciled with
+///    [`grandfather_split_verbs_catalog`] before use, so a role an operator built to hold
+///    `settings.manage` keeps its privacy/retention reach after the split.
+///
+/// Owner + Platform Administrator held every parent, so both keep their exact reach; a role that
+/// held no parent gains nothing.
+pub const T27_VERB_SPLIT_GRANDFATHER: &[(Permission, &[Permission])] = &[
+    (
+        Permission::PrivacyManage,
+        &[Permission::UserManage, Permission::SettingsManage],
+    ),
+    (
+        Permission::RetentionManage,
+        &[Permission::UserManage, Permission::SettingsManage],
+    ),
+    (Permission::LedgerReanchor, &[Permission::LedgerRecover]),
+    (Permission::LedgerRestore, &[Permission::LedgerRecover]),
+];
+
+/// Grandfather the t27 split onto one role's permission-set: grant each child verb whose parent the
+/// role already holds (see [`T27_VERB_SPLIT_GRANDFATHER`]). Returns `true` if the set changed.
+///
+/// **Idempotent** — a role that already holds a child is left as-is, so a second pass, or a pass
+/// over an already-migrated catalog, is a no-op. (Whether the migration runs at all on a given
+/// catalog is the caller's concern: it should be version-guarded so it never re-adds a verb an
+/// operator later deliberately removed — see the on-disk reconciliation in `chancela-api`.)
+///
+/// **Protected roles are skipped** — Owner's set is locked and already holds every verb via
+/// [`Permission::ALL`], so there is nothing to grant and its lock must not be touched.
+#[must_use]
+pub fn grandfather_split_verbs(role: &mut Role) -> bool {
+    if role.protected {
+        return false;
+    }
+    let mut changed = false;
+    for (child, parents) in T27_VERB_SPLIT_GRANDFATHER {
+        if role.permission_set.contains(child) {
+            continue;
+        }
+        if parents.iter().any(|p| role.permission_set.contains(p)) {
+            role.permission_set.insert(*child);
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// Apply [`grandfather_split_verbs`] across a whole catalog (e.g. a `roles.json` loaded off disk).
+/// Returns `true` if any role changed. Idempotent; protected roles are untouched.
+#[must_use]
+pub fn grandfather_split_verbs_catalog(catalog: &mut RoleCatalog) -> bool {
+    // Collect ids first: `RoleCatalog` exposes no mutable iterator, so mutate via clone→`insert`.
+    let ids: Vec<RoleId> = catalog.iter().map(|role| role.id).collect();
+    let mut changed = false;
+    for id in ids {
+        let Some(current) = catalog.get(id) else {
+            continue;
+        };
+        let mut role = current.clone();
+        if grandfather_split_verbs(&mut role) {
+            catalog.insert(role);
+            changed = true;
+        }
+    }
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -757,7 +842,14 @@ mod tests {
             assert!(!role.permission_set.contains(&Permission::DataWipe));
             assert!(!role.permission_set.contains(&Permission::DataStartOver));
             assert!(!role.permission_set.contains(&Permission::LedgerRecover));
+            // t27: the recovery-split verbs are as privileged as the `ledger.recover` they came
+            // from — no non-admin seeded role may hold them.
+            assert!(!role.permission_set.contains(&Permission::LedgerReanchor));
+            assert!(!role.permission_set.contains(&Permission::LedgerRestore));
             assert!(!role.permission_set.contains(&Permission::UserManage));
+            // t27: privacy/retention administration is platform authority, never a non-admin's.
+            assert!(!role.permission_set.contains(&Permission::PrivacyManage));
+            assert!(!role.permission_set.contains(&Permission::RetentionManage));
             // t22. `legal_hold.manage` is intentionally absent from this battery — Legal Counsel is
             // a non-admin seeded role and holds it by design (see the note in
             // `explicit_company_archetypes_exclude_sensitive_platform_and_meta_authority`).
@@ -1211,6 +1303,13 @@ mod tests {
                 Permission::SettingsManage,
                 Permission::PlatformLogsWrite,
                 Permission::LedgerRecover,
+                // t27: the recovery-split verbs share `ledger.recover`'s exclusion here.
+                Permission::LedgerReanchor,
+                Permission::LedgerRestore,
+                // t27: privacy/retention administration is platform authority, split off
+                // `user.manage`|`settings.manage`, so it is excluded here for the same reason.
+                Permission::PrivacyManage,
+                Permission::RetentionManage,
                 Permission::DataWipe,
                 Permission::DataStartOver,
                 // t22: importing a trusted-service list decides which signatures the product
@@ -1477,5 +1576,149 @@ mod tests {
                 ),
             }
         }
+    }
+
+    /// t27, mirroring the t22 split battery. The four verbs were split off `user.manage` /
+    /// `settings.manage` (privacy/retention) and `ledger.recover` (reanchor/restore). The split is
+    /// only worth anything if the seeded holders stay exactly the two roles that held every parent —
+    /// Owner and Platform Administrator — so pin the population exhaustively and in catalog order. A
+    /// future seed that grants one of these to a third role has to come through this test.
+    #[test]
+    fn t27_split_verbs_are_seeded_only_to_owner_and_platform_admin() {
+        let holders = |p: Permission| -> Vec<String> {
+            default_roles()
+                .into_iter()
+                .filter(|r| r.permission_set.contains(&p))
+                .map(|r| r.name)
+                .collect()
+        };
+
+        for verb in [
+            Permission::PrivacyManage,
+            Permission::RetentionManage,
+            Permission::LedgerReanchor,
+            Permission::LedgerRestore,
+        ] {
+            assert_eq!(
+                holders(verb),
+                vec!["Owner", "Platform Administrator"],
+                "{verb} is seeded to the wrong set of roles"
+            );
+        }
+
+        // And the parents kept their exact seeded holders — the split renames the reach, it does not
+        // move who has it. All three parents are Owner + Platform Administrator only.
+        for parent in [
+            Permission::UserManage,
+            Permission::SettingsManage,
+            Permission::LedgerRecover,
+        ] {
+            assert_eq!(
+                holders(parent),
+                vec!["Owner", "Platform Administrator"],
+                "{parent} holder set changed"
+            );
+        }
+    }
+
+    /// The grandfather rule itself (`T27_VERB_SPLIT_GRANDFATHER` + [`grandfather_split_verbs`]):
+    /// every prior holder of a parent verb gains the child, a role holding no parent gains nothing,
+    /// and the pass is idempotent. This is the "no reach lost" proof for operator-authored roles.
+    #[test]
+    fn t27_grandfather_grants_children_to_parent_holders_and_nothing_else() {
+        // Build operator-shaped roles from a minimal base and vary only the parent verbs.
+        let base = |perms: &[Permission]| Role {
+            id: RoleId(Uuid::from_u128(0x7465737400000000_0000000000000abc)),
+            name: "Custom".to_owned(),
+            permission_set: perms.iter().copied().collect(),
+            protected: false,
+        };
+
+        // user.manage → privacy.manage + retention.manage; NOT the ledger verbs.
+        let mut um = base(&[Permission::UserManage]);
+        assert!(grandfather_split_verbs(&mut um));
+        assert!(um.permission_set.contains(&Permission::PrivacyManage));
+        assert!(um.permission_set.contains(&Permission::RetentionManage));
+        assert!(!um.permission_set.contains(&Permission::LedgerReanchor));
+        assert!(!um.permission_set.contains(&Permission::LedgerRestore));
+
+        // settings.manage → the same privacy/retention pair.
+        let mut sm = base(&[Permission::SettingsManage]);
+        assert!(grandfather_split_verbs(&mut sm));
+        assert!(sm.permission_set.contains(&Permission::PrivacyManage));
+        assert!(sm.permission_set.contains(&Permission::RetentionManage));
+
+        // ledger.recover → ledger.reanchor + ledger.restore; NOT privacy/retention.
+        let mut lr = base(&[Permission::LedgerRecover]);
+        assert!(grandfather_split_verbs(&mut lr));
+        assert!(lr.permission_set.contains(&Permission::LedgerReanchor));
+        assert!(lr.permission_set.contains(&Permission::LedgerRestore));
+        assert!(!lr.permission_set.contains(&Permission::PrivacyManage));
+        assert!(!lr.permission_set.contains(&Permission::RetentionManage));
+
+        // Holding no parent grants nothing, and the call reports no change.
+        let mut none = base(&[Permission::EntityRead, Permission::BookRead]);
+        assert!(!grandfather_split_verbs(&mut none));
+        for child in [
+            Permission::PrivacyManage,
+            Permission::RetentionManage,
+            Permission::LedgerReanchor,
+            Permission::LedgerRestore,
+        ] {
+            assert!(!none.permission_set.contains(&child));
+        }
+
+        // Idempotent: a second pass over an already-migrated role changes nothing.
+        assert!(!grandfather_split_verbs(&mut um));
+        assert!(!grandfather_split_verbs(&mut lr));
+
+        // Protected roles are skipped even when they hold a parent — the lock must not be touched.
+        let mut protected = Role {
+            protected: true,
+            ..base(&[Permission::UserManage])
+        };
+        assert!(!grandfather_split_verbs(&mut protected));
+        assert!(
+            !protected
+                .permission_set
+                .contains(&Permission::PrivacyManage)
+        );
+    }
+
+    /// The seeded catalog already bakes the grandfather result into its constructors, so migrating a
+    /// fresh install must be a no-op — proof the code half and the migration half agree. And the
+    /// migration must **restore** a Platform Administrator persisted *before* the split (a
+    /// `roles.json` on disk that predates t27) to its exact current reach: that is the anti-lockout
+    /// guarantee stated as a test.
+    #[test]
+    fn t27_grandfather_is_noop_on_seed_and_restores_a_pre_split_platform_admin() {
+        let mut seeded = RoleCatalog::seeded_defaults();
+        assert!(
+            !grandfather_split_verbs_catalog(&mut seeded),
+            "seeded roles already carry the split verbs; migrating a fresh install must not change \
+             anything"
+        );
+
+        // A Platform Administrator as it would have been persisted before t27: today's set minus
+        // the four new verbs. It still holds user.manage, settings.manage and ledger.recover.
+        let mut legacy = Role::platform_administrator();
+        for verb in [
+            Permission::PrivacyManage,
+            Permission::RetentionManage,
+            Permission::LedgerReanchor,
+            Permission::LedgerRestore,
+        ] {
+            legacy.permission_set.remove(&verb);
+        }
+        assert!(
+            grandfather_split_verbs(&mut legacy),
+            "a pre-split Platform Administrator must be migrated"
+        );
+        assert_eq!(
+            legacy.permission_set,
+            Role::platform_administrator().permission_set,
+            "migration must restore the Platform Administrator's exact pre-split reach — no more, \
+             no less"
+        );
     }
 }

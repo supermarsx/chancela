@@ -74,8 +74,39 @@ fn init_tracing() {
     }
 }
 
-#[tokio::main]
-async fn main() {
+/// Process entry point. Deliberately **synchronous**: it applies the persisted env overrides while
+/// the process is still single-threaded, then builds the async runtime and hands off to [`run`].
+///
+/// ## Why not `#[tokio::main]` (the R1 invariant, edition 2024)
+/// `std::env::set_var` is `unsafe` in edition 2024 and must run before any other thread reads the
+/// environment. `#[tokio::main]` would spawn the runtime's worker threads before this function's body
+/// executes, so a `set_var` in the body could race their `getenv`s. Applying overrides here, before we
+/// build the runtime below, keeps the whole apply single-threaded and correct.
+///
+/// Nothing above the runtime build reads a var an override is meant to change: the data dir comes from
+/// `CHANCELA_DATA_DIR`, which is derived (Tier D) and never overridable, so resolving it first to find
+/// `env-overrides.json` is free of the chicken-and-egg the override store avoids. `init_tracing`,
+/// `try_from_env`, and every dependency crate's lazy `std::env::var` all run *inside* [`run`], after
+/// the overrides are stamped — so even `CHANCELA_LOG` is overridable. Restart-to-apply is the model:
+/// overrides are read once here, per process start.
+fn main() {
+    // R1: apply persisted overrides as the very first thing, single-threaded, before the runtime
+    // spawns workers and before anything reads env. Precedence: override > ambient env > code default.
+    if let Some(data_dir) = chancela_api::AppState::resolve_data_dir() {
+        chancela_api::env_overrides::apply_from_data_dir(&data_dir);
+    }
+
+    // Only now — with the environment stamped — build the multi-threaded runtime and run the server.
+    // This mirrors what `#[tokio::main]` builds (`new_multi_thread().enable_all()`).
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to build the tokio runtime")
+        .block_on(run());
+}
+
+/// The async server entry point: initialise tracing, open the store, and serve until shutdown.
+async fn run() {
     init_tracing();
 
     let raw_addr = std::env::var(ADDR_ENV).unwrap_or_else(|_| DEFAULT_ADDR.to_owned());

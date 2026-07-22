@@ -127,6 +127,28 @@ pub enum TermoError {
         /// The refused capacity.
         capacity: SignatoryCapacity,
     },
+    /// A signatory used the out-of-list [`SignatoryCapacity::Other`] quality without the
+    /// required free-text note.
+    ///
+    /// **`ASSURANCE`, not law.** `Other` sits *outside* CCom art. 31.º n.º 2's allow-list; it is
+    /// admitted only as an assurance escape hatch and only when it says what the quality is
+    /// (mirroring [`crate::act::Attendee::quality_note`] and [`crate::book::ClosingReason::Other`]).
+    #[error("termo signatory slot {slot_id} uses the 'Other' quality but supplies no note")]
+    MissingSignatoryCapacityNote {
+        /// The offending slot.
+        slot_id: Uuid,
+    },
+    /// A capacity note was supplied on a slot whose capacity is a modelled one.
+    ///
+    /// The note is meaningful only for [`SignatoryCapacity::Other`]; keeping the structured
+    /// capacity a closed set means rejecting a stray note rather than silently dropping it.
+    #[error(
+        "termo signatory slot {slot_id} carries a capacity note but its capacity is not 'Other'"
+    )]
+    UnexpectedSignatoryCapacityNote {
+        /// The offending slot.
+        slot_id: Uuid,
+    },
     /// The same slot id appears twice.
     #[error("duplicate termo signatory slot id {0}")]
     DuplicateSlotId(Uuid),
@@ -292,6 +314,20 @@ pub enum ActError {
          Correct a signed act with a new act that retifies it (WFL-21)"
     )]
     SignaturesCollected,
+    /// A free reversion ([`crate::Act::revert_to`]) was attempted from `Signing`.
+    ///
+    /// `Signing` is the content-freeze boundary: entering it minted the canonical signing
+    /// snapshot and reserved pages. Walking it back is not a free workflow move like the
+    /// pre-signature reversions — it must supersede the snapshot and release the reservation,
+    /// which is exactly what [`crate::Act::reopen_for_correction`] does (and only while no
+    /// signature has been collected). Routing a `Signing` reversal through `revert_to` would
+    /// bypass those guards, so it is refused here and directed at that path.
+    #[error(
+        "cannot freely revert from Signing; the content is frozen and a snapshot was minted. \
+         Use reopen_for_correction (Signing -> TextApproved), which supersedes the snapshot and \
+         is refused once any signature is collected"
+    )]
+    RevertFromSigning,
 }
 
 /// Sealing an act or opening a book failed.
