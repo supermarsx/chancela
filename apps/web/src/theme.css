@@ -129,9 +129,14 @@ a:focus-visible {
 }
 
 .app {
-  max-width: 1080px;
+  /* The two shell measures + the horizontal gutter, named so the header shrink-back rule
+     below can be derived from them exactly (change a measure once, the header follows). */
+  --app-measure: 1080px;
+  --app-measure-wide: 92rem;
+  --app-gutter: clamp(1.25rem, 4vw, 3rem);
+  max-width: var(--app-measure);
   margin: 0 auto;
-  padding: clamp(1.25rem, 4vw, 3rem);
+  padding: var(--app-gutter);
   /* Tighten the gap between the fixed tab bar and the page content (t19-e2 item d): the
      uniform PageHeader no longer carries the old `.section-title` top margin, and the
      scroll container's top padding is trimmed so pages start close under the tabs. */
@@ -146,7 +151,21 @@ a:focus-visible {
    gutters stay and text never runs to the viewport edge. Below the wider measure the rule
    is inert — `.app` is already fluid there. */
 .app:has(.wide-page) {
-  max-width: 92rem;
+  max-width: var(--app-measure-wide);
+}
+
+/* Keep the page header — the title and the shared `<SubNav>` sub-tab strip — at the usual
+   reading measure even when a wide sub-tab has widened `.app` (t18). Without this the sub-tab
+   bar rides the shell's width: on pages that mix a wide sub-tab with a narrow one (Arquivo's
+   Registo/Exportação, a book/entity detail's wide panel, some Configurações tabs) the strip
+   jumped in width/position every time the operator toggled between them. Sized to the narrow
+   content box (measure minus both gutters) and centred in the widened shell, the header box
+   lands exactly where it sits on a normal-width page, so the strip stays put while only the
+   data-heavy panel below breaks out to the wider measure. Below the wide measure the cap is
+   larger than the fluid content box, so it is inert — no shrink on narrow screens. */
+.app:has(.wide-page) .page-header {
+  max-width: calc(var(--app-measure) - 2 * var(--app-gutter));
+  margin-inline: auto;
 }
 
 .external-signature-page {
@@ -2849,10 +2868,11 @@ a.btn.btn--iconOnly {
   justify-content: flex-end;
 }
 
+/* A `·`-separated run of friendly chain names, mirroring the Âmbito column rather than the old
+   uppercase pills. `inline-block` keeps `max-width` governing where the run wraps to a second line
+   (see the compact-row note below) while the separators — not a flex gap — do the spacing. */
 .ledger-chain-list {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  display: inline-block;
   max-width: 18rem;
 }
 
@@ -2891,7 +2911,7 @@ a.btn.btn--iconOnly {
 
 /* The chain column is the one cell that wraps to a second line, which would undo the compaction
    row by row. The extra measure only exists at the `.wide-page` width the Arquivo now opts into,
-   so it is claimed there and nowhere else; the badges still wrap rather than being clipped,
+   so it is claimed there and nowhere else; the names still wrap rather than being clipped,
    because truncating a chain id on an evidentiary surface is worse than a taller row. */
 @media (min-width: 1100px) {
   .ledger-table .ledger-chain-list {
@@ -11099,37 +11119,233 @@ input[type='radio']:disabled {
   gap: 0.4rem;
 }
 
-/* A tidy square well for the native colour input — strip the UA chrome and frame it
-   with the same firmer interactive edge the text inputs use. */
-.color-customizer__swatch {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 2.6rem;
-  height: 2.2rem;
-  padding: 0;
+/* ============================================================================
+ * Themed colour picker (t11) — the self-built replacement for the raw
+ * `<input type="color">`. A swatch trigger opens an interactive popover
+ * (ColorPicker.tsx) styled purely with theme tokens, so it is light/dark-correct
+ * for free. The native-swatch rules that used to live here are gone; the
+ * `.color-customizer` GROUP shell above/below stays (the field grid, the reset
+ * row) — only the control inside each field changed.
+ *
+ * The panel is portaled to <body> and positioned `fixed` in JS; its entrance
+ * transition collapses under the global prefers-reduced-motion / safe-mode
+ * kill-switches (each zeroes `transition` on `*`), exactly like `.tooltip*`.
+ * ========================================================================== */
+
+/* The trigger: a framed swatch chip + hex label, on the same firmer interactive
+   edge the text inputs use (WCAG 1.4.11 for a control boundary). */
+.color-picker__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
   border: 1px solid var(--field-border);
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
   cursor: pointer;
 }
 
-.color-customizer__swatch::-webkit-color-swatch-wrapper {
-  padding: 2px;
-}
-
-.color-customizer__swatch::-webkit-color-swatch {
-  border: none;
-  border-radius: 2px;
-}
-
-.color-customizer__swatch::-moz-color-swatch {
-  border: none;
-  border-radius: 2px;
-}
-
-.color-customizer__swatch:focus-visible {
+.color-picker__trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.color-picker__chip {
+  flex: 0 0 auto;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 3px;
+  /* A hairline so a chip near the surface colour (e.g. a light surface preset) is
+     still bounded, plus an inner ring so it reads as a swatch not a hole. */
+  border: 1px solid color-mix(in srgb, var(--green-ink) 25%, transparent);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25);
+}
+
+.color-picker__triggerhex {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The portaled popover. Fixed, positioned in JS; a token-styled card that floats
+   above the page (below the tooltip layer at 2200). */
+.color-picker__panel {
+  position: fixed;
+  z-index: 1500;
+  width: 15rem;
+  max-width: calc(100vw - 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--green-ink) 55%, transparent);
+  /* Closed → invisible and non-interactive; opening fades + rises. The transition is
+     zeroed by the global reduced-motion / safe-mode blocks, so no motion escapes them. */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition:
+    opacity var(--motion-panel-duration) var(--motion-ease-enter),
+    transform var(--motion-panel-duration) var(--motion-ease-enter),
+    visibility 0s linear var(--motion-panel-duration);
+}
+
+.color-picker__panel.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition:
+    opacity var(--motion-panel-duration) var(--motion-ease-enter),
+    transform var(--motion-panel-duration) var(--motion-ease-enter);
+}
+
+/* A panel that flips ABOVE its trigger rises from the opposite direction. */
+.color-picker__panel--top {
+  transform: translateY(4px);
+}
+
+.color-picker__panel--top.is-open {
+  transform: translateY(0);
+}
+
+/* The 2D saturation (x) / brightness (y) field. The layered gradients are set inline
+   (they depend on the live hue); this rule owns the box + the draggable thumb. */
+.color-picker__area {
+  position: relative;
+  width: 100%;
+  height: 8.5rem;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--green-ink) 20%, transparent);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.color-picker__area:focus-visible,
+.color-picker__hue:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.color-picker__area-thumb {
+  position: absolute;
+  width: 0.85rem;
+  height: 0.85rem;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+
+/* The hue rail — a fixed spectrum, so it is an inline literal rather than a token. */
+.color-picker__hue {
+  position: relative;
+  width: 100%;
+  height: 0.85rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--green-ink) 20%, transparent);
+  cursor: pointer;
+  touch-action: none;
+  background: linear-gradient(
+    to right,
+    #f00 0%,
+    #ff0 17%,
+    #0f0 33%,
+    #0ff 50%,
+    #00f 67%,
+    #f0f 83%,
+    #f00 100%
+  );
+}
+
+.color-picker__hue-thumb {
+  position: absolute;
+  top: 50%;
+  width: 0.9rem;
+  height: 0.9rem;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+
+.color-picker__hexrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.color-picker__hexlabel {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.color-picker__hexinput {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+}
+
+.color-picker__hexinput:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.color-picker__hexinput[aria-invalid='true'] {
+  border-color: var(--danger, #a3402b);
+}
+
+.color-picker__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.color-picker__preset {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--green-ink) 25%, transparent);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2);
+  cursor: pointer;
+}
+
+.color-picker__preset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.color-picker__footer {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  padding-top: 0.55rem;
+}
+
+.color-picker__clear {
+  font-size: 0.72rem;
+  padding-block: 0.25rem;
 }
 
 /* The reset-to-defaults row (t31 follow-up).
@@ -11286,4 +11502,81 @@ input[type='radio']:disabled {
   .privacy-filterbar__primary .field:first-child {
     flex-basis: min(100%, 13rem);
   }
+}
+
+/* --- Trust multi-column data tables → stacked labelled sections (t22) ---------
+ *
+ * StatusHistoryTable / DigitalIdentitiesTable / ProviderServicesTable live in the
+ * constrained `.trust-explorer__detail` pane, which is narrow even on a wide viewport.
+ * Their ETSI service-type URIs and 64-char digests wrap into thin, cramped columns
+ * (`.trust-opaque` prevents overflow but not the cramping — the "columns don't fit"
+ * complaint). Each already emits `data-label` on every `<td>`, so — mirroring
+ * `.platform-log-table` above — we consume it here to stack every row into labelled
+ * field groups that take the full pane width. Unlike `.platform-log-table` this is
+ * unconditional, not viewport-gated, because the pane is narrow at every viewport. */
+.trust-history-table .table,
+.trust-history-table .table thead,
+.trust-history-table .table tbody,
+.trust-history-table .table tr,
+.trust-history-table .table td,
+.trust-identity-table .table,
+.trust-identity-table .table thead,
+.trust-identity-table .table tbody,
+.trust-identity-table .table tr,
+.trust-identity-table .table td,
+.trust-services-table .table,
+.trust-services-table .table thead,
+.trust-services-table .table tbody,
+.trust-services-table .table tr,
+.trust-services-table .table td {
+  display: block;
+}
+
+.trust-history-table .table thead,
+.trust-identity-table .table thead,
+.trust-services-table .table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.trust-history-table .table tr,
+.trust-identity-table .table tr,
+.trust-services-table .table tr {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+}
+
+.trust-history-table .table tr + tr,
+.trust-identity-table .table tr + tr,
+.trust-services-table .table tr + tr {
+  margin-top: 0.55rem;
+}
+
+.trust-history-table .table td,
+.trust-identity-table .table td,
+.trust-services-table .table td {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 0.35fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  border-bottom: 0;
+  padding: 0.25rem 0;
+  min-width: 0;
+}
+
+.trust-history-table .table td::before,
+.trust-identity-table .table td::before,
+.trust-services-table .table td::before {
+  content: attr(data-label);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  align-self: start;
 }
