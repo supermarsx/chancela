@@ -22,12 +22,21 @@
       "kind": "Paragraph",
       "template": "Encerra-se o presente livro, que contém {{ ata_count }} atas lavradas e seladas na cadeia de registo desta escrituração digital, nos termos do Código Cooperativo (Lei n.º 119/2015)."
     },
+    { "kind": "NarrativeBody" },
     { "kind": "Rule" },
     {
       "kind": "SignatureBlock",
       "source": "required_signatories",
       "role": "{{ role }}",
       "name": "{{ name }}"
+    }
+  ],
+  "default_body": [
+    {
+      "text": "Encerra-se o presente livro de atas, que contém as atas nele lavradas e numeradas sequencialmente, nos termos do Código Cooperativo (Lei n.º 119/2015)."
+    },
+    {
+      "text": "As atas integram a cadeia de registo desta escrituração digital, permitindo verificar a sua autenticidade e detetar qualquer adulteração. Em regime de folhas soltas, todas as folhas são numeradas e encadeadas entre si."
     }
   ]
 }

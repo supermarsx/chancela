@@ -77,8 +77,8 @@ use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_book};
 use crate::dto::{
-    BookView, OpenBookFromTermo, PatchTermoAbertura, SignTermoSlot, TermoInstrumentView,
-    normalize_capacity_note, parse_date,
+    BookView, CloseBookFromTermo, OpenBookFromTermo, PatchTermoAbertura, PatchTermoEncerramento,
+    SignTermoSlot, TermoInstrumentView, normalize_capacity_note, parse_date,
 };
 use crate::error::ApiError;
 use crate::signature::{
@@ -150,7 +150,7 @@ async fn load_book_abertura(
 /// snapshot (e2's PKCS#12 path) is what populates `instrument_signatures` and lets a book open.
 async fn require_real_signatures(
     state: &AppState,
-    book_id: BookId,
+    subject: ActId,
     termo: &TermoInstrument,
 ) -> Result<(), ApiError> {
     let required: Vec<Uuid> = termo
@@ -159,9 +159,10 @@ async fn require_real_signatures(
         .filter(|slot| slot.required)
         .map(|slot| slot.id)
         .collect();
-    // R1: the unified termo signing subject — the same key e2's sign handlers persist under, and the
-    // same key the advance snapshot + preserved-at-open PDF/A use.
-    let subject = ActId(book_id.0);
+    // The termo signing subject is passed by the caller: `ActId(book.id.0)` for the abertura (one-shot
+    // parity, R1), `ActId(termo.id.0)` for the encerramento (kept disjoint from the abertura's
+    // book-keyed artifacts). Either way it is the same key the sign handlers persist under and the
+    // advance snapshot + preserved PDF/A use.
     let real = match &state.store {
         Some(store) => store
             .read_blocking_async(move |s| s.instrument_signatures_for_subject(subject))
@@ -272,27 +273,38 @@ fn apply_patch(termo: &mut TermoInstrument, patch: PatchTermoAbertura) -> Result
         termo.fields.predecessor_note = non_empty(predecessor_note);
     }
     if let Some(slots) = patch.signatories {
-        // Replace the whole slot set; each input mints a fresh slot id + order.
-        termo.signatories.clear();
-        for input in slots {
-            let mut slot = if input.required {
-                TermoSignatorySlot::required(input.name, input.capacity, input.order)
-            } else {
-                TermoSignatorySlot::optional(input.name, input.capacity, input.order)
-            };
-            if let Some(email) = input.email.and_then(non_empty) {
-                slot = slot.with_email(email);
-            }
-            if let Some(note) = normalize_capacity_note(input.capacity_note) {
-                slot = slot.with_capacity_note(note);
-            }
-            termo.add_signatory(slot).map_err(map_termo_error)?;
-        }
+        replace_signatory_slots(termo, slots)?;
     }
     if let Some(policy) = patch.completion_policy {
         termo
             .set_completion_policy(policy)
             .map_err(map_termo_error)?;
+    }
+    Ok(())
+}
+
+/// Replace a termo's whole signatory slot set from PATCH input. Shared by the abertura and
+/// encerramento patch paths — the slot model is identical (art. 31.º n.º 2 puts both termos on the
+/// same signers). Each input mints a fresh slot id; the caller-supplied `order` drives sequential
+/// collection. The qualidade-`Other` assurance note (D1) round-trips.
+fn replace_signatory_slots(
+    termo: &mut TermoInstrument,
+    slots: Vec<crate::dto::TermoSlotInput>,
+) -> Result<(), ApiError> {
+    termo.signatories.clear();
+    for input in slots {
+        let mut slot = if input.required {
+            TermoSignatorySlot::required(input.name, input.capacity, input.order)
+        } else {
+            TermoSignatorySlot::optional(input.name, input.capacity, input.order)
+        };
+        if let Some(email) = input.email.and_then(non_empty) {
+            slot = slot.with_email(email);
+        }
+        if let Some(note) = normalize_capacity_note(input.capacity_note) {
+            slot = slot.with_capacity_note(note);
+        }
+        termo.add_signatory(slot).map_err(map_termo_error)?;
     }
     Ok(())
 }
@@ -515,10 +527,29 @@ pub async fn sign_abertura_pkcs12(
         ));
     }
 
-    // The unified signing subject (R1): the snapshot, the per-slot history, and the preserved PDF/A
-    // are all keyed on `ActId(book.id.0)`.
-    let subject = ActId(book_id.0);
-    let mut termo = load_book_abertura(&state, book_id).await?;
+    // The unified abertura signing subject (R1): the snapshot, the per-slot history, and the
+    // preserved PDF/A are all keyed on `ActId(book.id.0)`.
+    let termo = load_book_abertura(&state, book_id).await?;
+    sign_termo_slot_pkcs12(&state, ActId(book_id.0), termo, req, "termo de abertura").await
+}
+
+/// Shared PKCS#12 per-slot **real-PAdES** signing over a frozen termo snapshot, driving both the
+/// abertura and the encerramento `sign/pkcs12` handlers. Each caller loads its own kind-specific
+/// termo and resolves the signing subject (`ActId(book.id.0)` for the abertura, `ActId(termo.id.0)`
+/// for the encerramento — kept disjoint so the two termos' snapshots + signature sets never collide);
+/// everything else is identical, because art. 31.º n.º 2 puts both termos on the same signers with
+/// the same parallel co-signature model.
+///
+/// `subject` keys the snapshot lookup, the per-slot `instrument_signatures` row and the in-memory
+/// signed-doc cache. `reason_label` names the instrument in the PDF `/Reason` (pt-PT). Nothing enters
+/// the hash chain here — a `Signing` termo is off-chain until its open/close genesis digests it.
+async fn sign_termo_slot_pkcs12(
+    state: &AppState,
+    subject: ActId,
+    mut termo: TermoInstrument,
+    req: SignTermoSlotPkcs12,
+    reason_label: &str,
+) -> Result<Json<TermoInstrumentView>, ApiError> {
     if termo.state != TermoState::Signing {
         return Err(ApiError::Conflict(
             "the termo is not collecting signatures; freeze it for signing first".to_owned(),
@@ -536,7 +567,7 @@ pub async fn sign_abertura_pkcs12(
     }
 
     // The canonical UNSIGNED snapshot pinned at advance (t41-e1), keyed on the subject.
-    let snapshot = crate::documents::load_document(&state, subject)
+    let snapshot = crate::documents::load_document(state, subject)
         .await?
         .ok_or_else(|| {
             ApiError::Conflict(
@@ -601,9 +632,9 @@ pub async fn sign_abertura_pkcs12(
         .filter(|c| !c.is_empty())
     {
         Some(capacity) => {
-            format!("Assinatura local avançada do termo de abertura ({capacity})")
+            format!("Assinatura local avançada do {reason_label} ({capacity})")
         }
-        None => "Assinatura local avançada do termo de abertura".to_owned(),
+        None => format!("Assinatura local avançada do {reason_label}"),
     };
     let opts = SignOptions {
         field_name: Some(format!("AssinaturaTermo-{}", req.slot_id)),
@@ -642,7 +673,7 @@ pub async fn sign_abertura_pkcs12(
     .map_err(map_termo_pkcs12_error)?;
 
     let final_pdf =
-        finalize_signed_pdf(&state, signed_pdf, &identity.signing_certificate_der).await?;
+        finalize_signed_pdf(state, signed_pdf, &identity.signing_certificate_der).await?;
     // The signed bytes MUST extend the frozen snapshot byte-for-byte — a valid single-signature
     // incremental PAdES revision over the canonical termo PDF.
     ensure_signed_pdf_binds_document(&snapshot, &final_pdf.bytes)?;
@@ -707,6 +738,7 @@ pub async fn sign_abertura_pkcs12(
 /// canonical units per [[signed-pdfa-is-the-canonical-unit]]); they are never re-rendered (that would
 /// discard the signatures) and never merged into one file (that would invalidate every signature).
 fn build_cosignature_manifest(
+    kind: &str,
     subject: ActId,
     snapshot: &StoredDocument,
     signatures: &[StoredInstrumentSignature],
@@ -725,7 +757,7 @@ fn build_cosignature_manifest(
         })
         .collect();
     json!({
-        "kind": "termo.abertura.cosignatures",
+        "kind": kind,
         "model": "parallel-co-signature",
         "subject": subject.to_string(),
         "snapshot_document_id": snapshot.id,
@@ -762,7 +794,7 @@ pub async fn open_from_termo(
     // cryptographically signed. Runs BEFORE `seal`, so a not-really-signed termo stays `Signing`
     // (retriable) and never appears as `Sealed`. R1: keyed on `ActId(book.id.0)` so it sees e2's
     // real per-slot signatures.
-    require_real_signatures(&state, book_id, &termo).await?;
+    require_real_signatures(&state, ActId(book_id.0), &termo).await?;
 
     // numbering_scheme reconciliation (e1 flag): the snapshot every signatory signed was frozen at
     // advance under the codebase-default `Sequential` scheme (numbering_scheme is not yet a
@@ -856,7 +888,12 @@ pub async fn open_from_termo(
                     .to_owned(),
             ));
         };
-        let manifest = build_cosignature_manifest(subject, &snapshot_doc, &signatures);
+        let manifest = build_cosignature_manifest(
+            "termo.abertura.cosignatures",
+            subject,
+            &snapshot_doc,
+            &signatures,
+        );
         let scope = format!("entity:{}/book:{}", next.entity_id, next.id);
         let payload = match serde_json::to_vec(&manifest) {
             Ok(payload) => payload,
@@ -888,6 +925,471 @@ pub async fn open_from_termo(
             })
             .await?;
         // Keep the in-memory documents cache consistent with the preserved base PDF/A.
+        state
+            .documents
+            .write()
+            .await
+            .insert(snapshot_doc.act_id, snapshot_doc);
+    }
+    state.attest_latest(&attestor, &ledger).await;
+
+    let view = BookView::from(&next);
+    if let Some(slot) = books.get_mut(&book_id) {
+        *slot = next;
+    }
+    Ok(Json(view))
+}
+
+// ================================================================================================
+// Termo de encerramento — the two-phase CLOSE mirror of the abertura open (t44)
+// ================================================================================================
+//
+// The closing term is "like any other ata": templated (t44-e1 seeds) and signed through the SAME
+// parallel co-signature PAdES pipeline the abertura uses (t41). These handlers mirror the abertura
+// ones; the differences are deliberate and documented:
+//
+//   * The book must be **Open** (not `Created`) to close, and stays Open until a genuinely-signed
+//     encerramento seals it — a book AT capacity is closeable (t44-e2 blocks new acts, not close),
+//     and a book is NEVER auto-closed on a fake signature.
+//   * The signing subject is `ActId(termo.id.0)`, NOT the book id the abertura uses, so the
+//     encerramento's snapshot + `instrument_signatures` never overwrite/merge the abertura's (which
+//     live under `ActId(book.id.0)`). See `documents::generate_encerramento_snapshot`.
+//   * `close_from_termo` derives the authoritative facts (F18 ata count, F16 pages used) from the
+//     book — `Book::close` overwrites them again — and refuses to seal a signed snapshot whose
+//     material ata count no longer matches the book (the stale-fact guard, R12).
+
+/// Load a book's termo de encerramento from the store. `404` if the book has no encerramento draft
+/// (e.g. a book closed one-shot, or one never entered into the two-phase close flow).
+async fn load_book_encerramento(
+    state: &AppState,
+    book_id: BookId,
+) -> Result<TermoInstrument, ApiError> {
+    let Some(store) = &state.store else {
+        return Err(ApiError::NotFound);
+    };
+    let termos = store
+        .read_blocking_async(move |s| s.termo_instruments_for_book(book_id))
+        .await
+        .map_err(|e| ApiError::Internal(format!("termo store read failed: {e}")))?;
+    termos
+        .into_iter()
+        .find(|t| t.kind == TermoKind::Encerramento)
+        .ok_or(ApiError::NotFound)
+}
+
+/// The termo de encerramento signing subject: the encerramento instrument's OWN id, kept disjoint
+/// from the abertura's book-keyed subject (see `documents::generate_encerramento_snapshot`).
+fn encerramento_subject(termo: &TermoInstrument) -> ActId {
+    ActId(termo.id.0)
+}
+
+/// `GET /v1/books/{id}/termo/encerramento` — read the book's termo de encerramento instrument.
+pub async fn get_encerramento(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<TermoInstrumentView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(&state, &actor, Permission::BookRead, scope_of_book(book_id)).await?;
+    let termo = load_book_encerramento(&state, book_id).await?;
+    Ok(Json(TermoInstrumentView::from(&termo)))
+}
+
+/// `PATCH /v1/books/{id}/termo/encerramento` — edit the draft (title, body, fields, signatory slots,
+/// completion policy). Rejected with `409` once the termo has left `Draft`.
+pub async fn patch_encerramento(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    Json(patch): Json<PatchTermoEncerramento>,
+) -> Result<Json<TermoInstrumentView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookClose,
+        scope_of_book(book_id),
+    )
+    .await?;
+    let mut termo = load_book_encerramento(&state, book_id).await?;
+    if !termo.is_mutable() {
+        return Err(ApiError::Conflict(
+            "termo is frozen; edits are rejected once signing has begun".to_owned(),
+        ));
+    }
+    apply_patch_encerramento(&mut termo, patch)?;
+    persist_termo(&state, &termo).await?;
+    Ok(Json(TermoInstrumentView::from(&termo)))
+}
+
+/// Apply a PATCH to a `Draft` termo de encerramento. Mirrors [`apply_patch`], but the fillable
+/// fields are the encerramento's (a closing date + a structured closing reason, no page capacity).
+fn apply_patch_encerramento(
+    termo: &mut TermoInstrument,
+    patch: PatchTermoEncerramento,
+) -> Result<(), ApiError> {
+    if let Some(title) = patch.title {
+        termo.set_title(title).map_err(map_termo_error)?;
+    }
+    if let Some(body) = patch.body {
+        let clauses: Vec<TermoClause> = body
+            .into_iter()
+            .map(|clause| TermoClause::user_added(clause.heading, clause.text))
+            .collect();
+        termo.set_body(clauses).map_err(map_termo_error)?;
+    }
+    if let Some(book_number) = patch.book_number {
+        termo.fields.book_number = Some(book_number);
+    }
+    if let Some(place) = patch.place {
+        termo.fields.place = non_empty(place);
+    }
+    if let Some(closing_date) = patch.closing_date {
+        termo.fields.instrument_date = Some(parse_date(&closing_date)?);
+    }
+    if let Some(reason) = patch.closing_reason {
+        termo.fields.closing_reason = Some(reason);
+    }
+    if let Some(predecessor_note) = patch.predecessor_note {
+        termo.fields.predecessor_note = non_empty(predecessor_note);
+    }
+    if let Some(slots) = patch.signatories {
+        replace_signatory_slots(termo, slots)?;
+    }
+    if let Some(policy) = patch.completion_policy {
+        termo
+            .set_completion_policy(policy)
+            .map_err(map_termo_error)?;
+    }
+    Ok(())
+}
+
+/// `POST /v1/books/{id}/termo/encerramento/advance` — freeze the draft for signing (`Draft →
+/// Signing`): validate the content + signatory slots (the capacity allow-list, the
+/// at-least-one-signatory rule, the management floor, the completion policy, the required closing
+/// reason), pin the template, and render + pin the canonical **unsigned** encerramento snapshot with
+/// the book-derived facts materialized so signatories sign the real figures.
+pub async fn advance_encerramento(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<TermoInstrumentView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookClose,
+        scope_of_book(book_id),
+    )
+    .await?;
+
+    // Resolve the entity/book to render from; the book must be Open to close. The book-derived facts
+    // (F18/F16) are materialized here exactly as `Book::close` derives them. Lock order: entities →
+    // books.
+    let (entity, book, ata_count, pages_used_at_close) = {
+        let entities = state.entities.read().await;
+        let books = state.books.read().await;
+        let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
+        if !book.is_open() {
+            return Err(ApiError::Conflict(
+                "book is not Open; its termo de encerramento cannot be frozen".to_owned(),
+            ));
+        }
+        let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+        let ata_count = book.last_ata_number;
+        let pages_used_at_close = book.has_page_capacity().then_some(book.pages_used);
+        (entity.clone(), book.clone(), ata_count, pages_used_at_close)
+    };
+
+    let mut termo = load_book_encerramento(&state, book_id).await?;
+    if termo.fields.instrument_date.is_none() {
+        return Err(ApiError::Unprocessable(
+            "closing_date is required before the termo can be frozen for signing".to_owned(),
+        ));
+    }
+    let template_id = crate::documents::encerramento_template_id(entity.family)
+        .unwrap_or("csc-termo-encerramento/v1");
+    termo
+        .advance_to_signing(template_id, OffsetDateTime::now_utc())
+        .map_err(map_termo_error)?;
+
+    // Render + pin the canonical UNSIGNED encerramento snapshot, keyed on the encerramento subject
+    // `ActId(termo.id.0)`. A family without an encerramento template renders nothing; the book then
+    // closes on the domain event alone (one-shot parity).
+    let snapshot = crate::documents::generate_encerramento_snapshot(
+        &termo,
+        &book,
+        &entity,
+        ata_count,
+        pages_used_at_close,
+    )?;
+
+    // Persist the frozen termo + (if the family has a template) its unsigned snapshot in one durable
+    // commit. NO ledger append — a Signing termo is off-chain until the close genesis digests it.
+    {
+        let mut ledger = state.ledger.write().await;
+        let termo_for_store = termo.clone();
+        let snapshot_stored = snapshot.as_ref().map(|g| g.stored.clone());
+        state
+            .persist_write_through(&mut ledger, 0, move |tx| {
+                tx.upsert_termo_instrument(&termo_for_store)?;
+                if let Some(doc) = &snapshot_stored {
+                    tx.upsert_document(doc)?;
+                }
+                Ok(())
+            })
+            .await?;
+    }
+    if let Some(g) = &snapshot {
+        state
+            .documents
+            .write()
+            .await
+            .insert(g.stored.act_id, g.stored.clone());
+    }
+
+    Ok(Json(TermoInstrumentView::from(&termo)))
+}
+
+/// `POST /v1/books/{id}/termo/encerramento/sign` — record that a signatory slot signed by *reference*
+/// only (completion-tracking metadata, **not** an evidentiary cryptographic signature). A termo
+/// signed only through this path stays fail-closed at [`require_real_signatures`] — the book cannot
+/// close until a real per-slot PAdES signature over the encerramento PDF lands in the
+/// `instrument_signatures` history (see [`sign_encerramento_pkcs12`]).
+pub async fn sign_encerramento(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    Json(req): Json<SignTermoSlot>,
+) -> Result<Json<TermoInstrumentView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookClose,
+        scope_of_book(book_id),
+    )
+    .await?;
+    let mut termo = load_book_encerramento(&state, book_id).await?;
+    termo
+        .mark_slot_signed(req.slot_id, req.signature_id, OffsetDateTime::now_utc())
+        .map_err(map_termo_error)?;
+    persist_termo(&state, &termo).await?;
+    Ok(Json(TermoInstrumentView::from(&termo)))
+}
+
+/// `POST /v1/books/{id}/termo/encerramento/sign/pkcs12` — produce a **real cryptographic** per-slot
+/// PAdES signature over the frozen encerramento snapshot with a locally supplied PKCS#12/PFX
+/// certificate. The closing mirror of [`sign_abertura_pkcs12`]; both delegate to the shared
+/// [`sign_termo_slot_pkcs12`] core over the encerramento signing subject `ActId(termo.id.0)`.
+pub async fn sign_encerramento_pkcs12(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    Json(req): Json<SignTermoSlotPkcs12>,
+) -> Result<Json<TermoInstrumentView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookClose,
+        scope_of_book(book_id),
+    )
+    .await?;
+
+    // PKCS#12 local signing is the desk-application flow (mirrors the act pipeline's gate).
+    if !state.local_signing {
+        return Err(ApiError::Conflict(
+            "a assinatura local com certificado PKCS#12 só está disponível na aplicação de secretária"
+                .to_owned(),
+        ));
+    }
+
+    let termo = load_book_encerramento(&state, book_id).await?;
+    let subject = encerramento_subject(&termo);
+    sign_termo_slot_pkcs12(&state, subject, termo, req, "termo de encerramento").await
+}
+
+/// `POST /v1/books/{id}/termo/encerramento/close` — seal the signed termo de encerramento and close
+/// the book (the CLOSE mirror of [`open_from_termo`]).
+///
+/// Requires the completion policy satisfied AND — the fail-closed gate — every required slot really
+/// cryptographically signed. Re-derives the authoritative facts and rejects a snapshot whose material
+/// ata count moved under the signers (R12). Appends the `book.closed` event digesting the *final,
+/// filled, signed* encerramento projection, and **preserves the SET of co-signature PDF/As** (R2):
+/// the frozen snapshot stays as the preserved base PDF/A (keyed `ActId(termo.id.0)`) and a
+/// `document.generated` event digesting the co-signature manifest binds the exact set of real
+/// signatures into the SAME atomic close commit. The termo is **not** re-rendered into the preserved
+/// output at close (a re-render would be unsigned).
+pub async fn close_from_termo(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CloseBookFromTermo>,
+) -> Result<Json<BookView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookClose,
+        scope_of_book(book_id),
+    )
+    .await?;
+    let actor = actor.resolve(&req.actor);
+
+    let mut termo = load_book_encerramento(&state, book_id).await?;
+    let subject = encerramento_subject(&termo);
+    // EVIDENTIARY FAIL-CLOSED GATE (binding, inherited from the abertura): refuse to seal/close a
+    // termo that is not really cryptographically signed. Runs BEFORE `seal`, so a not-really-signed
+    // termo stays `Signing` (retriable); the book stays `Open`, never auto-closed on a fake signature.
+    require_real_signatures(&state, subject, &termo).await?;
+
+    // Load the SET of co-signature PDF/As recorded at sign time + the frozen snapshot — BEFORE the
+    // write locks. The gate above already proved they cover every required slot.
+    let signatures: Vec<StoredInstrumentSignature> = match &state.store {
+        Some(store) => store
+            .read_blocking_async(move |s| s.instrument_signatures_for_subject(subject))
+            .await
+            .map_err(|e| {
+                ApiError::Internal(format!("instrument signature store read failed: {e}"))
+            })?,
+        None => Vec::new(),
+    };
+    let snapshot = crate::documents::load_document(&state, subject).await?;
+
+    // Seal the termo (checks the completion policy) on a clone — discarded if any later precondition
+    // fails, leaving the stored Signing termo retriable.
+    termo
+        .seal(OffsetDateTime::now_utc())
+        .map_err(map_termo_error)?;
+
+    // entities → books → ledger.
+    let entities = state.entities.read().await;
+    let mut books = state.books.write().await;
+    let mut ledger = state.ledger.write().await;
+    let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
+    if !book.is_open() {
+        return Err(ApiError::Conflict(
+            "book is not Open; it cannot be closed".to_owned(),
+        ));
+    }
+    let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+
+    // Authoritative facts (F18 ata count / F16 pages used). `Book::close` overwrites these again; we
+    // derive them here for the projection AND the stale-fact guard.
+    let ata_count = book.last_ata_number;
+    let pages_used_at_close = book.has_page_capacity().then_some(book.pages_used);
+
+    // STALE-FACT GUARD (R12): the snapshot every signatory signed was frozen at advance with the ata
+    // count as it then stood. Re-render the encerramento from the CURRENT authoritative facts; if the
+    // material figure moved under the signers (a new ata was sealed mid-signing), the re-rendered
+    // bytes differ from the signed snapshot — refuse to seal a signed document that would contradict
+    // the ledger. A signed false fact is unrecoverable; discarding this attempt is the lesser evil.
+    if let Some(snapshot_doc) = &snapshot
+        && let Some(rederived) = crate::documents::generate_encerramento_snapshot(
+            &termo,
+            book,
+            entity,
+            ata_count,
+            pages_used_at_close,
+        )?
+        && rederived.stored.pdf_digest != snapshot_doc.pdf_digest
+    {
+        return Err(ApiError::Conflict(
+            "o livro registou uma nova ata depois de o termo de encerramento ter sido congelado \
+             para assinatura; o número de atas declarado deixou de corresponder ao livro. O termo \
+             assinado não pode ser selado porque contradiria o registo — recomece o termo de \
+             encerramento com os factos atualizados."
+                .to_owned(),
+        ));
+    }
+
+    let projected = termo
+        .project_encerramento(ata_count, pages_used_at_close)
+        .map_err(map_termo_error)?;
+
+    let mut next = book.clone();
+    // `Book::close` overwrites ata_count/pages_used authoritatively and moves Open → Closed.
+    next.close(projected)?;
+
+    let scope = format!("entity:{}/book:{}", next.entity_id, next.id);
+    let closed_payload = serde_json::to_vec(
+        next.termo_encerramento
+            .as_ref()
+            .expect("termo present immediately after close"),
+    )?;
+    // Appends the `book.closed` event digesting the final, filled, signed encerramento projection.
+    crate::try_append_event(
+        &mut ledger,
+        &actor,
+        &scope,
+        "book.closed",
+        None,
+        &closed_payload,
+    )?;
+
+    let sealed_termo = termo.clone();
+
+    // Preserve the SET of signed PDF/As and bind it into the SAME durable commit as `book.closed`. A
+    // write failure rolls the `book.closed` event back so a failed close leaves no trace.
+    if signatures.is_empty() {
+        // No recorded crypto signatures — a family with no encerramento template renders no snapshot
+        // and can carry no PAdES evidence, so it closes on the domain event alone (one-shot parity).
+        // (With a template, the gate above guarantees signatures exist.)
+        let book_for_store = next.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_book(&book_for_store)?;
+                tx.upsert_termo_instrument(&sealed_termo)
+            })
+            .await?;
+    } else {
+        let Some(snapshot_doc) = snapshot else {
+            // Signatures exist but the snapshot is gone — an inconsistent store. Fail closed rather
+            // than close a book whose signed set we cannot bind; roll the `book.closed` event back.
+            AppState::rollback_ledger_events(&mut ledger, 1);
+            return Err(ApiError::Internal(
+                "the termo de encerramento is cryptographically signed but its frozen snapshot is \
+                 missing; refusing to close without preserving the signed set"
+                    .to_owned(),
+            ));
+        };
+        let manifest = build_cosignature_manifest(
+            "termo.encerramento.cosignatures",
+            subject,
+            &snapshot_doc,
+            &signatures,
+        );
+        let payload = match serde_json::to_vec(&manifest) {
+            Ok(payload) => payload,
+            Err(e) => {
+                AppState::rollback_ledger_events(&mut ledger, 1);
+                return Err(e.into());
+            }
+        };
+        if let Err(e) = crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &scope,
+            "document.generated",
+            None,
+            &payload,
+        ) {
+            AppState::rollback_ledger_events(&mut ledger, 1);
+            return Err(e);
+        }
+        let book_for_store = next.clone();
+        let snapshot_for_store = snapshot_doc.clone();
+        state
+            .persist_write_through(&mut ledger, 2, move |tx| {
+                tx.upsert_book(&book_for_store)?;
+                // Re-affirm the frozen snapshot as the preserved base PDF/A (idempotent; pinned at
+                // advance). NOT re-rendered — the signatures bind to exactly these bytes.
+                tx.upsert_document(&snapshot_for_store)?;
+                tx.upsert_termo_instrument(&sealed_termo)
+            })
+            .await?;
         state
             .documents
             .write()

@@ -623,6 +623,17 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // POST book.open@Book (real PKCS#12 PAdES)
     ("/v1/books/{id}/termo/abertura/open", RouteClass::Gated), // POST book.open@Book (seal + open)
+    ("/v1/books/{id}/termo/encerramento", RouteClass::Gated), // GET book.read@Book · PATCH book.close@Book
+    (
+        "/v1/books/{id}/termo/encerramento/advance",
+        RouteClass::Gated,
+    ), // POST book.close@Book (freeze)
+    ("/v1/books/{id}/termo/encerramento/sign", RouteClass::Gated), // POST book.close@Book (collect signature reference)
+    (
+        "/v1/books/{id}/termo/encerramento/sign/pkcs12",
+        RouteClass::Gated,
+    ), // POST book.close@Book (real PKCS#12 PAdES)
+    ("/v1/books/{id}/termo/encerramento/close", RouteClass::Gated), // POST book.close@Book (seal + close)
     ("/v1/books/paper-import/validate", RouteClass::Gated), // POST book.import@Global (read-only)
     ("/v1/books/paper-import", RouteClass::Gated), // GET/POST book.import@Global (list/preserve package)
     ("/v1/books/paper-import/{id}", RouteClass::Gated), // GET book.import@Global (metadata)

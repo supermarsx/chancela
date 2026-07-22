@@ -2001,6 +2001,26 @@ pub fn router(state: AppState) -> Router {
             post(termo::open_from_termo),
         )
         .route(
+            "/v1/books/{id}/termo/encerramento",
+            get(termo::get_encerramento).patch(termo::patch_encerramento),
+        )
+        .route(
+            "/v1/books/{id}/termo/encerramento/advance",
+            post(termo::advance_encerramento),
+        )
+        .route(
+            "/v1/books/{id}/termo/encerramento/sign",
+            post(termo::sign_encerramento),
+        )
+        .route(
+            "/v1/books/{id}/termo/encerramento/sign/pkcs12",
+            post(termo::sign_encerramento_pkcs12),
+        )
+        .route(
+            "/v1/books/{id}/termo/encerramento/close",
+            post(termo::close_from_termo),
+        )
+        .route(
             "/v1/books/paper-import/validate",
             post(paper_import::validate_paper_book_import),
         )
@@ -7493,10 +7513,14 @@ mod tests {
             disposition,
             "attachment; filename=\"user-route-ata-v1.json\""
         );
+        // Export is the portable bundle envelope (t43): the spec (with its seed removed) rides
+        // under `spec`, the seed under `body_markdown`.
         let exported: Value = serde_json::from_slice(&bytes).expect("export JSON");
-        assert_eq!(exported["id"], id);
+        assert_eq!(exported["format"], "chancela.template-bundle");
+        assert_eq!(exported["format_version"], 1);
+        assert_eq!(exported["spec"]["id"], id);
         assert_eq!(
-            exported["blocks"][0]["template"],
+            exported["spec"]["blocks"][0]["template"],
             "Ata revista n.º {{ ata_number }}"
         );
 
@@ -7828,6 +7852,223 @@ mod tests {
         let (status, book) = send(state, get(&format!("/v1/books/{book_id}"))).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(book["state"], "Open");
+    }
+
+    #[tokio::test]
+    async fn one_shot_default_still_closes_in_one_step() {
+        // DA4: an unchanged close request (no `one_shot`) closes the book immediately, as before.
+        let (state, _entity, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let (status, book) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/books/{book_id}/close"),
+                json!({
+                    "reason": "BookFull",
+                    "closing_date": "2026-06-30",
+                    "required_signatories": ["Administrador"],
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{book}");
+        assert_eq!(book["state"], "Closed");
+    }
+
+    #[tokio::test]
+    async fn two_phase_encerramento_drafts_signs_then_close_fails_closed_without_real_signatures() {
+        // The CLOSE mirror of the abertura fail-closed test: a book two-phase close drafts, freezes
+        // and collects reference-only signatures, but `close` fails closed until a real per-slot
+        // PAdES signature over the encerramento PDF lands — a book is never closed on a fake signature.
+        let (state, token, entity_id, _tmp) = state_with_entity().await;
+
+        // One-shot open a book (the book must be Open to start a two-phase close).
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": ["Administrador"],
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{book}");
+        assert_eq!(book["state"], "Open");
+        let book_id = book["id"].as_str().expect("book id").to_owned();
+
+        // Two-phase close: mint a Draft encerramento, nothing on the chain.
+        let (status, view) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/close"),
+                    json!({
+                        "reason": "BookFull",
+                        "closing_date": "2026-06-30",
+                        "required_signatories": [],
+                        "one_shot": false,
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+        assert_eq!(view["state"], "Open", "book stays Open until close: {view}");
+
+        // The draft encerramento exists, its body seeded from the encerramento template `default_body`.
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/books/{book_id}/termo/encerramento")),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        assert_eq!(termo["kind"], "Encerramento");
+        assert_eq!(termo["state"], "Draft");
+        assert!(
+            !termo["body"].as_array().expect("body").is_empty(),
+            "seeded body: {termo}"
+        );
+
+        // PATCH: add a management signatory (clears the floor) + an out-of-list co-signer with the
+        // required assurance note (D1). Also revise the closing reason to Other (required note).
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                body_json(
+                    "PATCH",
+                    &format!("/v1/books/{book_id}/termo/encerramento"),
+                    json!({
+                        "closing_reason": {"Other": {"note": "encerrado por mudança de exercício"}},
+                        "signatories": [
+                            {"name": "Amélia Marques", "capacity": "Manager", "order": 0},
+                            {"name": "Liquidatária", "capacity": "Other",
+                             "capacity_note": "liquidatária judicial", "order": 1},
+                        ],
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        let slot0 = termo["signatories"][0]["id"]
+            .as_str()
+            .expect("slot 0 id")
+            .to_owned();
+        let slot1 = termo["signatories"][1]["id"]
+            .as_str()
+            .expect("slot 1 id")
+            .to_owned();
+        assert_eq!(
+            termo["signatories"][1]["capacity_note"], "liquidatária judicial",
+            "the Other note round-trips as assurance: {termo}"
+        );
+
+        // Freeze for signing.
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/advance"),
+                    json!({}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        assert_eq!(termo["state"], "Signing");
+
+        // Sequential order: slot 1 cannot sign before the earlier required slot 0.
+        let (status, _blocked) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/sign"),
+                    json!({"slot_id": slot1}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+
+        // Sign in order (reference only).
+        for slot in [&slot0, &slot1] {
+            let (status, _t) = send(
+                state.clone(),
+                with_session(
+                    post_json(
+                        &format!("/v1/books/{book_id}/termo/encerramento/sign"),
+                        json!({"slot_id": slot}),
+                    ),
+                    &token,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+        }
+
+        // Close FAILS CLOSED: the slots carry only signature references, not real PAdES signatures.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/close"),
+                    json!({}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("not cryptographically signed"),
+            "fail-closed reason: {body}"
+        );
+
+        // The book stays Open and NOTHING entered the chain — no fake-signed close.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        assert!(
+            !events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "book.closed"),
+            "no book.closed on a not-really-signed termo: {events}"
+        );
+        let (_, book) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/books/{book_id}")), &token),
+        )
+        .await;
+        assert_eq!(book["state"], "Open");
+        let (_, termo) = send(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/books/{book_id}/termo/encerramento")),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            termo["state"], "Signing",
+            "termo stays Signing, not fake-Sealed"
+        );
     }
 
     #[tokio::test]

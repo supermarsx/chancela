@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chancela.dev/schema/template-bundle.v1.json",
+  "title": "Chancela template bundle (v1)",
+  "description": "A portable, self-describing template unit: the template's JSON spec (props/layout) plus its markdown seed body. Fully portable Chancela-instance to Chancela-instance; partially portable to other tools via this schema and the standard-markdown body. Produced by GET /v1/templates/{id}/export and accepted by POST /v1/templates/import.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "format_version", "spec"],
+  "properties": {
+    "format": {
+      "type": "string",
+      "const": "chancela.template-bundle",
+      "description": "Format discriminator. A body lacking this key is treated by the importer as a legacy bare spec."
+    },
+    "format_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Major format version. An importer REJECTS any version it does not implement; it never best-effort transforms a newer bundle."
+    },
+    "spec": {
+      "$ref": "#/$defs/templateSpec",
+      "description": "The template spec JSON with its seed removed. The seed rides body_markdown alone, so the two representations can never disagree."
+    },
+    "body_markdown": {
+      "type": "string",
+      "default": "",
+      "description": "The seed body as md-block/v1 markdown: heading-optional, plain-text clauses. Each clause is a section — an optional `## <heading>` line then the clause text, sections separated by a blank line. Plain text only: a seed is rendered as a value and never compiled, so it must contain no minijinja (`{{ }}` / `{% %}`) syntax. Empty when the template has no fillable body. Restricted to the md-block/v1 subset (headings, paragraphs, bold, italic, thematic rules); lists, tables, links, images, and code are rejected on import rather than kept as literal text."
+    }
+  },
+  "$defs": {
+    "templateSpec": {
+      "type": "object",
+      "description": "A Chancela template spec. The digested render identity of a template; the seed (default_body) is deliberately NOT part of it and is carried by the bundle's body_markdown instead.",
+      "required": [
+        "id",
+        "family",
+        "stage",
+        "channels",
+        "signature_policy",
+        "rule_pack_id",
+        "blocks",
+        "locale"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable versioned id (e.g. `csc-ata-ag/v1`). A user-authored template must use the reserved `user-<slug>/v<n>` namespace to import."
+        },
+        "family": {
+          "type": "string",
+          "description": "The entity family the template serves (e.g. CommercialCompany, Association, Cooperative, Foundation, Condominium)."
+        },
+        "stage": {
+          "type": "string",
+          "description": "Where in the book lifecycle the template sits (e.g. Ata, TermoAbertura, TermoEncerramento)."
+        },
+        "channels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The meeting channels the template is valid for (e.g. Physical, Remote)."
+        },
+        "signature_policy": {
+          "type": "string",
+          "enum": ["QualifiedPreferred", "QualifiedOrHandwritten", "ManualAttested"],
+          "description": "The signature policy hint preferred for documents rendered from this template."
+        },
+        "rule_pack_id": {
+          "type": "string",
+          "description": "The compliance rule pack bound to the template (the id, not the pack)."
+        },
+        "blocks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "object" },
+          "description": "The ordered, kind-tagged block layout that produces the rendered document. Each block is a `{kind, ...}` object; the exact per-kind shape is Chancela-internal and intentionally not fully constrained here."
+        },
+        "locale": {
+          "type": "string",
+          "description": "The locale the prose is authored in (v1: `pt-PT`)."
+        }
+      }
+    }
+  }
+}

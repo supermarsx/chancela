@@ -345,6 +345,52 @@ mod tests {
         assert_eq!(spec.blocks.len(), 5);
     }
 
+    /// A user template with no `default_body` gets an empty seed — the field is optional (the DTO
+    /// defaults it), exactly as a built-in asset that omits it does.
+    #[test]
+    fn user_template_without_a_seed_body_defaults_to_empty() {
+        let spec = validate_user_template(&valid_json()).expect("valid template");
+        assert!(spec.default_body().is_empty());
+    }
+
+    /// **Portability foundation (t43).** A user-authored template may carry an editable **seed body**
+    /// (`default_body`), and it is preserved intact through validation into the parsed
+    /// [`TemplateSpec`]. This is the whole portability story for user templates: the API stores a user
+    /// template's *verbatim* JSON bytes and re-exports them unchanged, so a seed that parses here
+    /// round-trips losslessly instance-to-instance — the seed rides the stored blob and needs no
+    /// store-schema change. The seed is plain text (rendered as a value, never compiled), so it does
+    /// **not** go through the minijinja compile gate the block templates do.
+    #[test]
+    fn user_template_carries_and_preserves_its_seed_body() {
+        let json = r#"{
+            "id": "user-encosto-ata/v1",
+            "family": "CommercialCompany",
+            "stage": "Ata",
+            "channels": ["Physical"],
+            "signature_policy": "QualifiedPreferred",
+            "rule_pack_id": "csc-art63/v2",
+            "locale": "pt-PT",
+            "default_body": [
+                { "heading": "Abertura", "text": "A assembleia reuniu-se para deliberar sobre a ordem de trabalhos." },
+                { "text": "Nada mais havendo a tratar, foi encerrada a sessão." }
+            ],
+            "blocks": [
+                { "kind": "Heading", "level": 1, "template": "Ata n.º {{ ata_number }}" },
+                { "kind": "Paragraph", "template": "Reunida a assembleia." }
+            ]
+        }"#;
+        let spec = validate_user_template(json).expect("valid template carrying a seed body");
+        let seed = spec.default_body();
+        assert_eq!(seed.len(), 2, "both seed clauses survive validation");
+        assert_eq!(seed[0].heading.as_deref(), Some("Abertura"));
+        assert!(seed[0].text.contains("ordem de trabalhos"));
+        assert!(
+            seed[1].heading.is_none(),
+            "an optional heading stays absent"
+        );
+        assert!(seed[1].text.contains("Nada mais havendo"));
+    }
+
     #[test]
     fn oversize_payload_is_too_large() {
         // A well-formed body padded past the byte limit with whitespace inside a string.

@@ -497,6 +497,21 @@ pub struct BookView {
     pub required_signatories_encerramento: Option<Vec<String>>,
     pub required_signatory_records_abertura: Option<Vec<TermoSignatoryView>>,
     pub required_signatory_records_encerramento: Option<Vec<TermoSignatoryView>>,
+    /// F3 — the page capacity the termo de abertura declared, or `None` for an unlimited/legacy
+    /// book that enforces no size.
+    pub page_capacity: Option<u32>,
+    /// Pages consumed by sealed atas so far.
+    pub pages_used: u32,
+    /// Pages reserved by in-flight atas that have frozen their content but are not yet sealed.
+    pub pages_reserved: u32,
+    /// Pages still available (`page_capacity − used − reserved`), or `None` for an unlimited book.
+    /// `None` is not zero: a client must not treat the two alike.
+    pub remaining_pages: Option<u32>,
+    /// Whether the book has no room left for another page. Always `false` for an unlimited book.
+    /// An exhausted book stays `Open` and merely refuses new acts (§6.1: block, never auto-close);
+    /// this flag is the signal to draw up the termo de encerramento. **ASSURANCE**, never a legal
+    /// assertion.
+    pub capacity_exhausted: bool,
 }
 
 impl From<&Book> for BookView {
@@ -523,6 +538,11 @@ impl From<&Book> for BookView {
             required_signatory_records_encerramento: en.map(|t| {
                 termo_signatory_records(&t.required_signatory_records, &t.required_signatories)
             }),
+            page_capacity: b.page_capacity,
+            pages_used: b.pages_used,
+            pages_reserved: b.pages_reserved,
+            remaining_pages: b.pages_remaining(),
+            capacity_exhausted: b.is_capacity_exhausted(),
         }
     }
 }
@@ -802,6 +822,35 @@ pub struct PatchTermoAbertura {
     pub completion_policy: Option<TermoCompletionPolicy>,
 }
 
+/// Body of `PATCH /v1/books/{id}/termo/encerramento` (two-phase CLOSE, t44). Mirrors
+/// [`PatchTermoAbertura`], but the fillable fields are the encerramento's: a **closing date** and a
+/// structured **closing reason** ([`ClosingReason`], incl. `Other { note }`) replace the abertura's
+/// opening date, and there is no `page_capacity` (the encerramento states facts, it declares no
+/// size — core validation rejects a capacity on an encerramento). The book-derived facts (ata count,
+/// pages used) are never operator input; they are materialized from the book at `advance`. Every
+/// field is optional; absent fields are left unchanged. Rejected with `409` once frozen.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PatchTermoEncerramento {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub body: Option<Vec<TermoClauseInput>>,
+    #[serde(default)]
+    pub book_number: Option<u32>,
+    #[serde(default)]
+    pub place: Option<String>,
+    #[serde(default)]
+    pub closing_date: Option<String>,
+    #[serde(default)]
+    pub closing_reason: Option<ClosingReason>,
+    #[serde(default)]
+    pub predecessor_note: Option<String>,
+    #[serde(default)]
+    pub signatories: Option<Vec<TermoSlotInput>>,
+    #[serde(default)]
+    pub completion_policy: Option<TermoCompletionPolicy>,
+}
+
 /// Body of `POST /v1/books/{id}/termo/abertura/sign`: record that a slot signed. `signature_id`
 /// references the collected signature artifact (from the signing pipeline); tests inject it.
 #[derive(Debug, Clone, Deserialize)]
@@ -816,6 +865,15 @@ pub struct SignTermoSlot {
 pub struct OpenBookFromTermo {
     #[serde(default = "default_numbering")]
     pub numbering_scheme: NumberingScheme,
+    #[serde(default = "default_actor")]
+    pub actor: String,
+}
+
+/// Body of `POST /v1/books/{id}/termo/encerramento/close` (two-phase CLOSE, t44): seal the signed
+/// termo de encerramento and close the book. Unlike opening, closing carries no numbering scheme —
+/// the book's numbering was fixed at its abertura and cannot change at close.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CloseBookFromTermo {
     #[serde(default = "default_actor")]
     pub actor: String,
 }
@@ -911,6 +969,13 @@ pub struct CloseBook {
     pub reason: ClosingReason,
     pub closing_date: String,
     pub required_signatories: Vec<TermoSignatoryInput>,
+    /// DA4 (mirror of D2 on open) — when `true` (the default, preserving today's behaviour
+    /// byte-for-byte) the book is closed in one commit with a static termo de encerramento and no
+    /// collected signatures. When `false`, only a `Draft` [`chancela_core::termo::TermoInstrument`]
+    /// of kind `Encerramento` is minted for the open book; nothing enters the hash chain until the
+    /// termo is filled, co-signed and the book is explicitly closed via the two-phase endpoints.
+    #[serde(default = "default_one_shot")]
+    pub one_shot: bool,
     #[serde(default = "default_actor")]
     pub actor: String,
 }

@@ -46,6 +46,13 @@
       "template": "Encerra-se o presente livro de atas de {{ entity.name }}, que contém {{ ata_count }} atas lavradas e numeradas sequencialmente, nos termos do artigo 63.º do Código das Sociedades Comerciais."
     },
     {
+      "kind": "Paragraph",
+      "template": "As atas integram a cadeia de registo desta escrituração digital, permitindo verificar a sua autenticidade e detetar qualquer adulteração.{% if numbering_scheme == 'LooseLeaf' %} Em regime de folhas soltas, todas as folhas são numeradas e encadeadas entre si, nos termos do artigo 31.º, n.º 2, do Código Comercial.{% endif %}"
+    },
+    {
+      "kind": "NarrativeBody"
+    },
+    {
       "kind": "Rule"
     },
     {
@@ -53,6 +60,14 @@
       "source": "required_signatories",
       "role": "{{ role }}",
       "name": "{{ name }}"
+    }
+  ],
+  "default_body": [
+    {
+      "text": "Encerra-se o presente livro de atas, que contém as atas nele lavradas e numeradas sequencialmente, nos termos do artigo 63.º do Código das Sociedades Comerciais."
+    },
+    {
+      "text": "As atas integram a cadeia de registo desta escrituração digital, permitindo verificar a sua autenticidade e detetar qualquer adulteração. Em regime de folhas soltas, todas as folhas são numeradas e encadeadas entre si, nos termos do artigo 31.º, n.º 2, do Código Comercial."
     }
   ]
 }

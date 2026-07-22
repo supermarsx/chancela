@@ -41,6 +41,18 @@ pub fn accessibility_report<'a>(input: impl Into<AccessibilityInput<'a>>) -> Acc
     accessibility::report(input)
 }
 
+/// The number of pages [`write`] would lay `doc` onto, computed without assembling the PDF.
+///
+/// Runs the **same** [`layout::lay_out`] pass over the same bundled [`Font`] that [`write`] does,
+/// so the count is exactly the page count of the bytes `write` produces. The API reserves a book's
+/// page capacity (F14/F15) against this value at the act content-freeze — the one moment the
+/// rendered page count is both knowable and permanently stable. Never fewer than one page (an
+/// empty document still lays out a single blank page, mirroring [`write`]).
+pub fn page_count(doc: &DocumentModel) -> Result<usize, DocError> {
+    let font = Font::load()?;
+    Ok(layout::lay_out(doc, &font).pages.len())
+}
+
 /// Write `doc` as PDF/A-2u bytes and self-verify them before returning.
 pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     let accessibility = accessibility::report(doc);

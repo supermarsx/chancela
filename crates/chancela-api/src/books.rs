@@ -361,6 +361,13 @@ pub async fn get_book(
 }
 
 /// `POST /v1/books/{id}/close` — close an open book with a termo de encerramento (WFL-13).
+///
+/// By default (`one_shot: true`, DA4) this is the legacy one-commit close: it mints a static termo
+/// de encerramento with declared (not collected) signatories and closes in one step. With
+/// `one_shot: false` it enters the two-phase CLOSE flow (t44): only a `Draft`
+/// [`chancela_core::termo::TermoInstrument`] of kind `Encerramento` is created for the open book, and
+/// the book is closed later through the `/termo/encerramento/{advance,sign,sign/pkcs12,close}`
+/// endpoints once the termo is co-signed. Nothing enters the hash chain in the two-phase draft.
 pub async fn close_book(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -372,6 +379,7 @@ pub async fn close_book(
         reason,
         closing_date,
         required_signatories,
+        one_shot,
         actor: req_actor,
     } = req;
     // RBAC (t64-E3): closing a book is scoped to the book.
@@ -382,6 +390,11 @@ pub async fn close_book(
         scope_of_book(BookId(id)),
     )
     .await?;
+
+    if !one_shot {
+        return close_book_two_phase(&state, BookId(id), reason, closing_date).await;
+    }
+
     let closing_date = crate::dto::parse_date(&closing_date)?;
     let required_signatory_records =
         normalize_termo_signatories(required_signatories, "required_signatories")?;
@@ -479,6 +492,64 @@ pub async fn close_book(
     *book = next;
 
     Ok(Json(BookView::from(&*book)))
+}
+
+/// Two-phase close (`one_shot: false`, t44): mint a `Draft` termo de encerramento for an **open**
+/// book, seeded from the family's encerramento `default_body`, and persist it WITHOUT any ledger
+/// append. The book stays `Open`; it is closed later through the two-phase termo endpoints once the
+/// termo is filled, co-signed and explicitly sealed. Mirrors [`create_book_two_phase`] on the open
+/// side. RBAC (`book.close`) is already checked by the caller.
+///
+/// The `reason` and `closing_date` from the request seed the draft's initial values (the operator
+/// may revise them via PATCH); a blank closing date is left for PATCH. The book-derived facts (ata
+/// count, pages used) are never seeded here — they are materialized from the book at `advance`.
+async fn close_book_two_phase(
+    state: &AppState,
+    book_id: BookId,
+    reason: chancela_core::ClosingReason,
+    closing_date: String,
+) -> Result<Json<BookView>, ApiError> {
+    // A blank closing date defers the choice to a later PATCH; parse only if supplied.
+    let closing_date = {
+        let trimmed = closing_date.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(crate::dto::parse_date(trimmed)?)
+        }
+    };
+
+    // entities → books → ledger (ledger held only to serialize the durable write, no append).
+    let entities = state.entities.read().await;
+    let books = state.books.read().await;
+    let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
+    if !book.is_open() {
+        return Err(ApiError::Conflict(
+            "book is not Open; only an open book can start a two-phase close".to_owned(),
+        ));
+    }
+    let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+    let family = entity.family;
+    let view = BookView::from(book);
+    drop(books);
+    let mut ledger = state.ledger.write().await;
+
+    // Seed the Draft termo from the family's encerramento `default_body`; the operator fills the
+    // rest (signatory slots, revised reason/date) via PATCH.
+    let mut termo =
+        crate::documents::seed_draft_encerramento(book_id, family, OffsetDateTime::now_utc());
+    termo.fields.closing_reason = Some(reason);
+    termo.fields.instrument_date = closing_date;
+
+    // Persist the Draft termo atomically; NOTHING enters the hash chain here. The book is unchanged.
+    let termo_for_store = termo.clone();
+    state
+        .persist_write_through(&mut ledger, 0, move |tx| {
+            tx.upsert_termo_instrument(&termo_for_store)
+        })
+        .await?;
+
+    Ok(Json(view))
 }
 
 /// `GET /v1/books/{id}/acts` — acts in a book: sealed first by ata number, then drafts.

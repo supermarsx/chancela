@@ -43,7 +43,7 @@ use chancela_store::{
     StoredImportedDocumentReviewStatus, StoredSignedDocument,
 };
 use chancela_templates::authoring::{TemplateValidationError, validate_user_template};
-use chancela_templates::{Registry, TemplateLawReference, TemplateSpec};
+use chancela_templates::{DefaultBodyClause, Registry, TemplateLawReference, TemplateSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -358,6 +358,10 @@ pub(crate) struct Generated {
     pub stored: StoredDocument,
     /// The `document.generated` event payload (`{act_id, template_id, pdf_digest, profile}`).
     pub event_payload: Value,
+    /// How many PDF/A pages this document occupies (F14/F15). The act freeze reserves this many
+    /// pages against the book's capacity; the seal consumes them. It is the page count of exactly
+    /// the `stored.pdf_bytes` above, taken from the same layout pass that produced them.
+    pub page_count: u32,
 }
 
 /// Honest status for generated communications whose dispatch proof is still outside this slice.
@@ -482,6 +486,12 @@ fn generate(
         .map_err(|e| ApiError::Internal(format!("template render failed: {e}")))?;
     let bytes = chancela_doc::pdfa::write(&model)
         .map_err(|e| ApiError::Internal(format!("PDF/A generation failed: {e}")))?;
+    // Page count of exactly these bytes (F14/F15), from the same layout `write` just ran. Taken
+    // here, once, so the value the seal binds is the value the book reserved at the content freeze.
+    let page_count = chancela_doc::pdfa::page_count(&model)
+        .map_err(|e| ApiError::Internal(format!("PDF/A page count failed: {e}")))?;
+    let page_count = u32::try_from(page_count)
+        .map_err(|_| ApiError::Internal("document page count exceeds u32".to_owned()))?;
 
     let digest: [u8; 32] = Sha256::digest(&bytes).into();
     let pdf_digest = crate::hex::hex(&digest);
@@ -515,6 +525,7 @@ fn generate(
     Ok(Generated {
         stored,
         event_payload,
+        page_count,
     })
 }
 
@@ -972,6 +983,48 @@ pub(crate) fn abertura_template_id(family: EntityFamily) -> Option<&'static str>
     spine_template_id(family, LifecycleStage::TermoAbertura)
 }
 
+/// The title a fresh termo de encerramento draft carries, matching the one-shot render's heading
+/// ([`encerramento_ctx`]) so the two paths produce the same document heading.
+pub(crate) const TERMO_ENCERRAMENTO_TITLE: &str = "Termo de encerramento do livro de atas";
+
+/// Seed a fresh `Draft` termo de encerramento for a book, its body pre-filled from the family's
+/// encerramento template `default_body` (t44-e1's seeds). Mirrors [`seed_draft_abertura`] for the
+/// two-phase CLOSE flow. The closing reason, closing date and signatory slots are filled by the API
+/// consumer via PATCH; the book-derived facts (ata count, pages used) are materialized only at
+/// `advance`. Nothing here touches the ledger — a draft is off-chain.
+///
+/// A family without an encerramento template yields a draft with an **empty** body; the operator
+/// then writes the clauses. [`chancela_core::termo::TermoFields::for_encerramento`] seeds no page
+/// capacity (the encerramento states facts, it does not declare a size).
+#[must_use]
+pub(crate) fn seed_draft_encerramento(
+    book_id: BookId,
+    family: EntityFamily,
+    now: OffsetDateTime,
+) -> TermoInstrument {
+    let mut termo = TermoInstrument::draft(
+        book_id,
+        TermoKind::Encerramento,
+        TERMO_ENCERRAMENTO_TITLE,
+        now,
+    );
+    if let Some(spec) = default_spec(family, LifecycleStage::TermoEncerramento) {
+        termo.template_id = None; // pinned only at advance/freeze, not at seed.
+        termo.body = spec
+            .default_body()
+            .iter()
+            .map(|clause| TermoClause::from_template(clause.heading.clone(), clause.text.clone()))
+            .collect();
+    }
+    termo
+}
+
+/// The template id the family's termo de encerramento freezes against (pinned at `advance`).
+#[must_use]
+pub(crate) fn encerramento_template_id(family: EntityFamily) -> Option<&'static str> {
+    spine_template_id(family, LifecycleStage::TermoEncerramento)
+}
+
 /// Build the render context for a termo de encerramento (book-closing instrument). Unlike the
 /// abertura, the encerramento carries no entity snapshot, so the entity is supplied separately;
 /// `book.kind` names the organ, `reason` keeps its bare `ClosingReason` name (templates map it to
@@ -1009,6 +1062,48 @@ pub(crate) fn generate_for_encerramento(
     let ctx = encerramento_ctx(termo, book, entity);
     let owner = ActId(book.id.0);
     // A termo de encerramento carries no ata narrative body.
+    Ok(Some(generate(
+        spec,
+        &ctx,
+        owner,
+        OffsetDateTime::now_utc(),
+        &[],
+    )?))
+}
+
+/// Render + pin the canonical **unsigned** termo de encerramento PDF snapshot at `advance` (t44) —
+/// the bytes every required signatory co-signs and the bytes the close path preserves. Mirrors
+/// [`generate_termo_snapshot`] for the CLOSE side.
+///
+/// **Divergent signing subject.** Unlike the abertura snapshot (keyed `ActId(book.id.0)` for
+/// one-shot parity), the encerramento snapshot is keyed on the **encerramento instrument's own id**
+/// `ActId(termo.id.0)`. A book already holds the abertura's preserved PDF/A and — when opened
+/// two-phase — its per-slot `instrument_signatures`, both under `ActId(book.id.0)`. Reusing that
+/// subject would overwrite the abertura document and mix the two termos' signature sets, so the
+/// encerramento keeps its own subject. The API close handlers key the whole encerramento signing
+/// chain (snapshot, per-slot history, preserved PDF/A, fail-closed gate) on `ActId(termo.id.0)`.
+///
+/// `ata_count`/`pages_used_at_close` are the **book-derived facts** (F18/F16), materialized into the
+/// projection so signatories sign the real figures. The close path re-derives them and refuses to
+/// seal if the material count moved under the signers (the stale-fact guard). `None` for a family
+/// with no encerramento template (that book closes on the domain event alone — one-shot parity).
+pub(crate) fn generate_encerramento_snapshot(
+    termo: &TermoInstrument,
+    book: &Book,
+    entity: &Entity,
+    ata_count: u64,
+    pages_used_at_close: Option<u32>,
+) -> Result<Option<Generated>, ApiError> {
+    let Some(spec) = default_spec(entity.family, LifecycleStage::TermoEncerramento) else {
+        return Ok(None);
+    };
+    let projected = termo
+        .project_encerramento(ata_count, pages_used_at_close)
+        .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
+    let ctx = encerramento_ctx(&projected, book, entity);
+    // The encerramento signing subject — the instrument's own id, distinct from the abertura's
+    // book-keyed subject (see the doc comment above).
+    let owner = ActId(termo.id.0);
     Ok(Some(generate(
         spec,
         &ctx,
@@ -8111,7 +8206,7 @@ pub struct TemplateImportQuery {
 /// base `{error}` envelope: the web editor branches on the machine-readable `code`/`field` to point
 /// at the offending input. Used for 422 (validation), 409 (id conflict), and inside the import
 /// dry-run verdict.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct TemplateErrorBody {
     code: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -8188,7 +8283,9 @@ async fn user_template_id_taken(state: &AppState, id: &str) -> Result<bool, ApiE
     Ok(false)
 }
 
-/// Sanitize a template id into a safe download filename (`user-x/v1` → `user-x-v1.json`).
+/// Sanitize a template id into a safe download filename (`user-x/v1` → `user-x-v1.json`). The
+/// downloaded body is the portable bundle envelope; its `format`/`format_version` keys make it
+/// self-describing, so the plain `.json` extension is kept for tooling compatibility.
 fn sanitized_template_filename(id: &str) -> String {
     let stem: String = id
         .chars()
@@ -8201,6 +8298,322 @@ fn sanitized_template_filename(id: &str) -> String {
         })
         .collect();
     format!("{stem}.json")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Portable template bundle (t43) — the versioned JSON+MD export/import envelope.
+//
+// A template is a two-part unit: its JSON spec (props/layout) and a markdown seed body (the
+// editable narrative a fresh instrument is drafted with). The envelope carries both so a template
+// is fully portable Chancela-instance → Chancela-instance and partially portable to other tools
+// (standard markdown + a published JSON Schema, `schema/template-bundle.v1.json`).
+//
+// The seed lives on the runtime spec as `default_body` (a `Vec<DefaultBodyClause>`, plain text,
+// `#[serde(skip)]` so it never enters the digested canonical spec — t43-e1). Built-in specs drop
+// it on serialize, so the built-in export reads it back through `default_body()`; a user template
+// carries it inside its stored blob. In the envelope there is exactly ONE seed representation —
+// `body_markdown` — so the two never disagree.
+// ---------------------------------------------------------------------------------------------
+
+/// The `format` discriminator every portable bundle carries. A body that lacks a `format` key is
+/// treated as a legacy bare spec (back-compat with pre-t43 exports).
+const TEMPLATE_BUNDLE_FORMAT: &str = "chancela.template-bundle";
+
+/// The bundle's major format version. Import REJECTS any other value (never best-effort or
+/// transform) — a bundle written by a newer major is not something this instance can honestly read.
+const TEMPLATE_BUNDLE_FORMAT_VERSION: u32 = 1;
+
+/// The portable template bundle envelope (t43). Serialized on export, accepted on import. The
+/// `spec` is the template JSON with its seed **removed** (`default_body` stripped): the seed rides
+/// `body_markdown` alone, so there is one authoritative seed form. `deny_unknown_fields` so a
+/// malformed or newer-shaped envelope is rejected rather than silently truncated.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TemplateBundle {
+    /// Always [`TEMPLATE_BUNDLE_FORMAT`]; a foreign value is rejected on import.
+    format: String,
+    /// The major format version; import rejects anything but [`TEMPLATE_BUNDLE_FORMAT_VERSION`].
+    format_version: u32,
+    /// The template spec JSON with `default_body` removed (the seed rides `body_markdown`).
+    spec: Value,
+    /// The seed body as `md-block/v1` markdown: heading-optional plain-text clauses. Empty when the
+    /// template has no fillable body.
+    #[serde(default)]
+    body_markdown: String,
+}
+
+/// Render a template's seed clauses into the bundle's `body_markdown`.
+///
+/// Each clause becomes one markdown section: an optional `## <heading>` line, then the clause text,
+/// with a blank line between sections. This is the exact inverse of [`markdown_to_seed_clauses`]
+/// for the shapes a seed takes (single-paragraph plain text, optional heading) — proven by the
+/// round-trip unit tests. Plain text is emitted verbatim: a seed is a value, never compiled.
+fn seed_clauses_to_markdown(clauses: &[DefaultBodyClause]) -> String {
+    clauses
+        .iter()
+        .map(|clause| match &clause.heading {
+            Some(heading) => format!("## {heading}\n\n{}", clause.text),
+            None => clause.text.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// Parse a bundle's `body_markdown` back into seed clauses — the inverse of
+/// [`seed_clauses_to_markdown`].
+///
+/// The markdown is split into blank-line-separated blocks. A block whose first line is an ATX
+/// `## ` heading opens a clause whose text is the remainder of that block (if any) or the following
+/// non-heading block; every other block is a heading-less clause. A heading with no text is a hard
+/// error (**reject, never transform**): a seed clause always has text.
+fn markdown_to_seed_clauses(md: &str) -> Result<Vec<DefaultBodyClause>, TemplateErrorBody> {
+    let normalized = md.replace("\r\n", "\n").replace('\r', "\n");
+
+    // Group consecutive non-blank lines into blocks (a blank line separates blocks).
+    let mut blocks: Vec<String> = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+    for line in normalized.split('\n') {
+        if line.trim().is_empty() {
+            if !current.is_empty() {
+                blocks.push(current.join("\n"));
+                current.clear();
+            }
+        } else {
+            current.push(line);
+        }
+    }
+    if !current.is_empty() {
+        blocks.push(current.join("\n"));
+    }
+
+    let mut clauses = Vec::new();
+    let mut i = 0;
+    while i < blocks.len() {
+        let block = &blocks[i];
+        let (first_line, rest) = match block.split_once('\n') {
+            Some((first, rest)) => (first, Some(rest.to_owned())),
+            None => (block.as_str(), None),
+        };
+        if let Some(heading) = first_line.strip_prefix("## ") {
+            let text = if let Some(rest) = rest {
+                // Heading and text glued in one block (no blank line between them).
+                i += 1;
+                rest
+            } else if i + 1 < blocks.len() && !blocks[i + 1].starts_with("## ") {
+                // Heading on its own line; its text is the following block.
+                let text = blocks[i + 1].clone();
+                i += 2;
+                text
+            } else {
+                return Err(TemplateErrorBody {
+                    code: "invalid_seed",
+                    field: Some("body_markdown".to_owned()),
+                    message: format!("seed heading `{heading}` has no clause text beneath it"),
+                });
+            };
+            clauses.push(DefaultBodyClause {
+                heading: Some(heading.to_owned()),
+                text,
+            });
+        } else {
+            clauses.push(DefaultBodyClause {
+                heading: None,
+                text: block.clone(),
+            });
+            i += 1;
+        }
+    }
+    Ok(clauses)
+}
+
+/// Hold a seed's clauses to the same plain-text/non-empty bar shipped seeds meet
+/// (`chancela-templates`' `shipped_template_seeds_are_well_formed`): non-empty clause text, no
+/// minijinja syntax (a seed is rendered as a *value*, never compiled), and any present heading
+/// non-empty and minijinja-free. t43-e1 flagged that `validate_user_template` does not check the
+/// seed; this is where an imported/authored seed is held to it. **Reject, never transform.**
+fn validate_seed_clauses(clauses: &[DefaultBodyClause]) -> Result<(), TemplateErrorBody> {
+    for (i, clause) in clauses.iter().enumerate() {
+        if clause.text.trim().is_empty() {
+            return Err(TemplateErrorBody {
+                code: "invalid_seed",
+                field: Some("default_body".to_owned()),
+                message: format!("seed clause {i} has empty text"),
+            });
+        }
+        if clause.text.contains("{{") || clause.text.contains("{%") {
+            return Err(TemplateErrorBody {
+                code: "invalid_seed",
+                field: Some("default_body".to_owned()),
+                message: format!(
+                    "seed clause {i} contains minijinja syntax; a seed is a value, never compiled"
+                ),
+            });
+        }
+        if let Some(heading) = &clause.heading {
+            if heading.trim().is_empty() {
+                return Err(TemplateErrorBody {
+                    code: "invalid_seed",
+                    field: Some("default_body".to_owned()),
+                    message: format!("seed clause {i} has a present-but-empty heading"),
+                });
+            }
+            if heading.contains("{{") || heading.contains("{%") {
+                return Err(TemplateErrorBody {
+                    code: "invalid_seed",
+                    field: Some("default_body".to_owned()),
+                    message: format!("seed clause {i} heading contains minijinja syntax"),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Read a stored/exported spec `Value`'s `default_body` into seed clauses (empty when absent).
+fn seed_clauses_of_spec_value(spec: &Value) -> Result<Vec<DefaultBodyClause>, ApiError> {
+    match spec.get("default_body") {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(value) => serde_json::from_value(value.clone())
+            .map_err(|e| ApiError::Internal(format!("stored template seed is malformed: {e}"))),
+    }
+}
+
+/// The outcome of normalizing an import body into the effective spec JSON the shared create path
+/// validates and persists.
+enum PreparedImport {
+    /// A spec JSON string (seed folded into `default_body`) ready for `validate_user_template`.
+    Ready(String),
+    /// A bundle-level rejection (bad UTF-8/JSON, unknown format/version, unrepresentable or
+    /// malformed seed markdown) — surfaced as the import's `422 {code, field?, message}`.
+    Rejected(TemplateErrorBody),
+}
+
+/// Normalize an import body into an effective spec JSON, accepting BOTH the portable bundle
+/// envelope and a legacy bare spec (back-compat with pre-t43 exports).
+///
+/// A body carrying a `format` key is an envelope: its `format`/`format_version` are gated (unknown
+/// major ⇒ reject, never transform), its `body_markdown` is checked as representable `md-block/v1`
+/// and folded into the spec's `default_body`. A body without a `format` key is a legacy bare spec,
+/// passed through unchanged. The seed non-empty/no-minijinja bar is applied downstream, uniformly
+/// for both shapes, on the resulting spec's `default_body`.
+fn prepare_template_import(body: &[u8]) -> PreparedImport {
+    let raw = match std::str::from_utf8(body) {
+        Ok(raw) => raw,
+        Err(_) => {
+            return PreparedImport::Rejected(TemplateErrorBody {
+                code: "malformed",
+                field: None,
+                message: "template body must be valid UTF-8".to_owned(),
+            });
+        }
+    };
+    let value: Value = match serde_json::from_str(raw) {
+        Ok(value) => value,
+        Err(e) => {
+            return PreparedImport::Rejected(TemplateErrorBody {
+                code: "malformed",
+                field: None,
+                message: e.to_string(),
+            });
+        }
+    };
+
+    // Legacy bare spec: no `format` key. Pass through unchanged (its inline `default_body`, if any,
+    // is held to the seed bar downstream).
+    if value.get("format").is_none() {
+        return PreparedImport::Ready(raw.to_owned());
+    }
+
+    let bundle: TemplateBundle = match serde_json::from_value(value) {
+        Ok(bundle) => bundle,
+        Err(e) => {
+            return PreparedImport::Rejected(TemplateErrorBody {
+                code: "malformed",
+                field: None,
+                message: format!("malformed template bundle: {e}"),
+            });
+        }
+    };
+    if bundle.format != TEMPLATE_BUNDLE_FORMAT {
+        return PreparedImport::Rejected(TemplateErrorBody {
+            code: "unsupported_bundle_format",
+            field: Some("format".to_owned()),
+            message: format!(
+                "unknown bundle format `{}` (expected `{TEMPLATE_BUNDLE_FORMAT}`)",
+                bundle.format
+            ),
+        });
+    }
+    if bundle.format_version != TEMPLATE_BUNDLE_FORMAT_VERSION {
+        return PreparedImport::Rejected(TemplateErrorBody {
+            code: "unsupported_bundle_version",
+            field: Some("format_version".to_owned()),
+            message: format!(
+                "unsupported bundle format_version {} (this instance reads version \
+                 {TEMPLATE_BUNDLE_FORMAT_VERSION})",
+                bundle.format_version
+            ),
+        });
+    }
+
+    // The seed markdown must be representable in the frozen `md-block/v1` subset (no lists, tables,
+    // links, code, …) — reject, never silently keep unrepresentable markup as literal seed text.
+    if !bundle.body_markdown.trim().is_empty()
+        && let Err(e) = chancela_templates::markdown::compile_markdown(&bundle.body_markdown)
+    {
+        return PreparedImport::Rejected(TemplateErrorBody {
+            code: e.code(),
+            field: Some("body_markdown".to_owned()),
+            message: e.to_string(),
+        });
+    }
+    let clauses = match markdown_to_seed_clauses(&bundle.body_markdown) {
+        Ok(clauses) => clauses,
+        Err(err) => return PreparedImport::Rejected(err),
+    };
+
+    // Fold the seed into the spec's `default_body` so the resulting stored blob is self-contained.
+    let mut spec = bundle.spec;
+    let Value::Object(map) = &mut spec else {
+        return PreparedImport::Rejected(TemplateErrorBody {
+            code: "malformed",
+            field: Some("spec".to_owned()),
+            message: "bundle spec must be a JSON object".to_owned(),
+        });
+    };
+    if clauses.is_empty() {
+        map.remove("default_body");
+    } else {
+        match serde_json::to_value(&clauses) {
+            Ok(value) => {
+                map.insert("default_body".to_owned(), value);
+            }
+            Err(e) => {
+                return PreparedImport::Rejected(TemplateErrorBody {
+                    code: "malformed",
+                    field: Some("body_markdown".to_owned()),
+                    message: e.to_string(),
+                });
+            }
+        }
+    }
+    match serde_json::to_string(&spec) {
+        Ok(json) => PreparedImport::Ready(json),
+        Err(e) => PreparedImport::Rejected(TemplateErrorBody {
+            code: "malformed",
+            field: None,
+            message: e.to_string(),
+        }),
+    }
+}
+
+/// `validate_user_template` plus the seed-integrity bar ([`validate_seed_clauses`]), returning the
+/// `{code, field?, message}` body on the first failure. The single validation entrypoint every
+/// user-template ingestion path (create, replace, import, dry-run) shares.
+fn validate_user_template_checked(json: &str) -> Result<TemplateSpec, TemplateErrorBody> {
+    let spec = validate_user_template(json).map_err(|e| template_validation_error_body(&e))?;
+    validate_seed_clauses(spec.default_body())?;
+    Ok(spec)
 }
 
 /// Validate a body, enforce uniqueness, then append `template.created` + upsert the STORED
@@ -8220,14 +8633,10 @@ async fn persist_created_user_template(
         ));
     }
     let json = user_template_body_str(body)?;
-    let spec = match validate_user_template(json) {
+    let spec = match validate_user_template_checked(json) {
         Ok(spec) => spec,
         Err(err) => {
-            return Ok((
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(template_validation_error_body(&err)),
-            )
-                .into_response());
+            return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
         }
     };
     let id = spec.id.clone();
@@ -8307,14 +8716,10 @@ pub async fn replace_template(
     }
 
     let json = user_template_body_str(&body)?;
-    let spec = match validate_user_template(json) {
+    let spec = match validate_user_template_checked(json) {
         Ok(spec) => spec,
         Err(err) => {
-            return Ok((
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(template_validation_error_body(&err)),
-            )
-                .into_response());
+            return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
         }
     };
     if spec.id != id {
@@ -8409,10 +8814,16 @@ pub async fn delete_template(
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// `GET /v1/templates/{id}/export` — return a template's canonical JSON as a download (gate
-/// `act.read@Global`). A user template exports its verbatim stored JSON (lossless re-import); a
-/// built-in exports its canonical spec JSON. `Content-Type: application/json` + a
-/// `Content-Disposition: attachment` filename derived from the sanitized id.
+/// `GET /v1/templates/{id}/export` — return a template's portable bundle as a download (gate
+/// `act.read@Global`).
+///
+/// The bundle is the versioned JSON+MD envelope (t43): `spec` is the template JSON with its seed
+/// removed, `body_markdown` is the seed rendered as `md-block/v1` markdown. A built-in reads its
+/// seed through `default_body()` (the runtime spec drops it on serialize); a user template reads it
+/// from its stored blob. Both are then emitted in the one envelope shape, so a bundle re-imports
+/// losslessly instance-to-instance and is intelligible to other tools via the published JSON
+/// Schema. `Content-Type: application/json` + a `Content-Disposition: attachment` filename derived
+/// from the sanitized id.
 pub async fn export_template(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -8420,23 +8831,41 @@ pub async fn export_template(
 ) -> Result<Response, ApiError> {
     require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
 
-    let json = if let Some(spec) = registry().get(&id) {
-        serde_json::to_string_pretty(spec)?
-    } else {
-        let stored = match state.store.clone() {
-            Some(store) => {
-                let id = id.clone();
-                store
-                    .read_blocking_async(move |s| s.user_template(&id))
-                    .await
-                    .map_err(|e| {
-                        ApiError::Internal(format!("user template store read failed: {e}"))
-                    })?
-            }
-            None => None,
+    let (mut spec_value, clauses): (Value, Vec<DefaultBodyClause>) =
+        if let Some(spec) = registry().get(&id) {
+            // Built-in: canonical spec value (serde-skips `default_body`); read the seed separately.
+            (serde_json::to_value(spec)?, spec.default_body().to_vec())
+        } else {
+            let stored = match state.store.clone() {
+                Some(store) => {
+                    let id = id.clone();
+                    store
+                        .read_blocking_async(move |s| s.user_template(&id))
+                        .await
+                        .map_err(|e| {
+                            ApiError::Internal(format!("user template store read failed: {e}"))
+                        })?
+                }
+                None => None,
+            };
+            let stored = stored.ok_or(ApiError::NotFound)?;
+            let value: Value = serde_json::from_str(&stored)
+                .map_err(|e| ApiError::Internal(format!("stored template is malformed: {e}")))?;
+            let clauses = seed_clauses_of_spec_value(&value)?;
+            (value, clauses)
         };
-        stored.ok_or(ApiError::NotFound)?
+
+    // One seed representation: drop `default_body` from `spec`; it rides `body_markdown` alone.
+    if let Value::Object(map) = &mut spec_value {
+        map.remove("default_body");
+    }
+    let bundle = TemplateBundle {
+        format: TEMPLATE_BUNDLE_FORMAT.to_owned(),
+        format_version: TEMPLATE_BUNDLE_FORMAT_VERSION,
+        spec: spec_value,
+        body_markdown: seed_clauses_to_markdown(&clauses),
     };
+    let json = serde_json::to_string_pretty(&bundle)?;
 
     let filename = sanitized_template_filename(&id);
     let mut response = (StatusCode::OK, json).into_response();
@@ -8453,22 +8882,20 @@ pub async fn export_template(
     Ok(response)
 }
 
-/// Run the import dry-run preflight: validate + uniqueness only, no persistence. Always `200` with
-/// a `{ok, error?}` verdict.
+/// Run the import dry-run preflight: bundle-normalize + validate + seed bar + uniqueness only, no
+/// persistence. Always `200` with a `{ok, error?}` verdict. Covers the envelope and the legacy
+/// bare spec identically (`prepare_template_import`), so the web preflight verdict matches what the
+/// non-dry-run import would do.
 async fn template_import_dry_run(state: &AppState, body: &[u8]) -> Result<Response, ApiError> {
-    let verdict = match std::str::from_utf8(body) {
-        Err(_) => TemplateImportVerdict {
+    let verdict = match prepare_template_import(body) {
+        PreparedImport::Rejected(error) => TemplateImportVerdict {
             ok: false,
-            error: Some(TemplateErrorBody {
-                code: "malformed",
-                field: None,
-                message: "template body must be valid UTF-8".to_owned(),
-            }),
+            error: Some(error),
         },
-        Ok(json) => match validate_user_template(json) {
-            Err(err) => TemplateImportVerdict {
+        PreparedImport::Ready(json) => match validate_user_template_checked(&json) {
+            Err(error) => TemplateImportVerdict {
                 ok: false,
-                error: Some(template_validation_error_body(&err)),
+                error: Some(error),
             },
             Ok(spec) => {
                 if user_template_id_taken(state, &spec.id).await? {
@@ -8488,9 +8915,13 @@ async fn template_import_dry_run(state: &AppState, body: &[u8]) -> Result<Respon
     Ok((StatusCode::OK, Json(verdict)).into_response())
 }
 
-/// `POST /v1/templates/import` — import a canonical template JSON (gate `template.manage@Global`).
-/// `?dry_run=true` runs the validation + uniqueness preflight and returns a `{ok, error?}` verdict
-/// WITHOUT persisting; without it, behaves exactly like `POST /v1/templates` (create).
+/// `POST /v1/templates/import` — import a template (gate `template.manage@Global`).
+///
+/// Accepts BOTH the portable bundle envelope `{format, format_version, spec, body_markdown}` and a
+/// legacy bare spec (back-compat with pre-t43 exports); an unknown bundle major version is rejected
+/// (never transformed). `?dry_run=true` runs the validation + uniqueness preflight and returns a
+/// `{ok, error?}` verdict WITHOUT persisting; without it, persists exactly like `POST /v1/templates`
+/// (create), storing the spec with the seed folded into `default_body`.
 pub async fn import_template(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -8503,7 +8934,14 @@ pub async fn import_template(
     if q.dry_run {
         return template_import_dry_run(&state, &body).await;
     }
-    persist_created_user_template(&state, &attestor, &actor_name, &body).await
+    match prepare_template_import(&body) {
+        PreparedImport::Rejected(error) => {
+            Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(error)).into_response())
+        }
+        PreparedImport::Ready(json) => {
+            persist_created_user_template(&state, &attestor, &actor_name, json.as_bytes()).await
+        }
+    }
 }
 
 /// t74 §8 — the template-identity binding.
@@ -8697,7 +9135,7 @@ mod spec_binding_tests {
             ),
             (
                 "assoc-termo-encerramento/v1",
-                "c46b824b4392096b2c63447ef410b320f56c5c0049ceffd6ae9af0c20de61cdb",
+                "51d2aa219091df75d63827f3231c803150db4b04a46621b6d56e652bc2a78417",
             ),
             (
                 "assoc-termo-retificacao/v1",
@@ -8753,7 +9191,7 @@ mod spec_binding_tests {
             ),
             (
                 "condominio-termo-encerramento/v1",
-                "833949453d77677b7f654f2c41fbd9037bce240b5fe53b9997965d642fff1223",
+                "2f3da615f0cd66d68761f26957c70e2a3f3872dc9bd24776bbff88182cb3246c",
             ),
             (
                 "condominio-termo-retificacao/v1",
@@ -8809,7 +9247,7 @@ mod spec_binding_tests {
             ),
             (
                 "cooperativa-termo-encerramento/v1",
-                "3b9f0c36e041d74e256a6382f3627a241e2435925e32cdc3b5e8be2cfd31f106",
+                "bd25de47a560be9f09fd47148501ddab7268344ee6131cf430244d7545c5624c",
             ),
             (
                 "cooperativa-termo-retificacao/v1",
@@ -8985,7 +9423,7 @@ mod spec_binding_tests {
             ),
             (
                 "csc-termo-encerramento/v1",
-                "bb8e63214a3dc46a7230310b9df8f7ce60bd6694635290ac3487d721caefdaf2",
+                "ab068e5a59a9ecdb94ea6e1769278f28c81a4362c97e939d058ed0678e60f56d",
             ),
             (
                 "csc-termo-retificacao/v1",
@@ -9041,7 +9479,7 @@ mod spec_binding_tests {
             ),
             (
                 "fundacao-termo-encerramento/v1",
-                "f7deb95f2c68e75868051a383dccaef6fd548cc143d55fa2ccef5fb46aebe406",
+                "d10d178979946bc43db6cbdb73947e12c7cc42247807924cd324f8261daae954",
             ),
             (
                 "fundacao-termo-retificacao/v1",
@@ -12852,7 +13290,7 @@ mod tests {
             "merged catalog still carries the read-only built-ins"
         );
 
-        // export → canonical JSON with an attachment disposition; re-validates cleanly.
+        // export → a portable bundle envelope with an attachment disposition; re-imports cleanly.
         let exported = export_template(
             State(state.clone()),
             Path("user-encosto-ata/v1".to_owned()),
@@ -13203,5 +13641,435 @@ mod tests {
         .await
         .expect_err("no template.manage permission");
         assert!(matches!(err, ApiError::Forbidden(_)));
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Portable template bundle (t43) — the JSON+MD export/import envelope.
+    // ----------------------------------------------------------------------------------------
+
+    /// A user template that carries an editable seed body (two clauses, one with a heading).
+    fn valid_user_template_with_seed_json() -> String {
+        r#"{
+            "id": "user-encosto-seeded/v1",
+            "family": "CommercialCompany",
+            "stage": "Ata",
+            "channels": ["Physical"],
+            "signature_policy": "QualifiedPreferred",
+            "rule_pack_id": "csc-art63/v2",
+            "locale": "pt-PT",
+            "default_body": [
+                { "heading": "Abertura", "text": "A assembleia reuniu-se para deliberar sobre a ordem de trabalhos." },
+                { "text": "Nada mais havendo a tratar, foi encerrada a sessao." }
+            ],
+            "blocks": [
+                { "kind": "Heading", "level": 1, "template": "Ata n.º {{ ata_number }}" },
+                { "kind": "Paragraph", "template": "Reunida a assembleia." }
+            ]
+        }"#
+        .to_string()
+    }
+
+    /// The seed clause ⇄ markdown encoding is a bijection for the shapes a seed takes
+    /// (single-paragraph plain text, optional heading), so export→import never mangles a seed.
+    #[test]
+    fn seed_clause_markdown_round_trips() {
+        let cases: Vec<Vec<DefaultBodyClause>> = vec![
+            vec![],
+            vec![DefaultBodyClause {
+                heading: None,
+                text: "A single headingless clause.".to_owned(),
+            }],
+            vec![
+                DefaultBodyClause {
+                    heading: None,
+                    text: "First clause.".to_owned(),
+                },
+                DefaultBodyClause {
+                    heading: None,
+                    text: "Second clause.".to_owned(),
+                },
+            ],
+            vec![DefaultBodyClause {
+                heading: Some("Abertura".to_owned()),
+                text: "Body under a heading.".to_owned(),
+            }],
+            vec![
+                DefaultBodyClause {
+                    heading: Some("Um".to_owned()),
+                    text: "T1".to_owned(),
+                },
+                DefaultBodyClause {
+                    heading: None,
+                    text: "T2".to_owned(),
+                },
+                DefaultBodyClause {
+                    heading: Some("Dois".to_owned()),
+                    text: "T3".to_owned(),
+                },
+            ],
+        ];
+        for clauses in cases {
+            let md = seed_clauses_to_markdown(&clauses);
+            let back = markdown_to_seed_clauses(&md).expect("markdown decodes");
+            assert_eq!(back, clauses, "seed round-trip must be lossless for {md:?}");
+        }
+    }
+
+    /// A `## ` heading with no clause text beneath it is rejected, never transformed into an
+    /// empty-bodied clause.
+    #[test]
+    fn seed_markdown_heading_without_text_is_rejected() {
+        let err = markdown_to_seed_clauses("## Lonely heading").unwrap_err();
+        assert_eq!(err.code, "invalid_seed");
+        assert_eq!(err.field.as_deref(), Some("body_markdown"));
+    }
+
+    /// A built-in template exports a bundle whose seed rides `body_markdown` (the runtime spec
+    /// drops `default_body` on serialize), never inside `spec`.
+    #[tokio::test]
+    async fn export_builtin_emits_bundle_carrying_the_seed() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let exported = export_template(
+            State(state.clone()),
+            Path("csc-termo-abertura/v1".to_owned()),
+            actor,
+        )
+        .await
+        .expect("export built-in");
+        assert_eq!(exported.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(exported.into_body(), usize::MAX)
+            .await
+            .expect("export bytes");
+        let bundle: Value = serde_json::from_slice(&bytes).expect("bundle json");
+
+        assert_eq!(bundle["format"], "chancela.template-bundle");
+        assert_eq!(bundle["format_version"], 1);
+        assert_eq!(bundle["spec"]["id"], "csc-termo-abertura/v1");
+        assert!(
+            bundle["spec"].get("default_body").is_none(),
+            "the seed must not ride the spec half"
+        );
+        let md = bundle["body_markdown"]
+            .as_str()
+            .expect("body_markdown string");
+        assert!(
+            md.contains("registo das atas"),
+            "the built-in seed reaches body_markdown: {md:?}"
+        );
+    }
+
+    /// Export → import → export is byte-identical, and the seed survives intact (a user template's
+    /// seed carried through the bundle round-trips losslessly instance-to-instance).
+    #[tokio::test]
+    async fn template_bundle_round_trips_seed_losslessly() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let created = create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_with_seed_json()),
+        )
+        .await
+        .expect("create seeded template");
+        assert_eq!(created.status(), StatusCode::CREATED);
+
+        let first = export_template(
+            State(state.clone()),
+            Path("user-encosto-seeded/v1".to_owned()),
+            actor.clone(),
+        )
+        .await
+        .expect("first export");
+        let first_bytes = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .expect("first bytes");
+        let bundle: Value = serde_json::from_slice(&first_bytes).expect("bundle json");
+        assert!(
+            bundle["spec"].get("default_body").is_none(),
+            "the seed rides body_markdown, not the spec"
+        );
+        let md = bundle["body_markdown"].as_str().expect("markdown");
+        assert!(md.contains("## Abertura"));
+        assert!(md.contains("ordem de trabalhos"));
+        assert!(md.contains("Nada mais havendo"));
+
+        delete_template(
+            State(state.clone()),
+            Path("user-encosto-seeded/v1".to_owned()),
+            actor.clone(),
+            CurrentAttestor::default(),
+        )
+        .await
+        .expect("delete");
+
+        let reimported = import_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: false }),
+            first_bytes.clone(),
+        )
+        .await
+        .expect("re-import the bundle");
+        assert_eq!(
+            reimported.status(),
+            StatusCode::CREATED,
+            "an exported bundle re-imports"
+        );
+
+        // The seed is folded back into the stored blob's default_body.
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template("user-encosto-seeded/v1")
+            .expect("store read")
+            .expect("template row");
+        let stored_value: Value = serde_json::from_str(&stored).expect("stored json");
+        assert_eq!(stored_value["default_body"][0]["heading"], "Abertura");
+        assert!(
+            stored_value["default_body"][1]["text"]
+                .as_str()
+                .expect("clause text")
+                .contains("Nada mais havendo"),
+            "the second seed clause survives the round-trip"
+        );
+
+        let second = export_template(
+            State(state.clone()),
+            Path("user-encosto-seeded/v1".to_owned()),
+            actor,
+        )
+        .await
+        .expect("second export");
+        let second_bytes = axum::body::to_bytes(second.into_body(), usize::MAX)
+            .await
+            .expect("second bytes");
+        assert_eq!(
+            first_bytes, second_bytes,
+            "export→import→export must be byte-identical (spec + md)"
+        );
+    }
+
+    /// A pre-t43 bare spec (no `format` key) still imports — back-compat with old exports.
+    #[tokio::test]
+    async fn legacy_bare_spec_still_imports() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let resp = import_template(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: false }),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("legacy import");
+        assert_eq!(
+            resp.status(),
+            StatusCode::CREATED,
+            "a legacy bare spec still imports"
+        );
+    }
+
+    /// An unknown bundle major version is rejected, never best-effort read, and nothing persists.
+    #[tokio::test]
+    async fn import_rejects_unknown_bundle_major_version() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let spec: Value = serde_json::from_str(&valid_user_template_json()).expect("spec json");
+        let bundle = serde_json::json!({
+            "format": "chancela.template-bundle",
+            "format_version": 2,
+            "spec": spec,
+            "body_markdown": ""
+        });
+        let resp = import_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: false }),
+            Bytes::from(bundle.to_string()),
+        )
+        .await
+        .expect("handler returns a response");
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(resp).await;
+        assert_eq!(body["code"], "unsupported_bundle_version");
+
+        let Json(listed) = list_templates(
+            State(state.clone()),
+            actor,
+            Query(TemplatesQuery {
+                family: None,
+                stage: None,
+            }),
+        )
+        .await
+        .expect("list ok");
+        assert!(
+            !listed.iter().any(|s| s.id == "user-encosto-ata/v1"),
+            "a rejected bundle must not persist"
+        );
+    }
+
+    /// A seed body carrying minijinja syntax is rejected (a seed is a value, never compiled) —
+    /// reject, never silently transform it into a live template fragment.
+    #[tokio::test]
+    async fn import_rejects_seed_markdown_with_minijinja() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let spec: Value = serde_json::from_str(&valid_user_template_json()).expect("spec json");
+        let bundle = serde_json::json!({
+            "format": "chancela.template-bundle",
+            "format_version": 1,
+            "spec": spec,
+            "body_markdown": "Reunida a assembleia em {{ meeting_date }}."
+        });
+        let resp = import_template(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: false }),
+            Bytes::from(bundle.to_string()),
+        )
+        .await
+        .expect("handler returns a response");
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(resp).await;
+        assert_eq!(body["code"], "invalid_seed");
+    }
+
+    /// A seed body using a construct outside the `md-block/v1` subset (a list) is rejected, not
+    /// silently stored as literal seed text.
+    #[tokio::test]
+    async fn import_rejects_unrepresentable_seed_markdown() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let spec: Value = serde_json::from_str(&valid_user_template_json()).expect("spec json");
+        let bundle = serde_json::json!({
+            "format": "chancela.template-bundle",
+            "format_version": 1,
+            "spec": spec,
+            "body_markdown": "- first item\n- second item"
+        });
+        let resp = import_template(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: false }),
+            Bytes::from(bundle.to_string()),
+        )
+        .await
+        .expect("handler returns a response");
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(resp).await;
+        assert_eq!(body["code"], "unsupported_markdown");
+    }
+
+    /// The dry-run preflight covers the bundle: an unknown version is a `{ok:false}` verdict.
+    #[tokio::test]
+    async fn import_dry_run_reports_bundle_version_verdict() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let spec: Value = serde_json::from_str(&valid_user_template_json()).expect("spec json");
+        let bundle = serde_json::json!({
+            "format": "chancela.template-bundle",
+            "format_version": 9,
+            "spec": spec,
+            "body_markdown": ""
+        });
+        let resp = import_template(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: true }),
+            Bytes::from(bundle.to_string()),
+        )
+        .await
+        .expect("dry-run verdict");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = response_json(resp).await;
+        assert_eq!(body["ok"], false);
+        assert_eq!(body["error"]["code"], "unsupported_bundle_version");
+    }
+
+    /// The published JSON Schema stays in sync with the envelope the exporter actually emits: its
+    /// declared properties/required/const match the Rust struct and a real exported bundle.
+    #[tokio::test]
+    async fn template_bundle_schema_matches_the_envelope() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../schema/template-bundle.v1.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read schema {}: {e}", path.display()));
+        let schema: Value = serde_json::from_str(&raw).expect("schema is valid json");
+
+        let props = schema["properties"].as_object().expect("properties object");
+        let mut keys: Vec<&str> = props.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["body_markdown", "format", "format_version", "spec"],
+            "schema properties must match the TemplateBundle fields"
+        );
+
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .expect("required array")
+            .iter()
+            .map(|v| v.as_str().expect("required entry is a string"))
+            .collect();
+        assert_eq!(required, vec!["format", "format_version", "spec"]);
+
+        assert_eq!(props["format"]["const"], TEMPLATE_BUNDLE_FORMAT);
+        assert_eq!(
+            props["format_version"]["const"],
+            TEMPLATE_BUNDLE_FORMAT_VERSION
+        );
+
+        // A real exported bundle carries only keys the schema declares, and all required ones.
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let exported = export_template(
+            State(state.clone()),
+            Path("csc-termo-abertura/v1".to_owned()),
+            actor,
+        )
+        .await
+        .expect("export");
+        let bytes = axum::body::to_bytes(exported.into_body(), usize::MAX)
+            .await
+            .expect("bytes");
+        let bundle: Value = serde_json::from_slice(&bytes).expect("bundle json");
+        let bundle_obj = bundle.as_object().expect("bundle object");
+        for key in bundle_obj.keys() {
+            assert!(
+                props.contains_key(key),
+                "exported bundle key `{key}` is not declared in the schema"
+            );
+        }
+        for req in &required {
+            assert!(
+                bundle_obj.contains_key(*req),
+                "exported bundle is missing required key `{req}`"
+            );
+        }
     }
 }

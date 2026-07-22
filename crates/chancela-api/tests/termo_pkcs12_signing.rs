@@ -605,6 +605,295 @@ async fn pkcs12_termo_sign_wrong_passphrase_leaves_no_signature() {
     assert_eq!(termo["signatories"][0]["signed"], false);
 }
 
+// --- termo de encerramento (two-phase CLOSE, t44) ------------------------------------------------
+
+/// The encerramento signing subject is the encerramento instrument's OWN id (not the book id the
+/// abertura uses), so its history/snapshot are read under that subject.
+async fn instrument_signatures_for(
+    state: &AppState,
+    subject_id: &str,
+) -> Vec<(i64, Option<String>, Vec<u8>)> {
+    let subject = ActId(Uuid::parse_str(subject_id).expect("subject uuid"));
+    state
+        .store
+        .as_ref()
+        .expect("store")
+        .read_blocking_async(move |s| s.instrument_signatures_for_subject(subject))
+        .await
+        .expect("read history")
+        .into_iter()
+        .map(|row| (row.seq, row.slot_id, row.document.signed_pdf_bytes))
+        .collect()
+}
+
+async fn snapshot_bytes_for(state: &AppState, subject_id: &str) -> Vec<u8> {
+    let subject = ActId(Uuid::parse_str(subject_id).expect("subject uuid"));
+    state
+        .store
+        .as_ref()
+        .expect("store")
+        .read_blocking_async(move |s| s.document_for_act(subject))
+        .await
+        .expect("read snapshot")
+        .expect("snapshot pinned at advance")
+        .pdf_bytes
+}
+
+/// Create an entity + open a book in one step (one-shot), so it is `Open` and thus closeable.
+async fn open_book_one_shot(state: &AppState, token: &str) -> String {
+    let (status, entity) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/entities",
+            token,
+            json!({ "name": "Encosto Estrategico, S.A.", "nipc": "503004642", "seat": "Lisboa", "kind": "SociedadeAnonima" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "entity: {entity}");
+    let entity_id = entity["id"].as_str().unwrap().to_owned();
+
+    let (status, book) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/books",
+            token,
+            json!({
+                "entity_id": entity_id,
+                "kind": "AssembleiaGeral",
+                "purpose": "livro de atas da assembleia geral",
+                "opening_date": "2026-01-15",
+                "required_signatories": ["Administrador"],
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "book: {book}");
+    assert_eq!(book["state"], "Open");
+    book["id"].as_str().unwrap().to_owned()
+}
+
+/// Two-phase close: draft a termo de encerramento for the open book, add two required signatory
+/// slots, and freeze it for signing. Returns `(encerramento_termo_id, slot0_id, slot1_id)` — the
+/// termo id is the encerramento signing subject.
+async fn seed_frozen_encerramento(
+    state: &AppState,
+    token: &str,
+    book_id: &str,
+) -> (String, String, String) {
+    let (status, view) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/books/{book_id}/close"),
+            token,
+            json!({ "reason": "BookFull", "closing_date": "2026-06-30", "required_signatories": [], "one_shot": false }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "two-phase close draft: {view}");
+    assert_eq!(view["state"], "Open", "book stays Open until close: {view}");
+
+    let (status, termo) = send(
+        state,
+        get_req(&format!("/v1/books/{book_id}/termo/encerramento"), token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get encerramento: {termo}");
+    let termo_id = termo["id"].as_str().unwrap().to_owned();
+
+    let (status, termo) = send(
+        state,
+        json_req(
+            "PATCH",
+            &format!("/v1/books/{book_id}/termo/encerramento"),
+            token,
+            json!({
+                "signatories": [
+                    {"name": "Amelia Marques", "capacity": "Manager", "order": 0},
+                    {"name": "Bruno Secretario", "capacity": "Secretary", "order": 1},
+                ],
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "patch signatories: {termo}");
+    let slot0 = termo["signatories"][0]["id"].as_str().unwrap().to_owned();
+    let slot1 = termo["signatories"][1]["id"].as_str().unwrap().to_owned();
+
+    let (status, advanced) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/books/{book_id}/termo/encerramento/advance"),
+            token,
+            json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "advance: {advanced}");
+    assert_eq!(advanced["state"], "Signing");
+
+    (termo_id, slot0, slot1)
+}
+
+fn pkcs12_sign_encerramento_req(
+    book_id: &str,
+    token: &str,
+    slot_id: &str,
+    pfx: &[u8],
+    passphrase: &str,
+) -> Request<Body> {
+    json_req(
+        "POST",
+        &format!("/v1/books/{book_id}/termo/encerramento/sign/pkcs12"),
+        token,
+        json!({
+            "slot_id": slot_id,
+            "pkcs12_base64": B64.encode(pfx),
+            "passphrase": passphrase,
+        }),
+    )
+}
+
+fn close_req(book_id: &str, token: &str, body: Value) -> Request<Body> {
+    json_req(
+        "POST",
+        &format!("/v1/books/{book_id}/termo/encerramento/close"),
+        token,
+        body,
+    )
+}
+
+#[tokio::test]
+async fn genuinely_cosigned_encerramento_closes_and_preserves_the_signed_set() {
+    // The CLOSE mirror of `genuinely_cosigned_termo_opens...`: a termo de encerramento whose every
+    // required slot carries a REAL PAdES signature closes the book, seals the termo, and preserves
+    // the SET of co-signature PDF/As — without re-rendering or merging them.
+    let tmp = TmpDir::new();
+    let state = signing_state(&tmp).await;
+    let token = bootstrap(&state).await;
+    let book_id = open_book_one_shot(&state, &token).await;
+    let (termo_id, slot0, slot1) = seed_frozen_encerramento(&state, &token, &book_id).await;
+
+    let snapshot = snapshot_bytes_for(&state, &termo_id).await;
+    assert!(
+        snapshot.starts_with(b"%PDF-"),
+        "the frozen encerramento snapshot is a PDF"
+    );
+
+    // Co-sign both required slots with real, distinct PFX identities over the encerramento subject.
+    let pfx0 = local_pfx("Amelia Marques", 1, "amelia");
+    let (status, view) = send(
+        &state,
+        pkcs12_sign_encerramento_req(&book_id, &token, &slot0, &pfx0, PFX_PASSWORD),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "sign encerramento slot 0: {view}");
+    let pfx1 = local_pfx("Bruno Secretario", 2, "bruno");
+    let (status, view) = send(
+        &state,
+        pkcs12_sign_encerramento_req(&book_id, &token, &slot1, &pfx1, PFX_PASSWORD),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "sign encerramento slot 1: {view}");
+
+    // Close now succeeds — the fail-closed gate sees the real per-slot signatures.
+    let (status, view) = send(&state, close_req(&book_id, &token, json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "close: {view}");
+    assert_eq!(view["state"], "Closed", "book is Closed: {view}");
+
+    // The termo is Sealed (really signed, not fake-sealed).
+    let (_, termo) = send(
+        &state,
+        get_req(&format!("/v1/books/{book_id}/termo/encerramento"), &token),
+    )
+    .await;
+    assert_eq!(termo["state"], "Sealed", "termo Sealed: {termo}");
+
+    // `book.closed` landed, plus a co-signature manifest (`document.generated`) in the close commit.
+    // (The one-shot open already emitted one `document.generated` for the abertura, so the close's
+    // manifest brings the count to at least two.)
+    let events = ledger_events(&state, &token).await;
+    assert!(
+        events.iter().any(|e| e["kind"] == "book.closed"),
+        "book.closed emitted: {events:?}"
+    );
+    let doc_events = events
+        .iter()
+        .filter(|e| e["kind"] == "document.generated")
+        .count();
+    assert!(
+        doc_events >= 2,
+        "close added the encerramento co-signature manifest: {events:?}"
+    );
+
+    // The SET of signed PDF/As is preserved intact (2 rows, each a valid PAdES over the snapshot).
+    let history = instrument_signatures_for(&state, &termo_id).await;
+    assert_eq!(
+        history.len(),
+        2,
+        "both encerramento co-signatures preserved after close"
+    );
+    validate_pdf_signature(&history[0].2).expect("preserved signatory 1 still validates");
+    validate_pdf_signature(&history[1].2).expect("preserved signatory 2 still validates");
+
+    // The preserved base document is the FROZEN SNAPSHOT (the exact bytes signed), not re-rendered.
+    assert_eq!(
+        snapshot_bytes_for(&state, &termo_id).await,
+        snapshot,
+        "the preserved base PDF/A is the frozen encerramento snapshot, byte-for-byte"
+    );
+
+    // Subject disjointness: the abertura's preserved document (under the BOOK id) is a distinct
+    // document from the encerramento snapshot (under the TERMO id) — the two termos never collide.
+    let abertura_doc = snapshot_bytes(&state, &book_id).await;
+    assert_ne!(
+        abertura_doc, snapshot,
+        "the abertura and encerramento snapshots are distinct, disjoint documents"
+    );
+}
+
+#[tokio::test]
+async fn partially_cosigned_encerramento_still_fails_closed() {
+    // M of N required slots really signed (here 1 of 2) → close stays fail-closed and retriable; the
+    // book is NEVER auto-closed on a partially-signed termo.
+    let tmp = TmpDir::new();
+    let state = signing_state(&tmp).await;
+    let token = bootstrap(&state).await;
+    let book_id = open_book_one_shot(&state, &token).await;
+    let (_termo_id, slot0, _slot1) = seed_frozen_encerramento(&state, &token, &book_id).await;
+
+    let pfx0 = local_pfx("Amelia Marques", 1, "amelia");
+    let (status, _view) = send(
+        &state,
+        pkcs12_sign_encerramento_req(&book_id, &token, &slot0, &pfx0, PFX_PASSWORD),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = send(&state, close_req(&book_id, &token, json!({}))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "partial-sign close: {body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("not cryptographically signed"),
+        "fail-closed reason: {body}"
+    );
+
+    // The book stays Open; no `book.closed`.
+    let (_, book) = send(&state, get_req(&format!("/v1/books/{book_id}"), &token)).await;
+    assert_eq!(book["state"], "Open");
+    let events = ledger_events(&state, &token).await;
+    assert!(
+        !events.iter().any(|e| e["kind"] == "book.closed"),
+        "no book.closed on a partially-signed encerramento: {events:?}"
+    );
+}
+
 #[tokio::test]
 async fn pkcs12_termo_sign_requires_local_signing_capability() {
     let tmp = TmpDir::new();

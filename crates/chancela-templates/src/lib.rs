@@ -1218,6 +1218,86 @@ mod tests {
         assert!(ata.default_body().is_empty());
     }
 
+    /// **Seed-integrity check (t43 portability layer) — deliberately separate from the spec freeze.**
+    ///
+    /// The seed body ([`TemplateSpec::default_body`]) is the *portable* half of a template: the
+    /// human-editable narrative a Chancela instance re-seeds a fresh instrument from and that a human
+    /// or another tool can lift out directly. For that to hold, every shipped seed must be clean
+    /// plain text — non-empty clause text and **no minijinja syntax**, because a seed is rendered as a
+    /// *value*, never compiled (unlike a block template). This sweeps the *whole* registry, not just
+    /// the termo families the per-family tests above cover, so any shipped template that later grows a
+    /// seed is held to the same integrity bar.
+    ///
+    /// This is intentionally **un-conflated with `shipped_template_specs_are_frozen`** (the
+    /// evidentiary spec-freeze in `chancela-api`): a seed determines zero sealed bytes and is
+    /// `#[serde(skip)]` out of the digested canonical spec (proven registry-wide by
+    /// [`no_shipped_seed_enters_its_canonical_spec`]). Editing a seed is therefore a normal,
+    /// non-evidentiary edit that never moves a `template_spec_digest` — but it must still be
+    /// *well-formed*, which is what this asserts. Seed quality and spec fixity stay distinct concerns.
+    #[test]
+    fn shipped_template_seeds_are_well_formed() {
+        let reg = load_registry().expect("registry loads");
+        for spec in reg.specs() {
+            for (i, clause) in spec.default_body().iter().enumerate() {
+                assert!(
+                    !clause.text.trim().is_empty(),
+                    "{}: seed clause {i} has empty text",
+                    spec.id
+                );
+                assert!(
+                    !clause.text.contains("{{") && !clause.text.contains("{%"),
+                    "{}: seed clause {i} carries minijinja syntax (a seed is a value, never \
+                     compiled): {:?}",
+                    spec.id,
+                    clause.text
+                );
+                if let Some(heading) = &clause.heading {
+                    assert!(
+                        !heading.trim().is_empty(),
+                        "{}: seed clause {i} has a present-but-empty heading",
+                        spec.id
+                    );
+                    assert!(
+                        !heading.contains("{{") && !heading.contains("{%"),
+                        "{}: seed clause {i} heading carries minijinja syntax: {heading:?}",
+                        spec.id
+                    );
+                }
+            }
+        }
+    }
+
+    /// The t43 fixity decision, proven **registry-wide**: no shipped seed enters its canonical
+    /// (digested) spec, so editing a seed can never drift a `template_spec_digest` or trip
+    /// `shipped_template_specs_are_frozen`. Extends the single-template
+    /// [`default_body_is_absent_from_the_canonical_spec`] to every shipped template, so the portable
+    /// seed layer is guaranteed distinct from the evidentiary spec freeze on the real catalog, not
+    /// just one example.
+    #[test]
+    fn no_shipped_seed_enters_its_canonical_spec() {
+        let reg = load_registry().expect("registry loads");
+        for spec in reg.specs() {
+            let canonical = canonical_spec_json(spec).expect("serializes");
+            assert!(
+                !canonical.contains("default_body"),
+                "{}: the seed body must never enter the canonical (digested) spec",
+                spec.id
+            );
+            // For a seed-carrying template, prove it directly: dropping the seed leaves the canonical
+            // bytes identical, i.e. the digest is a function of render identity, never of the seed.
+            if !spec.default_body().is_empty() {
+                let mut seedless = spec.clone();
+                seedless.default_body = Vec::new();
+                assert_eq!(
+                    canonical,
+                    canonical_spec_json(&seedless).expect("serializes"),
+                    "{}: editing or removing the seed must not change the canonical spec bytes",
+                    spec.id
+                );
+            }
+        }
+    }
+
     /// E3: the loose-leaf/numbered-folhas rule on the CSC abertura is grounded in Código
     /// Comercial art. 31.º n.º 2, not miscited to CSC art. 63.º. (The atas-numbering regime on
     /// the same template legitimately still cites CSC art. 63.º — that is the atas provision.)
@@ -1238,6 +1318,140 @@ mod tests {
         // And the seed carries the same corrected citation.
         let seed = serde_json::to_string(spec.default_body()).expect("seed serializes");
         assert!(seed.contains("artigo 31.º, n.º 2, do Código Comercial"));
+    }
+
+    /// The termo de encerramento is a book-closing ata (t44): every shipped family carries an
+    /// operator-editable seed body, plain text only (rendered as a `TermoClause` value, never
+    /// compiled), mirroring the abertura seeds.
+    #[test]
+    fn every_termo_encerramento_seeds_a_plain_text_default_body() {
+        let reg = load_registry().expect("registry loads");
+        for id in [
+            "csc-termo-encerramento/v1",
+            "assoc-termo-encerramento/v1",
+            "condominio-termo-encerramento/v1",
+            "cooperativa-termo-encerramento/v1",
+            "fundacao-termo-encerramento/v1",
+        ] {
+            let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
+            let body = spec.default_body();
+            assert!(!body.is_empty(), "{id} has no seed body");
+            for clause in body {
+                assert!(
+                    !clause.text.trim().is_empty(),
+                    "{id} has a blank seed clause"
+                );
+                assert!(
+                    !clause.text.contains("{{") && !clause.text.contains("{%"),
+                    "{id} seed clause carries minijinja syntax: {:?}",
+                    clause.text
+                );
+            }
+        }
+    }
+
+    /// Each termo de encerramento places exactly one `NarrativeBody` anchor (t35-e1 mechanism) so
+    /// the compiled closing body renders at a known position when a two-phase close routes it
+    /// through `render_with_body`.
+    #[test]
+    fn every_termo_encerramento_places_one_narrative_body_anchor() {
+        let reg = load_registry().expect("registry loads");
+        for id in [
+            "csc-termo-encerramento/v1",
+            "assoc-termo-encerramento/v1",
+            "condominio-termo-encerramento/v1",
+            "cooperativa-termo-encerramento/v1",
+            "fundacao-termo-encerramento/v1",
+        ] {
+            let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
+            assert!(spec.places_narrative_body(), "{id} lacks the anchor");
+            let anchors = spec
+                .blocks
+                .iter()
+                .filter(|b| matches!(b, BlockSpec::NarrativeBody))
+                .count();
+            assert_eq!(
+                anchors, 1,
+                "{id} must place exactly one NarrativeBody anchor"
+            );
+        }
+    }
+
+    /// E3 mirror for the closing term: the loose-leaf/numbered-folhas rule on the CSC encerramento
+    /// is grounded in Código Comercial art. 31.º n.º 2, not miscited to CSC art. 63.º. The atas
+    /// provision on the same template legitimately keeps CSC art. 63.º (that is the atas rule, kept
+    /// exactly as on the abertura block 1) — art. 31.º governs only the numbering/binding of folhas.
+    #[test]
+    fn csc_encerramento_cites_ccom_art_31_for_the_loose_leaf_rule() {
+        let reg = load_registry().expect("registry loads");
+        let spec = reg
+            .get("csc-termo-encerramento/v1")
+            .expect("encerramento present");
+        let blocks = serde_json::to_string(&spec.blocks).expect("blocks serialize");
+        assert!(
+            blocks.contains("folhas soltas")
+                && blocks.contains("artigo 31.º, n.º 2, do Código Comercial"),
+            "the loose-leaf clause must cite Código Comercial art. 31.º n.º 2"
+        );
+        assert!(
+            !blocks.contains("encadeadas entre si, nos termos do artigo 63"),
+            "the loose-leaf rule must no longer be miscited to CSC art. 63.º"
+        );
+        // The seed carries the same corrected citation.
+        let seed = serde_json::to_string(spec.default_body()).expect("seed serializes");
+        assert!(seed.contains("artigo 31.º, n.º 2, do Código Comercial"));
+    }
+
+    /// Adding the anchor must not change the body-less encerramento output: with an empty body the
+    /// anchor contributes zero blocks, so the DocumentModel (and therefore the PDF/A bytes the
+    /// one-shot close emits) is exactly what a template without the anchor would produce.
+    #[test]
+    fn an_empty_encerramento_narrative_body_renders_byte_identically() {
+        let reg = load_registry().expect("registry loads");
+        let ctx = encerramento_probe_ctx();
+        for id in [
+            "csc-termo-encerramento/v1",
+            "assoc-termo-encerramento/v1",
+            "condominio-termo-encerramento/v1",
+            "cooperativa-termo-encerramento/v1",
+            "fundacao-termo-encerramento/v1",
+        ] {
+            let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
+            let mut slotless = spec.clone();
+            slotless
+                .blocks
+                .retain(|b| !matches!(b, BlockSpec::NarrativeBody));
+            assert!(!slotless.places_narrative_body());
+
+            let empty_body = render_with_body(spec, &ctx, &[])
+                .unwrap_or_else(|e| panic!("{id} empty-body render failed: {e:?}"));
+            let baseline = render(&slotless, &ctx)
+                .unwrap_or_else(|e| panic!("{id} slot-less render failed: {e:?}"));
+            assert_eq!(
+                empty_body, baseline,
+                "{id}: the anchor must be inert for a body-less encerramento"
+            );
+            assert_eq!(render(spec, &ctx).expect("renders"), empty_body);
+        }
+    }
+
+    /// A render context shaped like `chancela-api`'s `encerramento_ctx`: the reserved envelope keys
+    /// plus the closing facts every encerramento block reads.
+    fn encerramento_probe_ctx() -> Value {
+        json!({
+            "title": "Termo de encerramento do livro de atas",
+            "created_at": "2026-07-08T10:30:00Z",
+            "entity": {
+                "name": "Encosto Estratégico Lda",
+                "nipc": "515202030",
+                "seat": "Rua das Amoreiras, n.º 12, 1250-020 Lisboa"
+            },
+            "book": { "kind": "Assembleia Geral" },
+            "ata_count": 12,
+            "reason": "BookFull",
+            "closing_date": "2026-07-08",
+            "required_signatories": [ { "role": "Presidente da Mesa", "name": "" } ]
+        })
     }
 
     #[test]

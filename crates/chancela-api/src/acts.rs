@@ -58,6 +58,15 @@ pub async fn draft_act(
             "book {book_id} is not open; acts may only be drafted in an open book"
         )));
     }
+    // Capacity (t44/§6.1): a full book stays open but refuses new content. Block the draft here so
+    // an operator is stopped before authoring, not at the freeze. The book must be closed with a
+    // termo de encerramento and the sequence continued in a successor — never auto-closed.
+    if book.is_capacity_exhausted() {
+        return Err(ApiError::Conflict(format!(
+            "book {book_id} is at page capacity; no new acts can be drafted. Close it with a termo \
+             de encerramento and continue the sequence in a successor book."
+        )));
+    }
     let entity_id = book.entity_id;
     // Tenancy (wp27-e3): the act genesis joins its tenant chain, mirroring e1's entity/`book.opened`
     // change. Derive the tenant from the parent entity; a single-tenant deployment (or an entity not
@@ -389,9 +398,11 @@ pub async fn advance_act(
         ));
     }
 
-    // entities → books → acts → ledger (Signing snapshot generation needs the profile).
+    // entities → books → acts → ledger (Signing snapshot generation needs the profile). The books
+    // lock is `write` because entering `Signing` reserves the frozen page count against the book
+    // (t44 capacity enforcement); non-`Signing` advances leave the book untouched.
     let entities = state.entities.read().await;
-    let books = state.books.read().await;
+    let mut books = state.books.write().await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
 
@@ -399,6 +410,11 @@ pub async fn advance_act(
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     ensure_book_open_for_act_mutation(book)?;
     let entity_id = book.entity_id;
+    let book_id = act.book_id;
+    // An independent clone for the capacity reservation, committed alongside the act only when a
+    // reservation is actually taken (§2.5). Reserving on a clone keeps the read model untouched if
+    // the durable write fails.
+    let mut book_next = book.clone();
     let entity = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
 
     // Apply the transition to a clone, so the in-memory map is only mutated after the durable write
@@ -465,6 +481,26 @@ pub async fn advance_act(
         None
     };
 
+    // Capacity reservation (t44/§2.5). The content freeze is the one moment the rendered page count
+    // is knowable and permanently stable, so freeze it onto the act (F15) and reserve that many
+    // pages against the book. Reserving *before* anyone signs is the only humane refusal point: an
+    // act that reaches `Signing` has already reserved its pages and can therefore always be sealed,
+    // and a book that would overflow refuses here with 409 instead of stranding an in-flight ata.
+    // `freeze_page_count` is idempotent, so a retried advance re-freezes the same value harmlessly.
+    // The freeze mutates `next` before its `act.advanced` payload is serialized, so the reserved
+    // book and the recorded act agree on the count.
+    let page_reservation = if let Some(snapshot) = &signing_snapshot {
+        let pages = snapshot.page_count;
+        next.freeze_page_count(pages)
+            .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
+        book_next
+            .reserve_pages(pages)
+            .map_err(capacity_reservation_error)?;
+        Some(pages)
+    } else {
+        None
+    };
+
     let scope = format!("entity:{}/book:{}/act:{}", entity_id, next.book_id, next.id);
     let justification = format!("advance to {target_state:?}");
     let payload = serde_json::to_vec(&next)?;
@@ -496,17 +532,29 @@ pub async fn advance_act(
     let next_for_store = next.clone();
     // `Generated` is not `Clone`; capture only the owned `stored` document the tx needs.
     let snapshot_stored_for_store = signing_snapshot.as_ref().map(|s| s.stored.clone());
+    // Persist the reserved book alongside the act only when a reservation was taken, so a
+    // non-`Signing` advance writes byte-for-byte what it did before.
+    let book_for_store = page_reservation.map(|_| book_next.clone());
     state
         .persist_write_through(&mut ledger, appended_events, move |tx| {
             tx.upsert_act(&next_for_store)?;
             if let Some(stored) = &snapshot_stored_for_store {
                 tx.upsert_document(stored)?;
             }
+            if let Some(book) = &book_for_store {
+                tx.upsert_book(book)?;
+            }
             Ok(())
         })
         .await?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
+    // Move the reserved book into the read model only after the durable write committed.
+    if page_reservation.is_some()
+        && let Some(slot) = books.get_mut(&book_id)
+    {
+        *slot = book_next;
+    }
 
     if let Some(snapshot) = &signing_snapshot {
         crate::documents::publish_generated_document_read_model(&state, &snapshot.stored).await;
@@ -567,8 +615,9 @@ pub async fn reopen_act(
     // Read outside the write locks, mirroring the seal handler.
     let canonical = crate::documents::load_document(&state, act_id).await?;
 
-    // books → acts → ledger.
-    let books = state.books.read().await;
+    // books → acts → ledger. The books lock is `write` because a reopen releases the act's page
+    // reservation back to the book (t44 capacity enforcement).
+    let mut books = state.books.write().await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
 
@@ -585,12 +634,24 @@ pub async fn reopen_act(
         )));
     }
     let entity_id = book.entity_id;
+    let book_id = act.book_id;
+    // An independent clone for the reservation release, committed alongside the act only when the
+    // reopen actually released pages.
+    let mut book_next = book.clone();
 
     // Reopen a clone, so the read model moves only after the durable write commits.
     let mut next = act.clone();
+    // `reopen_for_correction` clears the act's frozen page count and hands it back: the reopen
+    // retires the signing snapshot those pages described, so the reservation they held on the book
+    // is released here (a re-advance freezes and reserves afresh over the corrected content).
     let released_page_count = next
         .reopen_for_correction()
         .map_err(|e| ApiError::Conflict(e.to_string()))?;
+    if let Some(pages) = released_page_count {
+        book_next
+            .release_reserved_pages(pages)
+            .map_err(ApiError::from)?;
+    }
 
     let reopened_at = time::OffsetDateTime::now_utc();
     let superseded = canonical.as_ref().map(|doc| SupersededSigningSnapshot {
@@ -631,11 +692,26 @@ pub async fn reopen_act(
     )?;
     let event_seq = ledger.events().last().map(|event| event.seq);
     let next_for_store = next.clone();
+    // Persist the released book alongside the act only when pages were actually released, so a
+    // reopen that had no reservation to release writes byte-for-byte what it did before.
+    let book_for_store = released_page_count.map(|_| book_next.clone());
     state
-        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_act(&next_for_store))
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_act(&next_for_store)?;
+            if let Some(book) = &book_for_store {
+                tx.upsert_book(book)?;
+            }
+            Ok(())
+        })
         .await?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
+    // Move the released book into the read model only after the durable write committed.
+    if released_page_count.is_some()
+        && let Some(slot) = books.get_mut(&book_id)
+    {
+        *slot = book_next;
+    }
 
     Ok(Json(ReopenActResponse {
         act: ActView::from(&*act),
@@ -1243,6 +1319,18 @@ pub async fn seal_act_handler(
             // it before the `.await` below so the handler future stays `Send` (axum's bound).
             drop(pack);
 
+            // Capacity (t44/§2.5): convert this act's page reservation into consumed pages. The
+            // reservation was taken at the content freeze, so this always fits capacity; a
+            // defensive failure rolls back the single `act.sealed` event `seal_act_with_evidence`
+            // just appended. An act with no frozen page count (advanced before this wiring, or one
+            // whose family has no ata template) reserved nothing and consumes nothing.
+            if let Some(pages) = act_next.page_count
+                && let Err(e) = book_next.consume_reserved_pages(pages)
+            {
+                AppState::rollback_ledger_events(&mut ledger, 1);
+                return Err(ApiError::from(e));
+            }
+
             // Digital seals retain the exact deterministic technical validation report whose digest
             // is frozen in `seal_metadata`. It is appended after `act.sealed`, but both events and
             // every row below commit atomically.
@@ -1567,6 +1655,28 @@ fn ensure_book_open_for_act_mutation(book: &Book) -> Result<(), ApiError> {
     )))
 }
 
+/// Map a page-reservation failure to a `409` that names the remedy.
+///
+/// A [`BookError::CapacityExceeded`](chancela_core::BookError::CapacityExceeded) means the book is
+/// full and this act would overflow it; the message states the operational facts and points at the
+/// close-and-continue-in-a-successor path. It asserts no legal requirement — capacity is an
+/// ASSURANCE control, not a statutory floor. Any other `BookError` keeps the generic `409` mapping.
+fn capacity_reservation_error(e: chancela_core::BookError) -> ApiError {
+    match e {
+        chancela_core::BookError::CapacityExceeded {
+            capacity,
+            used,
+            reserved,
+            required,
+        } => ApiError::Conflict(format!(
+            "book is at page capacity: {used} used and {reserved} reserved of {capacity}, but this \
+             act needs {required} more. Close this book with a termo de encerramento and continue \
+             the sequence in a successor book."
+        )),
+        other => ApiError::from(other),
+    }
+}
+
 fn ensure_written_resolution_review_receipts_append_only(
     current: Option<&chancela_core::WrittenResolutionEvidence>,
     next: &chancela_core::WrittenResolutionEvidence,
@@ -1650,6 +1760,14 @@ mod tests {
     }
 
     fn opened_book(entity: &Entity, kind: BookKind) -> Book {
+        opened_book_with_capacity(entity, kind, None)
+    }
+
+    fn opened_book_with_capacity(
+        entity: &Entity,
+        kind: BookKind,
+        page_capacity: Option<u32>,
+    ) -> Book {
         let mut book = Book::new(entity.id, kind);
         book.open(TermoDeAbertura {
             entity_name: entity.name.clone(),
@@ -1661,6 +1779,7 @@ mod tests {
                 .expect("valid opening date"),
             required_signatories: vec!["Administrador".to_owned()],
             required_signatory_records: Vec::new(),
+            page_capacity,
             ..Default::default()
         })
         .expect("test book opens");
@@ -2432,6 +2551,246 @@ mod tests {
             state.acts.read().await.get(&act_id).map(|row| row.state),
             Some(ActState::Archived)
         );
+    }
+
+    // --- t44 capacity enforcement -------------------------------------------------------------
+
+    /// Seed an entity + `book` + a `TextApproved` act into both the store and the read model, and
+    /// return the owner actor plus the ids. Mirrors the boilerplate the seal test spells out inline.
+    async fn seed_signing_ready(
+        state: &AppState,
+        book: Book,
+        entity: Entity,
+    ) -> (CurrentActor, ActId, BookId) {
+        let actor = seed_owner(state).await;
+        seed_opened_book_ledger(state, &entity, &book).await;
+        let act = text_approved_act(&book);
+        let act_id = act.id;
+        let book_id = book.id;
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| {
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)
+            })
+            .expect("seed persisted");
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book_id, book);
+        state.acts.write().await.insert(act_id, act);
+        (actor, act_id, book_id)
+    }
+
+    async fn advance_to(
+        state: &AppState,
+        actor: &CurrentActor,
+        act_id: ActId,
+        to: &str,
+    ) -> Result<Json<ActView>, ApiError> {
+        let req: AdvanceAct =
+            serde_json::from_value(json!({ "to": to })).expect("advance body");
+        advance_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+    }
+
+    async fn seal_manual(
+        state: &AppState,
+        actor: &CurrentActor,
+        act_id: ActId,
+    ) -> Result<Response, ApiError> {
+        let manual: SealAct = serde_json::from_value(json!({
+            "manual_signature_original_reference": {
+                "storage_reference": "Arquivo A / Pasta 2026 / original assinado",
+                "custodian": "Secretariado"
+            }
+        }))
+        .expect("manual seal body");
+        seal_act_handler(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Some(Json(manual)),
+        )
+        .await
+    }
+
+    /// Advancing to `Signing` reserves the frozen page count against the book, and sealing turns
+    /// that reservation into consumed pages — the reserve→consume half of the capacity model.
+    #[tokio::test]
+    async fn advance_to_signing_reserves_pages_and_seal_consumes_them() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book_with_capacity(&entity, BookKind::AssembleiaGeral, Some(100));
+        let (actor, act_id, book_id) = seed_signing_ready(&state, book, entity).await;
+
+        let _ = advance_to(&state, &actor, act_id, "Signing")
+            .await
+            .expect("enter Signing");
+        let frozen = state.acts.read().await[&act_id]
+            .page_count
+            .expect("page count frozen at the content freeze");
+        assert!(frozen >= 1, "a rendered ata occupies at least one page");
+        {
+            let books = state.books.read().await;
+            let b = &books[&book_id];
+            assert_eq!(b.pages_reserved, frozen, "the freeze reserves the page count");
+            assert_eq!(b.pages_used, 0, "nothing is consumed before the seal");
+        }
+
+        seal_manual(&state, &actor, act_id)
+            .await
+            .expect("manual-evidence seal");
+        {
+            let books = state.books.read().await;
+            let b = &books[&book_id];
+            assert_eq!(b.pages_used, frozen, "the seal consumes the reservation");
+            assert_eq!(b.pages_reserved, 0, "no reservation lingers after the seal");
+        }
+    }
+
+    /// A book with no room left refuses both a new freeze (409) and a new draft, and — crucially —
+    /// stays `Open`: capacity exhaustion blocks further acts but never auto-closes (§6.1 / t8-B).
+    #[tokio::test]
+    async fn a_full_book_blocks_a_new_freeze_and_new_draft_without_auto_closing() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book_with_capacity(&entity, BookKind::AssembleiaGeral, Some(1));
+        let (actor, act_id, book_id) = seed_signing_ready(&state, book, entity).await;
+
+        // Fill the book to capacity *after* the act was drafted, so the freeze — not the draft — is
+        // the guard under test.
+        state
+            .books
+            .write()
+            .await
+            .get_mut(&book_id)
+            .expect("seeded book")
+            .pages_used = 1;
+
+        let ledger_before = state.ledger.read().await.len();
+        let err = match advance_to(&state, &actor, act_id, "Signing").await {
+            Ok(_) => panic!("a full book must block the freeze"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(err, ApiError::Conflict(ref msg) if msg.contains("capacity")),
+            "{err:?}"
+        );
+        // The act did not move, the ledger is untouched, and the book stayed open (never auto-closed).
+        assert_eq!(
+            state.acts.read().await[&act_id].state,
+            ActState::TextApproved
+        );
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
+        {
+            let books = state.books.read().await;
+            let b = &books[&book_id];
+            assert!(b.is_open(), "an exhausted book stays open (block, never auto-close)");
+            assert!(b.is_capacity_exhausted());
+        }
+
+        // A brand-new draft on the exhausted book is refused before any authoring.
+        let draft = DraftAct {
+            book_id: book_id.0,
+            title: "Ata que não cabe".to_owned(),
+            channel: MeetingChannel::Physical,
+            ai_provenance: None,
+            convening: None,
+            convening_waiver: None,
+            retifies: None,
+            actor: "patch.owner".to_owned(),
+        };
+        let draft_err = match draft_act(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Json(draft),
+        )
+        .await
+        {
+            Ok(_) => panic!("an exhausted book must refuse new drafts"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(draft_err, ApiError::Conflict(ref msg) if msg.contains("capacity")),
+            "{draft_err:?}"
+        );
+    }
+
+    /// Reopening a `Signing` act returns its reserved pages to the book, so the room it held is
+    /// freed for the corrected content to reserve afresh on re-advance.
+    #[tokio::test]
+    async fn reopening_a_signing_act_releases_its_page_reservation() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book_with_capacity(&entity, BookKind::AssembleiaGeral, Some(100));
+        let (actor, act_id, book_id) = seed_signing_ready(&state, book, entity).await;
+
+        let _ = advance_to(&state, &actor, act_id, "Signing")
+            .await
+            .expect("enter Signing");
+        let reserved = state.books.read().await[&book_id].pages_reserved;
+        assert!(reserved >= 1);
+
+        let reopen: ReopenAct =
+            serde_json::from_value(json!({ "reason": "corrigir o texto" })).expect("reopen body");
+        let Json(body) = reopen_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Json(reopen),
+        )
+        .await
+        .expect("reopen releases the reservation");
+        assert_eq!(body.released_page_count, Some(reserved));
+        assert_eq!(
+            state.acts.read().await[&act_id].state,
+            ActState::TextApproved
+        );
+        assert!(
+            state.acts.read().await[&act_id].page_count.is_none(),
+            "the frozen page count is cleared for a fresh freeze"
+        );
+        {
+            let books = state.books.read().await;
+            let b = &books[&book_id];
+            assert_eq!(b.pages_reserved, 0, "reopen returns the reserved pages");
+            assert_eq!(b.pages_used, 0);
+        }
+    }
+
+    /// A book that declared no capacity (legacy / unlimited) tracks reservations but never blocks
+    /// and never reports itself exhausted.
+    #[tokio::test]
+    async fn a_book_without_declared_capacity_reserves_but_never_blocks() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        let (actor, act_id, book_id) = seed_signing_ready(&state, book, entity).await;
+
+        let _ = advance_to(&state, &actor, act_id, "Signing")
+            .await
+            .expect("an unlimited book still advances to Signing");
+        let books = state.books.read().await;
+        let b = &books[&book_id];
+        assert!(b.page_capacity.is_none());
+        assert!(!b.is_capacity_exhausted(), "an unlimited book is never exhausted");
+        assert_eq!(b.pages_remaining(), None, "remaining is None, not zero");
+        assert!(b.pages_reserved >= 1, "the reservation is still tracked");
     }
 
     #[tokio::test]
