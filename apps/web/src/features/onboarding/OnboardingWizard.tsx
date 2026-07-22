@@ -116,8 +116,13 @@ export function OnboardingWizard() {
         email: email.trim() || undefined,
         password: pw,
       });
-      const result = await api.createSession({ user_id: user.id, password: pw });
-      setSessionToken(result.token);
+      const outcome = await api.createSession({ user_id: user.id, password: pw });
+      // A just-created account has no confirmed second factor, so `POST /v1/session` always returns
+      // the token arm here; narrow the union (t95 P2) defensively rather than assume it.
+      if ('two_factor_challenge' in outcome) {
+        throw new Error('unexpected two-factor challenge for a newly created account');
+      }
+      setSessionToken(outcome.token);
       qc.setQueryData(keys.session, await api.getSession());
       setUserId(user.id);
       void qc.invalidateQueries({ queryKey: keys.roster });

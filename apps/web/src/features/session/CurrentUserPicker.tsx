@@ -36,6 +36,7 @@ import { useT } from '../../i18n';
 import { Icon, Tooltip, useToast } from '../../ui';
 import { SignOut } from '../../ui/icons';
 import { forgetAccount, readRecentAccounts, rememberAccount } from './recentAccounts';
+import { useAuthWallT } from './authWallCopy';
 
 /** One row of the menu: an identifier known on this device, or the pinned current user. */
 interface PickerEntry {
@@ -47,6 +48,7 @@ interface PickerEntry {
 
 export function CurrentUserPicker() {
   const t = useT();
+  const st = useAuthWallT();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   // The identity being switched TO — reveals an inline password prompt.
@@ -154,6 +156,15 @@ export function CurrentUserPicker() {
       { username: entry.username, password: secret },
       {
         onSuccess: (result) => {
+          // A target account with a confirmed second factor answers `POST /v1/session` with a
+          // challenge, not a token (t95 P2). The in-session switcher has no second-factor step —
+          // that lives only on the signed-out sign-in screen — so the switch cannot complete here.
+          // Leave the current session untouched and point the user at the sign-in screen.
+          if ('two_factor_challenge' in result) {
+            toast.error(st('signin.challenge.switcherUnsupported'));
+            reset();
+            return;
+          }
           // Only on success, and only for an identifier already remembered here: this
           // refreshes its ordering, it never introduces a new one.
           setRecents(

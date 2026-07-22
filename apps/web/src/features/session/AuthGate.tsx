@@ -19,6 +19,7 @@ import { Navigate } from 'react-router-dom';
 import { useSession, useSessionRoster } from '../../api/hooks';
 import { useT } from '../../i18n';
 import { Button, Skeleton } from '../../ui';
+import { RequiredActionGate } from './RequiredActionGate';
 import { SignIn } from './SignIn';
 
 export function AuthGate({ children }: { children: ReactNode }) {
@@ -29,7 +30,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Signed in → the app. Checked first so that immediately after the wizard/sign-in primes
   // the session cache (and after any roster staleness) the operator lands in the app,
   // never bounced back to the wizard.
-  if (session.data?.user) return <>{children}</>;
+  //
+  // A walled session (t21) is signed in too — it holds a `user` AND a `required_action` the
+  // server recomputes every `GET /v1/session`, and it 403s every route outside a tiny
+  // allow-list until the action is done. So intercept it HERE, before the chrome: render the
+  // matching wall instead of `children`. This is the one place required_action is handled, so
+  // one-step sign-in, a completed 2FA challenge and a plain reload all land on the wall until it
+  // clears (the wall re-reads the session on success, so the app appears the instant it lifts).
+  if (session.data?.user) {
+    if (session.data.required_action) {
+      return <RequiredActionGate action={session.data.required_action} user={session.data.user} />;
+    }
+    return <>{children}</>;
+  }
 
   // Still resolving who we are — hold a quiet boot screen rather than flashing sign-in.
   // Even at boot the shape is known: this panel resolves into either the retry message or

@@ -20,7 +20,7 @@ import { AuthGate } from './AuthGate';
 import { CurrentUserPicker } from './CurrentUserPicker';
 import { clearSessionToken, setSessionToken } from '../../api/session';
 import { SignIn } from './SignIn';
-import type { SessionRoster, UserView } from '../../api/types';
+import type { SessionRoster, TwoFactorChallengeView, UserView } from '../../api/types';
 
 const AMELIA: UserView = {
   id: 'u1',
@@ -649,5 +649,236 @@ describe('CurrentUserPicker (signed in)', () => {
     expect(document.activeElement).toBe(amelia);
     fireEvent.keyDown(amelia, { key: 'End' });
     expect(document.activeElement).toBe(bruno);
+  });
+});
+
+/**
+ * Two-step-verification challenge (t21 Screen A). When `POST /v1/session` answers with a challenge
+ * arm (an account with a confirmed second factor) it carries NO token — the session does not exist
+ * yet — so `SignIn` shows the code-entry card instead of landing in the app, and completion runs
+ * through `POST /v1/session/challenge`. A wrong code is a uniform opaque 401 the client renders as an
+ * inline reject, never a navigation or a sign-out (mirrors `two_step_signin.rs`).
+ */
+const FUTURE = () => new Date(Date.now() + 5 * 60_000).toISOString();
+const CHALLENGE_TOTP: TwoFactorChallengeView = {
+  challenge_id: 'ch-totp',
+  methods: ['totp'],
+  expires_at: FUTURE(),
+};
+const CHALLENGE_WITH_BACKUP: TwoFactorChallengeView = {
+  challenge_id: 'ch-backup',
+  methods: ['totp', 'backup_code'],
+  expires_at: FUTURE(),
+};
+
+/**
+ * A stub whose `POST /v1/session` always answers with the challenge arm (the account has a confirmed
+ * factor); the session is only minted once `POST /v1/session/challenge` receives `correctCode`. A
+ * wrong code is the SAME opaque 401 a spent/expired one gets — the stub is not more helpful than the
+ * real server.
+ */
+function challengeStub(opts: {
+  challenge: TwoFactorChallengeView;
+  correctCode: string;
+  user?: UserView;
+}): { fn: typeof fetch; calls: Recorded[] } {
+  const calls: Recorded[] = [];
+  const user = opts.user ?? BRUNO;
+  let signedIn = false;
+
+  const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null;
+    calls.push({ url, method, session: headers['X-Chancela-Session'] ?? null, body });
+
+    const json = (b: unknown, status = 200) =>
+      Promise.resolve(
+        new Response(b === undefined ? '' : JSON.stringify(b), {
+          status,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    if (url.includes('/v1/session/roster')) return json({ onboarding_required: false });
+    // Checked BEFORE the generic `/v1/session` block (the URL contains both substrings).
+    if (url.includes('/v1/session/challenge')) {
+      if (body?.code === opts.correctCode) {
+        signedIn = true;
+        return json({ token: 'tok-2fa', user });
+      }
+      // Uniform opaque 401 — wrong / spent / expired / capped are indistinguishable.
+      return json({ error: 'código inválido' }, 401);
+    }
+    if (url.includes('/v1/session')) {
+      if (method === 'POST') return json({ two_factor_challenge: opts.challenge });
+      if (method === 'DELETE') {
+        signedIn = false;
+        return json(undefined, 204);
+      }
+      return json({ user: signedIn ? user : null });
+    }
+    if (url.includes('/v1/users')) {
+      if (!headers['X-Chancela-Session']) return json({ error: 'sessão requerida' }, 401);
+      return json([user]);
+    }
+    return Promise.reject(new Error(`no stub for ${url}`));
+  }) as typeof fetch;
+
+  return { fn, calls };
+}
+
+/** Type a code into the challenge card and submit it. */
+function enterCode(code: string) {
+  fireEvent.change(screen.getByLabelText('Código de verificação'), { target: { value: code } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+}
+
+describe('SignIn — two-step-verification challenge (Screen A)', () => {
+  it('a confirmed second factor shows the code card, not the app, and mints no token', async () => {
+    const { fn, calls } = challengeStub({ challenge: CHALLENGE_TOTP, correctCode: '123456' });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+    await typeSignIn('bruno.dias', 'correct-horse');
+
+    // The challenge card takes over: its title + code field, and NOT the app chrome.
+    expect(await screen.findByText('Verificação em dois passos')).toBeTruthy();
+    expect(screen.getByLabelText('Código de verificação')).toBeTruthy();
+    expect(screen.queryByText('APP CHROME')).toBeNull();
+
+    // No token was established on the challenge arm — the only session read is the gate's own GET,
+    // never a POST that primed a token (the session does not exist yet).
+    expect(sessionStorage.getItem('chancela.session-token')).toBeNull();
+    // The account is NOT remembered yet: the sign-in is not complete.
+    expect(window.localStorage.getItem('chancela.signin.recentAccounts')).toBeNull();
+    // No challenge completion was attempted from merely reaching the card.
+    expect(calls.some((c) => c.url.includes('/v1/session/challenge'))).toBe(false);
+  });
+
+  it('a correct code completes the challenge, lands in the app, and remembers the account', async () => {
+    const { fn, calls } = challengeStub({ challenge: CHALLENGE_TOTP, correctCode: '123456' });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+    await typeSignIn('bruno.dias', 'correct-horse');
+    await screen.findByText('Verificação em dois passos');
+
+    enterCode('123456');
+
+    expect(await screen.findByText('APP CHROME')).toBeTruthy();
+    const post = calls.find((c) => c.url.includes('/v1/session/challenge') && c.method === 'POST');
+    // The opaque challenge_id + the code go up together; nothing else.
+    expect(post?.body).toEqual({ challenge_id: 'ch-totp', code: '123456' });
+    // A completed sign-in is remembered (Screen A honours the same recents contract as one-step).
+    const stored = JSON.parse(
+      window.localStorage.getItem('chancela.signin.recentAccounts') ?? '[]',
+    ) as { username: string }[];
+    expect(stored.map((r) => r.username)).toEqual(['bruno.dias']);
+  });
+
+  it('a wrong code is an inline reject — the card stays, nothing navigates, the field clears', async () => {
+    const { fn } = challengeStub({ challenge: CHALLENGE_TOTP, correctCode: '123456' });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+    await typeSignIn('bruno.dias', 'correct-horse');
+    await screen.findByText('Verificação em dois passos');
+
+    enterCode('000000');
+
+    // Inline, field-level reject — never the app, never a bounce back to the password form.
+    expect(await screen.findByText('Código incorreto. Tente novamente.')).toBeTruthy();
+    expect(screen.getByText('Verificação em dois passos')).toBeTruthy();
+    expect(screen.queryByText('APP CHROME')).toBeNull();
+    expect(screen.queryByLabelText('Utilizador')).toBeNull();
+    // The consumed code is dropped from the field.
+    expect((screen.getByLabelText('Código de verificação') as HTMLInputElement).value).toBe('');
+  });
+
+  it('the local attempt cap returns the operator to the password form with an honest notice', async () => {
+    const { fn } = challengeStub({ challenge: CHALLENGE_TOTP, correctCode: '123456' });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+    await typeSignIn('bruno.dias', 'correct-horse');
+    await screen.findByText('Verificação em dois passos');
+
+    // Five rejects: the challenge is certainly spent by the fifth, so we drop back to the password
+    // step with the "recomeçar" notice rather than looping on a dead handle.
+    for (let i = 0; i < 4; i += 1) {
+      enterCode('000000');
+      await screen.findByText('Código incorreto. Tente novamente.');
+    }
+    enterCode('000000');
+
+    expect(
+      await screen.findByText(
+        'Demasiadas tentativas. Introduza novamente a palavra-passe para recomeçar.',
+      ),
+    ).toBeTruthy();
+    // Back on the password form; the challenge card is gone.
+    expect(screen.getByLabelText('Utilizador')).toBeTruthy();
+    expect(screen.queryByText('Verificação em dois passos')).toBeNull();
+  });
+
+  it('"Voltar" abandons the challenge and returns to the password form', async () => {
+    const { fn } = challengeStub({ challenge: CHALLENGE_TOTP, correctCode: '123456' });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+    await typeSignIn('bruno.dias', 'correct-horse');
+    await screen.findByText('Verificação em dois passos');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+
+    expect(await screen.findByLabelText('Utilizador')).toBeTruthy();
+    expect(screen.queryByText('Verificação em dois passos')).toBeNull();
+    // A plain abandonment carries no reject notice — the operator simply chose to go back.
+    expect(screen.queryByText('Código incorreto. Tente novamente.')).toBeNull();
+  });
+
+  it('the recovery-code hint shows only when the challenge accepts a backup code', async () => {
+    const hint =
+      'Se não tiver acesso à aplicação, pode introduzir aqui um dos seus códigos de recuperação.';
+
+    // TOTP-only: no hint.
+    const totp = challengeStub({ challenge: CHALLENGE_TOTP, correctCode: '123456' });
+    vi.stubGlobal('fetch', totp.fn);
+    renderGate();
+    await typeSignIn('bruno.dias', 'correct-horse');
+    await screen.findByText('Verificação em dois passos');
+    expect(screen.queryByText(hint)).toBeNull();
+
+    cleanup();
+    clearSessionToken();
+
+    // Backup codes live: the same single field advertises it takes a recovery code too.
+    const backup = challengeStub({ challenge: CHALLENGE_WITH_BACKUP, correctCode: '123456' });
+    vi.stubGlobal('fetch', backup.fn);
+    renderGate();
+    await typeSignIn('bruno.dias', 'correct-horse');
+    await screen.findByText('Verificação em dois passos');
+    expect(screen.getByText(hint)).toBeTruthy();
+  });
+
+  it('a recovery code entered in the same field completes the challenge', async () => {
+    // The server decides by shape; here the "backup" string is the accepted code.
+    const { fn, calls } = challengeStub({
+      challenge: CHALLENGE_WITH_BACKUP,
+      correctCode: 'ABCD-EFGH-1234',
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+    await typeSignIn('bruno.dias', 'correct-horse');
+    await screen.findByText('Verificação em dois passos');
+
+    enterCode('ABCD-EFGH-1234');
+
+    expect(await screen.findByText('APP CHROME')).toBeTruthy();
+    const post = calls.find((c) => c.url.includes('/v1/session/challenge') && c.method === 'POST');
+    expect(post?.body).toEqual({ challenge_id: 'ch-backup', code: 'ABCD-EFGH-1234' });
   });
 });

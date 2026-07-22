@@ -34,10 +34,10 @@
  * roster offers the genuine bootstrap create and a populated one routes honestly back to
  * sign-in rather than faking a create that would 401.
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
-import type { UserView } from '../../api/types';
+import type { TwoFactorChallengeView, UserView } from '../../api/types';
 import { keys, useCreateSession, useSessionRoster } from '../../api/hooks';
 import { setSessionToken } from '../../api/session';
 import { useT } from '../../i18n';
@@ -54,6 +54,8 @@ import {
 import { useToast } from '../../ui';
 import { UserCreateForm } from '../users/UserCreateForm';
 import { forgetAccount, readRecentAccounts, rememberAccount } from './recentAccounts';
+import { useAuthWallT } from './authWallCopy';
+import { TwoFactorChallengeForm } from './TwoFactorChallengeForm';
 
 /**
  * `form` — the typed sign-in form (default); `create` — the bootstrap create form (empty
@@ -63,6 +65,7 @@ type Mode = 'form' | 'create' | 'blocked';
 
 export function SignIn() {
   const t = useT();
+  const st = useAuthWallT();
   const toast = useToast();
   const qc = useQueryClient();
   const roster = useSessionRoster();
@@ -75,8 +78,25 @@ export function SignIn() {
   const [remember, setRemember] = useState(true);
   const [recents, setRecents] = useState(() => readRecentAccounts());
   const [bootstrapping, setBootstrapping] = useState(false);
+  // The two-step-verification sub-state (t21 Screen A). Set when `POST /v1/session` answers with a
+  // challenge instead of a token: the code-entry card replaces the password form until the challenge
+  // is completed or abandoned. `challengeNotice` carries the reason the challenge ended (a spent
+  // handle after the attempt cap, or an expiry) back onto the password form.
+  const [challenge, setChallenge] = useState<TwoFactorChallengeView | null>(null);
+  const [challengeNotice, setChallengeNotice] = useState<string | null>(null);
 
   const busy = signIn.isPending;
+
+  /**
+   * Leave the challenge and return to the password form. Stable so the challenge card's expiry
+   * timer arms once per challenge rather than resetting on every host render. Drops the password
+   * (already consumed server-side) and surfaces an optional notice above the form.
+   */
+  const leaveChallenge = useCallback((notice?: string) => {
+    setChallenge(null);
+    setChallengeNotice(notice ?? null);
+    setPassword('');
+  }, []);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,10 +107,20 @@ export function SignIn() {
     // The identifier goes to the server as typed (it matches case-insensitively). No
     // client-side existence check: there is no list to check against any more, and the
     // server's failure is identical whether or not the account exists.
+    setChallengeNotice(null);
     signIn.mutate(
       { username: identifier, password },
       {
         onSuccess: (result) => {
+          // Challenge arm (t21): the account has a confirmed second factor, so `POST /v1/session`
+          // returned a challenge and NO token — `useCreateSession` left the session untouched.
+          // Show the code-entry card and drop the password (proved out server-side, a credential).
+          // Do NOT record the account or toast success yet: the sign-in is not complete.
+          if ('two_factor_challenge' in result) {
+            setChallenge(result.two_factor_challenge);
+            setPassword('');
+            return;
+          }
           // ONLY here — a failed attempt must never be recorded, or the recents list
           // becomes an "is this a real username" oracle. `remember` is the shared/kiosk
           // opt-out. The display name comes from the sign-in response, i.e. only after
@@ -136,8 +166,13 @@ export function SignIn() {
   async function bootstrapSignIn(user: UserView, createdPassword: string) {
     setBootstrapping(true);
     try {
-      const result = await api.createSession({ user_id: user.id, password: createdPassword });
-      setSessionToken(result.token);
+      const outcome = await api.createSession({ user_id: user.id, password: createdPassword });
+      // A just-created bootstrap account has no confirmed second factor, so `POST /v1/session`
+      // always returns the token arm here; narrow the union (t21) defensively rather than assume it.
+      if ('two_factor_challenge' in outcome) {
+        throw new Error('unexpected two-factor challenge for a newly created account');
+      }
+      setSessionToken(outcome.token);
       qc.setQueryData(keys.session, await api.getSession());
       void qc.invalidateQueries({ queryKey: keys.roster });
       void qc.invalidateQueries({ queryKey: keys.users });
@@ -154,14 +189,16 @@ export function SignIn() {
     }
   }
 
-  const title =
-    mode === 'create'
+  const title = challenge
+    ? st('signin.challenge.title')
+    : mode === 'create'
       ? t('signin.bootstrap.title')
       : mode === 'blocked'
         ? t('signin.blocked.title')
         : t('signin.title');
-  const subtitle =
-    mode === 'create'
+  const subtitle = challenge
+    ? st('signin.challenge.intro')
+    : mode === 'create'
       ? t('signin.bootstrap.body')
       : mode === 'blocked'
         ? t('signin.blocked.body')
@@ -232,8 +269,29 @@ export function SignIn() {
               </Button>
             </div>
           </div>
+        ) : challenge ? (
+          // Two-step verification (t21 Screen A): the password proved out but the account holds a
+          // confirmed second factor, so the code-entry card takes over until the challenge is
+          // completed (→ the session establishes and lands in the app) or abandoned (→ back here).
+          <TwoFactorChallengeForm
+            challenge={challenge}
+            onLeave={leaveChallenge}
+            onCompleted={(user) => {
+              if (remember) {
+                setRecents(
+                  rememberAccount({ username: user.username, displayName: user.display_name }),
+                );
+              }
+              toast.success(t('toast.signin.success'));
+            }}
+          />
         ) : (
           <>
+            {challengeNotice ? (
+              // Why the operator is back at the password form: a spent challenge (attempt cap) or an
+              // expired one. Honest, never a raw 401.
+              <InlineWarning tone="warn">{challengeNotice}</InlineWarning>
+            ) : null}
             <form className="signin__form" onSubmit={submit}>
               <Field label={t('signin.username.label')} htmlFor="signin-user">
                 <Input
