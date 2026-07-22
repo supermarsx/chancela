@@ -8,7 +8,13 @@
  * compliance-gated seal (§2.5) therefore keeps the CompliancePanel and dashboard
  * counts live without manual wiring.
  */
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  QueryClient,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type {
   AdvanceActBody,
@@ -78,10 +84,13 @@ import type {
   PlatformControllableServiceId,
   PlatformLogsQueryParams,
   PlatformServiceAction,
+  ServerEnvUpdateRequest,
   RegistryAutoUpdateAttemptBody,
   RegistryImportBody,
   SealActBody,
   Settings,
+  SessionResult,
+  CompleteChallengeBody,
   SetSecretBody,
   RemoveSecretBody,
   AttestationKeyBody,
@@ -212,6 +221,7 @@ export const keys = {
   settings: ['settings'] as const,
   emailStatus: ['settings', 'email', 'status'] as const,
   platformServices: ['platform', 'services'] as const,
+  serverEnv: ['platform', 'env'] as const,
   zkStorageStatus: ['zk-repositories', 'storage-status'] as const,
   platformLogs: (params: PlatformLogsQueryParams = {}) =>
     [
@@ -2474,6 +2484,27 @@ export type SignInArgs = { password: string } & (
 );
 
 /**
+ * Establish a freshly minted session in the client. Store the token in tab-scoped `sessionStorage`
+ * (t51) so every subsequent request — and every request after a page reload, until the tab closes —
+ * carries it, then prime `keys.session` from a full `GET /v1/session` read so RBAC-gated UI has the
+ * effective permission grants immediately, AND so any `required_action` the server recomputed lands
+ * in the session cache for the `AuthGate` wall.
+ *
+ * Shared by the one-step sign-in ({@link useCreateSession}, authenticated arm) and the two-step
+ * completion ({@link useCompleteChallenge}) so a completed 2FA challenge funnels its `required_action`
+ * into exactly the same wall handling as a one-step sign-in — the wall is read from `GET /v1/session`,
+ * the single source of truth, not from the mint response.
+ */
+async function establishSession(qc: QueryClient, result: SessionResult): Promise<void> {
+  setSessionToken(result.token);
+  qc.setQueryData(keys.session, await api.getSession());
+  // Now signed in, the auth-gated user list becomes readable — refetch it so the
+  // management page has the full UserView set. (The session picker no longer reads it:
+  // t94 moved it to the device-local recents, so this only fires where a list is mounted.)
+  void qc.invalidateQueries({ queryKey: keys.users });
+}
+
+/**
  * Sign in as a user (`POST /v1/session`, t29). The issued token is stored in tab-scoped
  * `sessionStorage` (t51) so every subsequent request — and every request after a page
  * reload, until the tab closes — carries it; the session query is primed with a full session
@@ -2482,6 +2513,12 @@ export type SignInArgs = { password: string } & (
  * (deliberately indistinguishable — see {@link SignInArgs}), a legacy account with no
  * password verifier reached *by id* is a **409**, and too many attempts a **429**
  * (backoff).
+ *
+ * `POST /v1/session` is a union (t95 P2): an account with a confirmed second factor answers with a
+ * **challenge** (`{ two_factor_challenge }`) instead of a token — the session does not exist yet. On
+ * that arm this hook does NOT touch the token; it lets the mutation resolve with the challenge so the
+ * caller (`SignIn`) can render the code-entry card and finish via {@link useCompleteChallenge}. Only
+ * the authenticated arm (carries `token`) establishes a session here.
  */
 export function useCreateSession() {
   const qc = useQueryClient();
@@ -2493,13 +2530,31 @@ export function useCreateSession() {
           : { user_id: args.userId, password: args.password },
       ),
     onSuccess: async (result) => {
-      setSessionToken(result.token);
-      qc.setQueryData(keys.session, await api.getSession());
-      // Now signed in, the auth-gated user list becomes readable — refetch it so the
-      // management page has the full UserView set. (The session picker no longer reads it:
-      // t94 moved it to the device-local recents, so this only fires where a list is mounted.)
-      void qc.invalidateQueries({ queryKey: keys.users });
+      // Challenge arm: no token yet. Do nothing to the session — the caller reads `result`,
+      // detects the `two_factor_challenge` key, and drives the second-factor step.
+      if ('two_factor_challenge' in result) return;
+      await establishSession(qc, result);
     },
+  });
+}
+
+/**
+ * Complete a two-step sign-in (`POST /v1/session/challenge`, t95 P2). Send the `challenge_id` from
+ * the challenge arm of `POST /v1/session` plus a TOTP or backup code (the server decides by shape);
+ * on success it mints the session exactly as a one-step sign-in would, so this establishes the token
+ * and primes `keys.session` through the SAME {@link establishSession} helper — any `required_action`
+ * on the completed challenge (a 2FA account that must also change its password) flows into the wall.
+ *
+ * A wrong/spent/expired code or the server's 5-attempt cap is a uniform opaque **401** (as with
+ * sign-in); the client cannot tell them apart, so the caller renders it as an inline field reject and
+ * keeps the challenge card mounted — never a sign-out (the `credentialProof` tag on the `ApiError`,
+ * set by `CREDENTIAL_PROOF_PATH`, guarantees the token store is left alone).
+ */
+export function useCompleteChallenge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CompleteChallengeBody) => api.completeChallenge(body),
+    onSuccess: (result) => establishSession(qc, result),
   });
 }
 
@@ -3199,6 +3254,37 @@ export function usePlatformServices() {
     queryFn: () => api.listPlatformServices(),
     staleTime: 15_000,
     retry: false,
+  });
+}
+
+/** The server-declared env-override registry joined with live state (`GET /v1/platform/env`).
+ *
+ *  Resolved once at process start, so — like {@link useZkStorageStatus} — the query is NOT invalidated
+ *  when the settings document is saved: its whole purpose is to expose the gap between what is stored
+ *  and what this process is running, which is precisely the `restart_pending` signal. */
+export function useServerEnv() {
+  return useQuery({
+    queryKey: keys.serverEnv,
+    queryFn: () => api.getServerEnv(),
+    staleTime: 15_000,
+    retry: false,
+  });
+}
+
+/** Replace the non-secret override map (`PUT /v1/platform/env`). The PUT returns a fresh
+ *  `ServerEnvResponse`, so the cache is seeded from the response — the pane immediately reflects the
+ *  new `source`/`restart_pending` (an override that changed a startup-read var comes back
+ *  `restart_pending: true`) without a refetch. A `422` (missing acknowledgement, narrow-only
+ *  violation, or a rejected validator) throws an `ApiError` the caller renders inline; the cache is
+ *  left untouched on failure. The change is audited, so the ledger view is invalidated. */
+export function useUpdateServerEnv() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ServerEnvUpdateRequest) => api.updateServerEnv(body),
+    onSuccess: (response) => {
+      qc.setQueryData(keys.serverEnv, response);
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
   });
 }
 

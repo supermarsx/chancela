@@ -6188,6 +6188,9 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       'Chaves e reposição',
       'IA e MCP',
       'Email',
+      // Ambiente do servidor (t14) — the editable env-override superset, last as the advanced
+      // surface. Its label resolves through the serverEnvFallback module, not the frozen catalog.
+      'Ambiente do servidor',
     ]);
 
     // Serviços is the default and carries no `sub` segment, mirroring the `sec` rule.
@@ -6874,6 +6877,65 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
     renderWithProviders(<SettingsPage />, ['/settings/operations/backups']);
     expect(await screen.findByText('Política local de recuperação de backups')).toBeTruthy();
     expect(screen.queryByText('Política de limpeza de exportações retidas')).toBeNull();
+  });
+
+  it('keeps the save/error feedback on a policy subtab even though it is standalone (t28)', async () => {
+    // The co-located policy editors write the settings document, so — unlike the other standalone
+    // subtabs — a failed policy save must still surface the retry affordance (`hostsSettingsPolicy`).
+    // Otherwise a settings.manage operator edits the policy here and never learns the save failed.
+    const calls: Recorded[] = [];
+    let putAttempts = 0;
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method, body: (init?.body as string) ?? null });
+      if (url.includes('/v1/permissions')) return Promise.resolve(jsonResponse(PERMISSION_CATALOG));
+      if (url.includes('/v1/settings')) {
+        if (method === 'PUT') {
+          putAttempts += 1;
+          if (putAttempts === 1) {
+            return Promise.resolve(jsonResponse({ error: 'Falha ao guardar' }, 500));
+          }
+          return Promise.resolve(jsonResponse(JSON.parse(init?.body as string)));
+        }
+        return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      }
+      if (url.includes('/v1/zk-repositories/storage-status')) {
+        return Promise.resolve(
+          jsonResponse({
+            ready: false,
+            reason: 'disabled',
+            requires_shared_root: true,
+            declared_root: null,
+            source: 'unset',
+          }),
+        );
+      }
+      if (url.includes('/v1/data/status')) return Promise.resolve(jsonResponse(null));
+      if (url.includes('/v1/ledger/verify')) {
+        return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
+      }
+      if (url.includes('/health')) {
+        return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/settings/operations/storage']);
+
+    const minAge = (await screen.findByLabelText(
+      'Idade mínima das exportações',
+    )) as HTMLInputElement;
+    fireEvent.change(minAge, { target: { value: '45' } });
+
+    // The failed save surfaces the assertive toast and the retry affordance — the bar is NOT
+    // suppressed the way it is on a data.manage-only standalone subtab.
+    const alert = await screen.findByRole('alert', undefined, { timeout: 3000 });
+    expect(alert.textContent).toContain('Falha ao guardar');
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(putAttempts).toBe(2));
+    expect(await screen.findByText('Configurações guardadas.')).toBeTruthy();
   });
 
   it('still refuses the ZK declaration to a principal without `settings.manage`', async () => {

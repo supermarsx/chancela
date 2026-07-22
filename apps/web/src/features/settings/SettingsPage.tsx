@@ -77,6 +77,7 @@ import {
 import { UI_VERSION, displayVersion } from '../../api/versionCheck';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
+import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
 import { grainStore } from '../../theme/grainStore';
 import { colorStore } from '../../theme/colorStore';
 import { applyAppearance, applyLocale, COLOR_OVERRIDE_FIELDS } from '../../theme/appearance';
@@ -94,6 +95,7 @@ import { LanguagePreferenceSection } from './LanguagePreferenceSection';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
 import { PairingPanel } from '../pairing/PairingPanel';
 import { ApiServerSection } from './ApiServerSection';
+import { ServerEnvSection } from './ServerEnvSection';
 import { CacheSection } from './CacheSection';
 import { DatabaseSection } from './DatabaseSection';
 import { McpSection } from './McpSection';
@@ -589,6 +591,7 @@ const SETTINGS_SUBSECTIONS = {
     'keys',
     'mcp',
     'email',
+    'env',
     'api-keys',
   ],
   signing: ['providers', 'policy', 'tsl', 'tsa', 'trust-services', 'cmd'],
@@ -600,7 +603,13 @@ type SettingsSubsection =
   | (typeof SETTINGS_SUBSECTIONS)['signing'][number]
   | (typeof SETTINGS_SUBSECTIONS)['users'][number];
 
-type SettingsSubsectionNav = { id: SettingsSubsection; label: MessageKey; icon: ReactNode };
+/** A sub-tab label is normally a frozen catalog key. "Ambiente do servidor" (t14) is the one
+ *  exception: its whole copy lives in `i18n/serverEnvFallback` (the shared catalogs were locked when
+ *  it landed), so it names a key in that module instead, resolved with `st(...)` at render — the same
+ *  split the pane itself uses. Exactly one of `label`/`serverEnvLabel` is present. */
+type SettingsSubsectionNav =
+  | { id: SettingsSubsection; label: MessageKey; icon: ReactNode; serverEnvLabel?: never }
+  | { id: SettingsSubsection; label?: never; icon: ReactNode; serverEnvLabel: ServerEnvCopyKey };
 
 /**
  * Second-level sub-tabs (t73). Two parents grew long enough to need their own strip, and three
@@ -644,6 +653,12 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
     // sibling rather than a third level inside Plataforma so it has a stable address of its own.
     { id: 'mcp', label: 'settings.subnav.mcp', icon: <Icon.Sliders /> },
     { id: 'email', label: 'settings.email.cardTitle', icon: <Icon.Tray /> },
+    // Ambiente do servidor (t14) — the editable superset of the read-only environment panes above
+    // (API, Base de dados, Redis). It lists every var the server declares and overrides the safe
+    // ones; it sits last because it is the advanced, comprehensive surface rather than a curated
+    // one. Its label is the one sub-tab whose copy lives in the serverEnvFallback module, not the
+    // catalog, so it is resolved with `st(...)` in the strip below.
+    { id: 'env', serverEnvLabel: 'settings.serverEnv.title', icon: <Icon.Sliders /> },
   ],
   signing: [
     { id: 'providers', label: 'settings.providerCredentials.cardTitle', icon: <Icon.IdCard /> },
@@ -743,6 +758,10 @@ const STANDALONE_SUBSECTIONS: readonly string[] = [
   'operations:storage',
   'operations:backups',
   'operations:keys',
+  // Ambiente do servidor (t14) owns its own data (`GET`/`PUT /v1/platform/env`) and its own save,
+  // not the settings working copy, so it carries no whole-document savebar and is not inerted by
+  // the page's `settings.manage` fieldset — the pane gates its own editors on `settings.manage`.
+  'operations:env',
   'signing:providers',
 ];
 
@@ -1141,6 +1160,9 @@ function PlatformLogTailPanel() {
 
 export function SettingsPage() {
   const t = useT();
+  // The "Ambiente do servidor" sub-tab label is the one strip entry whose copy lives in the
+  // serverEnvFallback module rather than the frozen catalog (t14) — resolved here for the strip.
+  const st = useServerEnvT();
   const toast = useToast();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -1219,6 +1241,11 @@ export function SettingsPage() {
   // nor the read-only "Sobre").
   const standalone = isStandalone(section, sub);
   const editingLocked = !canManageSettings && !standalone && section !== 'about';
+  // The two standalone subtabs that, since t28, host a `settings.manage` working-copy policy editor
+  // co-located with their readouts (Armazenamento → retained-export cleanup; Cópias e recuperação →
+  // backup-recovery). They DO touch the settings document, so — unlike other standalone subtabs —
+  // the autosave save/error bar must still surface here; otherwise a failed policy save is silent.
+  const hostsSettingsPolicy = section === 'operations' && (sub === 'storage' || sub === 'backups');
 
   // The committed (persisted) document, tracked in a ref so the unmount cleanup can
   // restore it if the operator navigated away mid-preview without saving.
@@ -1503,7 +1530,11 @@ export function SettingsPage() {
           the standalone ones that are not locked at all. */}
       {subNav && sub ? (
         <SubNav
-          items={subNav.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
+          items={subNav.map((s) => ({
+            id: s.id,
+            label: s.serverEnvLabel ? st(s.serverEnvLabel) : t(s.label),
+            icon: s.icon,
+          }))}
           // `api-keys` is a pane of the API tab, so the API button is the one that reads as
           // active while it is open — otherwise the strip would show nothing selected.
           active={sub === 'api-keys' ? 'api' : sub}
@@ -2778,6 +2809,13 @@ export function SettingsPage() {
                   everything else; the password and the test send are its own endpoints. */}
               {sub === 'email' ? <EmailSection email={draft.email} onChange={setEmail} /> : null}
 
+              {/* Ambiente do servidor — t14. STANDALONE: it reads and writes its own endpoint
+                  (`/v1/platform/env`), so it sits outside the settings working copy and the page
+                  fieldset, gating its own editors on `settings.manage`. It is the editable superset
+                  of the read-only environment panes above; every value is resolved once at startup,
+                  so an override is stored and takes effect on the next restart, never live. */}
+              {sub === 'env' ? <ServerEnvSection /> : null}
+
               {/* Chaves API — the API tab's second pane since t82b, but STILL its own
                   address and still in STANDALONE_SUBSECTIONS, which is what keeps its
                   `user.manage` gating and its no-savebar/no-fieldset treatment byte-identical.
@@ -2901,9 +2939,12 @@ export function SettingsPage() {
               is the toast; a clean or in-flight form shows nothing (no "Guardar agora").
             • Autosave OFF (a future toggle): whenever there are unsaved changes, to host
               the "Guardar agora" flush; a clean form shows nothing.
-          The standalone sub-tabs (Utilizadores, Integridade, Dados…) manage their own data
-          and never touch the settings document, so the bar is hidden there entirely. */}
-      {!standalone && (AUTOSAVE_ENABLED ? autosave.status === 'error' : autosave.isDirty) ? (
+          The standalone sub-tabs (Utilizadores, Integridade, Chaves e reposição…) manage their own
+          data and never touch the settings document, so the bar is hidden there entirely — EXCEPT
+          Armazenamento and Cópias e recuperação, which host a settings-document policy editor since
+          t28 (`hostsSettingsPolicy`) and so keep the same save/error feedback they had in Gestão. */}
+      {(!standalone || hostsSettingsPolicy) &&
+      (AUTOSAVE_ENABLED ? autosave.status === 'error' : autosave.isDirty) ? (
         <Card>
           <div className="stack--tight">
             {autosave.status === 'error' ? <ErrorNote error={autosave.error} /> : null}

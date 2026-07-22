@@ -2580,11 +2580,35 @@ export type ReadabilityPackageBody =
 
 export type NotificationTriageStatus = 'unread' | 'read' | 'dismissed' | 'acknowledged';
 
+export interface NotificationSnapshotAction {
+  href: string;
+  label: string;
+}
+
+/**
+ * A client-authored display copy of a notification, sent with a `dismissed` triage PATCH so the
+ * Dismissed tab can show the item for the full retention window even after the dashboard condition
+ * that generated it has cleared. The server stores it opaquely (length-capped, control-char-free)
+ * and echoes it back on GET; it never interprets the fields.
+ */
+export interface NotificationSnapshot {
+  kind: string;
+  tone: string;
+  badge: string;
+  title: string;
+  detail: string;
+  timestamp?: string;
+  action?: NotificationSnapshotAction;
+}
+
 export interface NotificationTriageEntry {
   owner?: string;
   notification_id: string;
   status: Exclude<NotificationTriageStatus, 'unread'>;
   updated_at: string;
+  /** For a dismissed entry, the dismissal instant that starts the retention clock. */
+  dismissed_at?: string;
+  snapshot?: NotificationSnapshot;
 }
 
 export interface NotificationTriageResponse {
@@ -2595,6 +2619,7 @@ export interface NotificationTriageResponse {
 
 export interface NotificationTriageUpdateBody {
   status: NotificationTriageStatus;
+  snapshot?: NotificationSnapshot;
 }
 
 export interface NotificationTriageUpdateResponse {
@@ -4073,6 +4098,13 @@ export interface SignStoredPkcs12Body {
 export interface SessionView {
   user: UserView | null;
   permissions: PermissionGrant[];
+  /**
+   * The wall this session must clear before it is a full session (t95 P2). Recomputed from the
+   * user record on every `GET /v1/session`, so it survives a page reload and clears the instant the
+   * underlying condition does — this is the single source of truth the `AuthGate` wall reads.
+   * Absent (`undefined`) for an ordinary session, so the pre-t95 wire shape is unchanged.
+   */
+  required_action?: RequiredAction;
 }
 
 /**
@@ -4144,6 +4176,20 @@ export interface PasswordPolicyView {
 export type CreateSessionBody = { password: string } & (
   { username: string; user_id?: never } | { user_id: string; username?: never }
 );
+
+/**
+ * `POST /v1/session/challenge` — completes a two-step sign-in issued by the challenge arm of
+ * {@link CreateSessionOutcome}. `challenge_id` is the opaque handle from that response; `code` is a
+ * TOTP or a backup code (the server decides by shape). Both are credentials: never log them, never
+ * put them in a URL, drop them from state the moment they are consumed. On success the server
+ * answers a {@link SessionResult}; on a wrong/spent/expired code or the attempt cap, a single opaque
+ * `401` (indistinguishable, as with sign-in) — surface it as an inline field reject, never a
+ * sign-out.
+ */
+export interface CompleteChallengeBody {
+  challenge_id: string;
+  code: string;
+}
 
 // Sign-in secret + attestation-key management bodies (t29). `current_password` is
 // required only when a secret already exists (verified server-side, 401 on mismatch).
@@ -5179,11 +5225,55 @@ export interface AttestationVerifyView {
   reason?: string;
 }
 
-/** `POST /v1/session` — the issued token plus the now-active user. */
+/**
+ * The wall a freshly signed-in (or reloaded) session must clear before it can do anything else
+ * (t95 P2). Wire values are the server's snake_case `RequiredAction` variants:
+ * - `change_password` — the account was created with an admin-chosen password (welcome-email path)
+ *   and must change it now; cleared on the first successful self `set_secret`.
+ * - `enrol_two_factor` — the account is required to hold a second factor and has none; it may reach
+ *   only the TOTP enrol/confirm endpoints (enrol-on-next-sign-in, never a hard lockout).
+ * Password change takes priority when both apply. Enforced per-request by the server (403 while
+ * walled); surfaced here and on {@link SessionView} so the client can route straight to the wall.
+ */
+export type RequiredAction = 'change_password' | 'enrol_two_factor';
+
+/** A factor that can satisfy a two-step sign-in challenge. `totp` is always offered; `backup_code`
+ *  only when the account still has unspent recovery codes. The server decides which was supplied by
+ *  the code's shape, so both ride the same {@link CompleteChallengeBody} `code` field. */
+export type TwoFactorMethod = 'totp' | 'backup_code';
+
+/**
+ * The challenge arm of {@link CreateSessionOutcome} (`POST /v1/session`) when the account has a
+ * confirmed second factor. Carries **no token** — the session does not exist yet — only an opaque
+ * `challenge_id` (a process-local, never-persisted handle that grants nothing on its own), the
+ * factors that satisfy it, and an rfc3339 `expires_at`. Complete it at `POST /v1/session/challenge`.
+ */
+export interface TwoFactorChallengeView {
+  challenge_id: string;
+  /** Accepted factors, in preference order (`"totp"` first). */
+  methods: TwoFactorMethod[];
+  /** rfc3339 UTC instant after which the challenge is spent and the user must re-enter the password. */
+  expires_at: string;
+}
+
+/** `POST /v1/session` — the issued token plus the now-active user, and (only when the account is
+ *  walled) the {@link RequiredAction} it must clear first. Also the success shape of
+ *  `POST /v1/session/challenge`. */
 export interface SessionResult {
   token: string;
   user: UserView;
+  /** Present only when the freshly minted session is walled; omitted on an ordinary sign-in. */
+  required_action?: RequiredAction;
 }
+
+/**
+ * The untagged `POST /v1/session` outcome: either an authenticated {@link SessionResult} (carries
+ * `token`), or a {@link TwoFactorChallengeView} wrapper (carries `two_factor_challenge`) when the
+ * account has a confirmed second factor. Discriminate by which key is present —
+ * `'two_factor_challenge' in outcome` selects the challenge arm, otherwise it is the token arm.
+ * A wrong password never reaches the challenge arm (it is a uniform opaque 401, as before).
+ */
+export type CreateSessionOutcome = SessionResult | { two_factor_challenge: TwoFactorChallengeView };
 
 // --- Request bodies (§2.3–§2.7) -------------------------------------------------
 
@@ -5687,6 +5777,124 @@ export interface PlatformControlResponse {
   service: PlatformServiceStatus;
   action: PlatformServiceAction;
   result: PlatformControlResult;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Server environment overrides (t14) — `GET`/`PUT /v1/platform/env`.
+//
+// The server declares the authoritative registry of every process env var it reads
+// (`chancela-api/src/env_overrides.rs`); the panel renders whatever the server *declares* instead of
+// a hardcoded row list, and finally gets the live resolved values it never had. Treatment is tiered
+// ("as they should", not "every var an editable box"): Tier A editable; Tier B secrets display-only
+// (never echoed — only `configured`); Tier C security boundaries editable behind an acknowledgement
+// the server enforces with a `422`, ceilings narrow-only; Tier D derived / read-only. Everything is
+// restart-to-apply, surfaced as `restart_pending`.
+// ---------------------------------------------------------------------------------------------
+
+/** Treatment tier: A editable · B secret (display-only) · C boundary (ack-gated) · D derived. */
+export const SERVER_ENV_TIERS = ['A', 'B', 'C', 'D'] as const;
+export type ServerEnvVarTier = (typeof SERVER_ENV_TIERS)[number];
+
+/** Which layer supplied the value the live process resolved. */
+export const SERVER_ENV_SOURCES = ['override', 'env', 'default'] as const;
+export type ServerEnvVarSource = (typeof SERVER_ENV_SOURCES)[number];
+
+/** The section the web groups a var under. */
+export const SERVER_ENV_GROUPS = [
+  'logging',
+  'network',
+  'session',
+  'rate_limit',
+  'hsts',
+  'cors',
+  'database',
+  'credentials',
+  'cache',
+  'cluster',
+  'postgres_tls',
+  'trust',
+  'signing',
+  'csc',
+  'cmd',
+  'scap',
+  'connectors',
+  'storage',
+  'paper_book',
+  'mcp',
+] as const;
+export type ServerEnvVarGroup = (typeof SERVER_ENV_GROUPS)[number];
+
+/** The validator kind the web reads to pick an input control. */
+export const SERVER_ENV_VALIDATOR_KINDS = [
+  'free_text',
+  'path',
+  'bool',
+  'unsigned',
+  'enum',
+  'http_url',
+  'socket_addr',
+  'host_list',
+  'duration',
+] as const;
+export type ServerEnvValidatorKind = (typeof SERVER_ENV_VALIDATOR_KINDS)[number];
+
+export interface ServerEnvValidatorView {
+  kind: ServerEnvValidatorKind;
+  /** Allowed literals for `kind: 'enum'`; `null` otherwise. */
+  allowed: string[] | null;
+}
+
+/**
+ * One env var as rendered by `GET /v1/platform/env`: the declared classification joined with the
+ * value the live process resolved. Secrets never carry a value — only `configured`.
+ */
+export interface ServerEnvVarView {
+  name: string;
+  group: ServerEnvVarGroup;
+  tier: ServerEnvVarTier;
+  /** The panel presents an editor (Tier A/C and not typed-slice-excluded). */
+  editable: boolean;
+  /** Holds (or points at) a secret — value is never echoed. */
+  secret: boolean;
+  /** A security boundary — a change needs acknowledgement. */
+  boundary: boolean;
+  /** A ceiling an override may only tighten, never loosen. */
+  narrow_only: boolean;
+  /** Editing requires acknowledging the risk; the server enforces a `422` otherwise. */
+  acknowledgement_required: boolean;
+  /** Non-null → managed by a typed settings slice; shown read-only with a cross-link (the reason). */
+  excluded_typed_slice: string | null;
+  source: ServerEnvVarSource;
+  /** The live process currently has a value (the only signal for secrets). */
+  configured: boolean;
+  /** The resolved value. `null` for secrets (never echoed) and when unset. */
+  effective_value: string | null;
+  /** The persisted override, if any. `null` for secrets and when no override is set. */
+  override_value: string | null;
+  /** The code default. `null` for secrets and vars with no default. */
+  default_value: string | null;
+  /** The stored override differs from the live value → takes effect on next restart. */
+  restart_pending: boolean;
+  validator: ServerEnvValidatorView;
+}
+
+/** `GET /v1/platform/env`, and the body a successful `PUT` returns. */
+export interface ServerEnvResponse {
+  vars: ServerEnvVarView[];
+  restart_pending: boolean;
+  /** Where the override file lives (informational; under `CHANCELA_DATA_DIR`). */
+  overrides_path: string;
+  generated_at: string;
+}
+
+/**
+ * `PUT /v1/platform/env` — replace the non-secret override map. The map is the complete desired set
+ * (keys absent from it are cleared). Only Tier A/C vars may appear. Any boundary var that changes
+ * must have its name in `acknowledge`, or the server returns `422`.
+ */
+export interface ServerEnvUpdateRequest {
+  overrides: Record<string, string>;
+  acknowledge: string[];
 }
 
 export type JsonValue =

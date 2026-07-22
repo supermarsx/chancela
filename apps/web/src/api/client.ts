@@ -115,6 +115,8 @@ import type {
   PlatformLogsResponse,
   PlatformServiceAction,
   PlatformServicesResponse,
+  ServerEnvResponse,
+  ServerEnvUpdateRequest,
   RegistryExtractView,
   RegistryAutoUpdateAttemptBody,
   RegistryAutoUpdateAttemptView,
@@ -181,6 +183,8 @@ import type {
   RemoteConfirmResult,
   UpdateEntityBody,
   SessionResult,
+  CreateSessionOutcome,
+  CompleteChallengeBody,
   SessionRoster,
   SessionView,
   PasswordPolicyView,
@@ -319,9 +323,15 @@ interface ApiErrorBody {
  * six-digit activation code with `401`, and a mistyped code during enrolment must not eject the
  * operator from the app. Only `confirm` verifies a code — enrol/disable/backup-codes do not —
  * so the pattern names it specifically rather than matching the whole `two-factor` subtree.
+ *
+ * `POST /v1/session/challenge` (t95 P2, two-step sign-in) belongs here too: a wrong TOTP/backup code
+ * is a rejected credential proof, not a dead session. It matters most for the in-session account
+ * switcher, where a token already exists — a mistyped challenge code must reject inline, never sign
+ * the operator out of their current session. From the signed-out sign-in path the token store is
+ * empty and clearing would be a harmless no-op; tagging it keeps both paths on the inline-reject rule.
  */
 const CREDENTIAL_PROOF_PATH =
-  /\/v1\/users\/[^/]+\/(secret|attestation-key|recovery|two-factor\/totp\/confirm)(\?|$)/;
+  /\/v1\/(users\/[^/]+\/(secret|attestation-key|recovery|two-factor\/totp\/confirm)|session\/challenge)(\?|$)/;
 
 /** Whether a 401 on `path` is a rejected credential proof rather than an expired session. */
 export function isCredentialProofPath(path: string | undefined): boolean {
@@ -783,6 +793,19 @@ export const api = {
         tail: params.tail,
       })}`,
     ),
+
+  /** The server-declared env-override registry joined with live state (`GET /v1/platform/env`):
+   *  every overridable var with its tier, source, effective value (masked for secrets) and
+   *  `restart_pending`. Read-only view; the panel writes with {@link updateServerEnv}. */
+  getServerEnv: () => get<ServerEnvResponse>('/v1/platform/env'),
+
+  /** Replace the non-secret override map (`PUT /v1/platform/env`). `overrides` is the COMPLETE desired
+   *  set — a key absent from it is cleared — and `acknowledge` must name every security-boundary var
+   *  being changed, or the server answers `422` (surfaced as an `ApiError`, `status: 422`, whose
+   *  `issues`/`warnings` the panel renders inline). Returns a fresh `ServerEnvResponse`, so the caller
+   *  sees the new `source`/`restart_pending` without a refetch. */
+  updateServerEnv: (body: ServerEnvUpdateRequest) =>
+    put<ServerEnvResponse>('/v1/platform/env', body),
 
   // Entities (§2.3)
   listEntities: () => get<Entity[]>('/v1/entities'),
@@ -1448,7 +1471,16 @@ export const api = {
   // The UNAUTHENTICATED sign-in roster (t45-e1): decides onboarding-vs-sign-in and lists
   // the signable users while signed out, without the auth-gated `GET /v1/users`.
   getSessionRoster: () => get<SessionRoster>('/v1/session/roster'),
-  createSession: (body: CreateSessionBody) => post<SessionResult>('/v1/session', body),
+  // `POST /v1/session` is an untagged union: an authenticated `SessionResult` (carries `token`) or a
+  // pending `{ two_factor_challenge }` when the account has a confirmed second factor. The caller
+  // discriminates by which key is present (see `CreateSessionOutcome`); only the token arm is a
+  // completed sign-in.
+  createSession: (body: CreateSessionBody) => post<CreateSessionOutcome>('/v1/session', body),
+  // `POST /v1/session/challenge` completes a two-step sign-in. The route is Exempt (the
+  // `challenge_id` is the credential); a wrong/spent/expired code is a uniform opaque 401 that
+  // `CREDENTIAL_PROOF_PATH` marks so it rejects inline rather than clearing the session.
+  completeChallenge: (body: CompleteChallengeBody) =>
+    post<SessionResult>('/v1/session/challenge', body),
   deleteSession: () => del<void>('/v1/session'),
 
   // Ledger (§2.6)
