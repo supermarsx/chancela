@@ -16,7 +16,7 @@
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSectionNav } from '../../app/navPath';
 import {
   useHealth,
@@ -81,6 +81,7 @@ import { grainStore } from '../../theme/grainStore';
 import { colorStore } from '../../theme/colorStore';
 import { applyAppearance, applyLocale, COLOR_OVERRIDE_FIELDS } from '../../theme/appearance';
 import type { ColorOverrideField } from '../../theme/appearance';
+import { ColorPicker } from '../../theme/ColorPicker';
 import { LivrosIntegridadeSection } from '../recovery/LivrosIntegridadeSection';
 import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
 import { ZkObjectRootSection } from '../recovery/ZkObjectRootSection';
@@ -577,7 +578,19 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
  *  autosave savebar is not shown for them. The RBAC tabs (Funções, Delegações) self-gate
  *  their own `role.manage`/`delegation.*` affordances, so they are standalone too. */
 const SETTINGS_SUBSECTIONS = {
-  operations: ['services', 'logs', 'api', 'database', 'cache', 'data', 'mcp', 'email', 'api-keys'],
+  operations: [
+    'services',
+    'logs',
+    'api',
+    'database',
+    'cache',
+    'storage',
+    'backups',
+    'keys',
+    'mcp',
+    'email',
+    'api-keys',
+  ],
   signing: ['providers', 'policy', 'tsl', 'tsa', 'trust-services', 'cmd'],
   users: ['users', 'delegations', 'roles'],
 } as const;
@@ -619,9 +632,14 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
     // comment on each section for why neither is an editor.
     { id: 'database', label: 'settings.database.cardTitle', icon: <Icon.Archive /> },
     { id: 'cache', label: 'settings.cache.cardTitle', icon: <Icon.Layers /> },
-    // Gestão de dados (t105), promoted from a top-level section. Standalone — see
-    // STANDALONE_SUBSECTIONS, which is what preserves its gating across the move.
-    { id: 'data', label: 'data.cardTitle', icon: <Icon.Archive /> },
+    // Gestão de dados was a single subtab whose own internal strip held three panes
+    // (Armazenamento / Cópias e recuperação / Chaves e reposição). t28 promotes those three to
+    // sibling subtabs here so each has a stable, bookmarkable address; the former `/…/data`
+    // address is kept resolving to Armazenamento by RETIRED_SUBSECTIONS. All three are standalone —
+    // see STANDALONE_SUBSECTIONS, which is what preserves their `data.manage`/`backup.manage` gating.
+    { id: 'storage', label: 'data.status.tab.storage', icon: <Icon.Layers /> },
+    { id: 'backups', label: 'data.status.tab.backup', icon: <Icon.Archive /> },
+    { id: 'keys', label: 'data.status.tab.keys', icon: <Icon.Shuffle /> },
     // MCP (t82). Sits next to Plataforma because that is where its controls came from; it is a
     // sibling rather than a third level inside Plataforma so it has a stable address of its own.
     { id: 'mcp', label: 'settings.subnav.mcp', icon: <Icon.Sliders /> },
@@ -707,16 +725,24 @@ const STANDALONE_SECTIONS: readonly SettingsSection[] = [
 /** The same rule one level down: Chaves API and Fornecedores de assinatura keep their own
  *  endpoints and their own gating, so they carry no savebar even though their parent does.
  *
- *  `operations:data` is here because Gestão de dados WAS a standalone top-level section (t105 moved
- *  it under Operações). Dropping it from `STANDALONE_SECTIONS` without adding it here would have
- *  handed it its new parent's gating instead of its own: the panel would be wrapped in the
- *  `settings.manage` disabled fieldset, so a principal holding `data.manage`/`backup.manage`
- *  without `settings.manage` would find backups and key rotation greyed out — authority they hold,
- *  removed by a navigation change. That is the exact inherited-gate hole t102 flagged on the
- *  privacy registers, and it is asserted by test rather than left to this comment. */
+ *  `operations:storage`/`backups`/`keys` are here because Gestão de dados WAS a standalone
+ *  top-level section (t105 moved it under Operações; t28 split it into these three subtabs).
+ *  Dropping them from `STANDALONE_SECTIONS` without listing them here would have handed each its
+ *  parent's gating instead of its own: the panel would be wrapped in the `settings.manage` disabled
+ *  fieldset, so a principal holding `data.manage`/`backup.manage` without `settings.manage` would
+ *  find backups and key rotation greyed out — authority they hold, removed by a navigation change.
+ *  That is the exact inherited-gate hole t102 flagged on the privacy registers, and it is asserted
+ *  by test rather than left to this comment.
+ *
+ *  The retained-export-cleanup and backup-recovery POLICY editors that t28 co-locates onto the
+ *  storage and backups subtabs are `settings.manage` working-copy, so they carry their OWN inner
+ *  `settings.manage` fieldset in the render — the subtab staying standalone must not silently widen
+ *  who may edit those policies. */
 const STANDALONE_SUBSECTIONS: readonly string[] = [
   'operations:api-keys',
-  'operations:data',
+  'operations:storage',
+  'operations:backups',
+  'operations:keys',
   'signing:providers',
 ];
 
@@ -789,7 +815,10 @@ const RETIRED_SECTIONS: Record<string, { section: SettingsSection; sub?: Setting
   // t105: Gestão de dados moved from a top-level section to a sub-tab of Operações. `/settings/data`
   // was a real, linkable address — and the pt-PT original `/configuracoes/dados` reaches it through
   // the same table — so both keep resolving to the pane rather than falling back to Aparência.
-  data: { section: 'operations', sub: 'data' },
+  // t28 split that sub-tab into three; the former address lands on Armazenamento (the successor of
+  // its old default pane). `/settings/operations/data` (the sub-level spelling) is kept resolving by
+  // RETIRED_SUBSECTIONS below.
+  data: { section: 'operations', sub: 'storage' },
   // t106: Funções and Delegações moved from top-level sections to sub-tabs of Utilizadores.
   // `/settings/roles` and `/settings/delegations` were both real, linkable addresses — and the
   // pt-PT originals `/configuracoes/funcoes` and `/configuracoes/delegacoes` reach these two
@@ -797,6 +826,18 @@ const RETIRED_SECTIONS: Record<string, { section: SettingsSection; sub?: Setting
   // both addresses keep landing on the panel they always landed on. Neither may 404.
   roles: { section: 'users', sub: 'roles' },
   delegations: { section: 'users', sub: 'delegations' },
+};
+
+/** Retired SUB-tabs — the same courtesy as `RETIRED_SECTIONS`, one level down. A retired sub name
+ *  under a still-live section resolves to its successor sub rather than falling through to the
+ *  section's first sub-tab (which would silently redirect a real bookmark to an unrelated pane).
+ *
+ *  `operations:data` was a real, bookmarkable address (t105) before t28 split Gestão de dados into
+ *  three sibling subtabs. It lands on Armazenamento, the successor of its old default pane, so
+ *  `/settings/operations/data` (and the pt-PT `/configuracoes/operacoes/dados`, which reaches the
+ *  same segment through `app/legacySlugs.ts`) never 404s or drops to Serviços. */
+const RETIRED_SUBSECTIONS: Partial<Record<SettingsSection, Record<string, SettingsSubsection>>> = {
+  operations: { data: 'storage' },
 };
 
 /** Anchor for the moved Identidade card, targeted by the retired `/settings/identity`
@@ -813,6 +854,25 @@ function providerModeLabel(provider: SigningProviderMetadata, t: ReturnType<type
       return t('settings.signing.providerMode.cscQtsp');
     case 'LOCAL_PKCS12':
       return t('settings.signing.providerMode.localPkcs12');
+  }
+}
+
+/** The `providers` sub-tab credential mode a table row's "Configurar" action deep-links to,
+ *  or `null` when the mode has no in-app configuration. Cartão de Cidadão is configured on the
+ *  operator's own machine (a card reader plus the Autenticação.gov middleware), so its row
+ *  carries a muted note rather than a navigating control — there is no route to invent. The
+ *  `configure` value is the URL contract consumed by `ProviderCredentialsSection` (t12-e3):
+ *  `/settings/signing/providers?configure=<mode>`, mode ∈ {cmd, csc, pkcs12}. */
+function providerConfigureMode(provider: SigningProviderMetadata): 'cmd' | 'csc' | 'pkcs12' | null {
+  switch (provider.mode) {
+    case 'CMD':
+      return 'cmd';
+    case 'CSC_QTSP':
+      return 'csc';
+    case 'LOCAL_PKCS12':
+      return 'pkcs12';
+    case 'CC':
+      return null;
   }
 }
 
@@ -1083,6 +1143,7 @@ export function SettingsPage() {
   const t = useT();
   const toast = useToast();
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   // Aparência is the default and carries no segment (so `/settings` lands on it). The
   // section is read off the path on every render, so a deep link paints the right tab at once.
   // A retired address (`/settings/email`) still resolves — to the sub-tab its content
@@ -1126,6 +1187,7 @@ export function SettingsPage() {
       : undefined;
   const sub: SettingsSubsection | undefined = subNav
     ? (retired?.sub ??
+      RETIRED_SUBSECTIONS[section]?.[subSegment] ??
       (validSubs?.includes(subSegment) ? (subSegment as SettingsSubsection) : subNav[0].id))
     : undefined;
   // Scoped to the ROSTER sub-tab, not to the whole Utilizadores section (t106). `?user=` is the
@@ -1578,31 +1640,22 @@ export function SettingsPage() {
 
                     <div className="color-customizer__grid">
                       {COLOR_OVERRIDE_FIELDS.map((fieldKey) => {
-                        const inputId = `set-color-${fieldKey}`;
                         const value = colors[fieldKey] ?? COLOR_SEEDS[fieldKey];
                         const isSet = colors[fieldKey] !== undefined;
+                        const label = t(`settings.appearance.colors.${fieldKey}.label`);
                         return (
                           <div key={fieldKey} className="color-customizer__field">
-                            <label className="field__label" htmlFor={inputId}>
-                              {t(`settings.appearance.colors.${fieldKey}.label`)}
+                            <label className="field__label" id={`set-color-${fieldKey}-label`}>
+                              {label}
                             </label>
                             <div className="color-customizer__row">
-                              <input
-                                id={inputId}
-                                className="color-customizer__swatch"
-                                type="color"
+                              <ColorPicker
                                 value={value}
-                                onChange={(e) => colorStore.setField(fieldKey, e.target.value)}
+                                isSet={isSet}
+                                label={label}
+                                onChange={(hex) => colorStore.setField(fieldKey, hex)}
+                                onClear={() => colorStore.setField(fieldKey, undefined)}
                               />
-                              {isSet ? (
-                                <IconButton
-                                  type="button"
-                                  variant="ghost"
-                                  icon={<Icon.Refresh />}
-                                  label={t('settings.appearance.colors.clearField')}
-                                  onClick={() => colorStore.setField(fieldKey, undefined)}
-                                />
-                              ) : null}
                             </div>
                           </div>
                         );
@@ -2158,11 +2211,16 @@ export function SettingsPage() {
                             label={t('settings.signing.table.notes')}
                             help={t('settings.signing.providers.help.notes')}
                           />
+                          <ColumnHead
+                            label={t('settings.signing.table.actions')}
+                            help={t('settings.signing.providers.help.actions')}
+                          />
                         </tr>
                       }
                     >
                       {draft.signing.providers.map((provider) => {
                         const status = providerStatus(provider, t);
+                        const configure = providerConfigureMode(provider);
                         return (
                           <tr key={provider.id}>
                             <td data-label={t('settings.signing.table.provider')}>
@@ -2187,10 +2245,86 @@ export function SettingsPage() {
                               </span>
                             </td>
                             <td data-label={t('settings.signing.table.notes')}>{provider.note}</td>
+                            <td data-label={t('settings.signing.table.actions')}>
+                              {configure ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  icon={<Icon.Sliders />}
+                                  aria-label={t('settings.signing.providers.action.configureAria', {
+                                    mode: providerModeLabel(provider, t),
+                                  })}
+                                  onClick={() =>
+                                    navigate(`/settings/signing/providers?configure=${configure}`)
+                                  }
+                                >
+                                  {t('settings.signing.providers.action.configure')}
+                                </Button>
+                              ) : (
+                                // Cartão de Cidadão has no in-app configuration target — it is set
+                                // up on the operator's own machine. A muted note plus a help glyph,
+                                // never a dead button pointing at a route that does not exist.
+                                <span className="row-wrap muted">
+                                  {t('settings.signing.providers.action.unavailable')}
+                                  <FieldHelp
+                                    text={t('settings.signing.providers.action.unavailableHelp')}
+                                  />
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
                     </Table>
+                  </div>
+                </Card>
+              ) : null}
+
+              {/* Explainer — what each signing mode is for and where it is configured. Read-only
+                  guidance that sits below the modes table; the per-mode "Configurar" affordance
+                  reuses the same deep-link contract as the table's Actions column. */}
+              {sub === 'trust-services' ? (
+                <Card title={t('settings.signing.providers.guide.title')}>
+                  <div className="form settings-rows">
+                    <p className="field__hint">{t('settings.signing.providers.guide.intro')}</p>
+                    <dl className="deflist">
+                      <div>
+                        <dt>{t('settings.signing.providerMode.cmd')}</dt>
+                        <dd>
+                          <p>{t('settings.signing.providers.guide.cmd.purpose')}</p>
+                          <p className="muted">
+                            {t('settings.signing.providers.guide.cmd.configure')}
+                          </p>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('settings.signing.providerMode.cc')}</dt>
+                        <dd>
+                          <p>{t('settings.signing.providers.guide.cc.purpose')}</p>
+                          <p className="muted">
+                            {t('settings.signing.providers.guide.cc.configure')}
+                          </p>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('settings.signing.providerMode.cscQtsp')}</dt>
+                        <dd>
+                          <p>{t('settings.signing.providers.guide.cscQtsp.purpose')}</p>
+                          <p className="muted">
+                            {t('settings.signing.providers.guide.cscQtsp.configure')}
+                          </p>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('settings.signing.providerMode.localPkcs12')}</dt>
+                        <dd>
+                          <p>{t('settings.signing.providers.guide.localPkcs12.purpose')}</p>
+                          <p className="muted">
+                            {t('settings.signing.providers.guide.localPkcs12.configure')}
+                          </p>
+                        </dd>
+                      </div>
+                    </dl>
                   </div>
                 </Card>
               ) : null}
@@ -2382,140 +2516,10 @@ export function SettingsPage() {
                   </div>
                 </div>
               </Card>
-              <Card title={t('settings.retainedExportCleanup.cardTitle')}>
-                <div className="form settings-rows">
-                  <p className="field__hint">{t('settings.retainedExportCleanup.note')}</p>
-                  <div className="registry-auto-update-grid">
-                    <Field
-                      label={t('settings.retainedExportCleanup.minimumAge.label')}
-                      htmlFor="retained-export-cleanup-minimum-age-days"
-                      hint={t('settings.retainedExportCleanup.minimumAge.hint')}
-                    >
-                      <Input
-                        id="retained-export-cleanup-minimum-age-days"
-                        type="number"
-                        min={0}
-                        max={RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS}
-                        value={retainedExportCleanupPolicy.minimum_age_days}
-                        onChange={(e) =>
-                          setRetainedExportCleanupPolicy(
-                            'minimum_age_days',
-                            boundedNumberValue(
-                              e.target.value,
-                              retainedExportCleanupPolicy.minimum_age_days,
-                              0,
-                              RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS,
-                            ),
-                          )
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label={t('settings.retainedExportCleanup.keepLatest.label')}
-                      htmlFor="retained-export-cleanup-keep-latest"
-                      hint={t('settings.retainedExportCleanup.keepLatest.hint')}
-                    >
-                      <Input
-                        id="retained-export-cleanup-keep-latest"
-                        type="number"
-                        min={0}
-                        max={RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST}
-                        value={retainedExportCleanupPolicy.keep_latest}
-                        onChange={(e) =>
-                          setRetainedExportCleanupPolicy(
-                            'keep_latest',
-                            boundedNumberValue(
-                              e.target.value,
-                              retainedExportCleanupPolicy.keep_latest,
-                              0,
-                              RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
-                            ),
-                          )
-                        }
-                      />
-                    </Field>
-                  </div>
-                </div>
-              </Card>
-              <Card title={t('settings.backupRecovery.cardTitle')}>
-                <div className="form settings-rows">
-                  <p className="field__hint">{t('settings.backupRecovery.note')}</p>
-                  <div className="registry-auto-update-grid">
-                    <Field
-                      label={t('settings.backupRecovery.maxDrillAge.label')}
-                      htmlFor="backup-recovery-max-drill-age-days"
-                      hint={t('settings.backupRecovery.maxDrillAge.hint')}
-                    >
-                      <Input
-                        id="backup-recovery-max-drill-age-days"
-                        type="number"
-                        min={1}
-                        max={BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS}
-                        value={backupRecoveryPolicy.max_drill_age_days}
-                        onChange={(e) =>
-                          setBackupRecoveryPolicy(
-                            'max_drill_age_days',
-                            boundedNumberValue(
-                              e.target.value,
-                              backupRecoveryPolicy.max_drill_age_days,
-                              1,
-                              BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
-                            ),
-                          )
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label={t('settings.backupRecovery.targetRpo.label')}
-                      htmlFor="backup-recovery-target-rpo-minutes"
-                      hint={t('settings.backupRecovery.targetRpo.hint')}
-                    >
-                      <Input
-                        id="backup-recovery-target-rpo-minutes"
-                        type="number"
-                        min={1}
-                        max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
-                        value={backupRecoveryPolicy.target_rpo_minutes}
-                        onChange={(e) =>
-                          setBackupRecoveryPolicy(
-                            'target_rpo_minutes',
-                            boundedNumberValue(
-                              e.target.value,
-                              backupRecoveryPolicy.target_rpo_minutes,
-                              1,
-                              BACKUP_RECOVERY_MAX_TARGET_MINUTES,
-                            ),
-                          )
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label={t('settings.backupRecovery.targetRto.label')}
-                      htmlFor="backup-recovery-target-rto-minutes"
-                      hint={t('settings.backupRecovery.targetRto.hint')}
-                    >
-                      <Input
-                        id="backup-recovery-target-rto-minutes"
-                        type="number"
-                        min={1}
-                        max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
-                        value={backupRecoveryPolicy.target_rto_minutes}
-                        onChange={(e) =>
-                          setBackupRecoveryPolicy(
-                            'target_rto_minutes',
-                            boundedNumberValue(
-                              e.target.value,
-                              backupRecoveryPolicy.target_rto_minutes,
-                              1,
-                              BACKUP_RECOVERY_MAX_TARGET_MINUTES,
-                            ),
-                          )
-                        }
-                      />
-                    </Field>
-                  </div>
-                </div>
-              </Card>
+              {/* The retained-export-cleanup and backup-recovery policy editors moved to the
+                  Operações › Armazenamento and Cópias e recuperação subtabs respectively (t28), next
+                  to the export-cleanup action and the recovery-freshness readout they govern. They
+                  keep their `settings.manage` gating there via an inner fieldset. */}
               <RegistryAutoUpdateSection
                 value={draft.registry_auto_update}
                 onChange={setRegistryAutoUpdate}
@@ -2573,21 +2577,175 @@ export function SettingsPage() {
               {sub === 'database' ? <DatabaseSection /> : null}
               {sub === 'cache' ? <CacheSection /> : null}
 
-              {/* Gestão de dados (t105), promoted from a top-level section. STANDALONE: it manages
-                  its own data behind its own gates, so `editingLocked` leaves it alone exactly as
-                  it did when it was top-level.
+              {/* Gestão de dados (t105/t28). Its three former internal panes are now three subtabs.
+                  STANDALONE: each manages its own data behind its own gates, so `editingLocked`
+                  leaves it alone exactly as it did when it was one tab. `GestaoDadosSection` is now
+                  driven by the `tab` prop (its internal SubNav is used only when rendered standalone,
+                  e.g. its own unit test) so the route decides which pane shows.
 
-                  The ZK object-root declaration renders BEFORE it rather than inside it.
-                  `GestaoDadosSection` owns a SubNav of three status panes (Armazenamento / Cópias /
-                  Chaves), and an instance-configuration control is not a footnote to whichever of
-                  those happens to be open. Keeping it a sibling also keeps that file under a single
-                  writer while t104 converts its readouts to tables. */}
-              {sub === 'data' ? (
+                  Armazenamento. The ZK object-root declaration renders here (t28, D1): it is
+                  instance-configuration for the object store, and Armazenamento is the storage pane.
+                  It carries its own `settings.manage` gate inside ZkObjectRootSection. The
+                  retained-export-cleanup POLICY editor is co-located here (t28), next to the export
+                  cleanup action it governs (the Manutenção panel), wrapped in its own
+                  `settings.manage` fieldset so this standalone subtab does not widen who may edit it. */}
+              {sub === 'storage' ? (
                 <div className="stack">
                   <ZkObjectRootSection />
-                  <GestaoDadosSection />
+                  <GestaoDadosSection tab="armazenamento" />
+                  <fieldset className="settings-fieldset" disabled={!canManageSettings}>
+                    <Card title={t('settings.retainedExportCleanup.cardTitle')}>
+                      <div className="form settings-rows">
+                        <p className="field__hint">{t('settings.retainedExportCleanup.note')}</p>
+                        <div className="registry-auto-update-grid">
+                          <Field
+                            label={t('settings.retainedExportCleanup.minimumAge.label')}
+                            htmlFor="retained-export-cleanup-minimum-age-days"
+                            hint={t('settings.retainedExportCleanup.minimumAge.hint')}
+                          >
+                            <Input
+                              id="retained-export-cleanup-minimum-age-days"
+                              type="number"
+                              min={0}
+                              max={RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS}
+                              value={retainedExportCleanupPolicy.minimum_age_days}
+                              onChange={(e) =>
+                                setRetainedExportCleanupPolicy(
+                                  'minimum_age_days',
+                                  boundedNumberValue(
+                                    e.target.value,
+                                    retainedExportCleanupPolicy.minimum_age_days,
+                                    0,
+                                    RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS,
+                                  ),
+                                )
+                              }
+                            />
+                          </Field>
+                          <Field
+                            label={t('settings.retainedExportCleanup.keepLatest.label')}
+                            htmlFor="retained-export-cleanup-keep-latest"
+                            hint={t('settings.retainedExportCleanup.keepLatest.hint')}
+                          >
+                            <Input
+                              id="retained-export-cleanup-keep-latest"
+                              type="number"
+                              min={0}
+                              max={RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST}
+                              value={retainedExportCleanupPolicy.keep_latest}
+                              onChange={(e) =>
+                                setRetainedExportCleanupPolicy(
+                                  'keep_latest',
+                                  boundedNumberValue(
+                                    e.target.value,
+                                    retainedExportCleanupPolicy.keep_latest,
+                                    0,
+                                    RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
+                                  ),
+                                )
+                              }
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    </Card>
+                  </fieldset>
                 </div>
               ) : null}
+
+              {/* Cópias e recuperação. The backup action + recovery-drill/freshness readouts, plus
+                  the backup-recovery POLICY editor co-located here (t28), next to the freshness
+                  readout it governs, wrapped in its own `settings.manage` fieldset for the same
+                  reason as Armazenamento's policy above. */}
+              {sub === 'backups' ? (
+                <div className="stack">
+                  <GestaoDadosSection tab="copias" />
+                  <fieldset className="settings-fieldset" disabled={!canManageSettings}>
+                    <Card title={t('settings.backupRecovery.cardTitle')}>
+                      <div className="form settings-rows">
+                        <p className="field__hint">{t('settings.backupRecovery.note')}</p>
+                        <div className="registry-auto-update-grid">
+                          <Field
+                            label={t('settings.backupRecovery.maxDrillAge.label')}
+                            htmlFor="backup-recovery-max-drill-age-days"
+                            hint={t('settings.backupRecovery.maxDrillAge.hint')}
+                          >
+                            <Input
+                              id="backup-recovery-max-drill-age-days"
+                              type="number"
+                              min={1}
+                              max={BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS}
+                              value={backupRecoveryPolicy.max_drill_age_days}
+                              onChange={(e) =>
+                                setBackupRecoveryPolicy(
+                                  'max_drill_age_days',
+                                  boundedNumberValue(
+                                    e.target.value,
+                                    backupRecoveryPolicy.max_drill_age_days,
+                                    1,
+                                    BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
+                                  ),
+                                )
+                              }
+                            />
+                          </Field>
+                          <Field
+                            label={t('settings.backupRecovery.targetRpo.label')}
+                            htmlFor="backup-recovery-target-rpo-minutes"
+                            hint={t('settings.backupRecovery.targetRpo.hint')}
+                          >
+                            <Input
+                              id="backup-recovery-target-rpo-minutes"
+                              type="number"
+                              min={1}
+                              max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
+                              value={backupRecoveryPolicy.target_rpo_minutes}
+                              onChange={(e) =>
+                                setBackupRecoveryPolicy(
+                                  'target_rpo_minutes',
+                                  boundedNumberValue(
+                                    e.target.value,
+                                    backupRecoveryPolicy.target_rpo_minutes,
+                                    1,
+                                    BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+                                  ),
+                                )
+                              }
+                            />
+                          </Field>
+                          <Field
+                            label={t('settings.backupRecovery.targetRto.label')}
+                            htmlFor="backup-recovery-target-rto-minutes"
+                            hint={t('settings.backupRecovery.targetRto.hint')}
+                          >
+                            <Input
+                              id="backup-recovery-target-rto-minutes"
+                              type="number"
+                              min={1}
+                              max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
+                              value={backupRecoveryPolicy.target_rto_minutes}
+                              onChange={(e) =>
+                                setBackupRecoveryPolicy(
+                                  'target_rto_minutes',
+                                  boundedNumberValue(
+                                    e.target.value,
+                                    backupRecoveryPolicy.target_rto_minutes,
+                                    1,
+                                    BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+                                  ),
+                                )
+                              }
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    </Card>
+                  </fieldset>
+                </div>
+              ) : null}
+
+              {/* Chaves e reposição. Data-key rotation + the reset/recomeço operations. */}
+              {sub === 'keys' ? <GestaoDadosSection tab="chaves" /> : null}
 
               {/* API — t82b, the "Servidor" pane. Same working copy, same endpoints, same
                   `settings.manage` gate the API service row and API log levels already had. */}

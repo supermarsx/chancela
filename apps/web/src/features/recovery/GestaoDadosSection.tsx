@@ -533,7 +533,10 @@ function FactTable({
   rows: FactRow[];
 }) {
   const t = useT();
-  const [factColumn, valueColumn] = columns ?? [t('data.status.col.fact'), t('data.status.col.value')];
+  const [factColumn, valueColumn] = columns ?? [
+    t('data.status.col.fact'),
+    t('data.status.col.value'),
+  ];
   return (
     <Table
       className="data-status-table"
@@ -643,14 +646,22 @@ function DataDatabaseEncryptionReadiness({
               key: 'plaintext_migration_pending',
               label: translateNow('uiLiteral.gestaoDadosSection.migracaoPlaintextPendente'),
               value: (
-                <StatusBadge value={encryption.plaintext_migration_pending} positive={false} t={t} />
+                <StatusBadge
+                  value={encryption.plaintext_migration_pending}
+                  positive={false}
+                  t={t}
+                />
               ),
             },
             {
               key: 'plaintext_migration_blocked',
               label: translateNow('uiLiteral.gestaoDadosSection.migracaoPlaintextBloqueada'),
               value: (
-                <StatusBadge value={encryption.plaintext_migration_blocked} positive={false} t={t} />
+                <StatusBadge
+                  value={encryption.plaintext_migration_blocked}
+                  positive={false}
+                  t={t}
+                />
               ),
             },
             {
@@ -1113,8 +1124,7 @@ function RecoveryFreshnessReviewReport({
             {
               key: 'latest_receipt_isolated_restore_verified',
               label: translateNow('uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado'),
-              value:
-                freshness.latest_receipt_isolated_restore_verified === true ? 'Sim' : 'Não',
+              value: freshness.latest_receipt_isolated_restore_verified === true ? 'Sim' : 'Não',
             },
           ]}
         />
@@ -1297,7 +1307,9 @@ function SyncHandoffPreflightReportCard({
                   key: 'latest_drill',
                   label: translateNow('uiLiteral.gestaoDadosSection.ultimoEnsaio'),
                   value: latestDrill ? (
-                    <Badge tone={latestDrill.verified_manifest_and_isolated_snapshot ? 'ok' : 'warn'}>
+                    <Badge
+                      tone={latestDrill.verified_manifest_and_isolated_snapshot ? 'ok' : 'warn'}
+                    >
                       {latestDrill.verified_manifest_and_isolated_snapshot ? 'verified' : 'missing'}
                     </Badge>
                   ) : (
@@ -1684,7 +1696,9 @@ function DataKeyRotationReceiptSummary({
                 {
                   key: 'status',
                   label: t('data.status.keyRotation.status'),
-                  value: <Badge tone={latest.rekey_executed ? 'ok' : 'warn'}>{latest.status}</Badge>,
+                  value: (
+                    <Badge tone={latest.rekey_executed ? 'ok' : 'warn'}>{latest.status}</Badge>
+                  ),
                 },
                 {
                   key: 'mode',
@@ -2258,7 +2272,10 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                       key: 'encryption',
                       label: t('data.status.encryption'),
                       value: (
-                        <StatusBadge value={data.persistence.database_encryption_configured} t={t} />
+                        <StatusBadge
+                          value={data.persistence.database_encryption_configured}
+                          t={t}
+                        />
                       ),
                     },
                     {
@@ -2373,10 +2390,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                         t,
                       );
                       return (
-                        <tr
-                          key={row.key}
-                          className={`data-status-probe--${permissionTone(check)}`}
-                        >
+                        <tr key={row.key} className={`data-status-probe--${permissionTone(check)}`}>
                           <th scope="row">{t(row.label)}</th>
                           <td>
                             <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
@@ -2509,45 +2523,45 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
                           </td>
                           <td>
                             <div className="data-status-cleanup__actions">
-                            <GateButton
-                              perm="settings.manage"
-                              type="button"
-                              variant="secondary"
-                              icon={isExportsPreview ? <Icon.Search /> : <Icon.Wrench />}
-                              disabled={!canClean || cleanup.isPending}
-                              onClick={() => {
-                                if (isExportsPreview) {
-                                  void previewExportsCleanup();
-                                  return;
-                                }
-                                setCleanupTarget(target.target);
-                              }}
-                            >
-                              {isTargetPending
-                                ? isExportsPreview
-                                  ? EXPORT_CLEANUP_PREVIEW_PENDING
-                                  : t('data.status.cleanup.pending')
-                                : isExportsPreview
-                                  ? EXPORT_CLEANUP_PREVIEW_BUTTON
-                                  : t(target.button)}
-                            </GateButton>
-                            {isExportsPreview ? (
                               <GateButton
                                 perm="settings.manage"
                                 type="button"
                                 variant="secondary"
-                                icon={<Icon.Wrench />}
-                                title={EXPORT_CLEANUP_EXECUTION_TOOLTIP}
-                                disabled={
-                                  !canClean || cleanup.isPending || !hasExportCleanupPreview
-                                }
-                                onClick={() => setCleanupTarget('exports')}
+                                icon={isExportsPreview ? <Icon.Search /> : <Icon.Wrench />}
+                                disabled={!canClean || cleanup.isPending}
+                                onClick={() => {
+                                  if (isExportsPreview) {
+                                    void previewExportsCleanup();
+                                    return;
+                                  }
+                                  setCleanupTarget(target.target);
+                                }}
                               >
-                                {cleanup.isPending && cleanupTarget === 'exports'
-                                  ? EXPORT_CLEANUP_EXECUTION_PENDING
-                                  : EXPORT_CLEANUP_EXECUTION_BUTTON}
+                                {isTargetPending
+                                  ? isExportsPreview
+                                    ? EXPORT_CLEANUP_PREVIEW_PENDING
+                                    : t('data.status.cleanup.pending')
+                                  : isExportsPreview
+                                    ? EXPORT_CLEANUP_PREVIEW_BUTTON
+                                    : t(target.button)}
                               </GateButton>
-                            ) : null}
+                              {isExportsPreview ? (
+                                <GateButton
+                                  perm="settings.manage"
+                                  type="button"
+                                  variant="secondary"
+                                  icon={<Icon.Wrench />}
+                                  title={EXPORT_CLEANUP_EXECUTION_TOOLTIP}
+                                  disabled={
+                                    !canClean || cleanup.isPending || !hasExportCleanupPreview
+                                  }
+                                  onClick={() => setCleanupTarget('exports')}
+                                >
+                                  {cleanup.isPending && cleanupTarget === 'exports'
+                                    ? EXPORT_CLEANUP_EXECUTION_PENDING
+                                    : EXPORT_CLEANUP_EXECUTION_BUTTON}
+                                </GateButton>
+                              ) : null}
                             </div>
                           </td>
                         </tr>
@@ -3038,7 +3052,12 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
   );
 }
 
-export function GestaoDadosSection() {
+/**
+ * @param tab When set (t28), the caller — the Operações route — decides which pane shows and the
+ *   internal `<SubNav>` is not rendered; each pane is its own route subtab. When omitted the
+ *   component is self-contained, driving its own strip (its unit test renders it this way).
+ */
+export function GestaoDadosSection({ tab: tabProp }: { tab?: GestaoTab } = {}) {
   const t = useT();
   const toast = useToast();
   const qc = useQueryClient();
@@ -3048,7 +3067,8 @@ export function GestaoDadosSection() {
   const [dialog, setDialog] = useState<Dialog>('none');
   const [reason, setReason] = useState('');
   const [lastOutcome, setLastOutcome] = useState<ResetOutcomeView | null>(null);
-  const [tab, setTab] = useState<GestaoTab>('armazenamento');
+  const [internalTab, setInternalTab] = useState<GestaoTab>('armazenamento');
+  const tab = tabProp ?? internalTab;
   const close = () => setDialog('none');
 
   const tabDescription =
@@ -3166,28 +3186,32 @@ export function GestaoDadosSection() {
 
   return (
     <div className="stack">
-      <SubNav
-        items={[
-          {
-            id: 'armazenamento',
-            label: t('data.status.tab.storage'),
-            icon: <Icon.Layers />,
-          },
-          {
-            id: 'copias',
-            label: t('data.status.tab.backup'),
-            icon: <Icon.Archive />,
-          },
-          {
-            id: 'chaves',
-            label: t('data.status.tab.keys'),
-            icon: <Icon.Shuffle />,
-          },
-        ]}
-        active={tab}
-        onSelect={setTab}
-        ariaLabel={t('data.status.subnav.aria')}
-      />
+      {/* Only when self-contained (t28): under Operações the route strip drives the pane, so a
+          second strip here would be a duplicate landmark. */}
+      {tabProp === undefined ? (
+        <SubNav
+          items={[
+            {
+              id: 'armazenamento',
+              label: t('data.status.tab.storage'),
+              icon: <Icon.Layers />,
+            },
+            {
+              id: 'copias',
+              label: t('data.status.tab.backup'),
+              icon: <Icon.Archive />,
+            },
+            {
+              id: 'chaves',
+              label: t('data.status.tab.keys'),
+              icon: <Icon.Shuffle />,
+            },
+          ]}
+          active={tab}
+          onSelect={setInternalTab}
+          ariaLabel={t('data.status.subnav.aria')}
+        />
+      ) : null}
       <p className="field__hint">{tabDescription}</p>
 
       <DataStatusPanel tab={tab} resetControls={resetControls} />

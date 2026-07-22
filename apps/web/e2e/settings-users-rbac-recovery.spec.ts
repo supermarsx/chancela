@@ -124,10 +124,11 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await restore.getByRole('button', { name: 'Cancelar' }).click();
     await expect(restore).toHaveCount(0);
 
-    await selectSettingsSection(page, 'Gestão de Dados', 'dados');
-    // The destructive reset controls sit under the «Chaves e reposição» sub-tab, deliberately
+    await selectSettingsSection(page, 'Operações', 'operations');
+    // The destructive reset controls sit under the «Chaves e reposição» subtab (t28), deliberately
     // separated from the everyday storage view.
-    await dataSubTab(page, 'Chaves e reposição').click();
+    await operationsSubTab(page, 'Chaves e reposição').click();
+    await expect(page).toHaveURL(/\/settings\/operations\/keys/);
     await page.getByRole('button', { name: 'Limpar dados' }).click();
     const wipe = page.getByRole('dialog', { name: 'Limpar dados' });
     await expect(wipe).toBeVisible();
@@ -185,10 +186,13 @@ test('data management recovery drill records isolated restore evidence without l
   });
 
   await signInAt(page, '/settings/data');
-  await selectSettingsSection(page, 'Gestão de Dados', 'dados');
-  // Gestão de Dados opens on «Armazenamento»; backup and recovery drills are a sibling sub-tab.
-  await dataSubTab(page, 'Cópias e recuperação').click();
-  await expect(dataSubTab(page, 'Cópias e recuperação')).toHaveAttribute('aria-pressed', 'true');
+  // `/settings/data` lands on Operações › Armazenamento (t28); backup and recovery drills are the
+  // sibling «Cópias e recuperação» subtab.
+  await operationsSubTab(page, 'Cópias e recuperação').click();
+  await expect(operationsSubTab(page, 'Cópias e recuperação')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 
   const backupResponsePromise = page.waitForResponse(
     (response) =>
@@ -271,9 +275,11 @@ async function selectSettingsSection(page: Page, name: string, section: string):
   await expect(page).toHaveURL(new RegExp(`/settings/${section}`));
 }
 
-function dataSubTab(page: Page, name: string): Locator {
+// Gestão de dados was split into three Operações subtabs (t28): Armazenamento, Cópias e
+// recuperação and Chaves e reposição. They live in the second-level "Áreas de operações" strip.
+function operationsSubTab(page: Page, name: string): Locator {
   return page
-    .getByRole('group', { name: 'Sub-secções da gestão de dados' })
+    .getByRole('group', { name: 'Áreas de operações' })
     .getByRole('button', { name, exact: true });
 }
 

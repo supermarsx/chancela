@@ -29,13 +29,13 @@ test('data key rotation preflight reveals guarded execution and submits only the
   const executionBodies: DataKeyRotationExecuteBody[] = [];
   await routeDataKeyRotationFixtures(page, preflightBodies, executionBodies);
 
-  await page.goto('/settings/data');
+  // Data-key rotation lives on the «Chaves e reposição» subtab since t28 split Gestão de dados into
+  // three Operações subtabs; its own address opens straight onto it.
+  await page.goto('/settings/operations/keys');
 
-  await expect(page.getByRole('heading', { name: 'Estado do armazenamento' })).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Verificação prévia da rotação da chave de dados' }),
   ).toBeVisible();
-  await expect(page.getByText('Durável aberto')).toBeVisible();
 
   await page.getByLabel('Chave atual').fill(PREFLIGHT_CURRENT_KEY);
   await page.getByLabel('Chave de substituição').fill(PREFLIGHT_REPLACEMENT_KEY);
@@ -205,12 +205,9 @@ function rosterUserFixture() {
 function sessionFixture() {
   return {
     user: userFixture(),
-    permissions: [
-      'ledger.read',
-      'settings.manage',
-      'settings.read',
-      'user.manage',
-    ].map(permissionGrant),
+    permissions: ['ledger.read', 'settings.manage', 'settings.read', 'user.manage'].map(
+      permissionGrant,
+    ),
   };
 }
 
