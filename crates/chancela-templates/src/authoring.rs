@@ -284,7 +284,7 @@ fn block_template_strings(block: &BlockSpec) -> Vec<&str> {
             out
         }
         BlockSpec::SignatureBlock { role, name, .. } => vec![role.as_str(), name.as_str()],
-        BlockSpec::PageBreak | BlockSpec::Rule => Vec::new(),
+        BlockSpec::PageBreak | BlockSpec::Rule | BlockSpec::NarrativeBody => Vec::new(),
     }
 }
 

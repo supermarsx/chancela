@@ -41,6 +41,7 @@
       "kind": "Paragraph",
       "template": "Os titulares acima identificados declararam aceitar os cargos para que foram eleitos e comprometeram-se a exercer as respetivas funções nos termos dos estatutos e da lei. Da presente cerimónia se lavrou a presente ata, que vai ser assinada pelos empossados e pela mesa da assembleia geral."
     },
+    { "kind": "NarrativeBody" },
     { "kind": "Rule" },
     {
       "kind": "SignatureBlock",

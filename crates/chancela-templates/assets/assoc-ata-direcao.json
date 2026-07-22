@@ -74,6 +74,7 @@
       "items": "deliberation_items",
       "template": "{% for s in statements %}Declaração de voto de {{ s.member }}: {{ s.text }} {% endfor %}"
     },
+    { "kind": "NarrativeBody" },
     {
       "kind": "Paragraph",
       "template": "Nada mais havendo a tratar, foi encerrada a reunião, da qual se lavrou a presente ata que, depois de lida e aprovada, vai ser assinada pelos membros da direção presentes."

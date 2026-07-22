@@ -25,6 +25,7 @@
       "items": "attachments",
       "template": "{{ label }}{% if kind %} ({{ kind }}){% endif %}{% if digest %} — resumo criptográfico {{ digest }}{% endif %}."
     },
+    { "kind": "NarrativeBody" },
     { "kind": "Rule" },
     {
       "kind": "SignatureBlock",

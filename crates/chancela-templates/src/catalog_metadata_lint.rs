@@ -720,7 +720,7 @@ fn block_template_strings_bind_field(block: &BlockSpec, field: &str) -> bool {
         BlockSpec::SignatureBlock { role, name, .. } => {
             template_string_binds_field(role, field) || template_string_binds_field(name, field)
         }
-        BlockSpec::PageBreak | BlockSpec::Rule => false,
+        BlockSpec::PageBreak | BlockSpec::Rule | BlockSpec::NarrativeBody => false,
     }
 }
 

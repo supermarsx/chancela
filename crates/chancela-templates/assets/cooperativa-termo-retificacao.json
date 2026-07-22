@@ -29,6 +29,7 @@
       "kind": "Paragraph",
       "template": "A presente retificação integra a cadeia de registo e reporta-se ao ato retificado, mantendo-se este acessível para efeitos de verificação da integridade da escrituração."
     },
+    { "kind": "NarrativeBody" },
     { "kind": "Rule" },
     {
       "kind": "SignatureBlock",

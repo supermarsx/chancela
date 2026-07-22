@@ -139,6 +139,7 @@
         }
       ]
     },
+    { "kind": "NarrativeBody" },
     {
       "kind": "Paragraph",
       "template": "Nada mais havendo a tratar, foi encerrada a sessão, da qual se lavrou a presente ata que, depois de lida e aprovada, vai ser assinada."

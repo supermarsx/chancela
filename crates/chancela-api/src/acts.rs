@@ -1931,14 +1931,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn advancing_to_signing_with_a_body_is_refused_while_no_template_can_carry_one() {
-        // The fail-closed gate at the handler boundary (t74 §9.3 through the placement seam). Until
-        // an ata template carries a placement anchor, an act with a narrative body must not reach a
-        // sealed PDF/A that omits it. The operator is told; nothing is dropped quietly.
+    async fn advancing_to_signing_with_a_body_now_succeeds_because_the_template_carries_the_anchor()
+    {
+        // The placement seam, now completed (t35/t74 follow-up (b)). Every Ata-stage template
+        // places a `NarrativeBody` anchor, so `template_can_place_body` is satisfied and an act
+        // carrying a markup body reaches `Signing` with its narrative rendered into the canonical
+        // PDF/A instead of being turned away by the silent-omission guard.
         //
-        // Freeze mechanics themselves are covered by `documents::tests::
-        // freezing_records_the_compiler_and_a_digest_of_what_it_compiled`, which does not have to
-        // walk the lifecycle to assert them.
+        // The inverse — that the guard still refuses a body when a template has *no* anchor — is
+        // covered directly in `documents::tests` against a hand-built slot-less spec, without
+        // walking the lifecycle.
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.path());
         let (actor, act) = seed_act_for_body(&state, "Encosto Estratégico Lda").await;
@@ -1970,7 +1972,13 @@ mod tests {
             seeded.mesa.presidente = Some("Amélia Marques".to_owned());
         }
 
-        for target in ["Review", "Convened", "Deliberated", "TextApproved"] {
+        for target in [
+            "Review",
+            "Convened",
+            "Deliberated",
+            "TextApproved",
+            "Signing",
+        ] {
             let req: AdvanceAct =
                 serde_json::from_value(json!({ "to": target })).expect("advance body");
             let _ = advance_act(
@@ -1984,25 +1992,21 @@ mod tests {
             .unwrap_or_else(|e| panic!("advance to {target} failed: {e:?}"));
         }
 
-        let req: AdvanceAct = serde_json::from_value(json!({ "to": "Signing" })).expect("body");
-        let err = match advance_act(
-            State(state.clone()),
-            Path(act.id.0),
-            actor,
-            CurrentAttestor::default(),
-            Json(req),
-        )
-        .await
-        {
-            Ok(_) => panic!("advancing with an unplaceable body must be refused"),
-            Err(e) => e,
-        };
+        // The act reached Signing with a body — no silent-omission refusal — and the signing
+        // snapshot document was generated (the narrative rides in it; its rendering into the
+        // PDF/A is proven in `documents::tests`).
+        assert_eq!(state.acts.read().await[&act.id].state, ActState::Signing);
+        let generated = state
+            .ledger
+            .read()
+            .await
+            .events()
+            .iter()
+            .any(|e| e.kind == "document.generated");
         assert!(
-            matches!(&err, ApiError::Unprocessable(m) if m.contains("no place for this act's narrative body")),
-            "the refusal must say why: {err:?}"
+            generated,
+            "advancing a body-carrying act to Signing must generate the canonical document"
         );
-        // ...and the act is not left half-advanced.
-        assert_ne!(state.acts.read().await[&act.id].state, ActState::Signing);
     }
 
     #[tokio::test]

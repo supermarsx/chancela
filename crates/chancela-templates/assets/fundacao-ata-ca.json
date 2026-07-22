@@ -87,6 +87,7 @@
       "items": "referenced_documents",
       "rows": [{ "key": "{{ label }}", "value": "{{ reference }}" }]
     },
+    { "kind": "NarrativeBody" },
     {
       "kind": "Paragraph",
       "template": "Nada mais havendo a tratar, foi encerrada a reunião, da qual se lavrou a presente ata que, depois de lida e aprovada, vai ser assinada."

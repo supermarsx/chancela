@@ -467,15 +467,18 @@ pub fn verify_spec_binding(
 
 /// Render `spec` against `ctx`, write PDF/A-2u bytes, and assemble the [`Generated`] artifact
 /// owned by `owner_id`. `created_at` is the stored row's metadata timestamp (not part of the
-/// PDF bytes). Any render / write failure is an internal error that the caller turns into a
-/// rolled-back seal.
+/// PDF bytes). `body` is the act's already-compiled markdown-body blocks, spliced in wherever the
+/// spec places its `NarrativeBody` anchor; pass `&[]` for a document that carries no narrative body
+/// (the anchor then renders nothing and the bytes are byte-identical to a slot-less template). Any
+/// render / write failure is an internal error that the caller turns into a rolled-back seal.
 fn generate(
     spec: &TemplateSpec,
     ctx: &Value,
     owner_id: ActId,
     created_at: OffsetDateTime,
+    body: &[Block],
 ) -> Result<Generated, ApiError> {
-    let model = chancela_templates::render(spec, ctx)
+    let model = chancela_templates::render_with_body(spec, ctx, body)
         .map_err(|e| ApiError::Internal(format!("template render failed: {e}")))?;
     let bytes = chancela_doc::pdfa::write(&model)
         .map_err(|e| ApiError::Internal(format!("PDF/A generation failed: {e}")))?;
@@ -747,17 +750,14 @@ fn attach_body_compiler_id(payload: &mut Value, act: &Act) {
 
 /// Whether `spec` has an anchor telling the renderer **where** an ata's narrative body belongs.
 ///
-/// Always `false` today, deliberately. The anchor is a `BlockSpec` variant that does not exist yet
-/// (t74 follow-up (b)): the 45 shipped ata templates render their "Deliberações" section from the
-/// structured `deliberation_items`, and none of them has a slot for a markup body. Nothing here
-/// guesses a position — inserting by inferred index would bake a positional assumption into the
-/// seal path that no template test would catch when an asset is reordered.
-///
-/// When the anchor lands this becomes a real check over `spec.blocks`, and this function is the
-/// only thing that changes.
+/// True exactly when the template places a [`chancela_templates::BlockSpec::NarrativeBody`] anchor
+/// (t74 follow-up (b), now landed). The anchor is an explicit, author-placed `BlockSpec` variant,
+/// never an inferred index: inserting by inferred position would bake a positional assumption into
+/// the seal path that no template test would catch when an asset is reordered. The 45 shipped ata
+/// templates each place exactly one anchor where the narrative belongs (before the closing
+/// formula), so a body-carrying ata can now be sealed with its narrative rendered into the PDF/A.
 fn template_can_place_body(spec: &TemplateSpec) -> bool {
-    let _ = spec;
-    false
+    spec.places_narrative_body()
 }
 
 /// Refuse to produce a document that would **silently omit** an operator's narrative body.
@@ -790,6 +790,14 @@ fn ensure_template_can_carry_body(act: &Act, spec: &TemplateSpec) -> Result<(), 
 /// spine template (documented fallback). `template_override` is the optional act-carried
 /// `template_id` (a specific ata subtype the user picked); an unknown/mismatched override is an
 /// error (never a silent spine fall-back). Called inside `seal_act_handler`'s Ok arm.
+///
+/// The act's narrative body (if any) is compiled from `act.body` via [`freeze_act_body`] and
+/// spliced into the template's [`chancela_templates::BlockSpec::NarrativeBody`] anchor. Deriving
+/// the blocks from the act itself — rather than taking them as a separate argument — is deliberate:
+/// it makes it impossible for a caller to pass blocks that disagree with `act.body` and so omit a
+/// body that cleared [`ensure_template_can_carry_body`]. The compile runs through the *same*
+/// `render_markdown_body` the seal digests, so the rendered narrative is exactly what
+/// `compiled_digest` covers; a body-less act yields no blocks and renders byte-identically.
 pub(crate) fn generate_for_act(
     act: &Act,
     entity: &Entity,
@@ -800,7 +808,10 @@ pub(crate) fn generate_for_act(
     };
     ensure_template_can_carry_body(act, spec)?;
     let ctx = act_ctx(act, entity)?;
-    let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc())?;
+    let body_blocks = freeze_act_body(act, entity)?
+        .map(|(_, blocks)| blocks)
+        .unwrap_or_default();
+    let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc(), &body_blocks)?;
     attach_body_compiler_id(&mut made.event_payload, act);
     Ok(Some(made))
 }
@@ -834,7 +845,9 @@ pub(crate) fn generate_for_act_template(
     }
 
     let ctx = act_render_ctx(act, book, entity)?;
-    let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc())?;
+    // A post-act instrument (certidão / extrato / annex) certifies or derives from the sealed ata;
+    // it does not carry the operator's narrative body, so no anchor blocks are spliced here.
+    let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc(), &[])?;
     if let Some(required_recipients) =
         generated_dispatch_required_recipient_names(act, &made.stored.template_id)
         && !required_recipients.is_empty()
@@ -881,11 +894,13 @@ pub(crate) fn generate_for_termo(
     };
     let ctx = termo_ctx(termo, book);
     let owner = ActId(book.id.0);
+    // A termo de abertura carries no ata narrative body (its content is the termo's own clauses).
     Ok(Some(generate(
         spec,
         &ctx,
         owner,
         OffsetDateTime::now_utc(),
+        &[],
     )?))
 }
 
@@ -960,11 +975,13 @@ pub(crate) fn generate_for_encerramento(
     };
     let ctx = encerramento_ctx(termo, book, entity);
     let owner = ActId(book.id.0);
+    // A termo de encerramento carries no ata narrative body.
     Ok(Some(generate(
         spec,
         &ctx,
         owner,
         OffsetDateTime::now_utc(),
+        &[],
     )?))
 }
 
@@ -8587,27 +8604,27 @@ mod spec_binding_tests {
         const PINNED: &[(&str, &str)] = &[
             (
                 "assoc-ata-alteracao-estatutos/v1",
-                "c43a9d6e341ddf99b9764604f97cb466e50d72c34d19be896d4f1fa756e33fc4",
+                "dcb2dc47ca8b5d887f163bbf90c1148251f0c17244896b94c27eb9d2648b849a",
             ),
             (
                 "assoc-ata-conselho-fiscal/v1",
-                "1ceca113f67b2fe6323cc0ea062d58dbe2dab07cd031aa055be2becc6a146ec7",
+                "dbeae215c9d28e0985629379e1434997157de213b7e75e9405743987e1a50c2e",
             ),
             (
                 "assoc-ata-direcao/v1",
-                "5fb77f64d4d460fd81e3832aa48144b56d535a350435ff39c32343a36ed4405d",
+                "a5375628da5ea3432ccf9435054185ec08b70dc1346cdd496d36fa6476802c36",
             ),
             (
                 "assoc-ata-eleicao-orgaos/v1",
-                "1c63489b916d94b882c655f95bf0f3d1fa4dbd603265ba61ed38d0cac1ff4016",
+                "552197714fa8d5545af65568f24b6f8a09330fdd119a2a080c941af765a46b1a",
             ),
             (
                 "assoc-ata-ga/v1",
-                "ff1739cc6961ba3583643f65623a55c31ef81fe57f12923294adf99039acd6de",
+                "e62454012c28a848b144c88babfc716ba0fc624ef155a35dfc27947f52dffae1",
             ),
             (
                 "assoc-ata-tomada-posse/v1",
-                "afbc6a5ad3722a1613fd2a7ded6642aeef3de80e6864b7df39930d33c6ed1609",
+                "5e53f21fd9b3cbf1d657d2291b3d21e1ca37509149fa675c9c0b8311373bef10",
             ),
             (
                 "assoc-certidao-ata/v1",
@@ -8651,7 +8668,7 @@ mod spec_binding_tests {
             ),
             (
                 "assoc-termo-retificacao/v1",
-                "14d167cf3dd756e8372bfc386201ffdd9f7bbf054aa4fd3a55a61a865365bf37",
+                "06b0975dac3d224d2952a03804776f1f8883bd0c58a1eab4352b2b1067a833fb",
             ),
             (
                 "assoc-termo-transporte/v1",
@@ -8659,11 +8676,11 @@ mod spec_binding_tests {
             ),
             (
                 "condominio-anexo-acordo-email/v1",
-                "b2437f1d86f21a607482b71db8b5fe31f42ec2314ead4543ae56f918d32ee930",
+                "8dd3c86d687eae40139f3b330b51f9740986b503430c44f495a9560c3d015277",
             ),
             (
                 "condominio-ata-assembleia/v1",
-                "14e77017b0a7071319993263082ea44816e4b296db137000fc4b2992e11d709c",
+                "96a9bb28bef8e638a08f6a4574b479e9576ab24be7e0b7317a7dfd101782b242",
             ),
             (
                 "condominio-aviso-convocatoria/v1",
@@ -8707,7 +8724,7 @@ mod spec_binding_tests {
             ),
             (
                 "condominio-termo-retificacao/v1",
-                "096e2fd42a0c82fdcbb05887a5c71c7b55763737de146ef26ae194445164e37f",
+                "baefc56c1ec86a2204aa4171924eff003851a155464485c92a327f3783e40b85",
             ),
             (
                 "condominio-termo-transporte/v1",
@@ -8715,11 +8732,11 @@ mod spec_binding_tests {
             ),
             (
                 "cooperativa-ata-ag/v1",
-                "44ddfb74e4cd56ee640189fcdf3f437c874de44df55b94b123735ae442069b34",
+                "c04298ab98e1d4ae7331aedcb0a37613aac4618c15c2d40ba2ed3e5ea03a37dc",
             ),
             (
                 "cooperativa-ata-direcao/v1",
-                "383ab13e7d138a1ffc41e0ec6ddc39c3d15d23bd1b23adcb411e681f1d0b5b28",
+                "ae0424162e82bdce612f64db79ac610fb7b48520e2b8f36b16a2acdef452f930",
             ),
             (
                 "cooperativa-certidao-ata/v1",
@@ -8763,7 +8780,7 @@ mod spec_binding_tests {
             ),
             (
                 "cooperativa-termo-retificacao/v1",
-                "9a029e87209e883cbe003f3c53ffa380a6a2b76debd1785a476318f807478cda",
+                "4a9df5fc1b1846d2ce50ff61fbc30299c6c5dd9db56078b82ed1f4a4fcc6c147",
             ),
             (
                 "cooperativa-termo-transporte/v1",
@@ -8771,115 +8788,115 @@ mod spec_binding_tests {
             ),
             (
                 "csc-ata-ag/v1",
-                "65f34ff2ad327e7abb83e2826a207f433c3760dc8b9c654580c9c6c19962f6db",
+                "d885b1a4e6dbb32672a781ae428b75bbd7a8e6bf8a928418e2f7eb18a5c1437d",
             ),
             (
                 "csc-ata-alteracao-firma/v1",
-                "72af7397ef9a809e76ba38495e61055a01cc92a70081b18f0a6b89db748920c8",
+                "605897e87e8b8f6426d982c186394fd67a59c766804be0b6b60ed40b79715d14",
             ),
             (
                 "csc-ata-alteracao-objeto/v1",
-                "840bdda219d2835dab62b594d7ab794efd9bfcf945ea17a85849af48d1732b7e",
+                "3cd6c8805b4f77fc8b43e7ada47f2bc6aabc2f7cc1d26fcab219e64d8048af37",
             ),
             (
                 "csc-ata-alteracao-sede/v1",
-                "cd5210b0c0abfddaa3e120a586226748a479c69ba37fa6a099ca72b52cd8c859",
+                "67c92efeb5a7968a10d6d2dc4c4e7e247992432842eaa7f6424979c785fe8c43",
             ),
             (
                 "csc-ata-amortizacao-quotas/v1",
-                "3f7a5fb4f517bea5a99bcb351e45469080442b99c808a181effba303a2dd12ec",
+                "014b41001bfe9e598711a837a95faeb14b906ad040695364e39f0174eff7488d",
             ),
             (
                 "csc-ata-aprovacao-contas/v1",
-                "60be8981e84a45314a9b543ede14e407f76ad4dee517b0288971ac3729a2bb9f",
+                "57d1a221af3bbb2790ffe0f1af6c1b6785a2765414c21ecb0b6a3f019962cf74",
             ),
             (
                 "csc-ata-aumento-capital/v1",
-                "9185046f51b9e692f947a0a3958f5ba2d269509957f747bdf166878e885dc206",
+                "c5c50f52f7c017825cc4b87521e900a2c7e1881d727a88f5c5f946b7be258d21",
             ),
             (
                 "csc-ata-cessao-quotas/v1",
-                "519c8dbd0ce64992cfb8e094957bd670c34149457cca8bcae061be7285f953f6",
+                "f08a3c01f3e1fb45a72a7a06a1fe79bb8cb0f9c0c284839b8c87f1f66f3b27ce",
             ),
             (
                 "csc-ata-cisao/v1",
-                "0e31e6633d575c18f5cc3306032d2e5ec2f7c9f450c9214bc128637bddccb2fd",
+                "924da2f987699001b0b23f0035c0f48d80e4ac8e197e9410bf4b147b8908b3d3",
             ),
             (
                 "csc-ata-delegacao-poderes/v1",
-                "537b02a311800c1c3dcdabedad4258e285474860d6d61ac963a624b69e96c97a",
+                "8a153150cfdc1af89538777fd48f63d6d7a3389d886e6d3742560e7a6f8f0965",
             ),
             (
                 "csc-ata-designacao-gerencia/v1",
-                "de481a36ee1e586ada36db0e0e251ee83ee3bd45026f97142b82a12533054bda",
+                "fa2ff9cfe0af3f74a35bc374b3268883173331d3793a3c0f9b3be73cded52a88",
             ),
             (
                 "csc-ata-destituicao-gerencia/v1",
-                "e7626dd8b2c3067044a763c8b41bca4317ea95d5fb40b7e58e71ce7ff2af6cfa",
+                "21a34a4e3ec48d1b044f7e909d81751cef648fde639cdbaab52cb571cab0fc1e",
             ),
             (
                 "csc-ata-dissolucao/v1",
-                "d96f9323963c109a06326724ec26a808c1ae781cd1a7febc81cc83bac17a194f",
+                "9cfe16a3adacf0efaeb6810565a385e31e17b1c5cf73137c1fffb004fe250953",
             ),
             (
                 "csc-ata-distribuicao-dividendos/v1",
-                "8eed07a4b019f7d660f12c110c4aae547290bd0dfba707404bb71cc52e2e907b",
+                "3a48d4a5a0e7eb6d2cc421082edbca83e12bd87f20272e7ecba301432407c961",
             ),
             (
                 "csc-ata-divisao-quotas/v1",
-                "f1273768ef20e6974ca6add2007223886a0ca40ef923bf903c0539cf0c67bbba",
+                "37773b92b607ced379b82859a3548c0736acd52cd7093f2f826e0795241118ab",
             ),
             (
                 "csc-ata-entrada-socio/v1",
-                "a1df49bf706e13388f4d59914cbd74c93269c6111f954c7c891a097f93d725f0",
+                "5c3047d420488256ccc2ceaef0a193d512ff2a49f380895c2fa8e28d03230778",
             ),
             (
                 "csc-ata-fusao/v1",
-                "eb34e634cab61f3209b2c658985521a7c05c8c481b0cd645540248c28601fba5",
+                "85000cd0c401e7bd77f640eba937f3b0a16a41e029212a9c4806473708703504",
             ),
             (
                 "csc-ata-gerencia/v1",
-                "464b632475158e1d3c7db41b0c2ae3ca5ce80291865d3242bdbac3f05c6f9998",
+                "91b1a0405213b7012424e46e3578841c084225bb775d3bebcf95562e06d36899",
             ),
             (
                 "csc-ata-liquidacao/v1",
-                "f55a06fab0399af157e1e91399646a06d23d4d3344da9e84f91c6989b5124536",
+                "1c94b021796209f6e90ebf5238d476bf6a537ac8f6895306fca21fd4da9c4d97",
             ),
             (
                 "csc-ata-nao-remuneracao-gerencia/v1",
-                "397d8276ef029f3846b37db2384e87e1ecb2e324ba4792f5ca53a01612100320",
+                "6fba164e9769c5dfb6d93f33a3243f855cf1c1e42fb98f448c714a9d89ba0e35",
             ),
             (
                 "csc-ata-prestacoes-suplementares/v1",
-                "5cedce4d6e328915a790005edf1e301283072833721bb8b7826a2da871062a1e",
+                "8f922f700afe96c4e9cba4f07be53c5f56f9fb6c9539b5e08ad88527757d9000",
             ),
             (
                 "csc-ata-reducao-capital/v1",
-                "c3e0f6564ca11e89e5e4e56c5080a4390afb738997505abe83ad6d5dedfa6ee3",
+                "1c1a68dea3b152edf0da18cc8a1ac7c1466257f715d78747cbd9c5a11fdbbc31",
             ),
             (
                 "csc-ata-remuneracao-gerencia/v1",
-                "d5df81c404fe3926cf6d0206eaedcf54c20c4b1750ad86bdf34ae9c9d871178f",
+                "98c381b6d9dd92e114627547ea4760b634c04766f8c90e378f01e0811ce7f40f",
             ),
             (
                 "csc-ata-renuncia-gerente/v1",
-                "5783169191396e42a3de76baf5b652e5b73ffe57f699898b578a5174c26583ed",
+                "68137cc7bfc437d910afa2591cf1240d5973c2f3c14e1df00ef0b9315aae72bd",
             ),
             (
                 "csc-ata-revogacao-poderes/v1",
-                "8dee6b3b4c928713a0d6a4543bda01964295563ae43b6e7c9f483726e9f10b0f",
+                "79a11032bc48dceb631e8460978660ec86eb954ad23bd4fc757cf6aa557c6d0f",
             ),
             (
                 "csc-ata-suprimentos/v1",
-                "125ec5dfa229ba16b35f18afa32cb66235ba441f256d86043a9feb331badb32b",
+                "387dda9993e5b2271d916999cd6fecdc1f1e5e0015959bc4dbcfa0743e552ea4",
             ),
             (
                 "csc-ata-transformacao/v1",
-                "1a769c6c2e6d298f346cb182e81a889040c557b3aeda5b90862898efa03a06c6",
+                "5ebf3bdca3408fb6a34c3f7ce773f5c3ae7126c25227c54857953fbf3db138e0",
             ),
             (
                 "csc-ata-unificacao-quotas/v1",
-                "e70cb24ab419fc8879b56cd21564f4ebb2e9d503e4f9d4948afc1f4e9278913b",
+                "b28d225e31f3b3759c2297db10710a8d288365982e108ecc3431aa0c8cefedb9",
             ),
             (
                 "csc-certidao-ata/v1",
@@ -8930,10 +8947,6 @@ mod spec_binding_tests {
                 "cb662056e942929723aeff193976bfc717f50f88113992c02cf7fc057359825b",
             ),
             (
-                // Re-pinned after t23-e2's authorized loose-leaf citation correction
-                // (art. 63.º CSC → Código Comercial art. 31.º n.º 2) edited this template's
-                // digested `blocks` prose in place. The `default_body` seed is `#[serde(skip)]`
-                // and does not affect this digest; only the prose correction moved it.
                 "csc-termo-abertura/v1",
                 "7c2e7943165b839889dc00f1d829efef6cb6223fa070956f1a5daead3f29c34c",
             ),
@@ -8943,7 +8956,7 @@ mod spec_binding_tests {
             ),
             (
                 "csc-termo-retificacao/v1",
-                "a0bb13c06cfcc0554af33398642f4316e85aecb5a26bb62ee14d57a0c4ddfc96",
+                "70b16e75070355635cb6d118172a0e10c725fc7f05875d6a19caecf4f4449d03",
             ),
             (
                 "csc-termo-transporte/v1",
@@ -8951,11 +8964,11 @@ mod spec_binding_tests {
             ),
             (
                 "fundacao-ata-ca/v1",
-                "bebb0652afd0a35df8c2b39618fd4fe06092f4ca438dc8470afe9b274c7c00cb",
+                "930caf7ac355233bbf13217b060c92eed783fa1f2cf8f6ff8f209b23954e5a1e",
             ),
             (
                 "fundacao-ata-orgao-fiscal/v1",
-                "be8e07d32ae656075c857cc39c0acf34242120747247301f643cd1eb0d86691d",
+                "35175a12da7c8ca04a63e88c5a9ef2dda2c422d6c5047ec9143b132a8c263cc8",
             ),
             (
                 "fundacao-certidao-ata/v1",
@@ -8999,7 +9012,7 @@ mod spec_binding_tests {
             ),
             (
                 "fundacao-termo-retificacao/v1",
-                "206ffff86aadb2b9208ef6f276116ef6b5e2b123f0bb57a369d713c0c8559c96",
+                "a641b9ff46caf0b4a5d793b0f593ff5ee9ce27ad5fe4f2ca8bb54c5e311b9ca5",
             ),
             (
                 "fundacao-termo-transporte/v1",
@@ -12414,9 +12427,11 @@ mod tests {
 
     #[test]
     fn sealing_is_refused_rather_than_silently_omitting_a_narrative_body() {
-        // t74 §9.3 arriving through the placement seam. No shipped ata template has an anchor for a
-        // markup body yet, so generating one would produce a PDF/A that does not contain text the
-        // operator wrote and approved — with no digest wrong and nothing alarming. Refuse instead.
+        // t74 §9.3 through the placement seam. The shipped ata templates now carry a `NarrativeBody`
+        // anchor, so the refusal can no longer be reached through the real registry — it is the
+        // guard for a template with *no* slot, exercised here against a slot-less spec directly.
+        // Producing a document through such a template would yield a PDF/A that omits text the
+        // operator wrote and approved, with no digest wrong and nothing alarming. Refuse instead.
         let entity = entity_of(EntityKind::Condominio);
         let book = Book::new(entity.id, BookKind::Condominio);
         let mut act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
@@ -12427,11 +12442,15 @@ mod tests {
             compiled_digest: "a".repeat(64),
         });
 
-        // `Generated` is not `Debug`, so unwrap the Result by hand.
-        let err = match generate_for_act(&act, &entity, None) {
-            Ok(_) => panic!("generating a document that would omit the body must be refused"),
-            Err(e) => e,
-        };
+        // A real catalog template that carries no anchor (a certidão/convocatoria/etc. — anything
+        // that is not an Ata-stage spine). `places_narrative_body()` is the single source of truth.
+        let slotless = registry()
+            .specs()
+            .iter()
+            .find(|s| !s.places_narrative_body())
+            .expect("the catalog has non-anchor templates");
+        let err = ensure_template_can_carry_body(&act, slotless)
+            .expect_err("a body must not seal through a template with no anchor");
         let ApiError::Unprocessable(message) = err else {
             panic!("expected a 422, got {err:?}");
         };
@@ -12439,6 +12458,15 @@ mod tests {
             message.contains("no place for this act's narrative body"),
             "the refusal must say why: {message}"
         );
+
+        // And the converse: a template that *does* place the anchor accepts the same body.
+        let anchored = registry()
+            .specs()
+            .iter()
+            .find(|s| s.places_narrative_body())
+            .expect("the catalog has anchor-carrying ata templates");
+        ensure_template_can_carry_body(&act, anchored)
+            .expect("a body seals cleanly through a template that carries the anchor");
     }
 
     #[test]
@@ -12457,6 +12485,37 @@ mod tests {
         assert!(
             generate_for_act(&act, &entity, None).is_ok(),
             "a whitespace-only body must not block generation"
+        );
+    }
+
+    #[test]
+    fn a_body_carrying_act_renders_its_narrative_into_the_pdf_instead_of_omitting_it() {
+        // The positive half of the placement seam. An act with a body now generates (no refusal),
+        // and the narrative actually lands in the PDF/A — proven by the bytes differing from the
+        // same act with no body. A silent omission would leave the two digests identical.
+        let (entity, mut act) = act_with_body(
+            "Encosto Estratégico Lda",
+            "# Deliberação\n\nO condomínio deliberou **aprovar** as contas.",
+        );
+
+        let with_body = generate_for_act(&act, &entity, None)
+            .expect("generates")
+            .expect("condominio spine exists");
+
+        act.body = None;
+        let without_body = generate_for_act(&act, &entity, None)
+            .expect("generates")
+            .expect("condominio spine exists");
+
+        assert_ne!(
+            with_body.stored.pdf_digest, without_body.stored.pdf_digest,
+            "the narrative body must change the PDF/A — a matching digest would mean it was omitted"
+        );
+        // The body-carrying event also records which compiler produced the spliced blocks.
+        assert_eq!(with_body.event_payload["body_compiler_id"], "md-block/v1");
+        assert!(
+            without_body.event_payload.get("body_compiler_id").is_none(),
+            "a body-less act must not carry the compiler id"
         );
     }
 

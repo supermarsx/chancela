@@ -61,6 +61,7 @@
       "items": "deliberation_items",
       "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
     },
+    { "kind": "NarrativeBody" },
     {
       "kind": "Paragraph",
       "template": "Nada mais havendo a tratar, foi encerrado o presente termo que, depois de lido e aprovado, vai ser assinado."

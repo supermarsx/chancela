@@ -100,6 +100,20 @@ impl TemplateSpec {
     pub fn default_body(&self) -> &[DefaultBodyClause] {
         &self.default_body
     }
+
+    /// Whether this template places a [`BlockSpec::NarrativeBody`] anchor, i.e. whether it has a
+    /// slot into which an ata's operator-authored narrative body can be rendered.
+    ///
+    /// This is the single source of truth for the seal-path guard that refuses to *silently omit*
+    /// a body from the canonical PDF/A: an act carrying a non-empty body may only be sealed through
+    /// a template for which this returns `true`. A template without the anchor renders every act
+    /// exactly as before (the body, if any, is caught by that guard rather than dropped).
+    #[must_use]
+    pub fn places_narrative_body(&self) -> bool {
+        self.blocks
+            .iter()
+            .any(|block| matches!(block, BlockSpec::NarrativeBody))
+    }
 }
 
 /// One clause of a template's **seed body** ([`TemplateSpec::default_body`]).
@@ -273,6 +287,19 @@ pub enum BlockSpec {
     PageBreak,
     /// A horizontal rule.
     Rule,
+    /// The anchor telling the renderer **where** an ata's operator-authored narrative body belongs.
+    ///
+    /// A structural marker with no fields: it carries no prose of its own and reads no record
+    /// field. At render time the act's already-compiled markdown-body blocks
+    /// ([`chancela_core::Block`], the exact `Vec<Block>` bound into the seal as
+    /// `ActBody::compiled_digest`) are spliced in at this position — see
+    /// [`render_with_body`]. An act with **no** body contributes zero blocks here, so a body-less
+    /// act renders byte-identically to one whose template never carried the anchor.
+    ///
+    /// Purely additive: `#[serde(tag = "kind")]` means every asset that omits
+    /// `{"kind": "NarrativeBody"}` deserializes exactly as before, and only the templates that
+    /// place it gain the slot.
+    NarrativeBody,
 }
 
 fn default_vote_field() -> String {
@@ -519,7 +546,7 @@ fn threshold_references_in_blocks(blocks: &[BlockSpec]) -> Vec<String> {
                 refs.extend(scan_threshold_references(role));
                 refs.extend(scan_threshold_references(name));
             }
-            BlockSpec::PageBreak | BlockSpec::Rule => {}
+            BlockSpec::PageBreak | BlockSpec::Rule | BlockSpec::NarrativeBody => {}
         }
     }
     refs
@@ -631,6 +658,25 @@ fn registry_from(assets: &[(&str, &str)]) -> Result<Registry, RegistryError> {
 /// `quality_label` (the same enum → the qualidade as it reads on an attendance roll: `Member` is
 /// "Sócio", not "Membro"). Built-in filters (`join`, …) are available too.
 pub fn render(spec: &TemplateSpec, ctx: &Value) -> Result<DocumentModel, RenderError> {
+    render_with_body(spec, ctx, &[])
+}
+
+/// Like [`render`], but splices `body` — the act's already-compiled markdown-body blocks — wherever
+/// the spec places a [`BlockSpec::NarrativeBody`] anchor.
+///
+/// [`render(spec, ctx)`](render) is exactly `render_with_body(spec, ctx, &[])`: with an empty body
+/// the anchor contributes nothing, so a body-less act renders **byte-identically** to a template
+/// that never carried the anchor (the acceptance bar for adding the anchor to the shipped catalog).
+///
+/// The blocks passed here are the same `Vec<Block>` the seal digests as `ActBody::compiled_digest`
+/// (the API compiles the body exactly once, at content freeze, and hands the result to both the
+/// digest and this splice), so **what renders at the anchor is what was digested** — there is no
+/// second compile and no path by which the rendered narrative could diverge from the sealed one.
+pub fn render_with_body(
+    spec: &TemplateSpec,
+    ctx: &Value,
+    body: &[Block],
+) -> Result<DocumentModel, RenderError> {
     let env = build_env();
 
     let title = ctx
@@ -668,7 +714,7 @@ pub fn render(spec: &TemplateSpec, ctx: &Value) -> Result<DocumentModel, RenderE
     };
 
     for block in &spec.blocks {
-        render_block(&env, block, ctx, &mut doc.blocks)?;
+        render_block(&env, block, ctx, body, &mut doc.blocks)?;
     }
 
     Ok(doc)
@@ -707,6 +753,7 @@ fn render_block(
     env: &minijinja::Environment<'_>,
     block: &BlockSpec,
     ctx: &Value,
+    body: &[Block],
     out: &mut Vec<Block>,
 ) -> Result<(), RenderError> {
     match block {
@@ -790,6 +837,7 @@ fn render_block(
         }
         BlockSpec::PageBreak => out.push(Block::PageBreak),
         BlockSpec::Rule => out.push(Block::Rule),
+        BlockSpec::NarrativeBody => out.extend(body.iter().cloned()),
     }
     Ok(())
 }
@@ -1976,6 +2024,81 @@ mod tests {
         assert_eq!(a, b, "same spec + ctx must serialize byte-identically");
     }
 
+    #[test]
+    fn the_shipped_ata_spine_carries_the_narrative_body_anchor() {
+        assert!(
+            ata_spec().places_narrative_body(),
+            "the ata spine must place a NarrativeBody anchor so a body-carrying ata can be sealed"
+        );
+    }
+
+    #[test]
+    fn an_empty_narrative_body_renders_byte_identically_to_a_slot_less_template() {
+        // The acceptance bar for adding the anchor to the shipped catalog: for a body-less ata the
+        // anchor must contribute *zero* blocks, so the DocumentModel — and therefore the PDF/A
+        // bytes and `pdf_digest` — is exactly what a template that never carried the anchor would
+        // produce. This proves the "no regression for body-less atas" guarantee at the render seam.
+        let spec = ata_spec();
+        let ctx = ata_ctx();
+
+        let mut slotless = spec.clone();
+        slotless
+            .blocks
+            .retain(|b| !matches!(b, BlockSpec::NarrativeBody));
+        assert!(!slotless.places_narrative_body());
+
+        let empty_body = render_with_body(&spec, &ctx, &[]).expect("renders");
+        let baseline = render(&slotless, &ctx).expect("renders");
+        assert_eq!(
+            empty_body, baseline,
+            "an empty body through the anchor must render byte-identically to a slot-less template"
+        );
+        // `render(spec, ctx)` is exactly the empty-body path.
+        assert_eq!(render(&spec, &ctx).expect("renders"), empty_body);
+    }
+
+    #[test]
+    fn a_narrative_body_is_spliced_at_the_anchor_position_leaving_all_other_blocks_untouched() {
+        // What renders at the anchor is the caller's already-compiled `Vec<Block>`, inserted in
+        // order exactly where the template places the anchor — nothing before or after it moves.
+        let spec = ata_spec();
+        let ctx = ata_ctx();
+        let anchor_pos = spec
+            .blocks
+            .iter()
+            .position(|b| matches!(b, BlockSpec::NarrativeBody))
+            .expect("spine carries the anchor");
+
+        let body = vec![
+            Block::Heading {
+                level: 2,
+                text: "Discussão".to_owned(),
+            },
+            Block::Paragraph {
+                runs: vec![Run {
+                    text: "Narrativa autoral do operador.".to_owned(),
+                    bold: false,
+                    italic: false,
+                }],
+            },
+        ];
+
+        let empty_body = render_with_body(&spec, &ctx, &[]).expect("renders");
+        let with_body = render_with_body(&spec, &ctx, &body).expect("renders");
+
+        // How many rendered blocks the template emits *before* the anchor — the splice offset.
+        let mut prefix_spec = spec.clone();
+        prefix_spec.blocks.truncate(anchor_pos);
+        let prefix_len = render(&prefix_spec, &ctx).expect("renders").blocks.len();
+
+        let mut expected = empty_body.blocks.clone();
+        expected.splice(prefix_len..prefix_len, body.iter().cloned());
+        assert_eq!(
+            with_body.blocks, expected,
+            "the body must splice in contiguously at the anchor's rendered position"
+        );
+    }
+
     /// A minimal single-block asset whose paragraph references `threshold(<id>)`. Used to exercise
     /// the `threshold()` function end-to-end through the real render pipeline (E3). This lives
     /// inline (a test string, not a shipped `assets/*.json`) so it never collides with the
@@ -2606,7 +2729,7 @@ mod tests {
             BlockSpec::SignatureBlock { role, name, .. } => {
                 role.contains(needle) || name.contains(needle)
             }
-            BlockSpec::PageBreak | BlockSpec::Rule => false,
+            BlockSpec::PageBreak | BlockSpec::Rule | BlockSpec::NarrativeBody => false,
         })
     }
 
