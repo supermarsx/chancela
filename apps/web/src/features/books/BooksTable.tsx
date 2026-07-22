@@ -3,13 +3,14 @@
  */
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { BookView, Entity } from '../../api/types';
+import { BOOK_COLUMNS, type BookColumn, type BookView, type Entity } from '../../api/types';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
 import { useT } from '../../i18n';
 import { Badge, EmptyState, Icon, Table, Tooltip, Truncate } from '../../ui';
 import { NipcBadge } from '../entities/NipcBadge';
 
-type BookColumn = 'Entity' | 'Kind' | 'Purpose' | 'State' | 'Opening' | 'LastAct' | 'Actions';
+/** The owning-entity column is not part of the per-user set — the page context decides it. */
+type BookTableColumn = BookColumn | 'Entity';
 
 function stateTone(state: BookView['state']) {
   if (state === 'Open') return 'ok' as const;
@@ -22,7 +23,7 @@ function BookTableCell({
   actions = false,
   children,
 }: {
-  column: BookColumn;
+  column: BookTableColumn;
   actions?: boolean;
   children: ReactNode;
 }) {
@@ -86,6 +87,7 @@ export function BooksTable({
   showEntity = false,
   entitiesById,
   entitiesLoading = false,
+  visibleColumns = BOOK_COLUMNS,
 }: {
   books: BookView[];
   /** Show the owning-entity column — the "all books" list where books span entities. */
@@ -94,9 +96,16 @@ export function BooksTable({
   entitiesById?: Map<string, Entity>;
   /** Entities query still loading — render a placeholder instead of the raw id. */
   entitiesLoading?: boolean;
+  /**
+   * The per-user visible column set (t37). `Actions` is structural and always present; `Entity`
+   * is governed by `showEntity`, not this set. Defaults to every column, so call-sites that do
+   * not personalise (an entity's own book list) render the full table unchanged.
+   */
+  visibleColumns?: readonly BookColumn[];
 }) {
   const t = useT();
   const openLabel = t('common.open');
+  const shows = (column: BookColumn) => visibleColumns.includes(column);
   if (books.length === 0) {
     return <EmptyState title={t('books.empty')} />;
   }
@@ -106,11 +115,11 @@ export function BooksTable({
         head={
           <tr>
             {showEntity ? <th data-book-column="Entity">{t('books.entity')}</th> : null}
-            <th data-book-column="Kind">{t('books.th.type')}</th>
-            <th data-book-column="Purpose">{t('books.th.purpose')}</th>
-            <th data-book-column="State">{t('books.th.state')}</th>
-            <th data-book-column="Opening">{t('books.th.opening')}</th>
-            <th data-book-column="LastAct">{t('books.th.lastAct')}</th>
+            {shows('Kind') ? <th data-book-column="Kind">{t('books.th.type')}</th> : null}
+            {shows('Purpose') ? <th data-book-column="Purpose">{t('books.th.purpose')}</th> : null}
+            {shows('State') ? <th data-book-column="State">{t('books.th.state')}</th> : null}
+            {shows('Opening') ? <th data-book-column="Opening">{t('books.th.opening')}</th> : null}
+            {shows('LastAct') ? <th data-book-column="LastAct">{t('books.th.lastAct')}</th> : null}
             <th data-book-column="Actions" />
           </tr>
         }
@@ -128,25 +137,35 @@ export function BooksTable({
                   />
                 </BookTableCell>
               ) : null}
-              <BookTableCell column="Kind">
-                <Truncate text={bookKindLabels[book.kind]} />
-              </BookTableCell>
-              <BookTableCell column="Purpose">
-                <Truncate text={book.purpose ?? '—'} />
-              </BookTableCell>
-              <BookTableCell column="State">
-                {/* No tooltip: the native `title` here repeated the badge's own visible text
-                    verbatim, so it revealed nothing (t31). */}
-                <span className="books-table__state">
-                  <Badge tone={stateTone(book.state)}>{bookStateLabels[book.state]}</Badge>
-                </span>
-              </BookTableCell>
-              <BookTableCell column="Opening">
-                <Truncate text={book.opening_date ?? '—'} mono />
-              </BookTableCell>
-              <BookTableCell column="LastAct">
-                <Truncate text={book.last_ata_number > 0 ? String(book.last_ata_number) : '—'} />
-              </BookTableCell>
+              {shows('Kind') ? (
+                <BookTableCell column="Kind">
+                  <Truncate text={bookKindLabels[book.kind]} />
+                </BookTableCell>
+              ) : null}
+              {shows('Purpose') ? (
+                <BookTableCell column="Purpose">
+                  <Truncate text={book.purpose ?? '—'} />
+                </BookTableCell>
+              ) : null}
+              {shows('State') ? (
+                <BookTableCell column="State">
+                  {/* No tooltip: the native `title` here repeated the badge's own visible text
+                      verbatim, so it revealed nothing (t31). */}
+                  <span className="books-table__state">
+                    <Badge tone={stateTone(book.state)}>{bookStateLabels[book.state]}</Badge>
+                  </span>
+                </BookTableCell>
+              ) : null}
+              {shows('Opening') ? (
+                <BookTableCell column="Opening">
+                  <Truncate text={book.opening_date ?? '—'} mono />
+                </BookTableCell>
+              ) : null}
+              {shows('LastAct') ? (
+                <BookTableCell column="LastAct">
+                  <Truncate text={book.last_ata_number > 0 ? String(book.last_ata_number) : '—'} />
+                </BookTableCell>
+              ) : null}
               <BookTableCell column="Actions" actions>
                 <span className="books-table__actions">
                   <Tooltip label={actionLabel} placement="left">

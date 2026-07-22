@@ -18,6 +18,7 @@ import {
 import {
   BOOK_KINDS,
   DEFAULT_SETTINGS,
+  REGISTERED_ENTITY_COLUMNS,
   type BookKind,
   type BookState,
   type BookView,
@@ -30,6 +31,9 @@ import {
   type RegisteredEntityColumn,
 } from '../../api/types';
 import { t as translateNow, useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
+import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
+import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
 import { NO_DATE, formatDate, formatTimestamp } from '../../format';
 import {
   Badge,
@@ -731,18 +735,10 @@ function tableFloor(columns: readonly RegisteredEntityColumn[]): string {
   return `calc(${terms.join(' + ')})`;
 }
 
-function normalizeVisibleColumns(
-  columns: readonly RegisteredEntityColumn[],
-): RegisteredEntityColumn[] {
-  const seen = new Set<RegisteredEntityColumn>();
-  const next = columns.filter((column) => {
-    if (seen.has(column)) return false;
-    seen.add(column);
-    return true;
-  });
-  if (!seen.has('Actions')) next.push('Actions');
-  return next.length > 0 ? next : [...DEFAULT_SETTINGS.ui.registered_entity_columns];
-}
+/** The hideable entity columns — every column except the structural, always-shown `Actions`. */
+const ENTITY_HIDEABLE_COLUMNS = REGISTERED_ENTITY_COLUMNS.filter(
+  (column): column is Exclude<RegisteredEntityColumn, 'Actions'> => column !== 'Actions',
+);
 
 function EntityColumnCell({
   column,
@@ -879,6 +875,7 @@ function EntityColumnCell({
 
 export function EntitiesPage() {
   const t = useT();
+  const ct = useTableColumnsT();
   const locale = useLocale();
   const navigate = useNavigate();
   const { data, isLoading, error } = useEntities();
@@ -983,9 +980,22 @@ export function EntitiesPage() {
   const bookKindFilterOptions = optionLabels(BOOK_KIND_FILTER_OPTIONS, t);
   const lastBookFilterOptions = optionLabels(LAST_BOOK_FILTER_OPTIONS, t);
   const activityFilterOptions = optionLabels(ACTIVITY_FILTER_OPTIONS, t);
-  const visibleColumns = normalizeVisibleColumns(
-    settings.data?.ui?.registered_entity_columns ?? DEFAULT_SETTINGS.ui.registered_entity_columns,
+  // The per-user column set (t37). The fallback chain is: personal override → the instance org
+  // default (`settings.ui.registered_entity_columns`, set by an admin in Configurações) → the
+  // product default. `useTableColumns` resolves the override; the fallback here supplies the rest.
+  const entityColumnSpec = useMemo<TableColumnsSpec<RegisteredEntityColumn>>(
+    () => ({
+      table: 'entities',
+      columns: REGISTERED_ENTITY_COLUMNS,
+      hideable: ENTITY_HIDEABLE_COLUMNS,
+      fallback:
+        settings.data?.ui?.registered_entity_columns ??
+        DEFAULT_SETTINGS.ui.registered_entity_columns,
+    }),
+    [settings.data],
   );
+  const entityColumns = useTableColumns(entityColumnSpec);
+  const visibleColumns = entityColumns.visible;
 
   const hasFilters =
     search.trim() !== '' ||
@@ -1209,6 +1219,15 @@ export function EntitiesPage() {
                 </div>
               </details>
             </div>
+
+            <ColumnPicker
+              columns={ENTITY_HIDEABLE_COLUMNS}
+              label={ct('tableColumns.summary')}
+              hint={ct('tableColumns.entities.hint')}
+              isVisible={entityColumns.isVisible}
+              onToggle={entityColumns.toggle}
+              columnLabel={(column) => t(ENTITY_COLUMN_LABEL_KEYS[column])}
+            />
 
             {rows.length === 0 ? (
               <EmptyState title={t('entities.filters.empty.title')}>

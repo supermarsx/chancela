@@ -7,13 +7,18 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { useBooks, useEntities } from '../../api/hooks';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
 import {
+  BOOK_COLUMNS,
   BOOK_KINDS,
+  type BookColumn,
   type BookKind,
   type BookState,
   type BookView,
   type Entity,
 } from '../../api/types';
 import { useT, type MessageKey } from '../../i18n';
+import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
+import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
 import {
   Badge,
   Card,
@@ -46,6 +51,27 @@ const KIND_FILTER_OPTIONS: { value: BookKindFilter; labelKey?: MessageKey; label
   { value: 'all', labelKey: 'books.filters.kind.all' },
   ...BOOK_KINDS.map((value) => ({ value, label: bookKindLabels[value] })),
 ];
+
+/** The hideable book columns (Actions is structural), and the header label each answers to. */
+const BOOK_HIDEABLE_COLUMNS = BOOK_COLUMNS.filter(
+  (column): column is Exclude<BookColumn, 'Actions'> => column !== 'Actions',
+);
+
+const BOOK_COLUMN_LABEL_KEYS: Record<Exclude<BookColumn, 'Actions'>, MessageKey> = {
+  Kind: 'books.th.type',
+  Purpose: 'books.th.purpose',
+  State: 'books.th.state',
+  Opening: 'books.th.opening',
+  LastAct: 'books.th.lastAct',
+};
+
+/** The books table's column spec: all shown by default (the product default), Actions always. */
+const BOOKS_COLUMN_SPEC: TableColumnsSpec<BookColumn> = {
+  table: 'books',
+  columns: BOOK_COLUMNS,
+  hideable: BOOK_HIDEABLE_COLUMNS,
+  fallback: BOOK_COLUMNS,
+};
 
 const ADVANCED_FILTER_OPTIONS: { value: AdvancedFilter; labelKey: MessageKey }[] = [
   { value: 'all', labelKey: 'books.filters.activity.all' },
@@ -105,6 +131,8 @@ function bookSearchText(book: BookView): string {
 
 export function BooksPage() {
   const t = useT();
+  const ct = useTableColumnsT();
+  const columns = useTableColumns(BOOKS_COLUMN_SPEC);
   const books = useBooks();
   const entities = useEntities();
   const entitiesById = useMemo(() => {
@@ -291,6 +319,15 @@ export function BooksPage() {
               </details>
             </div>
 
+            <ColumnPicker
+              columns={BOOK_HIDEABLE_COLUMNS}
+              label={ct('tableColumns.summary')}
+              hint={ct('tableColumns.books.hint')}
+              isVisible={columns.isVisible}
+              onToggle={columns.toggle}
+              columnLabel={(column) => t(BOOK_COLUMN_LABEL_KEYS[column])}
+            />
+
             {visibleBooks.length === 0 ? (
               <EmptyState title={t('books.filters.empty.title')}>
                 <p>{t('books.filters.empty.body')}</p>
@@ -301,6 +338,7 @@ export function BooksPage() {
                 showEntity
                 entitiesById={entitiesById}
                 entitiesLoading={entities.isLoading}
+                visibleColumns={columns.visible}
               />
             )}
           </div>

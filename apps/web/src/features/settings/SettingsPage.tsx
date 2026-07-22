@@ -78,6 +78,7 @@ import { UI_VERSION, displayVersion } from '../../api/versionCheck';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
+import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { useAdminT } from '../../i18n/adminFallback';
 import { grainStore } from '../../theme/grainStore';
 import { colorStore } from '../../theme/colorStore';
@@ -1210,6 +1211,8 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const st = useServerEnvT();
   // "Administração" copy (title + nav) lives in its own owned fallback module (t36), same split.
   const at = useAdminT();
+  // The entities-column card is now the ORG DEFAULT (t37): its hint says so, from an owned module.
+  const ct = useTableColumnsT();
   // The Administração surface (`/admin`) renders this page with `surface="admin"`: it forces the
   // Operações section, hides the Configurações section strip, titles the page "Administração", and
   // reads its sub off `/admin/:sub`. Every operations pane, the standalone/RETIRED machinery and
@@ -2632,7 +2635,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
               />
               <Card title={t('settings.entityTable.title')}>
                 <div className="form settings-rows">
-                  <p className="field__hint">{t('settings.entityTable.hint')}</p>
+                  <p className="field__hint">{ct('tableColumns.entities.orgDefaultHint')}</p>
                   <div
                     className="checkbox-grid"
                     role="group"

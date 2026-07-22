@@ -419,12 +419,18 @@ describe('BooksPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros de livros' }));
     await waitFor(() => expect(screen.getByText('Atas da Assembleia')).toBeTruthy());
 
-    fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'Created' } });
+    // `{ selector: 'select' }` disambiguates the state filter from the like-named column-picker
+    // checkbox ("Estado"/"Tipo" are also book column labels in the per-user picker, t37).
+    fireEvent.change(screen.getByLabelText('Estado', { selector: 'select' }), {
+      target: { value: 'Created' },
+    });
     expect(await screen.findByText('Administração do prédio')).toBeTruthy();
     expect(screen.queryByText('Atas da Assembleia')).toBeNull();
     expect(screen.queryByText('Atas da Gerência')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'Condominio' } });
+    fireEvent.change(screen.getByLabelText('Tipo', { selector: 'select' }), {
+      target: { value: 'Condominio' },
+    });
     expect(screen.getByText('Administração do prédio')).toBeTruthy();
     expect(screen.getByLabelText('A mostrar 1 de 3 livros')).toBeTruthy();
   });

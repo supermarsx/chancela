@@ -212,6 +212,34 @@ function openColumns(): HTMLDetailsElement {
   return columns;
 }
 
+/**
+ * A stateful preferences-aware fetch over a `fetchTable` base (t37): the per-user column store
+ * `GET|PUT /v1/me/preferences` is answered in-memory so a column toggle round-trips and a remount
+ * reads the persisted choice back, exactly as the server does. Every other URL delegates to the
+ * base table. The column set now lives in the account, not `localStorage`.
+ */
+function fetchWithPreferences(
+  entries: { match: string; status?: number; body: unknown }[],
+): typeof fetch {
+  const base = fetchTable(entries);
+  let stored: unknown = { table_columns: {} };
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes('/v1/me/preferences')) {
+      if ((init?.method ?? 'GET').toUpperCase() === 'PUT') {
+        stored = JSON.parse(String(init?.body ?? '{}'));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(stored), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
+    return base(input, init);
+  }) as typeof fetch;
+}
+
 describe('TemplatesCatalogPage', () => {
   it('leads each row with the document name and keeps the versioned id searchable', async () => {
     vi.stubGlobal(
@@ -240,7 +268,7 @@ describe('TemplatesCatalogPage', () => {
   it('renders the catalog as a named, sortable table over the operator column set', async () => {
     vi.stubGlobal(
       'fetch',
-      fetchTable([{ match: '/v1/templates', body: [...CATALOG, USER_TEMPLATE] }]),
+      fetchWithPreferences([{ match: '/v1/templates', body: [...CATALOG, USER_TEMPLATE] }]),
     );
 
     renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
@@ -292,15 +320,23 @@ describe('TemplatesCatalogPage', () => {
     // something the reader can no longer see.
     const columns = openColumns();
     fireEvent.click(within(columns).getByLabelText('Família'));
+    // The toggle now persists to the account, so the header drops after the write settles.
+    await waitFor(() => {
+      const headersNow = within(
+        screen.getByRole('table', { name: 'Catálogo de minutas' }),
+      ).getAllByRole('columnheader');
+      expect(headersNow.map((header) => header.textContent?.trim())).not.toContain('Família');
+    });
     const afterHide = within(
       screen.getByRole('table', { name: 'Catálogo de minutas' }),
     ).getAllByRole('columnheader');
-    expect(afterHide.map((header) => header.textContent?.trim())).not.toContain('Família');
     expect(afterHide[0].getAttribute('aria-sort')).toBe('none');
   });
 
   it('hides the legal source by default, restores it on demand, and remembers the choice', async () => {
-    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
+    // One shared preferences store across both mounts, so the second render reads back the choice
+    // the first persisted — the account-scoped replacement for the old per-device localStorage.
+    vi.stubGlobal('fetch', fetchWithPreferences([{ match: '/v1/templates', body: CATALOG }]));
 
     const first = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
     await screen.findByText('csc-ata-ag/v1');
@@ -313,10 +349,10 @@ describe('TemplatesCatalogPage', () => {
     expect(toggle.checked).toBe(false);
     fireEvent.click(toggle);
 
-    expect(screen.getByRole('columnheader', { name: 'Fonte legal' })).toBeTruthy();
-    expect(screen.getByText('CC arts. 173.º e 175.º')).toBeTruthy();
+    expect(await screen.findByRole('columnheader', { name: 'Fonte legal' })).toBeTruthy();
+    expect(await screen.findByText('CC arts. 173.º e 175.º')).toBeTruthy();
 
-    // The choice is per device, so a fresh mount reads it back rather than resetting.
+    // The choice is saved to the account, so a fresh mount reads it back rather than resetting.
     first.unmount();
     renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
     expect(await screen.findByRole('columnheader', { name: 'Fonte legal' })).toBeTruthy();
@@ -548,13 +584,15 @@ describe('TemplatesCatalogPage', () => {
   });
 
   it('renders pending law references and searches by citation or article text', async () => {
-    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
+    vi.stubGlobal('fetch', fetchWithPreferences([{ match: '/v1/templates', body: CATALOG }]));
 
     renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
     await screen.findByText('assoc-convocatoria-ga/v1');
-    // The column is off by default, so this test asks for it before reading its cells.
+    // The column is off by default, so this test asks for it before reading its cells; the toggle
+    // now persists to the account, so it waits for the header to appear before reading them.
     fireEvent.click(within(openColumns()).getByLabelText('Fonte legal'));
+    await screen.findByRole('columnheader', { name: 'Fonte legal' });
 
     const associationId = screen.getByText('assoc-convocatoria-ga/v1');
     const associationRow = associationId.closest('tr');

@@ -22,7 +22,6 @@ function describedText(el: Element | null | undefined): string | null {
   return id ? (document.getElementById(id)?.textContent ?? null) : null;
 }
 
-
 type EntityActivitySummary = NonNullable<Entity['activity_summary']>;
 
 const PROFILE: Entity['profile'] = {
@@ -341,7 +340,9 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.queryByText('+1 CAE')).toBeNull();
     expect(screen.getAllByText('Dentro da validade').length).toBeGreaterThan(1);
     // Scoped past the tooltip bubbles: a cell whose reveal restates its text matches twice.
-    expect(screen.getAllByText(`Válido até ${formatDate('2027-07-05')}`, { exact: false }).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(`Válido até ${formatDate('2027-07-05')}`, { exact: false }).length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText('CONSTITUIÇÃO DE SOCIEDADE')).toBeTruthy();
     expect(screen.getByText('06-30')).toBeTruthy();
     expect(screen.getByText('12-31 (por omissão)')).toBeTruthy();
@@ -371,7 +372,9 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getAllByText('Aberto').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Assembleia anual 2026/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Última ata\s+4/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(`Aberto em ${formatDate('2026-01-10')}`, { exact: false }).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(`Aberto em ${formatDate('2026-01-10')}`, { exact: false }).length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText('1 livro · Aberto: 1')).toBeTruthy();
 
     const activityLine = cells[12].querySelector('.entity-cell-line');
@@ -412,19 +415,27 @@ describe('EntitiesPage enrichment and filtering', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('NIPC'), { target: { value: 'unvalidated' } });
+    // `{ selector: 'select' }` disambiguates the filter dropdowns from the like-named per-user
+    // column-picker checkboxes ("NIPC"/"Registo"/"Último livro" are also entity column labels, t37).
+    fireEvent.change(screen.getByLabelText('NIPC', { selector: 'select' }), {
+      target: { value: 'unvalidated' },
+    });
     expect(screen.queryByText(ENTITY_A.name)).toBeNull();
     expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('Registo'), { target: { value: 'imported' } });
+    fireEvent.change(screen.getByLabelText('Registo', { selector: 'select' }), {
+      target: { value: 'imported' },
+    });
     expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
     expect(screen.queryByText(ENTITY_B.name)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('Registo'), { target: { value: 'not-imported' } });
+    fireEvent.change(screen.getByLabelText('Registo', { selector: 'select' }), {
+      target: { value: 'not-imported' },
+    });
     expect(screen.queryByText(ENTITY_A.name)).toBeNull();
     expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
 
@@ -503,7 +514,9 @@ describe('EntitiesPage enrichment and filtering', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_B.name)).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('Último livro'), { target: { value: 'Closed' } });
+    fireEvent.change(screen.getByLabelText('Último livro', { selector: 'select' }), {
+      target: { value: 'Closed' },
+    });
     expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
     expect(screen.queryByText(ENTITY_B.name)).toBeNull();
 

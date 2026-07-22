@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDeleteTemplate, useExportTemplate, useTemplates } from '../../api/hooks';
+import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
 import {
   entityFamilyLabels,
   lifecycleStageLabels,
@@ -36,9 +38,9 @@ import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../de
 import { GateButton } from '../session/permissions';
 import { TemplateEditorForm } from './TemplateEditorForm';
 import {
+  DEFAULT_TEMPLATE_COLUMNS,
   TEMPLATE_COLUMNS,
   loadTemplateColumns,
-  saveTemplateColumns,
   type TemplateColumn,
 } from './templateColumns';
 import { templateDisplayName } from './templateNames';
@@ -56,6 +58,28 @@ const TEMPLATE_COLUMN_LABEL_KEYS: Record<TemplateColumn, MessageKey> = {
   LawSource: 'documents.metadata.legalSource',
   Origin: 'templates.table.source',
 };
+
+/**
+ * The templates table's column spec (t37). Migrated off the device-local `localStorage` to the
+ * per-user server store, seeded once from the legacy value (see the mount effect below). `Name` and
+ * `Actions` are structural (rendered by the table itself, never in the toggle set), so the store
+ * needs the `Name` anchor: a "hide every optional column" choice must persist as a non-empty array,
+ * which the server would otherwise fold to "no override".
+ */
+const TEMPLATES_COLUMN_SPEC: TableColumnsSpec<TemplateColumn> = {
+  table: 'templates',
+  columns: TEMPLATE_COLUMNS,
+  hideable: TEMPLATE_COLUMNS,
+  fallback: DEFAULT_TEMPLATE_COLUMNS,
+  anchor: 'Name',
+};
+
+/** Order-insensitive set comparison of two column selections. */
+function sameColumns(a: readonly TemplateColumn[], b: readonly TemplateColumn[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((column) => set.has(column));
+}
 
 const ENTITY_FAMILIES: readonly EntityFamily[] = [
   'CommercialCompany',
@@ -137,8 +161,19 @@ export function TemplatesCatalogPage() {
   const [channel, setChannel] = useState<MeetingChannel | ''>('');
   const [signaturePolicy, setSignaturePolicy] = useState<SignaturePolicyHint | ''>('');
   const [rulePack, setRulePack] = useState('');
-  // Read once on mount: the stored set is this device's, and nothing else writes it.
-  const [columns, setColumns] = useState<TemplateColumn[]>(loadTemplateColumns);
+  // The visible columns are now a per-user server preference (t37), resolved through the shared
+  // mechanism; the legacy device-local `localStorage` value is migrated once on first load below.
+  const columns = useTableColumns(TEMPLATES_COLUMN_SPEC);
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || columns.loading) return;
+    seededRef.current = true;
+    // Only seed when the user has no server override yet AND the legacy device choice differs from
+    // the product default — otherwise there is nothing meaningful to carry over.
+    if (columns.overridden) return;
+    const legacy = loadTemplateColumns();
+    if (!sameColumns(legacy, DEFAULT_TEMPLATE_COLUMNS)) columns.set(legacy);
+  }, [columns]);
 
   const allTemplates = useMemo(
     () => [...(templates.data ?? [])].sort(sortTemplates),
@@ -185,16 +220,6 @@ export function TemplatesCatalogPage() {
     channel !== '' ||
     signaturePolicy !== '' ||
     rulePack !== '';
-
-  function toggleColumn(column: TemplateColumn, checked: boolean) {
-    setColumns((current) => {
-      const next = TEMPLATE_COLUMNS.filter((candidate) =>
-        candidate === column ? checked : current.includes(candidate),
-      );
-      saveTemplateColumns(next);
-      return next;
-    });
-  }
 
   function clearFilters() {
     setQuery('');
@@ -417,36 +442,25 @@ export function TemplatesCatalogPage() {
             citation, a source line and sometimes a pending note per reference, which squeezed
             the other columns to slivers — and the template's own page always carries it in
             full, so nothing is out of reach. */}
-        <details className="templates-columns filter-advanced">
-          <summary>{t('templates.columns.label')}</summary>
-          <fieldset className="templates-columns__body filter-advanced__body">
-            <legend className="sr-only">{t('templates.columns.label')}</legend>
-            <p className="field__hint">{t('templates.columns.hint')}</p>
-            <div className="row-wrap">
-              {TEMPLATE_COLUMNS.map((column) => (
-                <label key={column} className="checkline">
-                  <input
-                    type="checkbox"
-                    checked={columns.includes(column)}
-                    onChange={(event) => toggleColumn(column, event.target.checked)}
-                  />
-                  {t(TEMPLATE_COLUMN_LABEL_KEYS[column])}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        </details>
+        <ColumnPicker
+          columns={TEMPLATE_COLUMNS}
+          label={t('templates.columns.label')}
+          hint={t('templates.columns.hint')}
+          isVisible={columns.isVisible}
+          onToggle={columns.toggle}
+          columnLabel={(column) => t(TEMPLATE_COLUMN_LABEL_KEYS[column])}
+        />
 
         {templates.isLoading ? (
           <SkeletonRegion>
-            <SkeletonTable cols={columns.length + 2} />
+            <SkeletonTable cols={columns.visible.length + 2} />
           </SkeletonRegion>
         ) : templates.error ? (
           <ErrorNote error={templates.error} />
         ) : (
           <TemplatesTable
             templates={filtered}
-            visibleColumns={columns}
+            visibleColumns={columns.visible}
             onEdit={editor.edit}
             onClone={editor.clone}
             onExport={(template) => void onExport(template)}
