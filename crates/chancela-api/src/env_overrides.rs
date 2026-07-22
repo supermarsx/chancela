@@ -92,6 +92,7 @@ pub enum EnvVarGroup {
     Logging,
     Network,
     Session,
+    Notifications,
     RateLimit,
     Hsts,
     Cors,
@@ -223,7 +224,9 @@ impl EnvVarValidator {
             }
             EnvVarValidator::HostList => {
                 if trimmed.is_empty() || trimmed.split(',').any(|h| h.trim().is_empty()) {
-                    return Err("value must be a comma-separated list of non-empty hosts".to_string());
+                    return Err(
+                        "value must be a comma-separated list of non-empty hosts".to_string()
+                    );
                 }
             }
             EnvVarValidator::Duration => {
@@ -275,8 +278,7 @@ impl EnvVarSpec {
     /// Whether the panel presents an editor for this var. Tier A and Tier C are editable (C behind the
     /// acknowledgement gate); Tier B/D and any typed-slice-excluded var are not.
     pub fn is_editable(&self) -> bool {
-        self.excluded_typed_slice.is_none()
-            && matches!(self.tier, EnvVarTier::A | EnvVarTier::C)
+        self.excluded_typed_slice.is_none() && matches!(self.tier, EnvVarTier::A | EnvVarTier::C)
     }
 
     /// The wire descriptor of this var's validator (kind + enum options).
@@ -321,7 +323,12 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         V::Enum(&["json", "text", "pretty", "compact"]),
     ),
     // ---- Network / static assets --------------------------------------------------------------
-    spec_a("CHANCELA_ADDR", G::Network, Some("127.0.0.1:8080"), V::SocketAddr),
+    spec_a(
+        "CHANCELA_ADDR",
+        G::Network,
+        Some("127.0.0.1:8080"),
+        V::SocketAddr,
+    ),
     spec_a("CHANCELA_WEB_DIST", G::Network, Some("/srv/web"), V::Path),
     // ---- Session ------------------------------------------------------------------------------
     spec_a(
@@ -330,8 +337,23 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         Some("604800"),
         V::Unsigned,
     ),
+    // ---- Notifications (Action Center) --------------------------------------------------------
+    // How long a dismissed notification is retained before it is auto-deleted. `0` disables the
+    // time-based retention (the per-owner count cap still applies). Read at startup by
+    // `notifications::notification_dismiss_retention` (t17).
+    spec_a(
+        "CHANCELA_NOTIFICATION_DISMISS_RETENTION_DAYS",
+        G::Notifications,
+        Some("120"),
+        V::Unsigned,
+    ),
     // ---- HSTS ---------------------------------------------------------------------------------
-    spec_a("CHANCELA_HSTS_MAX_AGE", G::Hsts, Some("63072000"), V::Unsigned),
+    spec_a(
+        "CHANCELA_HSTS_MAX_AGE",
+        G::Hsts,
+        Some("63072000"),
+        V::Unsigned,
+    ),
     spec_a(
         "CHANCELA_HSTS_INCLUDE_SUBDOMAINS",
         G::Hsts,
@@ -341,14 +363,24 @@ pub const REGISTRY: &[EnvVarSpec] = &[
     spec_a("CHANCELA_HSTS_PRELOAD", G::Hsts, Some("false"), V::Bool),
     // ---- Rate limit ---------------------------------------------------------------------------
     // Numerics are Tier A; the on/off switch and the proxy-trust flag are security boundaries.
-    boundary("CHANCELA_RATE_LIMIT_ENABLED", G::RateLimit, Some("true"), V::Bool),
+    boundary(
+        "CHANCELA_RATE_LIMIT_ENABLED",
+        G::RateLimit,
+        Some("true"),
+        V::Bool,
+    ),
     spec_a(
         "CHANCELA_RATE_LIMIT_PER_SECOND",
         G::RateLimit,
         Some("50"),
         V::Unsigned,
     ),
-    spec_a("CHANCELA_RATE_LIMIT_BURST", G::RateLimit, Some("100"), V::Unsigned),
+    spec_a(
+        "CHANCELA_RATE_LIMIT_BURST",
+        G::RateLimit,
+        Some("100"),
+        V::Unsigned,
+    ),
     boundary(
         "CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR",
         G::RateLimit,
@@ -379,11 +411,21 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         V::Bool,
     ),
     // ---- Cache / Redis ------------------------------------------------------------------------
-    spec_a("CHANCELA_CACHE", G::Cache, Some("off"), V::Enum(&["off", "redis"])),
+    spec_a(
+        "CHANCELA_CACHE",
+        G::Cache,
+        Some("off"),
+        V::Enum(&["off", "redis"]),
+    ),
     secret("REDIS_URL", G::Cache),
     secret("REDIS_URL_FILE", G::Cache),
     // ---- Paper-book OCR -----------------------------------------------------------------------
-    spec_a("CHANCELA_PAPER_BOOK_OCR_COMMAND", G::PaperBook, None, V::Path),
+    spec_a(
+        "CHANCELA_PAPER_BOOK_OCR_COMMAND",
+        G::PaperBook,
+        None,
+        V::Path,
+    ),
     spec_a(
         "CHANCELA_PAPER_BOOK_OCR_ARGS_TEMPLATE",
         G::PaperBook,
@@ -488,7 +530,14 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         "CHANCELA_PG_SSLMODE",
         G::PostgresTls,
         Some("verify-full"),
-        V::Enum(&["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]),
+        V::Enum(&[
+            "disable",
+            "allow",
+            "prefer",
+            "require",
+            "verify-ca",
+            "verify-full",
+        ]),
     ),
     boundary("CHANCELA_PG_TLS_ROOT_CERT", G::PostgresTls, None, V::Path),
     // ---- Trust / validation URLs (Tier A) -----------------------------------------------------
@@ -500,7 +549,12 @@ pub const REGISTRY: &[EnvVarSpec] = &[
     spec_a("CHANCELA_REGISTRY_URL", G::Trust, None, V::HttpUrl),
     // ---- Trust anchors (boundary — clearing weakens verification) -----------------------------
     boundary("CHANCELA_TSL_TRUST_ANCHOR", G::Trust, None, V::FreeText),
-    boundary("CHANCELA_TSL_TRUST_ANCHOR_SHA256", G::Trust, None, V::FreeText),
+    boundary(
+        "CHANCELA_TSL_TRUST_ANCHOR_SHA256",
+        G::Trust,
+        None,
+        V::FreeText,
+    ),
     // ---- Connectors ---------------------------------------------------------------------------
     // The egress ceiling already has a typed slice (`connectors.allowed_hosts`, env is the ceiling):
     // excluded from the generic store, narrow-only, shown read-only with a cross-link.
@@ -518,7 +572,12 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         default_value: None,
         validator: V::HostList,
     },
-    boundary("CHANCELA_CONNECTOR_SECRETS_DIR", G::Connectors, None, V::Path),
+    boundary(
+        "CHANCELA_CONNECTOR_SECRETS_DIR",
+        G::Connectors,
+        None,
+        V::Path,
+    ),
     // ---- ZK shared object root (typed slice; env wins) ----------------------------------------
     EnvVarSpec {
         name: "CHANCELA_ZK_SHARED_OBJECT_ROOT",
@@ -762,7 +821,9 @@ fn should_apply(name: &str, value: &str) -> Result<&'static str, String> {
         ));
     }
     if let Some(reason) = spec.excluded_typed_slice {
-        return Err(format!("`{name}` is managed by a typed settings slice ({reason})"));
+        return Err(format!(
+            "`{name}` is managed by a typed settings slice ({reason})"
+        ));
     }
     if !spec.is_editable() {
         return Err(format!(
@@ -770,7 +831,9 @@ fn should_apply(name: &str, value: &str) -> Result<&'static str, String> {
             spec.tier
         ));
     }
-    spec.validator.validate(value).map_err(|e| format!("`{name}`: {e}"))?;
+    spec.validator
+        .validate(value)
+        .map_err(|e| format!("`{name}`: {e}"))?;
     Ok(spec.name)
 }
 
@@ -836,7 +899,11 @@ mod tests {
     fn registry_var_names_are_unique() {
         let mut seen = BTreeSet::new();
         for spec in REGISTRY {
-            assert!(seen.insert(spec.name), "duplicate registry entry: {}", spec.name);
+            assert!(
+                seen.insert(spec.name),
+                "duplicate registry entry: {}",
+                spec.name
+            );
         }
     }
 
@@ -883,7 +950,11 @@ mod tests {
             }
             // Secrets never carry a default on the wire.
             if spec.secret {
-                assert!(spec.default_value.is_none(), "{} secret carries default", spec.name);
+                assert!(
+                    spec.default_value.is_none(),
+                    "{} secret carries default",
+                    spec.name
+                );
             }
         }
     }
