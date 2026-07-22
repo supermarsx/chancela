@@ -1910,3 +1910,107 @@ describe('EditUserPage — two-factor (TOTP)', () => {
     expect(calls.some((c) => c.url.endsWith('/two-factor/backup-codes'))).toBe(true);
   });
 });
+
+// --- Active sessions on the Segurança tab (t103 against t107's frozen contract) --------
+describe('EditUserPage — active sessions', () => {
+  const SESSIONS = {
+    sessions: [
+      {
+        session_id: 's-current',
+        device: 'Chrome on Windows',
+        ip: '198.51.100.0',
+        issued_at: '2026-07-20T08:00:00Z',
+        last_seen_at: '2026-07-22T09:00:00Z',
+        expires_at: '2026-07-23T08:00:00Z',
+        current: true,
+      },
+      {
+        session_id: 's-phone',
+        // device + ip omitted — an old session predating enrichment; must render gracefully.
+        issued_at: '2026-07-19T10:00:00Z',
+        last_seen_at: '2026-07-21T12:00:00Z',
+        expires_at: '2026-07-22T10:00:00Z',
+        current: false,
+      },
+    ],
+  };
+
+  function stub(sessionUser: UserView, extra: Record<string, () => Response> = {}) {
+    const { fn, calls } = recordingFetch((r) => {
+      for (const [suffix, make] of Object.entries(extra)) {
+        if (r.url.endsWith(suffix)) return make();
+      }
+      if (r.url.endsWith('/v1/sessions/revoke-others')) return jsonResponse({ revoked: 1 });
+      if (/\/v1\/sessions\/s-/.test(r.url) && r.method === 'DELETE')
+        return jsonResponse({ revoked: 1 });
+      if (r.url.endsWith('/v1/sessions')) return jsonResponse(SESSIONS);
+      if (r.url.endsWith('/v1/session')) return jsonResponse({ user: sessionUser });
+      if (r.url.endsWith('/v1/users/u1/two-factor'))
+        return jsonResponse({ enrolled: false, confirmed: false, required: false });
+      if (r.url.endsWith('/v1/users/u1')) return jsonResponse(AMELIA);
+      return jsonResponse([AMELIA]);
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(
+      <Routes>
+        <Route path="/users/:id/:sec?" element={<EditUserPage />} />
+      </Routes>,
+      ['/users/u1/security'],
+    );
+    return calls;
+  }
+
+  it('lists the caller’s own sessions in a real table, marking the current one', async () => {
+    stub(AMELIA); // self
+
+    expect(await screen.findByText('Chrome on Windows')).toBeTruthy();
+    // The current session is badged and offers no per-row revoke (that is what sign-out is for).
+    const currentRow = screen.getByText('Chrome on Windows').closest('tr') as HTMLElement;
+    expect(within(currentRow).getByText('Sessão atual')).toBeTruthy();
+    expect(within(currentRow).queryByRole('button', { name: 'Terminar' })).toBeNull();
+    // A genuine table with an accessible caption, not a form.
+    expect(screen.getByRole('table', { name: 'Sessões ativas nesta conta' })).toBeTruthy();
+  });
+
+  it('renders a session with no device or IP gracefully', async () => {
+    stub(AMELIA);
+    // The old session omits device + ip; the panel shows the "unknown" fallbacks, not blanks.
+    expect(await screen.findByText('Dispositivo desconhecido')).toBeTruthy();
+    expect(screen.getByText('Rede desconhecida')).toBeTruthy();
+  });
+
+  it('revokes one other session by its opaque handle', async () => {
+    const calls = stub(AMELIA);
+    await screen.findByText('Chrome on Windows');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Terminar' }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === 'DELETE' && c.url.endsWith('/v1/sessions/s-phone')),
+      ).toBe(true),
+    );
+  });
+
+  it('terminates the other sessions, keeping the current one', async () => {
+    const calls = stub(AMELIA);
+    await screen.findByText('Chrome on Windows');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Terminar as outras sessões' }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/sessions/revoke-others')),
+      ).toBe(true),
+    );
+  });
+
+  it('is NOT shown when editing another user — the endpoint is self-scoped', async () => {
+    // GET /v1/sessions returns the CALLER's sessions, so on an admin's screen for another user it
+    // would show the admin's own — worse than useless. The panel mounts only for `isSelf`.
+    const calls = stub(OPERATOR); // session != edited user (u1)
+
+    await screen.findByText('Segurança da conta');
+    expect(screen.queryByText('Sessões ativas')).toBeNull();
+    // And it never even fetches the list cross-user.
+    expect(calls.some((c) => c.url.endsWith('/v1/sessions'))).toBe(false);
+  });
+});
