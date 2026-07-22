@@ -17,10 +17,12 @@
  * present; it never claims to validate the manual signature or certify the archive.
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { ApiError } from '../../api/client';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   useAct,
+  useActBodyPreview,
   useActSignature,
   useAdvanceAct,
   useArchiveAct,
@@ -54,6 +56,7 @@ import {
   PRESENCE_MODES,
   SIGNATORY_CAPACITIES,
   type ActAgendaItem,
+  type ActBodyInput,
   type ActAttachment,
   type ActAttendanceWeight,
   type ActAttendee,
@@ -91,6 +94,8 @@ import { formatAtaNumber } from '../../format';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useT } from '../../i18n';
 import { useActLifecycleT } from '../../i18n/actLifecycleFallback';
+import { useActBodyT, bodyDiagnosticKey } from '../../i18n/actBodyFallback';
+import { MarkdownBodyEditor, type MarkdownDiagnostic } from './MarkdownBodyEditor';
 import { formatAiProvenanceReviewPacket } from './aiProvenanceReviewPacket';
 import {
   buildWorkflowProvenanceReviewEvidence,
@@ -143,6 +148,12 @@ interface Draft {
   agenda: ActAgendaItem[];
   referenced_documents: ActDocumentReference[];
   deliberations: string;
+  /**
+   * The WYSIWYG narrative body's markdown source (t35/t74) — the primary prose surface. Held as the
+   * raw markdown string the {@link MarkdownBodyEditor} emits; empty ⇒ the act carries no body and the
+   * PATCH clears it. Additive to `deliberations`, never a reinterpretation of it (see `draftToPatch`).
+   */
+  body: string;
   deliberation_items: ActDeliberationItem[];
   telematic_evidence: string;
   convening: DraftConvening;
@@ -240,6 +251,7 @@ function toDraft(act: ActView): Draft {
     agenda: act.agenda,
     referenced_documents: act.referenced_documents,
     deliberations: act.deliberations,
+    body: act.body?.source ?? '',
     deliberation_items: act.deliberation_items,
     telematic_evidence: act.telematic_evidence ?? '',
     convening: toDraftConvening(act.convening),
@@ -251,6 +263,14 @@ function toDraft(act: ActView): Draft {
 
 /** Trimmed-empty → null, so the API stores an absent optional rather than "". */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s);
+
+/**
+ * The narrative-body byte ceiling (t74 §9.6), mirrored from `chancela_templates::markdown::
+ * MAX_BODY_BYTES` (= `MAX_TEMPLATE_BYTES`, 64 KiB). Display-only in the editor's byte counter; the
+ * server is the authority and rejects an over-cap body at preview and at save — nothing is ever
+ * truncated to fit it client-side.
+ */
+const MAX_ACT_BODY_BYTES = 64 * 1024;
 
 /** Parse an optional non-negative integer field; blank/invalid → null. */
 function orNullNum(s: string): number | null {
@@ -2762,6 +2782,14 @@ function draftToPatch(draft: Draft) {
     agenda: draft.agenda,
     referenced_documents: draft.referenced_documents,
     deliberations: draft.deliberations,
+    // The WYSIWYG narrative (t35). An empty source sends `null` (clears the body) rather than an
+    // empty record; a non-empty source sends the markdown verbatim under its required format. This
+    // is ADDITIVE to `deliberations` above — the two prose surfaces are separate stores and the
+    // plain field is never migrated into markup.
+    body:
+      draft.body.trim() === ''
+        ? null
+        : ({ format: 'Markdown', source: draft.body } as ActBodyInput),
     deliberation_items: draft.deliberation_items,
     telematic_evidence: orNull(draft.telematic_evidence),
     convening,
@@ -3037,6 +3065,7 @@ function SealWarningAcknowledgementModal({
 export function AtaEditorPage() {
   const t = useT();
   const rt = useActLifecycleT();
+  const bt = useActBodyT();
   const toast = useToast();
   const { id = '' } = useParams();
   const location = useLocation();
@@ -3050,6 +3079,7 @@ export function AtaEditorPage() {
     act.data?.state === 'Signing' || act.data?.state === 'Sealed' || act.data?.state === 'Archived',
   );
   const update = useUpdateAct(id);
+  const bodyPreview = useActBodyPreview(id);
   const dispatchConvening = useDispatchActConvening(id);
   const advance = useAdvanceAct(id);
   const revert = useRevertAct(id);
@@ -3067,6 +3097,10 @@ export function AtaEditorPage() {
     useState<WrittenResolutionReceiptDraft>(() => newWrittenResolutionReceiptDraft());
   const [sealWarningsOpen, setSealWarningsOpen] = useState(false);
   const [sealWarningsAcknowledged, setSealWarningsAcknowledged] = useState(false);
+  // The server's verdict on the current narrative-body source, when it refused to compile it. The
+  // editor never compiles document content itself (t74 §6): the server is the authority, so this is
+  // populated only from a `422` preview response and cleared on a clean one.
+  const [bodyDiagnostic, setBodyDiagnostic] = useState<MarkdownDiagnostic | null>(null);
   // Which backward-lifecycle prompt is open, if any: "Voltar" (revert) or the guarded reopen.
   const [reverseMode, setReverseMode] = useState<'revert' | 'reopen' | null>(null);
   const [manualSignatureOriginalReference, setManualSignatureOriginalReference] =
@@ -3099,6 +3133,41 @@ export function AtaEditorPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [act.data?.id]);
+
+  // Debounced server-side preview of the narrative body. The server compiles the SAME way it will at
+  // content freeze (t74 §6), so its verdict — clean or a rejected `{ code, offset }` — is exactly
+  // what the seal would produce; the editor shows that rather than guessing. Runs only while the
+  // body is still editable: a Signing/Sealed/Archived act's body is fixed and never re-previewed.
+  const bodySource = draft?.body ?? '';
+  const actState = act.data?.state;
+  const bodyEditable =
+    actState != null && actState !== 'Signing' && actState !== 'Sealed' && actState !== 'Archived';
+  useEffect(() => {
+    if (!bodyEditable) {
+      setBodyDiagnostic(null);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      bodyPreview.mutate(
+        { source: bodySource },
+        {
+          onSuccess: () => setBodyDiagnostic(null),
+          onError: (e) => {
+            // A rejected body is a 422 carrying a byte offset; anything else (transport, 403) is not
+            // a body-rejection, so leave no spurious underline. A `construct` here is a friendly noun
+            // resolved from the server's machine `code`, shown in the editor's in-place warning.
+            if (e instanceof ApiError && e.status === 422 && e.offset != null) {
+              setBodyDiagnostic({ construct: bt(bodyDiagnosticKey(e.code)), offset: e.offset });
+            } else {
+              setBodyDiagnostic(null);
+            }
+          },
+        },
+      );
+    }, 400);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bodySource, bodyEditable]);
 
   useEffect(() => {
     if (location.hash !== ACT_CONVENING_GUIDANCE_HASH) {
@@ -3585,7 +3654,42 @@ export function AtaEditorPage() {
             />
           </Card>
 
+          {/* The WYSIWYG narrative body (t35/t74) is the PRIMARY prose surface, available on every
+              ata in every pre-signing state (including template-seeded ones). After signing it is
+              read-only, shown only when a body was authored. */}
+          {!readOnly || draft.body.trim() !== '' ? (
+            <Card title={bt('acts.body.card.title')}>
+              <p className="field__hint">{bt('acts.body.card.hint')}</p>
+              {/* One-time, operator-confirmed, non-destructive seed: offered only when the narrative
+                  is empty and the legacy plain notes are not, so an act drafted before the WYSIWYG
+                  can carry its notes forward into formatting. The notes are left intact. */}
+              {!readOnly && draft.body.trim() === '' && draft.deliberations.trim() !== '' ? (
+                <div className="stack--tight">
+                  <p className="field__hint">{bt('acts.body.seed.hint')}</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => set('body', draft.deliberations)}
+                  >
+                    {bt('acts.body.seed.button')}
+                  </Button>
+                </div>
+              ) : null}
+              <MarkdownBodyEditor
+                id="ed-body"
+                value={draft.body}
+                disabled={readOnly}
+                diagnostic={bodyDiagnostic}
+                maxBytes={MAX_ACT_BODY_BYTES}
+                onChange={(next) => set('body', next)}
+              />
+            </Card>
+          ) : null}
+
+          {/* The legacy plain-text «Deliberações» field is kept (it is a frozen seal field) but
+              demoted below the narrative: it is now for unformatted notes, not the primary prose. */}
           <Card title={t('acts.deliberacoes')}>
+            <p className="field__hint">{bt('acts.body.deliberations.note')}</p>
             <div className="delib">
               <div className="delib__edit">
                 <Field
