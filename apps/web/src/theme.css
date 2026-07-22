@@ -159,11 +159,24 @@ a:focus-visible {
    bar rides the shell's width: on pages that mix a wide sub-tab with a narrow one (Arquivo's
    Registo/Exportação, a book/entity detail's wide panel, some Configurações tabs) the strip
    jumped in width/position every time the operator toggled between them. Sized to the narrow
-   content box (measure minus both gutters) and centred in the widened shell, the header box
-   lands exactly where it sits on a normal-width page, so the strip stays put while only the
-   data-heavy panel below breaks out to the wider measure. Below the wide measure the cap is
-   larger than the fluid content box, so it is inert — no shrink on narrow screens. */
-.app:has(.wide-page) .page-header {
+   content box (measure minus both gutters) and centred, the header box lands exactly where it
+   sits on a normal-width page, so the strip stays put while only the data-heavy panel below
+   breaks out to the wider measure.
+
+   The cap is UNCONDITIONAL — not gated behind `:has(.wide-page)` — on purpose (t33). Gating it
+   made the header width REACTIVE to a descendant mounting: on a wide page the shell-widening
+   rule above (subject `.app`) and this header pin (subject `.page-header`, reached through the
+   `:has()` descendant combinator) are invalidated along different paths, so the shell could
+   widen a frame before the header re-pinned — a one-frame flash where the sub-tab bar spanned
+   the full wide shell, then snapped back. Pinning the header to the reading box always removes
+   that dependency entirely: there is no `.wide-page`-driven restyle of the header, so nothing
+   can lag and nothing can flicker; it holds the reading measure from first paint. On a
+   normal-width page the cap equals the header's natural content box and the auto margins
+   resolve to zero, so it is a no-op; below the reading measure the cap exceeds the fluid
+   content box, so it is inert — no shrink, no overflow. `.page-header` only ever renders
+   inside `.app` (the external-signature shell has its own layout), so the `--app-*` vars are
+   always defined here. */
+.page-header {
   max-width: calc(var(--app-measure) - 2 * var(--app-gutter));
   margin-inline: auto;
 }
