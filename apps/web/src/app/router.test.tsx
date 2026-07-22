@@ -29,7 +29,7 @@ afterEach(() => {
 
 describe('route error fallback', () => {
   it('keeps every lazy route chunk importable', async () => {
-    expect(routeModuleLoaders).toHaveProperty('operations');
+    expect(routeModuleLoaders).toHaveProperty('admin');
     const modules = await Promise.all(Object.values(routeModuleLoaders).map((load) => load()));
 
     expect(modules).toHaveLength(Object.keys(routeModuleLoaders).length);
