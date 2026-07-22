@@ -46,11 +46,32 @@ function manualChunks(id: string): string | undefined {
   return 'vendor';
 }
 
+// The production CSP is `script-src 'self'` — no inline scripts. That is enforced in three
+// places: this `index.html` <meta>, the Rust server's `security_headers` (an HTTP header, the
+// authoritative one for the self-hosted server), and the Tauri config. But `@vitejs/plugin-react`
+// injects an inline React Fast Refresh preamble during `npm run dev`, which `script-src 'self'`
+// blocks — so `vite dev` would fail to boot with the strict meta present. This plugin strips ONLY
+// the CSP meta, and ONLY in dev (`apply: 'serve'`): the built `index.html` keeps it verbatim, and
+// production's real protection (the header + Tauri) is untouched. It never relaxes the policy that
+// ships — it removes a redundant meta from the dev server, where HMR needs its own inline script.
+function stripCspMetaInDev() {
+  return {
+    name: 'chancela:strip-csp-meta-in-dev',
+    apply: 'serve' as const,
+    transformIndexHtml(html: string): string {
+      return html.replace(
+        /\s*<meta\s+http-equiv="Content-Security-Policy"[\s\S]*?\/>/i,
+        '',
+      );
+    },
+  };
+}
+
 // Vite 6 + @vitejs/plugin-react. Vitest config lives here (no separate file) so
 // `vitest` and `vite build` share one plugin pipeline. Dev port stays the Vite
 // default 5173 per the scaffold contract (Tauri devUrl points at it).
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), stripCspMetaInDev()],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
