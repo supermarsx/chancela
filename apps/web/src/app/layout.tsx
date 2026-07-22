@@ -38,18 +38,19 @@ const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
   { to: '/entities', label: 'nav.entities' },
   { to: '/books', label: 'nav.books' },
   { to: '/templates', label: 'nav.templates' },
-  { to: '/archive', label: 'nav.archive' },
   { to: '/operations', label: 'nav.operations' },
 ];
 
 /**
- * Ferramentas and Configurações, as icons at the right-hand end of the bar (t103).
+ * Arquivo, Ferramentas and Configurações, as icons at the right-hand end of the bar (t103, t31).
  *
- * They left the text tab group deliberately. The other six tabs are *places you work*;
- * these two are the utility surfaces you reach for, which is why they read better beside the
- * alerts bell and the user picker than as the tail of a row of nouns. Order is tools → cog →
- * divider → alerts, so the two navigational glyphs group together and the divider separates
- * them from the notification affordance rather than sitting between two unrelated things.
+ * They left the text tab group deliberately. The remaining text tabs are *places you work*;
+ * these are the utility surfaces you reach for, which is why they read better beside the
+ * alerts bell and the user picker than as the tail of a row of nouns. Arquivo joined them
+ * (t31): the ledger archive is a reference surface you consult, not a workspace, so it belongs
+ * with the other utility glyphs rather than in the row of nouns. Order is archive → tools → cog
+ * → divider → alerts, so the navigational glyphs group together and the divider separates them
+ * from the notification affordance rather than sitting between two unrelated things.
  *
  * Each is icon-only, so each carries a real `aria-label` **as well as** a `Tooltip`. A tooltip
  * is not an accessible name — it is a hover/focus affordance — and a screen-reader user given
@@ -57,6 +58,7 @@ const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
  * name an assistive technology reads is the name a sighted operator sees, in every locale.
  */
 const ICON_NAV: { to: string; label: MessageKey; icon: ReactNode }[] = [
+  { to: '/archive', label: 'nav.archive', icon: <Icon.Archive /> },
   { to: '/tools', label: 'nav.tools', icon: <Icon.Wrench /> },
   { to: '/settings', label: 'nav.settings', icon: <Icon.Cog /> },
 ];

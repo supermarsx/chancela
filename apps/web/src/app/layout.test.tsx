@@ -375,8 +375,8 @@ describe('EntitiesPage', () => {
   });
 });
 
-// --- Top-bar utility glyphs (t103) ----------------------------------------------------
-describe('Layout — Ferramentas and Configurações as top-bar icons', () => {
+// --- Top-bar utility glyphs (t103, t31) -----------------------------------------------
+describe('Layout — Arquivo, Ferramentas and Configurações as top-bar icons', () => {
   function renderShell() {
     stubSignedInShellFetch();
     return renderWithDataRouter(
@@ -385,14 +385,15 @@ describe('Layout — Ferramentas and Configurações as top-bar icons', () => {
     );
   }
 
-  it('orders them tools → cog → divider → alerts', async () => {
+  it('orders them archive → tools → cog → divider → alerts', async () => {
     renderShell();
     await screen.findByText('painel');
 
     const session = document.querySelector('.topbar__session') as HTMLElement;
     expect(session).not.toBeNull();
 
-    // Read the rendered order rather than trusting the source order.
+    // Read the rendered order rather than trusting the source order. Arquivo sits first, just
+    // before the tools glyph (t31), so the archive reference surface groups with the utilities.
     const order = [
       ...session.querySelectorAll('.topbar__icon, .topbar__divider, .notification-bell'),
     ].map((el) =>
@@ -402,7 +403,7 @@ describe('Layout — Ferramentas and Configurações as top-bar icons', () => {
           ? 'alerts'
           : el.getAttribute('aria-label'),
     );
-    expect(order).toEqual(['Ferramentas', 'Configurações', 'divider', 'alerts']);
+    expect(order).toEqual(['Arquivo', 'Ferramentas', 'Configurações', 'divider', 'alerts']);
   });
 
   it('gives each glyph a real accessible name, not just a tooltip', async () => {
