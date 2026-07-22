@@ -674,7 +674,7 @@ describe('Ferramentas — TSL trust catalog', () => {
     expect(screen.getByRole('group', { name: 'Pontos de serviço' })).toBeTruthy();
     expect(screen.getByText('http://tsa.cartorio.example.test/tsa/server')).toBeTruthy();
     expect(screen.getByText('TSL signature is not valid; record is advisory')).toBeTruthy();
-    expect(screen.getAllByText('Advisório').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Consultivo').length).toBeGreaterThanOrEqual(1);
   });
 
   it('searches services and opens the selected service detail', async () => {
