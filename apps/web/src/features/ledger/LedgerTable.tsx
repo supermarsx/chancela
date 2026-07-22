@@ -8,13 +8,7 @@ import { ledgerEventKindLabel } from '../../api/labels';
 import type { LedgerEventView } from '../../api/types';
 import { useT } from '../../i18n';
 import { Badge, DateTime, Digest, EmptyState, Table, TooltipText } from '../../ui';
-import { LedgerScopeCell, useLedgerScopeNames } from './LedgerScopeCell';
-
-function shortChain(chain: string): string {
-  const [kind, id] = chain.split(':', 2);
-  if (!id) return chain;
-  return `${kind}:${id.slice(0, 8)}`;
-}
+import { chainSummaryLabel, LedgerScopeCell, useLedgerScopeNames } from './LedgerScopeCell';
 
 export function LedgerTable({
   events,
@@ -83,12 +77,18 @@ export function LedgerTable({
           </td>
           {showChains ? (
             <td>
+              {/* Mirrors the Âmbito column: friendly, `·`-separated names in normal case rather
+                  than the raw `company:{uuid}` / `book:{uuid}` tokens (which, as uppercase pills,
+                  read as one unbroken blob). Each membership keeps its exact chain id one focus
+                  away in the tooltip — it is the value the `?chain=` filter and every export use. */}
               <span className="ledger-chain-list">
-                {(e.chains ?? []).map((chain) => (
-                  <Badge key={chain} tone="neutral">
-                    {/* The full chain hash exists only here — the cell shows an abbreviation. */}
-                    <TooltipText label={chain}>{shortChain(chain)}</TooltipText>
-                  </Badge>
+                {(e.chains ?? []).map((chain, index) => (
+                  <span key={chain}>
+                    {index > 0 ? <span className="muted"> · </span> : null}
+                    <TooltipText label={chain}>
+                      {chainSummaryLabel(chain, scopeNames, t)}
+                    </TooltipText>
+                  </span>
                 ))}
               </span>
             </td>

@@ -45,6 +45,7 @@ import {
   TooltipText,
 } from '../../ui';
 import { LedgerTable } from '../ledger/LedgerTable';
+import { scopeSummaryLabel, useLedgerScopeNames } from '../ledger/LedgerScopeCell';
 import { actConveningGuidanceRoute } from '../acts/anchors';
 import './DashboardPage.css';
 
@@ -166,10 +167,6 @@ export function dashboardTabFromParam(value: string | null | undefined): Dashboa
   return 'current';
 }
 
-export function shortDashboardId(value: string): string {
-  return value.slice(0, 8);
-}
-
 export function idFromScopedValue(value: string, prefix: string): string | undefined {
   const marker = `${prefix}:`;
   return value.startsWith(marker) ? value.slice(marker.length).trim() || undefined : undefined;
@@ -247,41 +244,6 @@ export function recentActivityItems(events: LedgerEventView[]): ActivityItem[] {
       items.push({ event, kind, href: routeFromDashboardActivity(event, kind) });
       return items;
     }, []);
-}
-
-export function compactDashboardScope(scope: string): string {
-  const [kind, id] = scope.split(':', 2);
-  if (!id) return scope.length > 24 ? `${scope.slice(0, 8)}...` : scope;
-  return `${kind}:${shortDashboardId(id)}`;
-}
-
-/**
- * Human names for the ids that appear in `recent_events[].scope`, harvested from the SAME
- * `/v1/dashboard` payload the activity list is rendered from. `scope` only ever carries an
- * id, so the alternative to this index is one lookup per row; the payload already names the
- * open books' entities and every reminder's entity, which covers the scopes an operator
- * actually recognises. Anything unnamed keeps the compact id.
- */
-export function dashboardScopeNames(data: Dashboard): Map<string, string> {
-  const names = new Map<string, string>();
-
-  for (const book of data.current_work.open_books) {
-    const name = book.entity_name?.trim();
-    if (name) names.set(book.book_id.trim(), name);
-  }
-  for (const reminder of data.reminders) {
-    const name = reminder.entity_name.trim();
-    const id = reminder.entity_id.trim();
-    if (name && id) names.set(id, name);
-  }
-
-  return names;
-}
-
-/** The scope's human name when the payload knows it, else the compact `kind:id` form. */
-export function dashboardScopeLabel(scope: string, names: Map<string, string>): string {
-  const [, id] = scope.split(':', 2);
-  return names.get((id ?? scope).trim()) ?? compactDashboardScope(scope);
 }
 
 export function dashboardReminderTone(reminder: DashboardReminder): 'neutral' | 'accent' | 'warn' {
@@ -863,7 +825,11 @@ function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
 function RecentActivity({ data }: { data: Dashboard }) {
   const t = useT();
   const items = recentActivityItems(data.recent_events);
-  const scopeNames = dashboardScopeNames(data);
+  // The same permission-filtered entity/book name resolution the Arquivo's `Âmbito` column uses,
+  // so a scope reads as `Entidade — Encosto Estratégico Lda` instead of a raw `entity:0a20de34`.
+  // Shared react-query keys dedupe with any list already fetched this session; anything the viewer
+  // cannot read (or a deleted record) falls back to a translated type label plus the abbreviated id.
+  const scopeNames = useLedgerScopeNames();
 
   return (
     <Card title={t('dashboard.activity.title')}>
@@ -906,7 +872,7 @@ function RecentActivity({ data }: { data: Dashboard }) {
                       which is exactly the unnamed-scope case. */}
                   <TooltipText label={event.scope}>
                     {t('dashboard.activity.scope', {
-                      scope: dashboardScopeLabel(event.scope, scopeNames),
+                      scope: scopeSummaryLabel(event.scope, scopeNames, t),
                     })}
                   </TooltipText>
                   <TooltipText label={t('dashboard.activity.sequence.title')}>

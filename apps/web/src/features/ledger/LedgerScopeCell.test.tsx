@@ -37,7 +37,7 @@ const book = {
   required_signatories_encerramento: null,
 };
 
-function event(scope: string): LedgerEventView {
+function event(scope: string, chains: string[] = ['global']): LedgerEventView {
   return {
     id: `event-${scope}`,
     seq: 1,
@@ -49,7 +49,7 @@ function event(scope: string): LedgerEventView {
     payload_digest: 'aa'.repeat(32),
     prev_hash: '00'.repeat(32),
     hash: '11'.repeat(32),
-    chains: ['global'],
+    chains,
     attestation: null,
   };
 }
@@ -85,9 +85,7 @@ describe('the Arquivo scope column', () => {
 
     // The Arquivo is evidentiary: the value the `?scope=` filter and every export use must
     // still be obtainable, and through a focusable tooltip rather than hover alone.
-    await waitFor(() =>
-      expect(getByRevealedText(`entity:${ENTITY}/book:${BOOK}`)).toBeTruthy(),
-    );
+    await waitFor(() => expect(getByRevealedText(`entity:${ENTITY}/book:${BOOK}`)).toBeTruthy());
   });
 
   it('falls back to a labelled id rather than blanking an unresolvable scope', async () => {
@@ -143,5 +141,47 @@ describe('the Arquivo scope column', () => {
 
     await waitFor(() => expect(screen.getByText('E-mail')).toBeTruthy());
     expect(screen.getByText('Recuperação da cadeia')).toBeTruthy();
+  });
+});
+
+describe('the Arquivo chains column', () => {
+  it('names each chain membership by its resolved entity/book instead of a raw id', async () => {
+    stubLists();
+    // The chains vocabulary says `company:` where a scope says `entity:` — it must still resolve
+    // to the entity's name, and the book to its (kind) name, both `·`-separated like Âmbito.
+    renderWithProviders(
+      <LedgerTable
+        events={[event('act:1', ['global', `company:${ENTITY}`, `book:${BOOK}`])]}
+        showChains
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('Entidade Encosto Estratégico Lda')).toBeTruthy());
+    expect(screen.getByText('Livro Assembleia Geral')).toBeTruthy();
+    // `global` is the primary spine, distinct from the `application` audit chain — both are named.
+    expect(screen.getByText('Registo global')).toBeTruthy();
+  });
+
+  it('names the application-audit chain distinctly from the global spine', async () => {
+    stubLists();
+    renderWithProviders(
+      <LedgerTable events={[event('settings', ['application', 'global'])]} showChains />,
+    );
+
+    await waitFor(() => expect(screen.getByText('Aplicação')).toBeTruthy());
+    expect(screen.getByText('Registo global')).toBeTruthy();
+  });
+
+  it('keeps the exact chain id reachable and labels an unresolvable membership rather than blanking', async () => {
+    stubLists();
+    const missing = 'deadbeef-0000-4000-8000-000000000000';
+    renderWithProviders(
+      <LedgerTable events={[event('act:1', [`company:${missing}`])]} showChains />,
+    );
+
+    // Deleted, or outside this viewer's authority: an abbreviated id under the type, never blank,
+    // never a bare `company:{uuid}` — and the exact chain id stays one focus away for an auditor.
+    await waitFor(() => expect(screen.getByText('Entidade deadbeef…')).toBeTruthy());
+    expect(getByRevealedText(`company:${missing}`)).toBeTruthy();
   });
 });

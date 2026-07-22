@@ -123,6 +123,52 @@ function segmentLabel(segment: ScopeSegment, t: TFunction): string {
 }
 
 /**
+ * The most specific segment of a scope as a **plain string** — `Tipo — Nome`, or a bare type
+ * label for a keyword scope. For compact one-line surfaces (the dashboard's `Atividade recente`
+ * feed) that fold the scope into a sentence via i18n interpolation rather than rendering the full
+ * {@link LedgerScopeCell} with its tooltip and muted parent context. Same resolution, translated
+ * type labels, and honest fallback (an unresolved id becomes `Tipo — 0a20de34…`, never a bare
+ * UUID and never blank) as the cell.
+ */
+export function scopeSummaryLabel(scope: string, names: ScopeNameLookup, t: TFunction): string {
+  const segments = parseScope(scope, names);
+  return segmentLabel(segments[segments.length - 1], t);
+}
+
+/**
+ * One chain membership (the `Cadeias` column) rendered as a friendly label, resolving `company:`
+ * and `book:` ids to the names the viewer may already read and falling back to an abbreviated id —
+ * never a bare `company:{uuid}`.
+ *
+ * The **chains vocabulary is not the scope vocabulary**, so this cannot go through {@link parseScope}:
+ * a per-entity book-action chain is `company:{id}` where a scope would say `entity:{id}`
+ * (`chancela-ledger/src/lib.rs`, `ChainId::Company`), and the two id-less keyword chains are
+ * `global` (the primary spine every event shares) and `application` (the application-audit chain) —
+ * neither of which any scope emits. Everything else (`book:{id}`, `tenant:{id}`) shares the token.
+ *
+ * No new i18n: the id-less labels and the `Entidade {id}` / `Livro {id}` frames already exist in
+ * every locale under `ledger.chain.*` (they name the chain FILTER on the Arquivo page), so the same
+ * strings name the chain here — the only change is passing a resolved name where the filter passes a
+ * short id. An unmapped chain kind (`tenant:`, or anything the API adds next) keeps its raw token
+ * with an abbreviated id rather than being mislabelled; the exact chain id is in the tooltip either
+ * way, since it is the value the `?chain=` filter and every export use.
+ */
+export function chainSummaryLabel(chain: string, names: ScopeNameLookup, t: TFunction): string {
+  if (chain === 'global') return t('ledger.chain.global');
+  if (chain === 'application') return t('ledger.chain.application');
+  const colon = chain.indexOf(':');
+  if (colon > 0) {
+    const kind = chain.slice(0, colon);
+    const id = chain.slice(colon + 1);
+    if (kind === 'company')
+      return t('ledger.chain.company', { id: names.entity(id) ?? abbreviateId(id) });
+    if (kind === 'book') return t('ledger.chain.book', { id: names.book(id) ?? abbreviateId(id) });
+    return `${kind}:${abbreviateId(id)}`;
+  }
+  return chain;
+}
+
+/**
  * One scope, rendered as the most specific segment (`Tipo — Nome`) followed by whatever parent
  * segments actually resolved to a name, muted.
  *
