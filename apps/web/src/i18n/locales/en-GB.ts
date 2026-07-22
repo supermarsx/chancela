@@ -2355,6 +2355,7 @@ export const enGB: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Management / Administration',
   'enum.bookKind.ConselhoFiscal': 'Audit Board',
   'enum.bookKind.Condominio': 'Condominium',
+  'enum.bookKind.Other': 'Other',
   'enum.bookState.Created': 'Created',
   'enum.bookState.Open': 'Open',
   'enum.bookState.Closed': 'Closed',

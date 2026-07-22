@@ -2388,6 +2388,7 @@ export const frFR: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Gérance / Administration',
   'enum.bookKind.ConselhoFiscal': 'Conseil fiscal',
   'enum.bookKind.Condominio': 'Copropriété',
+  'enum.bookKind.Other': 'Autre',
   // Book states
   'enum.bookState.Created': 'Créé',
   'enum.bookState.Open': 'Ouvert',

@@ -2362,6 +2362,7 @@ export const daDK: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Ledelse / Direktion',
   'enum.bookKind.ConselhoFiscal': 'Tilsynsråd',
   'enum.bookKind.Condominio': 'Ejerforening',
+  'enum.bookKind.Other': 'Andet',
   // Book states
   'enum.bookState.Created': 'Oprettet',
   'enum.bookState.Open': 'Åben',

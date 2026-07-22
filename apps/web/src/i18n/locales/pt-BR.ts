@@ -2370,6 +2370,7 @@ export const ptBR: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Gestão / Administração',
   'enum.bookKind.ConselhoFiscal': 'Conselho Fiscal',
   'enum.bookKind.Condominio': 'Condomínio',
+  'enum.bookKind.Other': 'Outro',
   // Book states
   'enum.bookState.Created': 'Criado',
   'enum.bookState.Open': 'Abrir',

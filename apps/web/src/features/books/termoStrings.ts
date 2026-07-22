@@ -132,6 +132,53 @@ export const termoPtPT = {
     'Indique a qualidade quando não consta da lista. É uma indicação sua: não conta como a qualidade legalmente admitida, nem para o mínimo de gerência ou administração.',
   'books.termo.signatory.signed': 'Assinado',
   'books.termo.signatory.unsigned': 'Por assinar',
+
+  // — Como abrir o livro (um passo vs. termo assinável) ——————————————————————
+  'books.termo.mode.legend': 'Como abrir o livro',
+  'books.termo.mode.oneShot': 'Abrir já, num único passo',
+  'books.termo.mode.oneShotHelp':
+    'Cria e abre o livro de imediato, com um termo de abertura gerado a partir do que preencheu aqui. É o comportamento clássico.',
+  'books.termo.mode.twoPhase': 'Redigir um termo de abertura assinável',
+  'books.termo.mode.twoPhaseHelp':
+    'Cria o livro por abrir e um termo de abertura em rascunho. Redige e assina o termo como uma ata própria e só depois abre o livro. O livro não entra na cadeia enquanto o termo não estiver assinado.',
+
+  // — Sugestões de finalidade (D4) ——————————————————————————————————————————
+  'books.termo.field.purposeListHint': 'Escolha uma sugestão ou escreva a sua.',
+  'books.termo.purposePreset.agSocios': 'Atas das assembleias gerais de sócios',
+  'books.termo.purposePreset.agAcionistas': 'Atas das assembleias gerais de acionistas',
+  'books.termo.purposePreset.gerencia': 'Atas das reuniões da gerência',
+  'books.termo.purposePreset.administracao': 'Atas das reuniões do conselho de administração',
+  'books.termo.purposePreset.fiscal': 'Atas do conselho fiscal',
+  'books.termo.purposePreset.condominio': 'Atas das assembleias de condóminos',
+
+  // — Editor do termo (rascunho) —————————————————————————————————————————————
+  'books.termo.editor.titleLabel': 'Título do termo',
+  'books.termo.editor.titleHelp': 'O título do documento. Um valor por omissão é sugerido.',
+  'books.termo.editor.bodyLegend': 'Corpo do termo',
+  'books.termo.editor.bodyHelp':
+    'As cláusulas do termo. Partem do modelo e são livremente editáveis enquanto o termo estiver em rascunho.',
+  'books.termo.editor.clauseHeading': 'Título da cláusula (opcional)',
+  'books.termo.editor.clauseText': 'Texto',
+  'books.termo.editor.addClause': 'Adicionar cláusula',
+  'books.termo.editor.removeClause': 'Remover cláusula',
+  'books.termo.editor.noClauses': 'Sem cláusulas. Adicione a primeira.',
+  'books.termo.editor.fieldsLegend': 'Campos',
+  'books.termo.editor.signatoriesLegend': 'Signatários',
+  'books.termo.editor.addSignatory': 'Adicionar signatário',
+  'books.termo.editor.removeSignatory': 'Remover signatário',
+  'books.termo.editor.save': 'Guardar rascunho',
+  'books.termo.editor.saving': 'A guardar…',
+  'books.termo.editor.saved': 'Rascunho guardado.',
+  'books.termo.editor.policyLabel': 'Política de conclusão',
+
+  // — Recolha de assinaturas (Signing) ——————————————————————————————————————
+  'books.termo.signing.legend': 'Recolha de assinaturas',
+  'books.termo.signing.intro':
+    'O conteúdo está congelado. Cada signatário exigido assina pela ordem indicada; depois o livro pode ser aberto.',
+  'books.termo.signing.slotDone': 'Assinado',
+  'books.termo.signing.slotWaiting': 'Aguarda a assinatura anterior',
+  'books.termo.signing.signed': 'Assinatura registada.',
+  'books.termo.createdToast': 'Livro criado. Redija e assine o termo de abertura.',
 } as const;
 
 /** The key set the termo/opening copy resolves. */
@@ -234,6 +281,49 @@ export const termoEnglish = {
     'State the capacity when it is not in the list. This is your own label: it does not count as a legally admitted capacity, nor toward the management/administration minimum.',
   'books.termo.signatory.signed': 'Signed',
   'books.termo.signatory.unsigned': 'Unsigned',
+
+  'books.termo.mode.legend': 'How to open the book',
+  'books.termo.mode.oneShot': 'Open now, in a single step',
+  'books.termo.mode.oneShotHelp':
+    'Creates and opens the book straight away, with an opening term generated from what you fill in here. This is the classic behaviour.',
+  'books.termo.mode.twoPhase': 'Draft a signable opening term',
+  'books.termo.mode.twoPhaseHelp':
+    'Creates the book unopened and a draft opening term. You draft and sign the term as a document in its own right, and only then open the book. The book does not enter the chain until the term is signed.',
+
+  'books.termo.field.purposeListHint': 'Pick a suggestion or write your own.',
+  'books.termo.purposePreset.agSocios': 'Minutes of the general meetings of members',
+  'books.termo.purposePreset.agAcionistas': 'Minutes of the general meetings of shareholders',
+  'books.termo.purposePreset.gerencia': 'Minutes of the management meetings',
+  'books.termo.purposePreset.administracao': 'Minutes of the board of directors meetings',
+  'books.termo.purposePreset.fiscal': 'Minutes of the audit board',
+  'books.termo.purposePreset.condominio': 'Minutes of the condominium meetings',
+
+  'books.termo.editor.titleLabel': 'Term title',
+  'books.termo.editor.titleHelp': 'The document title. A default is suggested.',
+  'books.termo.editor.bodyLegend': 'Term body',
+  'books.termo.editor.bodyHelp':
+    'The clauses of the term. They start from the template and are freely editable while the term is a draft.',
+  'books.termo.editor.clauseHeading': 'Clause heading (optional)',
+  'books.termo.editor.clauseText': 'Text',
+  'books.termo.editor.addClause': 'Add clause',
+  'books.termo.editor.removeClause': 'Remove clause',
+  'books.termo.editor.noClauses': 'No clauses. Add the first.',
+  'books.termo.editor.fieldsLegend': 'Fields',
+  'books.termo.editor.signatoriesLegend': 'Signatories',
+  'books.termo.editor.addSignatory': 'Add signatory',
+  'books.termo.editor.removeSignatory': 'Remove signatory',
+  'books.termo.editor.save': 'Save draft',
+  'books.termo.editor.saving': 'Saving…',
+  'books.termo.editor.saved': 'Draft saved.',
+  'books.termo.editor.policyLabel': 'Completion policy',
+
+  'books.termo.signing.legend': 'Signature collection',
+  'books.termo.signing.intro':
+    'The content is frozen. Each required signatory signs in the order shown; the book can then be opened.',
+  'books.termo.signing.slotDone': 'Signed',
+  'books.termo.signing.slotWaiting': 'Waiting for the previous signature',
+  'books.termo.signing.signed': 'Signature recorded.',
+  'books.termo.createdToast': 'Book created. Draft and sign the opening term.',
 } as const satisfies Record<TermoCopyKey, string>;
 
 /**

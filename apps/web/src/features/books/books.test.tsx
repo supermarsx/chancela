@@ -292,6 +292,11 @@ function bookDetailFetch(
     if (custom) return Promise.resolve(custom);
     if (url === '/v1/books/book-1') return Promise.resolve(jsonResponse(BOOK));
     if (url === '/v1/books/book-1/acts') return Promise.resolve(jsonResponse([]));
+    // A legacy/one-shot book has no separately editable termo de abertura: the endpoint 404s and
+    // the termo editor renders the honest "no separately editable termo" note (t23).
+    if (url === '/v1/books/book-1/termo/abertura') {
+      return Promise.resolve(jsonResponse({ error: 'no draft termo' }, 404));
+    }
     if (url === '/v1/entities/ent-1') return Promise.resolve(jsonResponse(ENTITY));
     if (url === '/v1/books/paper-import?book_ref=book-1') return Promise.resolve(jsonResponse([]));
     if (method === 'GET' && /^\/v1\/books\/paper-import\/[^/]+\/conversion-dossiers$/.test(url)) {
@@ -340,10 +345,7 @@ describe('BooksPage', () => {
   it('announces the loading books list through a busy region instead of loading silently', async () => {
     // Same contract as the Arquivo skeleton: the shimmer bars are aria-hidden, so the
     // region is the only thing a screen reader can hear while the first paint waits.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch,
-    );
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch);
     renderWithProviders(<BooksPage />, ['/books']);
 
     const region = await screen.findByRole('status');
@@ -1108,8 +1110,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(await screen.findByText('ag-1968-1971.pdf')).toBeTruthy();
     expect(
       screen.getByText(
-        (_, el) =>
-          el?.textContent === `${formatDate('1968-01-01')} a ${formatDate('1971-12-31')}`,
+        (_, el) => el?.textContent === `${formatDate('1968-01-01')} a ${formatDate('1971-12-31')}`,
       ),
     ).toBeTruthy();
     expect(screen.getByText('Intervalo: 12 a 251')).toBeTruthy();
@@ -2391,6 +2392,71 @@ describe('OpenBookForm — structured termo signatories', () => {
   });
 });
 
+describe('OpenBookForm — Cluster A field UX (t23)', () => {
+  it('reveals the custom book-type label and the "Outra" qualidade note, and offers finalidade presets', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/settings', body: DEFAULT_SETTINGS }]));
+    renderWithProviders(<OpenBookForm entityId="ent-1" />);
+
+    // Finalidade offers a preset dropdown (a datalist) the operator can pick from OR type past.
+    const finalidade = (await screen.findByLabelText('Finalidade')) as HTMLInputElement;
+    const listId = finalidade.getAttribute('list');
+    expect(listId).toBeTruthy();
+    expect(
+      document.getElementById(listId as string)?.querySelectorAll('option').length,
+    ).toBeGreaterThan(0);
+
+    // A predecessor is picked from a dropdown of the entity's books, not typed as a raw UUID.
+    expect((screen.getByLabelText('Livro anterior') as HTMLElement).tagName).toBe('SELECT');
+
+    // Book type "Outro" reveals a required custom-label input (D3).
+    expect(screen.queryByLabelText('Tipo personalizado')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Tipo de livro'), { target: { value: 'Other' } });
+    expect(screen.getByLabelText('Tipo personalizado')).toBeTruthy();
+
+    // Qualidade "Outra qualidade" reveals a required note input (D1).
+    expect(screen.queryByLabelText('Outra qualidade')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Qualidade'), { target: { value: 'Other' } });
+    expect(screen.getByLabelText('Outra qualidade')).toBeTruthy();
+  });
+
+  it('opens two-phase: submits one_shot:false and lands on the termo editor', async () => {
+    const calls: RecordedCall[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null;
+      calls.push({ url, method, body });
+      if (url === '/v1/settings') return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      if (url.startsWith('/v1/books') && method === 'GET') return Promise.resolve(jsonResponse([]));
+      if (url === '/v1/books' && method === 'POST') {
+        return Promise.resolve(jsonResponse({ ...BOOK, id: 'book-2', state: 'Created' }, 201));
+      }
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/entities/ent-1" element={<OpenBookForm entityId="ent-1" />} />
+        <Route path="/books/:id/opening" element={<div>EDITOR DO TERMO</div>} />
+      </Routes>,
+      ['/entities/ent-1'],
+    );
+
+    fireEvent.change(await screen.findByLabelText('Finalidade'), { target: { value: 'Atas AG' } });
+    fireEvent.change(screen.getByLabelText('Data de abertura'), {
+      target: { value: '2026-01-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Como abrir o livro'), {
+      target: { value: 'twoPhase' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Redigir um termo de abertura assinável' }));
+
+    expect(await screen.findByText('EDITOR DO TERMO')).toBeTruthy();
+    const post = calls.find((call) => call.url === '/v1/books' && call.method === 'POST');
+    expect(post?.body?.one_shot).toBe(false);
+  });
+});
+
 describe('CloseBookForm — structured termo signatories', () => {
   it('submits structured closing signatories', async () => {
     const calls: RecordedCall[] = [];
@@ -2452,12 +2518,11 @@ describe('BookDetailPage — sub-tabs', () => {
     renderAtBook();
 
     const subnav = await screen.findByRole('group', { name: 'Secções do livro' });
-    expect(within(subnav).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'Atas',
-      'Termo de abertura',
-      'Retenção legal',
-      'Importações',
-    ]);
+    expect(
+      within(subnav)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Atas', 'Termo de abertura', 'Retenção legal', 'Importações']);
   });
 
   it('lands on Atas with no section segment, and marks only that tab pressed', async () => {
@@ -2470,7 +2535,9 @@ describe('BookDetailPage — sub-tabs', () => {
       'true',
     );
     expect(
-      within(subnav).getByRole('button', { name: 'Termo de abertura' }).getAttribute('aria-pressed'),
+      within(subnav)
+        .getByRole('button', { name: 'Termo de abertura' })
+        .getAttribute('aria-pressed'),
     ).toBe('false');
   });
 
@@ -2512,9 +2579,17 @@ describe('BookDetailPage — sub-tabs', () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
     renderAtBook('/books/book-1/opening');
 
-    expect(await screen.findByText('Termo de abertura em registo')).toBeTruthy();
-    // The termo editor is deliberately absent: the instrument and its API are not built yet.
-    expect(screen.queryByRole('button', { name: /editar termo/i })).toBeNull();
+    // The opening record still shows the book facts…
+    expect(await screen.findByText('Finalidade')).toBeTruthy();
+    // …and the termo is now a signable ata in its own right (t23): a legacy/one-shot book carries
+    // no separately editable termo, so the editor renders that honest note rather than a stale
+    // "in registration" placeholder or the acts panel.
+    expect(
+      await screen.findByText(
+        'Este livro foi aberto num único passo e não tem um termo de abertura editável em separado.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Termo de abertura em registo')).toBeNull();
     expect(screen.queryByText('Sem atas neste livro')).toBeNull();
   });
 

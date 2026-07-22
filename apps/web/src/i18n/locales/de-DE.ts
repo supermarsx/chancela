@@ -2393,6 +2393,7 @@ export const deDE: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Geschäftsführung / Verwaltung',
   'enum.bookKind.ConselhoFiscal': 'Aufsichtsrat',
   'enum.bookKind.Condominio': 'Eigentümergemeinschaft',
+  'enum.bookKind.Other': 'Sonstiges',
   // Book states
   'enum.bookState.Created': 'Erstellt',
   'enum.bookState.Open': 'Offen',

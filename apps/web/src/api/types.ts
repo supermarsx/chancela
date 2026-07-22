@@ -32,6 +32,11 @@ export const BOOK_KINDS = [
   'GerenciaAdministracao',
   'ConselhoFiscal',
   'Condominio',
+  // D3 (t23): an operator-described book type. Additive to the server's `BookKind` enum; a book
+  // opened as `Other` carries a required `kind_label` (see {@link OpenBookBody.kind_label}) and is
+  // exempt from the one-book-per-organ uniqueness rule. ASSURANCE only — never a legally recognised
+  // book class. `enum.bookKind.Other` labels it in every locale catalog.
+  'Other',
 ] as const;
 export type BookKind = (typeof BOOK_KINDS)[number];
 

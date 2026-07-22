@@ -2376,6 +2376,7 @@ export const itIT: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Gestione / Amministrazione',
   'enum.bookKind.ConselhoFiscal': 'Collegio Sindacale',
   'enum.bookKind.Condominio': 'Condominio',
+  'enum.bookKind.Other': 'Altro',
   // Book states
   'enum.bookState.Created': 'Creato',
   'enum.bookState.Open': 'Aperto',

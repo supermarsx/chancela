@@ -102,6 +102,7 @@ import {
   scopeBook,
   useCan,
 } from '../session/permissions';
+import { TermoAberturaEditor } from './TermoAberturaEditor';
 
 /**
  * The book sub-tabs, in the order the operator asked for. Labels reuse the section titles
@@ -2294,14 +2295,11 @@ export function BookDetailPage() {
                 ) : null}
               </dl>
             </Card>
-            {/* Honest scope note: the termo is a sealed record whose fields are shown above.
-                `TermoInstrument` (chancela-core, t8) will make it a fillable/signable
-                instrument, but neither the API nor an editor exists yet, and the generated
-                termo PDF/A has no per-book retrieval endpoint — it travels inside the
-                preservation ZIP offered in the page header. Nothing is invented here. */}
-            <InlineWarning tone="info" title={t('books.detail.termo.pending.title')}>
-              {t('books.detail.termo.pending.body')}
-            </InlineWarning>
+            {/* The termo de abertura is now a signable ata in its own right (t23): a book opened
+                two-phase carries a Draft termo that is drafted, signed and only then sealed to open
+                the book. The editor renders the right phase (Draft/Signing/Sealed), or an honest
+                "no separately editable termo" note for a one-shot/legacy book. */}
+            <TermoAberturaEditor bookId={b.id} />
           </>
         ) : null}
 

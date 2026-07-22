@@ -2370,6 +2370,7 @@ export const plPL: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Zarząd / Administracja',
   'enum.bookKind.ConselhoFiscal': 'Komisja rewizyjna',
   'enum.bookKind.Condominio': 'Wspólnota mieszkaniowa',
+  'enum.bookKind.Other': 'Inne',
   // Book states
   'enum.bookState.Created': 'Utworzona',
   'enum.bookState.Open': 'Otwarta',

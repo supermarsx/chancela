@@ -2377,6 +2377,7 @@ export const nlNL: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Directie / Bestuur',
   'enum.bookKind.ConselhoFiscal': 'Raad van Commissarissen',
   'enum.bookKind.Condominio': 'Vereniging van eigenaren',
+  'enum.bookKind.Other': 'Overig',
   // Book states
   'enum.bookState.Created': 'Aangemaakt',
   'enum.bookState.Open': 'Open',

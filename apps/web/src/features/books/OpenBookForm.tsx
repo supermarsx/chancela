@@ -5,14 +5,19 @@
  * field. The opening date is an ISO `YYYY-MM-DD` string straight from `<input
  * type="date">`, matching §2.1.
  *
+ * Two ways to open (t23): the classic **one-shot** (default) creates and opens the book in a
+ * single step with a generated termo de abertura; the **two-phase** path mints a `Created` book
+ * plus a `Draft` termo de abertura and routes to the termo editor, where the termo is drafted,
+ * signed and only then sealed to open the book — the termo treated as an ata in its own right.
+ *
  * The audit actor is NOT entered here: the current user (the topbar picker) is the
  * identity surface, so the server attributes the ledger actor from the
  * `X-Chancela-Session` header (falling back to "api" when signed out). The UI sends no
  * body `actor`.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useOpenBook, useSettings } from '../../api/hooks';
+import { useBooks, useOpenBook, useSettings } from '../../api/hooks';
 import {
   bookKindLabels,
   numberingSchemeLabels,
@@ -25,6 +30,7 @@ import {
   BOOK_KINDS,
   NUMBERING_SCHEMES,
   SIGNATORY_CAPACITIES,
+  type BookTermoSignatory,
   type BookTermoSignatoryInput,
   type BookKind,
   type Entity,
@@ -42,6 +48,7 @@ import {
   Select,
   useToast,
 } from '../../ui';
+import { useTermoT, type TermoCopyKey } from './termoStrings';
 
 export function parseLines(text: string): string[] {
   return text
@@ -50,21 +57,47 @@ export function parseLines(text: string): string[] {
     .filter((l) => l.length > 0);
 }
 
+/**
+ * A finalidade preset per book kind (D4). UI convenience only: the chosen value goes on the wire as
+ * the free-text `purpose`. `Other` books have no preset (the operator describes the book themselves).
+ */
+const FINALIDADE_PRESET_KEYS: Record<BookKind, TermoCopyKey[]> = {
+  AssembleiaGeral: ['books.termo.purposePreset.agSocios', 'books.termo.purposePreset.agAcionistas'],
+  GerenciaAdministracao: [
+    'books.termo.purposePreset.gerencia',
+    'books.termo.purposePreset.administracao',
+  ],
+  ConselhoFiscal: ['books.termo.purposePreset.fiscal'],
+  Condominio: ['books.termo.purposePreset.condominio'],
+  Other: [],
+};
+
 export interface TermoSignatoryDraft {
   name: string;
   capacity: SignatoryCapacity | '';
   email: string;
+  /** Free-text qualidade for the `Other` capacity (D1). ASSURANCE only; never a legal capacity. */
+  capacityNote?: string;
 }
 
-const emptySignatory = (): TermoSignatoryDraft => ({ name: '', capacity: '', email: '' });
+const emptySignatory = (): TermoSignatoryDraft => ({
+  name: '',
+  capacity: '',
+  email: '',
+  capacityNote: '',
+});
 
 export function parseTermoSignatories(rows: TermoSignatoryDraft[]): BookTermoSignatoryInput[] {
   return rows
-    .map((row) => ({
-      name: row.name.trim(),
-      capacity: row.capacity || null,
-      email: row.email.trim() || null,
-    }))
+    .map((row): BookTermoSignatory => {
+      const note = row.capacity === 'Other' ? row.capacityNote?.trim() : undefined;
+      return {
+        name: row.name.trim(),
+        capacity: row.capacity || null,
+        email: row.email.trim() || null,
+        ...(note ? { capacity_note: note } : {}),
+      };
+    })
     .filter((row) => row.name.length > 0 || row.capacity || row.email);
 }
 
@@ -78,20 +111,29 @@ export function TermoSignatoryFields({
   onChange: (rows: TermoSignatoryDraft[]) => void;
 }) {
   const t = useT();
+  const tt = useTermoT();
   const update = (index: number, patch: Partial<TermoSignatoryDraft>) =>
     onChange(rows.map((row, idx) => (idx === index ? { ...row, ...patch } : row)));
   const capacityOptions = [
     { value: '', label: '—' },
     ...optionsFrom(SIGNATORY_CAPACITIES, signatoryCapacityLabels),
+    // D1: an out-of-list qualidade with a required note. It never satisfies the legal allow-list
+    // or the management floor — the server enforces that; the copy states it plainly.
+    { value: 'Other', label: tt('books.termo.signatory.other') },
   ];
 
   return (
     <div className="stack--tight">
       {rows.map((row, index) => {
         const rowHasDetails = row.capacity !== '' || row.email.trim().length > 0;
+        const isOther = row.capacity === 'Other';
         return (
           <div className="rowline" key={index}>
-            <Field label={t('acts.signatoryNameAria')} htmlFor={`${idPrefix}-name-${index}`}>
+            <Field
+              label={t('acts.signatoryNameAria')}
+              htmlFor={`${idPrefix}-name-${index}`}
+              help={tt('books.termo.signatory.nameHelp')}
+            >
               <Input
                 id={`${idPrefix}-name-${index}`}
                 value={row.name}
@@ -100,7 +142,11 @@ export function TermoSignatoryFields({
                 placeholder={t('acts.namePlaceholder')}
               />
             </Field>
-            <Field label={t('acts.capacityAria')} htmlFor={`${idPrefix}-capacity-${index}`}>
+            <Field
+              label={t('acts.capacityAria')}
+              htmlFor={`${idPrefix}-capacity-${index}`}
+              help={tt('books.termo.signatory.capacityHelp')}
+            >
               <Select
                 id={`${idPrefix}-capacity-${index}`}
                 value={row.capacity}
@@ -110,7 +156,26 @@ export function TermoSignatoryFields({
                 options={capacityOptions}
               />
             </Field>
-            <Field label={t('registry.email.label')} htmlFor={`${idPrefix}-email-${index}`}>
+            {isOther ? (
+              <Field
+                label={tt('books.termo.signatory.other')}
+                htmlFor={`${idPrefix}-capacity-note-${index}`}
+                help={tt('books.termo.signatory.otherHelp')}
+              >
+                <Input
+                  id={`${idPrefix}-capacity-note-${index}`}
+                  value={row.capacityNote ?? ''}
+                  required
+                  onChange={(e) => update(index, { capacityNote: e.target.value })}
+                  placeholder={tt('books.termo.signatory.otherPlaceholder')}
+                />
+              </Field>
+            ) : null}
+            <Field
+              label={t('registry.email.label')}
+              htmlFor={`${idPrefix}-email-${index}`}
+              help={tt('books.termo.signatory.emailHelp')}
+            >
               <Input
                 id={`${idPrefix}-email-${index}`}
                 type="email"
@@ -143,6 +208,9 @@ export function TermoSignatoryFields({
   );
 }
 
+/** How the operator opens the book: classic one-step, or the drafted-then-signed termo path. */
+type OpenMode = 'oneShot' | 'twoPhase';
+
 interface Props {
   /** When set, the book is fixed to this entity (no picker shown). */
   entityId?: string;
@@ -152,6 +220,7 @@ interface Props {
 
 export function OpenBookForm({ entityId, entities }: Props) {
   const t = useT();
+  const tt = useTermoT();
   const toast = useToast();
   const navigate = useNavigate();
   const open = useOpenBook();
@@ -159,11 +228,14 @@ export function OpenBookForm({ entityId, entities }: Props) {
 
   const [selectedEntity, setSelectedEntity] = useState(entityId ?? entities?.[0]?.id ?? '');
   const [kind, setKind] = useState<BookKind>('AssembleiaGeral');
+  const [kindLabel, setKindLabel] = useState('');
   const [purpose, setPurpose] = useState('');
   const [scheme, setScheme] = useState<NumberingScheme>('Sequential');
   const [openingDate, setOpeningDate] = useState('');
   const [signatories, setSignatories] = useState<TermoSignatoryDraft[]>([emptySignatory()]);
   const [predecessor, setPredecessor] = useState('');
+  const [predecessorNote, setPredecessorNote] = useState('');
+  const [mode, setMode] = useState<OpenMode>('oneShot');
 
   // Seed the numbering scheme from the configured default once the settings document
   // loads (documents.numbering_scheme_default). Only applied once, so a later edit by
@@ -177,6 +249,24 @@ export function OpenBookForm({ entityId, entities }: Props) {
   }, [settings.data]);
 
   const chosen = entityId ?? selectedEntity;
+  const isOther = kind === 'Other';
+
+  // The entity's existing books back the predecessor dropdown (D5): the real successor link is a
+  // BookId, so the primary control picks one; the paper/legacy reference is a separate note.
+  const books = useBooks(chosen || undefined, !!chosen);
+  const predecessorOptions = useMemo(() => {
+    const list = (Array.isArray(books.data) ? books.data : []).filter((book) => book.id !== '');
+    return [
+      { value: '', label: tt('books.termo.field.predecessorNone') },
+      ...list.map((book) => ({
+        value: book.id,
+        label: `${bookKindLabels[book.kind]} — ${book.purpose ?? book.id.slice(0, 8)}`,
+      })),
+    ];
+  }, [books.data, tt]);
+
+  const finalidadeListId = `${entityId ?? 'book'}-finalidade-presets`;
+  const finalidadePresets = FINALIDADE_PRESET_KEYS[kind].map((key) => tt(key));
 
   // Unsaved-work guard (t52). The termo de abertura is typed once and kept nowhere until
   // the POST succeeds, and the signatory rows are the expensive part. The pickers
@@ -186,11 +276,14 @@ export function OpenBookForm({ entityId, entities }: Props) {
     purpose.trim() !== '' ||
       openingDate !== '' ||
       predecessor.trim() !== '' ||
+      predecessorNote.trim() !== '' ||
+      kindLabel.trim() !== '' ||
       parseTermoSignatories(signatories).length > 0,
   );
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const twoPhase = mode === 'twoPhase';
     open.mutate(
       {
         entity_id: chosen,
@@ -200,16 +293,21 @@ export function OpenBookForm({ entityId, entities }: Props) {
         opening_date: openingDate,
         required_signatories: parseTermoSignatories(signatories),
         predecessor: predecessor.trim() || undefined,
+        predecessor_note: predecessorNote.trim() || undefined,
+        kind_label: isOther ? kindLabel.trim() || undefined : undefined,
+        // Omit for the one-shot default so today's request is byte-for-byte unchanged.
+        ...(twoPhase ? { one_shot: false } : {}),
       },
       {
         // R6: success toast survives the navigate-away; R7: inline ErrorNote stays.
         onSuccess: (book) => {
-          toast.success(t('toast.book.opened'));
+          toast.success(twoPhase ? tt('books.termo.createdToast') : t('toast.book.opened'));
           // The form state is still populated at this point, so the guard would see a
           // dirty surface and prompt on the app's OWN post-save navigation. The work is
           // saved; exempt exactly this navigation.
           allowNextNavigation();
-          navigate(`/books/${book.id}`);
+          // Two-phase lands on the termo editor (the opening section); one-shot on the book.
+          navigate(twoPhase ? `/books/${book.id}/opening` : `/books/${book.id}`);
         },
         onError: (e) => toast.error(e),
       },
@@ -225,7 +323,11 @@ export function OpenBookForm({ entityId, entities }: Props) {
           <p>{t('books.open.guidanceBody')}</p>
         </InlineWarning>
         {!entityId && entities ? (
-          <Field label={t('books.entity')} htmlFor="book-entity">
+          <Field
+            label={t('books.entity')}
+            htmlFor="book-entity"
+            help={tt('books.termo.field.entityHelp')}
+          >
             <Select
               id="book-entity"
               value={selectedEntity}
@@ -242,14 +344,41 @@ export function OpenBookForm({ entityId, entities }: Props) {
             options={optionsFrom(BOOK_KINDS, bookKindLabels)}
           />
         </Field>
-        <Field label={t('books.purpose')} htmlFor="book-purpose">
+        {isOther ? (
+          <Field
+            label={tt('books.termo.field.kindLabel')}
+            htmlFor="book-kind-label"
+            help={tt('books.termo.field.kindLabelHelp')}
+          >
+            <Input
+              id="book-kind-label"
+              required
+              value={kindLabel}
+              onChange={(e) => setKindLabel(e.target.value)}
+            />
+          </Field>
+        ) : null}
+        <Field
+          label={t('books.purpose')}
+          htmlFor="book-purpose"
+          help={tt('books.termo.field.purposeHelp')}
+          hint={tt('books.termo.field.purposeListHint')}
+        >
           <Input
             id="book-purpose"
             required
             value={purpose}
+            list={finalidadePresets.length ? finalidadeListId : undefined}
             onChange={(e) => setPurpose(e.target.value)}
             placeholder={t('books.purposePlaceholder')}
           />
+          {finalidadePresets.length ? (
+            <datalist id={finalidadeListId}>
+              {finalidadePresets.map((preset) => (
+                <option value={preset} key={preset} />
+              ))}
+            </datalist>
+          ) : null}
         </Field>
         <Field
           label={t('books.numberingScheme')}
@@ -263,7 +392,11 @@ export function OpenBookForm({ entityId, entities }: Props) {
             options={optionsFrom(NUMBERING_SCHEMES, numberingSchemeLabels)}
           />
         </Field>
-        <Field label={t('books.openingDate')} htmlFor="book-date">
+        <Field
+          label={t('books.openingDate')}
+          htmlFor="book-date"
+          help={tt('books.termo.field.openingDateHelp')}
+        >
           <Input
             id="book-date"
             type="date"
@@ -280,14 +413,45 @@ export function OpenBookForm({ entityId, entities }: Props) {
           />
         </Field>
         <Field
-          label={t('books.predecessorOptional')}
+          label={tt('books.termo.field.predecessor')}
           htmlFor="book-predecessor"
-          hint={t('books.predecessorHint')}
+          help={tt('books.termo.field.predecessorHelp')}
         >
-          <Input
+          <Select
             id="book-predecessor"
             value={predecessor}
             onChange={(e) => setPredecessor(e.target.value)}
+            options={predecessorOptions}
+          />
+        </Field>
+        <Field
+          label={tt('books.termo.field.predecessorNote')}
+          htmlFor="book-predecessor-note"
+          help={tt('books.termo.field.predecessorNoteHelp')}
+        >
+          <Input
+            id="book-predecessor-note"
+            value={predecessorNote}
+            onChange={(e) => setPredecessorNote(e.target.value)}
+          />
+        </Field>
+        <Field
+          label={tt('books.termo.mode.legend')}
+          htmlFor="book-open-mode"
+          help={
+            mode === 'twoPhase'
+              ? tt('books.termo.mode.twoPhaseHelp')
+              : tt('books.termo.mode.oneShotHelp')
+          }
+        >
+          <Select
+            id="book-open-mode"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as OpenMode)}
+            options={[
+              { value: 'oneShot', label: tt('books.termo.mode.oneShot') },
+              { value: 'twoPhase', label: tt('books.termo.mode.twoPhase') },
+            ]}
           />
         </Field>
         {open.error ? <ErrorNote error={open.error} /> : null}
@@ -298,7 +462,11 @@ export function OpenBookForm({ entityId, entities }: Props) {
             icon={<Icon.BookPlus />}
             disabled={open.isPending || !chosen}
           >
-            {open.isPending ? t('books.opening') : t('books.openBook')}
+            {open.isPending
+              ? t('books.opening')
+              : mode === 'twoPhase'
+                ? tt('books.termo.mode.twoPhase')
+                : t('books.openBook')}
           </Button>
         </div>
       </form>

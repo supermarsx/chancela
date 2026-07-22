@@ -2369,6 +2369,7 @@ export const svFI: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Ledning / Förvaltning',
   'enum.bookKind.ConselhoFiscal': 'Revisionsutskott',
   'enum.bookKind.Condominio': 'Samfällighet',
+  'enum.bookKind.Other': 'Övrigt',
   // Book states
   'enum.bookState.Created': 'Skapad',
   'enum.bookState.Open': 'Öppen',

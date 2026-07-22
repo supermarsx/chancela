@@ -2366,6 +2366,7 @@ export const fiFI: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Johto / Hallinto',
   'enum.bookKind.ConselhoFiscal': 'Tarkastuslautakunta',
   'enum.bookKind.Condominio': 'Asunto-osakeyhtiö',
+  'enum.bookKind.Other': 'Muu',
   // Book states
   'enum.bookState.Created': 'Luotu',
   'enum.bookState.Open': 'Avoin',

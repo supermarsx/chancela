@@ -2376,6 +2376,7 @@ export const esES: Catalog = {
   'enum.bookKind.GerenciaAdministracao': 'Gerencia / Administración',
   'enum.bookKind.ConselhoFiscal': 'Consejo Fiscal',
   'enum.bookKind.Condominio': 'Comunidad de propietarios',
+  'enum.bookKind.Other': 'Otro',
   // Estados del libro
   'enum.bookState.Created': 'Creado',
   'enum.bookState.Open': 'Abierto',
