@@ -133,6 +133,17 @@ export function EmailSection({ email, onChange }: Props) {
   const passwordConfigured = status.data?.password_configured ?? false;
   const busy = setPassword.isPending || clearPassword.isPending;
 
+  // The email service's health, surfaced at the top of the section the way the API and MCP tabs
+  // surface their per-service status. `deliverable` already folds in enabled + host + sender +
+  // a password backing any username (EmailStatusView, smtp_settings.rs), so it is the single
+  // readiness signal; the disabled state is read from the working copy so the badge tracks the
+  // toggle live rather than only after a save round-trip.
+  const emailStatus: { label: MessageKey; tone: 'ok' | 'warn' | 'neutral' } = !email.enabled
+    ? { label: 'settings.email.status.off', tone: 'neutral' }
+    : status.data?.deliverable
+      ? { label: 'settings.email.status.ready', tone: 'ok' }
+      : { label: 'settings.email.status.notReady', tone: 'warn' };
+
   function submitPassword() {
     if (!password) return;
     setPassword.mutate(password, {
@@ -156,7 +167,10 @@ export function EmailSection({ email, onChange }: Props) {
 
   return (
     <>
-      <Card title={t('settings.email.cardTitle')}>
+      <Card
+        title={t('settings.email.cardTitle')}
+        actions={<Badge tone={emailStatus.tone}>{t(emailStatus.label)}</Badge>}
+      >
         <p className="lede">{t('settings.email.lede')}</p>
 
         <div className="form settings-rows">

@@ -152,6 +152,31 @@ describe('EmailSection', () => {
     expect(screen.queryByText('Por definir')).toBeNull();
   });
 
+  it('shows the email service status at the top: disabled, ready, or incomplete', async () => {
+    // Disabled in the working copy → the toggle wins regardless of the (stale) status view.
+    vi.stubGlobal('fetch', stubFetch({ status: statusView({ deliverable: true }) }).fn);
+    const disabled = renderWithProviders(
+      <EmailSection email={email({ enabled: false })} onChange={vi.fn()} />,
+    );
+    expect(await screen.findByText('Envio desativado')).toBeTruthy();
+    disabled.unmount();
+    cleanup();
+
+    // Enabled and deliverable → ready.
+    vi.stubGlobal('fetch', stubFetch({ status: statusView({ deliverable: true }) }).fn);
+    const ready = renderWithProviders(
+      <EmailSection email={email({ enabled: true })} onChange={vi.fn()} />,
+    );
+    expect(await screen.findByText('Pronto a enviar')).toBeTruthy();
+    ready.unmount();
+    cleanup();
+
+    // Enabled but not deliverable → the configuration is incomplete.
+    vi.stubGlobal('fetch', stubFetch({ status: statusView({ deliverable: false }) }).fn);
+    renderWithProviders(<EmailSection email={email({ enabled: true })} onChange={vi.fn()} />);
+    expect(await screen.findByText('Configuração incompleta')).toBeTruthy();
+  });
+
   it('shows the relay’s real SMTP code and text when the test send is rejected', async () => {
     vi.stubGlobal(
       'fetch',
