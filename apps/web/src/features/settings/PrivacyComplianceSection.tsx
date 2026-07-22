@@ -93,6 +93,14 @@ import {
   useToast,
 } from '../../ui';
 import { PermissionDeniedNote, useCan } from '../session/permissions';
+import {
+  dpiaChecklistLabelKey,
+  dpiaOperatorActionKey,
+  dpiaSectionDescKey,
+  dpiaSectionPromptKey,
+  dpiaSectionTitleKey,
+} from '../../i18n/dpiaTemplateLabels';
+import { RegisterEditModal } from './RegisterEditModal';
 
 type RegisterKind = 'processor' | 'dpia';
 type RegisterRecord = ProcessorRecordView | DpiaRecordView;
@@ -409,7 +417,12 @@ function advisoryReviewFilterOptions(t: TFunction) {
   ];
 }
 
-function presenceFilterOptions(t: TFunction, allKey: MessageKey, withKey: MessageKey, withoutKey: MessageKey) {
+function presenceFilterOptions(
+  t: TFunction,
+  allKey: MessageKey,
+  withKey: MessageKey,
+  withoutKey: MessageKey,
+) {
   return [
     { value: 'all', label: t(allKey) },
     { value: 'with', label: t(withKey) },
@@ -1038,34 +1051,53 @@ function DpiaTemplateGuidancePanel({
                 </tr>
               }
             >
-              {template.sections.map((section) => (
-                <tr key={section.id}>
-                  <td>
-                    {section.title}
-                    <br />
-                    <span className="muted">{section.description}</span>
-                  </td>
-                  <td>
-                    <ul>
-                      {section.prompts.map((prompt) => (
-                        <li key={`${section.id}-${prompt}`}>{prompt}</li>
-                      ))}
-                    </ul>
-                  </td>
-                  <td>
-                    <ul>
-                      {section.checklist.map((item) => (
-                        <li key={item.id}>
-                          {item.label} · <span className="mono">{item.field_type}</span> ·{' '}
-                          {t('settings.privacy.guidance.required', {
-                            value: String(item.required),
-                          })}
-                        </li>
-                      ))}
-                    </ul>
-                  </td>
-                </tr>
-              ))}
+              {template.sections.map((section) => {
+                // The template's wire copy is English; the client resolves each stable id to a
+                // translated catalog key. An unknown id (a backend section added later) yields
+                // `undefined`, so we fall back to the raw English rather than render blank —
+                // `dpiaTemplateLabels.test.ts` fails loudly if that fallback ever fires in prod.
+                const titleKey = dpiaSectionTitleKey(section.id);
+                const descKey = dpiaSectionDescKey(section.id);
+                return (
+                  <tr key={section.id}>
+                    <td>
+                      {titleKey ? t(titleKey) : section.title}
+                      <br />
+                      <span className="muted">{descKey ? t(descKey) : section.description}</span>
+                    </td>
+                    <td>
+                      <ul>
+                        {section.prompts.map((prompt, index) => {
+                          const promptKey = dpiaSectionPromptKey(section.id, index);
+                          return (
+                            <li key={`${section.id}-${index}`}>
+                              {promptKey ? t(promptKey) : prompt}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </td>
+                    <td>
+                      <ul>
+                        {section.checklist.map((item) => {
+                          // Only the label is translated. `field_type` is a wire identifier shown
+                          // in `mono` and stays verbatim (like the no_claims flags below).
+                          const labelKey = dpiaChecklistLabelKey(item.id);
+                          return (
+                            <li key={item.id}>
+                              {labelKey ? t(labelKey) : item.label} ·{' '}
+                              <span className="mono">{item.field_type}</span> ·{' '}
+                              {t('settings.privacy.guidance.required', {
+                                value: String(item.required),
+                              })}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </td>
+                  </tr>
+                );
+              })}
             </Table>
 
             {/*
@@ -1110,9 +1142,14 @@ function DpiaTemplateGuidancePanel({
             <div className="stack--tight">
               <strong>{t('settings.privacy.guidance.operatorActions')}</strong>
               <ul>
-                {template.operator_actions.map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
+                {template.operator_actions.map((action, index) => {
+                  const actionKey = dpiaOperatorActionKey(index);
+                  return (
+                    <li key={`operator-action-${index}`}>
+                      {actionKey ? t(actionKey) : action}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           </>
@@ -1573,24 +1610,31 @@ function RegisterPanel({
     }
   }
 
+  function closeForm() {
+    setForm(null);
+    setEditingId(null);
+  }
+
   return (
     <div className="stack">
-      {form ? (
-        <Card title={editingId ? t('settings.privacy.form.edit') : t('settings.privacy.form.new')}>
+      <RegisterEditModal
+        open={form !== null}
+        onClose={closeForm}
+        busy={saving}
+        title={editingId ? t('settings.privacy.form.edit') : t('settings.privacy.form.new')}
+      >
+        {form ? (
           <RegisterForm
             kind={kind}
             form={form}
             setForm={setForm}
             editing={editingId !== null}
             saving={saving}
-            onCancel={() => {
-              setForm(null);
-              setEditingId(null);
-            }}
+            onCancel={closeForm}
             onSubmit={submitForm}
           />
-        </Card>
-      ) : null}
+        ) : null}
+      </RegisterEditModal>
 
       <Card
         title={

@@ -219,23 +219,25 @@ const dpiaTemplate: DpiaTemplateView = {
   language: 'en',
   scope: 'local_offline_guidance_only',
   local_offline_guidance_only: true,
+  // Real backend section/checklist ids so the client resolves them to translated catalog keys.
+  // The English strings here are the wire copy the panel deliberately overrides with pt-PT.
   sections: [
     {
-      id: 'risk',
+      id: 'risk_prompts',
       title: 'Risk prompts',
       description: 'Human review prompts only.',
-      prompts: ['What can harm a data subject?'],
+      prompts: ['What rights and freedoms impacts should be reviewed?'],
       checklist: [
         {
-          id: 'evidence',
-          label: 'Evidence reference',
-          field_type: 'evidence_reference',
+          id: 'risk_review_note',
+          label: 'Human risk review note',
+          field_type: 'review_note',
           required: true,
         },
       ],
     },
   ],
-  operator_actions: ['Escalate unresolved questions to the DPO.'],
+  operator_actions: ['Fill placeholders locally with human-written notes.'],
   no_claims: {
     authority_filing_completed: false,
     authority_approval_obtained: false,
@@ -529,7 +531,60 @@ describe('PrivacyComplianceSection', () => {
     expect(screen.queryByLabelText('Nome do processador')).toBeNull();
   });
 
-  it('covers guidance loading, error, empty, and complete static-pack states', () => {
+  it('edits a DPIA record inside a modal window and dismisses it with Escape without saving', () => {
+    hooks.dpias.data = [dpia];
+    renderWithProviders(<PrivacyComplianceSection />);
+
+    // The editor is a window, not an inline card: nothing dialog-shaped until it is opened.
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    const dpiaRow = screen.getByText('High-risk profiling').closest('tr') as HTMLElement;
+    fireEvent.click(within(dpiaRow).getByRole('button', { name: 'Editar' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    // The window is titled by its heading (wired through aria-labelledby).
+    expect(dialog.getAttribute('aria-labelledby')).toBeTruthy();
+    expect(within(dialog).getByText('Editar registo')).toBeTruthy();
+    // The form opened seeded from the row it was launched from.
+    expect((within(dialog).getByLabelText('Título da DPIA') as HTMLInputElement).value).toBe(
+      'High-risk profiling',
+    );
+
+    // Escape closes the window and persists nothing.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(hooks.patchDpia.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('creates a DPIA record from the modal window and closes it on success', async () => {
+    renderWithProviders(<PrivacyComplianceSection />);
+    const dpiaPanel = screen.getByText('DPIAs').closest<HTMLElement>('.panel')!;
+    fireEvent.click(within(dpiaPanel).getByRole('button', { name: 'Novo registo' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Novo registo')).toBeTruthy();
+    const values: [string, string][] = [
+      ['Título da DPIA', 'New DPIA'],
+      ['Finalidade', 'Profiling'],
+      ['Base legal', 'Consent'],
+      ['Categorias de dados', 'Behaviour'],
+    ];
+    for (const [label, value] of values) {
+      fireEvent.change(within(dialog).getByLabelText(label), { target: { value } });
+    }
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar registo' }));
+
+    await waitFor(() => {
+      expect(hooks.createDpia.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'New DPIA', data_categories: ['Behaviour'] }),
+      );
+    });
+    // A successful save closes the window.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('covers guidance loading, error, empty, and translated static-pack states', () => {
     hooks.dpiaTemplate.isLoading = true;
     const first = renderWithProviders(<PrivacyComplianceSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Orientação' }));
@@ -552,10 +607,23 @@ describe('PrivacyComplianceSection', () => {
     hooks.dpiaTemplate.data = dpiaTemplate;
     renderWithProviders(<PrivacyComplianceSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Orientação' }));
-    expect(screen.getByText('Risk prompts')).toBeTruthy();
-    expect(screen.getByText('What can harm a data subject?')).toBeTruthy();
-    expect(screen.getByText(/Evidence reference/)).toBeTruthy();
-    expect(screen.getByText('Escalate unresolved questions to the DPO.')).toBeTruthy();
+    // The guidance template's wire copy is English; the panel resolves each stable id to the
+    // pt-PT catalog key, so the reader sees Portuguese, not the backend's English strings.
+    expect(screen.getByText('Perguntas de risco')).toBeTruthy();
+    expect(screen.queryByText('Risk prompts')).toBeNull();
+    expect(
+      screen.getByText('Que impactos nos direitos e liberdades devem ser revistos?'),
+    ).toBeTruthy();
+    expect(screen.getByText(/Nota de revisão humana do risco/)).toBeTruthy();
+    // `field_type` is a wire identifier shown verbatim in `mono` — never translated.
+    expect(screen.getByText('review_note')).toBeTruthy();
+    // Operator actions are translated too, positionally.
+    expect(
+      screen.getByText(
+        'Preencha os marcadores localmente com notas redigidas por pessoas, fora da resposta deste modelo.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Fill placeholders locally with human-written notes.')).toBeNull();
     fireEvent.click(screen.getByText('Flags sem alegação'));
     // t102: the disclosure is a two-column table now, not a `key: value` tag row, so the flag
     // identifier is a cell of its own and no longer carries a trailing colon.
