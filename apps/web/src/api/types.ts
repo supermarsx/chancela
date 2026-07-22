@@ -48,6 +48,32 @@ export type NumberingScheme = (typeof NUMBERING_SCHEMES)[number];
 export const CLOSING_REASONS = ['BookFull', 'EntityDissolved', 'MigrationToSuccessor'] as const;
 export type ClosingReason = (typeof CLOSING_REASONS)[number];
 
+/**
+ * The structured "Other" closing reason (`chancela_core::book::ClosingReason::Other { note }`, t44),
+ * serialized by the server as `{ "Other": { "note": "…" } }`. The `note` is REQUIRED and non-empty —
+ * core rejects a blank note: forcing a false modelled reason onto an instrument whose purpose is
+ * stating facts is exactly the failure this variant avoids, and the note is what keeps the choice
+ * auditable. **ASSURANCE** — never a legal claim.
+ */
+export interface ClosingReasonOther {
+  Other: { note: string };
+}
+
+/**
+ * The full wire shape of a closing reason: one of the modelled {@link ClosingReason} variants (a bare
+ * string) OR the structured {@link ClosingReasonOther}. Used on the request bodies that set a reason
+ * ({@link CloseBookBody}, {@link PatchTermoEncerramentoBody}) and on the projected
+ * `BookView.closing_reason` for a book closed with a custom reason.
+ */
+export type ClosingReasonWire = ClosingReason | ClosingReasonOther;
+
+/** Narrow a wire closing reason to the structured `Other { note }` form. */
+export function isClosingReasonOther(
+  reason: ClosingReasonWire | null | undefined,
+): reason is ClosingReasonOther {
+  return typeof reason === 'object' && reason !== null && 'Other' in reason;
+}
+
 export const MEETING_CHANNELS = ['Physical', 'Hybrid', 'Telematic', 'WrittenResolution'] as const;
 export type MeetingChannel = (typeof MEETING_CHANNELS)[number];
 
@@ -434,6 +460,13 @@ export interface BookView {
   numbering_scheme: NumberingScheme | null;
   opening_date: string | null;
   closing_date: string | null;
+  /**
+   * Why a `Closed` book was closed. A modelled reason is a bare string; a custom reason is the
+   * structured {@link ClosingReasonOther} (`{ Other: { note } }`, t44). `null` while the book is
+   * still open. Typed as {@link ClosingReason} for the label-rendering sites that predate the custom
+   * reason; a book closed with a custom reason carries {@link ClosingReasonOther} at runtime — read
+   * it through {@link isClosingReasonOther} rather than the string label map.
+   */
   closing_reason: ClosingReason | null;
   last_ata_number: number;
   predecessor: string | null;
@@ -441,6 +474,18 @@ export interface BookView {
   required_signatories_encerramento: string[] | null;
   required_signatory_records_abertura?: BookTermoSignatory[] | null;
   required_signatory_records_encerramento?: BookTermoSignatory[] | null;
+  /**
+   * Book-capacity projection (t44). The server always emits these; they are optional here only so a
+   * pre-capacity fixture/stub stays valid. `page_capacity`/`remaining_pages` are `null` for an
+   * unlimited/legacy book (`null` is not zero — a client must not treat the two alike).
+   * `capacity_exhausted` is the signal to draw up the termo de encerramento: an exhausted book stays
+   * `Open` and merely refuses new acts (§6.1 — block, never auto-close). **ASSURANCE.**
+   */
+  page_capacity?: number | null;
+  pages_used?: number;
+  pages_reserved?: number;
+  remaining_pages?: number | null;
+  capacity_exhausted?: boolean;
 }
 
 export interface BookTermoSignatory {
@@ -5395,10 +5440,23 @@ export interface OpenBookBody {
 }
 
 export interface CloseBookBody {
-  reason: ClosingReason;
+  /**
+   * A modelled reason (a bare {@link ClosingReason} string) or the structured
+   * {@link ClosingReasonOther} (`{ Other: { note } }`, DA1) — the server accepts both.
+   */
+  reason: ClosingReasonWire;
   closing_date: string;
   required_signatories: BookTermoSignatoryInput[];
   actor?: string;
+  /**
+   * DA4 (mirror of `OpenBookBody.one_shot`) — when `true`/omitted (the server default, preserving
+   * today's behaviour byte-for-byte) the book is closed in one commit with a static termo de
+   * encerramento. When `false`, only a `Draft` termo de encerramento is minted for the open book and
+   * nothing enters the hash chain until it is filled, co-signed and the book is explicitly closed via
+   * the two-phase encerramento endpoints ({@link CloseBookFromTermoBody}). Omit for the one-shot
+   * default (the recommended path).
+   */
+  one_shot?: boolean;
 }
 
 export type BookTermoSignatoryInput = string | BookTermoSignatory;
@@ -5570,6 +5628,76 @@ export interface SignTermoSlotBody {
  */
 export interface OpenBookFromTermoBody {
   numbering_scheme?: NumberingScheme;
+  actor?: string;
+}
+
+// --- Termo de encerramento as its own signable ata (two-phase book CLOSE, t44) ----------------
+//
+// The CLOSE mirror of the two-phase abertura. `POST /v1/books/{id}/close` with `one_shot: false` (see
+// {@link CloseBookBody}) mints a `Draft` termo de encerramento for an OPEN book (the book stays Open);
+// the operator fills it (PATCH), freezes it for signing (advance), collects per-slot signatures
+// (sign / sign/pkcs12), and finally seals it to close the book (close). The termo view shape is the
+// SAME {@link TermoInstrumentView} as the abertura, with `kind: 'Encerramento'`.
+
+/**
+ * Body of `PATCH /v1/books/{id}/termo/encerramento` (`PatchTermoEncerramento`). Mirrors
+ * {@link PatchTermoAberturaBody}, but the fillable fields are the encerramento's: a **closing date**
+ * and a structured **closing reason** ({@link ClosingReasonWire}, incl. `{ Other: { note } }`)
+ * replace the abertura's opening date, and there is **no** `page_capacity`/`purpose` (the encerramento
+ * states facts, it declares no size — the server rejects a capacity on an encerramento). The
+ * book-derived facts (ata count, pages used) are never operator input; they are materialized from the
+ * book at `advance`. Every field is optional; absent fields are left unchanged. `body` and
+ * `signatories` REPLACE the whole list. Rejected with `409` once the termo has left `Draft`.
+ */
+export interface PatchTermoEncerramentoBody {
+  title?: string;
+  body?: TermoClauseInput[];
+  book_number?: number;
+  place?: string;
+  /** ISO-8601 date; required (server-side) before the termo can be advanced to signing. */
+  closing_date?: string;
+  /** A modelled reason string or `{ Other: { note } }` (the note is required and non-empty). */
+  closing_reason?: ClosingReasonWire;
+  predecessor_note?: string;
+  signatories?: TermoSlotInput[];
+  completion_policy?: TermoCompletionPolicy;
+}
+
+/**
+ * Body of `POST /v1/books/{id}/termo/{abertura|encerramento}/sign/pkcs12`
+ * (`SignTermoSlotPkcs12`): produce a **real** per-slot PAdES signature over the frozen termo snapshot
+ * with a locally supplied PKCS#12/PFX software certificate. The PFX bytes and passphrase are
+ * TRANSIENT — sent for the one request that consumes them, never persisted client-side; only the
+ * resulting signed PDF plus public certificate evidence is stored server-side.
+ *
+ * Local PKCS#12 signing is the desk-application flow: a remote/browser-hosted server refuses with
+ * `409` ("só está disponível na aplicação de secretária"), surfaced honestly. This is advanced LOCAL
+ * TECHNICAL evidence, not a qualified remote/CMD signature.
+ */
+export interface SignTermoSlotPkcs12Body {
+  slot_id: string;
+  /** Base64-encoded PKCS#12/PFX bytes (transient). */
+  pkcs12_base64: string;
+  /** The PFX passphrase (transient — never persisted or logged). */
+  passphrase: string;
+  /** Optional friendly-name selector when the PFX carries multiple identities. */
+  friendly_name?: string;
+  /** Optional informational capacity label; the slot already carries the allow-listed capacity. */
+  capacity?: string;
+}
+
+/**
+ * Body of `POST /v1/books/{id}/termo/encerramento/close` (`CloseBookFromTermo`): seal the signed
+ * termo de encerramento and close the book. Unlike opening, closing carries no numbering scheme (the
+ * book's numbering was fixed at its abertura). `actor` defaults server-side, so an empty body is
+ * valid.
+ *
+ * NOTE (t44): the close FAILS CLOSED with `409` unless every required slot carries a REAL PAdES
+ * signature (the `require_real_signatures` gate) — a reference-only `sign` is not enough. It also
+ * fails closed with `409` if the material ata count moved under the signers mid-signing (the R12
+ * stale-fact guard). Both stay `Open`; the caller must surface each honestly, not hide it.
+ */
+export interface CloseBookFromTermoBody {
   actor?: string;
 }
 

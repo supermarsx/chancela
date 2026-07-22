@@ -73,7 +73,10 @@ import type {
   OpenBookBody,
   PatchTermoAberturaBody,
   SignTermoSlotBody,
+  SignTermoSlotPkcs12Body,
   OpenBookFromTermoBody,
+  PatchTermoEncerramentoBody,
+  CloseBookFromTermoBody,
   PaperBookImportValidateBody,
   PaperBookImportPreserveBody,
   PaperBookImportView,
@@ -189,6 +192,7 @@ export const keys = {
   bookLegalHold: (id: string) => ['books', id, 'legal-hold'] as const,
   bookActs: (id: string) => ['books', id, 'acts'] as const,
   bookTermoAbertura: (id: string) => ['books', id, 'termo', 'abertura'] as const,
+  bookTermoEncerramento: (id: string) => ['books', id, 'termo', 'encerramento'] as const,
   paperBookImports: (bookRef?: string) =>
     ['books', 'paper-imports', { bookRef: bookRef ?? null }] as const,
   paperBookOcrDrafts: (importId: string) =>
@@ -590,6 +594,117 @@ export function useCloseBook(id: string) {
     mutationFn: (body: CloseBookBody) => api.closeBook(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['books'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+// --- Termo de encerramento (two-phase book CLOSE, t44) ---------------------------------------
+//
+// The CLOSE mirror of the abertura hooks above. `useCloseBook` with `{ one_shot: false }` mints a
+// `Draft` encerramento for an OPEN book (the book stays Open — no new-create hook needed). These
+// hooks read/edit/freeze/collect the termo and finally seal it to close the book. The termo mutations
+// return the refreshed `TermoInstrumentView`, written straight into the cache; only `close` moves the
+// book and the ledger.
+
+/**
+ * The book's termo de encerramento draft (`GET /v1/books/{id}/termo/encerramento`, t44). Present only
+ * for a book being closed two-phase; a one-shot/legacy book has none and the endpoint 404s — treated
+ * as "no draft" (never retried) so the caller renders that honestly rather than as an error.
+ */
+export function useBookTermoEncerramento(id: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.bookTermoEncerramento(id),
+    queryFn: () => api.getBookTermoEncerramento(id),
+    enabled: enabled && !!id,
+    retry: false,
+  });
+}
+
+/**
+ * Edit the encerramento draft (`PATCH /v1/books/{id}/termo/encerramento`). Rejected `409` once the
+ * termo has left `Draft`. The refreshed termo is written to the cache; nothing else moves (the book
+ * is still `Open` and no ledger event is appended until it is closed).
+ */
+export function usePatchBookTermoEncerramento(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PatchTermoEncerramentoBody) => api.patchBookTermoEncerramento(id, body),
+    onSuccess: (termo) => {
+      qc.setQueryData(keys.bookTermoEncerramento(id), termo);
+    },
+  });
+}
+
+/**
+ * Freeze the draft for signing (`POST …/termo/encerramento/advance`, `Draft → Signing`). The server
+ * runs the legal checks (capacity allow-list, at-least-one-signatory) and requires a `closing_date`
+ * and `closing_reason`; a failure is a `4xx` `ApiError`. The frozen termo replaces the cached draft.
+ */
+export function useAdvanceBookTermoEncerramento(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.advanceBookTermoEncerramento(id),
+    onSuccess: (termo) => {
+      qc.setQueryData(keys.bookTermoEncerramento(id), termo);
+    },
+  });
+}
+
+/**
+ * Record that a signatory slot signed by reference (`POST …/termo/encerramento/sign`). Sequential
+ * order is enforced server-side (`409`). This is a reference marker only — it is NOT a real
+ * cryptographic signature and does NOT satisfy the fail-closed `close` gate (use
+ * {@link useSignBookTermoEncerramentoPkcs12} for a real PAdES signature). The updated termo replaces
+ * the cached one.
+ */
+export function useSignBookTermoEncerramento(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SignTermoSlotBody) => api.signBookTermoEncerramento(id, body),
+    onSuccess: (termo) => {
+      qc.setQueryData(keys.bookTermoEncerramento(id), termo);
+    },
+  });
+}
+
+/**
+ * Produce a REAL per-slot PAdES signature over the frozen encerramento snapshot with a locally
+ * supplied PKCS#12/PFX (`POST …/termo/encerramento/sign/pkcs12`). This is what the fail-closed `close`
+ * gate requires. Desk-application only: a remote server refuses with `409`. The updated termo (with
+ * the slot's real-signature evidence) replaces the cached one.
+ */
+export function useSignBookTermoEncerramentoPkcs12(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SignTermoSlotPkcs12Body) => api.signBookTermoEncerramentoPkcs12(id, body),
+    onSuccess: (termo) => {
+      qc.setQueryData(keys.bookTermoEncerramento(id), termo);
+    },
+  });
+}
+
+/**
+ * Seal the signed termo and close the book (`POST …/termo/encerramento/close`). On success the book
+ * becomes `Closed` (a `book.closed` genesis event digesting the final signed encerramento + the
+ * co-signature manifest is appended), so the book, its entity's book list, the ledger, the dashboard
+ * and the now-`Sealed` termo all refetch.
+ *
+ * FAILS CLOSED with a `409` unless every required slot carries a real PAdES signature ("not
+ * cryptographically signed"); also `409` if the material ata count moved under the signers mid-signing
+ * (the stale-fact guard). In both cases the book stays `Open` and no event is written — the caller
+ * must surface that `ApiError` honestly rather than treat it as a transient miss.
+ */
+export function useCloseBookFromTermo(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body?: CloseBookFromTermoBody) => api.closeBookFromTermo(id, body ?? {}),
+    onSuccess: (book) => {
+      qc.setQueryData(keys.book(id), book);
+      void qc.invalidateQueries({ queryKey: ['books'] });
+      void qc.invalidateQueries({ queryKey: keys.entity(book.entity_id) });
+      void qc.invalidateQueries({ queryKey: keys.bookTermoEncerramento(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });

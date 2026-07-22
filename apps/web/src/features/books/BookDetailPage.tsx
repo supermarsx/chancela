@@ -103,6 +103,8 @@ import {
   useCan,
 } from '../session/permissions';
 import { TermoAberturaEditor } from './TermoAberturaEditor';
+import { TermoEncerramentoEditor } from './TermoEncerramentoEditor';
+import { useEncerramentoT } from './termoEncerramentoStrings';
 
 /**
  * The book sub-tabs, in the order the operator asked for. Labels reuse the section titles
@@ -2080,6 +2082,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
 
 export function BookDetailPage() {
   const t = useT();
+  const et = useEncerramentoT();
   const toast = useToast();
   const { id = '' } = useParams();
   // Atas is the default and carries no segment (so `/books/:id` lands on it) — the exact
@@ -2300,6 +2303,11 @@ export function BookDetailPage() {
                 the book. The editor renders the right phase (Draft/Signing/Sealed), or an honest
                 "no separately editable termo" note for a one-shot/legacy book. */}
             <TermoAberturaEditor bookId={b.id} />
+            {/* The termo de encerramento is likewise a signable ata (t44): a book being closed
+                two-phase carries a Draft termo that is drafted, signed and only then sealed to close
+                the book; a Closed book shows its Sealed termo. The editor renders nothing for a
+                one-shot/legacy book with no separately editable encerramento. */}
+            <TermoEncerramentoEditor bookId={b.id} />
           </>
         ) : null}
 
@@ -2313,10 +2321,13 @@ export function BookDetailPage() {
         {section === 'imports' ? <PaperBookImportsPanel book={b} /> : null}
 
         {section === 'acts' ? (
-          <Card
-            title={t('books.atas')}
-            actions={
-              isOpen ? (
+          <>
+            {/* A capacity-exhausted book stays Open and merely refuses new atas (§6.1 — block, never
+                auto-close); this prompt is the honest "livro esgotado → close it" signal. Closing
+                fixity is assurance, never framed as discharging the encadernação duty. */}
+            {isOpen && b.capacity_exhausted ? (
+              <InlineWarning tone="warn" title={et('books.encerramento.capacity.exhaustedTitle')}>
+                <p>{et('books.encerramento.capacity.exhaustedBody')}</p>
                 <div className="row-wrap">
                   <GateButtonLink
                     perm="book.close"
@@ -2324,63 +2335,82 @@ export function BookDetailPage() {
                     to={`/books/${b.id}/close`}
                     icon={<Icon.BookClosed />}
                   >
-                    {t('books.closeBook')}
-                  </GateButtonLink>
-                  <GateButtonLink
-                    perm="act.draft"
-                    scope={scopeBook(b.id)}
-                    to={`/books/${b.id}/new-act`}
-                    variant="primary"
-                    icon={<Icon.Plus />}
-                  >
-                    {t('books.newAta')}
+                    {et('books.encerramento.capacity.close')}
                   </GateButtonLink>
                 </div>
-              ) : null
-            }
-          >
-            {acts.isLoading ? (
-              <SkeletonTable cols={5} />
-            ) : acts.error ? (
-              <ErrorNote error={acts.error} />
-            ) : !acts.data || acts.data.length === 0 ? (
-              <EmptyState title={t('books.noAtas')}>
-                {isOpen ? <p>{t('books.createFirstAta')}</p> : null}
-              </EmptyState>
-            ) : (
-              <Table
-                head={
-                  <tr>
-                    <th>{t('books.th.number')}</th>
-                    <th>{t('books.th.actTitle')}</th>
-                    <th>{t('books.th.channel')}</th>
-                    <th>{t('books.th.actState')}</th>
-                    <th />
-                  </tr>
-                }
-              >
-                {acts.data.map((act) => (
-                  <tr key={act.id}>
-                    <td>{act.ata_number ?? '—'}</td>
-                    <td>{act.title}</td>
-                    <td>{meetingChannelLabels[act.channel]}</td>
-                    <td>
-                      <Badge
-                        tone={
-                          act.state === 'Sealed' || act.state === 'Archived' ? 'accent' : 'neutral'
-                        }
-                      >
-                        {actStateLabels[act.state]}
-                      </Badge>
-                    </td>
-                    <td>
-                      <Link to={`/acts/${act.id}`}>{t('common.open')}</Link>
-                    </td>
-                  </tr>
-                ))}
-              </Table>
-            )}
-          </Card>
+              </InlineWarning>
+            ) : null}
+            <Card
+              title={t('books.atas')}
+              actions={
+                isOpen ? (
+                  <div className="row-wrap">
+                    <GateButtonLink
+                      perm="book.close"
+                      scope={scopeBook(b.id)}
+                      to={`/books/${b.id}/close`}
+                      icon={<Icon.BookClosed />}
+                    >
+                      {t('books.closeBook')}
+                    </GateButtonLink>
+                    <GateButtonLink
+                      perm="act.draft"
+                      scope={scopeBook(b.id)}
+                      to={`/books/${b.id}/new-act`}
+                      variant="primary"
+                      icon={<Icon.Plus />}
+                    >
+                      {t('books.newAta')}
+                    </GateButtonLink>
+                  </div>
+                ) : null
+              }
+            >
+              {acts.isLoading ? (
+                <SkeletonTable cols={5} />
+              ) : acts.error ? (
+                <ErrorNote error={acts.error} />
+              ) : !acts.data || acts.data.length === 0 ? (
+                <EmptyState title={t('books.noAtas')}>
+                  {isOpen ? <p>{t('books.createFirstAta')}</p> : null}
+                </EmptyState>
+              ) : (
+                <Table
+                  head={
+                    <tr>
+                      <th>{t('books.th.number')}</th>
+                      <th>{t('books.th.actTitle')}</th>
+                      <th>{t('books.th.channel')}</th>
+                      <th>{t('books.th.actState')}</th>
+                      <th />
+                    </tr>
+                  }
+                >
+                  {acts.data.map((act) => (
+                    <tr key={act.id}>
+                      <td>{act.ata_number ?? '—'}</td>
+                      <td>{act.title}</td>
+                      <td>{meetingChannelLabels[act.channel]}</td>
+                      <td>
+                        <Badge
+                          tone={
+                            act.state === 'Sealed' || act.state === 'Archived'
+                              ? 'accent'
+                              : 'neutral'
+                          }
+                        >
+                          {actStateLabels[act.state]}
+                        </Badge>
+                      </td>
+                      <td>
+                        <Link to={`/acts/${act.id}`}>{t('common.open')}</Link>
+                      </td>
+                    </tr>
+                  ))}
+                </Table>
+              )}
+            </Card>
+          </>
         ) : null}
       </div>
     </div>

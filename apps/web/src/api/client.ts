@@ -99,7 +99,10 @@ import type {
   TermoInstrumentView,
   PatchTermoAberturaBody,
   SignTermoSlotBody,
+  SignTermoSlotPkcs12Body,
   OpenBookFromTermoBody,
+  PatchTermoEncerramentoBody,
+  CloseBookFromTermoBody,
   PaperBookImportReport,
   PaperBookImportPreservationReport,
   PaperBookImportPreserveBody,
@@ -1063,6 +1066,30 @@ export const api = {
   // signed") until real per-slot PAdES signing lands (t41) — surfaced to the caller, never hidden.
   openBookFromTermo: (bookId: string, body: OpenBookFromTermoBody = {}) =>
     post<BookView>(`/v1/books/${bookId}/termo/abertura/open`, body),
+
+  // Termo de encerramento as its own signable ata (two-phase book CLOSE, t44 — the mirror of the
+  // abertura above). `closeBook(id, { one_shot: false })` mints a `Draft` encerramento for an OPEN
+  // book (which stays Open); the operator fills it (`patchBookTermoEncerramento`), freezes it
+  // (`advanceBookTermoEncerramento`), collects signatures (`signBookTermoEncerramento` reference /
+  // `signBookTermoEncerramentoPkcs12` real PAdES), then seals it to close the book
+  // (`closeBookFromTermo`). GET is `book.read`; every mutation is `book.close`. A one-shot/legacy
+  // book has no draft termo → the GET 404s.
+  getBookTermoEncerramento: (bookId: string) =>
+    get<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento`),
+  patchBookTermoEncerramento: (bookId: string, body: PatchTermoEncerramentoBody) =>
+    patch<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento`, body),
+  advanceBookTermoEncerramento: (bookId: string) =>
+    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento/advance`),
+  signBookTermoEncerramento: (bookId: string, body: SignTermoSlotBody) =>
+    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento/sign`, body),
+  // Real per-slot PAdES signature with a locally supplied PKCS#12/PFX (desk-app only; a remote server
+  // refuses with 409). The signed set is what the fail-closed `close` gate requires.
+  signBookTermoEncerramentoPkcs12: (bookId: string, body: SignTermoSlotPkcs12Body) =>
+    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento/sign/pkcs12`, body),
+  // Seal the signed termo and close the book. FAILS CLOSED with 409 unless every required slot has a
+  // real PAdES signature; also 409 if the material ata count moved mid-signing (stale-fact guard).
+  closeBookFromTermo: (bookId: string, body: CloseBookFromTermoBody = {}) =>
+    post<BookView>(`/v1/books/${bookId}/termo/encerramento/close`, body),
 
   // Acts (§2.5)
   getAct: (id: string) => get<ActView>(`/v1/acts/${id}`),
