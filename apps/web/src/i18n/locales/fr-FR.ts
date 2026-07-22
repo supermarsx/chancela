@@ -4807,7 +4807,7 @@ export const frFR: Catalog = {
 
   'settings.email.password.cardTitle': 'Mot de passe du serveur',
   'settings.email.password.lede':
-    'Stocké chiffré dans le coffre d’identifiants. Il n’est renvoyé par aucun point d’accès — seul l’état ci-dessous indique s’il en existe un.',
+    'Stocké chiffré dans le coffre d’identifiants. Il n’est renvoyé par aucun point d’accès — seul l’état ci-dessus indique s’il en existe un.',
   'settings.email.password.label': 'Mot de passe',
   'settings.email.password.hint': 'Saisir un nouveau mot de passe remplace le précédent.',
   'settings.email.password.placeholder': 'Saisissez pour définir ou remplacer',

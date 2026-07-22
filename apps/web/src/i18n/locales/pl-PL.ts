@@ -4768,7 +4768,7 @@ export const plPL: Catalog = {
 
   'settings.email.password.cardTitle': 'Hasło serwera',
   'settings.email.password.lede':
-    'Przechowywane w postaci zaszyfrowanej w sejfie poświadczeń. Żaden punkt końcowy go nie zwraca — jedynie stan poniżej wskazuje, czy istnieje.',
+    'Przechowywane w postaci zaszyfrowanej w sejfie poświadczeń. Żaden punkt końcowy go nie zwraca — jedynie stan powyżej wskazuje, czy istnieje.',
   'settings.email.password.label': 'Hasło',
   'settings.email.password.hint': 'Wpisanie nowego hasła zastępuje poprzednie.',
   'settings.email.password.placeholder': 'Wpisz, aby ustawić lub zastąpić',

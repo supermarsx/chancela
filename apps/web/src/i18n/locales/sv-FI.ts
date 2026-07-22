@@ -4764,7 +4764,7 @@ export const svFI: Catalog = {
 
   'settings.email.password.cardTitle': 'Serverns lösenord',
   'settings.email.password.lede':
-    'Lagras krypterat i autentiseringsvalvet. Det returneras inte av någon slutpunkt — bara statusen nedan visar om det finns ett.',
+    'Lagras krypterat i autentiseringsvalvet. Det returneras inte av någon slutpunkt — bara statusen ovan visar om det finns ett.',
   'settings.email.password.label': 'Lösenord',
   'settings.email.password.hint': 'Att skriva ett nytt lösenord ersätter det tidigare.',
   'settings.email.password.placeholder': 'Skriv för att ange eller ersätta',

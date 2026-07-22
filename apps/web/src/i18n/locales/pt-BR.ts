@@ -4761,7 +4761,7 @@ export const ptBR: Catalog = {
 
   'settings.email.password.cardTitle': 'Senha do servidor',
   'settings.email.password.lede':
-    'Armazenada criptografada no cofre de credenciais. Nunca é devolvida por nenhum endpoint — apenas o status abaixo indica se existe.',
+    'Armazenada criptografada no cofre de credenciais. Nunca é devolvida por nenhum endpoint — apenas o status acima indica se existe.',
   'settings.email.password.label': 'Senha',
   'settings.email.password.hint': 'Digitar uma nova senha substitui a anterior.',
   'settings.email.password.placeholder': 'Digite para definir ou substituir',

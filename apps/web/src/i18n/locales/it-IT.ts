@@ -4793,7 +4793,7 @@ export const itIT: Catalog = {
 
   'settings.email.password.cardTitle': 'Password del server',
   'settings.email.password.lede':
-    'Salvata cifrata nella cassaforte delle credenziali. Non viene restituita da nessun endpoint — solo lo stato qui sotto indica se esiste.',
+    'Salvata cifrata nella cassaforte delle credenziali. Non viene restituita da nessun endpoint — solo lo stato qui sopra indica se esiste.',
   'settings.email.password.label': 'Password',
   'settings.email.password.hint': 'Scrivere una nuova password sostituisce la precedente.',
   'settings.email.password.placeholder': 'Scrivi per impostare o sostituire',

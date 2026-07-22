@@ -323,6 +323,7 @@ export function EmailSection({ email, onChange }: Props) {
 
       {/* Password — its own card because it is its own endpoint and its own security posture. */}
       <Card
+        className="email-card"
         title={t('settings.email.password.cardTitle')}
         actions={
           <Badge tone={passwordConfigured ? 'ok' : 'neutral'}>
@@ -378,7 +379,7 @@ export function EmailSection({ email, onChange }: Props) {
       </Card>
 
       {/* Test send — the only way to tell "configured" from "configured and actually working". */}
-      <Card title={t('settings.email.test.cardTitle')}>
+      <Card className="email-card" title={t('settings.email.test.cardTitle')}>
         <p className="lede">{t('settings.email.test.lede')}</p>
 
         {(status.data?.warnings ?? []).map((warning) => (

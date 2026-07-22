@@ -4798,7 +4798,7 @@ export const nlNL: Catalog = {
 
   'settings.email.password.cardTitle': 'Serverwachtwoord',
   'settings.email.password.lede':
-    'Versleuteld bewaard in de kluis met inloggegevens. Het wordt door geen enkel eindpunt teruggegeven — alleen de status hieronder geeft aan of het bestaat.',
+    'Versleuteld bewaard in de kluis met inloggegevens. Het wordt door geen enkel eindpunt teruggegeven — alleen de status hierboven geeft aan of het bestaat.',
   'settings.email.password.label': 'Wachtwoord',
   'settings.email.password.hint': 'Een nieuw wachtwoord typen vervangt het vorige.',
   'settings.email.password.placeholder': 'Typ om in te stellen of te vervangen',

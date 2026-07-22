@@ -4831,7 +4831,7 @@ export const ptPT = {
 
   'settings.email.password.cardTitle': 'Palavra-passe do servidor',
   'settings.email.password.lede':
-    'Guardada cifrada no cofre de credenciais. Nunca é devolvida por nenhum endpoint — apenas o estado abaixo indica se existe.',
+    'Guardada cifrada no cofre de credenciais. Nunca é devolvida por nenhum endpoint — apenas o estado acima indica se existe.',
   'settings.email.password.label': 'Palavra-passe',
   'settings.email.password.hint': 'Escrever uma nova palavra-passe substitui a anterior.',
   'settings.email.password.placeholder': 'Escreva para definir ou substituir',

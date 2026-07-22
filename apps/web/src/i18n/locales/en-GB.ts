@@ -4712,7 +4712,7 @@ export const enGB: Catalog = {
 
   'settings.email.password.cardTitle': 'Server password',
   'settings.email.password.lede':
-    'Stored encrypted in the credential vault. It is never returned by any endpoint — only the status below says whether one exists.',
+    'Stored encrypted in the credential vault. It is never returned by any endpoint — only the status above says whether one exists.',
   'settings.email.password.label': 'Password',
   'settings.email.password.hint': 'Typing a new password replaces the previous one.',
   'settings.email.password.placeholder': 'Type to set or replace',

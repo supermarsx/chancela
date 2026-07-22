@@ -4814,7 +4814,7 @@ export const deDE: Catalog = {
 
   'settings.email.password.cardTitle': 'Serverpasswort',
   'settings.email.password.lede':
-    'Verschlüsselt im Anmeldedaten-Tresor gespeichert. Es wird von keinem Endpunkt zurückgegeben — nur der Status unten zeigt an, ob eines vorhanden ist.',
+    'Verschlüsselt im Anmeldedaten-Tresor gespeichert. Es wird von keinem Endpunkt zurückgegeben — nur der Status oben zeigt an, ob eines vorhanden ist.',
   'settings.email.password.label': 'Passwort',
   'settings.email.password.hint': 'Ein neues Passwort einzugeben ersetzt das bisherige.',
   'settings.email.password.placeholder': 'Eingeben, um zu setzen oder zu ersetzen',

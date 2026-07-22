@@ -4789,7 +4789,7 @@ export const esES: Catalog = {
 
   'settings.email.password.cardTitle': 'Contraseña del servidor',
   'settings.email.password.lede':
-    'Guardada cifrada en el almacén de credenciales. Ningún punto de acceso la devuelve — solo el estado de abajo indica si existe.',
+    'Guardada cifrada en el almacén de credenciales. Ningún punto de acceso la devuelve — solo el estado de arriba indica si existe.',
   'settings.email.password.label': 'Contraseña',
   'settings.email.password.hint': 'Escribir una contraseña nueva sustituye a la anterior.',
   'settings.email.password.placeholder': 'Escriba para definir o sustituir',

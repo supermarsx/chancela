@@ -4769,7 +4769,7 @@ export const fiFI: Catalog = {
 
   'settings.email.password.cardTitle': 'Palvelimen salasana',
   'settings.email.password.lede':
-    'Tallennettu salattuna tunnusten holviin. Mikään päätepiste ei palauta sitä — vain alla oleva tila kertoo, onko sellainen olemassa.',
+    'Tallennettu salattuna tunnusten holviin. Mikään päätepiste ei palauta sitä — vain yllä oleva tila kertoo, onko sellainen olemassa.',
   'settings.email.password.label': 'Salasana',
   'settings.email.password.hint': 'Uuden salasanan kirjoittaminen korvaa edellisen.',
   'settings.email.password.placeholder': 'Kirjoita asettaaksesi tai korvataksesi',

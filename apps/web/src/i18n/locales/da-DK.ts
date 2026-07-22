@@ -4753,7 +4753,7 @@ export const daDK: Catalog = {
 
   'settings.email.password.cardTitle': 'Serverens adgangskode',
   'settings.email.password.lede':
-    'Gemt krypteret i legitimationsboksen. Den returneres ikke af noget endepunkt — kun statussen nedenfor viser, om der findes en.',
+    'Gemt krypteret i legitimationsboksen. Den returneres ikke af noget endepunkt — kun statussen ovenfor viser, om der findes en.',
   'settings.email.password.label': 'Adgangskode',
   'settings.email.password.hint': 'At skrive en ny adgangskode erstatter den forrige.',
   'settings.email.password.placeholder': 'Skriv for at angive eller erstatte',
