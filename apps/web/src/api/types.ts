@@ -5575,6 +5575,55 @@ export interface AdvanceActBody {
   template_id?: string;
 }
 
+/**
+ * Body of `POST /v1/acts/{id}/revert` — move an act backward among the pre-signature drafting
+ * states. `to` must be a strictly-earlier pre-signature state (Draft…TextApproved); a forward or
+ * same-state target, a revert from `Signing` (use reopen instead), or any move out of
+ * `Sealed`/`Archived` is refused. `reason` is required and non-empty: a lifecycle regression on an
+ * evidentiary object must be reconstructable from the ledger. Appends a distinct `act.reverted`
+ * event (never `act.advanced`).
+ */
+export interface RevertActBody {
+  to: ActState;
+  reason: string;
+  actor?: string;
+}
+
+/**
+ * Body of `POST /v1/acts/{id}/reopen` — the one guarded reverse edge, pulling a `Signing` act back
+ * to `TextApproved`. Refused (409) once any signature has been collected, under legal hold, or when
+ * the book is not open. `reason` is required and non-empty for the same audit-trail reason as
+ * revert. Appends `act.reopened`.
+ */
+export interface ReopenActBody {
+  reason: string;
+  actor?: string;
+}
+
+/** The canonical signing snapshot a reopen retired; its bytes remain in the store as evidence. */
+export interface SupersededSigningSnapshotView {
+  document_id: string;
+  pdf_digest: string;
+  actor: string;
+  superseded_at: string;
+  reason: string;
+}
+
+/** Response of `POST /v1/acts/{id}/reopen`. */
+export interface ReopenActResponse {
+  act: ActView;
+  /** State the act was reopened from (always `Signing`). */
+  from: ActState;
+  /** State it was reopened into (always `TextApproved`). */
+  to: ActState;
+  /** Sequence number of the `act.reopened` ledger event. */
+  event_seq?: number;
+  /** The retired canonical snapshot, when the act had one. */
+  superseded_signing_snapshot?: SupersededSigningSnapshotView;
+  /** The frozen page count (F15) the reopen released, when one had been captured. */
+  released_page_count?: number;
+}
+
 export type HumanVerificationDecision = 'accept' | 'reject';
 
 export interface VerifyAiHumanReviewBody {

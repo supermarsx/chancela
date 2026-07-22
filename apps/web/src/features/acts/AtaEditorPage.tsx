@@ -28,6 +28,8 @@ import {
   useCompliance,
   useDispatchActConvening,
   useEntity,
+  useReopenAct,
+  useRevertAct,
   useSealAct,
   useUpdateAct,
   useVerifyActHumanReview,
@@ -88,6 +90,7 @@ import {
 import { formatAtaNumber } from '../../format';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useT } from '../../i18n';
+import { useActLifecycleT } from '../../i18n/actLifecycleFallback';
 import { formatAiProvenanceReviewPacket } from './aiProvenanceReviewPacket';
 import {
   buildWorkflowProvenanceReviewEvidence,
@@ -430,6 +433,29 @@ function nextState(current: ActState): ActState | null {
   const signingIdx = ACT_STATES.indexOf('Signing');
   if (idx < 0 || idx >= signingIdx) return null;
   return ACT_STATES[idx + 1];
+}
+
+/**
+ * The pre-signature drafting states, the only ones a revert may move between (t30). Everything from
+ * `Signing` on has frozen bytes or a minted snapshot: `Signing → TextApproved` is the guarded reopen
+ * (a separate control), and `Sealed`/`Archived` are inviolable.
+ */
+const REVERSIBLE_ACT_STATES: readonly ActState[] = [
+  'Draft',
+  'Review',
+  'Convened',
+  'Deliberated',
+  'TextApproved',
+];
+
+/**
+ * The strictly-earlier pre-signature states a `revert` may jump back to from `current` (D1 =
+ * jump-to-any-earlier). Empty for `Draft` (nothing before it) and for any non-reversible state.
+ */
+function earlierReversibleStates(current: ActState): ActState[] {
+  const idx = ACT_STATES.indexOf(current);
+  if (idx <= 0) return [];
+  return REVERSIBLE_ACT_STATES.filter((state) => ACT_STATES.indexOf(state) < idx);
 }
 
 /** Re-number an agenda list 1..n after an add/remove/reorder so numbers stay contiguous. */
@@ -2021,16 +2047,25 @@ function LifecycleStepper({
   current,
   aiHumanVerificationStatus,
   onAdvance,
+  onRevert,
+  onReopen,
   pending,
+  revertPending,
+  reopenPending,
   scope,
 }: {
   current: ActState;
   aiHumanVerificationStatus?: AiHumanVerificationStatus | null;
   onAdvance: (to: ActState) => void;
+  onRevert: () => void;
+  onReopen: () => void;
   pending: boolean;
+  revertPending: boolean;
+  reopenPending: boolean;
   scope: CanScope;
 }) {
   const t = useT();
+  const rt = useActLifecycleT();
   // `actStateLabels` is a live per-locale proxy, so the step list is built per render
   // (never hoisted to a module const) to stay correct across a locale switch.
   const steps: StepperStep<ActState>[] = ACT_STATES.map((state) => ({
@@ -2043,26 +2078,185 @@ function LifecycleStepper({
     next === 'Signing' &&
     aiHumanVerificationStatus != null &&
     aiHumanVerificationStatus !== 'accepted_by_human';
+  // "Voltar" is offered among the pre-signature drafting states (there is a strictly-earlier state
+  // to jump to). Sealed/Archived never revert; `Signing` reverses only through the guarded reopen.
+  const canRevert = earlierReversibleStates(current).length > 0;
   return (
     <div className="stack--tight">
       <Stepper steps={steps} current={current} ariaLabel={t('acts.lifecycle')} />
-      {next ? (
-        <GateButton
-          perm="act.advance"
-          scope={scope}
-          type="button"
-          variant="primary"
-          icon={<Icon.ArrowRight />}
-          disabled={pending || signingBlockedByAiReview}
-          onClick={() => onAdvance(next)}
-        >
-          {pending ? t('acts.advancing') : t('acts.advanceTo', { state: actStateLabels[next] })}
-        </GateButton>
-      ) : null}
+      <div className="rowline">
+        {next ? (
+          <GateButton
+            perm="act.advance"
+            scope={scope}
+            type="button"
+            variant="primary"
+            icon={<Icon.ArrowRight />}
+            disabled={pending || signingBlockedByAiReview}
+            onClick={() => onAdvance(next)}
+          >
+            {pending ? t('acts.advancing') : t('acts.advanceTo', { state: actStateLabels[next] })}
+          </GateButton>
+        ) : null}
+        {canRevert ? (
+          <GateButton
+            perm="act.revert"
+            scope={scope}
+            type="button"
+            variant="secondary"
+            icon={<Icon.ArrowLeft />}
+            disabled={revertPending}
+            onClick={onRevert}
+          >
+            {rt('acts.revert.button')}
+          </GateButton>
+        ) : null}
+        {current === 'Signing' ? (
+          <GateButton
+            perm="signing.perform"
+            scope={scope}
+            type="button"
+            variant="secondary"
+            icon={<Icon.Refresh />}
+            disabled={reopenPending}
+            onClick={onReopen}
+          >
+            {rt('acts.reopen.button')}
+          </GateButton>
+        ) : null}
+      </div>
       {signingBlockedByAiReview ? (
         <p className="field__hint">{t('acts.aiReview.signingBlocked')}</p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The reason prompt for a backward lifecycle move — shared by "Voltar" (revert, with an
+ * earlier-state picker) and "Reabrir para correção" (reopen, reason only). Both require a non-empty
+ * reason (the server rejects a blank one), so confirm stays disabled until one is typed. Mounted
+ * only while open, so its draft resets each time it opens.
+ */
+function LifecycleReverseModal({
+  mode,
+  earlierStates,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  mode: 'revert' | 'reopen';
+  earlierStates: ActState[];
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: (input: { to: ActState | null; reason: string }) => void;
+}) {
+  const t = useT();
+  const rt = useActLifecycleT();
+  const titleId = useId();
+  const reasonId = useId();
+  const targetId = useId();
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const [reason, setReason] = useState('');
+  const [target, setTarget] = useState<ActState | ''>(
+    mode === 'revert' ? (earlierStates[0] ?? '') : '',
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !pending) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [pending, onClose]);
+
+  const reasonReady = reason.trim().length > 0;
+  const targetReady = mode === 'reopen' || target !== '';
+  const ready = reasonReady && targetReady && !pending;
+
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!ready) return;
+    onConfirm({ to: mode === 'revert' ? (target as ActState) : null, reason: reason.trim() });
+  }
+
+  return createPortal(
+    <div
+      className="modal-backdrop"
+      onClick={() => {
+        if (!pending) onClose();
+      }}
+    >
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="modal__head">
+          <h2 className="modal__title" id={titleId}>
+            {rt(mode === 'revert' ? 'acts.revert.title' : 'acts.reopen.title')}
+          </h2>
+        </header>
+        <form className="modal__body" onSubmit={submit}>
+          <div className="modal__intro">
+            <p>{rt(mode === 'revert' ? 'acts.revert.body' : 'acts.reopen.body')}</p>
+          </div>
+
+          {mode === 'revert' ? (
+            <Field label={rt('acts.revert.target.label')} htmlFor={targetId}>
+              <Select
+                id={targetId}
+                value={target}
+                disabled={pending}
+                options={earlierStates.map((state) => ({
+                  value: state,
+                  label: actStateLabels[state],
+                }))}
+                onChange={(e) => setTarget(e.target.value as ActState)}
+              />
+            </Field>
+          ) : null}
+
+          <Field
+            label={rt(mode === 'revert' ? 'acts.revert.reason.label' : 'acts.reopen.reason.label')}
+            htmlFor={reasonId}
+            hint={rt(mode === 'revert' ? 'acts.revert.reason.hint' : 'acts.reopen.reason.hint')}
+          >
+            <TextArea
+              id={reasonId}
+              value={reason}
+              rows={3}
+              disabled={pending}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </Field>
+
+          <div className="modal__foot">
+            <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              icon={mode === 'revert' ? <Icon.ArrowLeft /> : <Icon.Refresh />}
+              disabled={!ready}
+            >
+              {mode === 'revert'
+                ? pending
+                  ? rt('acts.reverting')
+                  : rt('acts.revert.confirm')
+                : pending
+                  ? rt('acts.reopening')
+                  : rt('acts.reopen.confirm')}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2842,6 +3036,7 @@ function SealWarningAcknowledgementModal({
 
 export function AtaEditorPage() {
   const t = useT();
+  const rt = useActLifecycleT();
   const toast = useToast();
   const { id = '' } = useParams();
   const location = useLocation();
@@ -2857,6 +3052,8 @@ export function AtaEditorPage() {
   const update = useUpdateAct(id);
   const dispatchConvening = useDispatchActConvening(id);
   const advance = useAdvanceAct(id);
+  const revert = useRevertAct(id);
+  const reopen = useReopenAct(id);
   const humanReview = useVerifyActHumanReview(id);
   const seal = useSealAct(id);
   const archive = useArchiveAct(id);
@@ -2870,6 +3067,8 @@ export function AtaEditorPage() {
     useState<WrittenResolutionReceiptDraft>(() => newWrittenResolutionReceiptDraft());
   const [sealWarningsOpen, setSealWarningsOpen] = useState(false);
   const [sealWarningsAcknowledged, setSealWarningsAcknowledged] = useState(false);
+  // Which backward-lifecycle prompt is open, if any: "Voltar" (revert) or the guarded reopen.
+  const [reverseMode, setReverseMode] = useState<'revert' | 'reopen' | null>(null);
   const [manualSignatureOriginalReference, setManualSignatureOriginalReference] =
     useState<ManualSignatureOriginalReferenceDraft>(() =>
       emptyManualSignatureOriginalReferenceDraft(),
@@ -3006,6 +3205,35 @@ export function AtaEditorPage() {
       onSuccess: () => toast.success(t('toast.ata.advanced')),
       onError: (e) => toast.error(e),
     });
+  }
+
+  // Confirm a backward move from the reason prompt. On error the modal stays open (the honest 4xx is
+  // toasted) so the operator can adjust the reason/target and retry.
+  function onConfirmReverse(input: { to: ActState | null; reason: string }) {
+    if (reverseMode === 'revert') {
+      if (!input.to) return;
+      revert.mutate(
+        { to: input.to, reason: input.reason },
+        {
+          onSuccess: () => {
+            setReverseMode(null);
+            toast.success(rt('toast.ata.reverted'));
+          },
+          onError: (e) => toast.error(e),
+        },
+      );
+    } else if (reverseMode === 'reopen') {
+      reopen.mutate(
+        { reason: input.reason },
+        {
+          onSuccess: () => {
+            setReverseMode(null);
+            toast.success(rt('toast.ata.reopened'));
+          },
+          onError: (e) => toast.error(e),
+        },
+      );
+    }
   }
 
   function onHumanReview(decision: HumanVerificationDecision) {
@@ -3150,11 +3378,17 @@ export function AtaEditorPage() {
           not as a card squeezed into the 22rem aside. */}
       <Card title={t('acts.lifecycle')}>
         {advance.error ? <ErrorNote error={advance.error} /> : null}
+        {revert.error ? <ErrorNote error={revert.error} /> : null}
+        {reopen.error ? <ErrorNote error={reopen.error} /> : null}
         <LifecycleStepper
           current={a.state}
           aiHumanVerificationStatus={aiHumanVerificationStatus}
           pending={advance.isPending}
+          revertPending={revert.isPending}
+          reopenPending={reopen.isPending}
           onAdvance={onAdvance}
+          onRevert={() => setReverseMode('revert')}
+          onReopen={() => setReverseMode('reopen')}
           scope={bookScope}
         />
       </Card>
@@ -3542,6 +3776,17 @@ export function AtaEditorPage() {
         }}
         onConfirm={() => submitSeal(hasComplianceWarnings)}
       />
+      {reverseMode ? (
+        <LifecycleReverseModal
+          mode={reverseMode}
+          earlierStates={earlierReversibleStates(a.state)}
+          pending={reverseMode === 'revert' ? revert.isPending : reopen.isPending}
+          onClose={() => {
+            if (!revert.isPending && !reopen.isPending) setReverseMode(null);
+          }}
+          onConfirm={onConfirmReverse}
+        />
+      ) : null}
     </div>
   );
 }

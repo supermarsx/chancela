@@ -18,6 +18,8 @@ import {
 import { useEffect } from 'react';
 import type {
   AdvanceActBody,
+  RevertActBody,
+  ReopenActBody,
   BookArchivePackageParams,
   CaeRevision,
   CloseBookBody,
@@ -963,6 +965,34 @@ export function useAdvanceAct(id: string) {
       void qc.invalidateQueries({ queryKey: keys.compliance(id) });
       void qc.invalidateQueries({ queryKey: keys.bookActs(act.book_id) });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+export function useRevertAct(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RevertActBody) => api.revertAct(id, body),
+    onSuccess: (act) => {
+      qc.setQueryData(keys.act(id), act);
+      void qc.invalidateQueries({ queryKey: keys.compliance(id) });
+      void qc.invalidateQueries({ queryKey: keys.bookActs(act.book_id) });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useReopenAct(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ReopenActBody) => api.reopenAct(id, body),
+    onSuccess: (res) => {
+      qc.setQueryData(keys.act(id), res.act);
+      void qc.invalidateQueries({ queryKey: keys.compliance(id) });
+      void qc.invalidateQueries({ queryKey: keys.bookActs(res.act.book_id) });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }

@@ -393,6 +393,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Ata rascunhada',
     'Ata rascunhada a partir de OCR',
     'Ata reaberta para correção',
+    'Ata revertida para estado anterior',
     'Ata selada',
     'Atas',
     'Atas do livro',

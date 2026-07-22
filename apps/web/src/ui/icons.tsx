@@ -228,6 +228,15 @@ export function ArrowRight(props: IconProps) {
   );
 }
 
+/** step back / revert — a left arrow, the mirror of {@link ArrowRight}. */
+export function ArrowLeft(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+    </Icon>
+  );
+}
+
 /** move up / reorder — an up chevron. */
 export function ArrowUp(props: IconProps) {
   return (

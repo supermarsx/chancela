@@ -11,6 +11,9 @@
 import type {
   ActView,
   AdvanceActBody,
+  RevertActBody,
+  ReopenActBody,
+  ReopenActResponse,
   CaeCatalogView,
   CaeEntryView,
   CaeNode,
@@ -1047,6 +1050,14 @@ export const api = {
   dispatchActConvening: (id: string, body: DispatchActConveningBody) =>
     post<ActView>(`/v1/acts/${id}/convening/dispatch`, body),
   advanceAct: (id: string, body: AdvanceActBody) => post<ActView>(`/v1/acts/${id}/advance`, body),
+  // Move an act backward among the pre-signature drafting states (D1 = jump to any earlier one).
+  // Appends a distinct `act.reverted` event; 422 on empty reason / invalid target, 409 from Signing
+  // (points at reopen) or legal hold, 403 without `act.revert`.
+  revertAct: (id: string, body: RevertActBody) => post<ActView>(`/v1/acts/${id}/revert`, body),
+  // The one guarded reverse edge: pull a `Signing` act back to `TextApproved` for correction. 409
+  // once a signature has been collected, under legal hold, or when the book is not open.
+  reopenAct: (id: string, body: ReopenActBody) =>
+    post<ReopenActResponse>(`/v1/acts/${id}/reopen`, body),
   verifyActHumanReview: (id: string, body: VerifyAiHumanReviewBody) =>
     post<ActView>(`/v1/acts/${id}/human-verification`, body),
   getCompliance: (id: string) => get<ComplianceReport>(`/v1/acts/${id}/compliance`),
