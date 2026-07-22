@@ -4,7 +4,34 @@ import { ToastProvider } from './ToastProvider';
 import { useToast } from './useToast';
 import { ApiError } from '../../api/client';
 
-afterEach(cleanup);
+/**
+ * jsdom ships no `window.matchMedia`, and the provider treats its absence as "no motion" (the
+ * instant path). To exercise the animated exit we install a stub whose
+ * `(prefers-reduced-motion: reduce)` query resolves to `reduce`. `afterEach` removes it and
+ * clears any safe-mode flag so the default (motionless) env is restored for the other tests.
+ */
+function installMatchMedia(reduce: boolean) {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({
+      matches: query.includes('reduce') ? reduce : false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
+afterEach(() => {
+  cleanup();
+  Reflect.deleteProperty(window, 'matchMedia');
+  delete document.documentElement.dataset.safeMode;
+});
 
 /**
  * A tiny control surface that turns each toast API method into a clickable button, so
@@ -151,6 +178,69 @@ describe('ToastProvider + useToast', () => {
       </ToastProvider>,
     );
     expect(screen.getByRole('region', { name: 'Notificações' })).toBeTruthy();
+  });
+
+  it('keeps a dismissed toast mounted through its exit animation, then removes it', () => {
+    installMatchMedia(false); // motion on → the animated exit path
+    vi.useFakeTimers();
+    try {
+      renderToasts();
+      fireEvent.click(screen.getByText('push-success'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Dispensar' }));
+      // Still mounted, now marked as leaving so `toast-out` can play.
+      const leaving = screen.getByRole('status');
+      expect(leaving.className).toContain('toast--exiting');
+
+      // Removed only after the exit duration elapses (removal is timer-driven, not animationend).
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(screen.queryByRole('status')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('removes a toast instantly under prefers-reduced-motion (no exit animation)', () => {
+    installMatchMedia(true); // reduced motion
+    renderToasts();
+    fireEvent.click(screen.getByText('push-success'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dispensar' }));
+    // Gone at once — never enters the exiting state, nothing left animating.
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('removes a toast instantly in safe mode (no exit animation)', () => {
+    installMatchMedia(false);
+    document.documentElement.dataset.safeMode = 'on';
+    renderToasts();
+    fireEvent.click(screen.getByText('push-success'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dispensar' }));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('ignores a repeated dismiss while a toast is already exiting', () => {
+    installMatchMedia(false);
+    vi.useFakeTimers();
+    try {
+      renderToasts();
+      fireEvent.click(screen.getByText('push-success'));
+      const dismissBtn = screen.getByRole('button', { name: 'Dispensar' });
+
+      fireEvent.click(dismissBtn);
+      fireEvent.click(dismissBtn); // second click must not double-schedule or throw
+      expect(screen.getByRole('status').className).toContain('toast--exiting');
+
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(screen.queryByRole('status')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('throws when useToast is called without a provider', () => {
