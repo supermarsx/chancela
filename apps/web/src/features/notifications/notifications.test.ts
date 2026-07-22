@@ -10,6 +10,10 @@ import type { NotificationItem } from './notifications';
 import {
   buildDashboardNotifications,
   compareNotifications,
+  notificationItemFromSnapshot,
+  notificationMatchesQuery,
+  notificationMatchesTone,
+  notificationSnapshotFromItem,
   popupNotifications,
 } from './notifications';
 
@@ -988,5 +992,77 @@ describe('buildDashboardNotifications', () => {
     expect(
       compareNotifications(item({ id: 'a', title: 'Igual' }), item({ id: 'b', title: 'Igual' })),
     ).toBeLessThan(0);
+  });
+});
+
+describe('dismissal snapshots and the free-text filter (t17)', () => {
+  const baseItem = (overrides: Partial<NotificationItem> = {}): NotificationItem => ({
+    id: 'alert:x',
+    kind: 'alert',
+    priority: 2,
+    sortTime: null,
+    tone: 'warn',
+    badge: 'Alerta',
+    title: 'Rever conformidade',
+    detail: 'Detalhe da revisão',
+    meta: ['Fonte: acts.compliance'],
+    action: { href: '/acts/act-1', label: 'Rever ata' },
+    timestamp: '2026-07-16T10:00:00Z',
+    ...overrides,
+  });
+
+  it('authors a snapshot within the server byte caps and strips control characters', () => {
+    const snapshot = notificationSnapshotFromItem(
+      baseItem({
+        title: `A${'á'.repeat(400)}`,
+        detail: 'linha um\nlinha dois\ttab',
+        badge: 'b'.repeat(200),
+      }),
+    );
+    const bytes = (value: string) => new TextEncoder().encode(value).length;
+    expect(bytes(snapshot.title)).toBeLessThanOrEqual(256);
+    expect(bytes(snapshot.badge)).toBeLessThanOrEqual(128);
+    // Multi-byte truncation never splits a character.
+    expect(snapshot.title.normalize()).toBe(snapshot.title);
+    // Control characters are folded to spaces so the server's reject-on-control guard never trips.
+    expect(snapshot.detail).toBe('linha um linha dois tab');
+  });
+
+  it('round-trips a snapshot back into a display item, normalizing unknown kind/tone', () => {
+    const snapshot = notificationSnapshotFromItem(baseItem());
+    const rebuilt = notificationItemFromSnapshot('alert:x', snapshot);
+    expect(rebuilt.title).toBe('Rever conformidade');
+    expect(rebuilt.kind).toBe('alert');
+    expect(rebuilt.tone).toBe('warn');
+    expect(rebuilt.action?.href).toBe('/acts/act-1');
+    expect(rebuilt.sortTime).toBe(Date.parse('2026-07-16T10:00:00Z'));
+
+    const coerced = notificationItemFromSnapshot('id', {
+      kind: 'bogus',
+      tone: 'bogus',
+      badge: 'B',
+      title: 'T',
+      detail: 'D',
+    });
+    expect(coerced.kind).toBe('operation');
+    expect(coerced.tone).toBe('neutral');
+    expect(coerced.meta).toEqual([]);
+  });
+
+  it('matches queries diacritic-insensitively across title, detail, badge, and meta', () => {
+    const item = baseItem();
+    expect(notificationMatchesQuery(item, '')).toBe(true);
+    expect(notificationMatchesQuery(item, '   ')).toBe(true);
+    expect(notificationMatchesQuery(item, 'CONFORMIDADE')).toBe(true);
+    expect(notificationMatchesQuery(item, 'revisao')).toBe(true); // matches "revisão"
+    expect(notificationMatchesQuery(item, 'acts.compliance')).toBe(true); // meta
+    expect(notificationMatchesQuery(item, 'inexistente')).toBe(false);
+  });
+
+  it('filters by tone with an all-pass sentinel', () => {
+    const item = baseItem({ tone: 'error' });
+    expect(notificationMatchesTone(item, 'all')).toBe(true);
+    expect(notificationMatchesTone(item, 'error')).toBe(true);
+    expect(notificationMatchesTone(item, 'warn')).toBe(false);
   });
 });

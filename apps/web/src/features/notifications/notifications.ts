@@ -8,6 +8,7 @@ import type {
   DashboardAlert,
   DashboardReminder,
   LedgerEventView,
+  NotificationSnapshot,
 } from '../../api/types';
 import { normalizeLegacyRoute } from '../../app/legacySlugs';
 import type { MessageKey, TFunction, TParams } from '../../i18n';
@@ -759,4 +760,142 @@ export function isActionableNotification(item: NotificationItem): boolean {
 export function popupNotifications<T extends NotificationItem>(items: T[], limit: number): T[] {
   const actionable = items.filter(isActionableNotification);
   return (actionable.length > 0 ? actionable : items).slice(0, limit);
+}
+
+// — Dismissal snapshots (t17) ————————————————————————————————————————————————
+// A dismissed notification's content is reconstructed from the live dashboard only while the
+// condition that generated it persists. To make the Dismissed tab and the 120-day retention clock
+// meaningful, the client freezes a small display snapshot on dismiss and sends it in the PATCH body;
+// the server stores it opaquely and echoes it back. These helpers author the snapshot within the
+// server's byte caps (so a valid dismiss never trips the 422 length/control-char guard) and rebuild
+// a display item from a stored snapshot.
+
+// Byte caps mirror the server's `NotificationSnapshot` validation (notifications.rs).
+const SNAPSHOT_KIND_MAX_BYTES = 64;
+const SNAPSHOT_TONE_MAX_BYTES = 64;
+const SNAPSHOT_BADGE_MAX_BYTES = 128;
+const SNAPSHOT_TITLE_MAX_BYTES = 256;
+const SNAPSHOT_DETAIL_MAX_BYTES = 1024;
+const SNAPSHOT_TIMESTAMP_MAX_BYTES = 64;
+const SNAPSHOT_LABEL_MAX_BYTES = 128;
+const SNAPSHOT_HREF_MAX_BYTES = 512;
+
+const SNAPSHOT_ENCODER = new TextEncoder();
+
+function truncateToBytes(value: string, maxBytes: number): string {
+  if (SNAPSHOT_ENCODER.encode(value).length <= maxBytes) return value;
+  let result = '';
+  // Iterate by code point (spread) so a multi-byte character is never split across the cap.
+  for (const ch of value) {
+    if (SNAPSHOT_ENCODER.encode(result + ch).length > maxBytes) break;
+    result += ch;
+  }
+  return result;
+}
+
+// Fold C0 controls + DEL to a space. The server rejects any of these, so folding them keeps a valid
+// value (a title with a stray newline still archives, just flattened) instead of tripping the 422.
+// Done as a code-point scan rather than a regex so it needs no `no-control-regex` exception.
+function stripControlChars(value: string): string {
+  let result = '';
+  for (const ch of value) {
+    const code = ch.codePointAt(0) ?? 0;
+    result += code < 0x20 || code === 0x7f ? ' ' : ch;
+  }
+  return result;
+}
+
+function sanitizeSnapshotText(value: string, maxBytes: number): string {
+  return truncateToBytes(stripControlChars(value), maxBytes);
+}
+
+export function notificationSnapshotFromItem(item: NotificationItem): NotificationSnapshot {
+  const snapshot: NotificationSnapshot = {
+    kind: sanitizeSnapshotText(item.kind, SNAPSHOT_KIND_MAX_BYTES),
+    tone: sanitizeSnapshotText(item.tone, SNAPSHOT_TONE_MAX_BYTES),
+    badge: sanitizeSnapshotText(item.badge, SNAPSHOT_BADGE_MAX_BYTES),
+    title: sanitizeSnapshotText(item.title, SNAPSHOT_TITLE_MAX_BYTES),
+    detail: sanitizeSnapshotText(item.detail, SNAPSHOT_DETAIL_MAX_BYTES),
+  };
+  if (item.timestamp) {
+    snapshot.timestamp = sanitizeSnapshotText(item.timestamp, SNAPSHOT_TIMESTAMP_MAX_BYTES);
+  }
+  if (item.action) {
+    snapshot.action = {
+      href: sanitizeSnapshotText(item.action.href, SNAPSHOT_HREF_MAX_BYTES),
+      label: sanitizeSnapshotText(item.action.label, SNAPSHOT_LABEL_MAX_BYTES),
+    };
+  }
+  return snapshot;
+}
+
+const NOTIFICATION_KINDS: readonly NotificationKind[] = ['alert', 'reminder', 'operation'];
+const NOTIFICATION_TONES: readonly NotificationTone[] = ['neutral', 'accent', 'warn', 'error'];
+
+function snapshotKind(value: string): NotificationKind {
+  return (NOTIFICATION_KINDS as readonly string[]).includes(value)
+    ? (value as NotificationKind)
+    : 'operation';
+}
+
+function snapshotTone(value: string): NotificationTone {
+  return (NOTIFICATION_TONES as readonly string[]).includes(value)
+    ? (value as NotificationTone)
+    : 'neutral';
+}
+
+/**
+ * Rebuild a display item from a stored dismissal snapshot. Used for dismissed entries the dashboard
+ * no longer generates; the fields the snapshot does not carry (priority, meta) take inert defaults —
+ * the item is an archive row, not a live notification competing for sort position.
+ */
+export function notificationItemFromSnapshot(
+  id: string,
+  snapshot: NotificationSnapshot,
+): NotificationItem {
+  return {
+    id,
+    kind: snapshotKind(snapshot.kind),
+    priority: 5,
+    sortTime: parseNotificationTimestamp(snapshot.timestamp),
+    tone: snapshotTone(snapshot.tone),
+    badge: snapshot.badge,
+    title: snapshot.title,
+    detail: snapshot.detail,
+    meta: [],
+    action: snapshot.action
+      ? { href: snapshot.action.href, label: snapshot.action.label }
+      : undefined,
+    timestamp: snapshot.timestamp,
+  };
+}
+
+// — Entities-style free-text filter (t17) ————————————————————————————————————
+// Mirrors the entities list search: NFD-fold + strip diacritics + lowercase, then substring-match a
+// flattened haystack of the row's visible text. Pure so it can be unit-tested like the entities one.
+
+export function normalizeNotificationSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+export function notificationSearchText(item: NotificationItem): string {
+  return normalizeNotificationSearch([item.title, item.detail, item.badge, ...item.meta].join(' '));
+}
+
+export function notificationMatchesQuery(item: NotificationItem, query: string): boolean {
+  const normalized = normalizeNotificationSearch(query.trim());
+  if (!normalized) return true;
+  return notificationSearchText(item).includes(normalized);
+}
+
+export type NotificationToneFilter = 'all' | NotificationTone;
+
+export function notificationMatchesTone(
+  item: NotificationItem,
+  tone: NotificationToneFilter,
+): boolean {
+  return tone === 'all' || item.tone === tone;
 }

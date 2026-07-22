@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, api } from '../../api/client';
 import type {
+  NotificationSnapshot,
+  NotificationSnapshotAction,
   NotificationTriageEntry,
   NotificationTriageStatus,
+  NotificationTriageUpdateBody,
   NotificationTriageUpdateResponse,
 } from '../../api/types';
-import type { NotificationItem } from './notifications';
+import { notificationItemFromSnapshot, type NotificationItem } from './notifications';
 
 const LOCAL_STORAGE_KEY = 'chancela.notificationTriage.v1';
 const LOCAL_MAX_ENTRIES = 500;
@@ -27,6 +30,44 @@ function isStoredStatus(value: unknown): value is NotificationTriageEntry['statu
   return value === 'read' || value === 'dismissed' || value === 'acknowledged';
 }
 
+function isSnapshotAction(value: unknown): value is NotificationSnapshotAction {
+  if (!value || typeof value !== 'object') return false;
+  const action = value as Record<string, unknown>;
+  return typeof action.href === 'string' && typeof action.label === 'string';
+}
+
+/**
+ * Keep a snapshot only when it carries the full required display shape. A partial or tampered blob
+ * (localStorage is user-writable) is dropped, degrading that entry to live-reconstruction rather
+ * than rendering a half-built card. The server already length-caps and control-char-checks the copy
+ * before it stores it, so this is a shape guard, not a re-validation of every byte.
+ */
+function normalizeSnapshot(value: unknown): NotificationSnapshot | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const snapshot = value as Record<string, unknown>;
+  if (
+    typeof snapshot.kind !== 'string' ||
+    typeof snapshot.tone !== 'string' ||
+    typeof snapshot.badge !== 'string' ||
+    typeof snapshot.title !== 'string' ||
+    typeof snapshot.detail !== 'string'
+  ) {
+    return undefined;
+  }
+  const normalized: NotificationSnapshot = {
+    kind: snapshot.kind,
+    tone: snapshot.tone,
+    badge: snapshot.badge,
+    title: snapshot.title,
+    detail: snapshot.detail,
+  };
+  if (typeof snapshot.timestamp === 'string') normalized.timestamp = snapshot.timestamp;
+  if (isSnapshotAction(snapshot.action)) {
+    normalized.action = { href: snapshot.action.href, label: snapshot.action.label };
+  }
+  return normalized;
+}
+
 export function normalizeNotificationTriageEntries(value: unknown): NotificationTriageEntry[] {
   if (!Array.isArray(value)) return [];
   const byId = new Map<string, NotificationTriageEntry>();
@@ -40,6 +81,9 @@ export function normalizeNotificationTriageEntries(value: unknown): Notification
     ) {
       continue;
     }
+    const dismissedAt =
+      typeof entry.dismissed_at === 'string' && entry.dismissed_at ? entry.dismissed_at : undefined;
+    const snapshot = normalizeSnapshot(entry.snapshot);
     byId.set(entry.notification_id, {
       notification_id: entry.notification_id,
       status: entry.status,
@@ -47,6 +91,8 @@ export function normalizeNotificationTriageEntries(value: unknown): Notification
         typeof entry.updated_at === 'string' && entry.updated_at
           ? entry.updated_at
           : new Date(0).toISOString(),
+      ...(dismissedAt ? { dismissed_at: dismissedAt } : {}),
+      ...(snapshot ? { snapshot } : {}),
       ...(typeof entry.owner === 'string' ? { owner: entry.owner } : {}),
     });
   }
@@ -82,14 +128,20 @@ export function applyNotificationTriageStatus(
   notificationId: string,
   status: NotificationTriageStatus,
   responseEntry?: NotificationTriageEntry | null,
+  snapshot?: NotificationSnapshot,
 ): NotificationTriageEntry[] {
   const next = entries.filter((entry) => entry.notification_id !== notificationId);
   if (status !== 'unread') {
+    const now = new Date().toISOString();
     next.unshift(
       responseEntry ?? {
         notification_id: notificationId,
         status,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
+        // A locally-authored dismiss carries its own retention clock and display snapshot, so the
+        // fallback entry behaves like the server one — visible in Descartadas, aged out on the same
+        // 120-day terms once the server is reachable again.
+        ...(status === 'dismissed' ? { dismissed_at: now, ...(snapshot ? { snapshot } : {}) } : {}),
       },
     );
   }
@@ -99,8 +151,9 @@ export function applyNotificationTriageStatus(
 export function patchLocalNotificationTriage(
   notificationId: string,
   status: NotificationTriageStatus,
+  snapshot?: NotificationSnapshot,
 ): NotificationTriageUpdateResponse {
-  const entries = applyStatus(readLocalEntries(), notificationId, status);
+  const entries = applyStatus(readLocalEntries(), notificationId, status, undefined, snapshot);
   writeLocalEntries(entries);
   return {
     status,
@@ -158,6 +211,47 @@ export function resolvedNotifications(items: TriagedNotificationItem[]): Triaged
   return items.filter(isResolvedNotification);
 }
 
+export function acknowledgedNotifications(
+  items: TriagedNotificationItem[],
+): TriagedNotificationItem[] {
+  return items.filter((item) => item.triageStatus === 'acknowledged');
+}
+
+/**
+ * The Descartadas list: every dismissed notification, whether the dashboard still generates it or
+ * not. Live-reconstructed items win over their stored snapshot (freshest copy), and entries whose
+ * condition has cleared are rebuilt from the snapshot the client froze on dismiss. Sorted by the
+ * dismissal instant (newest first), falling back to `updated_at` for pre-snapshot entries.
+ */
+export function dismissedNotifications(
+  items: TriagedNotificationItem[],
+  entries: NotificationTriageEntry[],
+): TriagedNotificationItem[] {
+  const live = items.filter((item) => item.triageStatus === 'dismissed');
+  const liveIds = new Set(live.map((item) => item.id));
+  const snapshotOnly: TriagedNotificationItem[] = entries
+    .filter(
+      (entry) =>
+        entry.status === 'dismissed' && entry.snapshot && !liveIds.has(entry.notification_id),
+    )
+    .map((entry) => ({
+      ...notificationItemFromSnapshot(
+        entry.notification_id,
+        entry.snapshot as NotificationSnapshot,
+      ),
+      triageStatus: 'dismissed' as const,
+    }));
+  const clockById = new Map(
+    entries.map(
+      (entry) => [entry.notification_id, entry.dismissed_at ?? entry.updated_at] as const,
+    ),
+  );
+  const clock = (id: string): string => clockById.get(id) ?? '';
+  return [...live, ...snapshotOnly].sort(
+    (a, b) => clock(b.id).localeCompare(clock(a.id)) || a.id.localeCompare(b.id),
+  );
+}
+
 export function useNotificationTriage() {
   const queryClient = useQueryClient();
   const query = useQuery<NotificationTriageQueryData>({
@@ -188,18 +282,24 @@ export function useNotificationTriage() {
     mutationFn: async ({
       notificationId,
       status,
+      snapshot,
     }: {
       notificationId: string;
       status: NotificationTriageStatus;
+      snapshot?: NotificationSnapshot;
     }) => {
       const source =
         queryClient.getQueryData<NotificationTriageQueryData>(notificationTriageKey)?.source;
-      if (source === 'local') return localPatch(notificationId, status);
+      if (source === 'local') return localPatch(notificationId, status, snapshot);
+      const body: NotificationTriageUpdateBody = { status };
+      // The snapshot only means anything on a dismiss — it is what Descartadas renders once the
+      // dashboard stops generating the item. Never sent for read/acknowledge/restore.
+      if (status === 'dismissed' && snapshot) body.snapshot = snapshot;
       try {
-        return await api.patchNotificationTriage(notificationId, { status });
+        return await api.patchNotificationTriage(notificationId, body);
       } catch (error) {
         if (!shouldUseLocalFallback(error)) throw error;
-        return localPatch(notificationId, status);
+        return localPatch(notificationId, status, snapshot);
       }
     },
     onSuccess: (response, variables) => {
@@ -210,6 +310,7 @@ export function useNotificationTriage() {
           variables.notificationId,
           response.status,
           response.entry,
+          variables.snapshot,
         );
         if (source === 'local') writeLocalEntries(entries);
         return {
@@ -229,7 +330,10 @@ export function useNotificationTriage() {
     source: query.data?.source ?? 'server',
     durable: query.data?.durable ?? false,
     isUpdating: mutation.isPending,
-    setStatus: (notificationId: string, status: NotificationTriageStatus) =>
-      mutation.mutate({ notificationId, status }),
+    setStatus: (
+      notificationId: string,
+      status: NotificationTriageStatus,
+      snapshot?: NotificationSnapshot,
+    ) => mutation.mutate({ notificationId, status, snapshot }),
   };
 }

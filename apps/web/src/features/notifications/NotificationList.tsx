@@ -2,8 +2,9 @@ import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useT, type TFunction } from '../../i18n';
 import { Badge, EmptyState, Icon, RelativeDateTime, Tooltip, TooltipText } from '../../ui';
-import type { NotificationTriageStatus } from '../../api/types';
+import type { NotificationSnapshot, NotificationTriageStatus } from '../../api/types';
 import type { TriagedNotificationItem } from './triage';
+import { notificationSnapshotFromItem } from './notifications';
 import { MailOpenGlyph, ShieldCheckGlyph, notificationTypeGlyph } from './icons';
 
 function compactKindLabel(item: TriagedNotificationItem, t: TFunction): string {
@@ -87,7 +88,11 @@ export function NotificationList({
   compact?: boolean;
   emptyTitle?: string;
   onAction?: () => void;
-  onTriage?: (id: string, status: NotificationTriageStatus) => void;
+  onTriage?: (
+    id: string,
+    status: NotificationTriageStatus,
+    snapshot?: NotificationSnapshot,
+  ) => void;
   triageDisabled?: boolean;
 }) {
   const t = useT();
@@ -217,7 +222,11 @@ export function NotificationList({
                       iconName="dismiss"
                       icon={<Icon.Close />}
                       disabled={triageDisabled}
-                      onClick={() => onTriage(item.id, 'dismissed')}
+                      // Freeze the display copy at dismiss time so Descartadas can show this row for
+                      // the full retention window even after the dashboard stops generating it.
+                      onClick={() =>
+                        onTriage(item.id, 'dismissed', notificationSnapshotFromItem(item))
+                      }
                     />
                   ) : null}
                 </div>

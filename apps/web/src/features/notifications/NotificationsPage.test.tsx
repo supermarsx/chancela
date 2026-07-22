@@ -174,12 +174,13 @@ describe('NotificationsPage', () => {
     expectIconOnlyFilter('Alertas');
     expectIconOnlyFilter('Lembretes');
     expectIconOnlyFilter('Operações');
-    expectIconOnlyFilter('Resolvidas');
+    expectIconOnlyFilter('Dispensadas');
+    expectIconOnlyFilter('Reconhecidas');
 
     expect(await screen.findByText('Sem notificações derivadas do painel.')).toBeTruthy();
     expect(screen.queryByText('Rever conformidade da ata')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Resolvidas' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dispensadas' }));
 
     expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
     const resolvedItem = screen
@@ -328,5 +329,155 @@ describe('NotificationsPage', () => {
     // decoration riding on already-rendered content, never a gate in front of it.
     expect(screen.getByText('Rever conformidade da ata')).toBeTruthy();
     expect(after?.contains(screen.getByText('Rever conformidade da ata'))).toBe(true);
+  });
+
+  it('freezes a display snapshot in the PATCH body when a notification is dismissed', async () => {
+    const patches: { url: string; body: unknown }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const method = init?.method ?? 'GET';
+        if (url.includes('/v1/dashboard')) {
+          return Promise.resolve(
+            new Response(JSON.stringify(dashboard({ alerts: [actionableActAlert()] })), {
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+        if (url.includes('/v1/notifications/triage') && method === 'PATCH') {
+          patches.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
+          return Promise.resolve(
+            new Response(JSON.stringify({ status: 'dismissed', durable: true, entry: null }), {
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+        if (url.includes('/v1/notifications/triage')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ durable: true, max_entries_per_owner: 500, entries: [] }),
+              { headers: { 'Content-Type': 'application/json' } },
+            ),
+          );
+        }
+        return Promise.reject(new Error(`no stub for ${url}`));
+      }),
+    );
+
+    renderWithProviders(<NotificationsPage />, ['/notifications']);
+    await screen.findByText('Rever conformidade da ata');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dispensar' }));
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    const body = patches[0].body as {
+      status: string;
+      snapshot?: { title: string; kind: string; action?: { href: string } };
+    };
+    expect(body.status).toBe('dismissed');
+    expect(body.snapshot?.title).toBe('Rever conformidade da ata');
+    expect(body.snapshot?.kind).toBe('alert');
+    expect(body.snapshot?.action?.href).toBe('/acts/act-1');
+  });
+
+  it('renders dismissed snapshots the dashboard no longer generates and filters them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/dashboard', body: dashboard() },
+        {
+          match: '/v1/notifications/triage',
+          body: {
+            durable: true,
+            max_entries_per_owner: 500,
+            entries: [
+              {
+                notification_id: 'snapshot:lease',
+                status: 'dismissed',
+                updated_at: '2026-07-10T10:00:00Z',
+                dismissed_at: '2026-07-10T10:00:00Z',
+                snapshot: {
+                  kind: 'operation',
+                  tone: 'neutral',
+                  badge: 'Operação',
+                  title: 'Contrato de arrendamento',
+                  detail: 'Detalhe do arrendamento',
+                  action: { href: '/archive', label: 'Abrir' },
+                },
+              },
+              {
+                notification_id: 'snapshot:deadline',
+                status: 'dismissed',
+                updated_at: '2026-07-09T10:00:00Z',
+                dismissed_at: '2026-07-09T10:00:00Z',
+                snapshot: {
+                  kind: 'alert',
+                  tone: 'warn',
+                  badge: 'Alerta',
+                  title: 'Rever prazo pendente',
+                  detail: 'Detalhe do prazo',
+                },
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    renderWithProviders(<NotificationsPage />, ['/notifications']);
+    // The dashboard generates nothing, so these rows exist ONLY because the snapshot persisted them.
+    fireEvent.click(await screen.findByRole('button', { name: 'Dispensadas' }));
+
+    expect(await screen.findByText('Contrato de arrendamento')).toBeTruthy();
+    expect(screen.getByText('Rever prazo pendente')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'As notificações dispensadas são removidas automaticamente ao fim do período de retenção definido no servidor.',
+      ),
+    ).toBeTruthy();
+
+    const search = screen.getByRole('searchbox', { name: 'Pesquisar' });
+    fireEvent.change(search, { target: { value: 'arrendamento' } });
+
+    expect(screen.getByText('Contrato de arrendamento')).toBeTruthy();
+    expect(screen.queryByText('Rever prazo pendente')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }));
+    expect(screen.getByText('Rever prazo pendente')).toBeTruthy();
+  });
+
+  it('separates acknowledged notifications into their own tab', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/dashboard', body: dashboard({ alerts: [actionableActAlert()] }) },
+        {
+          match: '/v1/notifications/triage',
+          body: {
+            durable: true,
+            max_entries_per_owner: 500,
+            entries: [
+              {
+                notification_id: 'alert:act.compliance.review_required:-:-:act-1:0',
+                status: 'acknowledged',
+                updated_at: '2026-07-10T10:00:00Z',
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    renderWithProviders(<NotificationsPage />, ['/notifications']);
+
+    // Acknowledged is excluded from the active list…
+    expect(await screen.findByText('Sem notificações derivadas do painel.')).toBeTruthy();
+    // …absent from Descartadas…
+    fireEvent.click(screen.getByRole('button', { name: 'Dispensadas' }));
+    expect(await screen.findByText('Sem notificações dispensadas.')).toBeTruthy();
+    // …and present under Reconhecidas.
+    fireEvent.click(screen.getByRole('button', { name: 'Reconhecidas' }));
+    expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
   });
 });
