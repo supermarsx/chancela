@@ -333,8 +333,10 @@ pub async fn exchange_pairing_code(
         }
     };
 
-    // Mint an identity-only companion session, then bind a durable device to its token digest.
-    let token = mint_session(&state, uid, None).await?;
+    // Mint an identity-only companion session, then bind a durable device to its token digest. A
+    // paired companion carries no web device/IP origin here — the pairing device directory (wp27-e4)
+    // is its own device record — so the active-sign-ins list shows it without a browser label.
+    let token = mint_session(&state, uid, None, crate::session::SessionOrigin::default()).await?;
     let record = DurablePairingDevice {
         device_id: Uuid::new_v4().to_string(),
         user_id,

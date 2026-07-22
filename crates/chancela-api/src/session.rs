@@ -22,9 +22,30 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use std::net::SocketAddr;
+
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, FromRequestParts, State};
 use axum::http::StatusCode;
+use axum::http::request::Parts;
+
+/// An **infallible** extractor for the TCP peer address, `None` when the server was not started with
+/// `into_make_service_with_connect_info` (in-process tests) or the connect info is otherwise absent.
+///
+/// `Option<ConnectInfo<_>>` is not a valid axum 0.8 extractor, and a bare `ConnectInfo` *rejects*
+/// when the info is missing — which would break every in-process session test. This reads the same
+/// extension `ConnectInfo` populates and never fails, so the sign-in handlers stay testable.
+pub struct ClientPeer(pub Option<SocketAddr>);
+
+impl<S: Send + Sync> FromRequestParts<S> for ClientPeer {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(ClientPeer(
+            parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0),
+        ))
+    }
+}
 use p256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -55,7 +76,11 @@ pub struct SessionEntry {
 /// enough to re-authenticate a presented token after a clean or unclean API restart without turning
 /// the registry itself into a bearer-token database.
 pub(crate) const SESSIONS_FILE: &str = "sessions.json";
-const SESSION_REGISTRY_SCHEMA_VERSION: u32 = 1;
+/// Bumped 1→2 by the t95 session backend, which adds `session_id`, `device`, `ip` and
+/// `last_seen_unix` to each record. **A v1 file still loads** — the reader accepts any version `<= `
+/// this and the new fields deserialize from their `#[serde(default)]`s (a pre-feature session simply
+/// carries no device/IP and a fresh handle), so an upgrade never invalidates live sessions.
+const SESSION_REGISTRY_SCHEMA_VERSION: u32 = 2;
 const MAX_DURABLE_SESSIONS: usize = 10_000;
 const MAX_SESSION_REGISTRY_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -63,9 +88,26 @@ const MAX_SESSION_REGISTRY_BYTES: u64 = 8 * 1024 * 1024;
 #[serde(deny_unknown_fields)]
 pub(crate) struct DurableSessionRecord {
     token_sha256: String,
+    /// The opaque handle for the active-sign-ins API (t95). Not the token, not its digest. Defaulted
+    /// so a v1 record (which had none) loads with a fresh handle, persisted on its next write.
+    #[serde(default = "Uuid::new_v4")]
+    pub(crate) session_id: Uuid,
     pub(crate) user_id: Uuid,
     pub(crate) issued_at_unix: i64,
+    /// Last time this session was used, updated on every resolve. Defaulted to `0` for a v1 record and
+    /// normalised to `issued_at_unix` on load, so a legacy session shows an honest "last seen = when
+    /// it was issued" rather than the epoch.
+    #[serde(default)]
+    pub(crate) last_seen_unix: i64,
     pub(crate) expires_at_unix: i64,
+    /// A short, recognisable device label from the sign-in `User-Agent`. `None` for a v1 record or a
+    /// request with no UA — honestly blank, never fabricated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) device: Option<String>,
+    /// The **truncated** client IP at sign-in (network, not host — see [`crate::session_metadata`]).
+    /// `None` for a v1 record or when no IP could be resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) ip: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -122,19 +164,27 @@ impl DurableSessionRegistry {
         self.0.path.is_some()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn insert(
         &self,
         token: &str,
+        session_id: Uuid,
         user_id: Uuid,
+        device: Option<String>,
+        ip: Option<String>,
         issued_at: OffsetDateTime,
         expires_at: OffsetDateTime,
     ) -> Result<(), ApiError> {
         let digest = session_token_digest(token);
         let record = DurableSessionRecord {
             token_sha256: digest.clone(),
+            session_id,
             user_id,
             issued_at_unix: issued_at.unix_timestamp(),
+            last_seen_unix: issued_at.unix_timestamp(),
             expires_at_unix: expires_at.unix_timestamp(),
+            device,
+            ip,
         };
         let mut records = self.0.records.write().await;
         let mut next = records.clone();
@@ -171,11 +221,32 @@ impl DurableSessionRegistry {
             return Ok(None);
         }
         record.expires_at_unix = new_expires_at.unix_timestamp();
+        // Last-seen advances on use, so the active-sign-ins list shows when a session was last active.
+        record.last_seen_unix = now.unix_timestamp();
         next.insert(digest, record.clone());
         self.persist(&next)?;
         *records = next;
         Ok(Some(record))
     }
+
+    /// The live records for a user, for the self-scoped active-sign-ins list (t95). Clones the
+    /// records (metadata only — never token material beyond the digest, which stays internal). Only
+    /// meaningful on a durable single-node registry; HA reads the shared store instead.
+    pub(crate) async fn list_for_user(&self, user_id: Uuid, now: OffsetDateTime) -> Vec<DurableSessionRecord> {
+        let now = now.unix_timestamp();
+        let mut out: Vec<DurableSessionRecord> = self
+            .0
+            .records
+            .read()
+            .await
+            .values()
+            .filter(|r| r.user_id == user_id && now < r.expires_at_unix)
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| b.last_seen_unix.cmp(&a.last_seen_unix).then(a.session_id.cmp(&b.session_id)));
+        out
+    }
+
 
     /// Slide a record only when it belongs to this registry. This keeps manually injected test/e2e
     /// sessions working while every session minted through the production handler is write-through.
@@ -275,7 +346,11 @@ fn load_durable_sessions(
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
     let document: DurableSessionDocument =
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-    if document.schema_version != SESSION_REGISTRY_SCHEMA_VERSION {
+    // Accept this version and any OLDER one: an older file's records deserialize through the new
+    // fields' `#[serde(default)]`s (the t95 upgrade is purely additive), so a v1 `sessions.json`
+    // loads unchanged and no live session is invalidated on upgrade. A NEWER version is refused — a
+    // downgraded binary must not silently misread a format it does not understand.
+    if document.schema_version > SESSION_REGISTRY_SCHEMA_VERSION {
         return Err(format!(
             "unsupported schema version {}",
             document.schema_version
@@ -290,7 +365,7 @@ fn load_durable_sessions(
     let now = now.unix_timestamp();
     let mut seen = HashSet::with_capacity(document.sessions.len());
     let mut records = HashMap::with_capacity(document.sessions.len());
-    for record in document.sessions {
+    for mut record in document.sessions {
         if !is_lower_hex_digest(&record.token_sha256)
             || record.issued_at_unix > record.expires_at_unix
             || OffsetDateTime::from_unix_timestamp(record.issued_at_unix).is_err()
@@ -300,6 +375,11 @@ fn load_durable_sessions(
         }
         if !seen.insert(record.token_sha256.clone()) {
             return Err("registry contains a duplicate token digest".to_owned());
+        }
+        // v1 upgrade: a record without a `last_seen_unix` (default `0`) is honestly "last seen when
+        // issued", not at the Unix epoch.
+        if record.last_seen_unix < record.issued_at_unix {
+            record.last_seen_unix = record.issued_at_unix;
         }
         if now < record.expires_at_unix {
             records.insert(record.token_sha256.clone(), record);
@@ -786,6 +866,8 @@ fn stored_verifier_for(user: &User) -> Result<String, ApiError> {
 /// same argon2 work so the *timing* does not distinguish them either. While in backoff → `429`.
 pub async fn create_session(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    peer: ClientPeer,
     Json(req): Json<CreateSession>,
 ) -> Result<Json<CreateSessionOutcome>, ApiError> {
     // Resolve the identifier server-side. `username` is matched case-insensitively, consistently
@@ -941,7 +1023,8 @@ pub async fn create_session(
         )));
     }
 
-    let token = mint_session(&state, uid, unlocked_key).await?;
+    let origin = crate::session_origin(&state, &headers, peer.0);
+    let token = mint_session(&state, uid, unlocked_key, origin).await?;
 
     Ok(Json(CreateSessionOutcome::Authenticated(SessionCreated {
         token,
@@ -961,6 +1044,8 @@ pub async fn create_session(
 /// same uniform `401`.
 pub async fn complete_two_factor_challenge(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    peer: ClientPeer,
     Json(req): Json<CompleteChallenge>,
 ) -> Result<Json<SessionCreated>, ApiError> {
     let now = OffsetDateTime::now_utc();
@@ -1006,8 +1091,10 @@ pub async fn complete_two_factor_challenge(
     }
 
     // Accepted. Mint the session with the key carried across the challenge, then re-read the user for
-    // the view + any residual wall (a forced password change still applies after the factor).
-    let token = mint_session(&state, user_id, pending.unlocked_key.take()).await?;
+    // the view + any residual wall (a forced password change still applies after the factor). The
+    // session's device/IP come from THIS request — the one that completed the sign-in.
+    let origin = crate::session_origin(&state, &headers, peer.0);
+    let token = mint_session(&state, user_id, pending.unlocked_key.take(), origin).await?;
     let user = state
         .users
         .read()
@@ -1020,6 +1107,233 @@ pub async fn complete_two_factor_challenge(
         required_action: required_action_for(&user),
         user: UserView::from(&user),
     }))
+}
+
+// =================================================================================================
+// Active sign-ins (t95 session backend): a self-scoped list, self-revoke, and revoke-all-others.
+// =================================================================================================
+
+/// One session in the self-scoped active-sign-ins list. Identified by its **opaque handle**, never by
+/// anything token-shaped — the token and its digest never cross the wire.
+#[derive(Serialize)]
+pub struct SessionInfoView {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub issued_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub last_seen_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: OffsetDateTime,
+    /// Whether this is the caller's **own** session — the one that must survive a revoke-all-others.
+    pub current: bool,
+}
+
+#[derive(Serialize)]
+pub struct SessionListView {
+    pub sessions: Vec<SessionInfoView>,
+}
+
+#[derive(Serialize)]
+pub struct RevokedView {
+    pub revoked: usize,
+}
+
+/// A session for the list, normalised out of either the file registry or the shared store into one
+/// shape before it becomes a [`SessionInfoView`].
+struct ListedSession {
+    session_id: Uuid,
+    token_sha256: String,
+    issued_at_unix: i64,
+    last_seen_unix: i64,
+    expires_at_unix: i64,
+    device: Option<String>,
+    ip: Option<String>,
+}
+
+fn unix_to_rfc3339(unix: i64) -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(unix).unwrap_or(OffsetDateTime::UNIX_EPOCH)
+}
+
+/// Resolve the caller to `(user_id, own_token_digest)`. The digest names the caller's own session so
+/// the list can flag it and a revoke-all-others can keep it. `401` without a resolvable session.
+async fn resolve_self(
+    state: &AppState,
+    actor: &crate::actor::CurrentActor,
+    headers: &axum::http::HeaderMap,
+) -> Result<(UserId, String), ApiError> {
+    let Some(username) = actor.session_username() else {
+        return Err(ApiError::Forbidden(
+            "chave API não abre uma sessão interativa".to_owned(),
+        ));
+    };
+    let user_id = state
+        .users
+        .read()
+        .await
+        .values()
+        .find(|u| u.username == username)
+        .map(|u| u.id)
+        .ok_or(ApiError::Unauthorized("sessão inválida".to_owned()))?;
+    let token = headers
+        .get(SESSION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or(ApiError::Unauthorized("sessão requerida".to_owned()))?;
+    Ok((user_id, session_token_digest(token)))
+}
+
+/// The caller's live sessions, from the shared store (HA) or the file registry (single-node).
+/// **Fail-closed**: an unavailable shared store is a `503`, never an empty list an attacker could
+/// read as "no other sessions".
+async fn listed_sessions_for(
+    state: &AppState,
+    user_id: UserId,
+    now: OffsetDateTime,
+) -> Result<Vec<ListedSession>, ApiError> {
+    match state.cluster_shared.sessions.list_for_user(user_id.0) {
+        cluster_shared_state::SessionListResult::Sessions(shared) => Ok(shared
+            .into_iter()
+            .map(|s| ListedSession {
+                session_id: s.session_id,
+                token_sha256: s.token_sha256,
+                issued_at_unix: s.issued_at_unix,
+                last_seen_unix: s.last_seen_unix,
+                // The shared store slides an idle TTL; the effective expiry is last-seen + the TTL.
+                expires_at_unix: s.last_seen_unix + crate::actor::SESSION_TTL_SECS,
+                device: s.device,
+                ip: s.ip,
+            })
+            .collect()),
+        cluster_shared_state::SessionListResult::Unavailable => Err(ApiError::Unavailable(
+            "serviço de sessões partilhadas indisponível; tente novamente".to_owned(),
+        )),
+        cluster_shared_state::SessionListResult::NotShared => Ok(state
+            .durable_sessions
+            .list_for_user(user_id.0, now)
+            .await
+            .into_iter()
+            .map(|r| ListedSession {
+                session_id: r.session_id,
+                token_sha256: r.token_sha256,
+                issued_at_unix: r.issued_at_unix,
+                last_seen_unix: r.last_seen_unix,
+                expires_at_unix: r.expires_at_unix,
+                device: r.device,
+                ip: r.ip,
+            })
+            .collect()),
+    }
+}
+
+/// `GET /v1/sessions` — the caller's own live sessions. **Self-scoped**: a user only ever sees their
+/// own; there is no path here to another user's sessions.
+pub async fn list_sessions(
+    State(state): State<AppState>,
+    actor: crate::actor::CurrentActor,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<SessionListView>, ApiError> {
+    let now = OffsetDateTime::now_utc();
+    let (user_id, own_digest) = resolve_self(&state, &actor, &headers).await?;
+    let mut listed = listed_sessions_for(&state, user_id, now).await?;
+    listed.sort_by(|a, b| b.last_seen_unix.cmp(&a.last_seen_unix).then(a.session_id.cmp(&b.session_id)));
+    let sessions = listed
+        .into_iter()
+        .map(|s| SessionInfoView {
+            session_id: s.session_id.to_string(),
+            device: s.device,
+            ip: s.ip,
+            issued_at: unix_to_rfc3339(s.issued_at_unix),
+            last_seen_at: unix_to_rfc3339(s.last_seen_unix.max(s.issued_at_unix)),
+            expires_at: unix_to_rfc3339(s.expires_at_unix),
+            current: s.token_sha256 == own_digest,
+        })
+        .collect();
+    Ok(Json(SessionListView { sessions }))
+}
+
+/// Revoke a session by its **token digest** across every layer — the durable file registry, the
+/// shared cluster store, and this node's in-memory live map + issued-at map. After this the token is
+/// rejected on its **next request** (its Redis/file record is gone and the in-memory entry removed),
+/// not merely delisted.
+async fn revoke_digest_everywhere(state: &AppState, digest: &str) {
+    let _ = state.durable_sessions.revoke_by_digest(digest).await;
+    let _ = state.cluster_shared.sessions.revoke_by_digest(digest);
+    // The in-memory map is keyed by the plaintext token; find the matching entries by digest.
+    let tokens: Vec<String> = {
+        let sessions = state.sessions.read().await;
+        sessions
+            .keys()
+            .filter(|t| session_token_digest(t) == digest)
+            .cloned()
+            .collect()
+    };
+    if !tokens.is_empty() {
+        let mut sessions = state.sessions.write().await;
+        let mut issued = state.session_issued_at.write().await;
+        for token in &tokens {
+            sessions.remove(token);
+            issued.remove(token);
+        }
+    }
+}
+
+/// `DELETE /v1/sessions/{session_id}` — end one of the caller's **own** sessions by its opaque handle.
+/// A handle that is not one of the caller's own is a `404` (never revealing another user's session).
+/// Revoking the current session signs the caller out.
+pub async fn revoke_session(
+    State(state): State<AppState>,
+    actor: crate::actor::CurrentActor,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(session_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<Json<RevokedView>, ApiError> {
+    let now = OffsetDateTime::now_utc();
+    let (user_id, _own_digest) = resolve_self(&state, &actor, &headers).await?;
+    // Self-scoping: resolve the handle only within the caller's own sessions, so guessing another
+    // user's handle finds nothing.
+    let digest = listed_sessions_for(&state, user_id, now)
+        .await?
+        .into_iter()
+        .find(|s| s.session_id == session_id)
+        .map(|s| s.token_sha256)
+        .ok_or(ApiError::NotFound)?;
+    revoke_digest_everywhere(&state, &digest).await;
+    Ok(Json(RevokedView { revoked: 1 }))
+}
+
+/// `POST /v1/sessions/revoke-others` — "terminar as outras sessões": end every one of the caller's
+/// sessions **except** the current one, which stays alive. Also drops the caller's pending two-step
+/// sign-in challenges: if the operator is revoking others because they suspect compromise, an
+/// in-flight challenge held by someone who already has the password must not survive.
+pub async fn revoke_other_sessions(
+    State(state): State<AppState>,
+    actor: crate::actor::CurrentActor,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<RevokedView>, ApiError> {
+    let now = OffsetDateTime::now_utc();
+    let (user_id, own_digest) = resolve_self(&state, &actor, &headers).await?;
+    let others: Vec<String> = listed_sessions_for(&state, user_id, now)
+        .await?
+        .into_iter()
+        .map(|s| s.token_sha256)
+        .filter(|d| *d != own_digest)
+        .collect();
+    let revoked = others.len();
+    for digest in &others {
+        revoke_digest_everywhere(&state, digest).await;
+    }
+    // Drop this user's in-flight 2FA challenges — a mid-sign-in someone else is holding must not
+    // outlive a "sign out my other sessions".
+    state
+        .pending_two_factor
+        .write()
+        .await
+        .retain(|_, p| p.user_id != user_id);
+    Ok(Json(RevokedView { revoked }))
 }
 
 /// Mint a fresh opaque session token for `uid` and register it across **every** session layer — the
@@ -1039,22 +1353,39 @@ pub(crate) async fn mint_session(
     state: &AppState,
     uid: UserId,
     unlocked_key: Option<SigningKey>,
+    origin: SessionOrigin,
 ) -> Result<String, ApiError> {
     let token = Uuid::new_v4().to_string();
+    // The opaque handle for the active-sign-ins API — generated here, alongside the token, and stored
+    // in the durable record and Redis (never in the token itself). The token stays the only credential.
+    let session_id = Uuid::new_v4();
     let now = OffsetDateTime::now_utc();
     let expires_at = now + Duration::seconds(SESSION_TTL_SECS);
     if state.durable_sessions.is_durable() {
         state
             .durable_sessions
-            .insert(&token, uid.0, now, expires_at)
+            .insert(
+                &token,
+                session_id,
+                uid.0,
+                origin.device.clone(),
+                origin.ip.clone(),
+                now,
+                expires_at,
+            )
             .await?;
     }
     // Redis is the authority in HA. Do not return a node-local token if the shared write could not
     // be proven; otherwise a token could work on the minting node but disappear after failover.
     match state.cluster_shared.sessions.put(
         &token,
-        uid.0,
-        now.unix_timestamp(),
+        cluster_shared_state::SessionPut {
+            user_id: uid.0,
+            session_id,
+            issued_at_unix: now.unix_timestamp(),
+            device: origin.device,
+            ip: origin.ip,
+        },
         std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64),
     ) {
         cluster_shared_state::SessionMutation::NotShared
@@ -1080,6 +1411,15 @@ pub(crate) async fn mint_session(
         .await
         .insert(token.clone(), now);
     Ok(token)
+}
+
+/// Best-effort origin metadata captured for a session at mint time (t95 session backend): a short
+/// device label and a truncated client IP, both optional. Passed through [`mint_session`] into the
+/// durable record and the shared store so the active-sign-ins list can show them.
+#[derive(Debug, Clone, Default)]
+pub struct SessionOrigin {
+    pub device: Option<String>,
+    pub ip: Option<String>,
 }
 
 async fn upgrade_password_hash_after_signin(
@@ -1251,6 +1591,42 @@ mod durable_tests {
 
     use super::*;
 
+    /// The t95 session backend bumps the registry to v2 (adding `session_id`/`device`/`ip`/
+    /// `last_seen`). A pre-t95 **v1** file — records with only the original four fields — must still
+    /// load: the version check accepts anything `<=` current and the new fields deserialize from their
+    /// defaults. An upgrade must never invalidate a live session.
+    #[test]
+    fn a_v1_sessions_file_loads_unchanged_on_upgrade() {
+        let now = OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap();
+        let digest = "a".repeat(64);
+        let user_id = Uuid::new_v4();
+        let v1 = json!({
+            "schema_version": 1,
+            "sessions": [{
+                "token_sha256": digest,
+                "user_id": user_id,
+                "issued_at_unix": now.unix_timestamp(),
+                "expires_at_unix": (now + Duration::hours(1)).unix_timestamp(),
+            }]
+        });
+        let dir = std::env::temp_dir().join(format!("chancela-v1-load-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(SESSIONS_FILE);
+        std::fs::write(&path, serde_json::to_vec(&v1).unwrap()).unwrap();
+
+        let records = load_durable_sessions(&path, now).expect("a v1 file must still load");
+        assert_eq!(records.len(), 1, "the v1 session must survive the upgrade");
+        let record = records.get(&digest).expect("the record is present");
+        assert_eq!(record.user_id, user_id);
+        // The new fields take honest defaults: a fresh handle, no device/IP, last-seen = issued.
+        assert!(!record.session_id.is_nil(), "a v1 record gets a real handle");
+        assert_eq!(record.last_seen_unix, record.issued_at_unix);
+        assert_eq!(record.device, None);
+        assert_eq!(record.ip, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     struct TempDir {
         path: PathBuf,
     }
@@ -1302,7 +1678,7 @@ mod durable_tests {
         let issued_at = OffsetDateTime::now_utc();
 
         registry
-            .insert(token, uid, issued_at, issued_at + Duration::hours(1))
+            .insert(token, Uuid::new_v4(), uid, None, None, issued_at, issued_at + Duration::hours(1))
             .await
             .unwrap();
         for minutes in [2, 3, 4] {
@@ -1351,7 +1727,7 @@ mod durable_tests {
         std::fs::write(&path, b"{ definitely not valid json").unwrap();
         let recovered = DurableSessionRegistry::load(path.clone());
         recovered
-            .insert("new-token", uid, issued_at, issued_at + Duration::hours(1))
+            .insert("new-token", Uuid::new_v4(), uid, None, None, issued_at, issued_at + Duration::hours(1))
             .await
             .unwrap();
         let document: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();

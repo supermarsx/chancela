@@ -499,6 +499,11 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/health/{*rest}", RouteClass::Exempt),
     // --- Any valid session (introspection for the web permissions context) ----------------------
     ("/v1/session/permissions", RouteClass::Session),
+    // t95 active sign-ins: self-scoped list / revoke / revoke-others. A valid session that acts only
+    // on its own owner's sessions (handler-enforced), so `Session`, not a permission verb.
+    ("/v1/sessions", RouteClass::Session),
+    ("/v1/sessions/{session_id}", RouteClass::Session),
+    ("/v1/sessions/revoke-others", RouteClass::Session),
     // --- Companion device pairing (wp27-e4) -----------------------------------------------------
     // Mint / list / revoke are operator-authenticated: their handlers gate on `resolve_operator`
     // (an interactive session bound to an active user), not a specific `require_permission` verb —

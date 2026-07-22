@@ -569,7 +569,10 @@ mod clock_tests {
             .durable_sessions
             .insert(
                 &token,
+                Uuid::new_v4(),
                 uid.0,
+                None,
+                None,
                 t0(),
                 t0() + Duration::seconds(SESSION_TTL_SECS),
             )
@@ -663,7 +666,10 @@ mod clock_tests {
             .durable_sessions
             .insert(
                 &idle_token,
+                Uuid::new_v4(),
                 uid.0,
+                None,
+                None,
                 t0(),
                 t0() + Duration::seconds(SESSION_TTL_SECS),
             )
@@ -690,7 +696,10 @@ mod clock_tests {
             .durable_sessions
             .insert(
                 &token,
+                Uuid::new_v4(),
                 uid.0,
+                None,
+                None,
                 t0(),
                 t0() + Duration::seconds(SESSION_TTL_SECS),
             )

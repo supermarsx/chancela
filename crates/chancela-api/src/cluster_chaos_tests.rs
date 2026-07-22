@@ -460,28 +460,24 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
 struct SharedSessionBackend {
-    map: Arc<Mutex<HashMap<String, (Uuid, i64)>>>,
+    map: Arc<Mutex<HashMap<String, crate::cluster_shared_state::SessionPut>>>,
 }
 
 impl SessionStore for SharedSessionBackend {
     fn put(
         &self,
         token: &str,
-        user_id: Uuid,
-        issued_at_unix: i64,
+        put: crate::cluster_shared_state::SessionPut,
         _ttl: Duration,
     ) -> SessionMutation {
-        self.map
-            .lock()
-            .unwrap()
-            .insert(token.to_owned(), (user_id, issued_at_unix));
+        self.map.lock().unwrap().insert(token.to_owned(), put);
         SessionMutation::Stored
     }
     fn resolve(&self, token: &str, _ttl: Duration) -> SessionLookup {
         match self.map.lock().unwrap().get(token) {
-            Some((uid, issued_at_unix)) => SessionLookup::Found {
-                user_id: *uid,
-                issued_at_unix: *issued_at_unix,
+            Some(put) => SessionLookup::Found {
+                user_id: put.user_id,
+                issued_at_unix: put.issued_at_unix,
             },
             None => SessionLookup::NotFound,
         }
@@ -489,6 +485,34 @@ impl SessionStore for SharedSessionBackend {
     fn revoke(&self, token: &str) -> SessionMutation {
         self.map.lock().unwrap().remove(token);
         SessionMutation::Stored
+    }
+    fn revoke_by_digest(&self, digest: &str) -> SessionMutation {
+        self.map
+            .lock()
+            .unwrap()
+            .retain(|token, _| crate::session::session_token_digest(token) != digest);
+        SessionMutation::Stored
+    }
+    fn list_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> crate::cluster_shared_state::SessionListResult {
+        let sessions = self
+            .map
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, put)| put.user_id == user_id)
+            .map(|(token, put)| crate::cluster_shared_state::SharedSessionInfo {
+                session_id: put.session_id,
+                token_sha256: crate::session::session_token_digest(token),
+                issued_at_unix: put.issued_at_unix,
+                last_seen_unix: put.issued_at_unix,
+                device: put.device.clone(),
+                ip: put.ip.clone(),
+            })
+            .collect();
+        crate::cluster_shared_state::SessionListResult::Sessions(sessions)
     }
     fn clear_all(&self) -> SessionMutation {
         self.map.lock().unwrap().clear();
@@ -509,7 +533,7 @@ fn a_session_minted_on_the_old_leader_is_honored_after_failover() {
 
     // A user signs in on the OLD leader.
     let issued_at_unix = 1_700_000_000;
-    old_leader.put("session-tok", uid, issued_at_unix, ttl);
+    old_leader.put("session-tok", crate::cluster_shared_state::SessionPut::identity(uid, issued_at_unix), ttl);
     // Failover happens; the client's next request lands on the NEW leader — the session is still valid.
     assert_eq!(
         new_leader.resolve("session-tok", ttl),

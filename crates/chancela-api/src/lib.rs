@@ -176,6 +176,8 @@ mod scap;
 mod secretstore;
 mod secretstore_persist;
 mod session;
+// t95 session backend: best-effort device label + truncated IP for the active-sign-ins feature.
+mod session_metadata;
 mod settings;
 // wp16 P3b: backend-conditional storage seam for the five non-ledger file sidecars (users/roles/
 // delegations/settings/provider-credentials). File-backed on SQLite (single-node byte-identical),
@@ -2646,6 +2648,14 @@ pub fn router(state: AppState) -> Router {
             "/v1/session/challenge",
             post(session::complete_two_factor_challenge),
         )
+        // Active sign-ins (t95 session backend). Self-scoped: a session sees and revokes only its own
+        // owner's sessions. `revoke-others` keeps the current one alive.
+        .route("/v1/sessions", get(session::list_sessions))
+        .route("/v1/sessions/{session_id}", delete(session::revoke_session))
+        .route(
+            "/v1/sessions/revoke-others",
+            post(session::revoke_other_sessions),
+        )
         .route(
             "/v1/session",
             get(session::get_session)
@@ -3181,6 +3191,34 @@ fn rate_limit_client_ip(
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ci| ci.0.ip())
         .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+}
+
+/// The best-effort origin metadata for a session being minted (t95 session backend): a device label
+/// from the `User-Agent` and a **truncated** client IP. Reuses the rate limiter's IP resolution (the
+/// TCP peer, or a trusted forwarded header) so the session list and the rate limiter agree on what a
+/// client's address is. `connect` is the peer address when the server populated `ConnectInfo`
+/// (absent in in-process tests); the IP is truncated to a network before it is ever stored.
+pub(crate) fn session_origin(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    connect: Option<SocketAddr>,
+) -> session::SessionOrigin {
+    let device = session_metadata::device_label(
+        headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|v| v.to_str().ok()),
+    );
+    let ip = if state.rate_limit.trust_forwarded_for
+        && let Some(ip) = forwarded_client_ip(headers)
+    {
+        Some(ip)
+    } else {
+        connect.map(|addr| addr.ip())
+    };
+    session::SessionOrigin {
+        device,
+        ip: session_metadata::truncate_ip(ip),
+    }
 }
 
 /// Extract a client IP from the proxy forwarding headers (`X-Real-IP`, then the left-most
