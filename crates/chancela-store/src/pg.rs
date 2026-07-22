@@ -84,10 +84,12 @@ use postgres::types::ToSql;
 use postgres::{Client, Row};
 use r2d2_postgres::PostgresConnectionManager;
 use rusqlite::types::Value;
+use time::format_description::well_known::Rfc3339;
 
 use crate::{
     LedgerEventPage, LedgerEventPageQuery, LoadedState, PendingCmdSession, RawEventRow, StoreError,
-    StoredCredentialRecord, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
+    StoredCredentialRecord, StoredDocument, StoredEmailDelivery, StoredFollowUp,
+    StoredFollowUpStatus,
     StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
     StoredImportedDocumentReviewHistoryEntry, StoredImportedDocumentReviewStatus,
     StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
@@ -626,7 +628,7 @@ impl PostgresBackend {
         // `row_to_email_delivery`.
         let tls = delivery.tls.map(i64::from);
         let authenticated = delivery.authenticated.map(i64::from);
-        let mut client = self.write()?;
+        let mut client = self.writer();
         client.execute(
             "INSERT INTO email_deliveries \
              (id, template_id, user_id, recipient, status, attempt, previous_id, token_subject, \
