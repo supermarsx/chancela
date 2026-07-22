@@ -25,7 +25,8 @@
  * mutating controls (CONVENTIONS §5), inline error + toast (§2), `EmptyState` when empty, and
  * RBAC-gated on `settings.manage` (the same permission the backend writes require).
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type {
   CredentialMode,
   CredentialProtectionLevel,
@@ -69,6 +70,21 @@ import { providerCredentialsFieldHelp, providerCredentialFieldHelp } from './fie
 
 /** The modes an operator can configure, in display order. */
 const MODES: CredentialMode[] = ['cmd', 'csc', 'scap', 'pkcs12'];
+
+/**
+ * Credential modes reachable by the trust-services Actions deep-link (`?configure=<mode>`),
+ * the frozen URL contract with the "Modos de prestador" table (t12). Only these three have a
+ * provider-modes table row that routes here: `scap` has no table row and Cartão de Cidadão has
+ * no web configuration at all, so neither is a deep-link target. Any other value is ignored.
+ */
+const DEEP_LINK_MODES: readonly CredentialMode[] = ['cmd', 'csc', 'pkcs12'];
+
+/** The query-param key the trust-services Actions column navigates with. */
+const CONFIGURE_PARAM = 'configure';
+
+function isDeepLinkMode(value: string | null): value is CredentialMode {
+  return value !== null && (DEEP_LINK_MODES as readonly string[]).includes(value);
+}
 
 /** Modes that carry a per-entry endpoint / base_url override. */
 const ENDPOINT_MODES: readonly CredentialMode[] = ['csc', 'scap'];
@@ -968,7 +984,29 @@ export function ProviderCredentialsSection() {
   const t = useT();
   const can = useCan();
   const credentials = useProviderCredentials();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
+  // The mode the top-level create form opens on. Defaults to 'csc' (the historical default);
+  // a deep-link may preselect another mode before the form is shown.
+  const [createMode, setCreateMode] = useState<CredentialMode>('csc');
+
+  // Deep-link target: the trust-services "Configurar" action routes here with
+  // `?configure=<mode>` so an operator lands on the create form for the mode they picked. We
+  // consume the param once — preselecting the mode when it names one we can configure in the
+  // web app — then strip it (replace) so a refresh or Back does not reopen the form. An unknown
+  // or absent value leaves the section in its normal state; the param is still cleared so no
+  // stale `?configure=` lingers in the address bar.
+  useEffect(() => {
+    const requested = searchParams.get(CONFIGURE_PARAM);
+    if (requested === null) return;
+    if (isDeepLinkMode(requested)) {
+      setCreateMode(requested);
+      setCreating(true);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete(CONFIGURE_PARAM);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Six columns per provider group: entry, priority, state, endpoint, fields, actions.
   if (credentials.isLoading)
@@ -1001,7 +1039,8 @@ export function ProviderCredentialsSection() {
 
       {creating ? (
         <EntryForm
-          mode="csc"
+          key={createMode}
+          mode={createMode}
           disabled={!can('settings.manage') || !storable}
           onDone={() => setCreating(false)}
           onCancel={() => setCreating(false)}

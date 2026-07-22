@@ -7,6 +7,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useSearchParams } from 'react-router-dom';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
 import type { ProviderCredentialsListView } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
@@ -94,6 +95,12 @@ function stubFetch(
     return Promise.resolve(json(writeBody, writeStatus));
   }) as typeof fetch;
   return { fn, calls };
+}
+
+/** Surfaces the live query string so a test can assert the deep-link param was consumed. */
+function SearchProbe() {
+  const [params] = useSearchParams();
+  return <output data-testid="search">{params.toString()}</output>;
 }
 
 afterEach(() => {
@@ -580,5 +587,68 @@ describe('ProviderCredentialsSection', () => {
     expect(await screen.findByText(/ordenação recusada/)).toBeTruthy();
     const post = stub.calls.find((call) => call.method === 'POST');
     expect(JSON.parse(post?.body ?? '{}').order).toEqual(['entry-b', 'entry-a']);
+  });
+
+  // The trust-services "Modos de prestador" table routes here with `?configure=<mode>` so the
+  // operator lands on the create form already set to the mode they chose. The param is consumed
+  // once and stripped (replace) so a refresh or Back does not reopen the form.
+  describe('deep-link (?configure=)', () => {
+    function renderAt(query: string) {
+      vi.stubGlobal('fetch', stubFetch({ list: listView({ providers: [] }) }).fn);
+      return renderWithProviders(
+        <>
+          <ProviderCredentialsSection />
+          <SearchProbe />
+        </>,
+        [`/settings/signing/providers${query}`],
+      );
+    }
+
+    it('opens the create form preselected to PKCS#12 and clears the param', async () => {
+      renderAt('?configure=pkcs12');
+
+      const mode = (await screen.findByLabelText('Tipo de fornecedor')) as HTMLSelectElement;
+      expect(mode.value).toBe('pkcs12');
+      // The PKCS#12-specific upload field confirms the form really is on that mode.
+      expect(screen.getByLabelText('Ficheiro PKCS#12/PFX')).toBeTruthy();
+      // The consumed param is gone, so a refresh/Back will not reopen the form.
+      expect(screen.getByTestId('search').textContent).not.toContain('configure');
+    });
+
+    it('preselects the CMD mode when routed with ?configure=cmd', async () => {
+      renderAt('?configure=cmd');
+
+      const mode = (await screen.findByLabelText('Tipo de fornecedor')) as HTMLSelectElement;
+      expect(mode.value).toBe('cmd');
+      expect(screen.getByTestId('search').textContent).not.toContain('configure');
+    });
+
+    it('ignores an unknown mode: leaves the form closed but still clears the param', async () => {
+      renderAt('?configure=banana');
+
+      // The section settles on its normal closed state — the create control, not the form.
+      expect(await screen.findByRole('button', { name: 'Nova entrada' })).toBeTruthy();
+      expect(screen.queryByLabelText('Tipo de fornecedor')).toBeNull();
+      await waitFor(() =>
+        expect(screen.getByTestId('search').textContent).not.toContain('configure'),
+      );
+    });
+
+    it('does not deep-link SCAP — it has no provider-modes row to route from', async () => {
+      renderAt('?configure=scap');
+
+      expect(await screen.findByRole('button', { name: 'Nova entrada' })).toBeTruthy();
+      expect(screen.queryByLabelText('Tipo de fornecedor')).toBeNull();
+      await waitFor(() =>
+        expect(screen.getByTestId('search').textContent).not.toContain('configure'),
+      );
+    });
+
+    it('renders normally with no ?configure param', async () => {
+      renderAt('');
+
+      expect(await screen.findByRole('button', { name: 'Nova entrada' })).toBeTruthy();
+      expect(screen.queryByLabelText('Tipo de fornecedor')).toBeNull();
+    });
   });
 });
