@@ -91,6 +91,10 @@ import type {
   LedgerVerify,
   LocalDglabInterchangeManifest,
   OpenBookBody,
+  TermoInstrumentView,
+  PatchTermoAberturaBody,
+  SignTermoSlotBody,
+  OpenBookFromTermoBody,
   PaperBookImportReport,
   PaperBookImportPreservationReport,
   PaperBookImportPreserveBody,
@@ -1017,6 +1021,24 @@ export const api = {
   // Read-only JSON derived from the internal package manifest; not an official DGLAB export.
   getBookLocalDglabInterchangeManifest: (id: string) =>
     get<LocalDglabInterchangeManifest>(`/v1/books/${id}/archive/local-dglab-interchange-manifest`),
+
+  // Termo de abertura as its own signable ata (two-phase book opening, t23). A book minted with
+  // `one_shot: false` (see `openBook`) carries a `Draft` termo reachable here; the operator fills it
+  // (`patchBookTermoAbertura`), freezes it (`advanceBookTermoAbertura`), collects signatures
+  // (`signBookTermoAbertura`), then seals it to open the book (`openBookFromTermo`). GET is
+  // `book.read`; every mutation is `book.open`. A one-shot book has no draft termo → the GET 404s.
+  getBookTermoAbertura: (bookId: string) =>
+    get<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura`),
+  patchBookTermoAbertura: (bookId: string, body: PatchTermoAberturaBody) =>
+    patch<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura`, body),
+  advanceBookTermoAbertura: (bookId: string) =>
+    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura/advance`),
+  signBookTermoAbertura: (bookId: string, body: SignTermoSlotBody) =>
+    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura/sign`, body),
+  // Seal the signed termo and open the book. Currently FAILS CLOSED with 409 ("not cryptographically
+  // signed") until real per-slot PAdES signing lands (t41) — surfaced to the caller, never hidden.
+  openBookFromTermo: (bookId: string, body: OpenBookFromTermoBody = {}) =>
+    post<BookView>(`/v1/books/${bookId}/termo/abertura/open`, body),
 
   // Acts (§2.5)
   getAct: (id: string) => get<ActView>(`/v1/acts/${id}`),

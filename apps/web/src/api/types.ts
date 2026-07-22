@@ -441,6 +441,12 @@ export interface BookView {
 export interface BookTermoSignatory {
   name: string;
   capacity: SignatoryCapacity | null;
+  /**
+   * Free-text qualidade note carried when `capacity` is `Other` (t23/D1). ASSURANCE only — it
+   * states what an out-of-list qualidade actually is and is never a permitted legal capacity.
+   * Absent (`skip`-serialized) on records that predate the field.
+   */
+  capacity_note?: string | null;
   email: string | null;
 }
 
@@ -5305,7 +5311,27 @@ export interface OpenBookBody {
   opening_date: string;
   required_signatories: BookTermoSignatoryInput[];
   predecessor?: string;
-  actor?: string;
+  /**
+   * D5 — free-text reference to a paper/legacy predecessor book not in the system. ASSURANCE only;
+   * never a substitute for the {@link predecessor} id link that makes the verifiable chain.
+   */
+  predecessor_note?: string;
+  /**
+   * D3 — the operator's custom label for a `BookKind::Other` book, REQUIRED server-side when the
+   * kind is `Other` and rejected (422) for any modelled kind. ASSURANCE; never asserted as a legal
+   * book class. NOTE: {@link BookKind} does not yet carry the `Other` variant on the web — widening
+   * it is coupled to adding an `enum.bookKind.Other` catalog label (a locked catalog-chain / t23-e5
+   * concern, per plan t23 §5), so this field is forward-declared for when that lands.
+   */
+  kind_label?: string;
+  /**
+   * D2 — when `true` (the server default, preserving today's behaviour byte-for-byte) the book is
+   * created AND opened in one commit with a static termo. When `false`, only a `Created` book plus a
+   * `Draft` termo de abertura are minted; nothing enters the hash chain until the termo is filled,
+   * signed and the book is explicitly opened via {@link OpenBookFromTermoBody}. Omit to keep the
+   * one-shot default.
+   */
+  one_shot?: boolean;
 }
 
 export interface CloseBookBody {
@@ -5316,6 +5342,176 @@ export interface CloseBookBody {
 }
 
 export type BookTermoSignatoryInput = string | BookTermoSignatory;
+
+// --- Termo de abertura as its own signable ata (two-phase book opening, t23) -----------------
+//
+// The termo de abertura is a first-class, drafted-then-signed instrument, distinct from the
+// mechanical "open the book" step. `POST /v1/books` with `one_shot: false` (see OpenBookBody) mints
+// a `Created` book + a `Draft` termo; the operator then fills it (PATCH), freezes it for signing
+// (advance), collects signatures (sign), and finally seals it to open the book (open). Wire strings
+// below are the bare serde variant names from `chancela-core::termo`.
+
+/** Which of the two termos an instrument is (`chancela-core::termo::TermoKind`). */
+export type TermoKind = 'Abertura' | 'Encerramento';
+
+/**
+ * The termo lifecycle (`TermoState`): `Draft` (freely editable) → `Signing` (content + signatory
+ * set frozen, signatures being collected) → `Sealed` (took effect; immutable).
+ */
+export type TermoState = 'Draft' | 'Signing' | 'Sealed';
+
+/** Where a clause's text came from (`ClauseOrigin`) — draft-only provenance, never in a digest. */
+export type ClauseOrigin = 'TemplateDefault' | 'UserEdited' | 'UserAdded';
+
+/**
+ * How many slots must sign before the termo is complete (`TermoCompletionPolicy`, F9). Serialized
+ * as a bare string for the unit variants and `{ AtLeast: n }` for the tuple variant. `AllRequired`
+ * is the conservative default; NO copy may state the law requires all gerentes to sign, or that one
+ * suffices — the underlying question is deliberately left unresolved.
+ */
+export type TermoCompletionPolicy = 'AllRequired' | { AtLeast: number } | 'SingleQualifying';
+
+/** One fillable clause of a termo body (`TermoClauseView`). */
+export interface TermoClauseView {
+  id: string;
+  heading?: string;
+  text: string;
+  origin: ClauseOrigin;
+}
+
+/**
+ * A termo signatory SLOT (`TermoSlotView`): unlike a declared name ({@link BookTermoSignatory}), a
+ * slot carries a required capacity, a signing order, and whether a signature was actually collected.
+ * `signed`/`signed_at`/`signature_id` are provisional collection state — NOT evidentiary proof of a
+ * cryptographic signature (see {@link OpenBookFromTermoBody} for the fail-closed open gate).
+ */
+export interface TermoSlotView {
+  id: string;
+  name: string;
+  email?: string;
+  capacity: SignatoryCapacity;
+  /** ASSURANCE note when `capacity` is `Other` (D1); never a permitted legal capacity. */
+  capacity_note?: string;
+  required: boolean;
+  order: number;
+  signed: boolean;
+  /** ISO-8601 instant the slot was marked signed. */
+  signed_at?: string;
+  signature_id?: string;
+}
+
+/**
+ * The non-body fillable termo fields (`TermoFieldsView`). Every field is ASSURANCE or PRODUCT; none
+ * is legally required. `instrument_date` is the opening date (abertura) as an ISO-8601 date string.
+ */
+export interface TermoFieldsView {
+  book_number?: number;
+  place?: string;
+  page_capacity?: number;
+  purpose?: string;
+  instrument_date?: string;
+  predecessor_note?: string;
+}
+
+/** Progress toward completion (`TermoCompletionSummary`), with no legal/certificate assertion. */
+export interface TermoCompletionSummary {
+  policy: TermoCompletionPolicy;
+  required_slot_count: number;
+  signed_required_slot_count: number;
+  threshold: number;
+  /** Ids of required slots that still block completion. */
+  blocking_required_slot_ids: string[];
+  complete: boolean;
+}
+
+/**
+ * Read view of a termo instrument in any state (`GET /v1/books/{id}/termo/abertura` →
+ * `TermoInstrumentView`). Preserves the collected-vs-declared distinction the domain keeps:
+ * `signatories` are the slots (with collected-signature state); `declared_signatories` are the
+ * names carried on the projected payload (empty collection for a one-shot/legacy termo).
+ */
+export interface TermoInstrumentView {
+  id: string;
+  book_id: string;
+  kind: TermoKind;
+  state: TermoState;
+  title: string;
+  body: TermoClauseView[];
+  fields: TermoFieldsView;
+  signatories: TermoSlotView[];
+  completion_policy: TermoCompletionPolicy;
+  completion: TermoCompletionSummary;
+  template_id?: string;
+  /** ISO-8601 instant the draft was created. */
+  created_at: string;
+  /** ISO-8601 instant the termo entered `Signing`, once frozen. */
+  signing_started_at?: string;
+  /** ISO-8601 instant the termo was sealed, once opened. */
+  sealed_at?: string;
+  declared_signatories: BookTermoSignatory[];
+}
+
+/** A clause set on the body by a PATCH (`TermoClauseInput`). A new clause mints its own id. */
+export interface TermoClauseInput {
+  heading?: string;
+  text: string;
+}
+
+/**
+ * A signatory slot set by a PATCH (`TermoSlotInput`). The system-managed collection fields
+ * (`signed`/`signed_at`/`signature_id`) are never accepted; `required` defaults to `true`.
+ */
+export interface TermoSlotInput {
+  name: string;
+  email?: string;
+  capacity: SignatoryCapacity;
+  capacity_note?: string;
+  required?: boolean;
+  order: number;
+}
+
+/**
+ * Body of `PATCH /v1/books/{id}/termo/abertura` (`PatchTermoAbertura`). Every field is optional;
+ * absent fields are left unchanged. `body` and `signatories` REPLACE the whole list. Rejected with
+ * `409` once the termo has left `Draft`.
+ */
+export interface PatchTermoAberturaBody {
+  title?: string;
+  body?: TermoClauseInput[];
+  book_number?: number;
+  place?: string;
+  page_capacity?: number;
+  purpose?: string;
+  /** ISO-8601 date; required (server-side) before the termo can be advanced to signing. */
+  opening_date?: string;
+  predecessor_note?: string;
+  signatories?: TermoSlotInput[];
+  completion_policy?: TermoCompletionPolicy;
+}
+
+/**
+ * Body of `POST /v1/books/{id}/termo/abertura/sign` (`SignTermoSlot`): record that a slot signed.
+ * `signature_id` references the collected signature artifact from the signing pipeline.
+ */
+export interface SignTermoSlotBody {
+  slot_id: string;
+  signature_id?: string;
+}
+
+/**
+ * Body of `POST /v1/books/{id}/termo/abertura/open` (`OpenBookFromTermo`): seal the signed termo and
+ * open the book. Both fields default server-side (`numbering_scheme` → `Sequential`, `actor` → the
+ * session/system actor), so an empty body is valid.
+ *
+ * NOTE (t23/t41): real per-slot PAdES signing is not yet wired, so this endpoint currently FAILS
+ * CLOSED with `409` ("the termo de abertura is not cryptographically signed") for every book — the
+ * book stays `Created` and no `book.opened` event is appended. Callers must surface that 409
+ * honestly, not hide it.
+ */
+export interface OpenBookFromTermoBody {
+  numbering_scheme?: NumberingScheme;
+  actor?: string;
+}
 
 export interface DraftActBody {
   book_id: string;
@@ -5804,6 +6000,7 @@ export const SERVER_ENV_GROUPS = [
   'logging',
   'network',
   'session',
+  'notifications',
   'rate_limit',
   'hsts',
   'cors',

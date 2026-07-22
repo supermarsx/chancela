@@ -68,6 +68,9 @@ import type {
   LedgerArchiveDocumentParams,
   LedgerQueryParams,
   OpenBookBody,
+  PatchTermoAberturaBody,
+  SignTermoSlotBody,
+  OpenBookFromTermoBody,
   PaperBookImportValidateBody,
   PaperBookImportPreserveBody,
   PaperBookImportView,
@@ -180,6 +183,7 @@ export const keys = {
   book: (id: string) => ['books', id] as const,
   bookLegalHold: (id: string) => ['books', id, 'legal-hold'] as const,
   bookActs: (id: string) => ['books', id, 'acts'] as const,
+  bookTermoAbertura: (id: string) => ['books', id, 'termo', 'abertura'] as const,
   paperBookImports: (bookRef?: string) =>
     ['books', 'paper-imports', { bookRef: bookRef ?? null }] as const,
   paperBookOcrDrafts: (importId: string) =>
@@ -476,6 +480,99 @@ export function useOpenBook() {
     onSuccess: (book) => {
       void qc.invalidateQueries({ queryKey: ['books'] });
       void qc.invalidateQueries({ queryKey: keys.entity(book.entity_id) });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+// --- Termo de abertura as its own signable ata (two-phase book opening, t23) -----
+//
+// A book minted with `one_shot: false` (via `useOpenBook`) lands in `Created` with a `Draft` termo.
+// These hooks drive the rest of the lifecycle: read the draft, edit it, freeze it for signing,
+// collect signatures, and finally seal it to open the book. The termo mutations return the refreshed
+// `TermoInstrumentView`, which is written straight into the cache; only `open` moves the book and the
+// ledger.
+
+/**
+ * The book's termo de abertura draft (`GET /v1/books/{id}/termo/abertura`, t23). Present only for a
+ * two-phase (`Created`) book; a one-shot book has none and the endpoint 404s — treated as "no draft"
+ * (never retried) so the caller renders that honestly rather than as an error. `enabled` lets a
+ * call-site defer the fetch until it knows the book is in the two-phase flow.
+ */
+export function useBookTermoAbertura(id: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.bookTermoAbertura(id),
+    queryFn: () => api.getBookTermoAbertura(id),
+    enabled: enabled && !!id,
+    retry: false,
+  });
+}
+
+/**
+ * Edit the termo draft (`PATCH /v1/books/{id}/termo/abertura`). Rejected `409` once the termo has
+ * left `Draft` (surfaced as an `ApiError`). The refreshed termo is written to the cache; nothing else
+ * moves (the book is still `Created` and no ledger event is appended until it is opened).
+ */
+export function usePatchBookTermoAbertura(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PatchTermoAberturaBody) => api.patchBookTermoAbertura(id, body),
+    onSuccess: (termo) => {
+      qc.setQueryData(keys.bookTermoAbertura(id), termo);
+    },
+  });
+}
+
+/**
+ * Freeze the draft for signing (`POST …/termo/abertura/advance`, `Draft → Signing`). The server runs
+ * the legal checks (capacity allow-list, at-least-one-signatory, the management floor, the completion
+ * policy) and requires an `opening_date`; a failure is a `4xx` `ApiError`. The frozen termo replaces
+ * the cached draft.
+ */
+export function useAdvanceBookTermoAbertura(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.advanceBookTermoAbertura(id),
+    onSuccess: (termo) => {
+      qc.setQueryData(keys.bookTermoAbertura(id), termo);
+    },
+  });
+}
+
+/**
+ * Record that a signatory slot signed (`POST …/termo/abertura/sign`). Sequential order is enforced
+ * server-side (a slot cannot sign while an earlier required slot is unsigned → `409`). The updated
+ * termo (with the slot's collection state) replaces the cached one.
+ */
+export function useSignBookTermoAbertura(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SignTermoSlotBody) => api.signBookTermoAbertura(id, body),
+    onSuccess: (termo) => {
+      qc.setQueryData(keys.bookTermoAbertura(id), termo);
+    },
+  });
+}
+
+/**
+ * Seal the signed termo and open the book (`POST …/termo/abertura/open`). On success the book becomes
+ * `Open` (a `book.opened` genesis event digesting the final signed termo is appended), so the book,
+ * its entity's book list, the ledger, the dashboard and the now-`Sealed` termo all refetch.
+ *
+ * Until real per-slot PAdES signing lands (t41) this FAILS CLOSED with a `409` for every book — the
+ * termo is "not cryptographically signed", the book stays `Created`, and no event is written. The
+ * caller must surface that `ApiError` (status 409) honestly rather than treat it as a transient miss.
+ */
+export function useOpenBookFromTermo(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body?: OpenBookFromTermoBody) => api.openBookFromTermo(id, body ?? {}),
+    onSuccess: (book) => {
+      qc.setQueryData(keys.book(id), book);
+      void qc.invalidateQueries({ queryKey: ['books'] });
+      void qc.invalidateQueries({ queryKey: keys.entity(book.entity_id) });
+      void qc.invalidateQueries({ queryKey: keys.bookTermoAbertura(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });
