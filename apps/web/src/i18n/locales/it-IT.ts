@@ -1774,6 +1774,13 @@ export const itIT: Catalog = {
   'settings.appearance.colors.clearField': 'Reimposta questo colore',
   'settings.appearance.colors.reset': 'Ripristina i valori predefiniti del tema',
   'settings.appearance.colors.usingDefault': 'In uso i colori predefiniti del tema',
+  'settings.appearance.colors.picker.open': 'Scegli colore',
+  'settings.appearance.colors.picker.dialog': 'Selettore colore',
+  'settings.appearance.colors.picker.saturation': 'Saturazione e luminosità',
+  'settings.appearance.colors.picker.hue': 'Tonalità',
+  'settings.appearance.colors.picker.hex': 'Codice esadecimale',
+  'settings.appearance.colors.picker.presets': 'Preimpostazioni',
+  'settings.appearance.colors.picker.preset': 'Applica il colore {color}',
   'settings.identity.cardTitle': 'Identità',
   'settings.identity.orgName.label': 'Nome dell’organizzazione',
   'settings.identity.orgName.hint':
@@ -5221,6 +5228,131 @@ export const itIT: Catalog = {
   'settings.privacy.execution.decision.blocked': 'Bloccato',
   'settings.privacy.execution.decision.executionRecorded': 'Esecuzione registrata',
   'settings.privacy.guidance.operatorActions': 'Azioni dell’operatore',
+  'settings.privacy.dpiaTemplate.section.processing_description.title':
+    'Descrizione del trattamento',
+  'settings.privacy.dpiaTemplate.section.processing_description.desc':
+    'Descrivi il trattamento proposto solo con segnaposto; non incollare registri grezzi, dati degli interessati, destinatari, nomi dei responsabili del trattamento né segreti.',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.0':
+    'Quale attività di trattamento viene valutata?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.1':
+    'Quale questione relativa alla finalità e alla base giuridica dovrebbe considerare un revisore umano?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.2':
+    'Quali segnaposto di categorie di dati rientrano nell’ambito?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.3':
+    'Quale confine di sistema o di flusso di lavoro rientra nell’ambito?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.title':
+    'Domande di necessità e proporzionalità',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.desc':
+    'Guida una revisione umana della necessità, della minimizzazione, della conservazione e delle alternative senza decidere sulla sufficienza giuridica.',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.0':
+    'Perché questo trattamento è necessario per la finalità indicata?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.1':
+    'Quali alternative a minore impatto dovrebbero essere considerate?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.2':
+    'Quali vincoli di minimizzazione o di conservazione dovrebbero essere esaminati?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.3':
+    'Quali lacune di trasparenza o di informativa all’operatore dovrebbero essere verificate?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.title': 'Domande di rischio',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.desc':
+    'Raccogli solo domande qualitative sul rischio; questo modello non calcola, non classifica né autorizza il rischio.',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.0':
+    'Quali impatti sui diritti e sulle libertà dovrebbero essere esaminati?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.1':
+    'Quali scenari di riservatezza, integrità, disponibilità o uso improprio dovrebbero essere considerati?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.2':
+    'Quali fattori di contesto vulnerabile o di scala richiedono attenzione umana?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.3':
+    'Quali questioni irrisolte richiedono un’escalation?',
+  'settings.privacy.dpiaTemplate.section.safeguards.title': 'Garanzie',
+  'settings.privacy.dpiaTemplate.section.safeguards.desc':
+    'Elenca le garanzie e i riferimenti alle prove per una successiva revisione umana; non considerare l’elenco come una certificazione o un’approvazione.',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.0':
+    'Quali garanzie tecniche e organizzative dovrebbero essere comprovate?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.1':
+    'Quali controlli di accesso, registrazione, conservazione e sicurezza necessitano di revisione?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.2':
+    'Quali garanzie residue necessitano di un follow-up da parte del responsabile?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.title':
+    'Domande di consultazione ed escalation',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
+    'Registra le domande per le decisioni di escalation dell’operatore senza affermare che sia avvenuta una consultazione o che sia stata ottenuta l’approvazione dell’autorità.',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
+    'Quali ruoli di revisore interno dovrebbero esaminare questa DPIA?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
+    'Quale domanda di consultazione o di escalation rimane aperta?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
+    'Quale ostacolo impedisce di considerare questo come revisionato?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.3':
+    'Quale prossima azione dell’operatore dovrebbe essere registrata al di fuori di questo modello?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.title':
+    'Limiti di prova e di non-dichiarazione',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.desc':
+    'Preserva il confine locale/offline e gli indicatori di non-dichiarazione a falso quando questo modello viene esportato, copiato o utilizzato per la revisione dell’operatore.',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.0':
+    'Quali riferimenti a prove locali supportano le domande?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.1':
+    'Quali dichiarazioni di autorità, giuridiche, di validazione esterna, di punteggio, di completamento e di mutazione del registro rimangono a falso?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.2':
+    'Cosa deve essere esaminato prima di aggiornare qualsiasi registro separato?',
+  'settings.privacy.dpiaTemplate.checklist.activity_label.label':
+    'Etichetta dell’attività di trattamento',
+  'settings.privacy.dpiaTemplate.checklist.purpose_placeholder.label': 'Segnaposto della finalità',
+  'settings.privacy.dpiaTemplate.checklist.lawful_basis_prompt.label':
+    'Domanda di revisione della base giuridica',
+  'settings.privacy.dpiaTemplate.checklist.data_category_placeholders.label':
+    'Segnaposto di categorie di dati',
+  'settings.privacy.dpiaTemplate.checklist.system_boundary.label':
+    'Confine di sistema/flusso di lavoro',
+  'settings.privacy.dpiaTemplate.checklist.necessity_rationale.label':
+    'Domanda di motivazione della necessità',
+  'settings.privacy.dpiaTemplate.checklist.less_intrusive_alternatives.label':
+    'Alternative da considerare',
+  'settings.privacy.dpiaTemplate.checklist.minimization_controls.label':
+    'Controlli di minimizzazione da esaminare',
+  'settings.privacy.dpiaTemplate.checklist.retention_prompt.label':
+    'Domanda di revisione della conservazione',
+  'settings.privacy.dpiaTemplate.checklist.transparency_prompt.label':
+    'Domanda di revisione della trasparenza',
+  'settings.privacy.dpiaTemplate.checklist.rights_impacts.label': 'Domande di impatto sui diritti',
+  'settings.privacy.dpiaTemplate.checklist.misuse_scenarios.label':
+    'Scenari di uso improprio o di riservatezza',
+  'settings.privacy.dpiaTemplate.checklist.scale_context.label':
+    'Domanda di revisione di scala/contesto',
+  'settings.privacy.dpiaTemplate.checklist.unresolved_questions.label': 'Questioni irrisolte',
+  'settings.privacy.dpiaTemplate.checklist.risk_review_note.label':
+    'Nota di revisione umana del rischio',
+  'settings.privacy.dpiaTemplate.checklist.technical_safeguards.label': 'Garanzie tecniche',
+  'settings.privacy.dpiaTemplate.checklist.organizational_safeguards.label':
+    'Garanzie organizzative',
+  'settings.privacy.dpiaTemplate.checklist.access_logging_controls.label':
+    'Controlli di accesso/registrazione',
+  'settings.privacy.dpiaTemplate.checklist.evidence_references.label': 'Riferimenti a prove locali',
+  'settings.privacy.dpiaTemplate.checklist.residual_follow_up.label':
+    'Elementi residui di follow-up',
+  'settings.privacy.dpiaTemplate.checklist.reviewer_roles.label': 'Segnaposto di ruoli di revisore',
+  'settings.privacy.dpiaTemplate.checklist.consultation_questions.label':
+    'Domande di consultazione',
+  'settings.privacy.dpiaTemplate.checklist.escalation_blockers.label': 'Ostacoli all’escalation',
+  'settings.privacy.dpiaTemplate.checklist.target_review_date.label':
+    'Data obiettivo di revisione locale',
+  'settings.privacy.dpiaTemplate.checklist.next_operator_action.label':
+    'Prossima azione dell’operatore',
+  'settings.privacy.dpiaTemplate.checklist.local_evidence_index.label':
+    'Segnaposto dell’indice delle prove locali',
+  'settings.privacy.dpiaTemplate.checklist.false_no_claim_flags.label':
+    'Indicatori di non-dichiarazione a falso riconosciuti',
+  'settings.privacy.dpiaTemplate.checklist.no_sensitive_echo_check.label':
+    'Verifica di assenza di ripetizione di dati sensibili/del registro',
+  'settings.privacy.dpiaTemplate.checklist.separate_record_update_prompt.label':
+    'Domanda di aggiornamento di registro separato',
+  'settings.privacy.dpiaTemplate.operatorAction.0':
+    'Compila i segnaposto localmente con note redatte da persone, al di fuori della risposta di questo modello.',
+  'settings.privacy.dpiaTemplate.operatorAction.1':
+    'Esamina necessità, proporzionalità, rischi, garanzie e domande di escalation prima di qualsiasi aggiornamento separato del registro DPIA.',
+  'settings.privacy.dpiaTemplate.operatorAction.2':
+    'Mantieni a falso le dichiarazioni di deposito presso l’autorità, accettazione giuridica, validazione esterna, punteggio automatico, completamento, certificazione e mutazione del registro, salvo che siano comprovate separatamente al di fuori di questo modello.',
+  'settings.privacy.dpiaTemplate.operatorAction.3':
+    'Non incollare dati personali, segreti, contenuti grezzi del registro, nomi dei responsabili del trattamento, interessati né destinatari nella risposta del modello.',
   'settings.privacy.help.processor':
     'Un responsabile tratta dati personali per conto dell’organizzazione. Questo registro documenta chi tratta, per cosa, con quale base giuridica e quali sub-responsabili usa.',
   'settings.privacy.help.dpia':
@@ -5937,6 +6069,32 @@ export const itIT: Catalog = {
     'Se il mezzo è pronto all’uso. «Configurato» indica che la configurazione non segreta necessaria è presente; «Bloccato in produzione» che manca qualcosa richiesto fuori dalle prove; «Solo locale» contrassegna i mezzi che funzionano solo con un processo sulla macchina stessa; «Non configurato» che non è ancora stato fornito nulla.',
   'settings.signing.providers.help.notes':
     'Nota operativa proveniente dal server che spiega che cosa manca o che cosa condiziona questo mezzo — un ApplicationId dell’AMA mancante, la necessità di un lettore di smart card. È testo del server, non configurabile qui.',
+  'settings.signing.providers.help.actions':
+    'Apre la configurazione di questo mezzo nella tabella «Provider di firma», già pronta per il modo di questa riga. Il Cartão de Cidadão non si configura nell’applicazione: la sua cella riporta solo una nota, senza pulsante.',
+  'settings.signing.providers.action.configure': 'Configura',
+  'settings.signing.providers.action.configureAria': 'Configura il modo {mode}',
+  'settings.signing.providers.action.unavailable': 'Configurato sulla macchina dell’operatore',
+  'settings.signing.providers.action.unavailableHelp':
+    'Il Cartão de Cidadão firma con la carta fisica e un lettore collegati alla macchina dell’operatore, tramite il middleware Autenticação.gov. Qui non c’è nulla da configurare.',
+  'settings.signing.providers.guide.title': 'A cosa serve ogni modo e come configurarlo',
+  'settings.signing.providers.guide.intro':
+    'Ogni modo è un modo diverso di conservare la chiave e di firmare. Scegli quello adatto all’installazione e configuralo nella tabella «Provider di firma».',
+  'settings.signing.providers.guide.cmd.purpose':
+    'Il CMD/SCMD firma da remoto sull’infrastruttura dell’AMA, con la Chave Móvel Digital. La chiave privata non lascia mai i server dell’AMA e l’operatore approva ogni firma sul telefono.',
+  'settings.signing.providers.guide.cmd.configure':
+    'In «Provider di firma», crea una voce CMD con l’ApplicationId assegnato dall’AMA e le credenziali del servizio. Il pulsante «Configura» apre quella tabella già nel modo CMD.',
+  'settings.signing.providers.guide.cc.purpose':
+    'Il Cartão de Cidadão firma localmente con il certificato della carta stessa. Serve per firme occasionali fatte dalla persona che ha la carta a portata di mano.',
+  'settings.signing.providers.guide.cc.configure':
+    'Non c’è configurazione nell’applicazione. Servono un lettore di carte e il middleware Autenticação.gov installati sulla macchina dell’operatore; fatto ciò, il modo diventa disponibile.',
+  'settings.signing.providers.guide.cscQtsp.purpose':
+    'Il CSC/QTSP firma presso un prestatore di servizi fiduciari qualificato, tramite lo standard Cloud Signature Consortium. La chiave resta in custodia del prestatore e viene usata da remoto.',
+  'settings.signing.providers.guide.cscQtsp.configure':
+    'In «Provider di firma», crea una voce CSC con l’indirizzo del prestatore e le credenziali di accesso. Il pulsante «Configura» apre quella tabella già nel modo CSC.',
+  'settings.signing.providers.guide.localPkcs12.purpose':
+    'Il PKCS#12 locale usa un certificato salvato in un file (.p12 o .pfx) sulla macchina del server. Serve per ambienti di prova o certificati che non sono in un servizio remoto.',
+  'settings.signing.providers.guide.localPkcs12.configure':
+    'In «Provider di firma», crea una voce PKCS#12 con il file del certificato e la relativa password. Il pulsante «Configura» apre quella tabella già nel modo PKCS#12.',
   'settings.providerCredentials.protection.unavailable.title': 'Impossibile salvare le credenziali',
   'settings.providerCredentials.protection.unavailable.body':
     'Questo server non è in grado di cifrare né di salvare i segreti dei fornitori. Non verrà salvato nulla finché la questione non sarà risolta: le credenziali non sono conservate con una protezione più debole, semplicemente non sono conservate.',

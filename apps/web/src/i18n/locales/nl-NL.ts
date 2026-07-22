@@ -1773,6 +1773,13 @@ export const nlNL: Catalog = {
   'settings.appearance.colors.clearField': 'Deze kleur herstellen',
   'settings.appearance.colors.reset': 'Themastandaarden herstellen',
   'settings.appearance.colors.usingDefault': 'De standaardkleuren van het thema worden gebruikt',
+  'settings.appearance.colors.picker.open': 'Kleur kiezen',
+  'settings.appearance.colors.picker.dialog': 'Kleurkiezer',
+  'settings.appearance.colors.picker.saturation': 'Verzadiging en helderheid',
+  'settings.appearance.colors.picker.hue': 'Tint',
+  'settings.appearance.colors.picker.hex': 'Hexcode',
+  'settings.appearance.colors.picker.presets': 'Voorinstellingen',
+  'settings.appearance.colors.picker.preset': 'Kleur {color} toepassen',
   'settings.identity.cardTitle': 'Identiteit',
   'settings.identity.orgName.label': 'Naam van de organisatie',
   'settings.identity.orgName.hint':
@@ -5224,6 +5231,130 @@ export const nlNL: Catalog = {
   'settings.privacy.execution.decision.blocked': 'Geblokkeerd',
   'settings.privacy.execution.decision.executionRecorded': 'Uitvoering geregistreerd',
   'settings.privacy.guidance.operatorActions': 'Operatoracties',
+  'settings.privacy.dpiaTemplate.section.processing_description.title':
+    'Beschrijving van de verwerking',
+  'settings.privacy.dpiaTemplate.section.processing_description.desc':
+    'Leg de voorgenomen verwerking uitsluitend met tijdelijke aanduidingen vast; plak geen ruwe registervermeldingen, gegevens van betrokkenen, ontvangers, namen van verwerkers of geheimen.',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.0':
+    'Welke verwerkingsactiviteit wordt beoordeeld?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.1':
+    'Welke vraag over doel en rechtsgrondslag moet een menselijke beoordelaar overwegen?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.2':
+    'Welke tijdelijke aanduidingen voor gegevenscategorieën vallen binnen het bereik?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.3':
+    'Welke systeem- of workflowgrens valt binnen het bereik?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.title':
+    'Vragen over noodzaak en evenredigheid',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.desc':
+    'Begeleid een menselijke beoordeling van noodzaak, minimalisering, bewaring en alternatieven zonder de juridische toereikendheid te bepalen.',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.0':
+    'Waarom is deze verwerking noodzakelijk voor het aangegeven doel?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.1':
+    'Welke alternatieven met minder impact moeten worden overwogen?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.2':
+    'Welke beperkingen inzake minimalisering of bewaring moeten worden beoordeeld?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.3':
+    'Welke lacunes in transparantie of in kennisgeving aan de operator moeten worden gecontroleerd?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.title': 'Vragen over risico',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.desc':
+    'Verzamel uitsluitend kwalitatieve vragen over risico; dit sjabloon berekent, rangschikt of autoriseert geen risico.',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.0':
+    'Welke gevolgen voor rechten en vrijheden moeten worden beoordeeld?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.1':
+    'Welke scenario’s voor vertrouwelijkheid, integriteit, beschikbaarheid of misbruik moeten worden overwogen?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.2':
+    'Welke factoren met betrekking tot kwetsbare context of schaal vereisen menselijke aandacht?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.3':
+    'Welke onopgeloste vragen vereisen escalatie?',
+  'settings.privacy.dpiaTemplate.section.safeguards.title': 'Waarborgen',
+  'settings.privacy.dpiaTemplate.section.safeguards.desc':
+    'Vermeld waarborgen en bewijsverwijzingen voor latere menselijke beoordeling; behandel de lijst niet als certificering of goedkeuring.',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.0':
+    'Welke technische en organisatorische waarborgen moeten met bewijs worden onderbouwd?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.1':
+    'Welke maatregelen voor toegangsbeheer, logging, bewaring en beveiliging moeten worden beoordeeld?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.2':
+    'Welke resterende waarborgen vereisen opvolging door de verantwoordelijke?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.title':
+    'Vragen over raadpleging en escalatie',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
+    'Leg vragen vast voor escalatiebeslissingen van de operator zonder te beweren dat er raadpleging heeft plaatsgevonden of dat goedkeuring van de autoriteit is verkregen.',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
+    'Welke interne beoordelaarsrollen moeten deze DPIA inspecteren?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
+    'Welke vraag over raadpleging of escalatie blijft open?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
+    'Welke blokkade verhindert om dit als beoordeeld te behandelen?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.3':
+    'Welke volgende operatoractie moet buiten dit sjabloon worden vastgelegd?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.title':
+    'Grenzen van bewijs en niet-bewering',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.desc':
+    'Behoud de lokale/offline grens en de op onwaar gezette niet-beweringsvlaggen wanneer dit sjabloon wordt geëxporteerd, gekopieerd of gebruikt voor beoordeling door de operator.',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.0':
+    'Welke lokale bewijsverwijzingen ondersteunen de vragen?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.1':
+    'Welke beweringen over autoriteit, juridische aspecten, externe validatie, scoring, voltooiing en registerwijziging blijven onwaar?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.2':
+    'Wat moet worden beoordeeld voordat een afzonderlijk record wordt bijgewerkt?',
+  'settings.privacy.dpiaTemplate.checklist.activity_label.label':
+    'Label van de verwerkingsactiviteit',
+  'settings.privacy.dpiaTemplate.checklist.purpose_placeholder.label':
+    'Tijdelijke aanduiding voor het doel',
+  'settings.privacy.dpiaTemplate.checklist.lawful_basis_prompt.label':
+    'Vraag ter beoordeling van de rechtsgrondslag',
+  'settings.privacy.dpiaTemplate.checklist.data_category_placeholders.label':
+    'Tijdelijke aanduidingen voor gegevenscategorieën',
+  'settings.privacy.dpiaTemplate.checklist.system_boundary.label': 'Systeem-/workflowgrens',
+  'settings.privacy.dpiaTemplate.checklist.necessity_rationale.label':
+    'Vraag ter onderbouwing van de noodzaak',
+  'settings.privacy.dpiaTemplate.checklist.less_intrusive_alternatives.label':
+    'Te overwegen alternatieven',
+  'settings.privacy.dpiaTemplate.checklist.minimization_controls.label':
+    'Te beoordelen minimaliseringsmaatregelen',
+  'settings.privacy.dpiaTemplate.checklist.retention_prompt.label':
+    'Vraag ter beoordeling van de bewaring',
+  'settings.privacy.dpiaTemplate.checklist.transparency_prompt.label':
+    'Vraag ter beoordeling van de transparantie',
+  'settings.privacy.dpiaTemplate.checklist.rights_impacts.label':
+    'Vragen over gevolgen voor rechten',
+  'settings.privacy.dpiaTemplate.checklist.misuse_scenarios.label':
+    'Scenario’s voor misbruik of vertrouwelijkheid',
+  'settings.privacy.dpiaTemplate.checklist.scale_context.label':
+    'Vraag ter beoordeling van schaal/context',
+  'settings.privacy.dpiaTemplate.checklist.unresolved_questions.label': 'Onopgeloste vragen',
+  'settings.privacy.dpiaTemplate.checklist.risk_review_note.label':
+    'Notitie bij menselijke risicobeoordeling',
+  'settings.privacy.dpiaTemplate.checklist.technical_safeguards.label': 'Technische waarborgen',
+  'settings.privacy.dpiaTemplate.checklist.organizational_safeguards.label':
+    'Organisatorische waarborgen',
+  'settings.privacy.dpiaTemplate.checklist.access_logging_controls.label':
+    'Toegangs-/loggingmaatregelen',
+  'settings.privacy.dpiaTemplate.checklist.evidence_references.label': 'Lokale bewijsverwijzingen',
+  'settings.privacy.dpiaTemplate.checklist.residual_follow_up.label': 'Resterende opvolgpunten',
+  'settings.privacy.dpiaTemplate.checklist.reviewer_roles.label':
+    'Tijdelijke aanduidingen voor beoordelaarsrollen',
+  'settings.privacy.dpiaTemplate.checklist.consultation_questions.label': 'Raadplegingsvragen',
+  'settings.privacy.dpiaTemplate.checklist.escalation_blockers.label': 'Escalatieblokkades',
+  'settings.privacy.dpiaTemplate.checklist.target_review_date.label':
+    'Beoogde lokale beoordelingsdatum',
+  'settings.privacy.dpiaTemplate.checklist.next_operator_action.label': 'Volgende operatoractie',
+  'settings.privacy.dpiaTemplate.checklist.local_evidence_index.label':
+    'Tijdelijke aanduidingen voor de lokale bewijsindex',
+  'settings.privacy.dpiaTemplate.checklist.false_no_claim_flags.label':
+    'Op onwaar gezette niet-beweringsvlaggen bevestigd',
+  'settings.privacy.dpiaTemplate.checklist.no_sensitive_echo_check.label':
+    'Controle op geen weergave van gevoelige gegevens/registergegevens',
+  'settings.privacy.dpiaTemplate.checklist.separate_record_update_prompt.label':
+    'Vraag ter bijwerking van een afzonderlijk register',
+  'settings.privacy.dpiaTemplate.operatorAction.0':
+    'Vul de tijdelijke aanduidingen lokaal in met door mensen opgestelde notities buiten dit sjabloonantwoord.',
+  'settings.privacy.dpiaTemplate.operatorAction.1':
+    'Beoordeel noodzaak, evenredigheid, risico’s, waarborgen en escalatievragen vóór elke afzonderlijke bijwerking van het DPIA-register.',
+  'settings.privacy.dpiaTemplate.operatorAction.2':
+    'Houd beweringen over indiening bij de autoriteit, juridische aanvaarding, externe validatie, geautomatiseerde scoring, voltooiing, certificering en registerwijziging onwaar, tenzij deze afzonderlijk buiten dit sjabloon worden onderbouwd.',
+  'settings.privacy.dpiaTemplate.operatorAction.3':
+    'Plak geen persoonsgegevens, geheimen, ruwe registerinhoud, namen van verwerkers, betrokkenen of ontvangers in het sjabloonantwoord.',
   'settings.privacy.help.processor':
     'Een verwerker verwerkt persoonsgegevens namens de organisatie. Dit register legt vast wie verwerkt, waarvoor, op welke rechtsgrond en welke subverwerkers worden gebruikt.',
   'settings.privacy.help.dpia':
@@ -5936,6 +6067,32 @@ export const nlNL: Catalog = {
     'Of het middel klaar is voor gebruik. “Geconfigureerd” zegt dat de vereiste niet-geheime configuratie aanwezig is; “Geblokkeerd in productie” dat er iets ontbreekt wat buiten een testomgeving verplicht is; “Alleen lokaal” markeert de middelen die alleen werken met een proces op de machine zelf; “Niet geconfigureerd” dat er nog niets is opgegeven.',
   'settings.signing.providers.help.notes':
     'Operationele opmerking van de server die uitlegt wat er ontbreekt of wat dit middel beperkt — een ontbrekende ApplicationId van de AMA, de noodzaak van een kaartlezer. Deze tekst komt van de server en is hier niet configureerbaar.',
+  'settings.signing.providers.help.actions':
+    'Opent de configuratie van dit middel in de tabel “Ondertekeningsproviders”, al voorbereid voor de modus van deze rij. De Cartão de Cidadão wordt niet in de applicatie geconfigureerd: de cel bevat alleen een notitie, zonder knop.',
+  'settings.signing.providers.action.configure': 'Configureren',
+  'settings.signing.providers.action.configureAria': 'Modus {mode} configureren',
+  'settings.signing.providers.action.unavailable': 'Geconfigureerd op de machine van de operator',
+  'settings.signing.providers.action.unavailableHelp':
+    'De Cartão de Cidadão ondertekent met de fysieke kaart en een lezer die op de machine van de operator zijn aangesloten, via de Autenticação.gov-middleware. Hier valt niets te configureren.',
+  'settings.signing.providers.guide.title': 'Waarvoor elke modus dient en hoe u die configureert',
+  'settings.signing.providers.guide.intro':
+    'Elke modus is een andere manier om de sleutel te bewaren en te ondertekenen. Kies de modus die bij de installatie past en configureer die in de tabel “Ondertekeningsproviders”.',
+  'settings.signing.providers.guide.cmd.purpose':
+    'CMD/SCMD ondertekent op afstand op de infrastructuur van de AMA, met de Chave Móvel Digital. De privésleutel verlaat nooit de servers van de AMA en de operator keurt elke ondertekening op de telefoon goed.',
+  'settings.signing.providers.guide.cmd.configure':
+    'Maak in “Ondertekeningsproviders” een CMD-vermelding aan met de door de AMA toegewezen ApplicationId en de servicegegevens. De knop “Configureren” opent die tabel al in de modus CMD.',
+  'settings.signing.providers.guide.cc.purpose':
+    'De Cartão de Cidadão ondertekent lokaal met het certificaat van de kaart zelf. Het is bedoeld voor incidentele ondertekeningen door de persoon die de kaart bij de hand heeft.',
+  'settings.signing.providers.guide.cc.configure':
+    'Er is geen configuratie in de applicatie. Een kaartlezer en de Autenticação.gov-middleware moeten op de machine van de operator zijn geïnstalleerd; daarna is de modus beschikbaar.',
+  'settings.signing.providers.guide.cscQtsp.purpose':
+    'CSC/QTSP ondertekent bij een gekwalificeerde vertrouwensdienstverlener, via de standaard Cloud Signature Consortium. De sleutel blijft in beheer van de dienstverlener en wordt op afstand gebruikt.',
+  'settings.signing.providers.guide.cscQtsp.configure':
+    'Maak in “Ondertekeningsproviders” een CSC-vermelding aan met het adres van de dienstverlener en de toegangsgegevens. De knop “Configureren” opent die tabel al in de modus CSC.',
+  'settings.signing.providers.guide.localPkcs12.purpose':
+    'Lokale PKCS#12 gebruikt een certificaat dat is opgeslagen in een bestand (.p12 of .pfx) op de servermachine. Het is bedoeld voor testomgevingen of certificaten die niet in een externe dienst staan.',
+  'settings.signing.providers.guide.localPkcs12.configure':
+    'Maak in “Ondertekeningsproviders” een PKCS#12-vermelding aan met het certificaatbestand en het bijbehorende wachtwoord. De knop “Configureren” opent die tabel al in de modus PKCS#12.',
   'settings.providerCredentials.protection.unavailable.title':
     'Inloggegevens kunnen niet worden opgeslagen',
   'settings.providerCredentials.protection.unavailable.body':

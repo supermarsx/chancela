@@ -1768,6 +1768,13 @@ export const plPL: Catalog = {
   'settings.appearance.colors.clearField': 'Zresetuj ten kolor',
   'settings.appearance.colors.reset': 'Przywróć domyślne kolory motywu',
   'settings.appearance.colors.usingDefault': 'Używane są domyślne kolory motywu',
+  'settings.appearance.colors.picker.open': 'Wybierz kolor',
+  'settings.appearance.colors.picker.dialog': 'Selektor kolorów',
+  'settings.appearance.colors.picker.saturation': 'Nasycenie i jasność',
+  'settings.appearance.colors.picker.hue': 'Odcień',
+  'settings.appearance.colors.picker.hex': 'Kod szesnastkowy',
+  'settings.appearance.colors.picker.presets': 'Ustawienia wstępne',
+  'settings.appearance.colors.picker.preset': 'Zastosuj kolor {color}',
   'settings.identity.cardTitle': 'Tożsamość',
   'settings.identity.orgName.label': 'Nazwa organizacji',
   'settings.identity.orgName.hint':
@@ -5193,6 +5200,131 @@ export const plPL: Catalog = {
   'settings.privacy.execution.decision.blocked': 'Zablokowane',
   'settings.privacy.execution.decision.executionRecorded': 'Wykonanie zarejestrowane',
   'settings.privacy.guidance.operatorActions': 'Działania operatora',
+  'settings.privacy.dpiaTemplate.section.processing_description.title': 'Opis przetwarzania',
+  'settings.privacy.dpiaTemplate.section.processing_description.desc':
+    'Opisz proponowane przetwarzanie wyłącznie za pomocą symboli zastępczych; nie wklejaj surowych wpisów z rejestru, danych osób, których dane dotyczą, odbiorców, nazw podmiotów przetwarzających ani danych poufnych.',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.0':
+    'Jaka czynność przetwarzania jest oceniana?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.1':
+    'Jakie pytanie dotyczące celu i podstawy prawnej powinien rozważyć człowiek dokonujący weryfikacji?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.2':
+    'Które symbole zastępcze kategorii danych są objęte zakresem?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.3':
+    'Która granica systemu lub przepływu pracy jest objęta zakresem?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.title':
+    'Pytania dotyczące niezbędności i proporcjonalności',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.desc':
+    'Ukierunkuj przeprowadzaną przez człowieka weryfikację niezbędności, minimalizacji, przechowywania i alternatyw, bez rozstrzygania o wystarczalności prawnej.',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.0':
+    'Dlaczego to przetwarzanie jest niezbędne do wskazanego celu?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.1':
+    'Jakie alternatywy o mniejszym wpływie należy rozważyć?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.2':
+    'Jakie ograniczenia dotyczące minimalizacji lub przechowywania należy poddać weryfikacji?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.3':
+    'Jakie luki w przejrzystości lub w informacji dla operatora należy sprawdzić?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.title': 'Pytania dotyczące ryzyka',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.desc':
+    'Zbieraj wyłącznie jakościowe pytania dotyczące ryzyka; ten szablon nie oblicza, nie klasyfikuje ani nie zatwierdza ryzyka.',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.0':
+    'Jakie skutki dla praw i wolności należy poddać weryfikacji?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.1':
+    'Jakie scenariusze dotyczące poufności, integralności, dostępności lub nadużycia należy rozważyć?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.2':
+    'Jakie czynniki związane z wrażliwym kontekstem lub skalą wymagają uwagi człowieka?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.3':
+    'Jakie nierozstrzygnięte kwestie wymagają eskalacji?',
+  'settings.privacy.dpiaTemplate.section.safeguards.title': 'Zabezpieczenia',
+  'settings.privacy.dpiaTemplate.section.safeguards.desc':
+    'Wymień zabezpieczenia i odniesienia do dowodów do późniejszej weryfikacji przez człowieka; nie traktuj tej listy jako certyfikacji ani zatwierdzenia.',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.0':
+    'Które zabezpieczenia techniczne i organizacyjne należy udokumentować dowodami?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.1':
+    'Które mechanizmy kontroli dostępu, rejestrowania, przechowywania i bezpieczeństwa wymagają weryfikacji?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.2':
+    'Które zabezpieczenia szczątkowe wymagają działań następczych ze strony osoby odpowiedzialnej?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.title':
+    'Pytania dotyczące konsultacji i eskalacji',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
+    'Zapisuj pytania dotyczące decyzji operatora o eskalacji, nie twierdząc, że doszło do konsultacji ani że uzyskano zatwierdzenie organu.',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
+    'Które wewnętrzne role weryfikujące powinny sprawdzić tę DPIA?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
+    'Jakie pytanie dotyczące konsultacji lub eskalacji pozostaje otwarte?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
+    'Jaka przeszkoda uniemożliwia uznanie tego za zweryfikowane?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.3':
+    'Jakie następne działanie operatora należy odnotować poza tym szablonem?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.title':
+    'Granice dowodów i braku twierdzeń',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.desc':
+    'Zachowaj granicę lokalną/offline oraz fałszywe flagi braku twierdzeń, gdy ten szablon jest eksportowany, kopiowany lub wykorzystywany do weryfikacji przez operatora.',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.0':
+    'Które lokalne odniesienia do dowodów potwierdzają pytania?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.1':
+    'Które twierdzenia dotyczące organu, kwestii prawnych, walidacji zewnętrznej, punktacji, ukończenia i modyfikacji rejestru pozostają fałszywe?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.2':
+    'Co należy zweryfikować przed zaktualizowaniem jakiegokolwiek odrębnego wpisu?',
+  'settings.privacy.dpiaTemplate.checklist.activity_label.label':
+    'Etykieta czynności przetwarzania',
+  'settings.privacy.dpiaTemplate.checklist.purpose_placeholder.label': 'Symbol zastępczy celu',
+  'settings.privacy.dpiaTemplate.checklist.lawful_basis_prompt.label':
+    'Pytanie do weryfikacji podstawy prawnej',
+  'settings.privacy.dpiaTemplate.checklist.data_category_placeholders.label':
+    'Symbole zastępcze kategorii danych',
+  'settings.privacy.dpiaTemplate.checklist.system_boundary.label':
+    'Granica systemu/przepływu pracy',
+  'settings.privacy.dpiaTemplate.checklist.necessity_rationale.label':
+    'Pytanie o uzasadnienie niezbędności',
+  'settings.privacy.dpiaTemplate.checklist.less_intrusive_alternatives.label':
+    'Alternatywy do rozważenia',
+  'settings.privacy.dpiaTemplate.checklist.minimization_controls.label':
+    'Mechanizmy minimalizacji do weryfikacji',
+  'settings.privacy.dpiaTemplate.checklist.retention_prompt.label':
+    'Pytanie do weryfikacji przechowywania',
+  'settings.privacy.dpiaTemplate.checklist.transparency_prompt.label':
+    'Pytanie do weryfikacji przejrzystości',
+  'settings.privacy.dpiaTemplate.checklist.rights_impacts.label': 'Pytania o wpływ na prawa',
+  'settings.privacy.dpiaTemplate.checklist.misuse_scenarios.label':
+    'Scenariusze nadużycia lub naruszenia poufności',
+  'settings.privacy.dpiaTemplate.checklist.scale_context.label':
+    'Pytanie do weryfikacji skali/kontekstu',
+  'settings.privacy.dpiaTemplate.checklist.unresolved_questions.label': 'Nierozstrzygnięte kwestie',
+  'settings.privacy.dpiaTemplate.checklist.risk_review_note.label':
+    'Notatka z weryfikacji ryzyka przez człowieka',
+  'settings.privacy.dpiaTemplate.checklist.technical_safeguards.label': 'Zabezpieczenia techniczne',
+  'settings.privacy.dpiaTemplate.checklist.organizational_safeguards.label':
+    'Zabezpieczenia organizacyjne',
+  'settings.privacy.dpiaTemplate.checklist.access_logging_controls.label':
+    'Mechanizmy kontroli dostępu/rejestrowania',
+  'settings.privacy.dpiaTemplate.checklist.evidence_references.label':
+    'Lokalne odniesienia do dowodów',
+  'settings.privacy.dpiaTemplate.checklist.residual_follow_up.label':
+    'Szczątkowe elementy do działań następczych',
+  'settings.privacy.dpiaTemplate.checklist.reviewer_roles.label':
+    'Symbole zastępcze ról weryfikujących',
+  'settings.privacy.dpiaTemplate.checklist.consultation_questions.label': 'Pytania konsultacyjne',
+  'settings.privacy.dpiaTemplate.checklist.escalation_blockers.label': 'Przeszkody w eskalacji',
+  'settings.privacy.dpiaTemplate.checklist.target_review_date.label':
+    'Docelowa data lokalnej weryfikacji',
+  'settings.privacy.dpiaTemplate.checklist.next_operator_action.label':
+    'Następne działanie operatora',
+  'settings.privacy.dpiaTemplate.checklist.local_evidence_index.label':
+    'Symbole zastępcze lokalnego indeksu dowodów',
+  'settings.privacy.dpiaTemplate.checklist.false_no_claim_flags.label':
+    'Potwierdzono fałszywe flagi braku twierdzeń',
+  'settings.privacy.dpiaTemplate.checklist.no_sensitive_echo_check.label':
+    'Kontrola braku powielania danych wrażliwych/danych z rejestru',
+  'settings.privacy.dpiaTemplate.checklist.separate_record_update_prompt.label':
+    'Pytanie o aktualizację odrębnego rejestru',
+  'settings.privacy.dpiaTemplate.operatorAction.0':
+    'Wypełnij symbole zastępcze lokalnie notatkami napisanymi przez człowieka, poza odpowiedzią z tego szablonu.',
+  'settings.privacy.dpiaTemplate.operatorAction.1':
+    'Zweryfikuj niezbędność, proporcjonalność, ryzyka, zabezpieczenia i pytania eskalacyjne przed jakąkolwiek odrębną aktualizacją rejestru DPIA.',
+  'settings.privacy.dpiaTemplate.operatorAction.2':
+    'Utrzymuj jako fałszywe twierdzenia dotyczące złożenia do organu, akceptacji prawnej, walidacji zewnętrznej, automatycznej punktacji, ukończenia, certyfikacji i modyfikacji rejestru, chyba że zostaną odrębnie udokumentowane dowodami poza tym szablonem.',
+  'settings.privacy.dpiaTemplate.operatorAction.3':
+    'Nie wklejaj do odpowiedzi z szablonu danych osobowych, danych poufnych, surowej zawartości rejestru, nazw podmiotów przetwarzających, osób, których dane dotyczą, ani odbiorców.',
   'settings.privacy.help.processor':
     'Podmiot przetwarzający przetwarza dane osobowe w imieniu organizacji. Ten rejestr dokumentuje kto przetwarza, w jakim celu, na jakiej podstawie prawnej i jakich podprzetwarzających używa.',
   'settings.privacy.help.dpia':
@@ -5907,6 +6039,32 @@ export const plPL: Catalog = {
     'Czy dany sposób jest gotowy do użycia. „Skonfigurowany” oznacza, że wymagana konfiguracja niepoufna jest obecna; „Zablokowany w produkcji” — że brakuje czegoś wymaganego poza trybem testowym; „Tylko lokalnie” wskazuje sposoby działające wyłącznie z procesem na tej samej maszynie; „Nieskonfigurowany” — że nic jeszcze nie zostało podane.',
   'settings.signing.providers.help.notes':
     'Uwaga eksploatacyjna z serwera wyjaśniająca, czego brakuje lub co ogranicza ten sposób — brakujący ApplicationId z AMA, konieczność czytnika kart. To tekst z serwera, nieedytowalny w tym miejscu.',
+  'settings.signing.providers.help.actions':
+    'Otwiera konfigurację tego sposobu w tabeli „Dostawcy podpisu”, już przygotowaną dla trybu tego wiersza. Cartão de Cidadão nie konfiguruje się w aplikacji: jego komórka zawiera tylko notatkę, bez przycisku.',
+  'settings.signing.providers.action.configure': 'Konfiguruj',
+  'settings.signing.providers.action.configureAria': 'Konfiguruj tryb {mode}',
+  'settings.signing.providers.action.unavailable': 'Skonfigurowano na maszynie operatora',
+  'settings.signing.providers.action.unavailableHelp':
+    'Cartão de Cidadão podpisuje fizyczną kartą i czytnikiem podłączonymi do maszyny operatora, za pośrednictwem oprogramowania pośredniczącego Autenticação.gov. Nie ma tu nic do skonfigurowania.',
+  'settings.signing.providers.guide.title': 'Do czego służy każdy tryb i jak go skonfigurować',
+  'settings.signing.providers.guide.intro':
+    'Każdy tryb to inny sposób przechowywania klucza i podpisywania. Wybierz ten, który pasuje do instalacji, i skonfiguruj go w tabeli „Dostawcy podpisu”.',
+  'settings.signing.providers.guide.cmd.purpose':
+    'CMD/SCMD podpisuje zdalnie w infrastrukturze AMA, za pomocą Chave Móvel Digital. Klucz prywatny nigdy nie opuszcza serwerów AMA, a operator zatwierdza każdy podpis w telefonie.',
+  'settings.signing.providers.guide.cmd.configure':
+    'W „Dostawcy podpisu” utwórz wpis CMD z identyfikatorem ApplicationId przydzielonym przez AMA i poświadczeniami usługi. Przycisk „Konfiguruj” otwiera tę tabelę już w trybie CMD.',
+  'settings.signing.providers.guide.cc.purpose':
+    'Cartão de Cidadão podpisuje lokalnie certyfikatem samej karty. Służy do sporadycznych podpisów składanych przez osobę, która ma kartę pod ręką.',
+  'settings.signing.providers.guide.cc.configure':
+    'W aplikacji nie ma konfiguracji. Na maszynie operatora muszą być zainstalowane czytnik kart i oprogramowanie pośredniczące Autenticação.gov; po ich zainstalowaniu tryb staje się dostępny.',
+  'settings.signing.providers.guide.cscQtsp.purpose':
+    'CSC/QTSP podpisuje u kwalifikowanego dostawcy usług zaufania, za pośrednictwem standardu Cloud Signature Consortium. Klucz pozostaje pod pieczą dostawcy i jest używany zdalnie.',
+  'settings.signing.providers.guide.cscQtsp.configure':
+    'W „Dostawcy podpisu” utwórz wpis CSC z adresem dostawcy i poświadczeniami dostępu. Przycisk „Konfiguruj” otwiera tę tabelę już w trybie CSC.',
+  'settings.signing.providers.guide.localPkcs12.purpose':
+    'Lokalny PKCS#12 używa certyfikatu zapisanego w pliku (.p12 lub .pfx) na maszynie serwera. Służy do środowisk testowych lub certyfikatów, których nie ma w usłudze zdalnej.',
+  'settings.signing.providers.guide.localPkcs12.configure':
+    'W „Dostawcy podpisu” utwórz wpis PKCS#12 z plikiem certyfikatu i odpowiadającym mu hasłem. Przycisk „Konfiguruj” otwiera tę tabelę już w trybie PKCS#12.',
   'settings.providerCredentials.protection.unavailable.title': 'Nie można zapisać poświadczeń',
   'settings.providerCredentials.protection.unavailable.body':
     'Ten serwer nie potrafi zaszyfrować ani zapisać sekretów dostawcy. Nic nie zostanie zapisane, dopóki nie zostanie to naprawione — poświadczenia nie są przechowywane ze słabszą ochroną, po prostu nie są przechowywane.',

@@ -1785,6 +1785,13 @@ export const deDE: Catalog = {
   'settings.appearance.colors.clearField': 'Diese Farbe zurücksetzen',
   'settings.appearance.colors.reset': 'Auf Theme-Standard zurücksetzen',
   'settings.appearance.colors.usingDefault': 'Standardfarben des Themes werden verwendet',
+  'settings.appearance.colors.picker.open': 'Farbe wählen',
+  'settings.appearance.colors.picker.dialog': 'Farbwähler',
+  'settings.appearance.colors.picker.saturation': 'Sättigung und Helligkeit',
+  'settings.appearance.colors.picker.hue': 'Farbton',
+  'settings.appearance.colors.picker.hex': 'Hex-Code',
+  'settings.appearance.colors.picker.presets': 'Voreinstellungen',
+  'settings.appearance.colors.picker.preset': 'Farbe {color} anwenden',
   'settings.identity.cardTitle': 'Identität',
   'settings.identity.orgName.label': 'Name der Organisation',
   'settings.identity.orgName.hint':
@@ -5242,6 +5249,130 @@ export const deDE: Catalog = {
   'settings.privacy.execution.decision.blocked': 'Gesperrt',
   'settings.privacy.execution.decision.executionRecorded': 'Ausführung erfasst',
   'settings.privacy.guidance.operatorActions': 'Bedieneraktionen',
+  'settings.privacy.dpiaTemplate.section.processing_description.title':
+    'Beschreibung der Verarbeitung',
+  'settings.privacy.dpiaTemplate.section.processing_description.desc':
+    'Erfassen Sie die geplante Verarbeitung ausschließlich mit Platzhaltern; fügen Sie keine unbearbeiteten Verzeichniseinträge, Betroffenendaten, Empfänger, Auftragsverarbeiternamen oder Geheimnisse ein.',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.0':
+    'Welche Verarbeitungstätigkeit wird bewertet?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.1':
+    'Welche Frage zu Zweck und Rechtsgrundlage sollte eine prüfende Person berücksichtigen?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.2':
+    'Welche Platzhalter für Datenkategorien fallen in den Anwendungsbereich?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.3':
+    'Welche System- oder Workflow-Grenze fällt in den Anwendungsbereich?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.title':
+    'Fragen zu Erforderlichkeit und Verhältnismäßigkeit',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.desc':
+    'Leiten Sie eine menschliche Prüfung von Erforderlichkeit, Datenminimierung, Speicherdauer und Alternativen an, ohne über die rechtliche Hinlänglichkeit zu entscheiden.',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.0':
+    'Warum ist diese Verarbeitung für den angegebenen Zweck erforderlich?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.1':
+    'Welche Alternativen mit geringeren Auswirkungen sollten in Betracht gezogen werden?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.2':
+    'Welche Vorgaben zur Datenminimierung oder Speicherdauer sollten geprüft werden?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.3':
+    'Welche Lücken bei Transparenz oder bei Hinweisen an den Bediener sollten überprüft werden?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.title': 'Fragen zum Risiko',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.desc':
+    'Erfassen Sie ausschließlich qualitative Fragen zum Risiko; diese Vorlage berechnet, priorisiert oder genehmigt kein Risiko.',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.0':
+    'Welche Auswirkungen auf Rechte und Freiheiten sollten geprüft werden?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.1':
+    'Welche Szenarien für Vertraulichkeit, Integrität, Verfügbarkeit oder Missbrauch sollten in Betracht gezogen werden?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.2':
+    'Welche Faktoren im Zusammenhang mit schutzbedürftigen Kontexten oder mit dem Umfang erfordern menschliche Aufmerksamkeit?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.3':
+    'Welche offenen Fragen erfordern eine Eskalation?',
+  'settings.privacy.dpiaTemplate.section.safeguards.title': 'Schutzmaßnahmen',
+  'settings.privacy.dpiaTemplate.section.safeguards.desc':
+    'Führen Sie Schutzmaßnahmen und Nachweisverweise für eine spätere menschliche Prüfung auf; behandeln Sie die Liste nicht als Zertifizierung oder Genehmigung.',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.0':
+    'Welche technischen und organisatorischen Schutzmaßnahmen sollten nachgewiesen werden?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.1':
+    'Welche Kontrollen für Zugriffssteuerung, Protokollierung, Speicherdauer und Sicherheit müssen geprüft werden?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.2':
+    'Welche verbleibenden Schutzmaßnahmen erfordern eine Nachverfolgung durch die verantwortliche Person?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.title':
+    'Fragen zu Konsultation und Eskalation',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
+    'Erfassen Sie Fragen für Eskalationsentscheidungen des Bedieners, ohne zu behaupten, dass eine Konsultation stattgefunden hat oder eine Genehmigung der Aufsichtsbehörde eingeholt wurde.',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
+    'Welche internen Prüferrollen sollten diese DPIA prüfen?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
+    'Welche Frage zu Konsultation oder Eskalation bleibt offen?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
+    'Welcher Blocker verhindert, dies als geprüft zu behandeln?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.3':
+    'Welche nächste Bedieneraktion sollte außerhalb dieser Vorlage festgehalten werden?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.title':
+    'Grenzen für Nachweise und Nicht-Behauptungen',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.desc':
+    'Bewahren Sie die lokale/Offline-Grenze und die auf falsch gesetzten Nicht-Behauptungs-Flags, wenn diese Vorlage exportiert, kopiert oder für die Bedienerprüfung verwendet wird.',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.0':
+    'Welche lokalen Nachweisverweise stützen die Fragen?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.1':
+    'Welche Behauptungen zu Behörde, Recht, externer Validierung, Bewertung, Abschluss und Verzeichnisänderung bleiben falsch?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.2':
+    'Was muss geprüft werden, bevor ein separater Datensatz aktualisiert wird?',
+  'settings.privacy.dpiaTemplate.checklist.activity_label.label':
+    'Bezeichnung der Verarbeitungstätigkeit',
+  'settings.privacy.dpiaTemplate.checklist.purpose_placeholder.label': 'Platzhalter für den Zweck',
+  'settings.privacy.dpiaTemplate.checklist.lawful_basis_prompt.label':
+    'Frage zur Prüfung der Rechtsgrundlage',
+  'settings.privacy.dpiaTemplate.checklist.data_category_placeholders.label':
+    'Platzhalter für Datenkategorien',
+  'settings.privacy.dpiaTemplate.checklist.system_boundary.label': 'System-/Workflow-Grenze',
+  'settings.privacy.dpiaTemplate.checklist.necessity_rationale.label':
+    'Frage zur Begründung der Erforderlichkeit',
+  'settings.privacy.dpiaTemplate.checklist.less_intrusive_alternatives.label':
+    'Zu berücksichtigende Alternativen',
+  'settings.privacy.dpiaTemplate.checklist.minimization_controls.label':
+    'Zu prüfende Maßnahmen zur Datenminimierung',
+  'settings.privacy.dpiaTemplate.checklist.retention_prompt.label':
+    'Frage zur Prüfung der Speicherdauer',
+  'settings.privacy.dpiaTemplate.checklist.transparency_prompt.label':
+    'Frage zur Prüfung der Transparenz',
+  'settings.privacy.dpiaTemplate.checklist.rights_impacts.label':
+    'Fragen zu Auswirkungen auf Rechte',
+  'settings.privacy.dpiaTemplate.checklist.misuse_scenarios.label':
+    'Szenarien für Missbrauch oder Vertraulichkeit',
+  'settings.privacy.dpiaTemplate.checklist.scale_context.label':
+    'Frage zur Prüfung von Umfang/Kontext',
+  'settings.privacy.dpiaTemplate.checklist.unresolved_questions.label': 'Offene Fragen',
+  'settings.privacy.dpiaTemplate.checklist.risk_review_note.label':
+    'Notiz zur menschlichen Risikoprüfung',
+  'settings.privacy.dpiaTemplate.checklist.technical_safeguards.label':
+    'Technische Schutzmaßnahmen',
+  'settings.privacy.dpiaTemplate.checklist.organizational_safeguards.label':
+    'Organisatorische Schutzmaßnahmen',
+  'settings.privacy.dpiaTemplate.checklist.access_logging_controls.label':
+    'Zugriffs-/Protokollierungskontrollen',
+  'settings.privacy.dpiaTemplate.checklist.evidence_references.label': 'Lokale Nachweisverweise',
+  'settings.privacy.dpiaTemplate.checklist.residual_follow_up.label':
+    'Verbleibende Nachverfolgungspunkte',
+  'settings.privacy.dpiaTemplate.checklist.reviewer_roles.label': 'Platzhalter für Prüferrollen',
+  'settings.privacy.dpiaTemplate.checklist.consultation_questions.label': 'Konsultationsfragen',
+  'settings.privacy.dpiaTemplate.checklist.escalation_blockers.label': 'Eskalationsblocker',
+  'settings.privacy.dpiaTemplate.checklist.target_review_date.label':
+    'Angestrebtes lokales Prüfdatum',
+  'settings.privacy.dpiaTemplate.checklist.next_operator_action.label': 'Nächste Bedieneraktion',
+  'settings.privacy.dpiaTemplate.checklist.local_evidence_index.label':
+    'Platzhalter für den lokalen Nachweisindex',
+  'settings.privacy.dpiaTemplate.checklist.false_no_claim_flags.label':
+    'Auf falsch gesetzte Nicht-Behauptungs-Flags bestätigt',
+  'settings.privacy.dpiaTemplate.checklist.no_sensitive_echo_check.label':
+    'Prüfung auf keine Wiedergabe sensibler Daten/von Verzeichnisdaten',
+  'settings.privacy.dpiaTemplate.checklist.separate_record_update_prompt.label':
+    'Frage zur Aktualisierung eines separaten Verzeichnisses',
+  'settings.privacy.dpiaTemplate.operatorAction.0':
+    'Füllen Sie die Platzhalter lokal mit von Menschen verfassten Notizen außerhalb dieser Vorlagenantwort aus.',
+  'settings.privacy.dpiaTemplate.operatorAction.1':
+    'Prüfen Sie Erforderlichkeit, Verhältnismäßigkeit, Risiken, Schutzmaßnahmen und Eskalationsfragen vor jeder separaten Aktualisierung des DPIA-Verzeichnisses.',
+  'settings.privacy.dpiaTemplate.operatorAction.2':
+    'Halten Sie Behauptungen zu behördlicher Einreichung, rechtlicher Anerkennung, externer Validierung, automatisierter Bewertung, Abschluss, Zertifizierung und Verzeichnisänderung auf falsch, sofern sie nicht separat außerhalb dieser Vorlage nachgewiesen werden.',
+  'settings.privacy.dpiaTemplate.operatorAction.3':
+    'Fügen Sie keine personenbezogenen Daten, Geheimnisse, unbearbeiteten Verzeichnisinhalte, Auftragsverarbeiternamen, betroffenen Personen oder Empfänger in die Vorlagenantwort ein.',
   'settings.privacy.help.processor':
     'Ein Auftragsverarbeiter verarbeitet personenbezogene Daten im Auftrag der Organisation. Dieses Verzeichnis hält fest, wer verarbeitet, wozu, auf welcher Rechtsgrundlage und welche Unterauftragsverarbeiter genutzt werden.',
   'settings.privacy.help.dpia':
@@ -5957,6 +6088,32 @@ export const deDE: Catalog = {
     'Ob das Verfahren einsatzbereit ist. „Konfiguriert“ besagt, dass die erforderliche nicht geheime Konfiguration vorhanden ist; „In Produktion blockiert“, dass etwas fehlt, das außerhalb des Testbetriebs verlangt wird; „Nur lokal“ kennzeichnet die Verfahren, die nur mit einem Prozess auf dem Rechner selbst funktionieren; „Nicht konfiguriert“, dass noch nichts hinterlegt wurde.',
   'settings.signing.providers.help.notes':
     'Betriebshinweis vom Server, der erklärt, was fehlt oder was dieses Verfahren einschränkt — eine fehlende ApplicationId der AMA, die Notwendigkeit eines Kartenlesegeräts. Dieser Hinweis stammt vom Server und ist hier nicht konfigurierbar.',
+  'settings.signing.providers.help.actions':
+    'Öffnet die Konfiguration dieses Verfahrens in der Tabelle „Signaturanbieter“, bereits für den Modus dieser Zeile vorbereitet. Der Cartão de Cidadão wird nicht in der Anwendung konfiguriert: seine Zelle enthält nur einen Hinweis, ohne Schaltfläche.',
+  'settings.signing.providers.action.configure': 'Konfigurieren',
+  'settings.signing.providers.action.configureAria': 'Modus {mode} konfigurieren',
+  'settings.signing.providers.action.unavailable': 'Auf dem Rechner des Bedieners konfiguriert',
+  'settings.signing.providers.action.unavailableHelp':
+    'Der Cartão de Cidadão signiert mit der physischen Karte und einem Lesegerät, die mit dem Rechner des Bedieners verbunden sind, über die Middleware Autenticação.gov. Hier gibt es nichts zu konfigurieren.',
+  'settings.signing.providers.guide.title': 'Wozu jeder Modus dient und wie man ihn konfiguriert',
+  'settings.signing.providers.guide.intro':
+    'Jeder Modus ist eine andere Art, den Schlüssel zu speichern und zu signieren. Wählen Sie den passenden für die Installation und konfigurieren Sie ihn in der Tabelle „Signaturanbieter“.',
+  'settings.signing.providers.guide.cmd.purpose':
+    'CMD/SCMD signiert aus der Ferne auf der Infrastruktur der AMA, mit der Chave Móvel Digital. Der private Schlüssel verlässt die Server der AMA nie und der Bediener bestätigt jede Signatur auf dem Mobiltelefon.',
+  'settings.signing.providers.guide.cmd.configure':
+    'Legen Sie in „Signaturanbieter“ einen CMD-Eintrag mit der von der AMA vergebenen ApplicationId und den Dienstzugangsdaten an. Die Schaltfläche „Konfigurieren“ öffnet diese Tabelle bereits im Modus CMD.',
+  'settings.signing.providers.guide.cc.purpose':
+    'Der Cartão de Cidadão signiert lokal mit dem Zertifikat der Karte selbst. Er eignet sich für gelegentliche Signaturen durch die Person, die die Karte zur Hand hat.',
+  'settings.signing.providers.guide.cc.configure':
+    'In der Anwendung gibt es keine Konfiguration. Ein Kartenlesegerät und die Middleware Autenticação.gov müssen auf dem Rechner des Bedieners installiert sein; danach steht der Modus zur Verfügung.',
+  'settings.signing.providers.guide.cscQtsp.purpose':
+    'CSC/QTSP signiert bei einem qualifizierten Vertrauensdiensteanbieter, über den Standard Cloud Signature Consortium. Der Schlüssel bleibt in der Obhut des Anbieters und wird aus der Ferne verwendet.',
+  'settings.signing.providers.guide.cscQtsp.configure':
+    'Legen Sie in „Signaturanbieter“ einen CSC-Eintrag mit der Adresse des Anbieters und den Zugangsdaten an. Die Schaltfläche „Konfigurieren“ öffnet diese Tabelle bereits im Modus CSC.',
+  'settings.signing.providers.guide.localPkcs12.purpose':
+    'Das lokale PKCS#12 verwendet ein Zertifikat, das in einer Datei (.p12 oder .pfx) auf dem Server-Rechner gespeichert ist. Es eignet sich für Testumgebungen oder Zertifikate, die nicht in einem entfernten Dienst liegen.',
+  'settings.signing.providers.guide.localPkcs12.configure':
+    'Legen Sie in „Signaturanbieter“ einen PKCS#12-Eintrag mit der Zertifikatsdatei und dem zugehörigen Passwort an. Die Schaltfläche „Konfigurieren“ öffnet diese Tabelle bereits im Modus PKCS#12.',
   'settings.providerCredentials.protection.unavailable.title':
     'Zugangsdaten können nicht gespeichert werden',
   'settings.providerCredentials.protection.unavailable.body':

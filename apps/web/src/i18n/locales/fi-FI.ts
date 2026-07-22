@@ -1765,6 +1765,13 @@ export const fiFI: Catalog = {
   'settings.appearance.colors.clearField': 'Palauta tämä väri',
   'settings.appearance.colors.reset': 'Palauta teeman oletukset',
   'settings.appearance.colors.usingDefault': 'Käytössä ovat teeman oletusvärit',
+  'settings.appearance.colors.picker.open': 'Valitse väri',
+  'settings.appearance.colors.picker.dialog': 'Värinvalitsin',
+  'settings.appearance.colors.picker.saturation': 'Kylläisyys ja kirkkaus',
+  'settings.appearance.colors.picker.hue': 'Sävy',
+  'settings.appearance.colors.picker.hex': 'Heksakoodi',
+  'settings.appearance.colors.picker.presets': 'Esiasetukset',
+  'settings.appearance.colors.picker.preset': 'Käytä väriä {color}',
   'settings.identity.cardTitle': 'Identiteetti',
   'settings.identity.orgName.label': 'Organisaation nimi',
   'settings.identity.orgName.hint':
@@ -5193,6 +5200,129 @@ export const fiFI: Catalog = {
   'settings.privacy.execution.decision.blocked': 'Estetty',
   'settings.privacy.execution.decision.executionRecorded': 'Suoritus kirjattu',
   'settings.privacy.guidance.operatorActions': 'Operaattorin toimet',
+  'settings.privacy.dpiaTemplate.section.processing_description.title': 'Käsittelyn kuvaus',
+  'settings.privacy.dpiaTemplate.section.processing_description.desc':
+    'Kuvaa ehdotettu käsittely pelkillä paikkamerkeillä; älä liitä raakoja rekisteritietoja, rekisteröityjen tietoja, vastaanottajia, käsittelijöiden nimiä tai salaisuuksia.',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.0':
+    'Mitä käsittelytoimintaa arvioidaan?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.1':
+    'Mitä käyttötarkoitusta ja käsittelyn oikeusperustetta koskevaa kysymystä ihmisarvioijan tulisi harkita?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.2':
+    'Mitkä tietoluokkien paikkamerkit kuuluvat soveltamisalaan?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.3':
+    'Mikä järjestelmän tai työnkulun raja kuuluu soveltamisalaan?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.title':
+    'Tarpeellisuutta ja oikeasuhtaisuutta koskevat kysymykset',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.desc':
+    'Ohjaa tarpeellisuuden, minimoinnin, säilytyksen ja vaihtoehtojen ihmisarviointia ratkaisematta oikeudellista riittävyyttä.',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.0':
+    'Miksi tämä käsittely on tarpeen ilmoitettua käyttötarkoitusta varten?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.1':
+    'Mitä vähemmän vaikuttavia vaihtoehtoja tulisi harkita?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.2':
+    'Mitä minimointi- tai säilytysrajoituksia tulisi tarkastella?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.3':
+    'Mitä läpinäkyvyyden tai käyttäjälle annettavan informoinnin puutteita tulisi tarkistaa?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.title': 'Riskikysymykset',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.desc':
+    'Kerää vain laadullisia riskikysymyksiä; tämä malli ei laske, priorisoi eikä valtuuta riskiä.',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.0':
+    'Mitä oikeuksiin ja vapauksiin kohdistuvia vaikutuksia tulisi tarkastella?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.1':
+    'Mitä luottamuksellisuuteen, eheyteen, saatavuuteen tai väärinkäyttöön liittyviä skenaarioita tulisi harkita?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.2':
+    'Mitkä haavoittuvaan asiayhteyteen tai laajuuteen liittyvät tekijät vaativat ihmisen huomiota?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.3':
+    'Mitkä ratkaisematta olevat kysymykset vaativat eskalointia?',
+  'settings.privacy.dpiaTemplate.section.safeguards.title': 'Suojatoimet',
+  'settings.privacy.dpiaTemplate.section.safeguards.desc':
+    'Luettele suojatoimet ja näyttöviittaukset myöhempää ihmisarviointia varten; älä käsittele luetteloa sertifiointina tai hyväksyntänä.',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.0':
+    'Mitkä tekniset ja organisatoriset suojatoimet tulisi osoittaa näytöllä?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.1':
+    'Mitkä pääsynvalvonnan, lokituksen, säilytyksen ja tietoturvan hallintakeinot vaativat tarkastelua?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.2':
+    'Mitkä jäljelle jäävät suojatoimet vaativat vastuuhenkilön jatkotoimia?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.title':
+    'Kuulemista ja eskalointia koskevat kysymykset',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
+    'Kirjaa kysymykset käyttäjän eskalointipäätöksiä varten väittämättä, että kuuleminen olisi tapahtunut tai että valvontaviranomaisen hyväksyntä olisi saatu.',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
+    'Minkä sisäisten arvioijaroolien tulisi tarkastaa tämä DPIA?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
+    'Mikä kuulemista tai eskalointia koskeva kysymys on yhä avoin?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
+    'Mikä este estää käsittelemästä tätä arvioituna?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.3':
+    'Mikä seuraava käyttäjän toimenpide tulisi kirjata tämän mallin ulkopuolelle?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.title':
+    'Näyttöä ja väittämättömyyttä koskevat rajat',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.desc':
+    'Säilytä paikallinen/offline-raja ja epätosina pidettävät väittämättömyysliput, kun tämä malli viedään, kopioidaan tai sitä käytetään käyttäjän arviointiin.',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.0':
+    'Mitkä paikalliset näyttöviittaukset tukevat kysymyksiä?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.1':
+    'Mitkä viranomaista, oikeudellisuutta, ulkoista validointia, pisteytystä, valmistumista ja rekisterin muuttamista koskevat väitteet pysyvät epätosina?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.2':
+    'Mitä on tarkasteltava ennen kuin mitään erillistä tietuetta päivitetään?',
+  'settings.privacy.dpiaTemplate.checklist.activity_label.label': 'Käsittelytoiminnan nimike',
+  'settings.privacy.dpiaTemplate.checklist.purpose_placeholder.label':
+    'Käyttötarkoituksen paikkamerkki',
+  'settings.privacy.dpiaTemplate.checklist.lawful_basis_prompt.label':
+    'Oikeusperustan tarkastelukysymys',
+  'settings.privacy.dpiaTemplate.checklist.data_category_placeholders.label':
+    'Tietoluokkien paikkamerkit',
+  'settings.privacy.dpiaTemplate.checklist.system_boundary.label': 'Järjestelmän/työnkulun raja',
+  'settings.privacy.dpiaTemplate.checklist.necessity_rationale.label':
+    'Tarpeellisuuden perustelukysymys',
+  'settings.privacy.dpiaTemplate.checklist.less_intrusive_alternatives.label':
+    'Harkittavat vaihtoehdot',
+  'settings.privacy.dpiaTemplate.checklist.minimization_controls.label':
+    'Tarkasteltavat minimoinnin hallintakeinot',
+  'settings.privacy.dpiaTemplate.checklist.retention_prompt.label': 'Säilytyksen tarkastelukysymys',
+  'settings.privacy.dpiaTemplate.checklist.transparency_prompt.label':
+    'Läpinäkyvyyden tarkastelukysymys',
+  'settings.privacy.dpiaTemplate.checklist.rights_impacts.label':
+    'Oikeusvaikutuksia koskevat kysymykset',
+  'settings.privacy.dpiaTemplate.checklist.misuse_scenarios.label':
+    'Väärinkäyttö- tai luottamuksellisuusskenaariot',
+  'settings.privacy.dpiaTemplate.checklist.scale_context.label':
+    'Laajuuden/asiayhteyden tarkastelukysymys',
+  'settings.privacy.dpiaTemplate.checklist.unresolved_questions.label':
+    'Ratkaisematta olevat kysymykset',
+  'settings.privacy.dpiaTemplate.checklist.risk_review_note.label':
+    'Ihmisen tekemän riskitarkastelun muistiinpano',
+  'settings.privacy.dpiaTemplate.checklist.technical_safeguards.label': 'Tekniset suojatoimet',
+  'settings.privacy.dpiaTemplate.checklist.organizational_safeguards.label':
+    'Organisatoriset suojatoimet',
+  'settings.privacy.dpiaTemplate.checklist.access_logging_controls.label':
+    'Pääsynvalvonnan/lokituksen hallintakeinot',
+  'settings.privacy.dpiaTemplate.checklist.evidence_references.label':
+    'Paikalliset näyttöviittaukset',
+  'settings.privacy.dpiaTemplate.checklist.residual_follow_up.label': 'Jäljelle jäävät jatkotoimet',
+  'settings.privacy.dpiaTemplate.checklist.reviewer_roles.label': 'Arvioijaroolien paikkamerkit',
+  'settings.privacy.dpiaTemplate.checklist.consultation_questions.label': 'Kuulemiskysymykset',
+  'settings.privacy.dpiaTemplate.checklist.escalation_blockers.label': 'Eskaloinnin esteet',
+  'settings.privacy.dpiaTemplate.checklist.target_review_date.label':
+    'Paikallisen tarkastelun tavoitepäivä',
+  'settings.privacy.dpiaTemplate.checklist.next_operator_action.label':
+    'Käyttäjän seuraava toimenpide',
+  'settings.privacy.dpiaTemplate.checklist.local_evidence_index.label':
+    'Paikallisen näyttöhakemiston paikkamerkit',
+  'settings.privacy.dpiaTemplate.checklist.false_no_claim_flags.label':
+    'Epätodet väittämättömyysliput kuitattu',
+  'settings.privacy.dpiaTemplate.checklist.no_sensitive_echo_check.label':
+    'Tarkistus, ettei arkaluonteisia tietoja / rekisteritietoja toisteta',
+  'settings.privacy.dpiaTemplate.checklist.separate_record_update_prompt.label':
+    'Erillisen rekisterin päivityskysymys',
+  'settings.privacy.dpiaTemplate.operatorAction.0':
+    'Täytä paikkamerkit paikallisesti ihmisen kirjoittamilla muistiinpanoilla tämän mallivastauksen ulkopuolella.',
+  'settings.privacy.dpiaTemplate.operatorAction.1':
+    'Tarkastele tarpeellisuutta, oikeasuhtaisuutta, riskejä, suojatoimia ja eskalointikysymyksiä ennen mitään erillistä DPIA-rekisterin päivitystä.',
+  'settings.privacy.dpiaTemplate.operatorAction.2':
+    'Pidä viranomaiselle toimittamista, oikeudellista hyväksyntää, ulkoista validointia, automaattista pisteytystä, valmistumista, sertifiointia ja rekisterin muuttamista koskevat väitteet epätosina, ellei niitä ole osoitettu erikseen näytöllä tämän mallin ulkopuolella.',
+  'settings.privacy.dpiaTemplate.operatorAction.3':
+    'Älä liitä henkilötietoja, salaisuuksia, raakoja rekisterisisältöjä, käsittelijöiden nimiä, rekisteröityjä tai vastaanottajia mallivastaukseen.',
   'settings.privacy.help.processor':
     'Käsittelijä käsittelee henkilötietoja organisaation puolesta. Tämä rekisteri kirjaa kuka käsittelee, mihin, millä oikeusperusteella ja mitä alikäsittelijöitä käytetään.',
   'settings.privacy.help.dpia':
@@ -5895,6 +6025,33 @@ export const fiFI: Catalog = {
     'Kertoo, onko tapa valmis käytettäväksi. ”Määritetty” tarkoittaa, että vaadittu ei-salainen määritys on olemassa; ”Estetty tuotannossa”, että jotain testikäytön ulkopuolella vaadittua puuttuu; ”Vain paikallinen” merkitsee tavat, jotka toimivat vain koneella itsellään ajettavan prosessin kanssa; ”Ei määritetty”, ettei mitään ole vielä annettu.',
   'settings.signing.providers.help.notes':
     'Palvelimelta tuleva käyttöhuomautus siitä, mitä puuttuu tai mikä rajoittaa tätä tapaa — puuttuva AMA:n ApplicationId, kortinlukijan tarve. Teksti tulee palvelimelta, eikä sitä voi määrittää tässä.',
+  'settings.signing.providers.help.actions':
+    'Avaa tämän tavan määrityksen taulukossa ”Allekirjoituspalveluntarjoajat”, valmiiksi tämän rivin tilaa varten. Cartão de Cidadão -tapaa ei määritetä sovelluksessa: sen solu sisältää vain huomautuksen, ilman painiketta.',
+  'settings.signing.providers.action.configure': 'Määritä',
+  'settings.signing.providers.action.configureAria': 'Määritä {mode}-tila',
+  'settings.signing.providers.action.unavailable': 'Määritetty operaattorin koneella',
+  'settings.signing.providers.action.unavailableHelp':
+    'Cartão de Cidadão allekirjoittaa fyysisellä kortilla ja lukijalla, jotka on liitetty operaattorin koneeseen, Autenticação.gov-väliohjelmiston kautta. Täällä ei ole mitään määritettävää.',
+  'settings.signing.providers.guide.title':
+    'Mihin kukin tapa on tarkoitettu ja miten se määritetään',
+  'settings.signing.providers.guide.intro':
+    'Jokainen tapa on eri tapa säilyttää avain ja allekirjoittaa. Valitse asennukseen sopiva ja määritä se taulukossa ”Allekirjoituspalveluntarjoajat”.',
+  'settings.signing.providers.guide.cmd.purpose':
+    'CMD/SCMD allekirjoittaa etänä AMA:n infrastruktuurissa, Chave Móvel Digital -avaimella. Yksityinen avain ei koskaan poistu AMA:n palvelimilta, ja operaattori hyväksyy jokaisen allekirjoituksen puhelimessa.',
+  'settings.signing.providers.guide.cmd.configure':
+    'Luo kohtaan ”Allekirjoituspalveluntarjoajat” CMD-merkintä, jossa on AMA:n myöntämä ApplicationId ja palvelun tunnistetiedot. Painike ”Määritä” avaa taulukon valmiiksi CMD-tilassa.',
+  'settings.signing.providers.guide.cc.purpose':
+    'Cartão de Cidadão allekirjoittaa paikallisesti kortin omalla varmenteella. Se soveltuu satunnaisiin allekirjoituksiin, jotka tekee henkilö, jolla on kortti käsillä.',
+  'settings.signing.providers.guide.cc.configure':
+    'Sovelluksessa ei ole määritystä. Operaattorin koneeseen on asennettava kortinlukija ja Autenticação.gov-väliohjelmisto; sen jälkeen tapa on käytettävissä.',
+  'settings.signing.providers.guide.cscQtsp.purpose':
+    'CSC/QTSP allekirjoittaa hyväksytyn luottamuspalvelun tarjoajan palvelussa, Cloud Signature Consortium -standardin kautta. Avain pysyy tarjoajan hallussa ja sitä käytetään etänä.',
+  'settings.signing.providers.guide.cscQtsp.configure':
+    'Luo kohtaan ”Allekirjoituspalveluntarjoajat” CSC-merkintä, jossa on tarjoajan osoite ja käyttöoikeustiedot. Painike ”Määritä” avaa taulukon valmiiksi CSC-tilassa.',
+  'settings.signing.providers.guide.localPkcs12.purpose':
+    'Paikallinen PKCS#12 käyttää varmennetta, joka on tallennettu tiedostoon (.p12 tai .pfx) palvelinkoneella. Se soveltuu testiympäristöihin tai varmenteisiin, joita ei ole etäpalvelussa.',
+  'settings.signing.providers.guide.localPkcs12.configure':
+    'Luo kohtaan ”Allekirjoituspalveluntarjoajat” PKCS#12-merkintä, jossa on varmennetiedosto ja sen salasana. Painike ”Määritä” avaa taulukon valmiiksi PKCS#12-tilassa.',
   'settings.providerCredentials.protection.unavailable.title': 'Tunnuksia ei voi tallentaa',
   'settings.providerCredentials.protection.unavailable.body':
     'Tämä palvelin ei pysty salaamaan eikä tallentamaan palveluntarjoajien salaisuuksia. Mitään ei tallenneta ennen kuin asia on korjattu — tunnuksia ei säilytetä heikommalla suojauksella, niitä ei säilytetä lainkaan.',

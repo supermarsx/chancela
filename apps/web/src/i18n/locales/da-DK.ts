@@ -1766,6 +1766,13 @@ export const daDK: Catalog = {
   'settings.appearance.colors.clearField': 'Nulstil denne farve',
   'settings.appearance.colors.reset': 'Nulstil til temaets standard',
   'settings.appearance.colors.usingDefault': 'Bruger temaets standardfarver',
+  'settings.appearance.colors.picker.open': 'Vælg farve',
+  'settings.appearance.colors.picker.dialog': 'Farvevælger',
+  'settings.appearance.colors.picker.saturation': 'Mætning og lysstyrke',
+  'settings.appearance.colors.picker.hue': 'Farvetone',
+  'settings.appearance.colors.picker.hex': 'Hexkode',
+  'settings.appearance.colors.picker.presets': 'Forudindstillinger',
+  'settings.appearance.colors.picker.preset': 'Anvend farve {color}',
   'settings.identity.cardTitle': 'Identitet',
   'settings.identity.orgName.label': 'Organisationens navn',
   'settings.identity.orgName.hint':
@@ -5176,6 +5183,130 @@ export const daDK: Catalog = {
   'settings.privacy.execution.decision.blocked': 'Blokeret',
   'settings.privacy.execution.decision.executionRecorded': 'Udførelse registreret',
   'settings.privacy.guidance.operatorActions': 'Operatørhandlinger',
+  'settings.privacy.dpiaTemplate.section.processing_description.title':
+    'Beskrivelse af behandlingen',
+  'settings.privacy.dpiaTemplate.section.processing_description.desc':
+    'Registrér den foreslåede behandling udelukkende med pladsholdere; indsæt ikke rå fortegnelsesposter, registreredes oplysninger, modtagere, navne på databehandlere eller hemmeligheder.',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.0':
+    'Hvilken behandlingsaktivitet vurderes?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.1':
+    'Hvilket spørgsmål om formål og retsgrundlag bør en menneskelig bedømmer overveje?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.2':
+    'Hvilke pladsholdere for datakategorier er omfattet?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.3':
+    'Hvilken system- eller arbejdsgangsgrænse er omfattet?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.title':
+    'Spørgsmål om nødvendighed og proportionalitet',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.desc':
+    'Vejled en menneskelig gennemgang af nødvendighed, minimering, opbevaring og alternativer uden at afgøre den juridiske tilstrækkelighed.',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.0':
+    'Hvorfor er denne behandling nødvendig for det angivne formål?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.1':
+    'Hvilke alternativer med mindre indvirkning bør overvejes?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.2':
+    'Hvilke begrænsninger for minimering eller opbevaring bør gennemgås?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.3':
+    'Hvilke mangler i gennemsigtighed eller i meddelelser til operatøren bør kontrolleres?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.title': 'Spørgsmål om risiko',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.desc':
+    'Indsaml udelukkende kvalitative spørgsmål om risiko; denne skabelon beregner, rangordner eller godkender ikke risiko.',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.0':
+    'Hvilke indvirkninger på rettigheder og frihedsrettigheder bør gennemgås?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.1':
+    'Hvilke scenarier for fortrolighed, integritet, tilgængelighed eller misbrug bør overvejes?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.2':
+    'Hvilke faktorer vedrørende sårbar kontekst eller omfang kræver menneskelig opmærksomhed?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.3':
+    'Hvilke uafklarede spørgsmål kræver eskalering?',
+  'settings.privacy.dpiaTemplate.section.safeguards.title': 'Beskyttelsesforanstaltninger',
+  'settings.privacy.dpiaTemplate.section.safeguards.desc':
+    'Anfør beskyttelsesforanstaltninger og bevisreferencer til senere menneskelig gennemgang; behandl ikke listen som certificering eller godkendelse.',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.0':
+    'Hvilke tekniske og organisatoriske beskyttelsesforanstaltninger bør dokumenteres?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.1':
+    'Hvilke kontroller for adgangsstyring, logning, opbevaring og sikkerhed skal gennemgås?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.2':
+    'Hvilke resterende beskyttelsesforanstaltninger kræver opfølgning af den ansvarlige?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.title':
+    'Spørgsmål om høring og eskalering',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
+    'Registrér spørgsmål til operatørens eskaleringsbeslutninger uden at hævde, at der har fundet en høring sted, eller at der er opnået godkendelse fra myndigheden.',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
+    'Hvilke interne bedømmerroller bør inspicere denne DPIA?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
+    'Hvilket spørgsmål om høring eller eskalering forbliver åbent?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
+    'Hvilken blokering forhindrer, at dette behandles som gennemgået?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.3':
+    'Hvilken næste operatørhandling bør registreres uden for denne skabelon?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.title':
+    'Grænser for bevis og ikke-påstand',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.desc':
+    'Bevar den lokale/offline grænse og de ikke-påstandsflag, der er sat til falsk, når denne skabelon eksporteres, kopieres eller anvendes til operatørgennemgang.',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.0':
+    'Hvilke lokale bevisreferencer understøtter spørgsmålene?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.1':
+    'Hvilke påstande om myndighed, jura, ekstern validering, scoring, færdiggørelse og fortegnelsesændring forbliver falske?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.2':
+    'Hvad skal gennemgås, før en separat post opdateres?',
+  'settings.privacy.dpiaTemplate.checklist.activity_label.label':
+    'Etiket for behandlingsaktiviteten',
+  'settings.privacy.dpiaTemplate.checklist.purpose_placeholder.label': 'Pladsholder for formålet',
+  'settings.privacy.dpiaTemplate.checklist.lawful_basis_prompt.label':
+    'Spørgsmål til gennemgang af retsgrundlaget',
+  'settings.privacy.dpiaTemplate.checklist.data_category_placeholders.label':
+    'Pladsholdere for datakategorier',
+  'settings.privacy.dpiaTemplate.checklist.system_boundary.label': 'System-/arbejdsgangsgrænse',
+  'settings.privacy.dpiaTemplate.checklist.necessity_rationale.label':
+    'Spørgsmål til begrundelse af nødvendigheden',
+  'settings.privacy.dpiaTemplate.checklist.less_intrusive_alternatives.label':
+    'Alternativer, der bør overvejes',
+  'settings.privacy.dpiaTemplate.checklist.minimization_controls.label':
+    'Minimeringsforanstaltninger, der skal gennemgås',
+  'settings.privacy.dpiaTemplate.checklist.retention_prompt.label':
+    'Spørgsmål til gennemgang af opbevaringen',
+  'settings.privacy.dpiaTemplate.checklist.transparency_prompt.label':
+    'Spørgsmål til gennemgang af gennemsigtigheden',
+  'settings.privacy.dpiaTemplate.checklist.rights_impacts.label':
+    'Spørgsmål om indvirkning på rettigheder',
+  'settings.privacy.dpiaTemplate.checklist.misuse_scenarios.label':
+    'Scenarier for misbrug eller fortrolighed',
+  'settings.privacy.dpiaTemplate.checklist.scale_context.label':
+    'Spørgsmål til gennemgang af omfang/kontekst',
+  'settings.privacy.dpiaTemplate.checklist.unresolved_questions.label': 'Uafklarede spørgsmål',
+  'settings.privacy.dpiaTemplate.checklist.risk_review_note.label':
+    'Note om menneskelig risikogennemgang',
+  'settings.privacy.dpiaTemplate.checklist.technical_safeguards.label':
+    'Tekniske beskyttelsesforanstaltninger',
+  'settings.privacy.dpiaTemplate.checklist.organizational_safeguards.label':
+    'Organisatoriske beskyttelsesforanstaltninger',
+  'settings.privacy.dpiaTemplate.checklist.access_logging_controls.label':
+    'Adgangs-/logningskontroller',
+  'settings.privacy.dpiaTemplate.checklist.evidence_references.label': 'Lokale bevisreferencer',
+  'settings.privacy.dpiaTemplate.checklist.residual_follow_up.label':
+    'Resterende opfølgningspunkter',
+  'settings.privacy.dpiaTemplate.checklist.reviewer_roles.label': 'Pladsholdere for bedømmerroller',
+  'settings.privacy.dpiaTemplate.checklist.consultation_questions.label': 'Høringsspørgsmål',
+  'settings.privacy.dpiaTemplate.checklist.escalation_blockers.label': 'Eskaleringsblokeringer',
+  'settings.privacy.dpiaTemplate.checklist.target_review_date.label':
+    'Måldato for lokal gennemgang',
+  'settings.privacy.dpiaTemplate.checklist.next_operator_action.label': 'Næste operatørhandling',
+  'settings.privacy.dpiaTemplate.checklist.local_evidence_index.label':
+    'Pladsholdere for det lokale bevisindeks',
+  'settings.privacy.dpiaTemplate.checklist.false_no_claim_flags.label':
+    'Ikke-påstandsflag sat til falsk bekræftet',
+  'settings.privacy.dpiaTemplate.checklist.no_sensitive_echo_check.label':
+    'Kontrol af ingen gengivelse af følsomme data/fortegnelsesdata',
+  'settings.privacy.dpiaTemplate.checklist.separate_record_update_prompt.label':
+    'Spørgsmål til opdatering af separat fortegnelse',
+  'settings.privacy.dpiaTemplate.operatorAction.0':
+    'Udfyld pladsholderne lokalt med menneskeligt udarbejdede noter uden for dette skabelonsvar.',
+  'settings.privacy.dpiaTemplate.operatorAction.1':
+    'Gennemgå nødvendighed, proportionalitet, risici, beskyttelsesforanstaltninger og eskaleringsspørgsmål før enhver separat opdatering af DPIA-fortegnelsen.',
+  'settings.privacy.dpiaTemplate.operatorAction.2':
+    'Hold påstande om indgivelse til myndighed, juridisk accept, ekstern validering, automatiseret scoring, færdiggørelse, certificering og fortegnelsesændring falske, medmindre de dokumenteres separat uden for denne skabelon.',
+  'settings.privacy.dpiaTemplate.operatorAction.3':
+    'Indsæt ikke personoplysninger, hemmeligheder, rå fortegnelsesindhold, navne på databehandlere, registrerede eller modtagere i skabelonsvaret.',
   'settings.privacy.help.processor':
     'En databehandler behandler personoplysninger på organisationens vegne. Denne fortegnelse registrerer hvem der behandler, til hvad, på hvilket retsgrundlag og hvilke underdatabehandlere der bruges.',
   'settings.privacy.help.dpia':
@@ -5880,6 +6011,33 @@ export const daDK: Catalog = {
     'Om midlet er klar til brug. »Konfigureret« siger, at den nødvendige ikke-hemmelige konfiguration er til stede; »Blokeret i produktion«, at der mangler noget, som kræves uden for testbrug; »Kun lokal« markerer de midler, der kun virker med en proces på selve maskinen; »Ikke konfigureret«, at der endnu ikke er angivet noget.',
   'settings.signing.providers.help.notes':
     'Driftsbemærkning fra serveren, som forklarer, hvad der mangler, eller hvad der begrænser dette middel — et manglende ApplicationId fra AMA, behovet for en kortlæser. Denne tekst kommer fra serveren og kan ikke konfigureres her.',
+  'settings.signing.providers.help.actions':
+    'Åbner konfigurationen af dette middel i tabellen »Signeringsudbydere«, allerede forberedt til denne rækkes tilstand. Cartão de Cidadão konfigureres ikke i applikationen: dens celle indeholder kun en note, uden knap.',
+  'settings.signing.providers.action.configure': 'Konfigurer',
+  'settings.signing.providers.action.configureAria': 'Konfigurer tilstanden {mode}',
+  'settings.signing.providers.action.unavailable': 'Konfigureret på operatørens maskine',
+  'settings.signing.providers.action.unavailableHelp':
+    'Cartão de Cidadão signerer med det fysiske kort og en læser, der er tilsluttet operatørens maskine, via middleware-programmet Autenticação.gov. Der er intet at konfigurere her.',
+  'settings.signing.providers.guide.title':
+    'Hvad hver tilstand bruges til, og hvordan den konfigureres',
+  'settings.signing.providers.guide.intro':
+    'Hver tilstand er en forskellig måde at opbevare nøglen på og at signere på. Vælg den, der passer til installationen, og konfigurer den i tabellen »Signeringsudbydere«.',
+  'settings.signing.providers.guide.cmd.purpose':
+    'CMD/SCMD signerer eksternt på AMA’s infrastruktur, med Chave Móvel Digital. Den private nøgle forlader aldrig AMA’s servere, og operatøren godkender hver signatur på telefonen.',
+  'settings.signing.providers.guide.cmd.configure':
+    'Opret i »Signeringsudbydere« en CMD-post med det ApplicationId, som AMA har tildelt, og tjenestens legitimationsoplysninger. Knappen »Konfigurer« åbner tabellen allerede i tilstanden CMD.',
+  'settings.signing.providers.guide.cc.purpose':
+    'Cartão de Cidadão signerer lokalt med kortets eget certifikat. Det bruges til lejlighedsvise signaturer, som udføres af den person, der har kortet ved hånden.',
+  'settings.signing.providers.guide.cc.configure':
+    'Der er ingen konfiguration i applikationen. En kortlæser og middleware-programmet Autenticação.gov skal være installeret på operatørens maskine; når det er gjort, bliver tilstanden tilgængelig.',
+  'settings.signing.providers.guide.cscQtsp.purpose':
+    'CSC/QTSP signerer hos en kvalificeret tillidstjenesteudbyder, via standarden Cloud Signature Consortium. Nøglen forbliver i udbyderens varetægt og bruges eksternt.',
+  'settings.signing.providers.guide.cscQtsp.configure':
+    'Opret i »Signeringsudbydere« en CSC-post med udbyderens adresse og adgangsoplysningerne. Knappen »Konfigurer« åbner tabellen allerede i tilstanden CSC.',
+  'settings.signing.providers.guide.localPkcs12.purpose':
+    'Lokal PKCS#12 bruger et certifikat, der er gemt i en fil (.p12 eller .pfx) på servermaskinen. Det bruges til testmiljøer eller certifikater, der ikke ligger i en ekstern tjeneste.',
+  'settings.signing.providers.guide.localPkcs12.configure':
+    'Opret i »Signeringsudbydere« en PKCS#12-post med certifikatfilen og den tilhørende adgangskode. Knappen »Konfigurer« åbner tabellen allerede i tilstanden PKCS#12.',
   'settings.providerCredentials.protection.unavailable.title':
     'Legitimationsoplysninger kan ikke gemmes',
   'settings.providerCredentials.protection.unavailable.body':

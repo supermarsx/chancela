@@ -1770,6 +1770,13 @@ export const svFI: Catalog = {
   'settings.appearance.colors.clearField': 'Återställ den här färgen',
   'settings.appearance.colors.reset': 'Återställ temats standard',
   'settings.appearance.colors.usingDefault': 'Använder temats standardfärger',
+  'settings.appearance.colors.picker.open': 'Välj färg',
+  'settings.appearance.colors.picker.dialog': 'Färgväljare',
+  'settings.appearance.colors.picker.saturation': 'Mättnad och ljusstyrka',
+  'settings.appearance.colors.picker.hue': 'Nyans',
+  'settings.appearance.colors.picker.hex': 'Hex-kod',
+  'settings.appearance.colors.picker.presets': 'Förinställningar',
+  'settings.appearance.colors.picker.preset': 'Använd färg {color}',
   'settings.identity.cardTitle': 'Identitet',
   'settings.identity.orgName.label': 'Organisationens namn',
   'settings.identity.orgName.hint':
@@ -5188,6 +5195,129 @@ export const svFI: Catalog = {
   'settings.privacy.execution.decision.blocked': 'Blockerad',
   'settings.privacy.execution.decision.executionRecorded': 'Utförande registrerat',
   'settings.privacy.guidance.operatorActions': 'Operatörsåtgärder',
+  'settings.privacy.dpiaTemplate.section.processing_description.title':
+    'Beskrivning av behandlingen',
+  'settings.privacy.dpiaTemplate.section.processing_description.desc':
+    'Beskriv den föreslagna behandlingen med enbart platshållare; klistra inte in råa registerposter, uppgifter om registrerade, mottagare, biträdesnamn eller hemligheter.',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.0':
+    'Vilken behandlingsaktivitet bedöms?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.1':
+    'Vilken fråga om ändamål och rättslig grund bör en mänsklig granskare överväga?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.2':
+    'Vilka platshållare för datakategorier omfattas?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.3':
+    'Vilken system- eller arbetsflödesgräns omfattas?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.title':
+    'Frågor om nödvändighet och proportionalitet',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.desc':
+    'Vägled en mänsklig granskning av nödvändighet, minimering, lagring och alternativ utan att avgöra rättslig tillräcklighet.',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.0':
+    'Varför är denna behandling nödvändig för det angivna ändamålet?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.1':
+    'Vilka alternativ med lägre påverkan bör övervägas?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.2':
+    'Vilka begränsningar för minimering eller lagring bör granskas?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.3':
+    'Vilka brister i transparens eller i information till operatören bör kontrolleras?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.title': 'Riskfrågor',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.desc':
+    'Samla endast in kvalitativa riskfrågor; denna mall beräknar, rangordnar eller godkänner inte risk.',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.0':
+    'Vilka konsekvenser för rättigheter och friheter bör granskas?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.1':
+    'Vilka scenarier för konfidentialitet, integritet, tillgänglighet eller missbruk bör övervägas?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.2':
+    'Vilka faktorer kring sårbar kontext eller omfattning behöver mänsklig uppmärksamhet?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.3':
+    'Vilka olösta frågor kräver eskalering?',
+  'settings.privacy.dpiaTemplate.section.safeguards.title': 'Skyddsåtgärder',
+  'settings.privacy.dpiaTemplate.section.safeguards.desc':
+    'Förteckna skyddsåtgärder och bevisreferenser för senare mänsklig granskning; behandla inte listan som certifiering eller godkännande.',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.0':
+    'Vilka tekniska och organisatoriska skyddsåtgärder bör styrkas?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.1':
+    'Vilka åtgärder för åtkomstkontroll, loggning, lagring och säkerhet behöver granskas?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.2':
+    'Vilka kvarstående skyddsåtgärder behöver uppföljning av ansvarig?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.title':
+    'Frågor om samråd och eskalering',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
+    'Registrera frågor för operatörens eskaleringsbeslut utan att påstå att samråd har ägt rum eller att godkännande från tillsynsmyndighet har erhållits.',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
+    'Vilka interna granskarroller bör granska denna DPIA?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
+    'Vilken fråga om samråd eller eskalering är fortfarande öppen?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
+    'Vilket hinder gör att detta inte kan betraktas som granskat?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.3':
+    'Vilken nästa operatörsåtgärd bör registreras utanför denna mall?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.title':
+    'Gränser för bevis och icke-påståenden',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.desc':
+    'Bevara den lokala/offline-gränsen och de falska icke-påstående-flaggorna när denna mall exporteras, kopieras eller används för operatörsgranskning.',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.0':
+    'Vilka lokala bevisreferenser stöder frågorna?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.1':
+    'Vilka påståenden om myndighet, juridik, extern validering, poängsättning, slutförande och registerändring förblir falska?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.2':
+    'Vad måste granskas innan någon separat post uppdateras?',
+  'settings.privacy.dpiaTemplate.checklist.activity_label.label':
+    'Etikett för behandlingsaktivitet',
+  'settings.privacy.dpiaTemplate.checklist.purpose_placeholder.label': 'Platshållare för ändamål',
+  'settings.privacy.dpiaTemplate.checklist.lawful_basis_prompt.label':
+    'Fråga för granskning av rättslig grund',
+  'settings.privacy.dpiaTemplate.checklist.data_category_placeholders.label':
+    'Platshållare för datakategorier',
+  'settings.privacy.dpiaTemplate.checklist.system_boundary.label': 'System-/arbetsflödesgräns',
+  'settings.privacy.dpiaTemplate.checklist.necessity_rationale.label':
+    'Fråga om motivering av nödvändighet',
+  'settings.privacy.dpiaTemplate.checklist.less_intrusive_alternatives.label':
+    'Alternativ att överväga',
+  'settings.privacy.dpiaTemplate.checklist.minimization_controls.label':
+    'Minimeringsåtgärder att granska',
+  'settings.privacy.dpiaTemplate.checklist.retention_prompt.label':
+    'Fråga för granskning av lagring',
+  'settings.privacy.dpiaTemplate.checklist.transparency_prompt.label':
+    'Fråga för granskning av transparens',
+  'settings.privacy.dpiaTemplate.checklist.rights_impacts.label':
+    'Frågor om påverkan på rättigheter',
+  'settings.privacy.dpiaTemplate.checklist.misuse_scenarios.label':
+    'Scenarier för missbruk eller konfidentialitet',
+  'settings.privacy.dpiaTemplate.checklist.scale_context.label':
+    'Fråga för granskning av omfattning/kontext',
+  'settings.privacy.dpiaTemplate.checklist.unresolved_questions.label': 'Olösta frågor',
+  'settings.privacy.dpiaTemplate.checklist.risk_review_note.label':
+    'Anteckning om mänsklig riskgranskning',
+  'settings.privacy.dpiaTemplate.checklist.technical_safeguards.label': 'Tekniska skyddsåtgärder',
+  'settings.privacy.dpiaTemplate.checklist.organizational_safeguards.label':
+    'Organisatoriska skyddsåtgärder',
+  'settings.privacy.dpiaTemplate.checklist.access_logging_controls.label':
+    'Åtkomst-/loggningsåtgärder',
+  'settings.privacy.dpiaTemplate.checklist.evidence_references.label': 'Lokala bevisreferenser',
+  'settings.privacy.dpiaTemplate.checklist.residual_follow_up.label':
+    'Kvarstående uppföljningspunkter',
+  'settings.privacy.dpiaTemplate.checklist.reviewer_roles.label': 'Platshållare för granskarroller',
+  'settings.privacy.dpiaTemplate.checklist.consultation_questions.label': 'Samrådsfrågor',
+  'settings.privacy.dpiaTemplate.checklist.escalation_blockers.label': 'Eskaleringshinder',
+  'settings.privacy.dpiaTemplate.checklist.target_review_date.label':
+    'Måldatum för lokal granskning',
+  'settings.privacy.dpiaTemplate.checklist.next_operator_action.label': 'Nästa operatörsåtgärd',
+  'settings.privacy.dpiaTemplate.checklist.local_evidence_index.label':
+    'Platshållare för lokalt bevisindex',
+  'settings.privacy.dpiaTemplate.checklist.false_no_claim_flags.label':
+    'Falska icke-påstående-flaggor bekräftade',
+  'settings.privacy.dpiaTemplate.checklist.no_sensitive_echo_check.label':
+    'Kontroll av att inga känsliga uppgifter/registeruppgifter återges',
+  'settings.privacy.dpiaTemplate.checklist.separate_record_update_prompt.label':
+    'Fråga om uppdatering av separat register',
+  'settings.privacy.dpiaTemplate.operatorAction.0':
+    'Fyll i platshållarna lokalt med människoskrivna anteckningar utanför detta mallsvar.',
+  'settings.privacy.dpiaTemplate.operatorAction.1':
+    'Granska nödvändighet, proportionalitet, risker, skyddsåtgärder och eskaleringsfrågor innan någon separat uppdatering av DPIA-registret.',
+  'settings.privacy.dpiaTemplate.operatorAction.2':
+    'Håll påståenden om myndighetsinlämning, juridiskt godkännande, extern validering, automatisk poängsättning, slutförande, certifiering och registerändring falska om de inte styrks separat utanför denna mall.',
+  'settings.privacy.dpiaTemplate.operatorAction.3':
+    'Klistra inte in personuppgifter, hemligheter, råa registerinnehåll, biträdesnamn, registrerade eller mottagare i mallsvaret.',
   'settings.privacy.help.processor':
     'Ett personuppgiftsbiträde behandlar personuppgifter för organisationens räkning. Detta register anger vem som behandlar, för vad, på vilken rättslig grund och vilka underbiträden som används.',
   'settings.privacy.help.dpia':
@@ -5890,6 +6020,33 @@ export const svFI: Catalog = {
     'Om sättet är redo att användas. ”Konfigurerad” betyder att den icke-hemliga konfiguration som krävs finns på plats; ”Blockerad i produktion” att något som krävs utanför test saknas; ”Endast lokal” markerar de sätt som bara fungerar med en process på själva maskinen; ”Inte konfigurerad” att inget ännu har angetts.',
   'settings.signing.providers.help.notes':
     'Driftanmärkning från servern om vad som saknas eller vad som begränsar det här sättet — ett ApplicationId från AMA som saknas, behovet av en kortläsare. Det är text från servern, inte något som konfigureras här.',
+  'settings.signing.providers.help.actions':
+    'Öppnar konfigurationen av det här sättet i tabellen ”Signeringsleverantörer”, redan förberedd för radens läge. Cartão de Cidadão konfigureras inte i applikationen: dess cell innehåller bara en notis, utan knapp.',
+  'settings.signing.providers.action.configure': 'Konfigurera',
+  'settings.signing.providers.action.configureAria': 'Konfigurera läget {mode}',
+  'settings.signing.providers.action.unavailable': 'Konfigurerad på operatörens maskin',
+  'settings.signing.providers.action.unavailableHelp':
+    'Cartão de Cidadão signerar med det fysiska kortet och en läsare som är anslutna till operatörens maskin, via mellanprogrammet Autenticação.gov. Det finns inget att konfigurera här.',
+  'settings.signing.providers.guide.title':
+    'Vad varje läge används till och hur du konfigurerar det',
+  'settings.signing.providers.guide.intro':
+    'Varje läge är ett olika sätt att lagra nyckeln och att signera. Välj det som passar installationen och konfigurera det i tabellen ”Signeringsleverantörer”.',
+  'settings.signing.providers.guide.cmd.purpose':
+    'CMD/SCMD signerar på distans i AMA:s infrastruktur, med Chave Móvel Digital. Den privata nyckeln lämnar aldrig AMA:s servrar och operatören godkänner varje signatur på telefonen.',
+  'settings.signing.providers.guide.cmd.configure':
+    'Skapa i ”Signeringsleverantörer” en CMD-post med det ApplicationId som AMA har tilldelat och tjänstens autentiseringsuppgifter. Knappen ”Konfigurera” öppnar tabellen redan i läget CMD.',
+  'settings.signing.providers.guide.cc.purpose':
+    'Cartão de Cidadão signerar lokalt med kortets eget certifikat. Det passar för enstaka signaturer som görs av den person som har kortet till hands.',
+  'settings.signing.providers.guide.cc.configure':
+    'Det finns ingen konfiguration i applikationen. En kortläsare och mellanprogrammet Autenticação.gov måste vara installerade på operatörens maskin; när det är gjort blir läget tillgängligt.',
+  'settings.signing.providers.guide.cscQtsp.purpose':
+    'CSC/QTSP signerar hos en kvalificerad betrodd tjänsteleverantör, via standarden Cloud Signature Consortium. Nyckeln stannar i leverantörens förvar och används på distans.',
+  'settings.signing.providers.guide.cscQtsp.configure':
+    'Skapa i ”Signeringsleverantörer” en CSC-post med leverantörens adress och åtkomstuppgifterna. Knappen ”Konfigurera” öppnar tabellen redan i läget CSC.',
+  'settings.signing.providers.guide.localPkcs12.purpose':
+    'Lokal PKCS#12 använder ett certifikat som är lagrat i en fil (.p12 eller .pfx) på servermaskinen. Det passar för testmiljöer eller certifikat som inte finns i en fjärrtjänst.',
+  'settings.signing.providers.guide.localPkcs12.configure':
+    'Skapa i ”Signeringsleverantörer” en PKCS#12-post med certifikatfilen och tillhörande lösenord. Knappen ”Konfigurera” öppnar tabellen redan i läget PKCS#12.',
   'settings.providerCredentials.protection.unavailable.title': 'Uppgifterna kan inte sparas',
   'settings.providerCredentials.protection.unavailable.body':
     'Den här servern kan varken kryptera eller spara leverantörshemligheter. Ingenting sparas förrän detta är åtgärdat — uppgifterna förvaras inte med svagare skydd, de förvaras inte alls.',

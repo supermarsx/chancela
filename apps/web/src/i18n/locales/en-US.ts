@@ -1759,6 +1759,13 @@ export const enUS: Catalog = {
   'settings.appearance.colors.clearField': 'Reset this color',
   'settings.appearance.colors.reset': 'Reset to theme defaults',
   'settings.appearance.colors.usingDefault': "Using the theme's default colors",
+  'settings.appearance.colors.picker.open': 'Choose color',
+  'settings.appearance.colors.picker.dialog': 'Color picker',
+  'settings.appearance.colors.picker.saturation': 'Saturation and brightness',
+  'settings.appearance.colors.picker.hue': 'Hue',
+  'settings.appearance.colors.picker.hex': 'Hex code',
+  'settings.appearance.colors.picker.presets': 'Presets',
+  'settings.appearance.colors.picker.preset': 'Apply color {color}',
   'settings.identity.cardTitle': 'Identity',
   'settings.identity.orgName.label': 'Organization name',
   'settings.identity.orgName.hint':
@@ -5146,6 +5153,118 @@ export const enUS: Catalog = {
   'settings.privacy.execution.decision.blocked': 'Blocked',
   'settings.privacy.execution.decision.executionRecorded': 'Execution recorded',
   'settings.privacy.guidance.operatorActions': 'Operator actions',
+  'settings.privacy.dpiaTemplate.section.processing_description.title': 'Processing description',
+  'settings.privacy.dpiaTemplate.section.processing_description.desc':
+    'Capture the proposed processing with placeholders only; do not paste raw register records, subject data, recipients, processor names, or secrets.',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.0':
+    'What processing activity is being assessed?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.1':
+    'What purpose and lawful-basis question should a human reviewer consider?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.2':
+    'Which data-category placeholders are in scope?',
+  'settings.privacy.dpiaTemplate.section.processing_description.prompt.3':
+    'Which system or workflow boundary is in scope?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.title':
+    'Necessity and proportionality prompts',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.desc':
+    'Guide a human review of necessity, minimization, retention, and alternatives without deciding legal sufficiency.',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.0':
+    'Why is this processing necessary for the stated purpose?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.1':
+    'What lower-impact alternatives should be considered?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.2':
+    'What minimization or retention constraints should be reviewed?',
+  'settings.privacy.dpiaTemplate.section.necessity_proportionality.prompt.3':
+    'What transparency or operator-facing notice gaps should be checked?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.title': 'Risk prompts',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.desc':
+    'Collect qualitative risk prompts only; this template does not calculate, rank, or authorize risk.',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.0':
+    'What rights-and-freedoms impacts should be reviewed?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.1':
+    'What confidentiality, integrity, availability, or misuse scenarios should be considered?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.2':
+    'What vulnerable-context or scale factors need human attention?',
+  'settings.privacy.dpiaTemplate.section.risk_prompts.prompt.3':
+    'What unresolved questions require escalation?',
+  'settings.privacy.dpiaTemplate.section.safeguards.title': 'Safeguards',
+  'settings.privacy.dpiaTemplate.section.safeguards.desc':
+    'List safeguards and evidence references for later human review; do not treat the list as certification or approval.',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.0':
+    'Which technical and organizational safeguards should be evidenced?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.1':
+    'Which access-control, logging, retention, and security controls need review?',
+  'settings.privacy.dpiaTemplate.section.safeguards.prompt.2':
+    'Which residual safeguards need owner follow-up?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.title':
+    'Consultation and escalation prompts',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
+    'Record prompts for operator escalation decisions without claiming consultation occurred or authority approval was obtained.',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
+    'Which internal reviewer roles should inspect this DPIA?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
+    'What consultation or escalation question remains open?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
+    'What blocker prevents treating this as reviewed?',
+  'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.3':
+    'What next operator action should be recorded outside this template?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.title':
+    'Evidence and no-claim boundaries',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.desc':
+    'Preserve the local/offline boundary and false no-claim flags when this template is exported, copied, or used for operator review.',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.0':
+    'Which local evidence references support the prompts?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.1':
+    'Which authority, legal, external-validation, scoring, completion, and register-mutation claims remain false?',
+  'settings.privacy.dpiaTemplate.section.evidence_boundaries.prompt.2':
+    'What must be reviewed before any separate record is updated?',
+  'settings.privacy.dpiaTemplate.checklist.activity_label.label': 'Processing activity label',
+  'settings.privacy.dpiaTemplate.checklist.purpose_placeholder.label': 'Purpose placeholder',
+  'settings.privacy.dpiaTemplate.checklist.lawful_basis_prompt.label': 'Lawful-basis review prompt',
+  'settings.privacy.dpiaTemplate.checklist.data_category_placeholders.label':
+    'Data-category placeholders',
+  'settings.privacy.dpiaTemplate.checklist.system_boundary.label': 'System/workflow boundary',
+  'settings.privacy.dpiaTemplate.checklist.necessity_rationale.label': 'Necessity rationale prompt',
+  'settings.privacy.dpiaTemplate.checklist.less_intrusive_alternatives.label':
+    'Alternatives to consider',
+  'settings.privacy.dpiaTemplate.checklist.minimization_controls.label':
+    'Minimization controls to review',
+  'settings.privacy.dpiaTemplate.checklist.retention_prompt.label': 'Retention review prompt',
+  'settings.privacy.dpiaTemplate.checklist.transparency_prompt.label': 'Transparency review prompt',
+  'settings.privacy.dpiaTemplate.checklist.rights_impacts.label': 'Rights-impact prompts',
+  'settings.privacy.dpiaTemplate.checklist.misuse_scenarios.label':
+    'Misuse or confidentiality scenarios',
+  'settings.privacy.dpiaTemplate.checklist.scale_context.label': 'Scale/context review prompt',
+  'settings.privacy.dpiaTemplate.checklist.unresolved_questions.label': 'Unresolved questions',
+  'settings.privacy.dpiaTemplate.checklist.risk_review_note.label': 'Human risk review note',
+  'settings.privacy.dpiaTemplate.checklist.technical_safeguards.label': 'Technical safeguards',
+  'settings.privacy.dpiaTemplate.checklist.organizational_safeguards.label':
+    'Organizational safeguards',
+  'settings.privacy.dpiaTemplate.checklist.access_logging_controls.label':
+    'Access/logging controls',
+  'settings.privacy.dpiaTemplate.checklist.evidence_references.label': 'Local evidence references',
+  'settings.privacy.dpiaTemplate.checklist.residual_follow_up.label': 'Residual follow-up items',
+  'settings.privacy.dpiaTemplate.checklist.reviewer_roles.label': 'Reviewer role placeholders',
+  'settings.privacy.dpiaTemplate.checklist.consultation_questions.label': 'Consultation questions',
+  'settings.privacy.dpiaTemplate.checklist.escalation_blockers.label': 'Escalation blockers',
+  'settings.privacy.dpiaTemplate.checklist.target_review_date.label': 'Target local review date',
+  'settings.privacy.dpiaTemplate.checklist.next_operator_action.label': 'Next operator action',
+  'settings.privacy.dpiaTemplate.checklist.local_evidence_index.label':
+    'Local evidence index placeholders',
+  'settings.privacy.dpiaTemplate.checklist.false_no_claim_flags.label':
+    'False no-claim flags acknowledged',
+  'settings.privacy.dpiaTemplate.checklist.no_sensitive_echo_check.label':
+    'No sensitive/register echo check',
+  'settings.privacy.dpiaTemplate.checklist.separate_record_update_prompt.label':
+    'Separate register update prompt',
+  'settings.privacy.dpiaTemplate.operatorAction.0':
+    'Fill placeholders locally with human-authored notes outside this template response.',
+  'settings.privacy.dpiaTemplate.operatorAction.1':
+    'Review necessity, proportionality, risks, safeguards, and escalation questions before any separate DPIA register update.',
+  'settings.privacy.dpiaTemplate.operatorAction.2':
+    'Keep authority filing, legal acceptance, external validation, automated scoring, completion, certification, and register-mutation claims false unless separately evidenced outside this template.',
+  'settings.privacy.dpiaTemplate.operatorAction.3':
+    'Do not paste personal data, secrets, raw register contents, processor names, data subjects, or recipients into the template response.',
   'settings.privacy.help.processor':
     'A processor handles personal data on the organisation’s behalf. This register records who processes it, for what, on which legal basis and which subprocessors are used.',
   'settings.privacy.help.dpia':
@@ -5845,6 +5964,32 @@ export const enUS: Catalog = {
     'Whether the means is ready to use. “Configured” says the non-secret configuration it needs is present; “Blocked in production” that something required outside testing is missing; “Local only” marks the means that work solely with a process on the user’s own machine; “Not configured” that nothing has been supplied yet.',
   'settings.signing.providers.help.notes':
     'An operational note from the server explaining what is missing or what constrains this means — an absent AMA ApplicationId, the need for a card reader. It is server text, not configurable here.',
+  'settings.signing.providers.help.actions':
+    'Opens the configuration for this means in the “Signing providers” grid, already prepared for this row’s mode. The Cartão de Cidadão is not configured in the application: its cell carries only a note, with no button.',
+  'settings.signing.providers.action.configure': 'Configure',
+  'settings.signing.providers.action.configureAria': 'Configure the {mode} mode',
+  'settings.signing.providers.action.unavailable': 'Configured on the operator’s machine',
+  'settings.signing.providers.action.unavailableHelp':
+    'The Cartão de Cidadão signs with the physical card and a reader connected to the operator’s machine, through the Autenticação.gov middleware. There is nothing to configure here.',
+  'settings.signing.providers.guide.title': 'What each mode is for and how to configure it',
+  'settings.signing.providers.guide.intro':
+    'Each mode is a different way of storing the key and signing. Choose the one that suits the installation and configure it in the “Signing providers” grid.',
+  'settings.signing.providers.guide.cmd.purpose':
+    'CMD/SCMD signs remotely on the AMA infrastructure, with the Chave Móvel Digital. The private key never leaves AMA’s servers and the operator approves each signature on their phone.',
+  'settings.signing.providers.guide.cmd.configure':
+    'In “Signing providers”, create a CMD entry with the ApplicationId assigned by the AMA and the service credentials. The “Configure” button opens that grid already in CMD mode.',
+  'settings.signing.providers.guide.cc.purpose':
+    'The Cartão de Cidadão signs locally with the card’s own certificate. It serves occasional signatures made by the person who has the card at hand.',
+  'settings.signing.providers.guide.cc.configure':
+    'There is no configuration in the application. A card reader and the Autenticação.gov middleware must be installed on the operator’s machine; once that is done, the mode becomes available.',
+  'settings.signing.providers.guide.cscQtsp.purpose':
+    'CSC/QTSP signs at a qualified trust service provider, through the Cloud Signature Consortium standard. The key stays in the provider’s custody and is used remotely.',
+  'settings.signing.providers.guide.cscQtsp.configure':
+    'In “Signing providers”, create a CSC entry with the provider’s address and the access credentials. The “Configure” button opens that grid already in CSC mode.',
+  'settings.signing.providers.guide.localPkcs12.purpose':
+    'Local PKCS#12 uses a certificate stored in a file (.p12 or .pfx) on the server machine. It serves test environments or certificates that are not held in a remote service.',
+  'settings.signing.providers.guide.localPkcs12.configure':
+    'In “Signing providers”, create a PKCS#12 entry with the certificate file and its password. The “Configure” button opens that grid already in PKCS#12 mode.',
   'settings.providerCredentials.protection.unavailable.title': 'Credentials cannot be stored',
   'settings.providerCredentials.protection.unavailable.body':
     'This server cannot encrypt or store provider secrets. Nothing will be saved until this is resolved — the credentials are not being kept with weaker protection, they are simply not being kept.',
