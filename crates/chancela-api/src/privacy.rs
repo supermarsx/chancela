@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{authorizer, forbidden, require_permission};
+use crate::authz::{forbidden, require_permission};
 use crate::data::{ReAuth, require_step_up};
 use crate::dto::{LedgerEventView, format_date};
 use crate::error::ApiError;
@@ -3115,15 +3115,15 @@ fn persist_retention_candidate_resolution_records_locked(
 
 /// `GET /v1/privacy/users/{id}/export` — non-secret GDPR/DSR JSON export for one user.
 ///
-/// Requires `user.manage` at Global. A caller without that authority receives the same generic 403
-/// as other RBAC gates; a caller that clears the gate receives the ordinary honest 404 for an
-/// unknown target, matching the local admin endpoints.
+/// Requires `privacy.manage` at Global (re-gated t27 off `user.manage`). A caller without that
+/// authority receives the same generic 403 as other RBAC gates; a caller that clears the gate
+/// receives the ordinary honest 404 for an unknown target, matching the local admin endpoints.
 pub async fn export_user(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     actor: CurrentActor,
 ) -> Result<Json<PrivacyExport>, ApiError> {
-    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::PrivacyManage, Scope::Global).await?;
 
     let target = UserId(id);
     let user = {
@@ -3168,7 +3168,7 @@ pub async fn create_dsr_request(
     attestor: CurrentAttestor,
     Json(req): Json<CreateDsrRequest>,
 ) -> Result<(StatusCode, Json<DsrRequestView>), ApiError> {
-    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::PrivacyManage, Scope::Global).await?;
     let subject_user_id = UserId(id);
     ensure_subject_exists(&state, subject_user_id).await?;
 
@@ -3222,7 +3222,7 @@ pub async fn list_dsr_requests_for_user(
     Path(id): Path<Uuid>,
     actor: CurrentActor,
 ) -> Result<Json<Vec<DsrRequestView>>, ApiError> {
-    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::PrivacyManage, Scope::Global).await?;
     let subject_user_id = UserId(id);
     ensure_subject_exists(&state, subject_user_id).await?;
 
@@ -3283,7 +3283,7 @@ pub async fn patch_dsr_request(
     attestor: CurrentAttestor,
     Json(req): Json<PatchDsrRequest>,
 ) -> Result<Json<DsrRequestView>, ApiError> {
-    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::PrivacyManage, Scope::Global).await?;
     let target_status = req
         .status
         .as_deref()
@@ -3312,7 +3312,7 @@ pub async fn create_processor_record(
     attestor: CurrentAttestor,
     Json(req): Json<CreateProcessorRecord>,
 ) -> Result<(StatusCode, Json<ProcessorRecordView>), ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
 
     let actor_name = actor.resolve("api");
     let now = now_rfc3339();
@@ -3364,7 +3364,7 @@ pub async fn list_processor_records(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<Vec<ProcessorRecordView>>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     let records = state.processor_records.read().await;
     let mut list: Vec<&ProcessorRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -3381,7 +3381,7 @@ pub async fn patch_processor_record(
     attestor: CurrentAttestor,
     Json(req): Json<PatchProcessorRecord>,
 ) -> Result<Json<ProcessorRecordView>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let record_id = ProcessorRecordId(id);
 
@@ -3418,7 +3418,7 @@ pub async fn create_dpia_record(
     attestor: CurrentAttestor,
     Json(req): Json<CreateDpiaRecord>,
 ) -> Result<(StatusCode, Json<DpiaRecordView>), ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
 
     let actor_name = actor.resolve("api");
     let now = now_rfc3339();
@@ -3472,7 +3472,7 @@ pub async fn list_dpia_records(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<Vec<DpiaRecordView>>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     let records = state.dpia_records.read().await;
     let mut list: Vec<&DpiaRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -3484,7 +3484,7 @@ pub async fn get_dpia_template(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<DpiaTemplateView>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     Ok(Json(dpia_template_view()))
 }
 
@@ -3496,7 +3496,7 @@ pub async fn patch_dpia_record(
     attestor: CurrentAttestor,
     Json(req): Json<PatchDpiaRecord>,
 ) -> Result<Json<DpiaRecordView>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let record_id = DpiaRecordId(id);
 
@@ -3533,7 +3533,7 @@ pub async fn create_breach_playbook(
     attestor: CurrentAttestor,
     Json(req): Json<CreateBreachPlaybook>,
 ) -> Result<(StatusCode, Json<BreachPlaybookView>), ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
 
     let actor_name = actor.resolve("api");
     let now = now_rfc3339();
@@ -3626,7 +3626,7 @@ pub async fn list_breach_playbooks(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<Vec<BreachPlaybookView>>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     let records = state.breach_playbooks.read().await;
     let mut list: Vec<&BreachPlaybookRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -3643,7 +3643,7 @@ pub async fn patch_breach_playbook(
     attestor: CurrentAttestor,
     Json(req): Json<PatchBreachPlaybook>,
 ) -> Result<Json<BreachPlaybookView>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let playbook_id = BreachPlaybookId(id);
 
@@ -3683,7 +3683,7 @@ pub async fn create_transfer_control(
     attestor: CurrentAttestor,
     Json(req): Json<CreateTransferControl>,
 ) -> Result<(StatusCode, Json<TransferControlView>), ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
 
     let actor_name = actor.resolve("api");
     let now = now_rfc3339();
@@ -3773,7 +3773,7 @@ pub async fn list_transfer_controls(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<Vec<TransferControlView>>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     let records = state.transfer_controls.read().await;
     let mut list: Vec<&TransferControlRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -3790,7 +3790,7 @@ pub async fn patch_transfer_control(
     attestor: CurrentAttestor,
     Json(req): Json<PatchTransferControl>,
 ) -> Result<Json<TransferControlView>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_privacy_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let control_id = TransferControlId(id);
 
@@ -3830,7 +3830,7 @@ pub async fn create_retention_policy(
     attestor: CurrentAttestor,
     Json(req): Json<CreateRetentionPolicy>,
 ) -> Result<(StatusCode, Json<RetentionPolicyView>), ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
 
     let actor_name = actor.resolve("api");
     let now = now_rfc3339();
@@ -3902,7 +3902,7 @@ pub async fn list_retention_policies(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<Vec<RetentionPolicyView>>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
     let records = state.retention_policies.read().await;
     let mut list: Vec<&RetentionPolicyRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -3917,7 +3917,7 @@ pub async fn list_retention_execution_records(
     actor: CurrentActor,
     Query(query): Query<RetentionExecutionListQuery>,
 ) -> Result<Json<Vec<RetentionExecutionRecord>>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
     let status_filter = parse_retention_execution_status_filter(query.status)?;
     let records = state.retention_execution_records.read().await;
     let mut list: Vec<&RetentionExecutionRecord> = records
@@ -3936,7 +3936,7 @@ pub async fn list_retention_candidate_resolution_records(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<Vec<RetentionCandidateResolutionRecord>>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
     let records = state.retention_candidate_resolutions.read().await;
     let mut list: Vec<&RetentionCandidateResolutionRecord> = records.values().collect();
     list.sort_by(|a, b| a.recorded_at.cmp(&b.recorded_at).then(a.id.cmp(&b.id)));
@@ -3951,7 +3951,7 @@ pub async fn record_retention_candidate_resolution(
     attestor: CurrentAttestor,
     Json(req): Json<serde_json::Value>,
 ) -> Result<(StatusCode, Json<RetentionCandidateResolutionRecord>), ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let candidate = rederive_active_retention_due_candidate(&state, &candidate_id).await?;
     let req = serde_json::from_value::<RetentionCandidateResolutionRequest>(req)
@@ -3987,7 +3987,7 @@ pub async fn close_retention_execution_review(
     attestor: CurrentAttestor,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<RetentionExecutionRecord>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let req = serde_json::from_value::<RetentionReviewClosureRequest>(req)
         .map_err(|e| ApiError::Unprocessable(format!("invalid review closure body: {e}")))?;
@@ -4039,7 +4039,7 @@ pub async fn list_retention_due_candidates(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<RetentionDueCandidatesReport>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
 
     let today = OffsetDateTime::now_utc().date();
     let policies = state.retention_policies.read().await;
@@ -4121,7 +4121,7 @@ pub async fn patch_retention_policy(
     attestor: CurrentAttestor,
     Json(req): Json<PatchRetentionPolicy>,
 ) -> Result<Json<RetentionPolicyView>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let policy_id = RetentionPolicyId(id);
 
@@ -4158,7 +4158,7 @@ pub async fn retention_policy_dry_run(
     attestor: CurrentAttestor,
     Json(req): Json<RetentionDryRunRequest>,
 ) -> Result<Json<RetentionDryRunReport>, ApiError> {
-    require_privacy_record_manage(&state, &actor).await?;
+    require_retention_manage(&state, &actor).await?;
 
     let scope = required_retention_segment(req.scope, "scope", MAX_RETENTION_FIELD_CHARS)?;
     let category = required_retention_segment(req.category, "category", MAX_RETENTION_FIELD_CHARS)?;
@@ -4910,7 +4910,7 @@ async fn complete_dsr_request_inner(
     actor: &CurrentActor,
     attestor: &CurrentAttestor,
 ) -> Result<Json<DsrRequestView>, ApiError> {
-    require_permission(state, actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(state, actor, Permission::PrivacyManage, Scope::Global).await?;
     let actor_name = actor.resolve("api");
     let executed_at = now_rfc3339();
     let request_snapshot = {
@@ -4988,18 +4988,21 @@ async fn complete_dsr_request_inner(
     Ok(Json(view))
 }
 
-async fn require_privacy_record_manage(
-    state: &AppState,
-    actor: &CurrentActor,
-) -> Result<(), ApiError> {
-    let authz = authorizer(state, actor).await?;
-    if authz.permits(Permission::UserManage, Scope::Global)
-        || authz.permits(Permission::SettingsManage, Scope::Global)
-    {
-        Ok(())
-    } else {
-        Err(forbidden())
-    }
+/// Gate for the privacy-record families (processors, DPIAs, the DPIA template, breach playbooks,
+/// transfer controls) **and** the data-subject-rights surface. Re-gated by t27 onto the granular
+/// `privacy.manage` verb — split off the broad `user.manage` | `settings.manage` pair these used to
+/// share. The grandfather migration granted `privacy.manage` to every prior holder of either parent,
+/// so the split strips no authority from an existing admin.
+async fn require_privacy_manage(state: &AppState, actor: &CurrentActor) -> Result<(), ApiError> {
+    require_permission(state, actor, Permission::PrivacyManage, Scope::Global).await
+}
+
+/// Gate for the GDPR **retention** families (policies, due candidates, executions, dry-run,
+/// resolutions). Re-gated by t27 onto the granular `retention.manage` verb — split off the same
+/// broad `user.manage` | `settings.manage` pair, distinct from privacy records so retention
+/// administration is its own authority. Grandfathered to every prior holder of either parent.
+async fn require_retention_manage(state: &AppState, actor: &CurrentActor) -> Result<(), ApiError> {
+    require_permission(state, actor, Permission::RetentionManage, Scope::Global).await
 }
 
 fn apply_processor_patch(
@@ -7504,8 +7507,9 @@ struct ErasurePlanEnumeration {
     legal_hold_blocked: bool,
 }
 
-/// Destructive erasure is gated to interactive sessions with `user.manage@Global`; it is deliberately
-/// NOT reachable via an API key / MCP principal (destructive step-up operations stay off that path).
+/// Destructive erasure is gated to interactive sessions with `privacy.manage@Global` (re-gated t27
+/// off `user.manage`); it is deliberately NOT reachable via an API key / MCP principal (destructive
+/// step-up operations stay off that path).
 fn reject_api_key_for_destructive(actor: &CurrentActor) -> Result<(), ApiError> {
     if actor.is_api_key() {
         return Err(forbidden());
@@ -7737,7 +7741,7 @@ pub async fn erasure_preflight(
     Path((user_id, request_id)): Path<(Uuid, Uuid)>,
     actor: CurrentActor,
 ) -> Result<Json<ErasurePreflightReport>, ApiError> {
-    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::PrivacyManage, Scope::Global).await?;
     reject_api_key_for_destructive(&actor)?;
     let subject = UserId(user_id);
     let request = load_erasure_request(&state, DsrRequestId(request_id), subject).await?;
@@ -7756,7 +7760,7 @@ pub async fn erasure_approve(
     actor: CurrentActor,
     Json(body): Json<ApproveErasureBody>,
 ) -> Result<Json<DsrRequestView>, ApiError> {
-    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::PrivacyManage, Scope::Global).await?;
     reject_api_key_for_destructive(&actor)?;
     let subject = UserId(user_id);
     let request_id = DsrRequestId(request_id);
@@ -7839,7 +7843,7 @@ pub async fn erasure_execute(
     attestor: CurrentAttestor,
     Json(body): Json<ExecuteErasureBody>,
 ) -> Result<Json<DsrRequestView>, ApiError> {
-    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::PrivacyManage, Scope::Global).await?;
     reject_api_key_for_destructive(&actor)?;
     // t22: erasure destroys the subject DEK and physically removes the directory identity. Dual
     // control already forces a second principal to approve, but the EXECUTING principal proved
@@ -8121,7 +8125,7 @@ async fn record_subject_annotation(
         "rectification" => SUBJECT_RECTIFICATION_KIND,
         _ => SUBJECT_PROCESSING_RESTRICTED_KIND,
     };
-    require_permission(state, actor, Permission::UserManage, Scope::Global).await?;
+    require_permission(state, actor, Permission::PrivacyManage, Scope::Global).await?;
     // The DSR must exist and belong to the subject (audit linkage for the annotation).
     {
         let requests = state.dsr_requests.read().await;

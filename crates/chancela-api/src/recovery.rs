@@ -243,9 +243,10 @@ pub async fn reanchor_ledger(
     actor: CurrentActor,
     Json(req): Json<ReanchorRequest>,
 ) -> Result<Json<ReanchorResponse>, ApiError> {
-    // RBAC (t64-E3): re-anchoring the chain requires `ledger.recover` at Global — AND the existing
-    // step-up re-auth (RBAC = who-may, step-up = confirm-now; both are kept).
-    require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
+    // RBAC (t64-E3, re-gated t27): re-anchoring the chain requires the granular `ledger.reanchor`
+    // at Global (split off the broad `ledger.recover`) — AND the existing step-up re-auth
+    // (RBAC = who-may, step-up = confirm-now; both are kept).
+    require_permission(&state, &actor, Permission::LedgerReanchor, Scope::Global).await?;
     // Step-up re-auth — a valid session alone is NOT enough (mirrors the destructive wipes).
     require_step_up(&state, &actor, &req.reauth).await?;
     let actor = actor.resolve(&req.actor);
@@ -397,15 +398,15 @@ impl From<RestorePreflightOutcome> for RestorePreflightOutcomeView {
 }
 
 /// `POST /v1/ledger/recovery/restore/preflight` — read-only verification of a full backup before
-/// restore. Uses the same archive/passphrase mode and `ledger.recover` gate as execution restore,
-/// but never swaps the live DB, stages sidecars, appends restore events, reloads memory, or mutates
-/// API/store state.
+/// restore. Uses the same archive/passphrase mode and (re-gated t27) `ledger.restore` gate as
+/// execution restore, but never swaps the live DB, stages sidecars, appends restore events, reloads
+/// memory, or mutates API/store state.
 pub async fn restore_store_preflight(
     State(state): State<AppState>,
     actor: CurrentActor,
     Json(req): Json<RestoreRequest>,
 ) -> Result<Json<RestorePreflightOutcomeView>, ApiError> {
-    require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::LedgerRestore, Scope::Global).await?;
     let Some(store) = state.store.clone() else {
         return Err(ApiError::Unprocessable(
             "pré-validação de restauro requer persistência em disco".to_owned(),
@@ -438,8 +439,9 @@ pub async fn restore_store(
     actor: CurrentActor,
     Json(req): Json<RestoreRequest>,
 ) -> Result<Json<RestoreOutcomeView>, ApiError> {
-    // RBAC (t64-E3): a whole-store restore requires `ledger.recover` at Global.
-    require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
+    // RBAC (t64-E3, re-gated t27): a whole-store restore requires the granular `ledger.restore` at
+    // Global (split off the broad `ledger.recover`).
+    require_permission(&state, &actor, Permission::LedgerRestore, Scope::Global).await?;
     // t22: and step-up, which the route map has claimed since it was written but the handler never
     // had. A restore silently replaces every book and the ledger; it is at least as destructive as
     // the re-anchor immediately above, which has required step-up all along. The t69 carve-out in

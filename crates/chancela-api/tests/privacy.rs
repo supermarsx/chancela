@@ -172,7 +172,18 @@ async fn add_settings_manager(state: &AppState) -> (UserId, String) {
     state.roles.write().await.insert(Role {
         id: role_id,
         name: "Privacy Settings Manager".to_owned(),
-        permission_set: [Permission::SettingsManage].into_iter().collect(),
+        // t27 re-gated privacy records + retention off the broad `settings.manage` onto the granular
+        // `privacy.manage` / `retention.manage`. The grandfather migration grants both to every prior
+        // `settings.manage` holder, so a settings manager keeps the access these tests assert. This
+        // role mirrors that post-migration reality (settings.manage + its grandfathered children); the
+        // precise "the narrow verb is what actually gates now" is proven by the dedicated tests below.
+        permission_set: [
+            Permission::SettingsManage,
+            Permission::PrivacyManage,
+            Permission::RetentionManage,
+        ]
+        .into_iter()
+        .collect(),
         protected: false,
     });
 
@@ -181,6 +192,34 @@ async fn add_settings_manager(state: &AppState) -> (UserId, String) {
         state,
         user,
         "settings-manager",
+        RoleAssignment::new(role_id, Scope::Global),
+    )
+    .await;
+    let token = open_session(state, user).await;
+    (user, token)
+}
+
+/// Creates a user whose sole role holds exactly `perms` at Global, opens a session, and returns
+/// `(id, token)`. Used by the t27 granular-verb tests to prove each op is gated on its *specific*
+/// verb — a holder of a neighbouring or parent verb (but not the exact one) must be denied.
+async fn add_user_with_permissions(
+    state: &AppState,
+    id: u128,
+    username: &str,
+    perms: &[Permission],
+) -> (UserId, String) {
+    let role_id = RoleId(Uuid::from_u128(id ^ 0x726f6c65));
+    state.roles.write().await.insert(Role {
+        id: role_id,
+        name: format!("{username} Role"),
+        permission_set: perms.iter().copied().collect(),
+        protected: false,
+    });
+    let user = UserId(Uuid::from_u128(id));
+    insert_user(
+        state,
+        user,
+        username,
         RoleAssignment::new(role_id, Scope::Global),
     )
     .await;
@@ -7221,5 +7260,188 @@ async fn preflight_marks_sealed_records_as_annotation_remedy() {
         sealed["remedy"],
         json!("annotation"),
         "the remedy for sealed records is annotation, not erasure"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------------
+// t27 — granular-verb enforcement. Privacy records, DSR/subject-rights and retention were re-gated off
+// the broad `user.manage` | `settings.manage` pair onto the specific `privacy.manage` /
+// `retention.manage` verbs. These tests prove each op requires its *own* verb and denies a holder of
+// only a neighbouring or parent verb — the security property of the split, not just reachability.
+// ---------------------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn privacy_records_gate_on_privacy_manage_and_reject_bare_parents() {
+    let (state, _target, _owner_token, _reader, _reader_token) = fixture_state().await;
+
+    // A holder of the OLD parent `settings.manage` alone — WITHOUT the grandfathered child — is now
+    // denied. This is the whole point of the split: the broad verb no longer reaches privacy records.
+    let (_u, settings_only) = add_user_with_permissions(
+        &state,
+        0x2701,
+        "settings-only",
+        &[Permission::SettingsManage],
+    )
+    .await;
+    // Likewise the other old parent, `user.manage`, no longer reaches privacy records.
+    let (_u, user_only) =
+        add_user_with_permissions(&state, 0x2702, "user-only", &[Permission::UserManage]).await;
+    // The neighbouring granular verb `retention.manage` must NOT leak into privacy records.
+    let (_u, retention_only) = add_user_with_permissions(
+        &state,
+        0x2703,
+        "retention-only",
+        &[Permission::RetentionManage],
+    )
+    .await;
+    // Exactly `privacy.manage` clears the gate.
+    let (_u, privacy_only) =
+        add_user_with_permissions(&state, 0x2704, "privacy-only", &[Permission::PrivacyManage])
+            .await;
+
+    for (label, token) in [
+        ("settings.manage alone", &settings_only),
+        ("user.manage alone", &user_only),
+        ("retention.manage alone", &retention_only),
+    ] {
+        let status = send_status(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/privacy/processors",
+                    processor_payload("medium", "active"),
+                ),
+                token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{label} must be denied privacy records"
+        );
+    }
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/processors",
+                processor_payload("medium", "active"),
+            ),
+            &privacy_only,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "privacy.manage manages records: {created}"
+    );
+}
+
+#[tokio::test]
+async fn retention_gates_on_retention_manage_distinct_from_privacy_manage() {
+    let (state, _target, _owner_token, _reader, _reader_token) = fixture_state().await;
+
+    // The sibling `privacy.manage` verb must NOT reach retention — the split made them independent.
+    let (_u, privacy_only) =
+        add_user_with_permissions(&state, 0x2711, "privacy-only", &[Permission::PrivacyManage])
+            .await;
+    // Neither old parent reaches retention on its own anymore.
+    let (_u, settings_only) = add_user_with_permissions(
+        &state,
+        0x2712,
+        "settings-only",
+        &[Permission::SettingsManage],
+    )
+    .await;
+    // Exactly `retention.manage` clears the gate.
+    let (_u, retention_only) = add_user_with_permissions(
+        &state,
+        0x2713,
+        "retention-only",
+        &[Permission::RetentionManage],
+    )
+    .await;
+
+    for (label, token) in [
+        ("privacy.manage alone", &privacy_only),
+        ("settings.manage alone", &settings_only),
+    ] {
+        let status = send_status(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/privacy/retention-policies",
+                    retention_policy_payload("delete", "active"),
+                ),
+                token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{label} must be denied retention"
+        );
+    }
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                retention_policy_payload("delete", "active"),
+            ),
+            &retention_only,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "retention.manage manages retention: {created}"
+    );
+}
+
+#[tokio::test]
+async fn dsr_subject_rights_gate_on_privacy_manage_not_user_manage() {
+    let (state, target, _owner_token, _reader, _reader_token) = fixture_state().await;
+
+    // DSR / subject-rights used to ride `user.manage`; t27 moved them onto `privacy.manage`. A bare
+    // `user.manage` holder is now denied the subject export.
+    let (_u, user_only) =
+        add_user_with_permissions(&state, 0x2721, "user-only", &[Permission::UserManage]).await;
+    let status = send_status(
+        state.clone(),
+        with_session(
+            get(&format!("/v1/privacy/users/{target}/export")),
+            &user_only,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "user.manage alone denied the DSR export"
+    );
+
+    // `privacy.manage` is the verb that now authorizes it.
+    let (_u, privacy_only) =
+        add_user_with_permissions(&state, 0x2722, "privacy-only", &[Permission::PrivacyManage])
+            .await;
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            get(&format!("/v1/privacy/users/{target}/export")),
+            &privacy_only,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "privacy.manage authorizes the DSR export: {body}"
     );
 }

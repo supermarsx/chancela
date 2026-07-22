@@ -504,6 +504,9 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/sessions", RouteClass::Session),
     ("/v1/sessions/{session_id}", RouteClass::Session),
     ("/v1/sessions/revoke-others", RouteClass::Session),
+    // t37 per-user UI preferences (configurable table columns): a valid session that acts only on
+    // its own row (handler-enforced via `session_username` → own user id), so `Session`, not a verb.
+    ("/v1/me/preferences", RouteClass::Session),
     // --- Companion device pairing (wp27-e4) -----------------------------------------------------
     // Mint / list / revoke are operator-authenticated: their handlers gate on `resolve_operator`
     // (an interactive session bound to an active user), not a specific `require_permission` verb —
@@ -572,14 +575,8 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // --- Opt-in zero-knowledge repositories ---------------------------------------------------
     // Instance-level object-store interlock (t105): read status / declare the shared root. Both
     // gated at Global — read on settings.read, the declaration on settings.manage.
-    (
-        "/v1/zk-repositories/storage-status",
-        RouteClass::Gated,
-    ), // settings.read@Global
-    (
-        "/v1/zk-repositories/shared-object-root",
-        RouteClass::Gated,
-    ), // settings.manage@Global
+    ("/v1/zk-repositories/storage-status", RouteClass::Gated), // settings.read@Global
+    ("/v1/zk-repositories/shared-object-root", RouteClass::Gated), // settings.manage@Global
     (
         "/v1/tenants/{tenant_id}/repository-policy",
         RouteClass::Gated,
@@ -792,9 +789,9 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/ledger/verify", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/integrity", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/attestations/{seq}", RouteClass::Gated), // GET ledger.read@Global
-    ("/v1/ledger/recovery/reanchor", RouteClass::Gated), // POST ledger.recover@Global + step-up
-    ("/v1/ledger/recovery/restore", RouteClass::Gated), // POST ledger.recover@Global + step-up
-    ("/v1/ledger/recovery/restore/preflight", RouteClass::Gated), // POST ledger.recover@Global (read-only; no step-up by design)
+    ("/v1/ledger/recovery/reanchor", RouteClass::Gated), // POST ledger.reanchor@Global + step-up
+    ("/v1/ledger/recovery/restore", RouteClass::Gated), // POST ledger.restore@Global + step-up
+    ("/v1/ledger/recovery/restore/preflight", RouteClass::Gated), // POST ledger.restore@Global (read-only; no step-up by design)
     // --- Data management ------------------------------------------------------------------------
     ("/v1/data/reset", RouteClass::Gated), // POST data.wipe@Global + step-up
     ("/v1/data/status", RouteClass::Gated), // GET settings.read@Global
@@ -850,13 +847,13 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/settings/email/deliveries/{id}/resend",
         RouteClass::Gated,
     ), // POST settings.manage@Global (t108); re-issue of token mail is refused here and routed to user.invite
-    ("/v1/platform/services", RouteClass::Gated),     // GET settings.read@Global
-    ("/v1/platform/env", RouteClass::Gated),          // GET settings.read@Global; PUT settings.manage@Global (t14)
+    ("/v1/platform/services", RouteClass::Gated), // GET settings.read@Global
+    ("/v1/platform/env", RouteClass::Gated), // GET settings.read@Global; PUT settings.manage@Global (t14)
     (
         "/v1/platform/services/{id}/actions/{action}",
         RouteClass::Gated,
     ), // POST settings.manage@Global
-    ("/v1/platform/logs", RouteClass::Gated),         // GET settings.read@Global
+    ("/v1/platform/logs", RouteClass::Gated), // GET settings.read@Global
     ("/v1/platform/logs/forwarded", RouteClass::Gated), // POST platform.logs.write@Global
     // --- Reference: CAE + law -------------------------------------------------------------------
     ("/v1/cae", RouteClass::Gated),          // GET cae.read@Global
@@ -890,63 +887,69 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // verb. The read is self OR `user.manage` (cross-user is an admin view), also handler-enforced.
     ("/v1/users/{id}/two-factor", RouteClass::Session),
     ("/v1/users/{id}/two-factor/totp/enrol", RouteClass::Session),
-    ("/v1/users/{id}/two-factor/totp/confirm", RouteClass::Session),
+    (
+        "/v1/users/{id}/two-factor/totp/confirm",
+        RouteClass::Session,
+    ),
     ("/v1/users/{id}/two-factor/totp", RouteClass::Session),
-    ("/v1/users/{id}/two-factor/backup-codes", RouteClass::Session),
-    ("/v1/privacy/users/{id}/export", RouteClass::Gated), // GET user.manage@Global
-    ("/v1/privacy/users/{id}/dsr-requests", RouteClass::Gated), // GET/POST user.manage@Global
+    (
+        "/v1/users/{id}/two-factor/backup-codes",
+        RouteClass::Session,
+    ),
+    ("/v1/privacy/users/{id}/export", RouteClass::Gated), // GET privacy.manage@Global
+    ("/v1/privacy/users/{id}/dsr-requests", RouteClass::Gated), // GET/POST privacy.manage@Global
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/complete",
         RouteClass::Gated,
-    ), // POST user.manage@Global
+    ), // POST privacy.manage@Global
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/preflight",
         RouteClass::Gated,
-    ), // POST user.manage@Global (read-only erasure preflight)
+    ), // POST privacy.manage@Global (read-only erasure preflight)
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/approve",
         RouteClass::Gated,
-    ), // POST user.manage@Global
+    ), // POST privacy.manage@Global
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/execute",
         RouteClass::Gated,
-    ), // POST user.manage@Global + step-up (interactive only)
+    ), // POST privacy.manage@Global + step-up (interactive only)
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/rectification",
         RouteClass::Gated,
-    ), // POST user.manage@Global
+    ), // POST privacy.manage@Global
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/restriction",
         RouteClass::Gated,
-    ), // POST user.manage@Global
-    ("/v1/privacy/dsr-requests/{id}", RouteClass::Gated), // PATCH user.manage@Global
-    ("/v1/privacy/dsr-requests/{id}/complete", RouteClass::Gated), // POST user.manage@Global
-    ("/v1/privacy/processors", RouteClass::Gated),  // GET/POST user.manage|settings.manage@Global
-    ("/v1/privacy/processors/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
-    ("/v1/privacy/dpia-template", RouteClass::Gated), // GET user.manage|settings.manage@Global
-    ("/v1/privacy/dpias", RouteClass::Gated),       // GET/POST user.manage|settings.manage@Global
-    ("/v1/privacy/dpias/{id}", RouteClass::Gated),  // PATCH user.manage|settings.manage@Global
-    ("/v1/privacy/breach-playbooks", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
-    ("/v1/privacy/breach-playbooks/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
-    ("/v1/privacy/transfer-controls", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
-    ("/v1/privacy/transfer-controls/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
-    ("/v1/privacy/retention-policies", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
-    ("/v1/privacy/retention-policies/dry-run", RouteClass::Gated), // POST user.manage|settings.manage@Global, non-destructive
-    ("/v1/privacy/retention-due-candidates", RouteClass::Gated), // GET user.manage|settings.manage@Global, read-only scanner
+    ), // POST privacy.manage@Global
+    ("/v1/privacy/dsr-requests/{id}", RouteClass::Gated), // PATCH privacy.manage@Global
+    ("/v1/privacy/dsr-requests/{id}/complete", RouteClass::Gated), // POST privacy.manage@Global
+    ("/v1/privacy/processors", RouteClass::Gated),        // GET/POST privacy.manage@Global
+    ("/v1/privacy/processors/{id}", RouteClass::Gated),   // PATCH privacy.manage@Global
+    ("/v1/privacy/dpia-template", RouteClass::Gated),     // GET privacy.manage@Global
+    ("/v1/privacy/dpias", RouteClass::Gated),             // GET/POST privacy.manage@Global
+    ("/v1/privacy/dpias/{id}", RouteClass::Gated),        // PATCH privacy.manage@Global
+    ("/v1/privacy/breach-playbooks", RouteClass::Gated),  // GET/POST privacy.manage@Global
+    ("/v1/privacy/breach-playbooks/{id}", RouteClass::Gated), // PATCH privacy.manage@Global
+    ("/v1/privacy/transfer-controls", RouteClass::Gated), // GET/POST privacy.manage@Global
+    ("/v1/privacy/transfer-controls/{id}", RouteClass::Gated), // PATCH privacy.manage@Global
+    ("/v1/privacy/retention-policies", RouteClass::Gated), // GET/POST retention.manage@Global
+    ("/v1/privacy/retention-policies/dry-run", RouteClass::Gated), // POST retention.manage@Global, non-destructive
+    ("/v1/privacy/retention-due-candidates", RouteClass::Gated), // GET retention.manage@Global, read-only scanner
     (
         "/v1/privacy/retention-due-candidates/{candidate_id}/resolution",
         RouteClass::Gated,
-    ), // POST user.manage|settings.manage@Global, evidence-only
+    ), // POST retention.manage@Global, evidence-only
     (
         "/v1/privacy/retention-candidate-resolutions",
         RouteClass::Gated,
-    ), // GET user.manage|settings.manage@Global
-    ("/v1/privacy/retention-executions", RouteClass::Gated), // GET user.manage|settings.manage@Global
+    ), // GET retention.manage@Global
+    ("/v1/privacy/retention-executions", RouteClass::Gated),     // GET retention.manage@Global
     (
         "/v1/privacy/retention-executions/{id}/review-closure",
         RouteClass::Gated,
-    ), // POST user.manage|settings.manage@Global
-    ("/v1/privacy/retention-policies/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
+    ), // POST retention.manage@Global
+    ("/v1/privacy/retention-policies/{id}", RouteClass::Gated),  // PATCH retention.manage@Global
     // --- API keys -------------------------------------------------------------------------------
     ("/v1/api-keys", RouteClass::Gated), // GET/POST user.manage@Global + interactive session
     ("/v1/api-keys/{id}", RouteClass::Gated), // DELETE user.manage@Global + interactive session
