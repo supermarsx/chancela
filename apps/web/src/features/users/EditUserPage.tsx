@@ -60,7 +60,10 @@ import {
   useEnrolTotp,
   useExportUserDsr,
   useRegenerateBackupCodes,
+  useRevokeOtherSessions,
+  useRevokeSession,
   useSession,
+  useSessions,
   useTwoFactor,
   useUpdateUser,
   useUser,
@@ -512,6 +515,146 @@ function TwoFactorSection({ user, isSelf }: { user: UserView; isSelf: boolean })
 }
 
 /**
+ * Sessões ativas — the account holder's own sign-ins (t103, against t107's frozen contract).
+ *
+ * ## Self-only, by the shape of the endpoint
+ *
+ * `GET /v1/sessions` returns the **caller's own** sessions, never a path parameter's. So this is
+ * only meaningful on your own account: an administrator viewing another user's screen would see
+ * *their own* sessions, not the target's, which is worse than useless. The panel therefore renders
+ * only when `isSelf` — the caller of this component gates it, so it is never even mounted
+ * cross-user. (Contrast the credential posture above, which is genuine per-user state.)
+ *
+ * ## Genuinely tabular — the one place on this surface a `Table` belongs
+ *
+ * A list of sign-ins with device, network, last-seen and expiry columns is exactly what the
+ * `Table` primitive with a hidden `<caption>` is for — noted in the part-4 review that the
+ * credential blocks were NOT tabular and this would be. Nothing here is a form.
+ *
+ * ## The revoke footgun, handled
+ *
+ * Revoking the `current` session signs you out — that is what the sign-out control is already for,
+ * so a per-row revoke is offered only on the OTHER sessions, and the current row is labelled
+ * instead. "Terminar as outras sessões" revokes every session but the current one. A revoked
+ * session is rejected on its next request (not merely delisted), so the other tabs are genuinely
+ * signed out. Only `session_id` crosses the wire — never the token.
+ */
+function SessionsSection() {
+  const t = useT();
+  const toast = useToast();
+  const sessions = useSessions();
+  const revoke = useRevokeSession();
+  const revokeOthers = useRevokeOtherSessions();
+
+  const list = sessions.data?.sessions ?? [];
+  const others = list.filter((s) => !s.current);
+  const busy = revoke.isPending || revokeOthers.isPending;
+
+  function doRevoke(sessionId: string) {
+    revoke.mutate(sessionId, {
+      onSuccess: () => toast.success(t('users.sessions.revoked')),
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  function doRevokeOthers() {
+    revokeOthers.mutate(undefined, {
+      onSuccess: (res) => toast.success(t('users.sessions.revokedOthers', { count: res.revoked })),
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  return (
+    <Card
+      title={t('users.sessions.title')}
+      actions={
+        others.length > 0 ? (
+          <Button
+            type="button"
+            variant="secondary"
+            icon={<Icon.SignOut />}
+            disabled={busy}
+            onClick={doRevokeOthers}
+          >
+            {t('users.sessions.revokeOthers')}
+          </Button>
+        ) : undefined
+      }
+    >
+      <div className="stack">
+        <p className="field__hint">{t('users.sessions.intro')}</p>
+        {sessions.isLoading ? (
+          <SkeletonTable cols={5} />
+        ) : sessions.error ? (
+          isPermissionError(sessions.error) ? (
+            <PermissionDeniedNote />
+          ) : (
+            <ErrorNote error={sessions.error} />
+          )
+        ) : list.length === 0 ? (
+          <EmptyState title={t('users.sessions.empty')} />
+        ) : (
+          <Table
+            caption={t('users.sessions.caption')}
+            head={
+              <tr>
+                <th>{t('users.sessions.col.device')}</th>
+                <th>{t('users.sessions.col.network')}</th>
+                <th>{t('users.sessions.col.lastSeen')}</th>
+                <th>{t('users.sessions.col.expires')}</th>
+                <th>{t('users.table.action')}</th>
+              </tr>
+            }
+          >
+            {list.map((s) => (
+              <tr key={s.session_id}>
+                <td>
+                  {s.device ?? <span className="muted">{t('users.sessions.unknownDevice')}</span>}
+                  {s.current ? (
+                    <>
+                      {' '}
+                      <Badge tone="accent">{t('users.sessions.current')}</Badge>
+                    </>
+                  ) : null}
+                </td>
+                <td>
+                  {s.ip ? (
+                    <code className="mono">{s.ip}</code>
+                  ) : (
+                    <span className="muted">{t('users.sessions.unknownNetwork')}</span>
+                  )}
+                </td>
+                <td>
+                  <DateTime value={s.last_seen_at} />
+                </td>
+                <td>
+                  <DateTime value={s.expires_at} />
+                </td>
+                <td className="users-actions">
+                  {s.current ? (
+                    <span className="muted">{t('users.sessions.thisSession')}</span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      icon={<Icon.Trash />}
+                      disabled={busy}
+                      onClick={() => doRevoke(s.session_id)}
+                    >
+                      {t('users.sessions.revoke')}
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/**
  * Segurança — the account HOLDER's view of their own account security (t103).
  *
  * ## Why this tab exists, and the line between it and Acesso e auditoria
@@ -621,13 +764,12 @@ function SecuritySection({ user }: { user: UserView }) {
           authenticator. */}
       <TwoFactorSection user={user} isSelf={isSelf} />
 
-      {/*
-        SESSIONS_SEAM (t103 → t107-signup, funded). "Sessões ativas" — the sign-ins on this
-        account with device/IP/last-seen and a self-service "terminar as outras sessões" — mounts
-        here once t107 lands the enriched session record and the per-user list + revoke routes.
-        `DurableSessionRecord` today carries none of that and there is no list/revoke endpoint, so
-        there is nothing to render and no placeholder to draw. Add the real panel, not a promise.
-      */}
+      {/* Sessões ativas — t107's frozen contract has landed, so this is the real panel now. It is
+          SELF-ONLY: `GET /v1/sessions` returns the caller's own sessions, so on another user's
+          screen it would show the admin's own — worse than useless — hence it mounts only when
+          `isSelf`. An admin manages another account's sign-ins through account deactivation
+          (Geral), not by seeing their device list. */}
+      {isSelf ? <SessionsSection /> : null}
     </div>
   );
 }
