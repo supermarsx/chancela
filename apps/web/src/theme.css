@@ -63,6 +63,18 @@
   --motion-ease-glide: cubic-bezier(0.22, 0.61, 0.36, 1);
   --motion-page-rise: 16px;
 
+  /* Micro-interaction clock (hover, focus, press, small state changes). These consolidate the
+     ~40 hand-typed 0.12-0.24s values that had drifted across this file so every micro-transition
+     now reads off ONE set of durations. They sit deliberately BELOW the 150-300ms page/panel
+     band — a hover must feel immediate, not deliberate — which is why the motion.test band
+     assertion covers only the two content-swap tokens above. Like everything in this block they
+     collapse to instant under the global prefers-reduced-motion rule and `[data-safe-mode='on']`
+     (both zero `transition`/`animation` on `*`), so no micro-rule can escape a kill-switch. */
+  --motion-quick: 120ms; /* snappy — dense controls, chips, titlebar, popover picks */
+  --motion-micro: 140ms; /* default micro — the pervasive hover/focus state change */
+  --motion-slow: 240ms; /* deliberate — toggle/knob glides, card lift, larger surfaces */
+  --motion-ease-standard: ease; /* the app's default micro curve, named so rules stop re-typing it */
+
   color-scheme: light dark;
 }
 
@@ -664,7 +676,7 @@ a:focus-visible {
   cursor: help;
   font-size: 0.9rem;
   border-radius: 999px;
-  transition: color 0.14s ease;
+  transition: color var(--motion-micro) var(--motion-ease-standard);
 }
 
 .field-help:hover,
@@ -1037,7 +1049,7 @@ a.btn.btn--iconOnly {
     radial-gradient(140% 150% at 50% 120%, var(--btn-leather-shadow), transparent 66%),
     linear-gradient(var(--btn-leather-base), var(--btn-leather-base));
   opacity: 1;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion-micro) var(--motion-ease-standard);
 }
 
 :root[data-button-texture='on'] .btn::after {
@@ -1048,8 +1060,8 @@ a.btn.btn--iconOnly {
   mix-blend-mode: multiply;
   opacity: var(--btn-leather-grain-opacity, 0.14);
   transition:
-    background-position 0.15s ease,
-    opacity 0.15s ease;
+    background-position var(--motion-micro) var(--motion-ease-standard),
+    opacity var(--motion-micro) var(--motion-ease-standard);
 }
 
 :root[data-button-texture='on'] .btn:hover:not(:disabled):not([aria-disabled='true'])::before,
@@ -1127,8 +1139,8 @@ a.btn.btn--iconOnly {
   opacity: 0;
   visibility: hidden;
   transition:
-    opacity 0.14s ease,
-    transform 0.14s ease;
+    opacity var(--motion-micro) var(--motion-ease-standard),
+    transform var(--motion-micro) var(--motion-ease-standard);
 }
 
 .tooltip__bubble.is-open {
@@ -3660,41 +3672,59 @@ body {
 /* Smooth, consistent micro-transitions on the themed interactive surfaces. */
 a,
 .nav__link {
-  transition: color 0.15s ease;
+  transition: color var(--motion-micro) var(--motion-ease-standard);
 }
 
 .btn {
   transition:
-    background-color 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    background-color var(--motion-micro) var(--motion-ease-standard),
+    color var(--motion-micro) var(--motion-ease-standard),
+    border-color var(--motion-micro) var(--motion-ease-standard),
+    box-shadow var(--motion-micro) var(--motion-ease-standard);
 }
 
 .control {
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    background-color 0.15s ease;
+    border-color var(--motion-micro) var(--motion-ease-standard),
+    box-shadow var(--motion-micro) var(--motion-ease-standard),
+    background-color var(--motion-micro) var(--motion-ease-standard);
 }
 
 .card,
 .panel {
-  transition: border-color 0.2s ease;
+  /* Border tint is the shared state change. The two lift properties (transform, box-shadow) are
+     declared on the transition here too, so the `.card:hover` lift below settles on the same
+     clock; all three are compositor-friendly (no layout property is transitioned), and the whole
+     rule collapses to instant under the two universal kill-switches. */
+  transition:
+    border-color var(--motion-slow) var(--motion-ease-standard),
+    transform var(--motion-slow) var(--motion-ease-standard),
+    box-shadow var(--motion-slow) var(--motion-ease-standard);
+}
+
+/* Intensity-B tasteful hover lift — cards only. A `.panel` is a large page section, so lifting
+   one on hover reads as noise; a `.card` is a discrete tile, where a gentle 2px rise plus a soft
+   brand-ink shadow gives depth without shouting. Transform + shadow only (never layout props),
+   so it stays on the compositor. Under reduced-motion / safe mode the transition above is zeroed,
+   so the card settles into the lifted state instantly — the same collapse the tooltip rise and
+   route enter already rely on. */
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px -16px color-mix(in srgb, var(--green-ink) 60%, transparent);
 }
 
 .badge,
 .stepper__marker {
   transition:
-    color 0.15s ease,
-    background-color 0.15s ease,
-    border-color 0.15s ease;
+    color var(--motion-micro) var(--motion-ease-standard),
+    background-color var(--motion-micro) var(--motion-ease-standard),
+    border-color var(--motion-micro) var(--motion-ease-standard);
 }
 
 .titlebar__btn {
   transition:
-    background-color 0.12s ease,
-    color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    color var(--motion-quick) var(--motion-ease-standard);
 }
 
 /* Honour reduced-motion: no page-enter animation, no micro-transitions, instant
@@ -5247,9 +5277,9 @@ a.btn--primary {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    color 0.15s ease,
-    border-color 0.15s ease,
-    background-color 0.15s ease;
+    color var(--motion-micro) var(--motion-ease-standard),
+    border-color var(--motion-micro) var(--motion-ease-standard),
+    background-color var(--motion-micro) var(--motion-ease-standard);
 }
 
 .digest__copy:hover {
@@ -5429,8 +5459,8 @@ a.btn--primary {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
+    background-color var(--motion-micro) var(--motion-ease-standard),
+    color var(--motion-micro) var(--motion-ease-standard);
 }
 
 .cae-revswitch__btn.is-active {
@@ -5467,8 +5497,8 @@ a.btn--primary {
   color: var(--text);
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    border-color var(--motion-quick) var(--motion-ease-standard);
 }
 
 .cae-pick:hover {
@@ -5590,8 +5620,8 @@ a.btn--primary {
   color: var(--text);
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    border-color var(--motion-quick) var(--motion-ease-standard);
 }
 
 .cae-tree__node:hover {
@@ -6413,9 +6443,9 @@ a.btn--primary {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease,
-    color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    border-color var(--motion-quick) var(--motion-ease-standard),
+    color var(--motion-quick) var(--motion-ease-standard);
 }
 
 .trust-filter:hover {
@@ -6489,8 +6519,8 @@ a.btn--primary {
   color: var(--text);
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    border-color var(--motion-quick) var(--motion-ease-standard);
 }
 
 .trust-pick:hover {
@@ -7051,8 +7081,8 @@ a.btn--primary {
   font-size: 0.78rem;
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease;
+    border-color var(--motion-micro) var(--motion-ease-standard),
+    background-color var(--motion-micro) var(--motion-ease-standard);
 }
 
 .session-picker__trigger:hover,
@@ -7154,8 +7184,8 @@ a.btn--primary {
   text-align: left;
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    border-color var(--motion-quick) var(--motion-ease-standard);
 }
 
 .session-picker__item:hover:not(:disabled) {
@@ -7196,9 +7226,9 @@ a.btn--primary {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease,
-    color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    border-color var(--motion-quick) var(--motion-ease-standard),
+    color var(--motion-quick) var(--motion-ease-standard);
 }
 
 .session-picker__forget:hover:not(:disabled),
@@ -7728,7 +7758,7 @@ a.btn--primary {
   z-index: 2;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion-micro) var(--motion-ease-standard);
 }
 
 .subnav-wrap::before {
@@ -7774,10 +7804,10 @@ a.btn--primary {
   transform: translateY(-50%);
   box-shadow: 0 0.2rem 0.65rem color-mix(in srgb, #000 18%, transparent);
   transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    opacity 0.15s ease;
+    background-color var(--motion-micro) var(--motion-ease-standard),
+    border-color var(--motion-micro) var(--motion-ease-standard),
+    color var(--motion-micro) var(--motion-ease-standard),
+    opacity var(--motion-micro) var(--motion-ease-standard);
 }
 
 .subnav__scroll--start {
@@ -7865,7 +7895,7 @@ a.btn--primary {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color var(--motion-micro) var(--motion-ease-standard);
 }
 
 /* The decorative sub-tab glyph inherits the button's ink and sizes to the label. */
@@ -8552,7 +8582,7 @@ a.btn--primary {
   background: var(--accent-strong);
   transform: scaleX(0);
   transform-origin: center;
-  transition: transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: transform var(--motion-slow) var(--motion-ease-glide);
 }
 
 .topbar__nav .nav__link.is-active::after {
@@ -9052,8 +9082,8 @@ input[type='radio'] {
   place-content: center;
   vertical-align: -0.18rem;
   transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease;
+    border-color var(--motion-micro) var(--motion-ease-standard),
+    background-color var(--motion-micro) var(--motion-ease-standard);
 }
 
 input[type='radio'] {
@@ -9065,7 +9095,7 @@ input[type='checkbox']:not(.toggle__input)::before {
   width: 0.62rem;
   height: 0.62rem;
   transform: scale(0);
-  transition: transform 0.12s ease-in-out;
+  transition: transform var(--motion-quick) ease-in-out;
   background: var(--on-accent);
   clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
 }
@@ -9076,7 +9106,7 @@ input[type='radio']::before {
   height: 0.55rem;
   border-radius: 999px;
   transform: scale(0);
-  transition: transform 0.12s ease-in-out;
+  transition: transform var(--motion-quick) ease-in-out;
   background: var(--on-accent);
 }
 
@@ -9153,8 +9183,8 @@ input[type='radio']:disabled {
   background: color-mix(in srgb, var(--text-muted) 32%, transparent);
   border: 1px solid var(--border);
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
+    background-color var(--motion-micro) var(--motion-ease-standard),
+    border-color var(--motion-micro) var(--motion-ease-standard);
 }
 
 .toggle__thumb {
@@ -9167,7 +9197,7 @@ input[type='radio']:disabled {
   background: #fbf7ee;
   transform: translateY(-50%);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-  transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: transform var(--motion-micro) var(--motion-ease-glide);
 }
 
 .toggle__input:checked + .toggle__track {
@@ -9814,8 +9844,8 @@ input[type='radio']:disabled {
   text-align: left;
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    border-color var(--motion-quick) var(--motion-ease-standard);
 }
 
 .signin__user:hover:not(:disabled),
@@ -9978,9 +10008,9 @@ input[type='radio']:disabled {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease,
-    color 0.12s ease;
+    background-color var(--motion-quick) var(--motion-ease-standard),
+    border-color var(--motion-quick) var(--motion-ease-standard),
+    color var(--motion-quick) var(--motion-ease-standard);
 }
 
 .signin__recent-remove:hover:not(:disabled),
@@ -10568,6 +10598,11 @@ input[type='radio']:disabled {
   padding: clamp(1rem, 6vh, 4rem) 1rem;
   background: rgba(0, 0, 0, 0.5);
   overflow-y: auto;
+  /* The confirm modal / RegisterEditModal mount fresh on open (the component returns null when
+     closed), so a mount animation needs no JS — the dim layer fades in as the dialog arrives.
+     One-shot-on-mount, compositor-only, so — like `.route-transition` — it takes no `will-change`.
+     Collapses to an instant appearance under both universal kill-switches. */
+  animation: modal-backdrop-in var(--motion-panel-duration) var(--motion-ease-enter) both;
 }
 .modal {
   width: min(34rem, 100%);
@@ -10577,6 +10612,31 @@ input[type='radio']:disabled {
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
+  /* Same "arriving" gesture as a panel swap: opacity + a small 12px rise on `--motion-ease-enter`
+     at the panel clock, so a dialog reads as the same family of motion as a sub-tab change rather
+     than a bespoke pop. Compositor-only (opacity + transform), one-shot-on-mount → no
+     `will-change`; both kill-switches zero it to an instant show. */
+  animation: modal-in var(--motion-panel-duration) var(--motion-ease-enter) both;
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }
 .modal--danger {
   border-color: var(--error);
@@ -10636,6 +10696,7 @@ input[type='radio']:disabled {
   cursor: pointer;
   text-decoration: underline;
   font: inherit;
+  transition: color var(--motion-micro) var(--motion-ease-standard);
 }
 .file-btn {
   position: relative;
