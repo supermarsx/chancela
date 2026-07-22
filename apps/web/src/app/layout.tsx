@@ -29,7 +29,10 @@ import { UnsavedChangesGuard } from './UnsavedChangesGuard';
 import { SafeModeBanner } from './SafeModeBanner';
 import { DegradedBanner } from './DegradedBanner';
 import { isSafeMode } from './safeMode';
+import { useTopbarTier } from './useTopbarTier';
+import { TopbarMenu, type TopbarMenuItem } from './TopbarMenu';
 import { useT } from '../i18n';
+import { useTopbarExtraT } from '../i18n/topbarFallback';
 import type { MessageKey } from '../i18n';
 import { displayVersion, UI_VERSION } from '../api/versionCheck';
 
@@ -56,6 +59,13 @@ const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
  * is not an accessible name — it is a hover/focus affordance — and a screen-reader user given
  * only a glyph gets nothing. Both come from the same `MessageKey` the text tab used, so the
  * name an assistive technology reads is the name a sighted operator sees, in every locale.
+ *
+ * **Responsive overflow (t42).** This array is the single source for BOTH the inline glyphs and the
+ * narrow-tier "more" overflow menu (see `iconNavItems` + the `TopbarMenu` in the session cluster).
+ * A task adding a control to this bar — e.g. t36's forthcoming "Administração" glyph — appends ONE
+ * entry here (`{ to, label, icon }`) and it flows into the inline row on wide/medium AND into the
+ * overflow menu on narrow automatically, with no change to the collapse logic, the CSS, or
+ * `TopbarMenu`. (The label must be a real catalog `MessageKey`, as the others are.)
  */
 const ICON_NAV: { to: string; label: MessageKey; icon: ReactNode }[] = [
   { to: '/archive', label: 'nav.archive', icon: <Icon.Archive /> },
@@ -81,9 +91,42 @@ export function Layout() {
   // remounts and replays the enter animation on every navigation. It ALSO keys the page error
   // boundary, so navigating away from a crashed page remounts a fresh boundary.
   const t = useT();
+  const tt = useTopbarExtraT();
   const { pathname } = useLocation();
   const routeKey = useRouteKey(pathname);
   const safe = isSafeMode();
+
+  // Which reflow tier the header is in. `wide` lays every control out inline; `medium` folds the
+  // primary tabs into a burger; `narrow` also folds the utility glyphs into a "more" menu and drops
+  // the brand. A single representation is rendered per tier, so no hidden duplicate of a control
+  // sits in the DOM (which would double every tab in the accessibility tree and the tests). See
+  // useTopbarTier — it fails open to `wide` where `matchMedia` is absent (jsdom/tests).
+  const tier = useTopbarTier();
+  const tabsCollapsed = tier !== 'wide';
+  const utilitiesCollapsed = tier === 'narrow';
+  const showBrand = tier !== 'narrow';
+
+  // Active is decided against the ROUTE key (the pathname minus sub-tab segments) rather than left
+  // to `NavLink`'s own match: the dashboard's non-default panels live at `/dashboard/:tab`, which an
+  // `end`-matched `/` link would never mark active; the route key collapses both to `/`. One helper
+  // feeds the inline links AND the collapsed menus, so a tab reads identically wherever it renders.
+  const isActive = (to: string, end?: boolean): boolean =>
+    end === true ? routeKey === to : routeKey === to || routeKey.startsWith(`${to}/`);
+
+  const navItems: TopbarMenuItem[] = NAV.map((item) => ({
+    to: item.to,
+    label: t(item.label),
+    end: item.end,
+    active: isActive(item.to, item.end),
+  }));
+  const iconNavItems: TopbarMenuItem[] = ICON_NAV.map((item) => ({
+    to: item.to,
+    label: t(item.label),
+    icon: item.icon,
+    active: isActive(item.to),
+  }));
+  const anyNavActive = navItems.some((item) => item.active);
+  const anyIconActive = iconNavItems.some((item) => item.active);
 
   // On navigation, move keyboard focus to the routed <main id="main-content"> (it already
   // remounts keyed on pathname) so screen-reader/keyboard users land on the new page
@@ -132,54 +175,78 @@ export function Layout() {
             in the desktop shell. The brand mark stays left; the tab group is centered
             in the full bar width; the current-user picker sits at the right. The brand
             is hidden on desktop (the titlebar already carries the wordmark). */}
-        <nav className="topbar" aria-label={t('nav.aria')}>
-          <span className="topbar__brand">{t('common.brand')}</span>
-          <div className="topbar__nav" data-testid="tab-bar">
-            {NAV.map((item) => {
-              // Active is decided against the ROUTE key rather than left to `NavLink`'s own
-              // match: the dashboard's non-default panels live at `/dashboard/:tab`, which an
-              // `end`-matched `/` link would never mark active. The route key collapses both
-              // to `/`, so the tab stays lit wherever inside the page the operator is.
-              const active =
-                item.end === true
-                  ? routeKey === item.to
-                  : routeKey === item.to || routeKey.startsWith(`${item.to}/`);
-              return (
+        <nav className="topbar" data-topbar-tier={tier} aria-label={t('nav.aria')}>
+          {/* Left track: the burger (once the tabs have collapsed) then the brand (dropped only at
+              the narrowest tier). The burger holds the SAME NAV items the inline strip does. */}
+          <div className="topbar__lead">
+            {tabsCollapsed ? (
+              <TopbarMenu
+                label={tt('topbar.nav.menu')}
+                icon={<Icon.Menu />}
+                items={navItems}
+                align="start"
+                active={anyNavActive}
+                testId="topbar-tabs-menu"
+              />
+            ) : null}
+            {showBrand ? <span className="topbar__brand">{t('common.brand')}</span> : null}
+          </div>
+
+          {/* Centre track: the inline tab strip, only while it fits (wide tier). Below 960px it is
+              not rendered — the burger above is the single representation. */}
+          {tabsCollapsed ? null : (
+            <div className="topbar__nav" data-testid="tab-bar">
+              {navItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end={item.end}
-                  aria-current={active ? 'page' : undefined}
-                  className={active ? 'nav__link is-active' : 'nav__link'}
+                  aria-current={item.active ? 'page' : undefined}
+                  className={item.active ? 'nav__link is-active' : 'nav__link'}
                 >
-                  {t(item.label)}
+                  {item.label}
                 </NavLink>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
+
+          {/* Right track. The utility glyphs (Arquivo/Ferramentas/Configurações — and any icon a
+              later task appends to ICON_NAV) render inline while they fit; at the narrowest tier they
+              fold into the "more" overflow menu, which is fed by the SAME iconNavItems array, so an
+              added glyph needs no change here. The alerts bell and the user picker are the
+              always-visible essentials and never collapse. */}
           <div className="topbar__session">
-            {ICON_NAV.map((item) => {
-              // Same active rule as the text tabs: decided against the ROUTE key, so a sub-tab
-              // deep inside Configurações still lights the cog.
-              const active = routeKey === item.to || routeKey.startsWith(`${item.to}/`);
-              const label = t(item.label);
-              return (
-                <Tooltip key={item.to} label={label} placement="bottom">
-                  <NavLink
-                    to={item.to}
-                    aria-current={active ? 'page' : undefined}
-                    aria-label={label}
-                    className={`topbar__icon btn btn--ghost btn--icon btn--iconOnly${
-                      active ? ' is-active' : ''
-                    }`}
-                  >
-                    <span className="btn__icon" aria-hidden="true">
-                      {item.icon}
-                    </span>
-                  </NavLink>
-                </Tooltip>
-              );
-            })}
+            {utilitiesCollapsed ? (
+              <TopbarMenu
+                label={tt('topbar.utility.menu')}
+                icon={<Icon.MoreHorizontal />}
+                items={iconNavItems}
+                align="end"
+                active={anyIconActive}
+                testId="topbar-utility-menu"
+              />
+            ) : (
+              ICON_NAV.map((item) => {
+                const active = isActive(item.to);
+                const label = t(item.label);
+                return (
+                  <Tooltip key={item.to} label={label} placement="bottom">
+                    <NavLink
+                      to={item.to}
+                      aria-current={active ? 'page' : undefined}
+                      aria-label={label}
+                      className={`topbar__icon btn btn--ghost btn--icon btn--iconOnly${
+                        active ? ' is-active' : ''
+                      }`}
+                    >
+                      <span className="btn__icon" aria-hidden="true">
+                        {item.icon}
+                      </span>
+                    </NavLink>
+                  </Tooltip>
+                );
+              })
+            )}
             {/* Purely visual. `aria-hidden` + no text content, so it separates the utility
                 glyphs from the alerts bell for the eye without being announced as anything. */}
             <span className="topbar__divider" aria-hidden="true" />

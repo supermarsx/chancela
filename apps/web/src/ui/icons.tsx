@@ -447,3 +447,36 @@ export function Shield(props: IconProps) {
     </Icon>
   );
 }
+
+/**
+ * menu / collapse — a three-line "hamburger" (t42).
+ *
+ * The trigger the top bar shows when the primary tab row no longer fits and reflows into a
+ * dropdown. It is icon-only, so the button that carries it supplies the accessible name; the
+ * glyph stays decorative like every other in the set, inheriting the shared 24×24 chrome.
+ */
+export function Menu(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </Icon>
+  );
+}
+
+/**
+ * overflow / more — three horizontal dots (t42).
+ *
+ * Distinct from {@link Menu}: this fronts the *utility* overflow (the archive/tools/settings
+ * glyphs, and any icon added to the bar later) when the bar is too narrow to show them inline,
+ * so it reads as "more of these controls" rather than "the site navigation". Filled dots, since a
+ * 1.5px ring reads as noise at this size.
+ */
+export function MoreHorizontal(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
