@@ -1106,6 +1106,9 @@ export const svSE: Catalog = {
     'Varje paket omfattar en enda bok; för flera böcker upprepar du exporten bok för bok.',
   'ledger.export.book.empty': 'Inga böcker att exportera',
   'ledger.export.book.emptyBody': 'Öppna en bok och bevara dess dokument innan du skapar paket.',
+  'ledger.export.book.selectPlaceholder': 'Välj…',
+  'ledger.export.table.package': 'Paket',
+  'ledger.export.table.purpose': 'Beskrivning',
   'ledger.export.preservation.title': 'Bevarandepaket — leverans och bevis',
   'ledger.export.preservation.body':
     'En deterministisk, skrivskyddad ZIP avsedd för arkivleverans och som bevis. Den kan inte importeras tillbaka, och att skapa den skriver ingenting i loggen.',

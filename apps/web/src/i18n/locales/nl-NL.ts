@@ -1108,6 +1108,9 @@ export const nlNL: Catalog = {
   'ledger.export.book.empty': 'Geen boeken om te exporteren',
   'ledger.export.book.emptyBody':
     'Open een boek en bewaar de documenten ervan voordat u pakketten genereert.',
+  'ledger.export.book.selectPlaceholder': 'Selecteer…',
+  'ledger.export.table.package': 'Pakket',
+  'ledger.export.table.purpose': 'Beschrijving',
   'ledger.export.preservation.title': 'Bewaarpakket — overbrenging en bewijs',
   'ledger.export.preservation.body':
     'Een deterministische, alleen-lezen ZIP bedoeld voor archiefoverbrenging en bewijs. Hij is niet terug te importeren en het genereren schrijft niets in het logboek.',

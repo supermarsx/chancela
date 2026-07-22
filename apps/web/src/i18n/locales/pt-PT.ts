@@ -1124,6 +1124,9 @@ export const ptPT = {
   'ledger.export.book.empty': 'Sem livros para exportar',
   'ledger.export.book.emptyBody':
     'Abra um livro e preserve os respetivos documentos antes de gerar pacotes.',
+  'ledger.export.book.selectPlaceholder': 'Selecione…',
+  'ledger.export.table.package': 'Pacote',
+  'ledger.export.table.purpose': 'Descrição',
   'ledger.export.preservation.title': 'Pacote de preservação — depósito e prova',
   'ledger.export.preservation.body':
     'ZIP determinístico e apenas de leitura, destinado a depósito arquivístico e a prova. Não é reimportável e a sua geração não escreve no registo.',

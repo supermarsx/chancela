@@ -1117,6 +1117,9 @@ export const deDE: Catalog = {
   'ledger.export.book.empty': 'Keine Bücher zum Exportieren',
   'ledger.export.book.emptyBody':
     'Öffnen Sie ein Buch und sichern Sie dessen Dokumente, bevor Sie Pakete erzeugen.',
+  'ledger.export.book.selectPlaceholder': 'Auswählen…',
+  'ledger.export.table.package': 'Paket',
+  'ledger.export.table.purpose': 'Beschreibung',
   'ledger.export.preservation.title': 'Erhaltungspaket — Ablieferung und Nachweis',
   'ledger.export.preservation.body':
     'Ein deterministisches, schreibgeschütztes ZIP für die archivische Ablieferung und als Nachweis. Es lässt sich nicht zurückimportieren, und seine Erzeugung schreibt nichts ins Protokoll.',

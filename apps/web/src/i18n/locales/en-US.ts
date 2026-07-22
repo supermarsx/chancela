@@ -1099,6 +1099,9 @@ export const enUS: Catalog = {
   'ledger.export.book.empty': 'No books to export',
   'ledger.export.book.emptyBody':
     'Open a book and preserve its documents before generating packages.',
+  'ledger.export.book.selectPlaceholder': 'Select…',
+  'ledger.export.table.package': 'Package',
+  'ledger.export.table.purpose': 'Description',
   'ledger.export.preservation.title': 'Preservation package — deposit and evidence',
   'ledger.export.preservation.body':
     'A deterministic, read-only ZIP meant for archival deposit and evidence. It cannot be imported back, and generating it writes nothing to the log.',

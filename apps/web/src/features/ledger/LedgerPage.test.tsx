@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { useLocation } from 'react-router-dom';
 import { renderWithProviders, Wrapper } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
-import type { BookView, LedgerEventView, LedgerEventsPage } from '../../api/types';
+import type { BookView, Entity, LedgerEventView, LedgerEventsPage } from '../../api/types';
 
 const saveFileMock = vi.hoisted(() => ({
   saveBlobAs: vi.fn(),
@@ -119,10 +119,19 @@ function makeBook(patch: Partial<BookView> = {}): BookView {
   };
 }
 
+function makeEntity(patch: Partial<Entity> = {}): Entity {
+  return {
+    id: 'entity-1',
+    name: 'Encosto Estratégico, Lda.',
+    ...patch,
+  } as Entity;
+}
+
 function stubLedgerFetch(
   firstPage: LedgerEventsPage,
   olderPage = page([]),
   books: BookView[] = [makeBook()],
+  entities: Entity[] = [makeEntity()],
 ) {
   const calls: RecordedCall[] = [];
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -144,6 +153,7 @@ function stubLedgerFetch(
       );
     }
     if (url.includes('/v1/books')) return Promise.resolve(jsonResponse(books));
+    if (url.includes('/v1/entities')) return Promise.resolve(jsonResponse(entities));
     if (url.includes('/v1/ledger/archive/document')) {
       const format = new URL(`http://test${url}`).searchParams.get('format') ?? 'pdfa';
       const contentType =
@@ -660,9 +670,10 @@ describe('LedgerPage — sub-tabs', () => {
     expect(screen.getByText('chancela-book-bundle/v1')).toBeTruthy();
     // The bundle's retained/logged side effect is stated, the preservation package's is not.
     expect(screen.getByText('Esta exportação fica registada')).toBeTruthy();
-    expect(
-      await screen.findByRole('option', { name: 'Assembleia Geral · Atas da assembleia geral' }),
-    ).toBeTruthy();
+    // The cascade auto-selects the sole entity → type → book, so the book step offers the
+    // book's own purpose and the type step offers its kind label.
+    expect(await screen.findByRole('option', { name: 'Atas da assembleia geral' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Assembleia Geral' })).toBeTruthy();
   });
 
   it('downloads the preservation package with the export-time legal hold it was given', async () => {
@@ -675,9 +686,7 @@ describe('LedgerPage — sub-tabs', () => {
     const calls = stubLedgerFetch(page([makeEvent(10)]));
     renderLedger(['/archive/export']);
 
-    expect(
-      await screen.findByRole('option', { name: 'Assembleia Geral · Atas da assembleia geral' }),
-    ).toBeTruthy();
+    expect(await screen.findByRole('option', { name: 'Atas da assembleia geral' })).toBeTruthy();
     fireEvent.click(screen.getByRole('switch', { name: 'Marcar retenção legal nesta exportação' }));
     // A blank reason is a server 422, so the export is held back and the field says why.
     fireEvent.click(screen.getByRole('button', { name: 'Pacote de preservação Chancela' }));

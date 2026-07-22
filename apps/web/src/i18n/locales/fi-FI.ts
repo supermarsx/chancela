@@ -1106,6 +1106,9 @@ export const fiFI: Catalog = {
     'Kukin paketti kattaa yhden kirjan; useampaa kirjaa varten toista vienti kirja kerrallaan.',
   'ledger.export.book.empty': 'Ei vietäviä kirjoja',
   'ledger.export.book.emptyBody': 'Avaa kirja ja säilytä sen asiakirjat ennen pakettien luontia.',
+  'ledger.export.book.selectPlaceholder': 'Valitse…',
+  'ledger.export.table.package': 'Paketti',
+  'ledger.export.table.purpose': 'Kuvaus',
   'ledger.export.preservation.title': 'Säilytyspaketti — talletus ja todiste',
   'ledger.export.preservation.body':
     'Deterministinen, vain luettava ZIP arkistotalletukseen ja todisteeksi. Sitä ei voi tuoda takaisin, eikä sen luonti kirjoita lokiin mitään.',

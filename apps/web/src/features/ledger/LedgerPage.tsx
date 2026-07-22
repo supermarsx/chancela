@@ -14,19 +14,23 @@ import {
   useBooks,
   useDownloadBookArchivePackage,
   useDownloadLedgerArchiveDocument,
+  useEntities,
   useExportBook,
   useLedgerPages,
   useLedgerIntegrity,
   useLedgerVerify,
 } from '../../api/hooks';
 import type {
+  BookKind,
   BookView,
   LedgerArchiveDocumentFormat,
   LedgerArchiveDocumentParams,
   LedgerArchiveDocumentScope,
   LedgerQueryParams,
 } from '../../api/types';
+import { BOOK_KINDS } from '../../api/types';
 import { bookKindLabels } from '../../api/labels';
+import { abbreviateId } from './scopeLabel';
 import { useT, type TFunction } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
@@ -52,6 +56,7 @@ import {
   SkeletonTable,
   SkeletonRegion,
   SubNav,
+  Table,
   Toggle,
   useToast,
 } from '../../ui';
@@ -232,27 +237,87 @@ function BookExportsCard() {
   );
 }
 
+/**
+ * A cascade level's effective value. A stale or blank choice collapses to the sole option when
+ * the level has exactly one (so a single-entity instance needs no click), else stays empty so the
+ * placeholder shows. Mirrors the derived-value pattern the prior single-select used, without an
+ * effect.
+ */
+function resolveChoice(current: string, options: readonly { value: string }[]): string {
+  if (options.some((o) => o.value === current)) return current;
+  return options.length === 1 ? options[0].value : '';
+}
+
 function BookExportControls() {
   const t = useT();
   const toast = useToast();
   const books = useBooks();
+  const entities = useEntities();
+  // The three cascade choices. Each `onChange` clears the levels below it; `resolveChoice` then
+  // re-derives what is actually in effect (auto-selecting a sole option, dropping a stale one).
+  const [entityId, setEntityId] = useState('');
+  const [kind, setKind] = useState('');
   const [bookId, setBookId] = useState('');
   const [legalHold, setLegalHold] = useState(false);
   const [legalHoldReason, setLegalHoldReason] = useState('');
   const [reasonTouched, setReasonTouched] = useState(false);
 
-  const bookList = books.data ?? [];
-  const bookOptions = useMemo(
-    () =>
-      bookList.map((book: BookView) => ({
+  const bookList = useMemo(() => books.data ?? [], [books.data]);
+  const entityList = useMemo(() => entities.data ?? [], [entities.data]);
+
+  // Entity id → name for the dropdown labels. A book whose entity the viewer cannot read (or that
+  // is still loading) falls back to an abbreviated id rather than vanishing.
+  const entityNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entity of entityList) map.set(entity.id, entity.name);
+    return map;
+  }, [entityList]);
+
+  // Step 1 — only entities that actually own a readable book appear; a guided cascade never offers
+  // an entity with nothing behind it.
+  const entityOptions = useMemo(() => {
+    const withBooks = new Set(bookList.map((book: BookView) => book.entity_id));
+    return [...withBooks]
+      .map((id) => ({ value: id, label: entityNameById.get(id) ?? abbreviateId(id) }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt'));
+  }, [bookList, entityNameById]);
+  const effectiveEntityId = resolveChoice(entityId, entityOptions);
+
+  // Step 2 — the book types present under the chosen entity, in the canonical `BOOK_KINDS` order.
+  const kindOptions = useMemo(() => {
+    if (!effectiveEntityId) return [];
+    const present = new Set(
+      bookList
+        .filter((book: BookView) => book.entity_id === effectiveEntityId)
+        .map((book: BookView) => book.kind),
+    );
+    return BOOK_KINDS.filter((k) => present.has(k)).map((k) => ({
+      value: k,
+      label: bookKindLabels[k],
+    }));
+  }, [bookList, effectiveEntityId]);
+  const effectiveKind = resolveChoice(kind, kindOptions) as BookKind | '';
+
+  // Step 3 — the specific books of that entity and type; a book with no recorded purpose falls
+  // back to an abbreviated id (never blank).
+  const bookOptions = useMemo(() => {
+    if (!effectiveEntityId || !effectiveKind) return [];
+    return bookList
+      .filter(
+        (book: BookView) => book.entity_id === effectiveEntityId && book.kind === effectiveKind,
+      )
+      .map((book: BookView) => ({
         value: book.id,
-        label: `${bookKindLabels[book.kind]} · ${book.purpose ?? book.id.slice(0, 8)}`,
-      })),
-    [bookList],
-  );
-  const selectedBookId = bookOptions.some((o) => o.value === bookId)
-    ? bookId
-    : (bookOptions[0]?.value ?? '');
+        label: book.purpose?.trim() || abbreviateId(book.id),
+      }));
+  }, [bookList, effectiveEntityId, effectiveKind]);
+  const selectedBookId = resolveChoice(bookId, bookOptions);
+
+  const placeholder = {
+    value: '',
+    label: t('ledger.export.book.selectPlaceholder'),
+    disabled: true,
+  };
 
   const preservation = useDownloadBookArchivePackage(selectedBookId);
   const bundle = useExportBook();
@@ -309,7 +374,7 @@ function BookExportControls() {
     });
   }
 
-  if (books.isLoading) {
+  if (books.isLoading || entities.isLoading) {
     return (
       <SkeletonRegion>
         <SkeletonList items={2} />
@@ -317,7 +382,7 @@ function BookExportControls() {
     );
   }
   if (books.error) return <ErrorNote error={books.error} />;
-  if (bookOptions.length === 0) {
+  if (entityOptions.length === 0) {
     return (
       <EmptyState title={t('ledger.export.book.empty')}>
         {t('ledger.export.book.emptyBody')}
@@ -327,6 +392,34 @@ function BookExportControls() {
 
   return (
     <div className="stack">
+      {/* Step 1 → 2 → 3: pick the entity, then the book type it holds, then the specific book.
+          Each step below is disabled until the one above it resolves, so the choice is guided. */}
+      <Field label={t('books.entity')} htmlFor="ledger-export-entity">
+        <Select
+          id="ledger-export-entity"
+          options={[placeholder, ...entityOptions]}
+          value={effectiveEntityId}
+          onChange={(e) => {
+            setEntityId(e.target.value);
+            setKind('');
+            setBookId('');
+          }}
+        />
+      </Field>
+
+      <Field label={t('books.bookKind')} htmlFor="ledger-export-kind">
+        <Select
+          id="ledger-export-kind"
+          options={[placeholder, ...kindOptions]}
+          value={effectiveKind}
+          disabled={!effectiveEntityId}
+          onChange={(e) => {
+            setKind(e.target.value);
+            setBookId('');
+          }}
+        />
+      </Field>
+
       <Field
         label={t('ledger.export.book.label')}
         htmlFor="ledger-export-book"
@@ -334,88 +427,111 @@ function BookExportControls() {
       >
         <Select
           id="ledger-export-book"
-          options={bookOptions}
+          options={[placeholder, ...bookOptions]}
           value={selectedBookId}
+          disabled={!effectiveKind}
           onChange={(e) => setBookId(e.target.value)}
         />
       </Field>
 
-      <section className="stack--tight">
-        <h4 className="section-subtitle">{t('ledger.export.preservation.title')}</h4>
-        <p className="field__hint">
-          {t('ledger.export.preservation.body')} <code>{PRESERVATION_PACKAGE_PROFILE}</code>
-        </p>
-        <p className="field__hint">{t('ledger.export.preservation.contents')}</p>
-        <Toggle
-          id="ledger-export-legal-hold"
-          checked={legalHold}
-          onChange={(next) => {
-            setLegalHold(next);
-            if (!next) setReasonTouched(false);
-          }}
-          label={t('ledger.export.legalHold.label')}
-        />
-        <p className="field__hint">{t('ledger.export.legalHold.help')}</p>
-        {legalHold ? (
-          <Field
-            label={t('ledger.export.legalHold.reason.label')}
-            htmlFor="ledger-export-legal-hold-reason"
-            error={
-              reasonTouched && reasonMissing
-                ? t('ledger.export.legalHold.reason.required')
-                : undefined
-            }
-          >
-            <Input
-              id="ledger-export-legal-hold-reason"
-              value={legalHoldReason}
-              placeholder={t('ledger.export.legalHold.reason.placeholder')}
-              onChange={(e) => setLegalHoldReason(e.target.value)}
-              onBlur={() => setReasonTouched(true)}
-            />
-          </Field>
-        ) : null}
-        <div className="row-wrap">
-          <GateButton
-            perm="book.export"
-            scope={scopeBook(selectedBookId)}
-            type="button"
-            variant="primary"
-            icon={<Icon.Archive />}
-            disabled={preservation.isPending}
-            onClick={onDownloadPreservationPackage}
-          >
-            {preservation.isPending
-              ? t('books.preservationPackage.downloading')
-              : t('books.preservationPackage.download')}
-          </GateButton>
-        </div>
-      </section>
+      {/* The two packages side by side as a readable comparison, so their purpose and what each
+          one costs (a registered export, a legal-hold flag) is legible at a glance. */}
+      <Table
+        className="book-export-table"
+        caption={t('ledger.export.book.title')}
+        head={
+          <tr>
+            <th scope="col">{t('ledger.export.table.package')}</th>
+            <th scope="col">{t('ledger.export.table.purpose')}</th>
+            <th scope="col" />
+          </tr>
+        }
+      >
+        <tr>
+          <th scope="row">{t('ledger.export.preservation.title')}</th>
+          <td>
+            <p className="field__hint">
+              {t('ledger.export.preservation.body')} <code>{PRESERVATION_PACKAGE_PROFILE}</code>
+            </p>
+            <p className="field__hint">{t('ledger.export.preservation.contents')}</p>
+          </td>
+          <td>
+            <div className="stack--tight">
+              <Toggle
+                id="ledger-export-legal-hold"
+                checked={legalHold}
+                onChange={(next) => {
+                  setLegalHold(next);
+                  if (!next) setReasonTouched(false);
+                }}
+                label={t('ledger.export.legalHold.label')}
+              />
+              <p className="field__hint">{t('ledger.export.legalHold.help')}</p>
+              {legalHold ? (
+                <Field
+                  label={t('ledger.export.legalHold.reason.label')}
+                  htmlFor="ledger-export-legal-hold-reason"
+                  error={
+                    reasonTouched && reasonMissing
+                      ? t('ledger.export.legalHold.reason.required')
+                      : undefined
+                  }
+                >
+                  <Input
+                    id="ledger-export-legal-hold-reason"
+                    value={legalHoldReason}
+                    placeholder={t('ledger.export.legalHold.reason.placeholder')}
+                    onChange={(e) => setLegalHoldReason(e.target.value)}
+                    onBlur={() => setReasonTouched(true)}
+                  />
+                </Field>
+              ) : null}
+              <GateButton
+                perm="book.export"
+                scope={scopeBook(selectedBookId)}
+                type="button"
+                variant="primary"
+                icon={<Icon.Archive />}
+                disabled={!selectedBookId || preservation.isPending}
+                onClick={onDownloadPreservationPackage}
+              >
+                {preservation.isPending
+                  ? t('books.preservationPackage.downloading')
+                  : t('books.preservationPackage.download')}
+              </GateButton>
+            </div>
+          </td>
+        </tr>
 
-      <section className="stack--tight">
-        <h4 className="section-subtitle">{t('ledger.export.bundle.title')}</h4>
-        <p className="field__hint">
-          {t('ledger.export.bundle.body')} <code>{BOOK_BUNDLE_PROFILE}</code>
-        </p>
-        <InlineWarning tone="info" title={t('ledger.export.bundle.retainedTitle')}>
-          {t('ledger.export.bundle.retained')}
-        </InlineWarning>
-        <div className="row-wrap">
-          <GateButton
-            perm="book.export"
-            scope={scopeBook(selectedBookId)}
-            type="button"
-            variant="secondary"
-            icon={<Icon.Tray />}
-            disabled={bundle.isPending}
-            onClick={onDownloadBundle}
-          >
-            {bundle.isPending
-              ? t('ledger.export.bundle.downloading')
-              : t('ledger.export.bundle.download')}
-          </GateButton>
-        </div>
-      </section>
+        <tr>
+          <th scope="row">{t('ledger.export.bundle.title')}</th>
+          <td>
+            <p className="field__hint">
+              {t('ledger.export.bundle.body')} <code>{BOOK_BUNDLE_PROFILE}</code>
+            </p>
+            <InlineWarning tone="info" title={t('ledger.export.bundle.retainedTitle')}>
+              {t('ledger.export.bundle.retained')}
+            </InlineWarning>
+          </td>
+          <td>
+            <div className="stack--tight">
+              <GateButton
+                perm="book.export"
+                scope={scopeBook(selectedBookId)}
+                type="button"
+                variant="secondary"
+                icon={<Icon.Tray />}
+                disabled={!selectedBookId || bundle.isPending}
+                onClick={onDownloadBundle}
+              >
+                {bundle.isPending
+                  ? t('ledger.export.bundle.downloading')
+                  : t('ledger.export.bundle.download')}
+              </GateButton>
+            </div>
+          </td>
+        </tr>
+      </Table>
     </div>
   );
 }

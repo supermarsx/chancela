@@ -1107,6 +1107,9 @@ export const plPL: Catalog = {
   'ledger.export.book.empty': 'Brak ksiąg do wyeksportowania',
   'ledger.export.book.emptyBody':
     'Otwórz księgę i zabezpiecz jej dokumenty, zanim wygenerujesz pakiety.',
+  'ledger.export.book.selectPlaceholder': 'Wybierz…',
+  'ledger.export.table.package': 'Pakiet',
+  'ledger.export.table.purpose': 'Opis',
   'ledger.export.preservation.title': 'Pakiet zabezpieczający — przekazanie i dowód',
   'ledger.export.preservation.body':
     'Deterministyczny plik ZIP tylko do odczytu, przeznaczony do przekazania archiwalnego i jako dowód. Nie da się go zaimportować z powrotem, a jego wygenerowanie niczego nie zapisuje w dzienniku.',

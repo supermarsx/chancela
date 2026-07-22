@@ -1104,6 +1104,9 @@ export const daDK: Catalog = {
     'Hver pakke dækker én bog; ved flere bøger gentages eksporten bog for bog.',
   'ledger.export.book.empty': 'Ingen bøger at eksportere',
   'ledger.export.book.emptyBody': 'Åbn en bog, og bevar dens dokumenter, før du danner pakker.',
+  'ledger.export.book.selectPlaceholder': 'Vælg…',
+  'ledger.export.table.package': 'Pakke',
+  'ledger.export.table.purpose': 'Beskrivelse',
   'ledger.export.preservation.title': 'Bevaringspakke — aflevering og bevis',
   'ledger.export.preservation.body':
     'En deterministisk, skrivebeskyttet ZIP beregnet til arkivaflevering og bevisførelse. Den kan ikke importeres tilbage, og dannelsen skriver intet i loggen.',
