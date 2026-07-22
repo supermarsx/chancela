@@ -558,6 +558,12 @@ pub struct AppState {
     /// decrypted signing key held for the life of the session. Reset on restart; the unlocked key
     /// never persists and never leaves the process (plan t29 §4.4).
     pub sessions: Arc<RwLock<HashMap<String, session::SessionEntry>>>,
+    /// In-flight two-step sign-ins (t95 P2): a `challenge_id` → [`PendingTwoFactor`](session::PendingTwoFactor)
+    /// record for an account whose password proved out but whose second factor is still outstanding.
+    /// Holds the **unlocked attestation key** across the challenge, so it is process-local, never
+    /// persisted, never logged, and short-lived — a restart or failover mid-challenge loses it and the
+    /// user re-authenticates (fail-closed). Reset on restart, like `sessions`.
+    pub pending_two_factor: Arc<RwLock<HashMap<String, session::PendingTwoFactor>>>,
     /// Digest-only, reload-safe session registry for a durable single-node data directory. Pure
     /// in-memory states keep the explicit no-op default; clustered Postgres uses Redis instead.
     #[doc(hidden)]
@@ -2634,6 +2640,12 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/session/roster", get(session::session_roster))
         .route("/v1/session/password-policy", get(session::password_policy))
         .route("/v1/session/permissions", get(session::session_permissions))
+        // t95 P2: complete a two-step sign-in. Unauthenticated — no session exists yet; the
+        // `challenge_id` from `POST /v1/session` is the credential, and it grants nothing on its own.
+        .route(
+            "/v1/session/challenge",
+            post(session::complete_two_factor_challenge),
+        )
         .route(
             "/v1/session",
             get(session::get_session)
@@ -2671,6 +2683,13 @@ pub fn router(state: AppState) -> Router {
         // session header or a bearer API key, never both. This sits at router level so manual
         // session-resolution endpoints are covered too.
         .layer(middleware::from_fn(reject_mixed_credentials))
+        // t95 P2 — the second-factor / forced-password-change wall. For a session whose USER RECORD
+        // says it is walled (an unmet forced password change, or a required-but-unenrolled second
+        // factor), block every path except the one that clears the wall plus the session
+        // read/logout. Recomputed per request from the user record, so it survives a failover/restart
+        // with no bypass and lifts the instant the condition clears. Layered here so it sits above the
+        // handlers and carries the security headers added later.
+        .layer(middleware::from_fn_with_state(state.clone(), session_wall_gate))
         // Degraded read-only gate (t54 §3.1): block ordinary mutations with 503 when the chain is
         // broken, leaving reads + the recovery/reset/export/quarantine-import endpoints open. Layered
         // BELOW `security_headers` (added after) so a 503 still carries the security headers.
@@ -2731,6 +2750,104 @@ async fn reject_mixed_credentials(
         Err(e) if has_session => e.into_response(),
         _ => next.run(request).await,
     }
+}
+
+/// Whether `path`/`method` is reachable while a session is **walled** by [`RequiredAction`] (t95 P2).
+///
+/// The allowlist is intentionally tiny: the endpoints that *clear* the wall, plus the session
+/// read/logout so the client can render the wall and the user can sign out. A walled user can do
+/// nothing else until the underlying condition (forced password change, or a required-but-missing
+/// second factor) is resolved. `self`-ness is enforced by the handlers themselves (`set_secret`'s
+/// proof, `totp::require_self`), so this needs only the coarse path shape.
+fn wall_allows(action: session::RequiredAction, method: &axum::http::Method, path: &str) -> bool {
+    use axum::http::Method;
+    // Always: read/refresh the session, its permissions and the password policy, and sign out.
+    if path == "/v1/session"
+        || path == "/v1/session/permissions"
+        || path == "/v1/session/password-policy"
+    {
+        return true;
+    }
+    match action {
+        // Clearing a forced password change: set a new secret on one's own account.
+        session::RequiredAction::ChangePassword => {
+            *method == Method::POST
+                && path.starts_with("/v1/users/")
+                && path.ends_with("/secret")
+        }
+        // Enrolling the missing second factor: the two-factor endpoints (self-enforced).
+        session::RequiredAction::EnrolTwoFactor => {
+            path.starts_with("/v1/users/") && path.contains("/two-factor")
+        }
+    }
+}
+
+/// Middleware enforcing the t95 P2 wall. For a **session-authenticated** request whose user record
+/// implies a [`RequiredAction`], every path outside [`wall_allows`] is refused `403` with the action
+/// named, so the client can route the user to it. Unauthenticated and API-key requests pass straight
+/// through — an API key never opens an interactive session and cannot be mid-enrolment, and an
+/// unauthenticated request is the handler's own to reject.
+///
+/// The wall is a pure function of the **live user record**, read here per request, so it cannot be
+/// escaped by a stale node-local session after a failover or a restart, and it disappears the moment
+/// the user changes their password or enrols — no session state to update, no schema change.
+async fn session_wall_gate(
+    State(state): State<AppState>,
+    request: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    // API-key requests are never walled (no interactive enrolment); reads of nothing sensitive and
+    // the unauthenticated endpoints fall through to their own handlers.
+    if apikeys::read_bearer_api_key(request.headers())
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return next.run(request).await;
+    }
+    let token = request
+        .headers()
+        .get(actor::SESSION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_owned);
+    let Some(token) = token else {
+        return next.run(request).await;
+    };
+    // Resolve to the live user and compute the wall. A token that no longer resolves is left to the
+    // handler's own extractor to reject (401), not turned into a wall.
+    let required = match actor::resolve_session_actor(&state, &token).await {
+        Ok(Some(username)) => state
+            .users
+            .read()
+            .await
+            .values()
+            .find(|u| u.username == username)
+            .and_then(session::required_action_for),
+        _ => None,
+    };
+    let Some(action) = required else {
+        return next.run(request).await;
+    };
+    if wall_allows(action, request.method(), request.uri().path()) {
+        return next.run(request).await;
+    }
+    let (message, action_id) = match action {
+        session::RequiredAction::ChangePassword => (
+            "esta conta tem de alterar a palavra-passe antes de continuar",
+            "change_password",
+        ),
+        session::RequiredAction::EnrolTwoFactor => (
+            "esta conta tem de configurar um segundo fator antes de continuar",
+            "enrol_two_factor",
+        ),
+    };
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({ "error": message, "required_action": action_id })),
+    )
+        .into_response()
 }
 
 /// Whether a request is exempt from the degraded (read-only) mutation gate (t54 §3.1).

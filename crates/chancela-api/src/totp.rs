@@ -206,6 +206,15 @@ pub fn current_step(unix_seconds: i64) -> i64 {
     unix_seconds.div_euclid(STEP_SECONDS)
 }
 
+/// The 6-digit code a base32 `secret` produces at `unix_seconds`, or `None` if the secret is not
+/// decodable. This is a **generator**, the inverse of the verifier — exposed for tests (which must
+/// produce a live code to present) and available for a future "show the current code" diagnostic. It
+/// is never used by the sign-in path, which only ever *verifies*.
+#[must_use]
+pub fn code_for_secret(secret: &str, unix_seconds: i64) -> Option<String> {
+    code_at(secret, unix_seconds, 0).map(|code| format!("{code:0width$}", width = DIGITS as usize))
+}
+
 /// The outcome of verifying a presented code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerifyOutcome {
@@ -756,6 +765,75 @@ pub fn find_matching_backup_code(hashes: &[String], presented: &str) -> Option<u
     hashes
         .iter()
         .position(|h| crate::attestation::verify_secret(&candidate, h))
+}
+
+/// Verify a presented second-factor `code` for `user_id` at sign-in and, on success, **consume it** —
+/// advancing the replay guard for a TOTP code, or spending a backup code — then persist. Returns
+/// `Ok(true)` when accepted, `Ok(false)` when rejected.
+///
+/// This is the sign-in-time counterpart to [`confirm_totp`]: the pending-challenge handler
+/// (`session.rs`, P2) calls it after the password has already proved out and the unlocked key is held
+/// in the pending record. A 6-digit input is tried as a TOTP; anything else is tried as a backup
+/// code, so a user whose authenticator is unavailable can still get in with a recovery code. The
+/// throttle lives on the pending challenge (the caller), not here — a wrong code must speed-bump the
+/// pending sign-in, never lock the account.
+pub(crate) async fn verify_and_consume_second_factor(
+    state: &AppState,
+    user_id: UserId,
+    code: &str,
+    now: OffsetDateTime,
+) -> Result<bool, ApiError> {
+    let Some(enrolment) = state
+        .users
+        .read()
+        .await
+        .get(&user_id)
+        .and_then(|u| u.totp.clone())
+    else {
+        return Ok(false); // no enrolment to verify against
+    };
+    if !enrolment.confirmed {
+        return Ok(false);
+    }
+
+    let trimmed = code.trim();
+    let is_totp_shaped = trimmed.len() == 6 && trimmed.bytes().all(|b| b.is_ascii_digit());
+
+    if is_totp_shaped {
+        let Some(secret) = read_totp_secret(state, user_id).await? else {
+            return Ok(false);
+        };
+        match verify_code_against_secret(&secret, trimmed, now.unix_timestamp(), enrolment.last_accepted_step)
+        {
+            VerifyOutcome::Accepted { step } => {
+                let mut users = state.users.write().await;
+                if let Some(user) = users.get_mut(&user_id)
+                    && let Some(e) = user.totp.as_mut()
+                {
+                    e.last_accepted_step = Some(step);
+                }
+                drop(users);
+                crate::sidecar_store::persist_users(state).await?;
+                Ok(true)
+            }
+            VerifyOutcome::Rejected => Ok(false),
+        }
+    } else {
+        // Backup code path.
+        let Some(index) = find_matching_backup_code(&enrolment.backup_code_hashes, trimmed) else {
+            return Ok(false);
+        };
+        let mut users = state.users.write().await;
+        if let Some(user) = users.get_mut(&user_id)
+            && let Some(e) = user.totp.as_mut()
+            && index < e.backup_code_hashes.len()
+        {
+            e.backup_code_hashes.remove(index);
+        }
+        drop(users);
+        crate::sidecar_store::persist_users(state).await?;
+        Ok(true)
+    }
 }
 
 #[cfg(test)]

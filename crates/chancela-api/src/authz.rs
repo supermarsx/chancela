@@ -471,6 +471,9 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/livez", RouteClass::Exempt),
     ("/readyz", RouteClass::Exempt),
     ("/v1/session", RouteClass::Exempt),
+    // t95 P2: completing a two-step sign-in. Unauthenticated like `/v1/session` — no session exists
+    // yet; the `challenge_id` is the credential and grants nothing on its own.
+    ("/v1/session/challenge", RouteClass::Exempt),
     // The first-run probe: answers `{onboarding_required}` and NOTHING else (t33-e2). It used to
     // also return every active user's `{id, username, display_name, has_secret}`, which handed any
     // anonymous caller the instance's full valid-account list. Exempt is still correct — the

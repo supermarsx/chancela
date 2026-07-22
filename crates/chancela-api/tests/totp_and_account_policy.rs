@@ -141,24 +141,12 @@ async fn enrol_and_confirm(state: &AppState, uid: UserId, token: &str) -> String
     secret
 }
 
-/// The current 6-digit code for a base32 secret, computed the same way the server does.
+/// The current 6-digit code for a base32 secret. Uses the production generator so it is fast and
+/// deterministic (a brute-force search over 10^6 is slow enough under parallel load that the TOTP
+/// step can roll over before the server verifies).
 fn current_code(secret: &str) -> String {
-    // Reuse the production verifier to find the code the server will accept "now": brute the 10^6
-    // space is silly, so instead we ask the verifier — but the verifier does not expose the code.
-    // The test computes it via a tiny search over the current step using the public verify fn.
-    // Simpler and exact: the server accepts a code iff `verify_code_against_secret` accepts it, so we
-    // find the one code in the current window that verifies.
-    let now = OffsetDateTime::now_utc().unix_timestamp();
-    for candidate in 0..1_000_000u32 {
-        let code = format!("{candidate:06}");
-        if matches!(
-            verify_code_against_secret(secret, &code, now, None),
-            VerifyOutcome::Accepted { .. }
-        ) {
-            return code;
-        }
-    }
-    panic!("no code verified for the current step");
+    chancela_api::totp::code_for_secret(secret, OffsetDateTime::now_utc().unix_timestamp())
+        .expect("decodable secret")
 }
 
 // =================================================================================================

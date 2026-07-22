@@ -470,6 +470,107 @@ pub struct CreateSession {
 pub struct SessionCreated {
     pub token: String,
     pub user: UserView,
+    /// What the freshly minted session must do before it can do anything else (t95 P2). `None` for an
+    /// ordinary session; `Some(..)` when the account is walled — the same wall the per-request gate
+    /// ([`crate::session_wall_gate`]) enforces server-side, surfaced here so the client can route the
+    /// user straight to it. Skipped from the wire when `None`, so an unwalled sign-in is byte-identical
+    /// to before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_action: Option<RequiredAction>,
+}
+
+/// The gate a session must pass before it is a full session (t95 §2.3). Recomputed from the **user
+/// record** on every request, never baked into the session — so it survives a failover or restart
+/// with no bypass, and clears the instant the underlying condition does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequiredAction {
+    /// The account was created with an admin-chosen password (welcome-email path); it must be changed
+    /// before anything else (t95 §2.3 item 3). Cleared on the first successful `set_secret`.
+    ChangePassword,
+    /// The account is required to hold a second factor and has none enrolled (t95 §2.3 item 2). It may
+    /// reach the TOTP enrolment endpoints and nothing else — **enrol-on-next-sign-in**, never a
+    /// lockout, so even the last Owner can always get far enough to enrol.
+    EnrolTwoFactor,
+}
+
+/// The wall a user's current record implies, or `None` for a full session. **Password change takes
+/// priority over enrolment** — an account created with a welcome email that also requires 2FA changes
+/// its password first, then enrols, in that order, because each condition clears independently.
+#[must_use]
+pub fn required_action_for(user: &User) -> Option<RequiredAction> {
+    if user.force_password_change {
+        Some(RequiredAction::ChangePassword)
+    } else if user.two_factor_required
+        && !user.totp.as_ref().is_some_and(|t| t.confirmed)
+    {
+        Some(RequiredAction::EnrolTwoFactor)
+    } else {
+        None
+    }
+}
+
+/// The `POST /v1/session` outcome: either a minted session, or — when the account has a confirmed
+/// second factor — a pending challenge that must be completed at `POST /v1/session/challenge`. An
+/// **untagged** union: the authenticated arm carries `token`, the challenge arm carries
+/// `two_factor_challenge`, so a client distinguishes them by which key is present (the pre-t95 client
+/// reads `token` and is unaffected while 2FA is off, the default).
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum CreateSessionOutcome {
+    Authenticated(SessionCreated),
+    TwoFactorRequired(TwoFactorChallenge),
+}
+
+/// The challenge arm of [`CreateSessionOutcome`]. Carries **no token** — the session does not exist
+/// yet — and no secret.
+#[derive(Serialize)]
+pub struct TwoFactorChallenge {
+    pub two_factor_challenge: TwoFactorChallengeDetail,
+}
+
+/// The opaque handle and metadata a client needs to prompt for the second factor. The challenge id is
+/// a fresh UUID that indexes a **process-local, never-persisted** pending record; it is not a session
+/// token and grants nothing on its own.
+#[derive(Serialize)]
+pub struct TwoFactorChallengeDetail {
+    pub challenge_id: String,
+    /// The factors that satisfy this challenge, in preference order. `"totp"` always; `"backup_code"`
+    /// when the account still has unspent backup codes.
+    pub methods: Vec<&'static str>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: OffsetDateTime,
+}
+
+/// A pending two-step sign-in (t95 P2). The password has proved out and the attestation signing key is
+/// unlocked and held **here** — never written to a session, never persisted, never logged — until the
+/// second factor is presented. Process-local and short-lived: a failover or restart mid-challenge
+/// simply loses it and the user re-authenticates (fail-closed).
+pub struct PendingTwoFactor {
+    pub user_id: UserId,
+    /// The unlocked attestation scalar, carried across the challenge so the minted session can attest
+    /// exactly as a one-step password sign-in would. `None` only if the account had no key.
+    pub unlocked_key: Option<SigningKey>,
+    pub expires_at: OffsetDateTime,
+    /// Wrong-code attempts so far. At [`TWO_FACTOR_MAX_ATTEMPTS`] the challenge is discarded and the
+    /// user must re-enter their password — the throttle bites the *pending sign-in*, never the account.
+    pub fails: u32,
+}
+
+/// How long a pending second-factor challenge stays redeemable. Long enough to open an authenticator,
+/// short enough that a captured challenge id is useless minutes later.
+pub const TWO_FACTOR_CHALLENGE_TTL_SECS: i64 = 5 * 60;
+
+/// Wrong-code attempts before a pending challenge is discarded (the user must re-authenticate). A
+/// 6-digit space with five tries and a 30-second window is not brute-forceable.
+pub const TWO_FACTOR_MAX_ATTEMPTS: u32 = 5;
+
+/// Body of `POST /v1/session/challenge`.
+#[derive(Deserialize)]
+pub struct CompleteChallenge {
+    pub challenge_id: String,
+    /// A TOTP code (6 digits) or a backup code. The server decides which by shape.
+    pub code: String,
 }
 
 #[derive(Serialize)]
@@ -479,6 +580,12 @@ pub struct SessionView {
     /// paint so it can gate its UI without a second round-trip (t64-E3 / E5). Empty when signed out.
     /// The authoritative, fuller shape is `GET /v1/session/permissions`.
     pub permissions: Vec<PermissionGrantView>,
+    /// The wall this session must clear before it is a full session (t95 P2), recomputed from the
+    /// user record. `None`/absent for an ordinary session and on a page reload of an unwalled one, so
+    /// the default wire shape is unchanged; `Some(..)` tells a reloaded client to route straight to
+    /// the password-change or 2FA-enrolment step the server is already enforcing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_action: Option<RequiredAction>,
 }
 
 /// A [`chancela_authz::Scope`] rendered for the web (t64-E3, FROZEN for E5). A tagged union so the
@@ -680,7 +787,7 @@ fn stored_verifier_for(user: &User) -> Result<String, ApiError> {
 pub async fn create_session(
     State(state): State<AppState>,
     Json(req): Json<CreateSession>,
-) -> Result<Json<SessionCreated>, ApiError> {
+) -> Result<Json<CreateSessionOutcome>, ApiError> {
     // Resolve the identifier server-side. `username` is matched case-insensitively, consistently
     // with the uniqueness rule `create_user` enforces (`users.rs`), and only against **active**
     // users — an inactive user can never mint a session, and must be indistinguishable from one that
@@ -794,10 +901,123 @@ pub async fn create_session(
         None => None,
     };
 
+    // t95 P2 — the second step. If the account has a **confirmed** TOTP factor, the password is only
+    // the first factor: do not mint a session. Instead hold the unlocked key in a process-local
+    // pending record and hand back an opaque challenge. The key is carried across the challenge
+    // ([`PendingTwoFactor`]) so the eventually-minted session attests exactly as a one-step sign-in
+    // would; it is never written to a session, persisted, or logged while it waits.
+    if user.totp.as_ref().is_some_and(|t| t.confirmed) {
+        let challenge_id = Uuid::new_v4().to_string();
+        let expires_at = now + Duration::seconds(TWO_FACTOR_CHALLENGE_TTL_SECS);
+        let mut methods = vec!["totp"];
+        if user
+            .totp
+            .as_ref()
+            .is_some_and(|t| !t.backup_code_hashes.is_empty())
+        {
+            methods.push("backup_code");
+        }
+        {
+            let mut pending = state.pending_two_factor.write().await;
+            pending.retain(|_, p| now < p.expires_at); // opportunistic prune
+            pending.insert(
+                challenge_id.clone(),
+                PendingTwoFactor {
+                    user_id: uid,
+                    unlocked_key,
+                    expires_at,
+                    fails: 0,
+                },
+            );
+        }
+        return Ok(Json(CreateSessionOutcome::TwoFactorRequired(
+            TwoFactorChallenge {
+                two_factor_challenge: TwoFactorChallengeDetail {
+                    challenge_id,
+                    methods,
+                    expires_at,
+                },
+            },
+        )));
+    }
+
     let token = mint_session(&state, uid, unlocked_key).await?;
 
+    Ok(Json(CreateSessionOutcome::Authenticated(SessionCreated {
+        token,
+        required_action: required_action_for(&user),
+        user: UserView::from(&user),
+    })))
+}
+
+/// `POST /v1/session/challenge` — complete a two-step sign-in by presenting the second factor.
+///
+/// The password already proved out at [`create_session`], which parked the unlocked key in a pending
+/// record and returned the `challenge_id`. This verifies a TOTP or backup code against that record and,
+/// on success, mints the session with the carried key. Single-use and rate-limited **on the pending
+/// challenge, not the account**: the record is taken out on every attempt, put back only if a wrong
+/// code still has tries left, and discarded after [`TWO_FACTOR_MAX_ATTEMPTS`] — so burning attempts
+/// kills this sign-in, never locks the user out. Unknown / expired / exhausted / wrong all return the
+/// same uniform `401`.
+pub async fn complete_two_factor_challenge(
+    State(state): State<AppState>,
+    Json(req): Json<CompleteChallenge>,
+) -> Result<Json<SessionCreated>, ApiError> {
+    let now = OffsetDateTime::now_utc();
+    let invalid = || ApiError::Unauthorized("desafio de segundo fator inválido ou expirado".to_owned());
+
+    // Take the record out (single-use per attempt); prune expired while we hold the lock.
+    let Some(mut pending) = ({
+        let mut map = state.pending_two_factor.write().await;
+        map.retain(|_, p| now < p.expires_at);
+        map.remove(&req.challenge_id)
+    }) else {
+        return Err(invalid());
+    };
+    if now >= pending.expires_at {
+        return Err(invalid());
+    }
+
+    let user_id = pending.user_id;
+    let accepted =
+        crate::totp::verify_and_consume_second_factor(&state, user_id, &req.code, now).await?;
+
+    if !accepted {
+        pending.fails += 1;
+        // Count the failure toward the cluster-wide sign-in cap too, keyed on the user — a TOTP
+        // brute-force is a sign-in brute-force.
+        let key = format!("signin:{}", user_id);
+        state
+            .cluster_shared
+            .signin_limiter
+            .record_failure(&key, std::time::Duration::from_secs(15 * 60));
+        if pending.fails < TWO_FACTOR_MAX_ATTEMPTS {
+            // Tries left: put it back so the user can retry the same challenge.
+            state
+                .pending_two_factor
+                .write()
+                .await
+                .insert(req.challenge_id, pending);
+        }
+        // else: discarded — the user must re-authenticate with their password.
+        return Err(ApiError::Unauthorized(
+            "código de segundo fator inválido".to_owned(),
+        ));
+    }
+
+    // Accepted. Mint the session with the key carried across the challenge, then re-read the user for
+    // the view + any residual wall (a forced password change still applies after the factor).
+    let token = mint_session(&state, user_id, pending.unlocked_key.take()).await?;
+    let user = state
+        .users
+        .read()
+        .await
+        .get(&user_id)
+        .cloned()
+        .ok_or_else(invalid)?;
     Ok(Json(SessionCreated {
         token,
+        required_action: required_action_for(&user),
         user: UserView::from(&user),
     }))
 }
@@ -898,7 +1118,7 @@ pub async fn get_session(
         ));
     }
 
-    let resolved: Option<(UserView, UserId)> = match parts
+    let resolved: Option<(UserView, UserId, Option<RequiredAction>)> = match parts
         .get(SESSION_HEADER)
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
@@ -910,23 +1130,27 @@ pub async fn get_session(
                 users
                     .values()
                     .find(|u| u.username == username)
-                    .map(|u| (UserView::from(u), u.id))
+                    .map(|u| (UserView::from(u), u.id, required_action_for(u)))
             }
             _ => None,
         },
         None => None,
     };
 
-    let (user, permissions) = match resolved {
-        Some((view, uid)) => {
+    let (user, permissions, required_action) = match resolved {
+        Some((view, uid, required_action)) => {
             let eff =
                 crate::roles::effective_permissions_for(&state, uid, OffsetDateTime::now_utc())
                     .await;
-            (Some(view), grant_views(&eff))
+            (Some(view), grant_views(&eff), required_action)
         }
-        None => (None, Vec::new()),
+        None => (None, Vec::new(), None),
     };
-    Ok(Json(SessionView { user, permissions }))
+    Ok(Json(SessionView {
+        user,
+        permissions,
+        required_action,
+    }))
 }
 
 /// `GET /v1/session/permissions` — the current principal's role assignments (with scopes) and
