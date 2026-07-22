@@ -201,8 +201,12 @@ describe('LedgerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Registo' }));
     await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(true));
 
-    expectCssRule(await themeCss(), /\.app:has\(\.wide-page\)\s*\{([^}]*)\}/, [
-      'max-width: 92rem;',
+    // t18 named the wide shell measure as a custom prop on `.app`; the wide-page opt-out now
+    // caps to it (the 92rem literal lives on the `--app-measure-wide` declaration).
+    const css = await themeCss();
+    expectCssRule(css, /\.app\s*\{([^}]*)\}/, ['--app-measure-wide: 92rem;']);
+    expectCssRule(css, /\.app:has\(\.wide-page\)\s*\{([^}]*)\}/, [
+      'max-width: var(--app-measure-wide);',
     ]);
   });
 

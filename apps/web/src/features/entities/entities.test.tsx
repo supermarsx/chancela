@@ -159,7 +159,7 @@ describe('EntitiesPage', () => {
     expect(screen.getByRole('columnheader', { name: 'NIPC' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Tipo' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Última atividade' })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Ações' })).toBeTruthy();
     expect(screen.queryByRole('columnheader', { name: 'Sede' })).toBeNull();
     expect(screen.queryByRole('columnheader', { name: 'CAE' })).toBeNull();
   });
@@ -332,11 +332,16 @@ describe('EntitiesPage', () => {
     // The shell measure still applies by default — the opt-out is a separate rule, not a
     // relaxation of `.app` that every prose page would inherit.
     const appRule = css.match(/\.app\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
-    expect(appRule).toContain('max-width: 1080px;');
+    // t18 named the two shell measures + the gutter as custom props on `.app`; the measure,
+    // gutter and wide cap are asserted through those vars (the literals live on the decls).
+    expect(appRule).toContain('--app-measure: 1080px;');
+    expect(appRule).toContain('max-width: var(--app-measure);');
     // The gutters are the shell's own padding, so widening must not have dropped it.
-    expect(appRule).toContain('padding: clamp(1.25rem, 4vw, 3rem);');
+    expect(appRule).toContain('--app-gutter: clamp(1.25rem, 4vw, 3rem);');
+    expect(appRule).toContain('padding: var(--app-gutter);');
     const wideRule = css.match(/\.app:has\(\.wide-page\)\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
-    expect(wideRule).toContain('max-width: 92rem;');
+    expect(appRule).toContain('--app-measure-wide: 92rem;');
+    expect(wideRule).toContain('max-width: var(--app-measure-wide);');
 
     // The wider measure must reach the table as slack for `Name`, not as a new floor: the
     // composed floor stays the sum of the visible columns so a wide set still scrolls.

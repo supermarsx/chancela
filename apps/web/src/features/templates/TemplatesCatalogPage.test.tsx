@@ -530,10 +530,21 @@ describe('TemplatesCatalogPage', () => {
     const css = await themeCss();
     // The shell measure still applies by default — the opt-out is a separate rule, not a
     // relaxation of `.app` that every prose page would inherit.
-    expectCssRule(css, /\.app\s*\{([^}]*)\}/, ['max-width: 1080px;']);
-    expectCssRule(css, /\.app:has\(\.wide-page\)\s*\{([^}]*)\}/, ['max-width: 92rem;']);
+    // t18 named the two shell measures + the gutter as custom props on `.app`, so the measure
+    // and wide cap are asserted through those vars (the 1080px/92rem literals live on the decls).
+    expectCssRule(css, /\.app\s*\{([^}]*)\}/, [
+      '--app-measure: 1080px;',
+      'max-width: var(--app-measure);',
+      '--app-measure-wide: 92rem;',
+    ]);
+    expectCssRule(css, /\.app:has\(\.wide-page\)\s*\{([^}]*)\}/, [
+      'max-width: var(--app-measure-wide);',
+    ]);
     // The gutters are the shell's own padding, so widening must not have dropped it.
-    expectCssRule(css, /\.app\s*\{([^}]*)\}/, ['padding: clamp(1.25rem, 4vw, 3rem);']);
+    expectCssRule(css, /\.app\s*\{([^}]*)\}/, [
+      '--app-gutter: clamp(1.25rem, 4vw, 3rem);',
+      'padding: var(--app-gutter);',
+    ]);
   });
 
   it('renders pending law references and searches by citation or article text', async () => {
