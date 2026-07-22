@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { useLocation } from 'react-router-dom';
 import type { Entity, TenantRepositoryPolicy } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
-import { OperationsPage, operationsSectionFromParam } from './OperationsPage';
+import { AdminIntegrationsPanel, operationsSectionFromParam } from './AdminIntegrationsPanel';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -43,8 +43,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('OperationsPage', () => {
-  it('falls back unknown or absent deep-link sections to groups', () => {
+describe('AdminIntegrationsPanel', () => {
+  it('falls back unknown or absent deep-link areas to groups', () => {
     expect(operationsSectionFromParam(null)).toBe('groups');
     expect(operationsSectionFromParam('unknown')).toBe('groups');
     expect(operationsSectionFromParam('connectors')).toBe('connectors');
@@ -54,10 +54,11 @@ describe('OperationsPage', () => {
   it('explains the current tenant-directory boundary when no entity exposes a tenant', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([])));
 
-    renderWithProviders(<OperationsPage />, ['/operations']);
+    renderWithProviders(<AdminIntegrationsPanel sub="groups" />, ['/admin/groups']);
 
-    expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
-    expect(await screen.findByText('Ainda não existe uma organização selecionável')).toBeTruthy();
+    expect(
+      await screen.findByText('Ainda não existe uma organização selecionável'),
+    ).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Criar entidade' }).getAttribute('href')).toBe(
       '/entities/new',
     );
@@ -70,7 +71,7 @@ describe('OperationsPage', () => {
       vi.fn().mockResolvedValue(json({ error: 'Diretório indisponível' }, 503)),
     );
 
-    renderWithProviders(<OperationsPage />, ['/operations']);
+    renderWithProviders(<AdminIntegrationsPanel sub="groups" />, ['/admin/groups']);
 
     expect(await screen.findByText('Diretório indisponível')).toBeTruthy();
     expect(screen.queryByText('Ainda não existe uma organização selecionável')).toBeNull();
@@ -92,10 +93,10 @@ describe('OperationsPage', () => {
 
     renderWithProviders(
       <>
-        <OperationsPage />
+        <AdminIntegrationsPanel sub="groups" />
         <LocationProbe />
       </>,
-      ['/operations?tenant=tenant-1&group=group-1&repository=repo-1&object=obj-1'],
+      ['/admin/groups?tenant=tenant-1&group=group-1&repository=repo-1&object=obj-1'],
     );
 
     const picker = (await screen.findByLabelText('Organização')) as HTMLSelectElement;
@@ -104,64 +105,48 @@ describe('OperationsPage', () => {
     fireEvent.change(picker, { target: { value: 'tenant-2' } });
 
     await waitFor(() =>
-      expect(screen.getByTestId('location').textContent).toBe('/operations?tenant=tenant-2'),
+      expect(screen.getByTestId('location').textContent).toBe('/admin/groups?tenant=tenant-2'),
     );
   });
 
-  it('keeps every operator area reachable through URL-backed task tabs', async () => {
+  it('renders the area named by the `sub` prop against the selected tenant', async () => {
     const requests: string[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        requests.push(url);
-        if (url === '/v1/entities') return json([entity]);
-        if (url.includes('/connector-targets')) return json([]);
-        if (url.includes('/connector-jobs')) {
-          return json({ jobs: [], next_before_created_unix_millis: null });
-        }
-        if (url.endsWith('/repository-policy')) return json({ policy: tenantPolicy });
-        if (url.endsWith('/repositories')) return json([]);
-        if (url.endsWith('/groups')) return json([]);
-        throw new Error(`Unexpected request: ${url}`);
-      }),
-    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      requests.push(url);
+      if (url === '/v1/entities') return json([entity]);
+      if (url.includes('/connector-targets')) return json([]);
+      if (url.includes('/connector-jobs')) {
+        return json({ jobs: [], next_before_created_unix_millis: null });
+      }
+      if (url.endsWith('/repository-policy')) return json({ policy: tenantPolicy });
+      if (url.endsWith('/repositories')) return json([]);
+      if (url.endsWith('/groups')) return json([]);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProviders(
-      <>
-        <OperationsPage />
-        <LocationProbe />
-      </>,
-      ['/operations/connectors'],
-    );
-
-    const tabs = await screen.findByRole('group', { name: 'Áreas de operações' });
-    expect(
-      within(tabs)
-        .getByRole('button', { name: 'Conectores e trabalhos' })
-        .getAttribute('aria-pressed'),
-    ).toBe('true');
+    // Conectores: the area body renders, and the tenant is resolved off the entities directory.
+    const connectors = renderWithProviders(<AdminIntegrationsPanel sub="connectors" />, [
+      '/admin/connectors',
+    ]);
     expect(await screen.findByText('Ainda não existem destinos de conector.')).toBeTruthy();
     expect(screen.getByText('Apenas referências de credenciais')).toBeTruthy();
-    await waitFor(() =>
-      expect(screen.getByTestId('location').textContent).toBe(
-        '/operations/connectors?tenant=tenant-1',
-      ),
-    );
+    expect(requests.some((url) => url.includes('/connector-targets'))).toBe(true);
+    connectors.unmount();
 
-    fireEvent.click(within(tabs).getByRole('button', { name: 'Grupos e bibliotecas' }));
-    expect(await screen.findByText('Ainda não existem grupos nesta organização.')).toBeTruthy();
-    expect(screen.getByTestId('location').textContent).toBe('/operations?tenant=tenant-1');
-
-    fireEvent.click(within(tabs).getByRole('button', { name: 'Repositórios ZK' }));
+    // Repositórios ZK.
+    const repositories = renderWithProviders(<AdminIntegrationsPanel sub="repositories" />, [
+      '/admin/repositories',
+    ]);
     expect(await screen.findByText('Ainda não existem repositórios.')).toBeTruthy();
     expect(screen.getByText('Zero knowledge é uma opção explícita')).toBeTruthy();
-    expect(screen.getByTestId('location').textContent).toBe(
-      '/operations/repositories?tenant=tenant-1',
-    );
-
-    expect(requests.some((url) => url.includes('/connector-targets'))).toBe(true);
-    expect(requests.some((url) => url.endsWith('/groups'))).toBe(true);
     expect(requests.some((url) => url.endsWith('/repositories'))).toBe(true);
+    repositories.unmount();
+
+    // Grupos.
+    renderWithProviders(<AdminIntegrationsPanel sub="groups" />, ['/admin/groups']);
+    expect(await screen.findByText('Ainda não existem grupos nesta organização.')).toBeTruthy();
+    expect(requests.some((url) => url.endsWith('/groups'))).toBe(true);
   });
 });

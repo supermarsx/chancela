@@ -2480,10 +2480,14 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/settings']);
 
-    // A segmented sub-tab per section (Gestão included).
-    for (const name of ['Aparência', 'Documentos', 'Assinaturas', 'Gestão', 'Operações', 'Sobre']) {
+    // A segmented sub-tab per section (Gestão included). Operações is NOT here since t36 — its
+    // panes moved to the Administração surface (`/admin`), so Configurações no longer lists it.
+    for (const name of ['Aparência', 'Documentos', 'Assinaturas', 'Gestão', 'Sobre']) {
       expect(await screen.findByRole('button', { name })).toBeTruthy();
     }
+    // The Operações section button is gone from the Configurações strip.
+    const sections = within(await screen.findByRole('group', { name: 'Secções de configuração' }));
+    expect(sections.queryByRole('button', { name: 'Operações' })).toBeNull();
     // Aparência is the default section: its theme control is present…
     expect(await screen.findByLabelText('Tema')).toBeTruthy();
     // …while a Documentos-only field is not rendered until that sub-tab is active.
@@ -2656,7 +2660,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithoutAi());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, [MCP_TAB_PATH]);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/mcp']);
 
     const toggle = (await screen.findByRole('switch', {
       name: 'Ativar IA/MCP',
@@ -2670,7 +2674,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, [MCP_TAB_PATH]);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/mcp']);
 
     const toggle = (await screen.findByRole('switch', {
       name: 'Ativar IA/MCP',
@@ -2729,9 +2733,9 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', settingsFetch().fn);
     renderWithProviders(
       <StaticPermissionsProvider value={readerOnly}>
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </StaticPermissionsProvider>,
-      [MCP_TAB_PATH],
+      ['/admin/mcp'],
     );
 
     expect(await screen.findByRole('heading', { name: 'Servidor MCP' })).toBeTruthy();
@@ -2807,7 +2811,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     // The retained-export-cleanup policy editor moved to Operações › Armazenamento (t28).
-    renderWithProviders(<SettingsPage />, ['/settings/operations/storage']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/storage']);
 
     expect(
       await screen.findByRole('heading', {
@@ -2853,7 +2857,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     // The backup-recovery policy editor moved to Operações › Cópias e recuperação (t28).
-    renderWithProviders(<SettingsPage />, ['/settings/operations/backups']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/backups']);
 
     expect(
       await screen.findByRole('heading', {
@@ -2895,9 +2899,10 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
-    expect(await screen.findByRole('button', { name: 'Operações' })).toBeTruthy();
+    // On the Administração surface the operations sub-nav is the primary strip (no section strip).
+    expect(await screen.findByRole('group', { name: 'Áreas de operações' })).toBeTruthy();
 
     // Both service rows moved out (t82, t82b). `GET /v1/platform/services` returns exactly these
     // two, so the list here is empty by design — the pane routes rather than showing "no services".
@@ -2917,7 +2922,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations/api']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api']);
 
     // The service row, with the honest backend limitations it carried in Plataforma.
     expect(await screen.findByText('Chancela API server')).toBeTruthy();
@@ -2953,7 +2958,7 @@ describe('SettingsPage', () => {
     const { fn } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations/api-keys']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api-keys']);
 
     // The bookmarkable address still lands on the keys pane, now under the API button.
     expect(await screen.findByRole('heading', { name: 'Chaves API' })).toBeTruthy();
@@ -2978,9 +2983,9 @@ describe('SettingsPage', () => {
       <StaticPermissionsProvider
         value={permissionsValue((permission) => permission !== 'settings.manage')}
       >
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </StaticPermissionsProvider>,
-      ['/settings/operations/api-keys'],
+      ['/admin/api-keys'],
     );
 
     const create = await screen.findByRole('button', { name: 'Nova chave API' });
@@ -2995,7 +3000,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations/mcp']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/mcp']);
 
     // The service row, with the same honest backend limitations it carried in Plataforma.
     expect(await screen.findByText('Chancela MCP stdio server')).toBeTruthy();
@@ -3027,9 +3032,9 @@ describe('SettingsPage', () => {
       <StaticPermissionsProvider
         value={permissionsValue((permission) => permission !== 'settings.manage')}
       >
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </StaticPermissionsProvider>,
-      ['/settings/operations/api'],
+      ['/admin/api'],
     );
 
     const restart = await screen.findByRole('button', { name: /Registar reinício/ });
@@ -3048,7 +3053,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations/api']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api']);
 
     fireEvent.change(await screen.findByLabelText('API'), { target: { value: 'debug' } });
     fireEvent.change(screen.getByLabelText('Servidor API'), { target: { value: 'trace' } });
@@ -3073,7 +3078,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations/api']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api']);
 
     fireEvent.click(await screen.findByRole('button', { name: /Registar reinício/ }));
 
@@ -3098,9 +3103,9 @@ describe('SettingsPage', () => {
       <StaticPermissionsProvider
         value={permissionsValue((permission) => permission !== 'settings.manage')}
       >
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </StaticPermissionsProvider>,
-      ['/settings/operations/mcp'],
+      ['/admin/mcp'],
     );
 
     const start = await screen.findByRole('button', { name: /Registar arranque/ });
@@ -3115,11 +3120,19 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Sem permissão')).toBeTruthy();
   });
 
-  it('keeps `/settings/mcp` resolvable as a hand-written deep link into the sub-tab', async () => {
+  it('forwards the hand-written `/settings/mcp` deep link into the Administração MCP sub-tab', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/mcp']);
+    // `/settings/mcp` is the courtesy alias a hand-writer would guess; it forwards to `/admin/mcp`
+    // (the pane moved to the Administração surface in t36) rather than 404ing.
+    renderWithProviders(
+      <Routes>
+        <Route path="/settings/*" element={<SettingsPage />} />
+        <Route path="/admin/*" element={<SettingsPage surface="admin" />} />
+      </Routes>,
+      ['/settings/mcp'],
+    );
 
     expect(
       (await screen.findByRole('group', { name: 'Áreas de operações' })).querySelector(
@@ -3133,7 +3146,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     // Each row now lives on the tab that owns its service; the rows themselves are unchanged.
-    renderWithProviders(<SettingsPage />, ['/settings/operations/api']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api']);
 
     const apiRow = (await screen.findByText('Chancela API server')).closest('section');
     expect(apiRow).toBeTruthy();
@@ -3149,7 +3162,7 @@ describe('SettingsPage', () => {
     // backend capabilities, same rendering — only the address changed.
     cleanup();
     vi.stubGlobal('fetch', settingsFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/settings/operations/mcp']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/mcp']);
 
     const mcpRow = (await screen.findByText('Chancela MCP stdio server')).closest('section');
     expect(mcpRow).toBeTruthy();
@@ -3186,7 +3199,7 @@ describe('SettingsPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3207,9 +3220,9 @@ describe('SettingsPage', () => {
       <StaticPermissionsProvider
         value={permissionsValue((permission) => permission === 'settings.manage')}
       >
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </StaticPermissionsProvider>,
-      ['/settings/operations/mcp'],
+      ['/admin/mcp'],
     );
 
     const title = await screen.findByText('Garantia IA/MCP');
@@ -3226,7 +3239,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3255,7 +3268,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3298,7 +3311,7 @@ describe('SettingsPage', () => {
     });
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3325,7 +3338,7 @@ describe('SettingsPage', () => {
     });
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -3339,7 +3352,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations/mcp']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/mcp']);
 
     const mcpRow = (await screen.findByText('Chancela MCP stdio server')).closest('section');
     expect(mcpRow).toBeTruthy();
@@ -3358,14 +3371,14 @@ describe('SettingsPage', () => {
       (await screen.findAllByText(/MCP start desired state was recorded/)).length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
-    expect((await screen.findAllByText('Operações')).length).toBeGreaterThan(0);
+    expect(screen.getByRole('group', { name: 'Áreas de operações' })).toBeTruthy();
   });
 
   it('autosaves platform logging levels through the whole settings document, across Registos and MCP', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
@@ -5617,13 +5630,16 @@ describe('SettingsPage', () => {
     ).toBe(true);
   });
 
-  it('matches privacy register permission gating to user.manage or settings.manage', async () => {
+  it('gates the privacy registers on privacy.manage (t27 granular split)', async () => {
+    // t27-e4 split the privacy family off `settings.manage`: the record registers (processors,
+    // DPIAs, breach playbooks, transfer controls) now gate on `privacy.manage`, so a holder of that
+    // verb reaches them and a holder of nothing does not.
     const allowed = privacyFetch();
     vi.stubGlobal('fetch', allowed.fn);
 
     renderWithProviders(
       <StaticPermissionsProvider
-        value={permissionsValue((permission) => permission === 'settings.manage')}
+        value={permissionsValue((permission) => permission === 'privacy.manage')}
       >
         <SettingsPage />
       </StaticPermissionsProvider>,
@@ -5986,7 +6002,7 @@ describe('SettingsPage', () => {
     const { fn } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api-keys']);
 
     expect(await screen.findByRole('button', { name: 'Chaves API' })).toBeTruthy();
     expect(await screen.findByText('ERP bridge')).toBeTruthy();
@@ -6001,7 +6017,7 @@ describe('SettingsPage', () => {
     const { fn } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api-keys']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Nova chave API' }));
 
@@ -6014,7 +6030,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api-keys']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Nova chave API' }));
     fireEvent.change(await screen.findByLabelText('Nome da chave'), {
@@ -6051,7 +6067,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api-keys']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Rodar chave' }));
 
@@ -6072,7 +6088,7 @@ describe('SettingsPage', () => {
     const { fn } = apiKeysFetch([API_KEY_ONE, API_KEY_REVOKED]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api-keys']);
 
     const activeRow = (await screen.findByText('ERP bridge')).closest('tr');
     const revokedRow = (await screen.findByText('Retired bridge')).closest('tr');
@@ -6089,7 +6105,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = apiKeysFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api-keys']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Revogar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar revogação' }));
@@ -6152,31 +6168,22 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       .getAllByRole('button')
       .map((b: HTMLElement) => b.textContent?.replace(/\s+/gu, ' ').trim());
 
-  it('collapses the eight former top-level sub-tabs into Operações and Assinaturas', async () => {
+  it('lists every operations pane plus the three integrations subtabs in the Administração strip', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/settings/operations']);
+    // The operations panes moved to the Administração surface (t36); Operações is no longer a
+    // Configurações section, so on `/admin` there is NO section strip above — the operations
+    // sub-nav IS the primary strip.
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
-    // The three that moved are gone from the TOP strip…
-    const top = await loaded();
-    expect(top.getByRole('button', { name: 'Operações' })).toBeTruthy();
-    expect(top.getByRole('button', { name: 'Assinaturas' })).toBeTruthy();
-    expect(top.queryByRole('button', { name: 'Email' })).toBeNull();
-    expect(top.queryByRole('button', { name: 'Chaves API' })).toBeNull();
-    expect(top.queryByRole('button', { name: 'Fornecedores de assinatura' })).toBeNull();
-
-    // …and two of them are here, in Operações' own strip, behind the platform controls.
+    await screen.findByRole('group', { name: 'Áreas de operações' });
     const operations = childStrip('Áreas de operações');
-    // "Chaves API" is no longer a button here: since t82b it is a pane of the API tab, reached
-    // from the API tab's own strip while keeping its `/operations/chaves-api` address.
-    // "IA e MCP", not "MCP": the tab holds the tenant AI gate as well, so the strip says so.
-    // "Serviços" and "Registos" replace "Plataforma" (t101): they were a third level inside it,
-    // and are now siblings here — the panel they used to share no longer exists as an id.
-    // "Base de dados" and "Redis e estado partilhado" arrive with t105 (new read-only environment
-    // panes). "Gestão de Dados" was one button (t105) until t28 split its three internal panes into
-    // sibling subtabs — "Armazenamento", "Cópias e recuperação" and "Chaves e reposição" — so each
-    // has its own address. They sit after API and before IA e MCP, so the strip reads outwards from
-    // the API surface through the stores behind it.
+    expect(screen.queryByRole('group', { name: 'Secções de configuração' })).toBeNull();
+
+    // The eleven settings-ops panes, then — folded in by t36 — the three integrations subtabs the
+    // retired standalone `/operations` tab used to hold (Grupos / Conectores / Repositórios ZK),
+    // reusing the existing `operations.tabs.*` labels. Their strip order reads outwards from the
+    // platform panes through the stores and the env override to the per-tenant integrations.
     expect(labels(operations)).toEqual([
       'Serviços',
       'Registos',
@@ -6188,16 +6195,44 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       'Chaves e reposição',
       'IA e MCP',
       'Email',
-      // Ambiente do servidor (t14) — the editable env-override superset, last as the advanced
-      // surface. Its label resolves through the serverEnvFallback module, not the frozen catalog.
+      // Ambiente do servidor (t14) — the editable env-override superset, last of the platform panes.
+      // Its label resolves through the serverEnvFallback module, not the frozen catalog.
       'Ambiente do servidor',
+      // Integrations (t36) — the three areas folded in from the retired `/operations` tab.
+      'Grupos e bibliotecas',
+      'Conectores e trabalhos',
+      'Repositórios ZK',
     ]);
 
-    // Serviços is the default and carries no `sub` segment, mirroring the `sec` rule.
-    expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
+    // Serviços is the default and carries no `sub` segment; the surface is titled "Administração".
+    expect(await screen.findByRole('heading', { name: 'Administração' })).toBeTruthy();
     expect(operations.getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
+  });
+
+  it('dispatches an integrations subtab to AdminIntegrationsPanel on the admin surface', async () => {
+    // The one operations arm that is not a settings-document pane (t36): groups/connectors/
+    // repositories render the re-parented integrations body. This proves the render arm dispatches
+    // to AdminIntegrationsPanel — with no entities its tenant-empty state shows — and that the strip
+    // marks the integrations subtab active off the `/admin/:sub` segment.
+    const fn = ((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      if (url.includes('/v1/entities')) return Promise.resolve(jsonResponse([]));
+      if (url.includes('/health')) {
+        return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/connectors']);
+
+    const operations = within(await screen.findByRole('group', { name: 'Áreas de operações' }));
+    expect(
+      operations.getByRole('button', { name: 'Conectores e trabalhos' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(await screen.findByText('Ainda não existe uma organização selecionável')).toBeTruthy();
   });
 
   it('promotes Serviços and Registos to addressable siblings under Operações', async () => {
@@ -6208,8 +6243,8 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     // still write what they wrote.
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/settings/operations/logs']);
-    await loaded();
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/logs']);
+    await screen.findByRole('group', { name: 'Áreas de operações' });
 
     // Deep-linkable in its own right, and the strip agrees with the address.
     const operations = childStrip('Áreas de operações');
@@ -6236,8 +6271,8 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     // The retired address keeps resolving — onto the pane it always opened on, not a 404 and not
     // Aparência.
     vi.stubGlobal('fetch', settingsFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/settings/operations/platform']);
-    await loaded();
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/platform']);
+    await screen.findByRole('group', { name: 'Áreas de operações' });
     expect(
       childStrip('Áreas de operações')
         .getByRole('button', { name: 'Serviços' })
@@ -6323,10 +6358,12 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     const wideRule = css.match(/\.app:has\(\.wide-page\)\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
     expect(appRule).toContain('--app-measure-wide: 92rem;');
     expect(wideRule).toContain('max-width: var(--app-measure-wide);');
-    // The header is pinned back to the narrow content box and re-centred so the sub-tab strip
-    // keeps its left edge when a wide panel widens the shell (t18's actual fix).
-    const headerRule =
-      css.match(/\.app:has\(\.wide-page\)\s+\.page-header\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    // The header is pinned back to the narrow content box and re-centred so the sub-tab strip keeps
+    // its left edge when a wide panel widens the shell (t18's fix). t33 made that pin UNCONDITIONAL —
+    // `.page-header` itself, no longer gated behind `:has(.wide-page)` — to kill a one-frame flash
+    // where the header lagged the shell widening; on a normal-width page the cap equals the natural
+    // content box and the auto margins resolve to zero, so it is a no-op.
+    const headerRule = css.match(/\.page-header\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
     expect(headerRule).toContain('max-width: calc(var(--app-measure) - 2 * var(--app-gutter));');
     expect(headerRule).toContain('margin-inline: auto;');
     // `.settings-section` must not re-impose a cap the opt-out would then fight.
@@ -6399,11 +6436,22 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     }
   });
 
-  it('preserves every retired top-level address as a deep link into its new home', async () => {
-    // /settings/email → Operações › Email
+  it('forwards the retired operations aliases to /admin and keeps signing aliases on Configurações', async () => {
+    // The retired top-level operations addresses used to open Operações panes; since t36 Operações
+    // IS the Administração surface, so they forward to `/admin/*` (the in-page guard) and land on
+    // the moved pane rather than 404ing. Rendered through BOTH surfaces so the forward resolves the
+    // way it does under the app router (which mounts `/admin` as `<SettingsPage surface="admin">`).
+    const surfaces = (
+      <Routes>
+        <Route path="/settings/*" element={<SettingsPage />} />
+        <Route path="/admin/*" element={<SettingsPage surface="admin" />} />
+      </Routes>
+    );
+
+    // /settings/email → /admin/email → Operações › Email, on the Administração surface.
     vi.stubGlobal('fetch', settingsFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/settings/email']);
-    await loaded();
+    renderWithProviders(surfaces, ['/settings/email']);
+    expect(await screen.findByRole('heading', { name: 'Administração' })).toBeTruthy();
     expect(
       childStrip('Áreas de operações')
         .getByRole('button', { name: 'Email' })
@@ -6411,11 +6459,11 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
     cleanup();
 
-    // /settings/api-keys → Operações › API › Chaves API. Both hops of the address
-    // still resolve: the API button in the operations strip, and the keys pane inside it.
+    // /settings/api-keys → /admin/api-keys → Operações › API › Chaves API. Both hops still resolve:
+    // the API button in the operations strip and the keys pane inside it.
     vi.stubGlobal('fetch', apiKeysFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/settings/api-keys']);
-    await loaded();
+    renderWithProviders(surfaces, ['/settings/api-keys']);
+    expect(await screen.findByRole('heading', { name: 'Chaves API' })).toBeTruthy();
     expect(
       childStrip('Áreas de operações')
         .getByRole('button', { name: 'API' })
@@ -6428,7 +6476,8 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
     cleanup();
 
-    // /settings/signing-providers → Assinaturas › Fornecedores
+    // /settings/signing-providers → Assinaturas › Fornecedores stays on Configurações (only
+    // operations moved; signing is still a Configurações section).
     vi.stubGlobal('fetch', settingsFetch().fn);
     renderWithProviders(<SettingsPage />, ['/settings/signing-providers']);
     await loaded();
@@ -6491,10 +6540,11 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
 
     // A `sub` belongs to the section that declared it: leaving Assinaturas discards it rather
-    // than carrying a stale child id into Operações.
-    fireEvent.click((await loaded()).getByRole('button', { name: 'Operações' }));
-    expect(path()).toBe('/settings/operations');
-    expect(await screen.findByRole('heading', { name: 'Operações' })).toBeTruthy();
+    // than carrying a stale child id into another section. (Operações is no longer a Configurações
+    // section since t36, so this crosses into Sobre instead.)
+    fireEvent.click((await loaded()).getByRole('button', { name: 'Sobre' }));
+    expect(path()).toBe('/settings/about');
+    expect(await screen.findByRole('heading', { name: 'Sobre' })).toBeTruthy();
   });
 
   it('keeps the sub-tab strip operable for a reader who may not edit the settings', async () => {
@@ -6791,18 +6841,26 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
     // `/settings/operations/data` was a real, bookmarkable address before the split. It resolves
     // through RETIRED_SUBSECTIONS to Armazenamento rather than falling through to Serviços.
     vi.stubGlobal('fetch', dataFetch());
-    renderWithProviders(<SettingsPage />, ['/settings/operations/data']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/data']);
     expect(await screen.findByLabelText('Raiz de objetos partilhada')).toBeTruthy();
     expect(
       opsStrip().getByRole('button', { name: 'Armazenamento' }).getAttribute('aria-pressed'),
     ).toBe('true');
   });
 
-  it('keeps the former top-level `/settings/data` address resolving to Armazenamento', async () => {
-    // `/settings/data` was a real, linkable address. A restructure that drops it to the Aparência
-    // fallback breaks somebody's bookmark without telling them.
+  it('forwards the former top-level `/settings/data` address to Armazenamento on /admin', async () => {
+    // `/settings/data` was a real, linkable address. Since t36 Gestão de dados lives on the
+    // Administração surface, so the alias forwards to `/admin/storage` (its successor pane) rather
+    // than 404ing or dropping to the Aparência fallback. Rendered through both surfaces so the
+    // in-page forward resolves the way it does under the app router.
     vi.stubGlobal('fetch', dataFetch());
-    renderWithProviders(<SettingsPage />, ['/settings/data']);
+    renderWithProviders(
+      <Routes>
+        <Route path="/settings/*" element={<SettingsPage />} />
+        <Route path="/admin/*" element={<SettingsPage surface="admin" />} />
+      </Routes>,
+      ['/settings/data'],
+    );
     expect(await screen.findByLabelText('Raiz de objetos partilhada')).toBeTruthy();
     expect(
       opsStrip().getByRole('button', { name: 'Armazenamento' }).getAttribute('aria-pressed'),
@@ -6817,16 +6875,16 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
     // to descendants, so a per-control assertion would pass either way.
     const noSettingsManage = permissionsValue((permission) => permission !== 'settings.manage');
     const cases: [address: string, button: string][] = [
-      ['/settings/operations/storage', 'Armazenamento'],
-      ['/settings/operations/backups', 'Cópias e recuperação'],
-      ['/settings/operations/keys', 'Chaves e reposição'],
+      ['/admin/storage', 'Armazenamento'],
+      ['/admin/backups', 'Cópias e recuperação'],
+      ['/admin/keys', 'Chaves e reposição'],
     ];
     for (const [address, button] of cases) {
       cleanup();
       vi.stubGlobal('fetch', dataFetch());
       renderWithProviders(
         <StaticPermissionsProvider value={noSettingsManage}>
-          <SettingsPage />
+          <SettingsPage surface="admin" />
         </StaticPermissionsProvider>,
         [address],
       );
@@ -6853,9 +6911,9 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
     vi.stubGlobal('fetch', dataFetch());
     renderWithProviders(
       <StaticPermissionsProvider value={noSettingsManage}>
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </StaticPermissionsProvider>,
-      ['/settings/operations/storage'],
+      ['/admin/storage'],
     );
     const policyCard = (
       await screen.findByText('Política de limpeza de exportações retidas')
@@ -6868,13 +6926,13 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
     // Confirmation (t28): retained-export-cleanup policy lives on Armazenamento next to the export
     // cleanup action; backup-recovery policy lives on Cópias e recuperação next to its readout.
     vi.stubGlobal('fetch', dataFetch());
-    renderWithProviders(<SettingsPage />, ['/settings/operations/storage']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/storage']);
     expect(await screen.findByText('Política de limpeza de exportações retidas')).toBeTruthy();
     expect(screen.queryByText('Política local de recuperação de backups')).toBeNull();
 
     cleanup();
     vi.stubGlobal('fetch', dataFetch());
-    renderWithProviders(<SettingsPage />, ['/settings/operations/backups']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/backups']);
     expect(await screen.findByText('Política local de recuperação de backups')).toBeTruthy();
     expect(screen.queryByText('Política de limpeza de exportações retidas')).toBeNull();
   });
@@ -6922,7 +6980,7 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/operations/storage']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/storage']);
 
     const minAge = (await screen.findByLabelText(
       'Idade mínima das exportações',
@@ -6945,9 +7003,9 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
     vi.stubGlobal('fetch', dataFetch());
     renderWithProviders(
       <StaticPermissionsProvider value={noSettingsManage}>
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </StaticPermissionsProvider>,
-      ['/settings/operations/data'],
+      ['/admin/data'],
     );
 
     expect(
@@ -6961,7 +7019,7 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
   it('states why the interlock is closed rather than merely that it is', async () => {
     // Misconfiguration must never be silent: the pane carries the server's own reason verbatim.
     vi.stubGlobal('fetch', dataFetch());
-    renderWithProviders(<SettingsPage />, ['/settings/operations/data']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/data']);
     expect(await screen.findByText('Desativado (fecho seguro)')).toBeTruthy();
     expect(screen.getByText(/CHANCELA_ZK_SHARED_OBJECT_ROOT/)).toBeTruthy();
     // And it does not imply an assurance the server never made.

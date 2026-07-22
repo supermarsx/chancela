@@ -160,7 +160,10 @@ describe('Top bar — medium tier (tabs collapse to a burger)', () => {
 
     expect(screen.getByTestId('topbar-tabs-menu').getAttribute('aria-expanded')).toBe('true');
     const menu = screen.getByRole('menu');
-    for (const name of ['Painel', 'Entidades', 'Livros', 'Minutas', 'Operações']) {
+    // The standalone Operações text tab was retired in t36 (its surface folded into Administração,
+    // which is a right-hand utility glyph, not a primary tab), so the burger holds the four
+    // remaining primary tabs.
+    for (const name of ['Painel', 'Entidades', 'Livros', 'Minutas']) {
       // Exactly one representation per tab (the menuitem) — the inline strip is not also mounted, so
       // there is no hidden duplicate to overlap or to double the a11y tree.
       expect(within(menu).getByRole('menuitem', { name })).toBeTruthy();
@@ -199,10 +202,12 @@ describe('Top bar — narrow tier (utilities collapse too, brand dropped)', () =
     expect(document.querySelector('.notification-bell')).not.toBeNull();
     expect(screen.getByTestId('session-trigger')).toBeTruthy();
 
-    // Opening "more" reveals the utility surfaces as menu items with their glyphs.
+    // Opening "more" reveals the utility surfaces as menu items with their glyphs. The permission-
+    // gated Administração glyph (t36) folds in here too at this tier — the standard render context
+    // grants it — because it shares the same iconNavItems the inline row uses.
     fireEvent.click(more);
     const menu = screen.getByRole('menu');
-    for (const name of ['Arquivo', 'Ferramentas', 'Configurações']) {
+    for (const name of ['Arquivo', 'Ferramentas', 'Configurações', 'Administração']) {
       expect(within(menu).getByRole('menuitem', { name })).toBeTruthy();
     }
   });

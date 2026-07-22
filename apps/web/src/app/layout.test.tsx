@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { RouterProvider, createMemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Layout } from './layout';
 import { EntitiesPage } from '../features/entities/EntitiesPage';
-import { renderWithDataRouter, renderWithProviders, fetchTable } from '../test/utils';
+import { renderWithDataRouter, renderWithProviders, fetchTable, makeClient } from '../test/utils';
+import { ToastProvider } from '../ui/toast';
+import {
+  StaticPermissionsProvider,
+  permissionsValue,
+  type PermissionsContextValue,
+} from '../features/session/permissions';
 import { DEFAULT_SETTINGS, type Dashboard } from '../api/types';
 import { UI_VERSION, displayVersion } from '../api/versionCheck';
 
@@ -132,7 +139,9 @@ describe('Layout', () => {
     // The masthead is gone; the brand now lives in the fixed secondary tab bar (rendered
     // once the AuthGate resolves the active session).
     expect(await screen.findByText('Chancela')).toBeTruthy();
-    // Eight pinned tabs, including the task-focused Operações surface.
+    // Eight pinned surfaces: four text tabs plus the four utility glyphs. The standalone Operações
+    // text tab is gone — its surface folded into Administração (t36) — and the Administração glyph
+    // appears here because the standard test context grants every permission (see canAdmin).
     for (const label of [
       'Painel',
       'Entidades',
@@ -140,11 +149,13 @@ describe('Layout', () => {
       'Minutas',
       'Arquivo',
       'Ferramentas',
-      'Operações',
       'Configurações',
+      'Administração',
     ]) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy();
     }
+    // The retired standalone Operações text tab is no longer a nav destination.
+    expect(screen.queryByRole('link', { name: 'Operações' })).toBeNull();
   });
 
   it('brands the footer with the product, the instrument and the real build version', async () => {
@@ -385,7 +396,7 @@ describe('Layout — Arquivo, Ferramentas and Configurações as top-bar icons',
     );
   }
 
-  it('orders them archive → tools → cog → divider → alerts', async () => {
+  it('orders them archive → tools → cog → admin → divider → alerts', async () => {
     renderShell();
     await screen.findByText('painel');
 
@@ -393,7 +404,8 @@ describe('Layout — Arquivo, Ferramentas and Configurações as top-bar icons',
     expect(session).not.toBeNull();
 
     // Read the rendered order rather than trusting the source order. Arquivo sits first, just
-    // before the tools glyph (t31), so the archive reference surface groups with the utilities.
+    // before the tools glyph (t31); the Administração glyph (t36) is appended after the cog, so it
+    // sits between Configurações and the divider (the standard context grants it — see canAdmin).
     const order = [
       ...session.querySelectorAll('.topbar__icon, .topbar__divider, .notification-bell'),
     ].map((el) =>
@@ -403,7 +415,14 @@ describe('Layout — Arquivo, Ferramentas and Configurações as top-bar icons',
           ? 'alerts'
           : el.getAttribute('aria-label'),
     );
-    expect(order).toEqual(['Arquivo', 'Ferramentas', 'Configurações', 'divider', 'alerts']);
+    expect(order).toEqual([
+      'Arquivo',
+      'Ferramentas',
+      'Configurações',
+      'Administração',
+      'divider',
+      'alerts',
+    ]);
   });
 
   it('gives each glyph a real accessible name, not just a tooltip', async () => {
@@ -481,5 +500,92 @@ describe('Layout — Arquivo, Ferramentas and Configurações as top-bar icons',
     expect(
       screen.getByRole('link', { name: 'Ferramentas' }).getAttribute('aria-current'),
     ).toBeNull();
+  });
+});
+
+// --- Administração glyph permission reveal (t36) --------------------------------------
+describe('Layout — the Administração glyph is permission-gated (t36)', () => {
+  // The standard render context grants ALL permissions, which is exactly what makes it useless for
+  // testing HIDING — every gate is open. These cases inject an explicit permissions value instead,
+  // wrapping the same signed-in shell in a <StaticPermissionsProvider> with a narrow `can`.
+  function renderShellWithPermissions(permissions: PermissionsContextValue, entry = '/') {
+    stubSignedInShellFetch();
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Layout />,
+          children: [
+            { index: true, element: <div>painel</div> },
+            { path: 'admin/:sub?', element: <div>superfície admin</div> },
+          ],
+        },
+      ],
+      { initialEntries: [entry] },
+    );
+    return render(
+      <QueryClientProvider client={makeClient()}>
+        <ToastProvider>
+          <StaticPermissionsProvider value={permissions}>
+            <RouterProvider router={router} />
+          </StaticPermissionsProvider>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  // The no-regression union: every verb that gates any pane the admin surface hosts. Holding any one
+  // of them today reaches a surface now folded under /admin, so any one must reveal the glyph.
+  const ADMIN_UNION = [
+    'settings.manage',
+    'settings.read',
+    'data.manage',
+    'backup.manage',
+    'user.manage',
+    'entity.update',
+    'template.manage',
+  ];
+
+  it('reveals the glyph for a holder of any single verb in the no-regression union', async () => {
+    for (const verb of ADMIN_UNION) {
+      const { unmount } = renderShellWithPermissions(permissionsValue((perm) => perm === verb));
+      await screen.findByText('painel');
+      expect(screen.getByRole('link', { name: 'Administração' })).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it('hides the glyph from a principal holding no admin verb', async () => {
+    renderShellWithPermissions(permissionsValue(() => false));
+    await screen.findByText('painel');
+    // Hidden entirely — a nav destination the operator cannot reach is not advertised (the route
+    // itself redirects a non-holder away). This is the one place hiding, not disable-with-tooltip,
+    // is correct.
+    expect(screen.queryByRole('link', { name: 'Administração' })).toBeNull();
+    // The other three utility glyphs are unconditional and stay put.
+    for (const name of ['Arquivo', 'Ferramentas', 'Configurações']) {
+      expect(screen.getByRole('link', { name })).toBeTruthy();
+    }
+  });
+
+  it('does not reveal it for a verb outside the union', async () => {
+    // A verb the admin surface does not host must not open the door (here, a reader of the activity
+    // feed). The union is exact: over-revealing would land the operator on a surface with no pane
+    // they can use.
+    renderShellWithPermissions(permissionsValue((perm) => perm === 'act.read'));
+    await screen.findByText('painel');
+    expect(screen.queryByRole('link', { name: 'Administração' })).toBeNull();
+  });
+
+  it('marks the glyph active on the admin surface and points it at /admin', async () => {
+    renderShellWithPermissions(
+      permissionsValue((perm) => perm === 'settings.manage'),
+      '/admin',
+    );
+    await screen.findByText('superfície admin');
+    const link = screen.getByRole('link', { name: 'Administração' });
+    expect(link.getAttribute('href')).toBe('/admin');
+    // It lights for any address under /admin, mirroring how the cog lights inside Configurações.
+    expect(link.getAttribute('aria-current')).toBe('page');
   });
 });

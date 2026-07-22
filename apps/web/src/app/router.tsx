@@ -107,6 +107,37 @@ export function LegacyUsersRedirect() {
   return <Navigate to={usersSettingsPath(hash)} replace />;
 }
 
+/**
+ * `/operations/:view?` → `/admin/:view` (t36). The standalone Operações integrations surface folded
+ * into Administração; its three areas keep their slugs (groups/connectors/repositories), and the
+ * bare address that showed Grupos lands on `/admin/groups`. The tenant picker and every per-panel
+ * selection travel as query params, so `?tenant=…` and the rest are preserved verbatim, and the
+ * old address is `replace`d so it never becomes a Back-button stop. pt-PT `/operacoes/*` reaches
+ * here first through `legacySlugs` (`operacoes → operations`), so no slug-table change is needed.
+ */
+export function LegacyOperationsRedirect() {
+  const { view } = useParams();
+  const { search, hash } = useLocation();
+  const sub = view ?? 'groups';
+  return <Navigate to={`/admin/${encodeURIComponent(sub)}${search}${hash}`} replace />;
+}
+
+/**
+ * `/settings/operations/:sub?` → `/admin/:sub` (t36). Operações left Configurações for the new
+ * Administração surface, so the literal address is forwarded at the router level — a static
+ * `settings/operations` outranks the generic `settings/:sec?/:sub?`, so SettingsPage never renders
+ * for it. The RETIRED settings aliases that resolved INTO operations (`/settings/email`,
+ * `/settings/mcp`, `/settings/api`, `/settings/api-keys`, `/settings/data`) are forwarded by
+ * SettingsPage itself (t36-e2), which owns their table. Query + fragment are preserved; bare
+ * `/settings/operations` lands on `/admin` (its Serviços default).
+ */
+export function LegacySettingsOperationsRedirect() {
+  const { sub } = useParams();
+  const { search, hash } = useLocation();
+  const target = sub ? `/admin/${encodeURIComponent(sub)}` : '/admin';
+  return <Navigate to={`${target}${search}${hash}`} replace />;
+}
+
 export const routeModuleLoaders = {
   onboarding: () => import('../features/onboarding/OnboardingWizard'),
   externalSigner: () => import('../features/signing/ExternalSignerInvitePage'),
@@ -128,7 +159,7 @@ export const routeModuleLoaders = {
   templateDetail: () => import('../features/templates/TemplateDetailPage'),
   ledger: () => import('../features/ledger/LedgerPage'),
   notifications: () => import('../features/notifications/NotificationsPage'),
-  operations: () => import('../features/operations/OperationsPage'),
+  admin: () => import('../features/admin/AdminPage'),
   ferramentas: () => import('../features/ferramentas/FerramentasPage'),
   settings: () => import('../features/settings/SettingsPage'),
   cae: () => import('../features/cae/CaePage'),
@@ -256,11 +287,19 @@ export const router = createBrowserRouter([
         path: 'notifications',
         element: lazyRoute(routeModuleLoaders.notifications, 'NotificationsPage'),
       },
+      // Administração (t36): the operations panes + the folded-in integrations subtabs, at their
+      // own top-level address. A thin `AdminPage` renders SettingsPage in admin-surface mode.
       {
-        path: 'operations/:view?',
+        path: 'admin/:sub?',
         handle: { navDepth: 1 },
-        element: lazyRoute(routeModuleLoaders.operations, 'OperationsPage'),
+        element: lazyRoute(routeModuleLoaders.admin, 'AdminPage'),
       },
+      // The retired standalone Operações surface. Both its own address and the settings-hosted one
+      // forward into `/admin/*`, preserving `?tenant=` and every per-panel selection (no-404
+      // invariant). The static `settings/operations` is ranked above `settings/:sec?/:sub?` by
+      // React Router, so it intercepts the literal address before SettingsPage sees it.
+      { path: 'operations/:view?', element: <LegacyOperationsRedirect /> },
+      { path: 'settings/operations/:sub?', element: <LegacySettingsOperationsRedirect /> },
       // Two levels: the tool, then that tool's own sub-tab — the PDF validator spelled its
       // second level `?sec=` and Legislação spelled it `?leg=`, and both are the same
       // segment now (`/tools/pdf/asic`, `/tools/legislation/shelf`).

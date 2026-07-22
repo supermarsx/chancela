@@ -78,6 +78,7 @@ import { UI_VERSION, displayVersion } from '../../api/versionCheck';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
+import { useAdminT } from '../../i18n/adminFallback';
 import { grainStore } from '../../theme/grainStore';
 import { colorStore } from '../../theme/colorStore';
 import { applyAppearance, applyLocale, COLOR_OVERRIDE_FIELDS } from '../../theme/appearance';
@@ -88,6 +89,7 @@ import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
 import { ZkObjectRootSection } from '../recovery/ZkObjectRootSection';
 import { FuncoesSection } from '../rbac/FuncoesSection';
 import { DelegacoesSection } from '../rbac/DelegacoesSection';
+import { AdminIntegrationsPanel } from '../admin/AdminIntegrationsPanel';
 import { ApiKeysSection } from './ApiKeysSection';
 import { ConnectorEgressSection, parseAllowedHosts } from './ConnectorEgressSection';
 import { EmailSection } from './EmailSection';
@@ -563,7 +565,11 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'documents', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'signing', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
   { id: 'management', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
-  { id: 'operations', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
+  // Operações is no longer a Configurações tab (t36): its panes moved to the Administração surface
+  // at `/admin`, reached through the `<SettingsPage surface="admin">` wrapper. The `operations`
+  // section id, its SUBSECTION_NAV / SETTINGS_SUBSECTIONS / STANDALONE / RETIRED entries and the
+  // render block all remain — they are reached only from the admin surface and, for the settings
+  // surface, from the retired aliases that forward on to `/admin/*` (see the forward guard below).
   { id: 'privacy', label: 'settings.privacy.tab', icon: <Icon.Seal /> },
   { id: 'users', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
   { id: 'devices', label: 'pairing.tab', icon: <Icon.IdCard /> },
@@ -593,6 +599,13 @@ const SETTINGS_SUBSECTIONS = {
     'email',
     'env',
     'api-keys',
+    // Integrations (t36): the three areas the retired standalone `/operations` tab held —
+    // Grupos / Conectores / Repositórios ZK — folded in as subtabs of the Administração surface.
+    // They are STANDALONE (own data + own gating; see STANDALONE_SUBSECTIONS) and render through
+    // <AdminIntegrationsPanel>, not a settings-document pane.
+    'groups',
+    'connectors',
+    'repositories',
   ],
   signing: ['providers', 'policy', 'tsl', 'tsa', 'trust-services', 'cmd'],
   users: ['users', 'delegations', 'roles'],
@@ -659,6 +672,14 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
     // one. Its label is the one sub-tab whose copy lives in the serverEnvFallback module, not the
     // catalog, so it is resolved with `st(...)` in the strip below.
     { id: 'env', serverEnvLabel: 'settings.serverEnv.title', icon: <Icon.Sliders /> },
+    // Integrations (t36) — Grupos / Conectores / Repositórios ZK. These were the standalone
+    // `/operations` tab's three views; folding them in here is what makes them "part of the admin
+    // subtabs". They sit last, after the platform/data/env panes, and reuse the existing
+    // `operations.tabs.*` catalog labels. They render <AdminIntegrationsPanel> rather than a
+    // settings-document pane, and are STANDALONE so the autosave fieldset never wraps them.
+    { id: 'groups', label: 'operations.tabs.groups', icon: <Icon.Users /> },
+    { id: 'connectors', label: 'operations.tabs.connectors', icon: <Icon.Shuffle /> },
+    { id: 'repositories', label: 'operations.tabs.repositories', icon: <Icon.Archive /> },
   ],
   signing: [
     { id: 'providers', label: 'settings.providerCredentials.cardTitle', icon: <Icon.IdCard /> },
@@ -762,6 +783,13 @@ const STANDALONE_SUBSECTIONS: readonly string[] = [
   // not the settings working copy, so it carries no whole-document savebar and is not inerted by
   // the page's `settings.manage` fieldset — the pane gates its own editors on `settings.manage`.
   'operations:env',
+  // Integrations (t36). Grupos / Conectores / Repositórios ZK own their own data (the entities
+  // directory + the connector/ZK endpoints) and their own gating (each area component keeps its
+  // `perm="…"` disable-with-tooltip checks), so — like the other standalone subtabs — the page's
+  // `settings.manage` fieldset must not wrap them and the whole-document savebar must not show.
+  'operations:groups',
+  'operations:connectors',
+  'operations:repositories',
   'signing:providers',
 ];
 
@@ -1158,11 +1186,35 @@ function PlatformLogTailPanel() {
   );
 }
 
-export function SettingsPage() {
+/**
+ * The two surfaces this page powers (t36). `settings` is Configurações at `/settings`; `admin` is
+ * the Administração surface at `/admin`, reached through the thin {@link AdminPage} wrapper which
+ * renders this page as `<SettingsPage surface="admin" />`.
+ *
+ * t36-e1 introduces this prop as the CONTRACT ONLY — AdminPage needs it to typecheck, and the value
+ * is currently threaded no further than the root element's `data-surface`. t36-e2 implements the
+ * admin-surface BEHAVIOUR behind it: force the operations section, hide the Configurações section
+ * strip, use `admin.title` for the header, fold the integrations subtabs (groups/connectors/
+ * repositories) into the operations strip with an `<AdminIntegrationsPanel>` render arm, and forward
+ * the retired settings→operations aliases into `/admin/*`. Until then `admin` behaves as `settings`.
+ */
+export type SettingsSurface = 'settings' | 'admin';
+export interface SettingsPageProps {
+  surface?: SettingsSurface;
+}
+
+export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const t = useT();
   // The "Ambiente do servidor" sub-tab label is the one strip entry whose copy lives in the
   // serverEnvFallback module rather than the frozen catalog (t14) — resolved here for the strip.
   const st = useServerEnvT();
+  // "Administração" copy (title + nav) lives in its own owned fallback module (t36), same split.
+  const at = useAdminT();
+  // The Administração surface (`/admin`) renders this page with `surface="admin"`: it forces the
+  // Operações section, hides the Configurações section strip, titles the page "Administração", and
+  // reads its sub off `/admin/:sub`. Every operations pane, the standalone/RETIRED machinery and
+  // the autosave savebar are reused unchanged — only the chrome around them differs.
+  const isAdmin = surface === 'admin';
   const toast = useToast();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -1185,8 +1237,13 @@ export function SettingsPage() {
     // carried onto another section's address.
     dropParams: ['user'],
   });
-  const retired = secSegment === undefined ? undefined : RETIRED_SECTIONS[secSegment];
-  const section: SettingsSection = retired?.section ?? rawSection;
+  // The admin surface hosts exactly one section — Operações — with the section strip hidden and the
+  // sub read off `/admin/:sub`; the section-level nav above is only meaningful for `/settings`, so on
+  // the admin surface its result is discarded and `retired` (a settings-alias table) is not
+  // consulted. On the settings surface a retired alias (`/settings/email`, `/settings/data`, …) can
+  // still resolve INTO operations — the forward guard below then sends it on to `/admin/*`.
+  const retired = isAdmin || secSegment === undefined ? undefined : RETIRED_SECTIONS[secSegment];
+  const section: SettingsSection = isAdmin ? 'operations' : (retired?.section ?? rawSection);
   // The second level, for the two sections that have one. Like the section, the first sub-tab is
   // the default and carries no segment; an unknown one falls back to it rather than blanking the
   // panel. A retired address names its own destination sub-tab and wins over any sub segment.
@@ -1196,7 +1253,7 @@ export function SettingsPage() {
   // A PUSH, so the browser Back button walks back through the sub-tabs the operator opened
   // (the t34/t62 rule: navigation the user performed must be undoable).
   const { section: subSegment, select: selectRawSub } = useSectionNav<string>({
-    base: `/settings/${section}`,
+    base: isAdmin ? '/admin' : `/settings/${section}`,
     parse: (raw) => raw ?? '',
     fallback: '',
   });
@@ -1222,7 +1279,7 @@ export function SettingsPage() {
   const selectSub = (next: SettingsSubsection) =>
     selectRawSub(subNav && next === subNav[0].id ? '' : next);
   // The fragment of the current location, carried through the `?user=` → edit-screen redirect.
-  const { hash } = useLocation();
+  const { hash, pathname } = useLocation();
   const settings = useSettings();
   const health = useHealth();
   const ledger = useLedgerVerify();
@@ -1326,6 +1383,18 @@ export function SettingsPage() {
       </Card>
     </div>
   );
+  // Retired-alias forwarding into the Administração surface (t36). Operações is no longer a
+  // Configurações tab, but its RETIRED settings aliases still reach THIS page (only it knows the
+  // RETIRED_SECTIONS table): `/settings/email`, `/settings/mcp`, `/settings/api`,
+  // `/settings/api-keys` and `/settings/data` each resolve `section` to operations. Forward them on
+  // to `/admin/<sub>` so the bookmark lands on the moved pane rather than 404ing or dropping to
+  // Aparência. The literal `/settings/operations/*` never arrives here — the router redirect
+  // intercepts it first (t36-e1) — so the two forwarding mechanisms are disjoint. Guarded to genuine
+  // `/settings` addresses so a `/admin/*` render (whose segment[1] can coincide with a retired alias
+  // name) never re-forwards. `sub` is always defined here because operations carries a sub-nav.
+  if (!isAdmin && pathname.startsWith('/settings') && section === 'operations') {
+    return <Navigate to={sub ? `/admin/${sub}` : '/admin'} replace />;
+  }
   if (settings.isLoading) return settingsSkeleton;
   if (settings.error) return <ErrorNote error={settings.error} />;
   if (!draft) return settingsSkeleton;
@@ -1499,20 +1568,26 @@ export function SettingsPage() {
   const backupRecoveryPolicy = draft.data_management.backup_recovery;
 
   return (
-    <div className="stack">
-      {/* No `crumbs`: Configurações is a top-level tab with no parent, so a breadcrumb
-          would only restate the title (and did so in the singular, "Configuração"). */}
-      <PageHeader title={t('settings.page.title')}>
-        <SubNav
-          items={SETTINGS_SECTIONS.map((s) => ({
-            id: s.id,
-            label: 'literal' in s ? s.literal : t(s.label),
-            icon: s.icon,
-          }))}
-          active={section}
-          onSelect={selectSection}
-          ariaLabel={t('settings.subnav.aria')}
-        />
+    // `data-surface` is the t36-e1 contract seam only (see SettingsPageProps); t36-e2 keys the
+    // admin-surface behaviour off `surface` here.
+    <div className="stack" data-surface={surface}>
+      {/* No `crumbs`: both surfaces are a top-level tab with no parent, so a breadcrumb would only
+          restate the title. On the Administração surface (t36) the Configurações section strip is
+          hidden — that surface has exactly one section (Operações), so the second-level strip below
+          IS its primary nav — and the header reads "Administração" from the owned admin fallback. */}
+      <PageHeader title={isAdmin ? at('admin.title') : t('settings.page.title')}>
+        {isAdmin ? null : (
+          <SubNav
+            items={SETTINGS_SECTIONS.map((s) => ({
+              id: s.id,
+              label: 'literal' in s ? s.literal : t(s.label),
+              icon: s.icon,
+            }))}
+            active={section}
+            onSelect={selectSection}
+            ariaLabel={t('settings.subnav.aria')}
+          />
+        )}
       </PageHeader>
 
       {/* Honest disable-with-explanation for the editable settings when the user lacks
@@ -2822,6 +2897,16 @@ export function SettingsPage() {
                   Its component is untouched: the plaintext secret is still shown once, on
                   create/rotate only, and the table still renders the non-secret prefix alone. */}
               {sub === 'api-keys' ? <ApiKeysSection /> : null}
+
+              {/* Integrations (t36) — Grupos / Conectores / Repositórios ZK. The one arm that is not
+                  a settings-document pane: it renders the re-parented body of the retired
+                  `/operations` tab (tenant picker + area dispatch), driven by the admin `:sub`
+                  segment. STANDALONE, so the fieldset above never inerts it and each area keeps its
+                  own gating. Reached on the admin surface (`/admin/{groups,connectors,repositories}`)
+                  and via the retired `/operations/*` → `/admin/*` router redirect (t36-e1). */}
+              {sub === 'groups' || sub === 'connectors' || sub === 'repositories' ? (
+                <AdminIntegrationsPanel sub={sub} />
+              ) : null}
             </div>
           ) : null}
 

@@ -33,6 +33,8 @@ import { useTopbarTier } from './useTopbarTier';
 import { TopbarMenu, type TopbarMenuItem } from './TopbarMenu';
 import { useT } from '../i18n';
 import { useTopbarExtraT } from '../i18n/topbarFallback';
+import { useAdminT } from '../i18n/adminFallback';
+import { usePermissions } from '../features/session/permissions';
 import type { MessageKey } from '../i18n';
 import { displayVersion, UI_VERSION } from '../api/versionCheck';
 
@@ -41,7 +43,6 @@ const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
   { to: '/entities', label: 'nav.entities' },
   { to: '/books', label: 'nav.books' },
   { to: '/templates', label: 'nav.templates' },
-  { to: '/operations', label: 'nav.operations' },
 ];
 
 /**
@@ -52,8 +53,17 @@ const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
  * alerts bell and the user picker than as the tail of a row of nouns. Arquivo joined them
  * (t31): the ledger archive is a reference surface you consult, not a workspace, so it belongs
  * with the other utility glyphs rather than in the row of nouns. Order is archive → tools → cog
- * → divider → alerts, so the navigational glyphs group together and the divider separates them
- * from the notification affordance rather than sitting between two unrelated things.
+ * → admin → divider → alerts, so the navigational glyphs group together and the divider separates
+ * them from the notification affordance rather than sitting between two unrelated things.
+ *
+ * **The Administração glyph (t36)** is appended after the cog — but not as a static entry in this
+ * array. It differs from the other three in two ways, so it is merged into the resolved icon-item
+ * list at render time (see {@link Layout}): it is PERMISSION-GATED (rendered only for holders of the
+ * no-regression union of verbs that gate any pane the admin surface hosts — hiding, not
+ * disable-with-tooltip, is right for a nav destination the operator cannot reach), and its label
+ * comes from the owned `adminFallback` module (`nav.admin`) rather than the shared catalog, so it is
+ * not a `MessageKey` this array could carry. It still flows into BOTH the inline row and the narrow
+ * "more" overflow menu automatically, because both iterate the same resolved `iconNavItems`.
  *
  * Each is icon-only, so each carries a real `aria-label` **as well as** a `Tooltip`. A tooltip
  * is not an accessible name — it is a hover/focus affordance — and a screen-reader user given
@@ -62,10 +72,11 @@ const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
  *
  * **Responsive overflow (t42).** This array is the single source for BOTH the inline glyphs and the
  * narrow-tier "more" overflow menu (see `iconNavItems` + the `TopbarMenu` in the session cluster).
- * A task adding a control to this bar — e.g. t36's forthcoming "Administração" glyph — appends ONE
- * entry here (`{ to, label, icon }`) and it flows into the inline row on wide/medium AND into the
- * overflow menu on narrow automatically, with no change to the collapse logic, the CSS, or
- * `TopbarMenu`. (The label must be a real catalog `MessageKey`, as the others are.)
+ * A task adding an UNGATED, catalog-labelled control to this bar appends ONE entry here
+ * (`{ to, label, icon }`) and it flows into the inline row on wide/medium AND into the overflow menu
+ * on narrow automatically, with no change to the collapse logic, the CSS, or `TopbarMenu`. (The
+ * label must be a real catalog `MessageKey`, as the others are.) A gated or owned-fallback control
+ * is merged into `iconNavItems` at render time instead — see the Administração note above.
  */
 const ICON_NAV: { to: string; label: MessageKey; icon: ReactNode }[] = [
   { to: '/archive', label: 'nav.archive', icon: <Icon.Archive /> },
@@ -92,9 +103,28 @@ export function Layout() {
   // boundary, so navigating away from a crashed page remounts a fresh boundary.
   const t = useT();
   const tt = useTopbarExtraT();
+  const at = useAdminT();
+  const { canAny } = usePermissions();
   const { pathname } = useLocation();
   const routeKey = useRouteKey(pathname);
   const safe = isSafeMode();
+
+  // Whether to reveal the Administração glyph (t36). A nav DESTINATION is the one place hiding is
+  // right rather than disable-with-tooltip: a surface the operator cannot reach should not be
+  // advertised, and the route itself redirects a non-holder away. The predicate is the
+  // no-regression UNION of every verb that gates any pane the admin surface hosts, so nobody loses
+  // a surface they reach today (settings-ops panes, storage/backups/keys, api-keys). `canAny`
+  // (holds the verb at ANY scope) matches how those panes are reached now — a tenant-scoped holder
+  // still gets there. Under-revealing would strip a surface; over-revealing is harmless because
+  // every endpoint and pane enforces on its own. (The integrations verbs join this union with t36-e5.)
+  const canAdmin =
+    canAny('settings.manage') ||
+    canAny('settings.read') ||
+    canAny('data.manage') ||
+    canAny('backup.manage') ||
+    canAny('user.manage') ||
+    canAny('entity.update') ||
+    canAny('template.manage');
 
   // Which reflow tier the header is in. `wide` lays every control out inline; `medium` folds the
   // primary tabs into a burger; `narrow` also folds the utility glyphs into a "more" menu and drops
@@ -119,12 +149,28 @@ export function Layout() {
     end: item.end,
     active: isActive(item.to, item.end),
   }));
-  const iconNavItems: TopbarMenuItem[] = ICON_NAV.map((item) => ({
-    to: item.to,
-    label: t(item.label),
-    icon: item.icon,
-    active: isActive(item.to),
-  }));
+  // The three catalog-labelled utility glyphs, plus the permission-gated Administração glyph merged
+  // in after the cog (its label comes from the owned `adminFallback`, and it renders only for a
+  // holder — see `canAdmin`). This single resolved list feeds BOTH the inline row and the narrow
+  // "more" overflow menu, so the admin glyph appears in whichever the current tier renders.
+  const iconNavItems: TopbarMenuItem[] = [
+    ...ICON_NAV.map((item) => ({
+      to: item.to,
+      label: t(item.label),
+      icon: item.icon,
+      active: isActive(item.to),
+    })),
+    ...(canAdmin
+      ? [
+          {
+            to: '/admin',
+            label: at('nav.admin'),
+            icon: <Icon.Power />,
+            active: isActive('/admin'),
+          },
+        ]
+      : []),
+  ];
   const anyNavActive = navItems.some((item) => item.active);
   const anyIconActive = iconNavItems.some((item) => item.active);
 
@@ -210,11 +256,11 @@ export function Layout() {
             </div>
           )}
 
-          {/* Right track. The utility glyphs (Arquivo/Ferramentas/Configurações — and any icon a
-              later task appends to ICON_NAV) render inline while they fit; at the narrowest tier they
-              fold into the "more" overflow menu, which is fed by the SAME iconNavItems array, so an
-              added glyph needs no change here. The alerts bell and the user picker are the
-              always-visible essentials and never collapse. */}
+          {/* Right track. The utility glyphs (Arquivo/Ferramentas/Configurações — and the
+              permission-gated Administração glyph merged into iconNavItems) render inline while they
+              fit; at the narrowest tier they fold into the "more" overflow menu, which is fed by the
+              SAME iconNavItems array, so an added glyph needs no change here. The alerts bell and the
+              user picker are the always-visible essentials and never collapse. */}
           <div className="topbar__session">
             {utilitiesCollapsed ? (
               <TopbarMenu
@@ -226,26 +272,22 @@ export function Layout() {
                 testId="topbar-utility-menu"
               />
             ) : (
-              ICON_NAV.map((item) => {
-                const active = isActive(item.to);
-                const label = t(item.label);
-                return (
-                  <Tooltip key={item.to} label={label} placement="bottom">
-                    <NavLink
-                      to={item.to}
-                      aria-current={active ? 'page' : undefined}
-                      aria-label={label}
-                      className={`topbar__icon btn btn--ghost btn--icon btn--iconOnly${
-                        active ? ' is-active' : ''
-                      }`}
-                    >
-                      <span className="btn__icon" aria-hidden="true">
-                        {item.icon}
-                      </span>
-                    </NavLink>
-                  </Tooltip>
-                );
-              })
+              iconNavItems.map((item) => (
+                <Tooltip key={item.to} label={item.label} placement="bottom">
+                  <NavLink
+                    to={item.to}
+                    aria-current={item.active ? 'page' : undefined}
+                    aria-label={item.label}
+                    className={`topbar__icon btn btn--ghost btn--icon btn--iconOnly${
+                      item.active ? ' is-active' : ''
+                    }`}
+                  >
+                    <span className="btn__icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                  </NavLink>
+                </Tooltip>
+              ))
             )}
             {/* Purely visual. `aria-hidden` + no text content, so it separates the utility
                 glyphs from the alerts bell for the eye without being announced as anything. */}
