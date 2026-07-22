@@ -197,6 +197,8 @@ import type {
   TotpEnrolment,
   TotpConfirmBody,
   BackupCodes,
+  SessionListResponse,
+  RevokedResponse,
   Settings,
   EmailStatusView,
   EmailTestResult,
@@ -1345,6 +1347,13 @@ export const api = {
   disableTotp: (id: string) => del<UserView>(`/v1/users/${id}/two-factor/totp`),
   regenerateBackupCodes: (id: string) =>
     post<BackupCodes>(`/v1/users/${id}/two-factor/backup-codes`, {}),
+  // Active sessions — frozen contract from t107 (t95, funded). SELF-SCOPED: all three act on the
+  // caller's OWN sessions regardless of any path parameter, so the UI only surfaces them on one's
+  // own account. Only `session_id` (an opaque handle) crosses the wire, never the token/digest.
+  listSessions: () => get<SessionListResponse>('/v1/sessions'),
+  revokeSession: (sessionId: string) =>
+    del<RevokedResponse>(`/v1/sessions/${encodeURIComponent(sessionId)}`),
+  revokeOtherSessions: () => post<RevokedResponse>('/v1/sessions/revoke-others', {}),
   getSession: () => get<SessionView>('/v1/session'),
   // Active password-strength ruleset (t68). Exempt so onboarding can render the checklist
   // before a user/session exists; the server remains authoritative on submit.

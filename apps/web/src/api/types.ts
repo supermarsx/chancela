@@ -4241,6 +4241,43 @@ export interface TotpConfirmBody {
   code: string;
 }
 
+// --- Active sessions — frozen contract from t107 (t95, funded) -------------------
+//
+// Self-scoped: `GET /v1/sessions` returns the CALLER's own sessions, never a path parameter's,
+// so this is only meaningful on one's own account — an administrator viewing another user never
+// sees that user's device list. The token/digest never crosses the wire; `session_id` (an opaque
+// uuid) is the only handle.
+
+/**
+ * One active sign-in (`GET /v1/sessions`). `device` and `ip` are **omitted** when unknown — a
+ * session predating the enrichment, or a request with no user-agent / no resolvable IP — so the
+ * panel must render their absence gracefully. `ip` is a **truncated network** (e.g.
+ * `198.51.100.0`), never a full host: a full IP is personal data and this product is
+ * privacy-conscious. Exactly one entry in the list carries `current: true`.
+ */
+export interface SessionInfo {
+  session_id: string;
+  device?: string;
+  ip?: string;
+  issued_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  current: boolean;
+}
+
+export interface SessionListResponse {
+  sessions: SessionInfo[];
+}
+
+/**
+ * `DELETE /v1/sessions/{session_id}` and `POST /v1/sessions/revoke-others` both answer with the
+ * count revoked. A revoked session is rejected on its **next request** (not merely delisted), so
+ * the other tabs are genuinely signed out. Revoking the `current` session signs the caller out.
+ */
+export interface RevokedResponse {
+  revoked: number;
+}
+
 export const DSR_REQUEST_TYPES = ['export', 'rectification', 'erasure', 'restriction'] as const;
 export type DsrRequestType = (typeof DSR_REQUEST_TYPES)[number];
 

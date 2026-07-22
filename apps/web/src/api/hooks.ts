@@ -248,6 +248,7 @@ export const keys = {
   user: (id: string) => ['users', id] as const,
   userDsrRequests: (id: string) => ['users', id, 'dsr-requests'] as const,
   userTwoFactor: (id: string) => ['users', id, 'two-factor'] as const,
+  sessions: ['sessions'] as const,
   session: ['session'] as const,
   passwordPolicy: ['session', 'password-policy'] as const,
   sessionPermissions: ['session', 'permissions'] as const,
@@ -2297,6 +2298,49 @@ export function useRegenerateBackupCodes(id: string) {
     mutationFn: () => api.regenerateBackupCodes(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.userTwoFactor(id) });
+    },
+  });
+}
+
+// --- Active sessions, t103 against t107's frozen contract ------------------------
+//
+// Self-scoped: the endpoint returns the CALLER's own sessions, so these are keyed globally
+// (`keys.sessions`) rather than per-user — there is only ever one list, the current principal's.
+
+/** The current principal's active sign-ins (`GET /v1/sessions`). `retry: false` so a refusal
+ *  surfaces rather than hammers. */
+export function useSessions() {
+  return useQuery({
+    queryKey: keys.sessions,
+    queryFn: () => api.listSessions(),
+    retry: false,
+  });
+}
+
+/**
+ * Revoke one of your own sessions (`DELETE /v1/sessions/{id}`). Revoking the `current` one signs
+ * you out — the caller decides whether to offer that. On success the list is invalidated; the
+ * session cache too, since revoking the current session ends it.
+ */
+export function useRevokeSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => api.revokeSession(sessionId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.sessions });
+      void qc.invalidateQueries({ queryKey: keys.session });
+    },
+  });
+}
+
+/** Revoke every session except the current one (`POST /v1/sessions/revoke-others`) — "terminar
+ *  as outras sessões". The current session stays alive; the others are rejected on next request. */
+export function useRevokeOtherSessions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.revokeOtherSessions(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.sessions });
     },
   });
 }
