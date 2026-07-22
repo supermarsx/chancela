@@ -2757,6 +2757,20 @@ pub struct ReopenAct {
     pub reason: String,
 }
 
+/// Body of `POST /v1/acts/{id}/revert` — move an act backward among the pre-signature states.
+#[derive(Deserialize)]
+pub struct RevertAct {
+    /// The strictly-earlier pre-signature state to move back to (Draft…TextApproved). `revert_to`
+    /// refuses a forward or same-state target, a revert from `Signing` (use reopen), and any move
+    /// out of `Sealed`/`Archived`.
+    pub to: ActState,
+    #[serde(default = "default_actor")]
+    pub actor: String,
+    /// Why the act is being moved backward. Required and non-empty: a lifecycle regression on an
+    /// evidentiary object has to be reconstructable from the ledger alone.
+    pub reason: String,
+}
+
 /// The canonical signing snapshot a reopen retired.
 #[derive(Debug, Serialize, Clone)]
 pub struct SupersededSigningSnapshotView {

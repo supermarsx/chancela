@@ -904,6 +904,39 @@ pub(crate) fn generate_for_termo(
     )?))
 }
 
+/// Render + pin the canonical **unsigned** termo de abertura PDF snapshot at `advance` — the bytes
+/// every required signatory signs (sequential PAdES) and the bytes the open path preserves. Keyed on
+/// `ActId(book.id.0)` (via [`generate_for_termo`]): the unified termo signing subject (t41 R1), the
+/// same document key the preserved-at-open PDF/A uses, so the signed revision REPLACEs this snapshot
+/// in place rather than living under a second id.
+///
+/// Projects the `TermoInstrument` into the sealed [`TermoDeAbertura`] payload (binding the filled
+/// body + declared signatories) and renders it through the very [`generate_for_termo`] path the open
+/// genesis uses, so the snapshot the signatories sign is byte-identical to what the open path emits
+/// from the same inputs. `None` for a family with no termo-abertura template (that book opens on the
+/// genesis event alone, no preserved PDF/A — same as the one-shot path).
+///
+/// ⚠️ `numbering_scheme` is not (yet) a `TermoInstrument` field, so it is fixed here at render time
+/// rather than chosen by the operator before signing. The open path (t41-e3) must render/preserve
+/// with the SAME scheme, or move the choice ahead of `advance`, so the signed snapshot and the
+/// genesis-digested projection cannot disagree. See `termo::advance_abertura`.
+pub(crate) fn generate_termo_snapshot(
+    termo: &TermoInstrument,
+    book: &Book,
+    entity: &Entity,
+    numbering_scheme: NumberingScheme,
+) -> Result<Option<Generated>, ApiError> {
+    let projected = termo
+        .project_abertura(
+            entity.name.clone(),
+            entity.nipc.to_string(),
+            entity.seat.clone(),
+            numbering_scheme,
+        )
+        .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
+    generate_for_termo(&projected, book, entity.family)
+}
+
 /// The title a fresh termo de abertura draft carries, matching the one-shot render's heading so the
 /// two paths produce the same document heading.
 pub(crate) const TERMO_ABERTURA_TITLE: &str = "Termo de abertura do livro de atas";

@@ -227,6 +227,12 @@ const ROLE_MIGRATION_SCHEMA_VERSION: u32 = 1;
 /// Marker id for the **t27 verb-split grandfather** reconciliation ([`reconcile_split_verb_grandfather`]).
 pub(crate) const T27_SPLIT_VERB_GRANDFATHER_MIGRATION: &str = "t27_split_verb_grandfather";
 
+/// Marker id for the **t30 `act.revert` grandfather** reconciliation
+/// ([`reconcile_act_revert_grandfather`]). Kept DISTINCT from the t27 marker so a catalog store that
+/// already ran t27 still applies this later grant on the next boot — a single shared marker would
+/// leave already-migrated stores without `act.revert`.
+pub(crate) const T30_ACT_REVERT_GRANDFATHER_MIGRATION: &str = "t30_act_revert_grandfather";
+
 /// The set of one-time role-catalog data migrations already applied to a given catalog store.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RoleMigrationState {
@@ -350,6 +356,35 @@ pub(crate) fn reconcile_split_verb_grandfather(
     }
     let catalog_changed = chancela_authz::grandfather_split_verbs_catalog(catalog);
     state.mark(T27_SPLIT_VERB_GRANDFATHER_MIGRATION);
+    RoleMigrationOutcome {
+        catalog_changed,
+        marker_changed: true,
+    }
+}
+
+/// **t30 `act.revert` grandfather, on-disk half — version-guarded so it runs at most once.**
+///
+/// t30 adds the new `act.revert` lifecycle verb. The policy (t30 D2): whoever can advance the
+/// lifecycle can also revert it, so `act.revert` is granted to every prior holder of `act.advance`
+/// — [`chancela_authz::grandfather_act_revert_catalog`] is that grant (protected Owner skipped: it
+/// already holds every verb via `Permission::ALL`, and its set is locked).
+///
+/// The guard: if `state` already records [`T30_ACT_REVERT_GRANDFATHER_MIGRATION`], this is a no-op.
+/// Otherwise it reconciles the catalog and records the marker. Its **own** marker — kept distinct
+/// from t27's — is what lets a store already migrated past t27 still pick this grant up exactly once,
+/// while never re-adding the verb an operator later deliberately removed from an `act.advance` role.
+///
+/// **Zero UserView/ledger impact:** only the role catalog's permission-sets are touched.
+#[must_use]
+pub(crate) fn reconcile_act_revert_grandfather(
+    catalog: &mut RoleCatalog,
+    state: &mut RoleMigrationState,
+) -> RoleMigrationOutcome {
+    if state.has_run(T30_ACT_REVERT_GRANDFATHER_MIGRATION) {
+        return RoleMigrationOutcome::default();
+    }
+    let catalog_changed = chancela_authz::grandfather_act_revert_catalog(catalog);
+    state.mark(T30_ACT_REVERT_GRANDFATHER_MIGRATION);
     RoleMigrationOutcome {
         catalog_changed,
         marker_changed: true,

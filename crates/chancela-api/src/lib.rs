@@ -17,7 +17,9 @@
 //! - `POST|GET /v1/books`, `GET /v1/books/{id}`, `POST /v1/books/{id}/close`,
 //!   `GET /v1/books/{id}/acts` — book open/list/close and the acts-in-a-book feed (§2.4).
 //! - `POST /v1/acts`, `GET|PATCH /v1/acts/{id}`, `POST /v1/acts/{id}/advance`,
-//!   `POST /v1/acts/{id}/reopen` — the one reverse lifecycle edge (`Signing → TextApproved`),
+//!   `POST /v1/acts/{id}/reopen` — the guarded `Signing → TextApproved` reopen,
+//!   `POST /v1/acts/{id}/revert` — free backward transitions among the pre-signature states
+//!   (`Draft…TextApproved`), ledgered as `act.reverted`,
 //!   `POST /v1/acts/{id}/human-verification`, `GET /v1/acts/{id}/compliance`,
 //!   `POST /v1/acts/{id}/seal`,
 //!   `POST /v1/acts/{id}/archive` — the ata lifecycle, compliance gate, and seal (§2.5).
@@ -896,12 +898,18 @@ impl AppState {
         let mut role_migrations = roles::load_role_migration_state(&role_migrations_path);
         let migration =
             roles::reconcile_split_verb_grandfather(&mut roles_catalog, &mut role_migrations);
-        if (seeded || retired_any || migration.catalog_changed)
+        // t30: grandfather `act.revert` onto operator-authored roles holding `act.advance`. Its own
+        // marker (distinct from t27's) means a store already migrated past t27 still applies it.
+        let revert_migration =
+            roles::reconcile_act_revert_grandfather(&mut roles_catalog, &mut role_migrations);
+        let catalog_changed = migration.catalog_changed || revert_migration.catalog_changed;
+        let marker_changed = migration.marker_changed || revert_migration.marker_changed;
+        if (seeded || retired_any || catalog_changed)
             && let Err(e) = roles::write_roles_atomic(&roles_path, &roles_catalog)
         {
             eprintln!("warning: failed to seed {} ({e})", roles_path.display());
         }
-        if migration.marker_changed
+        if marker_changed
             && let Err(e) =
                 roles::write_role_migration_state_atomic(&role_migrations_path, &role_migrations)
         {
@@ -1985,6 +1993,10 @@ pub fn router(state: AppState) -> Router {
             post(termo::sign_abertura),
         )
         .route(
+            "/v1/books/{id}/termo/abertura/sign/pkcs12",
+            post(termo::sign_abertura_pkcs12),
+        )
+        .route(
             "/v1/books/{id}/termo/abertura/open",
             post(termo::open_from_termo),
         )
@@ -2068,6 +2080,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/acts/{id}", get(acts::get_act).patch(acts::patch_act))
         .route("/v1/acts/{id}/advance", post(acts::advance_act))
         .route("/v1/acts/{id}/reopen", post(acts::reopen_act))
+        .route("/v1/acts/{id}/revert", post(acts::revert_act))
         .route(
             "/v1/acts/{id}/human-verification",
             post(acts::verify_ai_human_review),

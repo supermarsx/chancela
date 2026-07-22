@@ -7218,7 +7218,7 @@ async fn run_cmd_initiate(
 
 /// Phase-2 driver: run `cmd_confirm` over the injected transport inline (tests), or a real
 /// `HttpScmdTransport` off the async runtime (production).
-async fn run_cmd_confirm(
+pub(crate) async fn run_cmd_confirm(
     state: &AppState,
     cmd_cfg: &CmdConfig,
     session: &CmdSignSession,
@@ -7294,7 +7294,7 @@ async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
 /// priority order, or — when nothing is stored — the single env/settings-derived config as the
 /// [`ResolvedSource::Env`] candidate. Mirrors [`resolve_cmd_config`]'s precedence via the shared
 /// [`resolve_candidates`] engine; an all-disabled or unconfigured provider yields an empty list.
-async fn resolve_cmd_candidates(
+pub(crate) async fn resolve_cmd_candidates(
     state: &AppState,
 ) -> Result<Vec<ResolvedCredential<CmdConfig>>, ApiError> {
     let cmd = { state.settings.read().await.signing.cmd.clone() };
@@ -7531,14 +7531,14 @@ fn provider_label(provider_id: &str) -> &str {
 
 // --- helpers ----------------------------------------------------------------------------------
 
-struct FinalSignedPdf {
-    bytes: Vec<u8>,
-    timestamp_token_der: Option<Vec<u8>>,
-    timestamp_trust_report_json: Option<String>,
-    report: chancela_pades::PdfSignatureReport,
+pub(crate) struct FinalSignedPdf {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) timestamp_token_der: Option<Vec<u8>>,
+    pub(crate) timestamp_trust_report_json: Option<String>,
+    pub(crate) report: chancela_pades::PdfSignatureReport,
 }
 
-async fn finalize_signed_pdf(
+pub(crate) async fn finalize_signed_pdf(
     state: &AppState,
     signed_pdf: Vec<u8>,
     expected_signer_cert_der: &[u8],
@@ -7970,7 +7970,7 @@ pub(crate) async fn load_signing_document(
     Ok(document)
 }
 
-fn ensure_signed_pdf_binds_document(
+pub(crate) fn ensure_signed_pdf_binds_document(
     document: &StoredDocument,
     signed_pdf: &[u8],
 ) -> Result<(), ApiError> {

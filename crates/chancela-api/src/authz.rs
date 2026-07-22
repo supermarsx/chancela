@@ -617,7 +617,11 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/books/{id}/acts", RouteClass::Gated), // GET book.read@Book
     ("/v1/books/{id}/termo/abertura", RouteClass::Gated), // GET book.read@Book · PATCH book.open@Book
     ("/v1/books/{id}/termo/abertura/advance", RouteClass::Gated), // POST book.open@Book (freeze)
-    ("/v1/books/{id}/termo/abertura/sign", RouteClass::Gated), // POST book.open@Book (collect signature)
+    ("/v1/books/{id}/termo/abertura/sign", RouteClass::Gated), // POST book.open@Book (collect signature reference)
+    (
+        "/v1/books/{id}/termo/abertura/sign/pkcs12",
+        RouteClass::Gated,
+    ), // POST book.open@Book (real PKCS#12 PAdES)
     ("/v1/books/{id}/termo/abertura/open", RouteClass::Gated), // POST book.open@Book (seal + open)
     ("/v1/books/paper-import/validate", RouteClass::Gated), // POST book.import@Global (read-only)
     ("/v1/books/paper-import", RouteClass::Gated), // GET/POST book.import@Global (list/preserve package)
@@ -663,6 +667,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}", RouteClass::Gated), // GET act.read@Book · PATCH act.edit@Book
     ("/v1/acts/{id}/advance", RouteClass::Gated), // POST act.advance@Book
     ("/v1/acts/{id}/reopen", RouteClass::Gated), // POST signing.perform@Book + act.edit@Book
+    ("/v1/acts/{id}/revert", RouteClass::Gated), // POST act.revert@Book
     ("/v1/acts/{id}/human-verification", RouteClass::Gated), // POST act.advance@Book
     ("/v1/acts/{id}/body/preview", RouteClass::Gated), // POST act.read@Book (compiles, never writes)
     ("/v1/acts/{id}/compliance", RouteClass::Gated),   // GET act.read@Book

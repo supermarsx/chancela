@@ -78,6 +78,14 @@ pub enum Permission {
     ActEdit,
     #[serde(rename = "act.advance")]
     ActAdvance,
+    /// Move an act **backward** among the pre-signature lifecycle states (t30, `POST
+    /// /v1/acts/{id}/revert`). A lifecycle *regression* is a distinct authority from advancing it
+    /// forward, so it is its own verb rather than an overload of `act.advance`. Granted by the t30
+    /// grandfather migration to every prior holder of `act.advance`, so introducing the verb strips
+    /// no reach. The guarded `Signing → TextApproved` reopen is unaffected and keeps its own
+    /// `signing.perform` + `act.edit` pair.
+    #[serde(rename = "act.revert")]
+    ActRevert,
     #[serde(rename = "act.archive")]
     ActArchive,
 
@@ -197,7 +205,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 49] = [
+    pub const ALL: [Permission; 50] = [
         Permission::TenantRead,
         Permission::TenantCreate,
         Permission::TenantAdmin,
@@ -218,6 +226,7 @@ impl Permission {
         Permission::ActDraft,
         Permission::ActEdit,
         Permission::ActAdvance,
+        Permission::ActRevert,
         Permission::ActArchive,
         Permission::SigningPerform,
         Permission::DocumentGenerate,
@@ -316,6 +325,7 @@ impl Permission {
             Permission::ActDraft => "act.draft",
             Permission::ActEdit => "act.edit",
             Permission::ActAdvance => "act.advance",
+            Permission::ActRevert => "act.revert",
             Permission::ActArchive => "act.archive",
             Permission::SigningPerform => "signing.perform",
             Permission::DocumentGenerate => "document.generate",
@@ -409,6 +419,7 @@ mod tests {
                 | Permission::ActDraft
                 | Permission::ActEdit
                 | Permission::ActAdvance
+                | Permission::ActRevert
                 | Permission::ActArchive
                 | Permission::SigningPerform
                 | Permission::DocumentGenerate
@@ -463,6 +474,7 @@ mod tests {
             Permission::ActDraft,
             Permission::ActEdit,
             Permission::ActAdvance,
+            Permission::ActRevert,
             Permission::ActArchive,
             Permission::SigningPerform,
             Permission::DocumentGenerate,
@@ -632,5 +644,25 @@ mod tests {
                 "{p} does not round-trip"
             );
         }
+    }
+
+    /// t30: `act.revert` is a new lifecycle verb (moving an act backward among pre-signature
+    /// states). Its dotted id is the wire/on-disk form the route classification, the web gate and
+    /// the on-disk grandfather migration all key off — freeze it so a rename is deliberate. It is an
+    /// ordinary (delegable) authority, not RBAC meta, and is NOT on the self-signup ceiling: it is a
+    /// lifecycle operation, exactly like the `act.advance` it is grandfathered from, which is also
+    /// not forbidden to a signup default role.
+    #[test]
+    fn act_revert_has_a_stable_dotted_id_and_is_an_ordinary_verb() {
+        assert_eq!(Permission::ActRevert.as_str(), "act.revert");
+        assert!(Permission::ALL.contains(&Permission::ActRevert));
+        assert!(!Permission::ActRevert.is_meta());
+        assert!(!Permission::SELF_SIGNUP_FORBIDDEN.contains(&Permission::ActRevert));
+        let json = serde_json::to_string(&Permission::ActRevert).unwrap();
+        assert_eq!(json, "\"act.revert\"");
+        assert_eq!(
+            serde_json::from_str::<Permission>(&json).unwrap(),
+            Permission::ActRevert
+        );
     }
 }

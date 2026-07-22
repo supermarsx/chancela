@@ -367,7 +367,13 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
         .unwrap_or_default();
     let migration =
         crate::roles::reconcile_split_verb_grandfather(&mut roles, &mut store_migrations);
-    if migration.marker_changed
+    // t30: grandfather `act.revert` onto the DB catalog too, under its own marker (distinct from
+    // t27's) so a Postgres deployment already migrated past t27 still picks up the new verb.
+    let revert_migration =
+        crate::roles::reconcile_act_revert_grandfather(&mut roles, &mut store_migrations);
+    let catalog_changed = migration.catalog_changed || revert_migration.catalog_changed;
+    let marker_changed = migration.marker_changed || revert_migration.marker_changed;
+    if marker_changed
         && let Some(path) = store_marker_path.as_deref()
         && let Err(e) = crate::roles::write_role_migration_state_atomic(path, &store_migrations)
     {
@@ -376,7 +382,7 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
             path.display()
         );
     }
-    if seeded || retired_any || migration.catalog_changed {
+    if seeded || retired_any || catalog_changed {
         let rows = roles
             .iter()
             .filter_map(|role| {

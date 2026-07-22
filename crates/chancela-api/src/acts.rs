@@ -2,7 +2,8 @@
 //! advance, compliance check, seal, and archive.
 //!
 //! Every mutating handler appends the matching ledger event — `act.drafted`, `act.advanced`,
-//! `act.sealed` (via `seal_act`), `act.archived` — **except** PATCH, which edits working
+//! `act.reverted` (backward lifecycle hop), `act.sealed` (via `seal_act`), `act.archived` —
+//! **except** PATCH, which edits working
 //! state only: an act's payload is not frozen until sealing, so a draft edit is not itself an
 //! auditable event (only the sealed content is). Multi-lock handlers follow the fixed global
 //! order **entities → books → acts → ledger**.
@@ -30,7 +31,7 @@ use crate::authz::{require_permission, scope_of_act, scope_of_book};
 use crate::dto::{
     ActBodyPreviewResponse, ActView, AdvanceAct, ArchiveAct, ComplianceResponse, ConveningAdvisory,
     DispatchConvening, DraftAct, HumanVerificationDecision, IssueView, PatchAct, PreviewActBody,
-    ReopenAct, ReopenActResponse, SealAct, SealResponse, SupersededSigningSnapshotView,
+    ReopenAct, ReopenActResponse, RevertAct, SealAct, SealResponse, SupersededSigningSnapshotView,
     VerifyAiHumanReview, WrittenResolutionEvidenceStatusView, read_redaction_for_actor,
 };
 use crate::error::ApiError;
@@ -646,6 +647,103 @@ pub async fn reopen_act(
             .map(SupersededSigningSnapshotView::from_core),
         released_page_count,
     }))
+}
+
+/// `POST /v1/acts/{id}/revert` — move an act **backward** among the pre-signature lifecycle states.
+///
+/// The general "always allow going back" edge (t30): a free backward transition among the drafting
+/// states `Draft…TextApproved`. Every one of those states is pre-signature — `is_mutable()` is true,
+/// nothing is frozen, no snapshot minted — so moving the workflow marker back is fully safe and
+/// mutates only that marker (never content, page count, signatories or snapshots).
+///
+/// It is deliberately **not** an overload of `advance`, and it emits a **distinct `act.reverted`**
+/// ledger event, never `act.advanced`: a backward hop must read as a reversion in the audit trail.
+/// Refused, in order, when: the caller lacks `act.revert`; the reason is empty (the regression must
+/// be reconstructable from the ledger); the book is not open; the book is under legal hold; or the
+/// core `revert_to` rejects the target. `revert_to` refuses a revert from `Signing` (that is the
+/// guarded `reopen` path, which supersedes the snapshot and releases the page reservation — 409) and
+/// any move out of `Sealed`/`Archived` (a sealed record is corrected only by a new retificação act,
+/// never un-sealed — 422).
+pub async fn revert_act(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<RevertAct>,
+) -> Result<Json<ActView>, ApiError> {
+    let act_id = ActId(id);
+    // RBAC: a lifecycle regression is its own authority — `act.revert`, scoped to the book —
+    // distinct from the `act.advance` that moves it forward (t30 D2).
+    let scope = scope_of_act(&state, act_id).await;
+    require_permission(&state, &actor, Permission::ActRevert, scope).await?;
+
+    let reason = req.reason.trim().to_owned();
+    if reason.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "revert requires a non-empty reason; the regression must be reconstructable from the ledger"
+                .to_owned(),
+        ));
+    }
+    let actor = actor.resolve(&req.actor);
+    let target_state = req.to;
+
+    // books → acts → ledger.
+    let books = state.books.read().await;
+    let mut acts = state.acts.write().await;
+    let mut ledger = state.ledger.write().await;
+
+    let act = acts.get_mut(&act_id).ok_or(ApiError::NotFound)?;
+    let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+    ensure_book_open_for_act_mutation(book)?;
+    // Legal hold: a held book's acts must not move, exactly as for reopen — a hold is the
+    // circumstance in which the state an act is preserved in matters most.
+    if let Some(hold) = &book.legal_hold {
+        return Err(ApiError::Conflict(format!(
+            "book {} is under legal hold ({:?}); reverting an act is refused while the hold stands",
+            book.id, hold.reason
+        )));
+    }
+    let entity_id = book.entity_id;
+    let from_state = act.state;
+
+    // Revert a clone, so the read model moves only after the durable write commits (mirrors
+    // `advance_act`). No content, page-count or snapshot change — every reversible state is
+    // pre-signature. `RevertFromSigning` → 409 (points at reopen); any other refusal → 422.
+    let mut next = act.clone();
+    next.revert_to(target_state).map_err(|e| match e {
+        ActError::RevertFromSigning => ApiError::Conflict(e.to_string()),
+        other => ApiError::Unprocessable(other.to_string()),
+    })?;
+
+    let reverted_at = time::OffsetDateTime::now_utc();
+    let scope = format!("entity:{}/book:{}/act:{}", entity_id, next.book_id, next.id);
+    let justification = format!("revert to {target_state:?}: {reason}");
+    // Payload mirrors `act.reopened` (from/to/actor/reason) so the two backward events read alike.
+    let payload = serde_json::to_vec(&json!({
+        "act_id": next.id.to_string(),
+        "book_id": next.book_id.to_string(),
+        "from": from_state,
+        "to": next.state,
+        "actor": actor,
+        "reverted_at": reverted_at.format(&Rfc3339).unwrap_or_default(),
+        "reason": reason,
+    }))?;
+    crate::try_append_event(
+        &mut ledger,
+        &actor,
+        &scope,
+        "act.reverted",
+        Some(&justification),
+        &payload,
+    )?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_act(&next_for_store))
+        .await?;
+    state.attest_latest(&attestor, &ledger).await;
+    *act = next;
+
+    Ok(Json(ActView::from(&*act)))
 }
 
 /// `POST /v1/acts/{id}/human-verification` — accept/reject human review of AI-assisted draft text.

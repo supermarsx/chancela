@@ -5761,6 +5761,31 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Record one **per-slot** termo signature: write the current-signed-artifact row (the latest
+    /// signed bytes the next signatory extends and the open path preserves) **and** append the
+    /// signature to the subject's ordered history *tagged with its `slot_id`*.
+    ///
+    /// This is the slot-aware sibling of [`Self::upsert_signed_document`]. The termo is the first
+    /// genuinely multi-signatory instrument (the ~20 act handlers each carry exactly one signature
+    /// and pass `slot_id = None`); sequential-PAdES signer *n+1* extends signer *n*'s bytes, so the
+    /// history row must remember **which** required slot it satisfies. The evidentiary gate
+    /// (`termo::require_real_signatures`) then matches required slot ids against `slot_id` precisely.
+    ///
+    /// The `slot_id` column already exists (schema v23) — this is additive, no schema-version bump.
+    /// Same idempotency as [`Self::upsert_signed_document`]: a re-write of the same signature bytes
+    /// (identical `signed_pdf_digest`) keeps its original `seq` rather than inflating the chain.
+    ///
+    /// **Never persists a PIN or an OTP** — only the public signed PDF + signature metadata.
+    pub fn upsert_signed_termo_slot_signature(
+        &self,
+        doc: &StoredSignedDocument,
+        slot_id: &str,
+    ) -> Result<(), StoreError> {
+        self.upsert_signed_document_row(doc)?;
+        self.append_instrument_signature(doc, Some(slot_id))?;
+        Ok(())
+    }
+
     /// Append `doc` to its subject's signature history, returning the `seq` it occupies.
     ///
     /// Idempotent on `(subject_id, signed_pdf_digest)`: if this exact signature is already recorded

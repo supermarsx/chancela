@@ -251,6 +251,8 @@ impl Role {
                 Permission::ActDraft,
                 Permission::ActEdit,
                 Permission::ActAdvance,
+                // t30: grandfathered from `act.advance`, which this role holds.
+                Permission::ActRevert,
                 Permission::ActArchive,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
@@ -313,6 +315,8 @@ impl Role {
                 Permission::ActDraft,
                 Permission::ActEdit,
                 Permission::ActAdvance,
+                // t30: grandfathered from `act.advance`, which this role holds.
+                Permission::ActRevert,
                 Permission::ActArchive,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
@@ -390,6 +394,8 @@ impl Role {
                 Permission::ActDraft,
                 Permission::ActEdit,
                 Permission::ActAdvance,
+                // t30: grandfathered from `act.advance`, which this role holds.
+                Permission::ActRevert,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -434,6 +440,7 @@ impl Role {
                 Permission::ActDraft,
                 Permission::ActEdit,
                 Permission::ActAdvance,
+                Permission::ActRevert,
                 Permission::ActArchive,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
@@ -469,6 +476,7 @@ impl Role {
                 Permission::ActDraft,
                 Permission::ActEdit,
                 Permission::ActAdvance,
+                Permission::ActRevert,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -557,6 +565,7 @@ impl Role {
                 Permission::ActRead,
                 Permission::LedgerRead,
                 Permission::ActAdvance,
+                Permission::ActRevert,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
             ]
@@ -578,6 +587,7 @@ impl Role {
                 Permission::ActRead,
                 Permission::LedgerRead,
                 Permission::ActAdvance,
+                Permission::ActRevert,
                 Permission::DocumentGenerate,
             ]
             .into_iter()
@@ -716,23 +726,37 @@ pub const T27_VERB_SPLIT_GRANDFATHER: &[(Permission, &[Permission])] = &[
     (Permission::LedgerRestore, &[Permission::LedgerRecover]),
 ];
 
-/// Grandfather the t27 split onto one role's permission-set: grant each child verb whose parent the
-/// role already holds (see [`T27_VERB_SPLIT_GRANDFATHER`]). Returns `true` if the set changed.
+/// The t30 **`act.revert` grandfather map**, structured exactly like [`T27_VERB_SPLIT_GRANDFATHER`]:
+/// holding **any** verb in `parents` grants `child`.
+///
+/// t30 introduces `act.revert` — moving an act **backward** among the pre-signature lifecycle
+/// states. Unlike the t27 verbs, this is not a *split* of an existing verb but a genuinely new
+/// authority; the policy (t30 D2) is that whoever can advance the lifecycle can also revert it, so
+/// `act.revert` is granted to every prior holder of `act.advance`. Introducing the verb therefore
+/// strips no reach. Applied from the same single source of truth as t27:
+///
+/// 1. **Seeded roles (code):** every constructor holding `act.advance` bakes in `act.revert`
+///    (Owner via [`Permission::ALL`]), so migrating a fresh install is a no-op.
+/// 2. **Operator-authored roles (on disk):** reconciled with [`grandfather_act_revert_catalog`]
+///    under its **own** one-time migration marker (kept distinct from t27's, so a store already
+///    migrated past t27 still picks the new verb up — see `chancela-api`).
+pub const T30_ACT_REVERT_GRANDFATHER: &[(Permission, &[Permission])] =
+    &[(Permission::ActRevert, &[Permission::ActAdvance])];
+
+/// Grant each child verb in `table` whose parent the role already holds. Returns `true` if the set
+/// changed. Shared engine behind [`grandfather_split_verbs`] (t27) and [`grandfather_act_revert`]
+/// (t30).
 ///
 /// **Idempotent** — a role that already holds a child is left as-is, so a second pass, or a pass
-/// over an already-migrated catalog, is a no-op. (Whether the migration runs at all on a given
-/// catalog is the caller's concern: it should be version-guarded so it never re-adds a verb an
-/// operator later deliberately removed — see the on-disk reconciliation in `chancela-api`.)
-///
-/// **Protected roles are skipped** — Owner's set is locked and already holds every verb via
-/// [`Permission::ALL`], so there is nothing to grant and its lock must not be touched.
-#[must_use]
-pub fn grandfather_split_verbs(role: &mut Role) -> bool {
+/// over an already-migrated catalog, is a no-op. **Protected roles are skipped** — Owner's set is
+/// locked and already holds every verb via [`Permission::ALL`], so there is nothing to grant and its
+/// lock must not be touched.
+fn apply_grandfather_table(role: &mut Role, table: &[(Permission, &[Permission])]) -> bool {
     if role.protected {
         return false;
     }
     let mut changed = false;
-    for (child, parents) in T27_VERB_SPLIT_GRANDFATHER {
+    for (child, parents) in table {
         if role.permission_set.contains(child) {
             continue;
         }
@@ -744,10 +768,12 @@ pub fn grandfather_split_verbs(role: &mut Role) -> bool {
     changed
 }
 
-/// Apply [`grandfather_split_verbs`] across a whole catalog (e.g. a `roles.json` loaded off disk).
-/// Returns `true` if any role changed. Idempotent; protected roles are untouched.
-#[must_use]
-pub fn grandfather_split_verbs_catalog(catalog: &mut RoleCatalog) -> bool {
+/// Apply `table` across a whole catalog (e.g. a `roles.json` loaded off disk). Returns `true` if any
+/// role changed. Idempotent; protected roles are untouched.
+fn apply_grandfather_table_catalog(
+    catalog: &mut RoleCatalog,
+    table: &[(Permission, &[Permission])],
+) -> bool {
     // Collect ids first: `RoleCatalog` exposes no mutable iterator, so mutate via clone→`insert`.
     let ids: Vec<RoleId> = catalog.iter().map(|role| role.id).collect();
     let mut changed = false;
@@ -756,12 +782,47 @@ pub fn grandfather_split_verbs_catalog(catalog: &mut RoleCatalog) -> bool {
             continue;
         };
         let mut role = current.clone();
-        if grandfather_split_verbs(&mut role) {
+        if apply_grandfather_table(&mut role, table) {
             catalog.insert(role);
             changed = true;
         }
     }
     changed
+}
+
+/// Grandfather the t27 split onto one role's permission-set: grant each child verb whose parent the
+/// role already holds (see [`T27_VERB_SPLIT_GRANDFATHER`]). Returns `true` if the set changed.
+///
+/// Idempotent and protected-role-skipping (see [`apply_grandfather_table`]). Whether the migration
+/// runs at all on a given catalog is the caller's concern: it should be version-guarded so it never
+/// re-adds a verb an operator later deliberately removed — see the on-disk reconciliation in
+/// `chancela-api`.
+#[must_use]
+pub fn grandfather_split_verbs(role: &mut Role) -> bool {
+    apply_grandfather_table(role, T27_VERB_SPLIT_GRANDFATHER)
+}
+
+/// Apply [`grandfather_split_verbs`] across a whole catalog (e.g. a `roles.json` loaded off disk).
+/// Returns `true` if any role changed. Idempotent; protected roles are untouched.
+#[must_use]
+pub fn grandfather_split_verbs_catalog(catalog: &mut RoleCatalog) -> bool {
+    apply_grandfather_table_catalog(catalog, T27_VERB_SPLIT_GRANDFATHER)
+}
+
+/// Grandfather the t30 `act.revert` grant onto one role's permission-set: grant `act.revert` when
+/// the role already holds `act.advance` (see [`T30_ACT_REVERT_GRANDFATHER`]). Returns `true` if the
+/// set changed. Idempotent; protected roles are skipped.
+#[must_use]
+pub fn grandfather_act_revert(role: &mut Role) -> bool {
+    apply_grandfather_table(role, T30_ACT_REVERT_GRANDFATHER)
+}
+
+/// Apply [`grandfather_act_revert`] across a whole catalog. Returns `true` if any role changed.
+/// Idempotent; protected roles are untouched. Runs under its own one-time migration marker in
+/// `chancela-api`, independent of the t27 marker.
+#[must_use]
+pub fn grandfather_act_revert_catalog(catalog: &mut RoleCatalog) -> bool {
+    apply_grandfather_table_catalog(catalog, T30_ACT_REVERT_GRANDFATHER)
 }
 
 #[cfg(test)]
@@ -1184,6 +1245,7 @@ mod tests {
                 Permission::ActDraft,
                 Permission::ActEdit,
                 Permission::ActAdvance,
+                Permission::ActRevert,
                 Permission::ActArchive,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
@@ -1208,6 +1270,7 @@ mod tests {
                 Permission::ActDraft,
                 Permission::ActEdit,
                 Permission::ActAdvance,
+                Permission::ActRevert,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -1260,6 +1323,7 @@ mod tests {
                 Permission::ActRead,
                 Permission::LedgerRead,
                 Permission::ActAdvance,
+                Permission::ActRevert,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
             ])
@@ -1272,6 +1336,7 @@ mod tests {
                 Permission::ActRead,
                 Permission::LedgerRead,
                 Permission::ActAdvance,
+                Permission::ActRevert,
                 Permission::DocumentGenerate,
             ])
         );
@@ -1482,6 +1547,7 @@ mod tests {
             Permission::ActDraft,
             Permission::ActEdit,
             Permission::ActAdvance,
+            Permission::ActRevert,
             Permission::ActArchive,
             Permission::SigningPerform,
             Permission::DocumentGenerate,
@@ -1501,6 +1567,7 @@ mod tests {
             Permission::ActRead,
             Permission::LedgerRead,
             Permission::ActAdvance,
+            Permission::ActRevert,
             Permission::SigningPerform,
             Permission::DocumentGenerate,
         ]);
@@ -1719,6 +1786,72 @@ mod tests {
             Role::platform_administrator().permission_set,
             "migration must restore the Platform Administrator's exact pre-split reach — no more, \
              no less"
+        );
+    }
+
+    /// t30: the `act.revert` grandfather grants the new verb to every prior `act.advance` holder and
+    /// nothing else, is idempotent, and skips protected roles. The "no reach lost" proof for
+    /// operator-authored roles that could advance the lifecycle but predate the revert verb.
+    #[test]
+    fn t30_act_revert_grandfather_grants_to_advance_holders_and_nothing_else() {
+        let base = |perms: &[Permission]| Role {
+            id: RoleId(Uuid::from_u128(0x7465737430000000_0000000000000abc)),
+            name: "Custom".to_owned(),
+            permission_set: perms.iter().copied().collect(),
+            protected: false,
+        };
+
+        // act.advance → act.revert.
+        let mut adv = base(&[Permission::ActAdvance]);
+        assert!(grandfather_act_revert(&mut adv));
+        assert!(adv.permission_set.contains(&Permission::ActRevert));
+
+        // No act.advance → no act.revert, and the call reports no change.
+        let mut none = base(&[Permission::ActRead, Permission::ActEdit]);
+        assert!(!grandfather_act_revert(&mut none));
+        assert!(!none.permission_set.contains(&Permission::ActRevert));
+
+        // Idempotent.
+        assert!(!grandfather_act_revert(&mut adv));
+
+        // Protected roles are skipped even when they hold the parent.
+        let mut protected = Role {
+            protected: true,
+            ..base(&[Permission::ActAdvance])
+        };
+        assert!(!grandfather_act_revert(&mut protected));
+        assert!(!protected.permission_set.contains(&Permission::ActRevert));
+
+        // The two grandfather generations are independent: the t27 pass never grants act.revert.
+        let mut adv_only = base(&[Permission::ActAdvance]);
+        assert!(!grandfather_split_verbs(&mut adv_only));
+        assert!(!adv_only.permission_set.contains(&Permission::ActRevert));
+    }
+
+    /// The seeded catalog already bakes `act.revert` into every `act.advance` holder, so migrating a
+    /// fresh install is a no-op; and a role persisted before t30 (today's set minus `act.revert`) is
+    /// restored to its exact current reach — the anti-lockout guarantee for the revert verb.
+    #[test]
+    fn t30_act_revert_grandfather_is_noop_on_seed_and_restores_a_pre_t30_role() {
+        let mut seeded = RoleCatalog::seeded_defaults();
+        assert!(
+            !grandfather_act_revert_catalog(&mut seeded),
+            "seeded roles already carry act.revert; migrating a fresh install must not change \
+             anything"
+        );
+
+        // A Company Owner as persisted before t30: today's set minus act.revert. It still holds
+        // act.advance, so the grandfather must grant act.revert back.
+        let mut legacy = Role::company_owner();
+        legacy.permission_set.remove(&Permission::ActRevert);
+        assert!(
+            grandfather_act_revert(&mut legacy),
+            "a pre-t30 act.advance holder must be migrated"
+        );
+        assert_eq!(
+            legacy.permission_set,
+            Role::company_owner().permission_set,
+            "migration must restore the role's exact pre-t30 reach — no more, no less"
         );
     }
 }
