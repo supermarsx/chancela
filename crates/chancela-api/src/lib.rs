@@ -205,6 +205,10 @@ mod tenants;
 // the sign-in path (P2) consumes. `pub` so the adversarial suite can drive the verifier directly.
 pub mod totp;
 mod trust;
+// t37: per-user, non-ledger UI preferences (configurable table columns). Deliberately NOT part of
+// the ledger-backed `users` / `UserView` — see the module note for why churny UI toggles must not
+// ride the user-event digest.
+mod user_preferences;
 mod users;
 mod xades_signature;
 mod zk_repository;
@@ -284,12 +288,12 @@ pub use settings::{
     AiSettings, AppearanceSettings, AuthSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
     DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS, DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES,
     DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES, DocumentSettings, Locale, OnboardingSettings,
-    OrganizationSettings, PlatformAuditEvent, PlatformControlOutcomeKind, PlatformLogLevel,
-    PlatformLoggingSettings, PlatformServiceAction, PlatformServiceControlSettings,
-    PlatformServiceDesiredState, PlatformServiceLastAction, PlatformSettings,
-    RegistryAutoUpdateCadence, RegistryAutoUpdateEntityDefaults, RegistryAutoUpdateSettings,
-    RegistryAutoUpdateWeekday, PasswordRecoverySettings, Settings, SignatureFamily, SignupMode,
-    SignupSettings, SigningCmdSettings, SigningSettings, ThemeMode, TwoFactorSettings,
+    OrganizationSettings, PasswordRecoverySettings, PlatformAuditEvent, PlatformControlOutcomeKind,
+    PlatformLogLevel, PlatformLoggingSettings, PlatformServiceAction,
+    PlatformServiceControlSettings, PlatformServiceDesiredState, PlatformServiceLastAction,
+    PlatformSettings, RegistryAutoUpdateCadence, RegistryAutoUpdateEntityDefaults,
+    RegistryAutoUpdateSettings, RegistryAutoUpdateWeekday, Settings, SignatureFamily,
+    SigningCmdSettings, SigningSettings, SignupMode, SignupSettings, ThemeMode, TwoFactorSettings,
 };
 #[cfg(debug_assertions)]
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
@@ -551,6 +555,13 @@ pub struct AppState {
     pub backup_recovery_drill_receipts_path: Option<Arc<PathBuf>>,
     /// Where `notification-triage.json` is persisted, or `None` for in-memory triage.
     pub notification_triage_path: Option<Arc<PathBuf>>,
+    /// Per-user, **non-ledger** UI preferences (t37): configurable table columns for entities/books/
+    /// templates. Keyed by user id, self-scoped through `GET|PUT /v1/me/preferences`. Deliberately
+    /// outside the ledger and outside `UserView` so a column toggle moves no digest and emits no
+    /// event. File-backed states load and write this through `user_preferences.json`.
+    pub user_preferences: Arc<RwLock<user_preferences::UserPreferencesStore>>,
+    /// Where `user_preferences.json` is persisted, or `None` for in-memory preferences.
+    pub user_preferences_path: Option<Arc<PathBuf>>,
     /// Where `users.json` is persisted, or `None` for in-memory profiles. Mirrors `persist_path`.
     pub users_path: Option<Arc<PathBuf>>,
     /// App-level seed material for hardened password/recovery verifiers. File-backed states load or
@@ -950,6 +961,9 @@ impl AppState {
         let notification_triage_path = dir.join(notifications::NOTIFICATION_TRIAGE_FILE);
         let loaded_notification_triage =
             notifications::load_notification_triage(&notification_triage_path).unwrap_or_default();
+        let user_preferences_path = dir.join(user_preferences::USER_PREFERENCES_FILE);
+        let loaded_user_preferences =
+            user_preferences::load_user_preferences(&user_preferences_path).unwrap_or_default();
         let api_keys_path = dir.join(apikeys::API_KEYS_FILE);
         let loaded_api_keys = apikeys::load_api_keys(&api_keys_path).unwrap_or_default();
         let external_signing_envelopes_path =
@@ -1013,6 +1027,8 @@ impl AppState {
             )),
             notification_triage: Arc::new(RwLock::new(loaded_notification_triage)),
             notification_triage_path: Some(Arc::new(notification_triage_path)),
+            user_preferences: Arc::new(RwLock::new(loaded_user_preferences)),
+            user_preferences_path: Some(Arc::new(user_preferences_path)),
             api_keys: Arc::new(RwLock::new(loaded_api_keys)),
             api_keys_path: Some(Arc::new(api_keys_path)),
             external_signing_envelopes: Arc::new(RwLock::new(loaded_external_signing_envelopes)),
@@ -1411,6 +1427,7 @@ impl AppState {
                     dir.join(crate::privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE),
                     dir.join(crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
                     dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
+                    dir.join(crate::user_preferences::USER_PREFERENCES_FILE),
                     dir.join(crate::apikeys::API_KEYS_FILE),
                     dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
                     dir.join(crate::connector_jobs::CONNECTOR_TARGETS_FILE),
@@ -1529,6 +1546,10 @@ impl AppState {
                 &dir.join(notifications::NOTIFICATION_TRIAGE_FILE),
             )
             .unwrap_or_default();
+            *self.user_preferences.write().await = user_preferences::load_user_preferences(
+                &dir.join(user_preferences::USER_PREFERENCES_FILE),
+            )
+            .unwrap_or_default();
             *self.api_keys.write().await =
                 apikeys::load_api_keys(&dir.join(apikeys::API_KEYS_FILE)).unwrap_or_default();
             *self.external_signing_envelopes.write().await = external_signing::load_envelopes(
@@ -1643,6 +1664,7 @@ impl AppState {
         self.retention_candidate_resolutions.write().await.clear();
         self.backup_recovery_drill_receipts.write().await.clear();
         self.notification_triage.write().await.clear();
+        *self.user_preferences.write().await = user_preferences::UserPreferencesStore::default();
         self.sessions.write().await.clear();
         self.session_issued_at.write().await.clear();
         if let Err(error) = self.durable_sessions.clear().await {
@@ -2441,6 +2463,13 @@ pub fn router(state: AppState) -> Router {
             "/v1/notifications/triage/{id}",
             patch(notifications::patch_notification_triage),
         )
+        // t37: self-scoped per-user UI preferences (configurable table columns). Session-only, no
+        // permission verb — the acting session reads/writes only its own row (see the module note).
+        .route(
+            "/v1/me/preferences",
+            get(user_preferences::get_me_preferences)
+                .put(user_preferences::put_me_preferences),
+        )
         .route("/v1/backup", post(backup::create_backup))
         .route(
             "/v1/settings",
@@ -2834,9 +2863,7 @@ fn wall_allows(action: session::RequiredAction, method: &axum::http::Method, pat
     match action {
         // Clearing a forced password change: set a new secret on one's own account.
         session::RequiredAction::ChangePassword => {
-            *method == Method::POST
-                && path.starts_with("/v1/users/")
-                && path.ends_with("/secret")
+            *method == Method::POST && path.starts_with("/v1/users/") && path.ends_with("/secret")
         }
         // Enrolling the missing second factor: the two-factor endpoints (self-enforced).
         session::RequiredAction::EnrolTwoFactor => {
@@ -7736,7 +7763,10 @@ mod tests {
             with_session(get(&format!("/v1/books/{book_id}/termo/abertura")), &token),
         )
         .await;
-        assert_eq!(termo["state"], "Signing", "termo stays Signing, not fake-Sealed");
+        assert_eq!(
+            termo["state"], "Signing",
+            "termo stays Signing, not fake-Sealed"
+        );
     }
 
     #[tokio::test]
