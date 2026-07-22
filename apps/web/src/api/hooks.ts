@@ -33,6 +33,7 @@ import type {
   CreateRetentionPolicyBody,
   CreateUserBody,
   DraftActBody,
+  PreviewActBody,
   EntityFamily,
   LifecycleStage,
   CmdInitiateBody,
@@ -94,6 +95,8 @@ import type {
   RegistryImportBody,
   SealActBody,
   Settings,
+  UserPreferences,
+  TableColumnPreferences,
   SessionResult,
   CompleteChallengeBody,
   SetSecretBody,
@@ -225,6 +228,7 @@ export const keys = {
   dataKeyRotationExecution: ['data', 'key-rotation', 'execution'] as const,
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
+  mePreferences: ['me', 'preferences'] as const,
   emailStatus: ['settings', 'email', 'status'] as const,
   platformServices: ['platform', 'services'] as const,
   serverEnv: ['platform', 'env'] as const,
@@ -938,6 +942,19 @@ export function useUpdateAct(id: string) {
       void qc.invalidateQueries({ queryKey: keys.compliance(id) });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
+  });
+}
+
+/**
+ * Compile an ata body source server-side (`POST /v1/acts/{id}/body/preview`, t74 §6). A mutation,
+ * not a query: the body editor drives it from the live (debounced) editor buffer, and the response
+ * is transient — the same compiler runs again at content freeze, so nothing here is cached or
+ * authoritative. A rejected source rejects the mutation with an `ApiError` carrying `{ code, offset
+ * }`, which the editor turns into an in-place diagnostic; it writes nothing back.
+ */
+export function useActBodyPreview(id: string) {
+  return useMutation({
+    mutationFn: (body: PreviewActBody) => api.previewActBody(id, body),
   });
 }
 
@@ -3292,6 +3309,84 @@ export function useUpdateSettings() {
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.settings });
+    },
+  });
+}
+
+// --- Per-user table-column preferences (t37) ------------------------------------
+
+/**
+ * The acting user's per-table column preferences (`GET /v1/me/preferences`, t37). Self-scoped,
+ * loaded once and shared by all three tables (entities, books, templates). Kept fresh for a
+ * minute like settings; a table with no override is simply absent from the response, and the
+ * shared `useTableColumns` hook resolves the fallback for it.
+ *
+ * `retry: false`: an API-key session is answered `403` here (the endpoint is interactive-only),
+ * which must surface as "no override" at once rather than after a retry storm. The consumers all
+ * degrade to the fallback columns when this query has no data, so a failure is invisible.
+ */
+export function useUserPreferences() {
+  return useQuery({
+    queryKey: keys.mePreferences,
+    queryFn: () => api.getMePreferences(),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+/** Merge one table's column selection into a preferences document (clearing it when `null`). */
+function mergeTableColumns(
+  current: UserPreferences | undefined,
+  table: keyof TableColumnPreferences,
+  columns: string[] | null,
+): UserPreferences {
+  const next: TableColumnPreferences = { ...(current?.table_columns ?? {}) };
+  if (columns === null) delete next[table];
+  else next[table] = columns;
+  return { table_columns: next };
+}
+
+/**
+ * Persist one table's column selection (`PUT /v1/me/preferences`, t37). The endpoint takes the
+ * WHOLE desired preferences document, so this merges the single-table change over the cached
+ * document (preserving the other tables' overrides) before sending. Optimistic: the cache moves
+ * immediately so the table re-renders without waiting for the round-trip, rolls back on error,
+ * and reconciles with the server's echoed document on settle.
+ *
+ * Passing `columns: null` clears that table's override (falls back to the default). The shared
+ * `useTableColumns` hook keeps a structural anchor in the array otherwise, so an ordinary toggle
+ * never sends an empty list (which the server would fold to "no override").
+ */
+export function useUpdateTableColumns() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      table,
+      columns,
+    }: {
+      table: keyof TableColumnPreferences;
+      columns: string[] | null;
+    }) => {
+      const current = qc.getQueryData<UserPreferences>(keys.mePreferences);
+      return api.putMePreferences(mergeTableColumns(current, table, columns));
+    },
+    onMutate: async ({ table, columns }) => {
+      await qc.cancelQueries({ queryKey: keys.mePreferences });
+      const previous = qc.getQueryData<UserPreferences>(keys.mePreferences);
+      qc.setQueryData<UserPreferences>(
+        keys.mePreferences,
+        mergeTableColumns(previous, table, columns),
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(keys.mePreferences, context.previous);
+    },
+    onSuccess: (stored) => {
+      qc.setQueryData(keys.mePreferences, stored);
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.mePreferences });
     },
   });
 }

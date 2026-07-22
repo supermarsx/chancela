@@ -10,6 +10,8 @@
  */
 import type {
   ActView,
+  ActBodyPreviewResponse,
+  PreviewActBody,
   AdvanceActBody,
   RevertActBody,
   ReopenActBody,
@@ -211,6 +213,7 @@ import type {
   SessionListResponse,
   RevokedResponse,
   Settings,
+  UserPreferences,
   EmailStatusView,
   EmailTestResult,
   UpdateActBody,
@@ -317,6 +320,12 @@ interface ApiErrorBody {
   pin_status?: string;
   /** Coarse remaining-attempt hint (`"low"`/`"final_try"`/`"locked"`/`"unknown"`). */
   tries_left?: string;
+  /**
+   * Byte offset into an ata body source of the construct a `422 InvalidActBody` rejected (t74).
+   * A **byte** offset (UTF-8), not a character index — the body editor converts it before
+   * underlining. Absent unless the error is a rejected markdown body.
+   */
+  offset?: number;
 }
 
 /**
@@ -376,6 +385,12 @@ export class ApiError extends Error {
    */
   readonly pinStatus?: string;
   readonly triesLeft?: string;
+  /**
+   * Byte offset of the construct a rejected ata body (`422 InvalidActBody`, t74) refused, when the
+   * error carries one. Paired with `code` (`unsupported_markdown`/`invalid_placeholder`/…) so the
+   * body editor can underline the offending byte in place. Absent on every non-body error.
+   */
+  readonly offset?: number;
 
   constructor(status: number, body: ApiErrorBody, credentialProof = false) {
     super(body.error || body.message || t('error.requestFailed', { status }));
@@ -388,6 +403,7 @@ export class ApiError extends Error {
     this.warnings = body.warnings;
     this.pinStatus = body.pin_status;
     this.triesLeft = body.tries_left;
+    this.offset = body.offset;
   }
 }
 
@@ -763,6 +779,11 @@ export const api = {
   getSettings: () => get<Settings>('/v1/settings'),
   putSettings: (body: Settings) => put<Settings>('/v1/settings', body),
 
+  // Per-user table-column preferences (t37) — self-scoped, whole-document GET/PUT. PUT replaces
+  // the caller's entire `table_columns`; a table omitted from the body clears its override.
+  getMePreferences: () => get<UserPreferences>('/v1/me/preferences'),
+  putMePreferences: (body: UserPreferences) => put<UserPreferences>('/v1/me/preferences', body),
+
   // Outbound email (t23). The non-secret configuration rides `putSettings` with the rest of the
   // document; these three cover what cannot — the write-only relay password, the status that
   // reports it without revealing it, and the test send.
@@ -1047,6 +1068,12 @@ export const api = {
   getAct: (id: string) => get<ActView>(`/v1/acts/${id}`),
   draftAct: (body: DraftActBody) => post<ActView>('/v1/acts', body),
   updateAct: (id: string, body: UpdateActBody) => patch<ActView>(`/v1/acts/${id}`, body),
+  // Compile a markdown body source into `Block[]` server-side (t74 §6) — the SAME compiler the seal
+  // runs, so a clean preview is exactly what will be sealed. Read-only (`act.read`), usable in any
+  // state. A rejected source is a `422` carrying `{ code, offset }` on the `ApiError`, never a
+  // silently-dropped construct.
+  previewActBody: (id: string, body: PreviewActBody) =>
+    post<ActBodyPreviewResponse>(`/v1/acts/${id}/body/preview`, body),
   dispatchActConvening: (id: string, body: DispatchActConveningBody) =>
     post<ActView>(`/v1/acts/${id}/convening/dispatch`, body),
   advanceAct: (id: string, body: AdvanceActBody) => post<ActView>(`/v1/acts/${id}/advance`, body),

@@ -842,6 +842,56 @@ export interface AiProvenanceView {
   human_verification: AiHumanVerificationView;
 }
 
+/**
+ * How the source text of an {@link ActBodyView} is read. `Markdown` is the only format — a body
+ * that carries no format cannot exist server-side (`chancela-core::BodyFormat`), and there is no
+ * inference. New formats append.
+ */
+export type BodyFormat = 'Markdown';
+
+/**
+ * The narrative body of an ata (`ActBody`, t74): the operator's markdown source plus what it
+ * compiled to. Additive to — never a reinterpretation of — the plain-text `deliberations` field.
+ *
+ * `compiled_digest` is empty until content freeze (sealing): before then there is no compiled
+ * output to bind, and the server reports emptiness rather than a digest the seal would replace.
+ * `compiler_id` names the compiler version (`"md-block/v1"`); neither is ever sent from the client.
+ */
+export interface ActBodyView {
+  format: BodyFormat;
+  source: string;
+  compiler_id: string;
+  compiled_digest: string;
+}
+
+/**
+ * The client-supplied half of an {@link ActBodyView} on a PATCH: what the operator wrote and how to
+ * read it. `compiler_id`/`compiled_digest` are deliberately server-set and not accepted here.
+ */
+export interface ActBodyInput {
+  format: BodyFormat;
+  source: string;
+}
+
+/**
+ * Body of `POST /v1/acts/{id}/body/preview` (t74 §6). `source` is the editor's current, possibly
+ * unsaved buffer; omitted ⇒ preview the stored body (what a freshly-opened editor wants).
+ */
+export interface PreviewActBody {
+  source?: string | null;
+}
+
+/**
+ * Response of `POST /v1/acts/{id}/body/preview`: the compiled blocks the server produced from the
+ * source, plus the compiler that produced them. The **same** compiler runs at content freeze, so a
+ * clean preview is exactly what will be sealed. A rejected source is a `422` carrying `{ code,
+ * offset }` instead (see {@link ApiError}); the client never compiles document content itself.
+ */
+export interface ActBodyPreviewResponse {
+  compiler_id: string;
+  blocks: Block[];
+}
+
 export interface ActView {
   id: string;
   book_id: string;
@@ -858,6 +908,11 @@ export interface ActView {
   referenced_documents: ActDocumentReference[];
   written_resolution_evidence?: WrittenResolutionEvidenceView | null;
   deliberations: string;
+  /**
+   * The tagged-markup narrative body (t74), when the operator has authored one. Omitted/`null` for
+   * an act with no body — an act carrying only plain `deliberations` reads `body: null`.
+   */
+  body?: ActBodyView | null;
   deliberation_items: ActDeliberationItem[];
   telematic_evidence: string | null;
   attachments: ActAttachment[];
@@ -7272,6 +7327,35 @@ export type RegisteredEntityColumn = (typeof REGISTERED_ENTITY_COLUMNS)[number];
 
 export interface UiSettings {
   registered_entity_columns: RegisteredEntityColumn[];
+}
+
+/**
+ * The books/livros table columns, in render order (t37). `Actions` is structural and always
+ * shown; `Entity` is not listed here because it is governed by the page context (`showEntity`
+ * on the all-books list), not by a per-user toggle. The remaining five are hideable.
+ */
+export const BOOK_COLUMNS = ['Kind', 'Purpose', 'State', 'Opening', 'LastAct', 'Actions'] as const;
+export type BookColumn = (typeof BOOK_COLUMNS)[number];
+
+/**
+ * Per-user, server-persisted UI preferences (t37, `GET|PUT /v1/me/preferences`). Self-scoped:
+ * the acting session reads and writes only its own row. NOT part of the settings document and
+ * NOT in the ledger — a column toggle emits no audit event and moves no digest.
+ *
+ * Each `table_columns` field is an ordered, opaque list of column ids. A field is **omitted**
+ * (not `null`) when the user has no override for that table, in which case the web falls back
+ * (entities → the instance org default → the product default; books/templates → the product
+ * default). The server validates only the shape of the ids, never their meaning, so adding or
+ * renaming a column never touches this contract.
+ */
+export interface TableColumnPreferences {
+  entities?: string[];
+  books?: string[];
+  templates?: string[];
+}
+
+export interface UserPreferences {
+  table_columns: TableColumnPreferences;
 }
 
 /**
