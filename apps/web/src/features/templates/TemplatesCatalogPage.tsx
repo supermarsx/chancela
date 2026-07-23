@@ -36,7 +36,6 @@ import {
 } from '../../ui';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { GateButton } from '../session/permissions';
-import { TemplateEditorForm } from './TemplateEditorForm';
 import {
   DEFAULT_TEMPLATE_COLUMNS,
   TEMPLATE_COLUMNS,
@@ -179,9 +178,9 @@ export function TemplatesCatalogPage() {
     () => [...(templates.data ?? [])].sort(sortTemplates),
     [templates.data],
   );
-  const editor = useTemplateEditor(
-    useMemo(() => allTemplates.map((row) => row.id), [allTemplates]),
-  );
+  // Create / edit / fork are full pages now (t56); the controller navigates rather than opening a
+  // modal, so it needs no id list or in-flight download state.
+  const editor = useTemplateEditor();
   const locales = useMemo(
     () => Array.from(new Set(allTemplates.map((template) => template.locale))).sort(),
     [allTemplates],
@@ -465,21 +464,10 @@ export function TemplatesCatalogPage() {
             onClone={editor.clone}
             onExport={(template) => void onExport(template)}
             onDelete={setDeleteTarget}
-            editPending={editor.pending}
             exportPending={exportTemplate.isPending}
           />
         )}
       </section>
-
-      {editor.state ? (
-        <TemplateEditorForm
-          mode={editor.state.mode}
-          initialSpec={editor.state.mode === 'create' ? null : editor.state.spec}
-          sourceId={editor.state.mode === 'fork' ? editor.state.sourceId : undefined}
-          sourceIsBuiltin={editor.state.mode === 'fork' ? editor.state.sourceIsBuiltin : undefined}
-          onClose={editor.close}
-        />
-      ) : null}
 
       {importing ? <TemplateImportDialog onClose={() => setImporting(false)} /> : null}
 

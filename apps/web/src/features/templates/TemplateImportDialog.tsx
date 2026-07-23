@@ -27,7 +27,7 @@ import {
 } from '../../i18n/templateImportFallback';
 import { Button, Field, Icon, InlineWarning, TextArea, useToast } from '../../ui';
 import { useFocusTrap } from '../../ui/useFocusTrap';
-import { mappedTemplateError } from './TemplateEditorForm';
+import { mappedTemplateError } from './templateErrors';
 
 function ImportModal({
   title,

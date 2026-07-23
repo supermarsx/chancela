@@ -24,3 +24,23 @@ export function templateDetailPath(id: string): string {
 export function templateEditPath(id: string): string {
   return `/templates/${encodeURIComponent(id)}/edit`;
 }
+
+/**
+ * The full-page CREATE surface (t56). A static top-level route (`/templates/new`) rather than a
+ * `:sec?` section: it is not a view of an existing template, so it lives beside the catalog, not
+ * under a template id. React Router ranks the static `new` segment above the dynamic `:id`, so it is
+ * never shadowed by `/templates/:id/:sec?`.
+ */
+export function templateNewPath(): string {
+  return '/templates/new';
+}
+
+/**
+ * FORK is a create SEEDED from a source (t56): the same page as create, carrying the source id as a
+ * `?fork=<id>` query so the page can copy that template's spec + body into a fresh `user-…` draft.
+ * A query rather than a path segment because the target is still `/templates/new` — a new template,
+ * not a view of the source.
+ */
+export function templateForkPath(sourceId: string): string {
+  return `/templates/new?fork=${encodeURIComponent(sourceId)}`;
+}

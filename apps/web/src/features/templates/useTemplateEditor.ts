@@ -1,90 +1,47 @@
 /**
- * The one place that decides what "Editar" and "Duplicar" mean for a template.
+ * The one place that decides what "Novo", "Editar" and "Duplicar" mean for a template.
  *
- * Both the catalog table and a template's detail page offer the two actions, and both must
- * make the same ruling: a BUILT-IN template is never edited in place — editing it offers a
- * fork into the `user-…` namespace instead. That is not a UI preference. A sealed document
- * records the digest of the spec it was generated from, so rewriting a shipped template would
- * retroactively change what a past seal meant. Keeping the decision in a hook means neither
- * surface can drift from the other.
+ * All three are now full-page surfaces rather than modals (t56): the controller navigates, it does
+ * not open a dialog. Keeping the decision in a hook means the catalog table and a template's detail
+ * page cannot drift from one another.
  *
- * The spec body is not in `TemplateSummary`, so every path here first fetches it through the
- * export endpoint — the only read that returns `blocks`.
+ * The rulings it encodes:
+ *  - CREATE goes to `/templates/new`;
+ *  - EDIT of a `user-…` template goes to that template's own full-width edit page;
+ *  - EDIT of a BUILT-IN never edits in place — a sealed document records the digest of the spec it
+ *    was generated from, so rewriting a shipped template would retroactively change what a past seal
+ *    meant. It is diverted to a FORK (a create seeded from the built-in) instead;
+ *  - DUPLICATE is always a fork, whatever the source.
+ *
+ * The create/fork page fetches the source spec + body itself (through the shared export query), so
+ * this hook no longer downloads anything — every action is an instant navigation.
  */
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { templateSpecFromExport, useExportTemplate } from '../../api/hooks';
-import { templateEditPath } from './templateRoutes';
-import type { TemplateSpec, TemplateSummary } from '../../api/types';
-import { useToast } from '../../ui';
-import { forkTemplateSpec, forkedTemplateId } from './templateFork';
-
-export type TemplateEditorState =
-  | { mode: 'create' }
-  | { mode: 'edit'; spec: TemplateSpec }
-  /** A copy of `sourceId`, not yet saved. `sourceId` may be built-in or user-authored. */
-  | { mode: 'fork'; spec: TemplateSpec; sourceId: string; sourceIsBuiltin: boolean };
+import type { TemplateSummary } from '../../api/types';
+import { templateEditPath, templateForkPath, templateNewPath } from './templateRoutes';
 
 export interface TemplateEditorController {
-  state: TemplateEditorState | null;
-  /** A spec download is in flight; the triggering button should read as busy. */
-  pending: boolean;
+  /** Go to the full-page create surface. */
   create: () => void;
-  /** Edit a user template in place; a built-in is diverted to a fork. */
+  /** Edit a user template on its own page; a built-in is diverted to a fork. */
   edit: (template: TemplateSummary) => void;
-  /** Always a fork, whatever the source. */
+  /** Always a fork (a create seeded from the source), whatever the source. */
   clone: (template: TemplateSummary) => void;
-  close: () => void;
 }
 
-/**
- * @param existingIds every id already in the catalog, so a fork never collides on save.
- */
-export function useTemplateEditor(existingIds: readonly string[]): TemplateEditorController {
-  const toast = useToast();
+export function useTemplateEditor(): TemplateEditorController {
   const navigate = useNavigate();
-  const loadSpec = useExportTemplate();
-  const [state, setState] = useState<TemplateEditorState | null>(null);
-
-  async function withSpec(id: string, apply: (spec: TemplateSpec) => void) {
-    try {
-      const download = await loadSpec.mutateAsync(id);
-      // The export is the `chancela.template-bundle` envelope (t43), whose spec lives under `.spec`;
-      // unwrap it rather than casting the envelope to `TemplateSpec` (that left `rule_pack_id` and
-      // `blocks` undefined, crashing the fork editor on `spec.rule_pack_id.trim()`).
-      apply(templateSpecFromExport(JSON.parse(download.text)));
-    } catch (err) {
-      toast.error(err);
-    }
-  }
-
-  function openFork(template: TemplateSummary) {
-    void withSpec(template.id, (spec) =>
-      setState({
-        mode: 'fork',
-        spec: forkTemplateSpec(spec, forkedTemplateId(template.id, existingIds)),
-        sourceId: template.id,
-        sourceIsBuiltin: template.source !== 'user',
-      }),
-    );
-  }
-
   return {
-    state,
-    pending: loadSpec.isPending,
-    create: () => setState({ mode: 'create' }),
+    create: () => void navigate(templateNewPath()),
     edit: (template) => {
-      if (template.source !== 'user') {
-        openFork(template);
-        return;
-      }
-      // A user template is edited on its OWN full-width page (t109), not in the dialog: its
-      // body is canonical BlockSpec JSON and needs the room. The fork path stays a dialog —
-      // there the operator is naming a copy, not writing one. The spec is not fetched here
-      // any more; the page loads it through the shared `useTemplateSpec` query.
-      void navigate(templateEditPath(template.id));
+      // A user template is edited in place on its OWN full-width page; a built-in can only be
+      // changed by forking it, so "Editar" on one leads to the seeded create page.
+      void navigate(
+        template.source === 'user'
+          ? templateEditPath(template.id)
+          : templateForkPath(template.id),
+      );
     },
-    clone: openFork,
-    close: () => setState(null),
+    clone: (template) => void navigate(templateForkPath(template.id)),
   };
 }

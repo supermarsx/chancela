@@ -10,7 +10,32 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { TemplateDetailPage } from './TemplateDetailPage';
 import { renderWithProviders } from '../../test/utils';
-import type { TemplateSummary } from '../../api/types';
+import type { Block, TemplateSummary } from '../../api/types';
+
+// The real `MarkdownBodyEditor` is a lazy ProseMirror chunk exercised by its own test; here it is
+// mocked to a plain textarea so these tests assert the PAGE WIRING (value/onChange/save payload,
+// the debounced preview, the no-anchor hint) without ProseMirror in the loop.
+vi.mock('../acts/MarkdownBodyEditor', () => ({
+  MarkdownBodyEditor: ({
+    value,
+    onChange,
+    disabled,
+    id,
+  }: {
+    value: string;
+    onChange: (next: string) => void;
+    disabled?: boolean;
+    id?: string;
+  }) => (
+    <textarea
+      aria-label="corpo-markdown"
+      id={id}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  ),
+}));
 
 const USER_TEMPLATE: TemplateSummary = {
   id: 'user-encosto-ata/v1',
@@ -49,8 +74,15 @@ interface RecordedRequest {
   body?: BodyInit | null;
 }
 
-/** A fetch stub over the catalog + the export endpoint, recording every request made. */
-function stubFetch(catalog: TemplateSummary[]) {
+/**
+ * A fetch stub over the catalog, the export endpoint and the stateless body-preview compile,
+ * recording every request made. `opts.exportBody` overrides the `/export` payload (e.g. a bundle
+ * envelope carrying `body_markdown`); `opts.previewBlocks` is what the body preview compiles to.
+ */
+function stubFetch(
+  catalog: TemplateSummary[],
+  opts: { exportBody?: unknown; previewBlocks?: Block[] } = {},
+) {
   const calls: RecordedRequest[] = [];
   const fn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -62,7 +94,10 @@ function stubFetch(catalog: TemplateSummary[]) {
           headers: { 'Content-Type': 'application/json' },
         }),
       );
-    if (url.includes('/export')) return json(SPEC);
+    if (url.includes('/v1/templates/body/preview')) {
+      return json({ compiler_id: 'md-block/v1', blocks: opts.previewBlocks ?? [] });
+    }
+    if (url.includes('/export')) return json(opts.exportBody ?? SPEC);
     if (url.includes('/v1/templates')) {
       if ((init?.method ?? 'GET') === 'PUT') return json({ ...USER_TEMPLATE });
       return json(catalog);
@@ -70,6 +105,11 @@ function stubFetch(catalog: TemplateSummary[]) {
     return Promise.reject(new Error(`no stub for ${url}`));
   });
   return { fn: fn as unknown as typeof fetch, calls };
+}
+
+/** POSTs that are real writes, not the stateless preview compile (which is also a POST). */
+function writePosts(calls: RecordedRequest[]): RecordedRequest[] {
+  return calls.filter((c) => c.method === 'POST' && !c.url.includes('/body/preview'));
 }
 
 /**
@@ -106,7 +146,8 @@ describe('TemplateEditPage', () => {
     // as the buttons are.
     expect(await screen.findByText('Os modelos incluídos não se editam')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Guardar' })).toBeNull();
-    expect(calls.some((c) => c.method === 'PUT' || c.method === 'POST')).toBe(false);
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    expect(writePosts(calls)).toHaveLength(0);
     // NB: the spec IS fetched here, by the detail page that owns this route — it needs the body
     // for its own blocks/fields views. That is a read of an endpoint that serves built-ins by
     // design. The invariant is that nothing is ever written back, which is asserted above.
@@ -151,8 +192,9 @@ describe('TemplateEditPage', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
     const put = calls.find((c) => c.method === 'PUT');
     expect(String(put?.body)).toContain('Reescrito.');
-    // An edit is a PUT over the same id — never a POST that would leave a second copy behind.
-    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    // An edit is a PUT over the same id — never a write POST that would leave a second copy behind
+    // (the stateless body-preview POST does not count and is excluded).
+    expect(writePosts(calls)).toHaveLength(0);
   });
 
   it('reports invalid block JSON without sending anything', async () => {
@@ -180,7 +222,8 @@ describe('TemplateEditPage', () => {
 
     expect(await screen.findByText('Os modelos incluídos não se editam')).toBeTruthy();
     expect(screen.queryByLabelText('Blocos')).toBeNull();
-    expect(calls.some((c) => c.method === 'PUT' || c.method === 'POST')).toBe(false);
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    expect(writePosts(calls)).toHaveLength(0);
   });
 
   it('leaves the unknown-segment fallback intact for its neighbours', async () => {
@@ -207,5 +250,84 @@ describe('TemplateEditPage', () => {
     renderEdit('user-nao-existe/v1');
 
     expect(await screen.findByText('Modelo não encontrado')).toBeTruthy();
+  });
+
+  // --- Narrative body: WYSIWYG + live preview (t56) -------------------------------------
+
+  /** The export as the real `chancela.template-bundle` envelope, carrying a seed body. */
+  const BUNDLE_EXPORT = {
+    format: 'chancela.template-bundle',
+    format_version: 1,
+    spec: SPEC,
+    body_markdown: '## Corpo\n\nTexto com {{ campo }}.',
+  };
+
+  it('mounts the WYSIWYG body editor seeded from the bundle body_markdown', async () => {
+    const { fn } = stubFetch([USER_TEMPLATE], { exportBody: BUNDLE_EXPORT });
+    vi.stubGlobal('fetch', fn);
+
+    renderEdit(USER_TEMPLATE.id);
+
+    // The narrative body rides the bundle envelope as `body_markdown` and hydrates the editor.
+    const body = (await screen.findByLabelText('corpo-markdown')) as HTMLTextAreaElement;
+    expect(body.value).toBe('## Corpo\n\nTexto com {{ campo }}.');
+    // The structured blocks stay a separate canonical-JSON textarea — the WYSIWYG edits prose only.
+    expect((await screen.findByLabelText('Blocos')) as HTMLTextAreaElement).toBeTruthy();
+  });
+
+  it('renders the server-compiled preview beside the editor, tags in literal form', async () => {
+    const { fn } = stubFetch([USER_TEMPLATE], {
+      exportBody: BUNDLE_EXPORT,
+      // The server compiles the body; a merge tag surfaces as literal token text (unresolved).
+      previewBlocks: [{ type: 'Heading', level: 2, text: 'Ata n.º {{ ata_number }}' }],
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderEdit(USER_TEMPLATE.id);
+
+    // The pane's own chrome is immediate; the compiled block arrives after the debounced preview.
+    expect(await screen.findByText('Pré-visualização do corpo')).toBeTruthy();
+    expect(await screen.findByText('Ata n.º {{ ata_number }}')).toBeTruthy();
+  });
+
+  it('saves the narrative body through the bundle envelope', async () => {
+    const { fn, calls } = stubFetch([USER_TEMPLATE], { exportBody: BUNDLE_EXPORT });
+    vi.stubGlobal('fetch', fn);
+
+    renderEdit(USER_TEMPLATE.id);
+
+    const body = (await screen.findByLabelText('corpo-markdown')) as HTMLTextAreaElement;
+    fireEvent.change(body, { target: { value: '## Reescrito\n\nNovo corpo.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
+    const put = calls.find((c) => c.method === 'PUT');
+    // The PUT carries the whole bundle: the envelope format AND the edited body_markdown.
+    expect(String(put?.body)).toContain('chancela.template-bundle');
+    expect(String(put?.body)).toContain('Novo corpo.');
+    expect(writePosts(calls)).toHaveLength(0);
+  });
+
+  it('hints when the template places no narrative-body anchor, and not when it does', async () => {
+    // SPEC has no `NarrativeBody` block, so the body would not reach the generated document.
+    const { fn } = stubFetch([USER_TEMPLATE], { exportBody: BUNDLE_EXPORT });
+    vi.stubGlobal('fetch', fn);
+
+    const withoutAnchor = renderEdit(USER_TEMPLATE.id);
+    expect(await screen.findByText('O corpo não será incluído no documento')).toBeTruthy();
+    withoutAnchor.unmount();
+    cleanup();
+
+    // A spec that DOES place the anchor drops the hint.
+    const anchored = {
+      ...BUNDLE_EXPORT,
+      spec: { ...SPEC, blocks: [...SPEC.blocks, { kind: 'NarrativeBody' }] },
+    };
+    const { fn: fn2 } = stubFetch([USER_TEMPLATE], { exportBody: anchored });
+    vi.stubGlobal('fetch', fn2);
+
+    renderEdit(USER_TEMPLATE.id);
+    await screen.findByLabelText('corpo-markdown');
+    expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull();
   });
 });

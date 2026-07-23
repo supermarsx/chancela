@@ -1,41 +1,36 @@
 /**
- * TemplateEditPage — a user template's own full-width editing surface (t109).
+ * TemplateEditPage — a user template's own full-width editing surface (t109 + t56).
  *
- * ## Why a page rather than the modal
+ * ## Why a page rather than a modal
  *
- * A template body is the widest content in the app: canonical `BlockSpec` JSON with nested
- * minijinja. The modal (`TemplateEditorForm`) gave it a 12-row textarea inside a dialog whose
- * measure is the prose measure. This page opts into `.wide-page` (the shared shell opt-out,
- * `theme.css:148` — not a new mechanism) and gives the body the room it needs. The modal is
- * kept for **create** and **fork**, where the operator is answering "what is this template?"
- * rather than writing its body.
+ * A template is the widest authoring surface in the app: the structured spec (canonical `BlockSpec`
+ * JSON) AND a narrative body written with a WYSIWYG beside a live preview. None of that fits a dialog
+ * whose measure is the prose measure, so this page opts into `.wide-page` (the shared shell opt-out,
+ * `theme.css` — not a new mechanism) and gives both the room they need. Create and fork are pages
+ * too now (`TemplateCreatePage`); the edit modal is gone.
  *
  * ## Built-ins are never editable here
  *
- * This page refuses any template whose `source` is not `user`, and says why. Every shipped
- * spec's digest is pinned and bound into the `document.generated` ledger event, so editing a
- * built-in in place retroactively changes what a past seal meant. The route into a built-in's
- * body is the FORK dialog on the detail page, which is where this page sends the operator.
- * `useTemplateEditor` remains the one place that ruling is made for the catalog and the detail
- * page; this page is a third surface and re-states it rather than assuming a caller checked.
+ * This page refuses any template whose `source` is not `user`, and says why. Every shipped spec's
+ * digest is pinned and bound into the `document.generated` ledger event, so editing a built-in in
+ * place retroactively changes what a past seal meant. The route into a built-in's body is the FORK
+ * page, which is where the buttons send the operator. This page re-states the ruling rather than
+ * assuming a caller checked (a route is bookmarked, typed and shared).
  *
- * ## There is NO preview pane, deliberately — see the log
+ * ## WYSIWYG body + live preview (t56)
  *
- * A live "markdown to PDF" preview would have to come from the server, through the same compile
- * path that runs at generation, because the client must never render document content and
- * placeholders must resolve (and be markdown-escaped) server-side. **No such endpoint exists for
- * templates.** `GET /v1/acts/{id}/document/preview?template_id=` resolves ids through
- * `registry().get(tid)` only (`chancela-api/src/documents.rs:4727`), so it returns 404 for every
- * `user-…` id — the exact templates this page edits — and it needs an act to supply a context.
- * `POST /v1/templates/import?dry_run=true` returns `{ok, error?}`, a validation verdict with no
- * rendered output. Faking it client-side would show an operator a document that disagrees with
- * what the server would actually generate, which on an evidentiary product is worse than showing
- * nothing. The gap is reported, not worked around.
+ * The narrative body — the markdown seed that rides the `chancela.template-bundle` envelope as
+ * `body_markdown` — is edited with the ata's `MarkdownBodyEditor` (a pure consumer), with a live
+ * side-by-side PREVIEW compiled by the server's own stateless `POST /v1/templates/body/preview`. The
+ * client never renders document content itself, and merge tags appear in LITERAL token form because
+ * the preview is unresolved (there is no act context). The structured `blocks[]` array stays a
+ * canonical-JSON textarea (`TemplateSpecFields`): the WYSIWYG edits the prose body only, never the
+ * block structure. Both halves are persisted through the bundle envelope on save.
  */
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { TemplateBlockSpec, TemplateSpec } from '../../api/types';
-import { useTemplateSpec, useTemplates, useUpdateTemplate } from '../../api/hooks';
+import { useTemplateBundle, useTemplates, useUpdateTemplate } from '../../api/hooks';
 import { ApiError } from '../../api/client';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useT } from '../../i18n';
@@ -52,8 +47,9 @@ import {
   SkeletonDeflist,
   useToast,
 } from '../../ui';
-import { mappedTemplateError } from './TemplateEditorForm';
+import { mappedTemplateError } from './templateErrors';
 import { TemplateSpecFields } from './TemplateSpecFields';
+import { TemplateBodyEditor } from './TemplateBodyEditor';
 import { templateDetailPath } from './templateRoutes';
 import { hasTemplateName, templateDisplayName } from './templateNames';
 
@@ -66,30 +62,35 @@ export function TemplateEditPage() {
   const templates = useTemplates();
   const template = (templates.data ?? []).find((row) => row.id === id);
   const isUser = template?.source === 'user';
-  // The body is only fetched once the catalog says this template exists AND is editable, so
-  // opening the page against a built-in never even reads its spec.
-  const spec = useTemplateSpec(id, template !== undefined && isUser);
+  // Both authored halves — spec + narrative body — are fetched once the catalog says this template
+  // exists AND is editable, so opening the page against a built-in never even reads it. The bundle
+  // reader preserves the t48 fork crash-fix (spec is unwrapped from the `.spec` envelope half).
+  const bundle = useTemplateBundle(id, template !== undefined && isUser);
   const updateTemplate = useUpdateTemplate();
 
   const [draft, setDraft] = useState<TemplateSpec | null>(null);
   const [blocksText, setBlocksText] = useState('');
+  const [body, setBody] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Seed the draft once the body arrives. Keyed on the loaded spec rather than on `id` so a
+  // Seed the draft once the bundle arrives. Keyed on the loaded data rather than on `id` so a
   // refetch that returns the same body cannot silently discard typing in progress.
   useEffect(() => {
-    if (!spec.data || draft !== null) return;
-    setDraft(spec.data);
-    setBlocksText(JSON.stringify(spec.data.blocks, null, 2));
-  }, [spec.data, draft]);
+    if (!bundle.data || draft !== null) return;
+    setDraft(bundle.data.spec);
+    setBlocksText(JSON.stringify(bundle.data.spec.blocks, null, 2));
+    setBody(bundle.data.body_markdown);
+  }, [bundle.data, draft]);
 
   const dirty = useMemo(() => {
-    if (!spec.data || !draft) return false;
+    if (!bundle.data || !draft) return false;
     return (
-      JSON.stringify({ ...draft, blocks: [] }) !== JSON.stringify({ ...spec.data, blocks: [] }) ||
-      blocksText !== JSON.stringify(spec.data.blocks, null, 2)
+      JSON.stringify({ ...draft, blocks: [] }) !==
+        JSON.stringify({ ...bundle.data.spec, blocks: [] }) ||
+      blocksText !== JSON.stringify(bundle.data.spec.blocks, null, 2) ||
+      body !== bundle.data.body_markdown
     );
-  }, [draft, spec.data, blocksText]);
+  }, [draft, bundle.data, blocksText, body]);
 
   // Warns before a reload or a route change would throw the edit away (t52's registry).
   useUnsavedChanges(dirty);
@@ -130,7 +131,7 @@ export function TemplateEditPage() {
 
   const name = hasTemplateName(template.id) ? templateDisplayName(template.id) : template.id;
 
-  // A built-in reached by URL, not by a button — the buttons already divert to the fork dialog.
+  // A built-in reached by URL, not by a button — the buttons already divert to the fork page.
   // It is refused HERE too, because a route is a thing people bookmark, type and share.
   if (!isUser) {
     return (
@@ -183,9 +184,11 @@ export function TemplateEditPage() {
     };
 
     try {
+      // Persist BOTH halves through the bundle envelope: the spec AND the narrative body seed, so an
+      // edited (or unchanged, forked) body is never dropped on save.
       const updated = await updateTemplate.mutateAsync({
         id: payload.id,
-        rawJson: JSON.stringify(payload),
+        bundle: { spec: payload, body_markdown: body },
       });
       toast.success(t('templates.toast.updated', { id: updated.id }));
       // The draft is dropped so `dirty` goes false before the route changes; otherwise the
@@ -221,19 +224,19 @@ export function TemplateEditPage() {
         }
       />
 
-      {/* The same warning the fork dialog and the detail page carry, for the same reason: an
-          operator about to invest an afternoon in a body must know before they type that the
-          seal will refuse it. Adjacent to the work, not at the end of it. */}
+      {/* The same warning the fork page and the detail page carry, for the same reason: an operator
+          about to invest an afternoon in a body must know before they type that the seal will refuse
+          it. Adjacent to the work, not at the end of it. */}
       <InlineWarning tone="warn" title={t('templates.fork.limit.title')}>
         <p>{t('templates.fork.limit.body')}</p>
       </InlineWarning>
 
-      {spec.isLoading ? (
+      {bundle.isLoading ? (
         <Card title={t('templates.editor.title.edit')}>
           <SkeletonDeflist />
         </Card>
-      ) : spec.error ? (
-        <ErrorNote error={spec.error} />
+      ) : bundle.error ? (
+        <ErrorNote error={bundle.error} />
       ) : draft ? (
         <Card title={t('templates.editor.title.edit')}>
           <form className="form" onSubmit={submit}>
@@ -247,6 +250,14 @@ export function TemplateEditPage() {
               idLocked
               // The whole point of the page: the body gets the vertical room the modal denied it.
               blocksRows={28}
+              idPrefix="tpl-page"
+            />
+
+            <TemplateBodyEditor
+              spec={draft}
+              value={body}
+              onChange={setBody}
+              disabled={updateTemplate.isPending}
               idPrefix="tpl-page"
             />
 

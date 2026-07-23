@@ -10,6 +10,12 @@ function LocationPathname() {
   return <>{useLocation().pathname}</>;
 }
 
+/** The current path AND query, so a `?fork=<id>` navigation can be asserted. */
+function LocationHref() {
+  const location = useLocation();
+  return <>{`${location.pathname}${location.search}`}</>;
+}
+
 interface RecordedRequest {
   url: string;
   method: string;
@@ -646,12 +652,15 @@ describe('TemplatesCatalogPage', () => {
     expect(within(builtinRow).queryByRole('button', { name: 'Eliminar' })).toBeNull();
   });
 
-  // --- Editing a built-in forks it, and says what the fork cannot do (t79) --------------
+  // --- Editing/forking a built-in navigates to the full-page create surface (t56) --------
   //
   // Built-in specs are frozen because a sealed document records the digest of the spec it was
-  // generated from. The UI must therefore never offer an in-place edit of one — and, because a
-  // `user-…` template is offered by the pickers but refused at the seal, it must say so BEFORE
-  // the operator invests any work in the copy.
+  // generated from. The UI must therefore never offer an in-place edit of one — "Editar" and
+  // "Duplicar" both navigate to the full-page FORK surface (`/templates/new?fork=<id>`), where the
+  // seeded spec + body are authored. No modal remains. The seeding, the envelope-unwrap and the
+  // "a copy cannot yet seal" limit copy are exercised on that page's own test
+  // (`TemplateCreatePage.test.tsx`); here the invariant is only that the catalog navigates and
+  // writes nothing on the way.
 
   const BUILTIN_SPEC = JSON.stringify({
     id: 'csc-ata-ag/v1',
@@ -664,122 +673,53 @@ describe('TemplatesCatalogPage', () => {
     blocks: [{ kind: 'Paragraph', template: 'Ata de {{ entity.name }}.' }],
   });
 
-  function specFetch(catalog: TemplateSummary[]) {
-    return templatesFetch(catalog, (url, method) =>
-      url.includes('/export') && method === 'GET'
-        ? new Response(BUILTIN_SPEC, {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        : null,
-    );
-  }
-
-  it('turns "editar" on a built-in into a fork, and states the limit before any work is done', async () => {
-    const { fn, calls } = specFetch([CATALOG[0]]);
+  it('sends "editar" on a built-in to the full-page fork, with no dialog and no write', async () => {
+    const { fn, calls } = templatesFetch([CATALOG[0]]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+    renderWithProviders(
+      <>
+        <TemplatesCatalogPage />
+        <span data-testid="location">{<LocationHref />}</span>
+      </>,
+      ['/templates'],
+    );
 
     const builtinRow = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
     fireEvent.click(within(builtinRow).getByRole('button', { name: 'Editar' }));
 
-    // Not the edit dialog: a duplicate dialog, pre-filled with a free `user-…/v1` id.
-    const dialog = await screen.findByRole('dialog', { name: 'Duplicar modelo' });
-    expect(screen.queryByRole('dialog', { name: 'Editar modelo' })).toBeNull();
-    expect((within(dialog).getByLabelText('Identificador') as HTMLInputElement).value).toBe(
-      'user-csc-ata-ag/v1',
-    );
-    expect(within(dialog).getByText('Modelo de origem: csc-ata-ag/v1')).toBeTruthy();
-    expect(within(dialog).getByText('Os modelos incluídos não se editam')).toBeTruthy();
-    // The honest part: the copy cannot yet seal, and it says so here rather than at the seal.
-    expect(within(dialog).getByText('Uma cópia ainda não produz documentos')).toBeTruthy();
-    expect(
-      within(dialog).getByText(/a geração e o selo de uma ata só reconhecem os modelos incluídos/),
-    ).toBeTruthy();
-
-    // Nothing was written to the built-in: the only request was the read of its spec.
-    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
-    expect(calls.some((c) => c.method === 'POST')).toBe(false);
-  });
-
-  it('saves a fork as a new user template rather than replacing its source', async () => {
-    const { fn, calls } = templatesFetch([CATALOG[0]], (url, method) => {
-      if (url.includes('/export') && method === 'GET') {
-        return new Response(BUILTIN_SPEC, {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return url.endsWith('/v1/templates') && method === 'POST'
-        ? jsonResponse(USER_TEMPLATE, 201)
-        : null;
-    });
-    vi.stubGlobal('fetch', fn);
-
-    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
-
-    const builtinRow = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
-    fireEvent.click(within(builtinRow).getByRole('button', { name: 'Duplicar' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Duplicar modelo' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
-
+    // The source id carries a slash, so the `?fork=` query percent-encodes it.
     await waitFor(() =>
-      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'))).toBe(true),
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/templates/new?fork=csc-ata-ag%2Fv1',
+      ),
     );
-    const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'));
-    // A CREATE under the new id, carrying the source's body — never a PUT over the built-in.
-    expect(String(post?.body)).toContain('user-csc-ata-ag/v1');
-    expect(String(post?.body)).toContain('Ata de {{ entity.name }}.');
-    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // Nothing was written on the way to the page.
+    expect(calls.some((c) => c.method === 'POST' || c.method === 'PUT')).toBe(false);
   });
 
-  // The export endpoint emits the `chancela.template-bundle` envelope (t43), where the spec lives
-  // under `.spec`. The fork path used to cast the envelope straight to `TemplateSpec`, leaving
-  // `rule_pack_id`/`blocks` undefined — which crashed the fork editor on `spec.rule_pack_id.trim()`
-  // (`can't access property "trim", p.rule_pack_id is undefined`). The bare-spec fork tests above
-  // never caught it because they mock the legacy shape; this one mocks the real envelope.
-  const BUILTIN_BUNDLE = JSON.stringify({
-    format: 'chancela.template-bundle',
-    format_version: 1,
-    spec: JSON.parse(BUILTIN_SPEC),
-    body_markdown: '',
-  });
-
-  it('forks from the real template-bundle envelope without crashing on an undefined rule pack', async () => {
-    const { fn, calls } = templatesFetch([CATALOG[0]], (url, method) => {
-      if (url.includes('/export') && method === 'GET') {
-        return new Response(BUILTIN_BUNDLE, {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return url.endsWith('/v1/templates') && method === 'POST'
-        ? jsonResponse(USER_TEMPLATE, 201)
-        : null;
-    });
+  it('sends "duplicar" to the full-page fork as well', async () => {
+    const { fn } = templatesFetch([CATALOG[0]]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+    renderWithProviders(
+      <>
+        <TemplatesCatalogPage />
+        <span data-testid="location">{<LocationHref />}</span>
+      </>,
+      ['/templates'],
+    );
 
     const builtinRow = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
     fireEvent.click(within(builtinRow).getByRole('button', { name: 'Duplicar' }));
 
-    // Before the fix the modal threw while rendering (canSubmit's `.trim()`); it now opens.
-    const dialog = await screen.findByRole('dialog', { name: 'Duplicar modelo' });
-    // The spec was unwrapped from `.spec`: the rule pack carried through rather than being undefined.
-    expect((within(dialog).getByLabelText('Pacote de regras') as HTMLInputElement).value).toBe(
-      'csc-art63/v2',
-    );
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
     await waitFor(() =>
-      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'))).toBe(true),
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/templates/new?fork=csc-ata-ag%2Fv1',
+      ),
     );
-    const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'));
-    // The saved fork carries the source's rule pack and body — proof the envelope was unwrapped.
-    expect(String(post?.body)).toContain('"rule_pack_id":"csc-art63/v2"');
-    expect(String(post?.body)).toContain('Ata de {{ entity.name }}.');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   // Behaviour CHANGED in t109: a user template is still edited in place (never forked), but the
@@ -831,31 +771,25 @@ describe('TemplatesCatalogPage', () => {
     );
   });
 
-  it('creates a user template through the editor form', async () => {
-    const { fn, calls } = templatesFetch([CATALOG[0]], (url, method) =>
-      url.endsWith('/v1/templates') && method === 'POST' ? jsonResponse(USER_TEMPLATE, 201) : null,
-    );
+  it('sends "Novo modelo" to the full-page create surface, with no dialog or write', async () => {
+    const { fn, calls } = templatesFetch([CATALOG[0]]);
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+    renderWithProviders(
+      <>
+        <TemplatesCatalogPage />
+        <span data-testid="location">{<LocationHref />}</span>
+      </>,
+      ['/templates'],
+    );
+    await screen.findByText('csc-ata-ag/v1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Novo modelo' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Novo modelo' });
 
-    fireEvent.change(within(dialog).getByLabelText('Identificador'), {
-      target: { value: 'user-encosto-ata/v1' },
-    });
-    fireEvent.change(within(dialog).getByLabelText('Pacote de regras'), {
-      target: { value: 'csc-art63/v2' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
-
-    await waitFor(() =>
-      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'))).toBe(true),
-    );
-    const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'));
-    expect(String(post?.body)).toContain('user-encosto-ata/v1');
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Novo modelo' })).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/templates/new'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // Creation itself happens on the page; the catalog writes nothing.
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
   it('blocks an invalid import in the dry-run preflight', async () => {

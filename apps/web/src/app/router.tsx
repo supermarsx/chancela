@@ -174,6 +174,7 @@ export const routeModuleLoaders = {
   closeBook: () => import('../features/books/CloseBookPage'),
   ataEditor: () => import('../features/acts/AtaEditorPage'),
   templates: () => import('../features/templates/TemplatesCatalogPage'),
+  templateCreate: () => import('../features/templates/TemplateCreatePage'),
   templateDetail: () => import('../features/templates/TemplateDetailPage'),
   ledger: () => import('../features/ledger/LedgerPage'),
   notifications: () => import('../features/notifications/NotificationsPage'),
@@ -283,6 +284,13 @@ export const router = createBrowserRouter([
       {
         path: 'templates',
         element: lazyRoute(routeModuleLoaders.templates, 'TemplatesCatalogPage'),
+      },
+      // Full-page CREATE / FORK (t56): a static segment, so React Router ranks it above the dynamic
+      // `templates/:id/:sec?` below and `/templates/new` is never read as a template whose id is
+      // `new`. Fork rides the same route with a `?fork=<id>` query (a create seeded from a source).
+      {
+        path: 'templates/new',
+        element: lazyRoute(routeModuleLoaders.templateCreate, 'TemplateCreatePage'),
       },
       // The id carries a slash (`csc-ata-ag/v1`) and is therefore URL-encoded by the links
       // that lead here; React Router decodes the param back for `useParams`. The trailing

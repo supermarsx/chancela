@@ -1,10 +1,11 @@
 /**
- * The authored fields of a {@link TemplateSpec} — extracted so the modal (create/fork) and the
- * full-width edit page cannot drift apart (t109).
+ * The authored fields of a {@link TemplateSpec} — extracted so the full-page create/fork surface and
+ * the full-width edit page cannot drift apart (t109 + t56).
  *
  * This is markup and nothing else: no fetching, no submission, no ruling about which templates
  * may be edited. The caller owns the spec state and the write, because those differ between the
- * two surfaces — the modal POSTs a new template, the page PUTs an existing one whose id is fixed.
+ * two surfaces — the create page POSTs a new template, the edit page PUTs an existing one whose id
+ * is fixed.
  *
  * `law_references` are SERVER-DERIVED and therefore never authored here.
  *

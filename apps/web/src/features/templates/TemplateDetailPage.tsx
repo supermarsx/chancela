@@ -46,7 +46,6 @@ import {
 } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { GateButton } from '../session/permissions';
-import { TemplateEditorForm } from './TemplateEditorForm';
 import { TemplateEditPage } from './TemplateEditPage';
 import { templateIdBase, templateIdVersion } from './templateFork';
 import { hasTemplateName, templateDisplayName } from './templateNames';
@@ -139,7 +138,8 @@ export function TemplateDetailPage() {
   const templates = useTemplates();
   const template = (templates.data ?? []).find((row) => row.id === id);
   const spec = useTemplateSpec(id, template !== undefined);
-  const editor = useTemplateEditor((templates.data ?? []).map((row) => row.id));
+  // Edit / duplicate are full pages now (t56); the controller navigates rather than opening a modal.
+  const editor = useTemplateEditor();
 
   // The edit section is a full-width page of its own rather than a panel inside this one: a
   // template body is canonical BlockSpec JSON and needs the whole measure. It is a separate
@@ -202,7 +202,6 @@ export function TemplateDetailPage() {
               type="button"
               variant="secondary"
               icon={<Icon.Pencil />}
-              disabled={editor.pending}
               onClick={() => editor.edit(template)}
             >
               {t('templates.actions.edit')}
@@ -212,7 +211,6 @@ export function TemplateDetailPage() {
               type="button"
               variant="secondary"
               icon={<Icon.Copy />}
-              disabled={editor.pending}
               onClick={() => editor.clone(template)}
             >
               {t('templates.actions.clone')}
@@ -374,16 +372,6 @@ export function TemplateDetailPage() {
           </Card>
         ) : null}
       </div>
-
-      {editor.state ? (
-        <TemplateEditorForm
-          mode={editor.state.mode}
-          initialSpec={editor.state.mode === 'create' ? null : editor.state.spec}
-          sourceId={editor.state.mode === 'fork' ? editor.state.sourceId : undefined}
-          sourceIsBuiltin={editor.state.mode === 'fork' ? editor.state.sourceIsBuiltin : undefined}
-          onClose={editor.close}
-        />
-      ) : null}
     </div>
   );
 }
