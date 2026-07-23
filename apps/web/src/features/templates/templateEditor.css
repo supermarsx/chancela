@@ -1,0 +1,132 @@
+/*
+ * Template authoring stays feature-scoped: the shell, controls and `.field-table` density come
+ * from the shared design system, while these rules only arrange the block collection itself.
+ */
+.template-block-editor__list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.template-block-editor__item {
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.template-block-editor__item > summary {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, auto) minmax(8rem, 0.45fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+}
+
+.template-block-editor__item > summary code {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-block-editor__item[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.template-block-editor__body {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.7rem;
+}
+
+.template-block-editor__actions {
+  justify-content: flex-end;
+}
+
+.template-block-editor__kv-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.8fr) minmax(12rem, 1.2fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.template-block-editor__add {
+  align-items: end;
+}
+
+.template-block-editor__add > .field {
+  min-width: min(100%, 17rem);
+}
+
+.template-block-editor__raw {
+  padding-top: 0.15rem;
+  border-top: 1px solid var(--border);
+}
+
+.template-block-editor__raw > summary {
+  width: fit-content;
+  padding: 0.55rem 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.template-editor__save-bar {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1fr) auto;
+  align-items: end;
+  gap: 0.8rem 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.template-editor__save-actions {
+  align-self: end;
+  padding-bottom: 0.1rem;
+}
+
+.template-editor__document-preview.preview {
+  padding: 0.45rem;
+  overflow: auto;
+}
+
+.template-editor__document-preview .doc-preview {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.2rem 1.35rem;
+  font-size: 0.9rem;
+}
+
+.template-editor__document-preview .doc-preview__head {
+  margin-bottom: 1rem;
+  padding-bottom: 0.7rem;
+}
+
+.template-editor__document-preview .doc-heading {
+  margin: 1rem 0 0.4rem;
+}
+
+.template-editor__document-preview .doc-paragraph {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .template-block-editor__item > summary {
+    grid-template-columns: auto 1fr;
+  }
+
+  .template-block-editor__item > summary code {
+    grid-column: 1 / -1;
+  }
+
+  .template-block-editor__kv-row {
+    grid-template-columns: 1fr;
+  }
+
+  .template-editor__save-bar {
+    grid-template-columns: 1fr;
+  }
+}

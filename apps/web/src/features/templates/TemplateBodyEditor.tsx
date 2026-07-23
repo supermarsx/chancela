@@ -1,6 +1,6 @@
 /**
- * TemplateBodyEditor — the template's narrative body as a WYSIWYG surface with a live, side-by-side
- * preview (t56). Shared by the full-page create and edit surfaces so the two cannot drift.
+ * TemplateBodyEditor — the template's narrative body as a WYSIWYG surface beside the complete
+ * currently-authored template preview. Shared by create and edit so the two cannot drift.
  *
  * ## What this edits
  *
@@ -8,16 +8,16 @@
  * `body_markdown` and is folded into the template's `default_body`. It is a pure consumer of the
  * ata's `MarkdownBodyEditor` (the t35/t74 ProseMirror surface whose schema IS the frozen block set,
  * so unsupported constructs are unrepresentable rather than rejected after the fact). The structured
- * `blocks[]` array stays a canonical-JSON textarea in `TemplateSpecFields` — the WYSIWYG never
- * touches it, because a `BlockSpec[]` carries non-prose bindings markdown cannot represent.
+ * `blocks[]` stays a separate structured editor — the WYSIWYG never touches it, because a
+ * `BlockSpec[]` carries non-prose bindings markdown cannot represent.
  *
  * ## Preview is the server's, unresolved
  *
- * The preview pane renders ONLY the `Block[]` the stateless `POST /v1/templates/body/preview` returns
- * from the same compiler the seal runs (debounced). Merge tags appear in LITERAL token form — the
- * preview has no act context to resolve them against, and being honest about that is the point on an
- * evidentiary product. A rejected body is a `422` carrying a byte offset, shown as an in-place
- * diagnostic under the editor rather than as a fabricated render.
+ * The preview pane renders the complete authored `TemplateBlockSpec[]` in order. At each
+ * `NarrativeBody` marker it inserts ONLY the `Block[]` returned by the stateless
+ * `POST /v1/templates/body/preview` compiler used by the seal path (debounced). Merge tags stay
+ * literal because this stateless preview has no act context. A rejected body carries its server
+ * diagnostic both into the editor and into the in-place preview error state.
  *
  * ## The no-anchor hint
  *
@@ -34,19 +34,20 @@ import { MarkdownBodyEditor, type MarkdownDiagnostic } from '../acts/MarkdownBod
 import { useActBodyT, bodyDiagnosticKey } from '../../i18n/actBodyFallback';
 import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
 import { InlineWarning } from '../../ui';
-import { TemplateBodyPreview } from './TemplateBodyPreview';
+import {
+  TemplateAuthoredPreview,
+  type TemplateNarrativePreviewState,
+} from './TemplateAuthoredPreview';
 
 /** The narrative-body byte ceiling — the server's cap for a template body seed (mirrors the ata). */
 export const MAX_TEMPLATE_BODY_BYTES = 64 * 1024;
 
 /**
  * Does the template place a narrative body? The `NarrativeBody` anchor (t35-e1) is a kind-tagged
- * fieldless block; it is not in the authored `TemplateBlockSpec` union in `types.ts` (that union is
- * frozen and t56-e2-owned), so its presence is read off the raw `kind` string rather than through
- * the typed variants.
+ * fieldless block and is represented explicitly in the authored `TemplateBlockSpec` union.
  */
 export function placesNarrativeBody(blocks: TemplateSpec['blocks']): boolean {
-  return blocks.some((block) => (block as { kind?: string }).kind === 'NarrativeBody');
+  return blocks.some((block) => block.kind === 'NarrativeBody');
 }
 
 export function TemplateBodyEditor({
@@ -69,7 +70,12 @@ export function TemplateBodyEditor({
   const bt = useTemplatesEditorT();
   const abt = useActBodyT();
   const preview = useTemplateBodyPreview();
-  const [blocks, setBlocks] = useState<Block[]>([]);
+  const mutatePreview = preview.mutate;
+  const [compiled, setCompiled] = useState<{ source: string; blocks: Block[] } | null>(null);
+  const [compileFailure, setCompileFailure] = useState<{
+    source: string;
+    diagnostic: string;
+  } | null>(null);
   // Server-only verdict on the current source, when it refused to compile. The editor never
   // compiles content itself — this is populated from a `422` preview response and cleared on a clean
   // one, exactly as the ata body editor does (t35-e2).
@@ -81,19 +87,29 @@ export function TemplateBodyEditor({
   // verdict — clean blocks or a rejected `{ code, offset }` — is what the document would carry; the
   // pane shows that rather than guessing. Suspended while the body is not editable.
   useEffect(() => {
-    if (disabled) {
-      setDiagnostic(null);
+    setDiagnostic(null);
+    setCompileFailure(null);
+    if (!value.trim()) {
+      setCompiled(null);
       return;
     }
+    if (disabled) {
+      return;
+    }
+    const source = value;
+    let active = true;
     const handle = window.setTimeout(() => {
-      preview.mutate(
-        { source: value },
+      mutatePreview(
+        { source },
         {
           onSuccess: (response) => {
-            setBlocks(response.blocks);
+            if (!active) return;
+            setCompiled({ source, blocks: response.blocks });
+            setCompileFailure(null);
             setDiagnostic(null);
           },
           onError: (err) => {
+            if (!active) return;
             // A rejected body is a 422 with a byte offset; anything else (transport, 403) is not a
             // body rejection, so it leaves no spurious underline. The `construct` shown is a friendly
             // noun resolved from the server's machine `code`.
@@ -102,14 +118,27 @@ export function TemplateBodyEditor({
             } else {
               setDiagnostic(null);
             }
-            setBlocks([]);
+            setCompileFailure({
+              source,
+              diagnostic: err instanceof Error ? err.message : String(err),
+            });
           },
         },
       );
     }, 400);
-    return () => window.clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, disabled]);
+    return () => {
+      active = false;
+      window.clearTimeout(handle);
+    };
+  }, [abt, disabled, mutatePreview, value]);
+
+  const narrative: TemplateNarrativePreviewState = !value.trim()
+    ? { status: 'empty' }
+    : compileFailure?.source === value
+      ? { status: 'error', diagnostic: compileFailure.diagnostic }
+      : compiled?.source === value
+        ? { status: 'ready', blocks: compiled.blocks }
+        : { status: 'loading' };
 
   return (
     <div className="stack--tight">
@@ -135,10 +164,15 @@ export function TemplateBodyEditor({
           />
         </div>
         <div className="delib__preview stack--tight">
-          <p className="card__label">{bt('templates.editor.preview.title')}</p>
           <p className="field__hint">{bt('templates.editor.preview.hint')}</p>
-          <div className="preview">
-            <TemplateBodyPreview blocks={blocks} emptyLabel={bt('templates.editor.preview.empty')} />
+          <div className="preview template-editor__document-preview">
+            <TemplateAuthoredPreview
+              title={bt('templates.editor.preview.title')}
+              templateId={spec.id}
+              locale={spec.locale}
+              blocks={spec.blocks}
+              narrative={narrative}
+            />
           </div>
         </div>
       </div>

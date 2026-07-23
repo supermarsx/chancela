@@ -1210,6 +1210,29 @@ export interface TemplateSummary {
   source: TemplateSource;
 }
 
+/** One retained, named-or-unnamed snapshot in a user template's bounded save history. */
+export interface TemplateVersionEntry {
+  id: string;
+  template_id: string;
+  name?: string | null;
+  created_at: string;
+  created_by: string;
+}
+
+/**
+ * Response from `GET /v1/templates/{id}/versions`. Entries are newest first and
+ * `history_limit` is the server-configured retention ceiling for this installation.
+ */
+export interface TemplateVersionHistory {
+  history_limit: number;
+  entries: TemplateVersionEntry[];
+}
+
+/** Rename a retained template save; `null` or a blank value clears its friendly name. */
+export interface RenameTemplateVersionBody {
+  name?: string | null;
+}
+
 export interface TemplateErrorBody {
   code: string;
   field?: string;

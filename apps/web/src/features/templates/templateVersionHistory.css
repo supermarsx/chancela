@@ -1,0 +1,63 @@
+.template-version-history {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.template-version-history > h2 {
+  margin: 0;
+}
+
+.template-version-history__retention {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.template-version-history__table .table {
+  min-width: 46rem;
+}
+
+.template-version-history__table th:last-child,
+.template-version-history__table td:last-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.template-version-history__name {
+  min-width: 13rem;
+}
+
+.template-version-history__actions,
+.template-version-history__rename-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.template-version-history__actions {
+  justify-content: flex-end;
+}
+
+.template-version-history__actions .btn,
+.template-version-history__rename-actions .btn {
+  min-height: 2rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.template-version-history__rename {
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(22rem, 70vw);
+}
+
+.template-version-history__rename .field__hint,
+.template-version-history__rename .field__error {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .template-version-history__actions {
+    justify-content: flex-start;
+  }
+}

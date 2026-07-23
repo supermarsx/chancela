@@ -1,30 +1,18 @@
 /**
- * The authored fields of a {@link TemplateSpec} — extracted so the full-page create/fork surface and
- * the full-width edit page cannot drift apart (t109 + t56).
+ * The compact metadata properties of a {@link TemplateSpec} — extracted so the full-page
+ * create/fork surface and the full-width edit page cannot drift apart.
  *
  * This is markup and nothing else: no fetching, no submission, no ruling about which templates
  * may be edited. The caller owns the spec state and the write, because those differ between the
  * two surfaces — the create page POSTs a new template, the edit page PUTs an existing one whose id
  * is fixed.
  *
- * `law_references` are SERVER-DERIVED and therefore never authored here.
- *
- * ## Why `blocks` is still a JSON textarea and not a WYSIWYG
- *
- * A template body is **not markdown**. It is `Vec<BlockSpec>` — kind-tagged blocks
- * (`Heading`, `Paragraph`, `KeyValue`, `VoteTable`, `SignatureBlock`, `PageBreak`, `Rule`,
- * `chancela-templates/src/lib.rs:179`) carrying minijinja in their text fields plus non-text
- * bindings a document has no prose form for: `items` loop paths, `vote_field`,
- * `unanimous_total`, `KvRowSpec` pairs. The app's ProseMirror WYSIWYG
- * (`features/acts/MarkdownBodyEditor`) edits a **markdown string** — the ata's narrative body —
- * and markdown cannot represent any of the above. Pointing it at a spec would require a lossy
- * markdown⇄BlockSpec mapping whose failure mode is silently dropping a `VoteTable` from a legal
- * instrument. Canonical JSON is the honest surface until a block-structured editor exists; the
- * server still validates every block (`no_blocks` / `bad_template` / `unknown_threshold`).
+ * `law_references` are SERVER-DERIVED and therefore never authored here. Blocks are edited by
+ * `TemplateBlocksEditor`; keeping them out of this component is what lets the page put authoring
+ * and preview together on the first tab while these properties occupy their own compact table tab.
  */
 import {
   LIFECYCLE_STAGES,
-  LOCALES,
   MEETING_CHANNELS,
   type EntityFamily,
   type MeetingChannel,
@@ -39,7 +27,7 @@ import {
   signaturePolicyLabels,
 } from '../../api/labels';
 import { useT } from '../../i18n';
-import { Field, FieldHelp, Input, Select, TextArea } from '../../ui';
+import { Field, Input, Select } from '../../ui';
 
 const ENTITY_FAMILIES: readonly EntityFamily[] = [
   'CommercialCompany',
@@ -55,17 +43,16 @@ const SIGNATURE_POLICIES: readonly SignaturePolicyHint[] = [
   'ManualAttested',
 ];
 
+// Template authoring currently accepts only pt-PT. The wider LOCALES catalog belongs to user and
+// document settings; offering those values here guarantees a 422 from the template write API.
+const AUTHORABLE_TEMPLATE_LOCALES = ['pt-PT'] as const;
+
 export interface TemplateSpecFieldsProps {
   /** The scalar fields of the spec being authored. */
   spec: TemplateSpec;
   onSpecChange: (next: (current: TemplateSpec) => TemplateSpec) => void;
-  /** The `blocks[]` array as canonical JSON text — kept as text so a half-typed edit survives. */
-  blocksText: string;
-  onBlocksTextChange: (next: string) => void;
   /** The id is immutable once a template exists: a new id is a different template. */
   idLocked: boolean;
-  /** How tall the blocks textarea should be — the page gives it far more room than the modal. */
-  blocksRows?: number;
   /** Prefix for the generated control ids, so two mounts never collide. */
   idPrefix?: string;
 }
@@ -73,10 +60,7 @@ export interface TemplateSpecFieldsProps {
 export function TemplateSpecFields({
   spec,
   onSpecChange,
-  blocksText,
-  onBlocksTextChange,
   idLocked,
-  blocksRows = 12,
   idPrefix = 'tpl',
 }: TemplateSpecFieldsProps) {
   const t = useT();
@@ -91,7 +75,7 @@ export function TemplateSpecFields({
   }
 
   return (
-    <>
+    <div className="form field-table">
       <Field
         label={t('templates.editor.field.id.label')}
         htmlFor={`${idPrefix}-id`}
@@ -203,29 +187,15 @@ export function TemplateSpecFields({
         <Select
           id={`${idPrefix}-locale`}
           value={spec.locale}
-          options={LOCALES.map((value) => ({ value, label: localeLabels[value] }))}
+          options={AUTHORABLE_TEMPLATE_LOCALES.map((value) => ({
+            value,
+            label: localeLabels[value],
+          }))}
           onChange={(event) =>
             onSpecChange((current) => ({ ...current, locale: event.target.value }))
           }
         />
       </Field>
-
-      <div className="field">
-        <span className="field__labelrow">
-          <label className="field__label" htmlFor={`${idPrefix}-blocks`}>
-            {t('templates.editor.field.blocks.label')}
-          </label>
-          <FieldHelp text={t('templates.editor.field.blocks.help')} />
-        </span>
-        <TextArea
-          id={`${idPrefix}-blocks`}
-          className="mono"
-          rows={blocksRows}
-          value={blocksText}
-          spellCheck={false}
-          onChange={(event) => onBlocksTextChange(event.target.value)}
-        />
-      </div>
-    </>
+    </div>
   );
 }

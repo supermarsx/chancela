@@ -223,6 +223,7 @@ export const keys = {
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
   templateSpec: (id: string) => ['templates', 'spec', id] as const,
   templateBundle: (id: string) => ['templates', 'bundle', id] as const,
+  templateVersions: (id: string) => ['templates', 'versions', id] as const,
   ledger: (params: LedgerQueryParams) => ['ledger', params] as const,
   ledgerPage: (params: LedgerQueryParams) => ['ledger', 'page', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
@@ -1396,8 +1397,8 @@ export type CreateTemplateInput = string | TemplateBundleInput;
  * `{ id, bundle }` (bundle-envelope replace that persists `body_markdown`).
  */
 export type UpdateTemplateInput =
-  | { id: string; rawJson: string }
-  | { id: string; bundle: TemplateBundleInput };
+  | { id: string; rawJson: string; versionName?: string }
+  | { id: string; bundle: TemplateBundleInput; versionName?: string };
 
 /**
  * Create a user-authored template (`POST /v1/templates`, wp23/t56). Accepts a bare-spec raw JSON
@@ -1426,10 +1427,62 @@ export function useCreateTemplate() {
 export function useUpdateTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateTemplateInput) =>
-      'bundle' in input
-        ? api.updateTemplateBundle(input.id, input.bundle)
-        : api.updateTemplate(input.id, input.rawJson),
+    mutationFn: (input: UpdateTemplateInput) => {
+      if ('bundle' in input) {
+        return input.versionName === undefined
+          ? api.updateTemplateBundle(input.id, input.bundle)
+          : api.updateTemplateBundle(input.id, input.bundle, input.versionName);
+      }
+      return input.versionName === undefined
+        ? api.updateTemplate(input.id, input.rawJson)
+        : api.updateTemplate(input.id, input.rawJson, input.versionName);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['templates'] });
+    },
+  });
+}
+
+/** The bounded save history for one user-authored template, newest first. */
+export function useTemplateVersions(templateId: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.templateVersions(templateId),
+    queryFn: () => api.listTemplateVersions(templateId),
+    enabled: enabled && !!templateId,
+  });
+}
+
+/** Rename (or clear the name of) one retained save. */
+export function useRenameTemplateVersion(templateId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ versionId, name }: { versionId: string; name: string | null }) =>
+      api.renameTemplateVersion(templateId, versionId, { name }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.templateVersions(templateId) });
+    },
+  });
+}
+
+/** Permanently remove one retained save without changing the current template. */
+export function useDeleteTemplateVersion(templateId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (versionId: string) => api.deleteTemplateVersion(templateId, versionId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.templateVersions(templateId) });
+    },
+  });
+}
+
+/**
+ * Restore an exact retained snapshot. The server records the restored state as a new save, so
+ * both the template reads/catalog and its history are invalidated.
+ */
+export function useRestoreTemplateVersion(templateId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (versionId: string) => api.restoreTemplateVersion(templateId, versionId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['templates'] });
     },

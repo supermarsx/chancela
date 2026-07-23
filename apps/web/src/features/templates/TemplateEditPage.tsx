@@ -19,28 +19,28 @@
  *
  * ## WYSIWYG body + live preview (t56)
  *
- * The narrative body — the markdown seed that rides the `chancela.template-bundle` envelope as
- * `body_markdown` — is edited with the ata's `MarkdownBodyEditor` (a pure consumer), with a live
- * side-by-side PREVIEW compiled by the server's own stateless `POST /v1/templates/body/preview`. The
- * client never renders document content itself, and merge tags appear in LITERAL token form because
- * the preview is unresolved (there is no act context). The structured `blocks[]` array stays a
- * canonical-JSON textarea (`TemplateSpecFields`): the WYSIWYG edits the prose body only, never the
- * block structure. Both halves are persisted through the bundle envelope on save.
+ * The first tab follows the authoring flow: structured document blocks, then the narrative-body
+ * WYSIWYG beside the server-compiled preview. Metadata lives in a separate compact properties tab.
+ * Canonical block JSON remains available only as a validated advanced escape hatch. Both authored
+ * halves are persisted through the bundle envelope on save.
  */
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { TemplateBlockSpec, TemplateSpec } from '../../api/types';
+import type { TemplateBlockSpec, TemplateBundleView, TemplateSpec } from '../../api/types';
 import { useTemplateBundle, useTemplates, useUpdateTemplate } from '../../api/hooks';
 import { ApiError } from '../../api/client';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useT } from '../../i18n';
+import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
 import {
   Button,
   ButtonLink,
   Card,
   EmptyState,
   ErrorNote,
+  Field,
   Icon,
+  Input,
   InlineWarning,
   PageHeader,
   Skeleton,
@@ -49,15 +49,23 @@ import {
 } from '../../ui';
 import { mappedTemplateError } from './templateErrors';
 import { TemplateSpecFields } from './TemplateSpecFields';
+import { TemplateBlocksEditor, parseTemplateBlocksText } from './TemplateBlocksEditor';
 import { TemplateBodyEditor } from './TemplateBodyEditor';
+import { TemplateEditorTabs, type UserTemplateEditorTab } from './TemplateEditorTabs';
+import { TemplateVersionHistory } from './TemplateVersionHistory';
+import { normalizeTemplateVersionName } from './templateVersionNames';
 import { templateDetailPath } from './templateRoutes';
 import { hasTemplateName, templateDisplayName } from './templateNames';
+import { PermissionDeniedNote, useCan } from '../session/permissions';
 
 export function TemplateEditPage() {
   const t = useT();
+  const et = useTemplatesEditorT();
   const toast = useToast();
   const navigate = useNavigate();
   const { id = '' } = useParams();
+  const can = useCan();
+  const canManageTemplates = can('template.manage');
 
   const templates = useTemplates();
   const template = (templates.data ?? []).find((row) => row.id === id);
@@ -65,22 +73,30 @@ export function TemplateEditPage() {
   // Both authored halves — spec + narrative body — are fetched once the catalog says this template
   // exists AND is editable, so opening the page against a built-in never even reads it. The bundle
   // reader preserves the t48 fork crash-fix (spec is unwrapped from the `.spec` envelope half).
-  const bundle = useTemplateBundle(id, template !== undefined && isUser);
+  const bundle = useTemplateBundle(id, canManageTemplates && template !== undefined && isUser);
   const updateTemplate = useUpdateTemplate();
 
   const [draft, setDraft] = useState<TemplateSpec | null>(null);
   const [blocksText, setBlocksText] = useState('');
   const [body, setBody] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [versionName, setVersionName] = useState('');
+  const [versionNameError, setVersionNameError] = useState<string | null>(null);
+  const [restoreReloading, setRestoreReloading] = useState(false);
+  const [tab, setTab] = useState<UserTemplateEditorTab>('content');
+
+  const seedFromBundle = useCallback((next: TemplateBundleView) => {
+    setDraft(next.spec);
+    setBlocksText(JSON.stringify(next.spec.blocks, null, 2));
+    setBody(next.body_markdown);
+  }, []);
 
   // Seed the draft once the bundle arrives. Keyed on the loaded data rather than on `id` so a
   // refetch that returns the same body cannot silently discard typing in progress.
   useEffect(() => {
-    if (!bundle.data || draft !== null) return;
-    setDraft(bundle.data.spec);
-    setBlocksText(JSON.stringify(bundle.data.spec.blocks, null, 2));
-    setBody(bundle.data.body_markdown);
-  }, [bundle.data, draft]);
+    if (!bundle.data || bundle.error || restoreReloading || draft !== null) return;
+    seedFromBundle(bundle.data);
+  }, [bundle.data, bundle.error, draft, restoreReloading, seedFromBundle]);
 
   const dirty = useMemo(() => {
     if (!bundle.data || !draft) return false;
@@ -88,14 +104,47 @@ export function TemplateEditPage() {
       JSON.stringify({ ...draft, blocks: [] }) !==
         JSON.stringify({ ...bundle.data.spec, blocks: [] }) ||
       blocksText !== JSON.stringify(bundle.data.spec.blocks, null, 2) ||
-      body !== bundle.data.body_markdown
+      body !== bundle.data.body_markdown ||
+      versionName.trim() !== ''
     );
-  }, [draft, bundle.data, blocksText, body]);
+  }, [draft, bundle.data, blocksText, body, versionName]);
+
+  // The body-placement hint follows structured block edits immediately. If advanced JSON is
+  // temporarily invalid, keep the last valid spec visible rather than inventing a block list.
+  const authoredSpec = useMemo(() => {
+    if (!draft) return null;
+    const parsed = parseTemplateBlocksText(blocksText);
+    return parsed.blocks ? { ...draft, blocks: parsed.blocks } : draft;
+  }, [draft, blocksText]);
 
   // Warns before a reload or a route change would throw the edit away (t52's registry).
   useUnsavedChanges(dirty);
 
   const backToTemplate = templateDetailPath(id);
+
+  function handleVersionRestored() {
+    // The restore response is metadata-only. Drop every local authored half, then force a fresh
+    // bundle read before returning to the editor; otherwise the old cached body could briefly
+    // become the new dirty baseline.
+    setRestoreReloading(true);
+    setDraft(null);
+    setBlocksText('');
+    setBody('');
+    setVersionName('');
+    setVersionNameError(null);
+    setFormError(null);
+
+    void bundle.refetch().then(
+      (refreshed) => {
+        if (refreshed.data && !refreshed.error) {
+          seedFromBundle(refreshed.data);
+          setTab('content');
+        }
+        setRestoreReloading(false);
+      },
+      () => setRestoreReloading(false),
+    );
+  }
 
   if (templates.isLoading) {
     return (
@@ -131,6 +180,27 @@ export function TemplateEditPage() {
 
   const name = hasTemplateName(template.id) ? templateDisplayName(template.id) : template.id;
 
+  // The catalog's Edit action is permission-gated, but a URL can be typed or bookmarked. Mirror
+  // that global gate at the route boundary and never mount the editor/history queries for a reader.
+  if (!canManageTemplates) {
+    return (
+      <div className="stack wide-page">
+        <PageHeader
+          crumbs={
+            <>
+              <Link to="/templates">{t('templates.title')}</Link> · {template.id}
+            </>
+          }
+          title={name}
+        />
+        <PermissionDeniedNote />
+        <p>
+          <Link to={backToTemplate}>{t('templates.detail.open')}</Link>
+        </p>
+      </div>
+    );
+  }
+
   // A built-in reached by URL, not by a button — the buttons already divert to the fork page.
   // It is refused HERE too, because a route is a thing people bookmark, type and share.
   if (!isUser) {
@@ -158,6 +228,13 @@ export function TemplateEditPage() {
     event.preventDefault();
     if (!draft || updateTemplate.isPending) return;
     setFormError(null);
+    setVersionNameError(null);
+
+    const normalizedVersionName = normalizeTemplateVersionName(versionName);
+    if (normalizedVersionName.tooLong) {
+      setVersionNameError(et('templates.editor.saveName.tooLong'));
+      return;
+    }
 
     let blocks: TemplateBlockSpec[];
     try {
@@ -189,6 +266,7 @@ export function TemplateEditPage() {
       const updated = await updateTemplate.mutateAsync({
         id: payload.id,
         bundle: { spec: payload, body_markdown: body },
+        ...(normalizedVersionName.value ? { versionName: normalizedVersionName.value } : {}),
       });
       toast.success(t('templates.toast.updated', { id: updated.id }));
       // The draft is dropped so `dirty` goes false before the route changes; otherwise the
@@ -237,50 +315,98 @@ export function TemplateEditPage() {
         </Card>
       ) : bundle.error ? (
         <ErrorNote error={bundle.error} />
-      ) : draft ? (
+      ) : bundle.data ? (
         <Card title={t('templates.editor.title.edit')}>
-          <form className="form" onSubmit={submit}>
+          <div className="stack">
             <p className="field__hint">{t('templates.editor.intro')}</p>
 
-            <TemplateSpecFields
-              spec={draft}
-              onSpecChange={(next) => setDraft((current) => (current ? next(current) : current))}
-              blocksText={blocksText}
-              onBlocksTextChange={setBlocksText}
-              idLocked
-              // The whole point of the page: the body gets the vertical room the modal denied it.
-              blocksRows={28}
-              idPrefix="tpl-page"
-            />
+            <TemplateEditorTabs active={tab} onSelect={setTab} showVersions />
 
-            <TemplateBodyEditor
-              spec={draft}
-              value={body}
-              onChange={setBody}
-              disabled={updateTemplate.isPending}
-              idPrefix="tpl-page"
-            />
+            {tab === 'versions' ? (
+              <div className="route-transition" key={tab}>
+                <TemplateVersionHistory
+                  templateId={id}
+                  enabled
+                  onRestored={handleVersionRestored}
+                  restoreBlockedReason={
+                    dirty ? et('templates.editor.versions.restoreBlockedDirty') : undefined
+                  }
+                  hideHeading
+                />
+              </div>
+            ) : restoreReloading || !draft || !authoredSpec ? (
+              <SkeletonDeflist />
+            ) : (
+              <form className="form" onSubmit={submit}>
+                <div className="route-transition stack" key={tab}>
+                  {tab === 'content' ? (
+                    <>
+                      <TemplateBlocksEditor
+                        value={blocksText}
+                        onChange={setBlocksText}
+                        idPrefix="tpl-page-blocks"
+                      />
+                      <TemplateBodyEditor
+                        spec={authoredSpec}
+                        value={body}
+                        onChange={setBody}
+                        disabled={updateTemplate.isPending}
+                        idPrefix="tpl-page"
+                      />
+                    </>
+                  ) : (
+                    <TemplateSpecFields
+                      spec={draft}
+                      onSpecChange={(next) =>
+                        setDraft((current) => (current ? next(current) : current))
+                      }
+                      idLocked
+                      idPrefix="tpl-page"
+                    />
+                  )}
+                </div>
 
-            {formError ? (
-              <InlineWarning tone="error" title={t('templates.import.invalid')}>
-                <p>{formError}</p>
-              </InlineWarning>
-            ) : null}
+                {formError ? (
+                  <InlineWarning tone="error" title={t('templates.import.invalid')}>
+                    <p>{formError}</p>
+                  </InlineWarning>
+                ) : null}
 
-            <div className="row-wrap">
-              <Button
-                type="submit"
-                variant="primary"
-                icon={<Icon.Save />}
-                disabled={updateTemplate.isPending || !blocksText.trim()}
-              >
-                {t('templates.actions.save')}
-              </Button>
-              <ButtonLink to={backToTemplate} variant="ghost">
-                {t('templates.actions.cancel')}
-              </ButtonLink>
-            </div>
-          </form>
+                <div className="template-editor__save-bar">
+                  <Field
+                    label={et('templates.editor.saveName.label')}
+                    htmlFor="tpl-page-version-name"
+                    hint={et('templates.editor.saveName.hint')}
+                    error={versionNameError}
+                  >
+                    <Input
+                      id="tpl-page-version-name"
+                      value={versionName}
+                      placeholder={et('templates.editor.saveName.placeholder')}
+                      disabled={updateTemplate.isPending}
+                      onChange={(event) => {
+                        setVersionName(event.target.value);
+                        if (versionNameError) setVersionNameError(null);
+                      }}
+                    />
+                  </Field>
+                  <div className="row-wrap template-editor__save-actions">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      icon={<Icon.Save />}
+                      disabled={updateTemplate.isPending || !blocksText.trim()}
+                    >
+                      {t('templates.actions.save')}
+                    </Button>
+                    <ButtonLink to={backToTemplate} variant="ghost">
+                      {t('templates.actions.cancel')}
+                    </ButtonLink>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
         </Card>
       ) : null}
     </div>

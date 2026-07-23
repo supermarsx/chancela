@@ -79,6 +79,9 @@ import type {
   LifecycleStage,
   TemplateImportVerdict,
   TemplateSummary,
+  TemplateVersionEntry,
+  TemplateVersionHistory,
+  RenameTemplateVersionBody,
   TemplateBundle,
   TemplateBundleInput,
   PreviewTemplateBody,
@@ -1167,8 +1170,11 @@ export const api = {
   listTemplates: (params: { family?: EntityFamily; stage?: LifecycleStage } = {}) =>
     get<TemplateSummary[]>(`/v1/templates${query(params)}`),
   createTemplate: (rawJson: string) => postRawJsonText<TemplateSummary>('/v1/templates', rawJson),
-  updateTemplate: (id: string, rawJson: string) =>
-    putRawJsonText<TemplateSummary>(`/v1/templates/${encodeURIComponent(id)}`, rawJson),
+  updateTemplate: (id: string, rawJson: string, versionName?: string) =>
+    putRawJsonText<TemplateSummary>(
+      `/v1/templates/${encodeURIComponent(id)}${query({ version_name: versionName })}`,
+      rawJson,
+    ),
   // Create/replace a user template through the `chancela.template-bundle` envelope (t56 §5a), so the
   // authored `body_markdown` (which MAY carry unresolved merge tags) is persisted as the spec's seed
   // `default_body` instead of a bare spec. The server also accepts a legacy bare spec via
@@ -1178,10 +1184,25 @@ export const api = {
       '/v1/templates',
       JSON.stringify(templateBundleEnvelope(input)),
     ),
-  updateTemplateBundle: (id: string, input: TemplateBundleInput) =>
+  updateTemplateBundle: (id: string, input: TemplateBundleInput, versionName?: string) =>
     putRawJsonText<TemplateSummary>(
-      `/v1/templates/${encodeURIComponent(id)}`,
+      `/v1/templates/${encodeURIComponent(id)}${query({ version_name: versionName })}`,
       JSON.stringify(templateBundleEnvelope(input)),
+    ),
+  listTemplateVersions: (id: string) =>
+    get<TemplateVersionHistory>(`/v1/templates/${encodeURIComponent(id)}/versions`),
+  renameTemplateVersion: (templateId: string, versionId: string, body: RenameTemplateVersionBody) =>
+    patch<TemplateVersionEntry>(
+      `/v1/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}`,
+      body,
+    ),
+  deleteTemplateVersion: (templateId: string, versionId: string) =>
+    del<void>(
+      `/v1/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}`,
+    ),
+  restoreTemplateVersion: (templateId: string, versionId: string) =>
+    post<TemplateSummary>(
+      `/v1/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}/restore`,
     ),
   // Compile a template narrative-body source into `Block[]` server-side (t56 §5b) — STATELESS (no act,
   // no id), the SAME `md-block/v1` compiler the seal runs. Merge tags render as literal token text

@@ -42,9 +42,12 @@ import {
 } from '../../ui';
 import { mappedTemplateError } from './templateErrors';
 import { TemplateSpecFields } from './TemplateSpecFields';
+import { TemplateBlocksEditor, parseTemplateBlocksText } from './TemplateBlocksEditor';
 import { TemplateBodyEditor } from './TemplateBodyEditor';
+import { TemplateEditorTabs, type TemplateEditorTab } from './TemplateEditorTabs';
 import { forkTemplateSpec, forkedTemplateId } from './templateFork';
 import { templateDetailPath } from './templateRoutes';
+import { PermissionDeniedNote, useCan } from '../session/permissions';
 
 /** A default authored spec for a brand-new template (a single empty paragraph block). */
 function blankSpec(): TemplateSpec {
@@ -67,35 +70,43 @@ export function TemplateCreatePage() {
   const [params] = useSearchParams();
   const forkId = params.get('fork');
   const isFork = forkId !== null && forkId !== '';
+  const can = useCan();
+  const canManageTemplates = can('template.manage');
 
-  const templates = useTemplates();
+  const templates = useTemplates(undefined, undefined, canManageTemplates);
   const source = isFork ? (templates.data ?? []).find((row) => row.id === forkId) : undefined;
   const sourceIsBuiltin = source !== undefined && source.source !== 'user';
-  const existingIds = useMemo(
-    () => (templates.data ?? []).map((row) => row.id),
-    [templates.data],
-  );
+  const existingIds = useMemo(() => (templates.data ?? []).map((row) => row.id), [templates.data]);
   // The seed spec + body for a fork; only fetched when forking and once the catalog resolved the id.
-  const bundle = useTemplateBundle(forkId ?? '', isFork && templates.data !== undefined);
+  const bundle = useTemplateBundle(
+    forkId ?? '',
+    canManageTemplates && isFork && templates.data !== undefined,
+  );
   const createTemplate = useCreateTemplate();
 
   const [draft, setDraft] = useState<TemplateSpec | null>(null);
   const [blocksText, setBlocksText] = useState('');
   const [body, setBody] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TemplateEditorTab>('content');
   // The seeded baseline, captured once so `dirty` measures real edits (not the pre-filled fork).
   const baselineRef = useRef<string | null>(null);
   const savedRef = useRef(false);
 
   // Seed the draft once: immediately for a blank create, or when the fork bundle arrives.
   useEffect(() => {
+    if (!canManageTemplates) return;
     if (draft !== null) return;
     if (!isFork) {
       const seed = blankSpec();
       setDraft(seed);
       setBlocksText(JSON.stringify(seed.blocks, null, 2));
       setBody('');
-      baselineRef.current = JSON.stringify({ spec: { ...seed, blocks: [] }, blocks: seed.blocks, body: '' });
+      baselineRef.current = JSON.stringify({
+        spec: { ...seed, blocks: [] },
+        blocks: seed.blocks,
+        body: '',
+      });
       return;
     }
     if (!bundle.data) return;
@@ -108,7 +119,7 @@ export function TemplateCreatePage() {
       blocks: seed.blocks,
       body: bundle.data.body_markdown,
     });
-  }, [draft, isFork, bundle.data, forkId, existingIds]);
+  }, [canManageTemplates, draft, isFork, bundle.data, forkId, existingIds]);
 
   const dirty = useMemo(() => {
     if (!draft || baselineRef.current === null) return false;
@@ -118,14 +129,32 @@ export function TemplateCreatePage() {
     } catch {
       blocks = blocksText;
     }
-    return (
-      JSON.stringify({ spec: { ...draft, blocks: [] }, blocks, body }) !== baselineRef.current
-    );
+    return JSON.stringify({ spec: { ...draft, blocks: [] }, blocks, body }) !== baselineRef.current;
   }, [draft, blocksText, body]);
+
+  const authoredSpec = useMemo(() => {
+    if (!draft) return null;
+    const parsed = parseTemplateBlocksText(blocksText);
+    return parsed.blocks ? { ...draft, blocks: parsed.blocks } : draft;
+  }, [draft, blocksText]);
 
   useUnsavedChanges(dirty && !savedRef.current);
 
   const title = isFork ? t('templates.editor.title.fork') : t('templates.editor.title.create');
+
+  // New/fork buttons are gated in the catalog, but a direct URL bypasses those affordances.
+  // Fail closed here too: no catalog/fork-bundle authoring read, draft, preview, or late POST.
+  if (!canManageTemplates) {
+    return (
+      <div className="stack wide-page">
+        <PageHeader crumbs={<Link to="/templates">{t('templates.title')}</Link>} title={title} />
+        <PermissionDeniedNote />
+        <p>
+          <Link to="/templates">{t('templates.title')}</Link>
+        </p>
+      </div>
+    );
+  }
 
   if (isFork && templates.isLoading) {
     return (
@@ -230,28 +259,45 @@ export function TemplateCreatePage() {
         <Card title={title}>
           <SkeletonDeflist />
         </Card>
-      ) : draft ? (
+      ) : draft && authoredSpec ? (
         <Card title={title}>
           <form className="form" onSubmit={submit}>
             <p className="field__hint">{t('templates.editor.intro')}</p>
 
-            <TemplateSpecFields
-              spec={draft}
-              onSpecChange={(next) => setDraft((current) => (current ? next(current) : current))}
-              blocksText={blocksText}
-              onBlocksTextChange={setBlocksText}
-              idLocked={false}
-              blocksRows={20}
-              idPrefix="tpl-new"
+            <TemplateEditorTabs
+              active={tab}
+              onSelect={(next) => {
+                if (next !== 'versions') setTab(next);
+              }}
             />
 
-            <TemplateBodyEditor
-              spec={draft}
-              value={body}
-              onChange={setBody}
-              disabled={createTemplate.isPending}
-              idPrefix="tpl-new"
-            />
+            <div className="route-transition stack" key={tab}>
+              {tab === 'content' ? (
+                <>
+                  <TemplateBlocksEditor
+                    value={blocksText}
+                    onChange={setBlocksText}
+                    idPrefix="tpl-new-blocks"
+                  />
+                  <TemplateBodyEditor
+                    spec={authoredSpec}
+                    value={body}
+                    onChange={setBody}
+                    disabled={createTemplate.isPending}
+                    idPrefix="tpl-new"
+                  />
+                </>
+              ) : (
+                <TemplateSpecFields
+                  spec={draft}
+                  onSpecChange={(next) =>
+                    setDraft((current) => (current ? next(current) : current))
+                  }
+                  idLocked={false}
+                  idPrefix="tpl-new"
+                />
+              )}
+            </div>
 
             {formError ? (
               <InlineWarning tone="error" title={t('templates.import.invalid')}>

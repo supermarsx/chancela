@@ -9,11 +9,16 @@
  * The lazy `MarkdownBodyEditor` is mocked to a plain textarea so the wiring is what the test observes.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { TemplateCreatePage } from './TemplateCreatePage';
 import { renderWithProviders } from '../../test/utils';
-import type { Block, TemplateSummary } from '../../api/types';
+import type { Block, TemplateBlockSpec, TemplateSummary } from '../../api/types';
+import {
+  StaticPermissionsProvider,
+  permissionsValue,
+  type PermissionsContextValue,
+} from '../session/permissions';
 
 vi.mock('../acts/MarkdownBodyEditor', () => ({
   MarkdownBodyEditor: ({
@@ -107,12 +112,19 @@ function writePosts(calls: RecordedRequest[]): RecordedRequest[] {
   return calls.filter((c) => c.method === 'POST' && !c.url.includes('/body/preview'));
 }
 
-function renderCreate(search = '') {
-  return renderWithProviders(
+function renderCreate(search = '', permissions?: PermissionsContextValue) {
+  const routes = (
     <Routes>
       <Route path="/templates/new" element={<TemplateCreatePage />} />
       <Route path="/templates/:id/:sec?" element={<div>detalhe</div>} />
-    </Routes>,
+    </Routes>
+  );
+  return renderWithProviders(
+    permissions ? (
+      <StaticPermissionsProvider value={permissions}>{routes}</StaticPermissionsProvider>
+    ) : (
+      routes
+    ),
     [`/templates/new${search}`],
   );
 }
@@ -123,15 +135,60 @@ afterEach(() => {
 });
 
 describe('TemplateCreatePage', () => {
+  it.each([
+    { label: 'new', search: '' },
+    { label: 'fork', search: '?fork=csc-ata-ag%2Fv1' },
+  ])('fails closed on a direct $label route for an act.read-only reader', async ({ search }) => {
+    const { fn, calls } = stubFetch([BUILTIN]);
+    vi.stubGlobal('fetch', fn);
+
+    renderCreate(
+      search,
+      permissionsValue((permission) => permission === 'act.read'),
+    );
+
+    expect(await screen.findByText('Sem permissão')).toBeTruthy();
+    expect(screen.getByText('Não tem permissão para realizar esta operação.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Guardar' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Editor e pré-visualização' })).toBeNull();
+    expect(screen.queryByLabelText('corpo-markdown')).toBeNull();
+    expect(calls.some((call) => call.url.includes('/export'))).toBe(false);
+    expect(calls.some((call) => call.url.includes('/body/preview'))).toBe(false);
+    expect(writePosts(calls)).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+  });
+
   it('is a full-width page, not a modal', async () => {
     const { fn } = stubFetch([]);
     vi.stubGlobal('fetch', fn);
 
     const { container } = renderCreate();
 
-    await screen.findByLabelText('Identificador');
+    const contentTab = await screen.findByRole('button', {
+      name: 'Editor e pré-visualização',
+    });
+    expect(contentTab.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByLabelText('Identificador')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Histórico de versões' })).toBeNull();
     expect(container.querySelector('.wide-page')).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
+    await screen.findByLabelText('Identificador');
+    expect(container.querySelector('.field-table')).toBeTruthy();
+    expect(screen.queryByLabelText('corpo-markdown')).toBeNull();
+  });
+
+  it('offers only the locale accepted by the template authoring API', async () => {
+    const { fn } = stubFetch([]);
+    vi.stubGlobal('fetch', fn);
+
+    renderCreate();
+    await screen.findByLabelText('corpo-markdown');
+    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
+
+    const locale = screen.getByLabelText('Idioma') as HTMLSelectElement;
+    expect(Array.from(locale.options, (option) => option.value)).toEqual(['pt-PT']);
   });
 
   it('creates a user template by posting the bundle envelope with the narrative body', async () => {
@@ -140,14 +197,15 @@ describe('TemplateCreatePage', () => {
 
     renderCreate();
 
+    fireEvent.change(await screen.findByLabelText('corpo-markdown'), {
+      target: { value: '## Novo corpo' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
     fireEvent.change(await screen.findByLabelText('Identificador'), {
       target: { value: 'user-x/v1' },
     });
     fireEvent.change(screen.getByLabelText('Pacote de regras'), {
       target: { value: 'csc-art63/v2' },
-    });
-    fireEvent.change(screen.getByLabelText('corpo-markdown'), {
-      target: { value: '## Novo corpo' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 
@@ -168,15 +226,16 @@ describe('TemplateCreatePage', () => {
 
     renderCreate('?fork=csc-ata-ag%2Fv1');
 
+    // The first tab is authoring: body and preview stay together.
+    expect(((await screen.findByLabelText('corpo-markdown')) as HTMLTextAreaElement).value).toBe(
+      '## Corpo\n\nTexto do corpo.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
     // The spec was unwrapped from `.spec` (t48 crash-fix): rule pack carried through, id derived.
     const id = (await screen.findByLabelText('Identificador')) as HTMLInputElement;
     expect(id.value).toBe('user-csc-ata-ag/v1');
     expect((screen.getByLabelText('Pacote de regras') as HTMLInputElement).value).toBe(
       'csc-art63/v2',
-    );
-    // The body rode the bundle as `body_markdown` and seeded the editor.
-    expect((screen.getByLabelText('corpo-markdown') as HTMLTextAreaElement).value).toBe(
-      '## Corpo\n\nTexto do corpo.',
     );
     // The honest limit is stated before any work, not at the seal.
     expect(screen.getByText('Os modelos incluídos não se editam')).toBeTruthy();
@@ -190,7 +249,7 @@ describe('TemplateCreatePage', () => {
 
     renderCreate('?fork=csc-ata-ag%2Fv1');
 
-    await screen.findByLabelText('Identificador');
+    await screen.findByLabelText('corpo-markdown');
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 
     await waitFor(() => expect(writePosts(calls)).toHaveLength(1));
@@ -233,11 +292,110 @@ describe('TemplateCreatePage', () => {
 
     renderCreate();
 
-    // Chrome is immediate; the compiled block arrives after the debounced preview call.
-    expect(await screen.findByText('Pré-visualização do corpo')).toBeTruthy();
+    // The compiled body appears at its authored placement marker, after the debounced server call.
+    expect(await screen.findByText('Pré-visualização do modelo')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Tipo do novo bloco'), {
+      target: { value: 'NarrativeBody' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar bloco' }));
     fireEvent.change(await screen.findByLabelText('corpo-markdown'), {
       target: { value: '## Ata' },
     });
     expect(await screen.findByText('Ata n.º {{ ata_number }}')).toBeTruthy();
+  });
+
+  it('previews all eight currently authored block variants and keeps NarrativeBody in order', async () => {
+    const blocks: TemplateBlockSpec[] = [
+      { kind: 'Heading', level: 1, template: 'Título inicial' },
+      { kind: 'Paragraph', items: 'agenda_items', template: 'Ponto {{ item.text }}' },
+      {
+        kind: 'KeyValue',
+        items: 'entity',
+        rows: [{ key: 'Entidade', value: '{{ entity.name }}' }],
+      },
+      { kind: 'NarrativeBody' },
+      {
+        kind: 'VoteTable',
+        items: 'deliberation_items',
+        label: '{{ item.text }}',
+        vote_field: 'vote',
+        unanimous_total: '{{ members_present }}',
+      },
+      { kind: 'Rule' },
+      { kind: 'PageBreak' },
+      {
+        kind: 'SignatureBlock',
+        source: 'signatories',
+        role: '{{ capacity }}',
+        name: '{{ name }}',
+      },
+    ];
+    const { fn } = stubFetch([], {
+      previewBlocks: [
+        {
+          type: 'Heading',
+          level: 2,
+          text: 'Corpo compilado {{ meeting_date }}',
+        },
+      ],
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderCreate();
+
+    const rawDisclosure = (await screen.findByText('JSON avançado')).closest('details');
+    if (!rawDisclosure) throw new Error('advanced JSON disclosure missing');
+    fireEvent.click(within(rawDisclosure).getByText('JSON avançado'));
+    fireEvent.change(screen.getByLabelText('JSON avançado'), {
+      target: { value: JSON.stringify(blocks, null, 2) },
+    });
+
+    const firstBlock = screen.getByText('Bloco 1').closest('details');
+    const thirdBlock = screen.getByText('Bloco 3').closest('details');
+    if (!firstBlock || !thirdBlock) throw new Error('structured block controls missing');
+    fireEvent.change(within(firstBlock).getByLabelText('Texto do modelo'), {
+      target: { value: 'Título editado' },
+    });
+    fireEvent.click(within(thirdBlock).getByText('Bloco 3'));
+    fireEvent.change(within(thirdBlock).getByLabelText('Rótulo 1'), {
+      target: { value: 'Entidade atualizada' },
+    });
+    fireEvent.change(screen.getByLabelText('corpo-markdown'), {
+      target: { value: '## Corpo compilado' },
+    });
+
+    const preview = await screen.findByRole('article', {
+      name: 'Pré-visualização do modelo',
+    });
+    expect(within(preview).getByText('Título editado')).toBeTruthy();
+    expect(within(preview).getByText('Entidade atualizada')).toBeTruthy();
+    expect(within(preview).getByText('{{ entity.name }}')).toBeTruthy();
+    expect(within(preview).getByText('agenda_items')).toBeTruthy();
+    expect(within(preview).getByText('deliberation_items')).toBeTruthy();
+    expect(within(preview).getByText('{{ members_present }}')).toBeTruthy();
+    expect(within(preview).getByText('signatories')).toBeTruthy();
+    expect(within(preview).getByText('{{ capacity }}')).toBeTruthy();
+    expect(within(preview).getByText('{{ name }}')).toBeTruthy();
+
+    const authoredOrder = Array.from(
+      preview.querySelectorAll<HTMLElement>('[data-template-block-kind]'),
+      (node) => node.dataset.templateBlockKind,
+    );
+    expect(authoredOrder).toEqual([
+      'Heading',
+      'Paragraph',
+      'KeyValue',
+      'NarrativeBody',
+      'VoteTable',
+      'Rule',
+      'PageBreak',
+      'SignatureBlock',
+    ]);
+    const narrative = preview.querySelector('[data-template-narrative]');
+    if (!narrative) throw new Error('narrative placement marker missing');
+    expect(
+      await within(narrative as HTMLElement).findByText('Corpo compilado {{ meeting_date }}'),
+    ).toBeTruthy();
+    expect(document.querySelectorAll('h1')).toHaveLength(1);
   });
 });
