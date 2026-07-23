@@ -11207,6 +11207,9 @@ input[type='radio']:disabled {
 }
 
 .data-status-usage-groups--breakdown {
+  /* Stack the usage tables full-width (one per row) like the books/acts tables,
+     overriding the parent auto-fit grid that would place them cramped side-by-side. */
+  grid-template-columns: 1fr;
   gap: 1.15rem;
   align-items: start;
 }
