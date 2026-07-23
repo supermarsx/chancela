@@ -29,15 +29,11 @@ import type { PlatformLogLevel, PlatformSettings } from '../../api/types';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import {
-  Badge,
   ButtonLink,
   Card,
   ErrorNote,
-  Field,
-  FieldHelp,
   Icon,
   InlineWarning,
-  Select,
   Skeleton,
   SkeletonRegion,
   Table,
@@ -48,11 +44,13 @@ import {
   LOGS_TAB_PATH,
   SERVICES_TAB_PATH,
   ServiceRow,
-  effectiveLogLevel,
-  logLevelOptions,
-  loggingSourceText,
-  overrideOptions,
 } from './PlatformOperationsSection';
+import {
+  effectiveLogLevel,
+  loggingSourceText,
+  PlatformLoggingTable,
+  type PlatformLoggingTableRow,
+} from './PlatformLoggingTable';
 
 /**
  * The launch-time environment surface, transcribed from `chancela-server/src/main.rs`,
@@ -116,6 +114,27 @@ export function ApiServerSection({
   };
 
   const effective = effectiveLogLevel(value.logging, API_SERVICE_ID);
+  const loggingRows: PlatformLoggingTableRow[] = [
+    {
+      id: 'api',
+      scope: t('settings.platform.service.api'),
+      area: {
+        id: 'platform-log-api',
+        label: t('settings.platform.logging.api'),
+        value: value.logging.api,
+        onChange: setLevel,
+      },
+      override: {
+        id: 'platform-log-override-api',
+        label: t('settings.platform.logging.override.api'),
+        value: value.logging.service_overrides[API_SERVICE_ID] ?? '',
+        onChange: setOverride,
+      },
+      effective,
+      source: loggingSourceText(value.logging, API_SERVICE_ID, t),
+      configuration: t('settings.api.cardTitle'),
+    },
+  ];
 
   return (
     <div className="stack">
@@ -151,48 +170,7 @@ export function ApiServerSection({
       <Card title={t('settings.api.logging.title')}>
         <div className="form settings-rows">
           <p className="field__hint">{t('settings.api.logging.hint')}</p>
-          <Field
-            label={t('settings.platform.logging.api')}
-            htmlFor="platform-log-api"
-            help={t('settings.platform.help.logLevels')}
-          >
-            <Select
-              id="platform-log-api"
-              value={value.logging.api}
-              options={logLevelOptions(t)}
-              onChange={(e) => setLevel(e.target.value as PlatformLogLevel)}
-            />
-          </Field>
-          <Field
-            label={t('settings.platform.logging.override.api')}
-            htmlFor="platform-log-override-api"
-            help={t('settings.platform.help.overrides')}
-          >
-            <Select
-              id="platform-log-override-api"
-              value={value.logging.service_overrides[API_SERVICE_ID] ?? ''}
-              options={overrideOptions(t)}
-              onChange={(e) => setOverride(e.target.value as PlatformLogLevel | '')}
-            />
-          </Field>
-          <div
-            className="platform-logging-effective"
-            role="group"
-            aria-label={t('settings.platform.effectiveLog')}
-          >
-            <p className="card__label">
-              {t('settings.platform.effectiveLog')}{' '}
-              <FieldHelp text={t('settings.platform.help.effective')} />
-            </p>
-            <div className="platform-logging-effective__item">
-              <Badge tone={effective === 'off' ? 'neutral' : 'accent'}>
-                {t(`settings.platform.logLevel.${effective}` as MessageKey)}
-              </Badge>
-              <span className="field__hint">
-                {loggingSourceText(value.logging, API_SERVICE_ID, t)}
-              </span>
-            </div>
-          </div>
+          <PlatformLoggingTable caption={t('settings.api.logging.title')} rows={loggingRows} />
         </div>
       </Card>
 

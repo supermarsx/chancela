@@ -1,8 +1,7 @@
-import { useMemo, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useControlPlatformService, usePlatformServices } from '../../api/hooks';
 import {
-  PLATFORM_LOG_LEVELS,
-  PLATFORM_SERVICE_IDS,
   type PlatformActionCapability,
   type PlatformAuditEvent,
   type PlatformControlOutcomeKind,
@@ -24,13 +23,17 @@ import {
   Card,
   DateTime,
   ErrorNote,
-  Field,
   FieldHelp,
   Icon,
   InlineWarning,
-  Select,
   useToast,
 } from '../../ui';
+import {
+  effectiveLogLevel,
+  loggingSourceText,
+  PlatformLoggingTable,
+  type PlatformLoggingTableRow,
+} from './PlatformLoggingTable';
 
 /** The two Operações panels this file renders, chosen by the ROUTE rather than by local state
  *  (t101). "Serviços" holds the desired-state service controls plus the operations audit;
@@ -55,43 +58,12 @@ export const LOGS_TAB_PATH = '/settings/operations/logs';
 /** The Serviços tab. */
 export const SERVICES_TAB_PATH = '/settings/operations/services';
 
-/** Every log AREA the settings document carries. `logAreaField` maps a service onto one of these;
- *  it is NOT the list this tab edits (see `LOG_BASE_FIELDS`). */
-type LogAreaField = 'global' | 'app' | 'api' | 'mcp';
-/** The log areas and overrides edited HERE. Both per-service areas moved to the tab that owns the
- *  service — `api` to the API sub-tab (t82b), `mcp`/`mcp_stdio` to the MCP sub-tab (t82) — and are
- *  edited there against the same `platform.logging` object in the same working copy. What is left
- *  is what belongs to no single service: the global floor and the desktop app's own area. */
-const LOG_BASE_FIELDS: readonly Exclude<LogAreaField, 'api' | 'mcp'>[] = ['global', 'app'];
-const LOG_OVERRIDE_IDS: readonly PlatformServiceId[] = ['app'];
-const LOG_LEVEL_RANK: Record<PlatformLogLevel, number> = {
-  trace: 0,
-  debug: 1,
-  info: 2,
-  warn: 3,
-  error: 4,
-  off: 5,
-};
 const AI_MCP_ASSURANCE_KEYS = [
   'settings.platform.assurance.gates',
   'settings.platform.assurance.rbac',
   'settings.platform.assurance.drafts',
   'settings.platform.assurance.signature',
 ] as const satisfies readonly MessageKey[];
-
-export function logLevelOptions(t: ReturnType<typeof useT>) {
-  return PLATFORM_LOG_LEVELS.map((level) => ({
-    value: level,
-    label: t(`settings.platform.logLevel.${level}` as MessageKey),
-  }));
-}
-
-export function overrideOptions(t: ReturnType<typeof useT>) {
-  return [
-    { value: '', label: t('settings.platform.logging.override.none') },
-    ...logLevelOptions(t),
-  ];
-}
 
 function statusTone(value: PlatformRuntimeStatus | PlatformServiceDesiredState) {
   return value === 'running' ? 'ok' : value === 'unknown' ? 'warn' : 'neutral';
@@ -117,47 +89,6 @@ function isMeaningfulDesiredStateAction(
 ) {
   if (capability.action === 'restart') return service.desired_state === 'running';
   return service.desired_state !== desiredStateForAction(capability.action);
-}
-
-function logAreaField(serviceId: PlatformServiceId): Exclude<LogAreaField, 'global'> {
-  if (serviceId === MCP_SERVICE_ID) return 'mcp';
-  return serviceId;
-}
-
-function stricterLogLevel(left: PlatformLogLevel, right: PlatformLogLevel): PlatformLogLevel {
-  return LOG_LEVEL_RANK[left] >= LOG_LEVEL_RANK[right] ? left : right;
-}
-
-export function effectiveLogLevel(
-  logging: PlatformLoggingSettings,
-  serviceId: PlatformServiceId,
-): PlatformLogLevel {
-  if (logging.global === 'off') return 'off';
-  const override = logging.service_overrides[serviceId];
-  if (override) return override;
-  return stricterLogLevel(logging.global, logging[logAreaField(serviceId)]);
-}
-
-export function loggingSourceText(
-  logging: PlatformLoggingSettings,
-  serviceId: PlatformServiceId,
-  t: ReturnType<typeof useT>,
-) {
-  if (logging.global === 'off') {
-    return `${t('settings.platform.logging.global')}: ${t('settings.platform.logLevel.off')}`;
-  }
-  const override = logging.service_overrides[serviceId];
-  if (override) {
-    return `${t('settings.platform.logging.overrides')}: ${t(
-      `settings.platform.logLevel.${override}` as MessageKey,
-    )}`;
-  }
-  const area = logAreaField(serviceId);
-  return `${t('settings.platform.logging.global')}: ${t(
-    `settings.platform.logLevel.${logging.global}` as MessageKey,
-  )} · ${t(`settings.platform.logging.${area}` as MessageKey)}: ${t(
-    `settings.platform.logLevel.${logging[area]}` as MessageKey,
-  )}`;
 }
 
 function actionIcon(action: PlatformServiceAction) {
@@ -422,36 +353,6 @@ export function ServiceRow({
   );
 }
 
-function LoggingEffectiveSummary({ logging }: { logging: PlatformLoggingSettings }) {
-  const t = useT();
-  return (
-    <div
-      className="platform-logging-effective"
-      role="group"
-      aria-label={t('settings.platform.effectiveLog')}
-    >
-      <p className="card__label">
-        {t('settings.platform.effectiveLog')}{' '}
-        <FieldHelp text={t('settings.platform.help.effective')} />
-      </p>
-      <div className="platform-logging-effective__grid">
-        {PLATFORM_SERVICE_IDS.map((serviceId) => {
-          const effective = effectiveLogLevel(logging, serviceId);
-          return (
-            <div key={serviceId} className="platform-logging-effective__item">
-              <span>{serviceFallbackLabel(serviceId, t)}</span>
-              <Badge tone={effective === 'off' ? 'neutral' : 'accent'}>
-                {t(`settings.platform.logLevel.${effective}` as MessageKey)}
-              </Badge>
-              <span className="field__hint">{loggingSourceText(logging, serviceId, t)}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function AuditTail({ audit }: { audit: PlatformAuditEvent[] }) {
   const t = useT();
   const tail = audit.slice(-5).reverse();
@@ -515,10 +416,8 @@ export function PlatformOperationsSection({
   // `settings.manage` fieldset exactly as before.
   const t = useT();
   const services = usePlatformServices();
-  const levels = useMemo(() => logLevelOptions(t), [t]);
-  const overrides = useMemo(() => overrideOptions(t), [t]);
   const setLogging = (logging: PlatformLoggingSettings) => onChange({ ...value, logging });
-  const setBaseLevel = (field: (typeof LOG_BASE_FIELDS)[number], level: PlatformLogLevel) =>
+  const setBaseLevel = (field: 'global' | 'app', level: PlatformLogLevel) =>
     setLogging({ ...value.logging, [field]: level });
   const setOverride = (serviceId: PlatformServiceId, level: PlatformLogLevel | '') => {
     const service_overrides = { ...value.logging.service_overrides };
@@ -531,6 +430,77 @@ export function PlatformOperationsSection({
     tab === 'services'
       ? t('settings.platform.tab.services.desc')
       : t('settings.platform.tab.logs.desc');
+  const loggingRows: PlatformLoggingTableRow[] = [
+    {
+      id: 'global',
+      scope: t('settings.platform.logging.global'),
+      area: {
+        id: 'platform-log-global',
+        label: t('settings.platform.logging.global'),
+        value: value.logging.global,
+        onChange: (level) => setBaseLevel('global', level),
+      },
+      override: null,
+      effective: value.logging.global,
+      source: `${t('settings.platform.logging.global')}: ${t(
+        `settings.platform.logLevel.${value.logging.global}` as MessageKey,
+      )}`,
+    },
+    {
+      id: 'app',
+      scope: serviceFallbackLabel('app', t),
+      area: {
+        id: 'platform-log-app',
+        label: t('settings.platform.logging.app'),
+        value: value.logging.app,
+        onChange: (level) => setBaseLevel('app', level),
+      },
+      override: {
+        id: 'platform-log-override-app',
+        label: `${t('settings.platform.logging.overrides')}: ${t(
+          'settings.platform.logging.override.app',
+        )}`,
+        value: value.logging.service_overrides.app ?? '',
+        onChange: (level) => setOverride('app', level),
+      },
+      effective: effectiveLogLevel(value.logging, 'app'),
+      source: loggingSourceText(value.logging, 'app', t),
+    },
+    {
+      id: 'api',
+      scope: serviceFallbackLabel(API_SERVICE_ID, t),
+      area: {
+        id: 'platform-log-api-overview',
+        label: t('settings.platform.logging.api'),
+        value: value.logging.api,
+      },
+      override: {
+        id: 'platform-log-override-api-overview',
+        label: t('settings.platform.logging.override.api'),
+        value: value.logging.service_overrides.api ?? '',
+      },
+      effective: effectiveLogLevel(value.logging, API_SERVICE_ID),
+      source: loggingSourceText(value.logging, API_SERVICE_ID, t),
+      configuration: <Link to={API_TAB_PATH}>{t('settings.api.cardTitle')}</Link>,
+    },
+    {
+      id: 'mcp_stdio',
+      scope: serviceFallbackLabel(MCP_SERVICE_ID, t),
+      area: {
+        id: 'platform-log-mcp-overview',
+        label: t('settings.platform.logging.mcp'),
+        value: value.logging.mcp,
+      },
+      override: {
+        id: 'platform-log-override-mcp-overview',
+        label: t('settings.platform.logging.override.mcp_stdio'),
+        value: value.logging.service_overrides.mcp_stdio ?? '',
+      },
+      effective: effectiveLogLevel(value.logging, MCP_SERVICE_ID),
+      source: loggingSourceText(value.logging, MCP_SERVICE_ID, t),
+      configuration: <Link to={MCP_TAB_PATH}>{t('settings.mcp.cardTitle')}</Link>,
+    },
+  ];
 
   // No strip of its own any more: the parent's Operações strip is the only one, which is the
   // whole point of the change. The lead-in sentence stays, because it is what tells an operator
@@ -564,49 +534,10 @@ export function PlatformOperationsSection({
             <Card title={t('settings.platform.logging.cardTitle')}>
               <div className="form settings-rows">
                 <p className="field__hint">{t('settings.platform.logging.hint')}</p>
-                <div className="platform-logging-grid">
-                  {LOG_BASE_FIELDS.map((field) => (
-                    <Field
-                      key={field}
-                      label={t(`settings.platform.logging.${field}` as MessageKey)}
-                      htmlFor={`platform-log-${field}`}
-                      help={field === 'global' ? t('settings.platform.help.logLevels') : undefined}
-                    >
-                      <Select
-                        id={`platform-log-${field}`}
-                        value={value.logging[field]}
-                        options={levels}
-                        onChange={(e) => setBaseLevel(field, e.target.value as PlatformLogLevel)}
-                      />
-                    </Field>
-                  ))}
-                </div>
-                <LoggingEffectiveSummary logging={value.logging} />
-                <div className="stack--tight">
-                  <p className="card__label">
-                    {t('settings.platform.logging.overrides')}{' '}
-                    <FieldHelp text={t('settings.platform.help.overrides')} />
-                  </p>
-                  <p className="field__hint">{t('settings.platform.logging.overridesHint')}</p>
-                  <div className="platform-logging-grid">
-                    {LOG_OVERRIDE_IDS.map((serviceId) => (
-                      <Field
-                        key={serviceId}
-                        label={t(`settings.platform.logging.override.${serviceId}` as MessageKey)}
-                        htmlFor={`platform-log-override-${serviceId}`}
-                      >
-                        <Select
-                          id={`platform-log-override-${serviceId}`}
-                          value={value.logging.service_overrides[serviceId] ?? ''}
-                          options={overrides}
-                          onChange={(e) =>
-                            setOverride(serviceId, e.target.value as PlatformLogLevel | '')
-                          }
-                        />
-                      </Field>
-                    ))}
-                  </div>
-                </div>
+                <PlatformLoggingTable
+                  caption={t('settings.platform.logging.cardTitle')}
+                  rows={loggingRows}
+                />
               </div>
             </Card>
 

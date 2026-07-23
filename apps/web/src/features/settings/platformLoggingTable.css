@@ -1,0 +1,67 @@
+/*
+ * The platform logging controls are a repeated settings matrix, not a set of cards. Keep the real
+ * shared table compact and give it an intrinsic floor so narrow screens scroll inside `.table-wrap`
+ * rather than crushing labels and selects or expanding each row into another oversized panel.
+ */
+.platform-logging-table .table {
+  min-width: 48rem;
+  table-layout: fixed;
+}
+
+.platform-logging-table .table th:nth-child(1) {
+  width: 10rem;
+}
+
+.platform-logging-table .table th:nth-child(2) {
+  width: 9rem;
+}
+
+.platform-logging-table .table th:nth-child(3) {
+  width: 11rem;
+}
+
+.platform-logging-table .table th:nth-child(4) {
+  width: 8rem;
+}
+
+.platform-logging-table .table tbody th[scope='row'] {
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+  vertical-align: middle;
+}
+
+.platform-logging-table__heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.platform-logging-table .control {
+  min-width: 7.5rem;
+}
+
+.platform-logging-table__source {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.platform-logging-table__configuration {
+  font-weight: 650;
+}
+
+.platform-logging-table__not-applicable,
+.platform-logging-table__inherited {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}

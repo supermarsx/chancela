@@ -35,30 +35,24 @@ import type { PlatformLogLevel, PlatformSettings } from '../../api/types';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import {
-  Badge,
   ButtonLink,
   Card,
   ErrorNote,
-  Field,
-  FieldHelp,
   Icon,
   InlineWarning,
-  Select,
   Skeleton,
   SkeletonRegion,
   Table,
   Toggle,
   useToast,
 } from '../../ui';
+import { AiMcpAssurancePanel, MCP_SERVICE_ID, ServiceRow } from './PlatformOperationsSection';
 import {
-  AiMcpAssurancePanel,
-  MCP_SERVICE_ID,
-  ServiceRow,
   effectiveLogLevel,
-  logLevelOptions,
   loggingSourceText,
-  overrideOptions,
-} from './PlatformOperationsSection';
+  PlatformLoggingTable,
+  type PlatformLoggingTableRow,
+} from './PlatformLoggingTable';
 
 /**
  * The launch-time environment surface, transcribed from `McpConfig::from_env` in
@@ -109,6 +103,28 @@ export function McpSection({
     else service_overrides[MCP_SERVICE_ID] = level;
     onChange({ ...value, logging: { ...value.logging, service_overrides } });
   };
+  const effective = effectiveLogLevel(value.logging, MCP_SERVICE_ID);
+  const loggingRows: PlatformLoggingTableRow[] = [
+    {
+      id: 'mcp_stdio',
+      scope: t('settings.platform.service.mcp_stdio'),
+      area: {
+        id: 'platform-log-mcp',
+        label: t('settings.platform.logging.mcp'),
+        value: value.logging.mcp,
+        onChange: setLevel,
+      },
+      override: {
+        id: 'platform-log-override-mcp_stdio',
+        label: t('settings.platform.logging.override.mcp_stdio'),
+        value: value.logging.service_overrides[MCP_SERVICE_ID] ?? '',
+        onChange: setOverride,
+      },
+      effective,
+      source: loggingSourceText(value.logging, MCP_SERVICE_ID, t),
+      configuration: t('settings.mcp.cardTitle'),
+    },
+  ];
 
   return (
     <div className="stack">
@@ -166,57 +182,7 @@ export function McpSection({
       <Card title={t('settings.mcp.logging.title')}>
         <div className="form settings-rows">
           <p className="field__hint">{t('settings.mcp.logging.hint')}</p>
-          <Field
-            label={t('settings.platform.logging.mcp')}
-            htmlFor="platform-log-mcp"
-            help={t('settings.platform.help.logLevels')}
-          >
-            <Select
-              id="platform-log-mcp"
-              value={value.logging.mcp}
-              options={logLevelOptions(t)}
-              onChange={(e) => setLevel(e.target.value as PlatformLogLevel)}
-            />
-          </Field>
-          <Field
-            label={t('settings.platform.logging.override.mcp_stdio')}
-            htmlFor="platform-log-override-mcp_stdio"
-            help={t('settings.platform.help.overrides')}
-          >
-            <Select
-              id="platform-log-override-mcp_stdio"
-              value={value.logging.service_overrides[MCP_SERVICE_ID] ?? ''}
-              options={overrideOptions(t)}
-              onChange={(e) => setOverride(e.target.value as PlatformLogLevel | '')}
-            />
-          </Field>
-          <div
-            className="platform-logging-effective"
-            role="group"
-            aria-label={t('settings.platform.effectiveLog')}
-          >
-            <p className="card__label">
-              {t('settings.platform.effectiveLog')}{' '}
-              <FieldHelp text={t('settings.platform.help.effective')} />
-            </p>
-            <div className="platform-logging-effective__item">
-              <Badge
-                tone={
-                  effectiveLogLevel(value.logging, MCP_SERVICE_ID) === 'off' ? 'neutral' : 'accent'
-                }
-              >
-                {t(
-                  `settings.platform.logLevel.${effectiveLogLevel(
-                    value.logging,
-                    MCP_SERVICE_ID,
-                  )}` as MessageKey,
-                )}
-              </Badge>
-              <span className="field__hint">
-                {loggingSourceText(value.logging, MCP_SERVICE_ID, t)}
-              </span>
-            </div>
-          </div>
+          <PlatformLoggingTable caption={t('settings.mcp.logging.title')} rows={loggingRows} />
         </div>
       </Card>
 
