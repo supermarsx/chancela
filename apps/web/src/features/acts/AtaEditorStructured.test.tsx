@@ -275,6 +275,23 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     });
   });
 
+  it('opts the editor into the wide page measure and keeps the reunião fields editable', async () => {
+    const shared = stateful({ ...baseAct });
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    const { container } = renderEditor();
+
+    // The loaded page carries `wide-page` so `.app:has(.wide-page)` breaks the editor out
+    // to the wide measure (t53). The reunião metadata renders as an editable form-table.
+    const title = (await screen.findByDisplayValue('Assembleia Geral Anual')) as HTMLInputElement;
+    const root = container.querySelector('.stack');
+    expect(root?.classList.contains('wide-page')).toBe(true);
+    expect(container.querySelector('.field-table')).toBeTruthy();
+    // The meeting fields are live inputs, not a read-only display (no readOnly regression).
+    expect(title.disabled).toBe(false);
+    expect((screen.getByLabelText('Presentes') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText('Representados') as HTMLInputElement).disabled).toBe(false);
+  });
+
   it('adds inline help to top-level meeting and free-text fields', async () => {
     const shared = stateful({ ...baseAct, channel: 'Hybrid' });
     vi.stubGlobal('fetch', shared.fetchImpl);

@@ -3195,7 +3195,7 @@ export function AtaEditorPage() {
 
   if (act.isLoading || !draft) {
     return (
-      <div className="stack">
+      <div className="stack wide-page">
         <PageHeader crumbs={t('acts.crumb')} title={<Skeleton width="20rem" height="1.6rem" />} />
         <Card title={t('acts.reuniao')}>
           <div className="form">
@@ -3383,7 +3383,7 @@ export function AtaEditorPage() {
   const manualOriginalReference = a.seal_metadata?.manual_signature_original_reference ?? null;
 
   return (
-    <div className="stack">
+    <div className="stack wide-page">
       <PageHeader
         crumbs={
           <>
@@ -3483,7 +3483,7 @@ export function AtaEditorPage() {
             }
           >
             {update.error ? <ErrorNote error={update.error} /> : null}
-            <div className="form">
+            <div className="form field-table">
               <Field label={t('acts.title')} htmlFor="ed-title" help={ataFieldHelp.title}>
                 <Input
                   id="ed-title"
@@ -3501,34 +3501,32 @@ export function AtaEditorPage() {
                   options={optionsFrom(MEETING_CHANNELS, meetingChannelLabels)}
                 />
               </Field>
-              <div className="rowline">
-                <Field
-                  label={t('acts.meetingDate')}
-                  htmlFor="ed-date"
-                  help={ataFieldHelp.meetingDate}
-                >
-                  <Input
-                    id="ed-date"
-                    type="date"
-                    value={draft.meeting_date}
-                    disabled={readOnly}
-                    onChange={(e) => set('meeting_date', e.target.value)}
-                  />
-                </Field>
-                <Field
-                  label={t('acts.meetingTime')}
-                  htmlFor="ed-time"
-                  help={ataFieldHelp.meetingTime}
-                >
-                  <Input
-                    id="ed-time"
-                    type="time"
-                    value={draft.meeting_time}
-                    disabled={readOnly}
-                    onChange={(e) => set('meeting_time', e.target.value)}
-                  />
-                </Field>
-              </div>
+              <Field
+                label={t('acts.meetingDate')}
+                htmlFor="ed-date"
+                help={ataFieldHelp.meetingDate}
+              >
+                <Input
+                  id="ed-date"
+                  type="date"
+                  value={draft.meeting_date}
+                  disabled={readOnly}
+                  onChange={(e) => set('meeting_date', e.target.value)}
+                />
+              </Field>
+              <Field
+                label={t('acts.meetingTime')}
+                htmlFor="ed-time"
+                help={ataFieldHelp.meetingTime}
+              >
+                <Input
+                  id="ed-time"
+                  type="time"
+                  value={draft.meeting_time}
+                  disabled={readOnly}
+                  onChange={(e) => set('meeting_time', e.target.value)}
+                />
+              </Field>
               <Field label={t('acts.local')} htmlFor="ed-place" help={ataFieldHelp.place}>
                 <Input
                   id="ed-place"
@@ -3549,36 +3547,34 @@ export function AtaEditorPage() {
                   onChange={(e) => set('attendance_reference', e.target.value)}
                 />
               </Field>
-              <div className="rowline">
-                <Field
-                  label={t('acts.membersPresent')}
-                  htmlFor="ed-present"
-                  help={ataFieldHelp.membersPresent}
-                >
-                  <Input
-                    id="ed-present"
-                    type="number"
-                    min={0}
-                    value={draft.members_present}
-                    disabled={readOnly}
-                    onChange={(e) => set('members_present', e.target.value)}
-                  />
-                </Field>
-                <Field
-                  label={t('acts.membersRepresented')}
-                  htmlFor="ed-represented"
-                  help={ataFieldHelp.membersRepresented}
-                >
-                  <Input
-                    id="ed-represented"
-                    type="number"
-                    min={0}
-                    value={draft.members_represented}
-                    disabled={readOnly}
-                    onChange={(e) => set('members_represented', e.target.value)}
-                  />
-                </Field>
-              </div>
+              <Field
+                label={t('acts.membersPresent')}
+                htmlFor="ed-present"
+                help={ataFieldHelp.membersPresent}
+              >
+                <Input
+                  id="ed-present"
+                  type="number"
+                  min={0}
+                  value={draft.members_present}
+                  disabled={readOnly}
+                  onChange={(e) => set('members_present', e.target.value)}
+                />
+              </Field>
+              <Field
+                label={t('acts.membersRepresented')}
+                htmlFor="ed-represented"
+                help={ataFieldHelp.membersRepresented}
+              >
+                <Input
+                  id="ed-represented"
+                  type="number"
+                  min={0}
+                  value={draft.members_represented}
+                  disabled={readOnly}
+                  onChange={(e) => set('members_represented', e.target.value)}
+                />
+              </Field>
               {draft.channel === 'Telematic' || draft.channel === 'Hybrid' ? (
                 <Field
                   label={t('acts.telematicEvidence')}

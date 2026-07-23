@@ -781,6 +781,43 @@ a:focus-visible {
   align-items: flex-end;
 }
 
+/* Reunião metadata as a labelled two-column form-table (t53): the meeting-header fields
+   (title, channel, date, time, local, attendance ref, present, represented, telematic)
+   read like table rows — label column | control column — rather than loose stacked
+   fields, so the operator scans and fills them faster. Layout only: every row stays a
+   live, editable `.field` (Input/Select), handlers and validation unchanged. Border and
+   surface tokens are borrowed from `.data-status-table` for a consistent table read. */
+.field-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+/* Rows are flush; the hairline row borders below carry the rhythm, not the form's 1rem gap. */
+.field-table > * + * {
+  margin-top: 0;
+}
+
+.field-table > .field {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) 1fr;
+  align-items: center;
+  gap: 0.3rem 0.9rem;
+  padding: 0.5rem 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+.field-table > .field:first-child {
+  border-top: 0;
+}
+
+/* Hint and error explain the whole row, so they span both columns and sit under it rather
+   than being squeezed into the control cell. */
+.field-table > .field > .field__hint,
+.field-table > .field > .field__error {
+  grid-column: 1 / -1;
+}
+
 .check {
   font-family: var(--font-sans);
   font-size: 0.8rem;
