@@ -6,7 +6,7 @@
 //! `Signing` is refused and points at the guarded `reopen` path; a `Sealed` act is never un-sealed;
 //! a legal hold freezes the movement; and the endpoint is gated on the new `act.revert` permission.
 
-mod common;
+use crate::common;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};

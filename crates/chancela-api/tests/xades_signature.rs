@@ -3,7 +3,7 @@
 //! The PKCS#12 signer is generated in-process (no checked-in keys, no OS store, no network). The
 //! endpoints are local/technical: they produce or validate a signature and persist nothing.
 
-mod common;
+use crate::common;
 
 use std::str::FromStr;
 use std::time::Duration as StdDuration;

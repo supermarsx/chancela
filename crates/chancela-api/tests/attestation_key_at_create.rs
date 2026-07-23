@@ -16,7 +16,7 @@
 //! preimage should describe the audited fact, and because the handler is the one user endpoint
 //! that fed the whole struct in; a refactor is more likely to restore that than to invent it.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

@@ -7,7 +7,7 @@
 //! atas, termo de encerramento) through the API and assert the package presents it as a book:
 //! abertura → atas by `ata_number` → encerramento.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};

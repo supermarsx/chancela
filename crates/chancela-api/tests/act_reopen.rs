@@ -7,7 +7,7 @@
 //! advancing now runs the same compliance evaluation the seal runs, and `POST /v1/acts/{id}/reopen`
 //! walks the one reverse edge (`Signing → TextApproved`) for acts that are already stuck.
 
-mod common;
+use crate::common;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};

@@ -5,7 +5,7 @@
 //! request**, not merely dropped from the list. `revoking_a_session_rejects_its_token_on_the_next_request`
 //! proves it by using the revoked token afterward and asserting 401.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

@@ -20,7 +20,7 @@
 //! A hardware-free, key-backed [`CryptoToken`] stands in for a citizen card (as in `cc_signing.rs`),
 //! so the underlying signed PDF genuinely validates. Fictional example data only.
 
-mod common;
+use crate::common;
 
 use std::str::FromStr;
 use std::sync::Arc;

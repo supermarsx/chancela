@@ -16,7 +16,7 @@
 //! the CC flow (verify the request body carries no secret). Fictional example data only: "Encosto
 //! Estratégico, S.A." / "Amélia Marques" — never real names.
 
-mod common;
+use crate::common;
 
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};

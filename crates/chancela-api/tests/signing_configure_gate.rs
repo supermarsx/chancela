@@ -10,7 +10,7 @@
 //!   is refused (403) the moment the signing slice changes;
 //! - a holder of both (Owner) may change the signing slice.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;

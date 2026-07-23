@@ -237,7 +237,7 @@ or backup-policy completeness, complete RBAC/delegation policy, or make any
 spec area complete.
 
 The RBAC ledger verification regression markers prove that `cargo test -p
-chancela-api --test rbac_ledger_verify --locked` drives user-role assignment
+chancela-api --test api-records --locked -- rbac_ledger_verify` drives user-role assignment
 and unassignment, delegation grant and revoke, and role-catalog
 create/update/delete mutations through the real in-process API router, then
 asserts `GET /v1/ledger/verify`, `GET /v1/ledger/integrity`, direct
@@ -299,7 +299,7 @@ certification, or broad API Postgres coverage.
 
 It intentionally reuses existing test surfaces:
 
-- API paper import: `cargo test -p chancela-api --test paper_import --locked`
+- API paper import: `cargo test -p chancela-api --test api-records --locked -- paper_import`
   including the non-canonical canonical-conversion preflight guard and
   operator-configured local OCR run coverage, plus the accepted OCR draft to
   mutable draft-act endpoint, `conversion_execution_artifact` response/store
@@ -314,7 +314,7 @@ It intentionally reuses existing test surfaces:
   import/draft/target-act binding, canonical-draft response artifact shape, and
   dossier `conversion_execution_artifacts` shape.
 - API archive package and `/DocTimeStamp` evidence:
-  `cargo test -p chancela-api --test archive_package --locked`
+  `cargo test -p chancela-api --test api-archive-privacy --locked -- archive_package`
   including the read-only local DGLAB interchange manifest endpoint and
   `book.export@Book` gate.
 - API per-book import preflight:
@@ -380,7 +380,7 @@ It intentionally reuses existing test surfaces:
   unit proof is `npm run test --workspace apps/web --
   src/features/settings/ProviderCredentialsSection.test.tsx`.
 - API bounded retention execution:
-  `cargo test -p chancela-api --test privacy --locked retention_`
+  `cargo test -p chancela-api --test api-archive-privacy --locked -- privacy::retention_`
   including explicit non-destructive evidence states, due-candidate prior
   bounded archive/no-action suppression, active `candidate_count`,
   `suppressed_candidate_count`, `suppressed_by_bounded_evidence_count`,
@@ -418,9 +418,9 @@ It intentionally reuses existing test surfaces:
   plus
   `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
   plus
-  `cargo test -p chancela-api --test archive_package --locked archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
+  `cargo test -p chancela-api --test api-archive-privacy --locked -- archive_package::archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
   plus
-  `cargo test -p chancela-api --test archive_package --locked generated_convening_notice_dispatch_evidence`
+  `cargo test -p chancela-api --test api-archive-privacy --locked -- archive_package::generated_convening_notice_dispatch_evidence`
   plus
   `cargo test -p chancela-api --locked document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`
   plus the `cargo test -p chancela-api --locked reminder_` lane for
@@ -535,7 +535,7 @@ It intentionally reuses existing test surfaces:
   backup/restore fixity. The ignored Postgres variant is live-DB gated and is
   not default CI evidence.
 - API RBAC ledger verification:
-  `cargo test -p chancela-api --test rbac_ledger_verify --locked` including
+  `cargo test -p chancela-api --test api-records --locked -- rbac_ledger_verify` including
   role assignment/unassignment, delegation grant/revoke, role-catalog mutation,
   `/v1/ledger/verify`, `/v1/ledger/integrity`, direct `Ledger::verify()`,
   application-chain audit scoping, and no accidental `company:` chain for RBAC
@@ -558,7 +558,7 @@ It intentionally reuses existing test surfaces:
   legal approval, deliver provider/calendar/email/webhooks, certify privacy
   compliance, or prove production privacy compliance.
 - DPIA template/guidance pack:
-  `cargo test -p chancela-api --test privacy --locked dpia` plus
+  `cargo test -p chancela-api --test api-archive-privacy --locked -- privacy::dpia` plus
   `apps/web/src/contracts/contracts.test.ts` and
   `apps/web/src/features/settings/SettingsPage.test.tsx` pin
   `GET /v1/privacy/dpia-template`, `contracts/privacy.dpia-template.json`,
@@ -599,7 +599,7 @@ It intentionally reuses existing test surfaces:
   admin apply only; it is not auto-privilege mutation, tenant/sync/ZK/archive,
   retention, or compliance completion evidence.
 - API official signed-PDF handoff guardrail acknowledgement:
-  `cargo test -p chancela-api --test official_signature_import --locked official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
+  `cargo test -p chancela-api --test api-signatures --locked -- official_signature_import::official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
 - Official signed-PDF handoff browser proof:
   `npm run test:browser --workspace apps/web -- e2e/official-signed-handoff.spec.ts`
   pins the sealed-act browser path for importing a PDF already signed outside
@@ -712,7 +712,7 @@ It intentionally reuses existing test surfaces:
   law-reference/threshold verification, provider/registry/DRE acceptance, or
   production Postgres readiness claim is added.
 - Template law-reference corpus audit:
-  `cargo test -p chancela-api --test law_reference_coverage --locked` builds a
+  `cargo test -p chancela-api --test api-records --locked -- law_reference_coverage` builds a
   deterministic local report from the embedded template registry and embedded
   law corpus. It pins local corpus diploma coverage, single-article resolution
   or explicit blockers, corpus Verified/Pending preservation, Pending references

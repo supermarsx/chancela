@@ -3,7 +3,7 @@
 //! present or future), and the unauthenticated bootstrap can never be re-triggered to escalate on an
 //! instance that already has a user directory.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

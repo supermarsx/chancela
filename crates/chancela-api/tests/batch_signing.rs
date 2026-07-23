@@ -14,7 +14,7 @@
 //!
 //! Fictional example data only: "Encosto Estratégico, S.A." / "Amélia Marques" — never real names.
 
-mod common;
+use crate::common;
 
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};

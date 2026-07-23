@@ -6,7 +6,7 @@
 //! exercised here; this suite covers the enrolment mechanism, the policy fields, and the account
 //! state each transition leaves behind.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

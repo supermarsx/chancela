@@ -6,7 +6,7 @@
 //! the interesting failure is not a bad value — it is a client that says nothing at all about a
 //! section and thereby erases it.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

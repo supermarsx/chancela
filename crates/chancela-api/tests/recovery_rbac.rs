@@ -12,7 +12,7 @@
 //! makes both the deny (`403`) and the pass (`422` in-memory "needs durable store") assertions
 //! unambiguous.
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

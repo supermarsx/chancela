@@ -6,7 +6,7 @@
 //! session, so a 2FA sign-in attests exactly as a one-step sign-in does. `an_attested_act_after_a_two_step_sign_in`
 //! proves that end to end.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

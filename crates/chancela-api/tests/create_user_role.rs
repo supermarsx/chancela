@@ -10,7 +10,7 @@
 //!  3. the first-run bootstrap is untouched — the first user is still Owner\@Global, and a `role`
 //!     on a bootstrap create is refused rather than silently honoured.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 
