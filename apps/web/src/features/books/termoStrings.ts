@@ -178,6 +178,13 @@ export const termoPtPT = {
   'books.termo.signing.slotDone': 'Assinado',
   'books.termo.signing.slotWaiting': 'Aguarda a assinatura anterior',
   'books.termo.signing.signed': 'Assinatura registada.',
+
+  // — Assinatura real por signatário (PAdES com PKCS#12 local) ————————————————
+  'books.termo.signing.pkcs12.intro':
+    'Produz uma assinatura PAdES real sobre o PDF do termo, com um certificado PKCS#12/PFX local. É esta a assinatura que o termo exige para produzir efeito; disponível apenas na aplicação de secretária.',
+  'books.termo.signing.pkcs12.submit': 'Assinar com certificado',
+  'books.termo.signing.pkcs12.cancel': 'Cancelar',
+
   'books.termo.createdToast': 'Livro criado. Redija e assine o termo de abertura.',
 } as const;
 
@@ -323,6 +330,12 @@ export const termoEnglish = {
   'books.termo.signing.slotDone': 'Signed',
   'books.termo.signing.slotWaiting': 'Waiting for the previous signature',
   'books.termo.signing.signed': 'Signature recorded.',
+
+  'books.termo.signing.pkcs12.intro':
+    'Produces a real PAdES signature over the term’s PDF with a local PKCS#12/PFX certificate. This is the signature the term requires to take effect; available only in the desk application.',
+  'books.termo.signing.pkcs12.submit': 'Sign with certificate',
+  'books.termo.signing.pkcs12.cancel': 'Cancel',
+
   'books.termo.createdToast': 'Book created. Draft and sign the opening term.',
 } as const satisfies Record<TermoCopyKey, string>;
 

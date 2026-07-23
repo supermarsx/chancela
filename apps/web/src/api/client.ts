@@ -1062,6 +1062,10 @@ export const api = {
     post<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura/advance`),
   signBookTermoAbertura: (bookId: string, body: SignTermoSlotBody) =>
     post<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura/sign`, body),
+  // Real per-slot PAdES signature with a locally supplied PKCS#12/PFX (desk-app only; a remote server
+  // refuses with 409). The signed set is what the fail-closed `open` gate requires.
+  signBookTermoAberturaPkcs12: (bookId: string, body: SignTermoSlotPkcs12Body) =>
+    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura/sign/pkcs12`, body),
   // Seal the signed termo and open the book. Currently FAILS CLOSED with 409 ("not cryptographically
   // signed") until real per-slot PAdES signing lands (t41) — surfaced to the caller, never hidden.
   openBookFromTermo: (bookId: string, body: OpenBookFromTermoBody = {}) =>

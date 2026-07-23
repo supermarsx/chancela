@@ -59,6 +59,18 @@ const SIGNING_TERMO: TermoInstrumentView = {
   signing_started_at: '2026-01-02T00:00:00Z',
 };
 
+/** The termo after the sole required slot carries a real per-slot PAdES signature. */
+const SIGNED_TERMO: TermoInstrumentView = {
+  ...SIGNING_TERMO,
+  signatories: [{ ...SIGNING_TERMO.signatories[0], signed: true, signed_at: '2026-01-03T00:00:00Z' }],
+  completion: {
+    ...SIGNING_TERMO.completion,
+    signed_required_slot_count: 1,
+    blocking_required_slot_ids: [],
+    complete: true,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -136,6 +148,73 @@ describe('TermoAberturaEditor', () => {
     // The 409 is surfaced honestly — the book is NOT pretended open.
     expect(
       await screen.findByText('O termo ainda não está assinado criptograficamente'),
+    ).toBeTruthy();
+  });
+
+  it('signs a slot with a real PKCS#12 co-signature, then the book opens', async () => {
+    const calls: RecordedCall[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method });
+      if (url.endsWith('/termo/abertura/sign/pkcs12'))
+        return Promise.resolve(jsonResponse(SIGNED_TERMO));
+      if (url.endsWith('/termo/abertura/open'))
+        return Promise.resolve(jsonResponse({ id: 'book-2', entity_id: 'ent-1', state: 'Open' }));
+      if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNING_TERMO));
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+
+    // Expand the active slot's real-signature form.
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar' }));
+
+    // Provide the local PKCS#12 certificate + passphrase (transient) and produce the real signature.
+    fireEvent.change(screen.getByLabelText('Ficheiro PKCS#12/PFX'), {
+      target: { files: [new File(['pfx-bytes'], 'cert.pfx', { type: 'application/x-pkcs12' })] },
+    });
+    fireEvent.change(screen.getByLabelText('Frase-passe'), { target: { value: 'segredo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Assinar com certificado' }));
+
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === 'POST' && c.url.endsWith('/termo/abertura/sign/pkcs12')),
+      ).toBe(true),
+    );
+    expect(await screen.findByText('Assinatura registada.')).toBeTruthy();
+
+    // With the required slot really signed, the open no longer fails closed.
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir livro' }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/termo/abertura/open'))).toBe(
+        true,
+      ),
+    );
+    expect(screen.queryByText('O termo ainda não está assinado criptograficamente')).toBeNull();
+  });
+
+  it('surfaces the desk-app-only note when the PKCS#12 sign is refused off-host (409)', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/termo/abertura/sign/pkcs12'))
+        return Promise.resolve(jsonResponse({ error: 'só na aplicação de secretária' }, 409));
+      if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNING_TERMO));
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar' }));
+    fireEvent.change(screen.getByLabelText('Ficheiro PKCS#12/PFX'), {
+      target: { files: [new File(['pfx-bytes'], 'cert.pfx', { type: 'application/x-pkcs12' })] },
+    });
+    fireEvent.change(screen.getByLabelText('Frase-passe'), { target: { value: 'segredo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Assinar com certificado' }));
+
+    expect(
+      await screen.findByText('Disponível apenas na aplicação de secretária'),
     ).toBeTruthy();
   });
 });

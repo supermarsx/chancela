@@ -16,6 +16,7 @@ import {
   useOpenBookFromTermo,
   usePatchBookTermoAbertura,
   useSignBookTermoAbertura,
+  useSignBookTermoAberturaPkcs12,
 } from './hooks';
 import type { BookView, TermoInstrumentView } from './types';
 
@@ -79,6 +80,11 @@ describe('termo de abertura client', () => {
     await api.patchBookTermoAbertura('B1', { purpose: 'Livro de atas' });
     await api.advanceBookTermoAbertura('B1');
     await api.signBookTermoAbertura('B1', { slot_id: 'S1' });
+    await api.signBookTermoAberturaPkcs12('B1', {
+      slot_id: 'S1',
+      pkcs12_base64: 'AAAA',
+      passphrase: 'pw',
+    });
     await api.openBookFromTermo('B1');
 
     const calls = fetchMock.mock.calls;
@@ -95,10 +101,17 @@ describe('termo de abertura client', () => {
     expect(calls[3][0]).toBe('/v1/books/B1/termo/abertura/sign');
     expect(JSON.parse(calls[3][1].body)).toEqual({ slot_id: 'S1' });
 
-    expect(calls[4][0]).toBe('/v1/books/B1/termo/abertura/open');
-    expect(calls[4][1].method).toBe('POST');
+    expect(calls[4][0]).toBe('/v1/books/B1/termo/abertura/sign/pkcs12');
+    expect(JSON.parse(calls[4][1].body)).toEqual({
+      slot_id: 'S1',
+      pkcs12_base64: 'AAAA',
+      passphrase: 'pw',
+    });
+
+    expect(calls[5][0]).toBe('/v1/books/B1/termo/abertura/open');
+    expect(calls[5][1].method).toBe('POST');
     // Empty body default is still a JSON POST (numbering/actor default server-side).
-    expect(JSON.parse(calls[4][1].body)).toEqual({});
+    expect(JSON.parse(calls[5][1].body)).toEqual({});
   });
 });
 
@@ -111,11 +124,14 @@ describe('termo de abertura hooks', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('writes the refreshed termo into the cache on patch/advance/sign', async () => {
+  it('writes the refreshed termo into the cache on patch/advance/sign/pkcs12', async () => {
     const { qc, wrapper } = harness();
     vi.spyOn(api, 'patchBookTermoAbertura').mockResolvedValue(termo({ title: 'Editado' }));
     vi.spyOn(api, 'advanceBookTermoAbertura').mockResolvedValue(termo({ state: 'Signing' }));
     vi.spyOn(api, 'signBookTermoAbertura').mockResolvedValue(
+      termo({ state: 'Signing', signatories: [] }),
+    );
+    vi.spyOn(api, 'signBookTermoAberturaPkcs12').mockResolvedValue(
       termo({ state: 'Signing', signatories: [] }),
     );
 
@@ -135,6 +151,17 @@ describe('termo de abertura hooks', () => {
       slot_id: 'S1',
     });
     expect(api.signBookTermoAbertura).toHaveBeenCalledWith('B1', { slot_id: 'S1' });
+
+    await mutate(renderHook(() => useSignBookTermoAberturaPkcs12('B1'), { wrapper }).result, {
+      slot_id: 'S1',
+      pkcs12_base64: 'AAAA',
+      passphrase: 'pw',
+    });
+    expect(api.signBookTermoAberturaPkcs12).toHaveBeenCalledWith('B1', {
+      slot_id: 'S1',
+      pkcs12_base64: 'AAAA',
+      passphrase: 'pw',
+    });
   });
 
   it('moves the book and refetches on a successful open', async () => {

@@ -29,7 +29,7 @@ import {
   useBookTermoEncerramento,
   useCloseBookFromTermo,
   usePatchBookTermoEncerramento,
-  useSignBookTermoEncerramento,
+  useSignBookTermoEncerramentoPkcs12,
 } from '../../api/hooks';
 import { closingReasonLabels, optionsFrom, signatoryCapacityLabels } from '../../api/labels';
 import {
@@ -60,6 +60,7 @@ import {
 } from '../../ui';
 import { useTermoT } from './termoStrings';
 import { useEncerramentoT } from './termoEncerramentoStrings';
+import { TermoSlotPkcs12Signer } from './TermoSlotPkcs12Signer';
 
 /** Local, editable copy of a clause (a new clause has no server id yet). */
 type ClauseDraft = { heading: string; text: string };
@@ -476,10 +477,11 @@ function TermoDraftForm({ termo }: { termo: TermoInstrumentView }) {
 function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
   const tt = useTermoT();
   const et = useEncerramentoT();
-  const toast = useToast();
   const formatPolicy = useFormatPolicy();
-  const sign = useSignBookTermoEncerramento(termo.book_id);
+  const sign = useSignBookTermoEncerramentoPkcs12(termo.book_id);
   const closeBook = useCloseBookFromTermo(termo.book_id);
+  // The slot whose real per-slot PAdES co-signature form is open (null = none expanded yet).
+  const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
 
   const orderedSlots = useMemo(
     () => [...termo.signatories].sort((a, b) => a.order - b.order),
@@ -487,16 +489,6 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
   );
   // Sequential collection: the next slot allowed to sign is the earliest unsigned required one.
   const nextSlotId = orderedSlots.find((slot) => slot.required && !slot.signed)?.id;
-
-  function onSign(slot: TermoSlotView) {
-    sign.mutate(
-      { slot_id: slot.id },
-      {
-        onSuccess: () => toast.success(tt('books.termo.signing.signed')),
-        onError: (error) => toast.error(error),
-      },
-    );
-  }
 
   const closeError = closeErrorKind(closeBook.error);
 
@@ -528,29 +520,42 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
 
       <ul className="stack--tight" style={{ listStyle: 'none', padding: 0 }}>
         {orderedSlots.map((slot) => (
-          <li className="rowline" key={slot.id}>
-            <span>
-              {slot.name || '—'}
-              {' · '}
-              {slot.capacity === 'Other'
-                ? (slot.capacity_note ?? tt('books.termo.signatory.other'))
-                : signatoryCapacityLabels[slot.capacity]}
-            </span>
-            {slot.signed ? (
-              <Badge tone="ok">{tt('books.termo.signing.slotDone')}</Badge>
-            ) : slot.id === nextSlotId ? (
-              <Button
-                type="button"
-                variant="primary"
-                icon={<Icon.PenNib />}
-                onClick={() => onSign(slot)}
-                disabled={sign.isPending}
-              >
-                {sign.isPending ? tt('books.termo.action.signing') : tt('books.termo.action.sign')}
-              </Button>
-            ) : (
-              <span className="field__hint">{tt('books.termo.signing.slotWaiting')}</span>
-            )}
+          <li className="stack--tight" key={slot.id} style={{ listStyle: 'none' }}>
+            <div className="rowline">
+              <span>
+                {slot.name || '—'}
+                {' · '}
+                {slot.capacity === 'Other'
+                  ? (slot.capacity_note ?? tt('books.termo.signatory.other'))
+                  : signatoryCapacityLabels[slot.capacity]}
+              </span>
+              {slot.signed ? (
+                <Badge tone="ok">{tt('books.termo.signing.slotDone')}</Badge>
+              ) : slot.id === nextSlotId ? (
+                slot.id === activeSlotId ? null : (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    icon={<Icon.PenNib />}
+                    onClick={() => setActiveSlotId(slot.id)}
+                    disabled={sign.isPending}
+                  >
+                    {tt('books.termo.action.sign')}
+                  </Button>
+                )
+              ) : (
+                <span className="field__hint">{tt('books.termo.signing.slotWaiting')}</span>
+              )}
+            </div>
+            {slot.id === nextSlotId && slot.id === activeSlotId && !slot.signed ? (
+              <TermoSlotPkcs12Signer
+                slotId={slot.id}
+                sign={(body) => sign.mutateAsync(body)}
+                isPending={sign.isPending}
+                onSigned={() => setActiveSlotId(null)}
+                onCancel={() => setActiveSlotId(null)}
+              />
+            ) : null}
           </li>
         ))}
       </ul>
@@ -566,7 +571,6 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
       ) : closeBook.error ? (
         <ErrorNote error={closeBook.error} />
       ) : null}
-      {sign.error ? <ErrorNote error={sign.error} /> : null}
 
       <div className="form__actions">
         <Button

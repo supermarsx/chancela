@@ -565,6 +565,22 @@ export function useSignBookTermoAbertura(id: string) {
 }
 
 /**
+ * Produce a REAL per-slot PAdES signature over the frozen abertura snapshot with a locally supplied
+ * PKCS#12/PFX (`POST …/termo/abertura/sign/pkcs12`). This is what the fail-closed `open` gate requires
+ * — a reference `sign` marker is not enough. Desk-application only: a remote server refuses with `409`.
+ * The updated termo (with the slot's real-signature evidence) replaces the cached one.
+ */
+export function useSignBookTermoAberturaPkcs12(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SignTermoSlotPkcs12Body) => api.signBookTermoAberturaPkcs12(id, body),
+    onSuccess: (termo) => {
+      qc.setQueryData(keys.bookTermoAbertura(id), termo);
+    },
+  });
+}
+
+/**
  * Seal the signed termo and open the book (`POST …/termo/abertura/open`). On success the book becomes
  * `Open` (a `book.opened` genesis event digesting the final signed termo is appended), so the book,
  * its entity's book list, the ledger, the dashboard and the now-`Sealed` termo all refetch.

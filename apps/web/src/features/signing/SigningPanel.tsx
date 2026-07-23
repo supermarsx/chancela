@@ -79,6 +79,16 @@ import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import { ApiError, api } from '../../api/client';
 import { BatchSigningPanel } from './BatchSigningPanel';
 import { RemoteBatchSigningPanel } from './RemoteBatchSigningPanel';
+import {
+  Pkcs12SignerFields,
+  base64ToBytes,
+  bytesToBase64,
+  emptyPkcs12Signer,
+  fileToBase64,
+  type Pkcs12SignerState,
+} from './Pkcs12SignerFields';
+// Re-exported so existing consumers (and SigningPanel.logic.test) keep importing these from here.
+export { base64ToBytes, bytesToBase64, fileToBase64 } from './Pkcs12SignerFields';
 import { ScapAttributePicker } from './ScapAttributePicker';
 import { SealDesigner } from './seal-designer';
 import { actStateLabels, signatureFamilyLabels } from '../../api/labels';
@@ -275,28 +285,6 @@ export function externalInviteLink(token: string): string {
   return new URL(path, window.location.origin).toString();
 }
 
-export async function fileToBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  return bytesToBase64(bytes);
-}
-
-export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-/** Decode a base64 payload to raw bytes for a download blob. */
-export function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
 /**
  * The signing format the user selects. `pades` is the qualified act-signing lane (the existing
  * provider picker, which signs the act's sealed PDF in place). `xades`/`asic`/`scap` are local
@@ -304,84 +292,6 @@ export function base64ToBytes(b64: string): Uint8Array {
  * state; each is co-location-gated server-side.
  */
 type SigningFormat = 'pades' | 'xades' | 'asic' | 'scap';
-
-/** Transient co-located software-certificate signer form state (PKCS#12 + passphrase). */
-type Pkcs12SignerState = {
-  file: File | null;
-  passphrase: string;
-  friendlyName: string;
-};
-
-function emptyPkcs12Signer(): Pkcs12SignerState {
-  return { file: null, passphrase: '', friendlyName: '' };
-}
-
-/**
- * The shared co-located PKCS#12 signer fields for the local XAdES/ASiC tools. The bytes + passphrase
- * are transient: the parent clears them on success and error and never persists them.
- */
-function Pkcs12SignerFields({
-  idPrefix,
-  signer,
-  disabled,
-  onChange,
-}: {
-  idPrefix: string;
-  signer: Pkcs12SignerState;
-  disabled: boolean;
-  onChange: (patch: Partial<Pkcs12SignerState>) => void;
-}) {
-  const t = useT();
-  return (
-    <>
-      <p className="card__label">{t('signing.tool.signer.legend')}</p>
-      <div className="form__grid">
-        <Field
-          label={t('signing.tool.signer.file.label')}
-          htmlFor={`${idPrefix}-pkcs12-file`}
-          hint={t('signing.tool.signer.file.hint')}
-        >
-          <Input
-            id={`${idPrefix}-pkcs12-file`}
-            type="file"
-            accept=".p12,.pfx,application/x-pkcs12"
-            autoComplete="off"
-            disabled={disabled}
-            onChange={(event) => onChange({ file: event.target.files?.[0] ?? null })}
-          />
-        </Field>
-        <Field
-          label={t('signing.tool.signer.passphrase.label')}
-          htmlFor={`${idPrefix}-pkcs12-passphrase`}
-          hint={t('signing.tool.signer.passphrase.hint')}
-        >
-          <Input
-            id={`${idPrefix}-pkcs12-passphrase`}
-            type="password"
-            autoComplete="off"
-            value={signer.passphrase}
-            disabled={disabled}
-            onChange={(event) => onChange({ passphrase: event.target.value })}
-          />
-        </Field>
-        <Field
-          label={t('signing.tool.signer.friendlyName.label')}
-          htmlFor={`${idPrefix}-pkcs12-friendly-name`}
-          hint={t('signing.tool.signer.friendlyName.hint')}
-        >
-          <Input
-            id={`${idPrefix}-pkcs12-friendly-name`}
-            type="text"
-            autoComplete="off"
-            value={signer.friendlyName}
-            disabled={disabled}
-            onChange={(event) => onChange({ friendlyName: event.target.value })}
-          />
-        </Field>
-      </div>
-    </>
-  );
-}
 
 /** Trigger a browser download of local-tool output bytes with an honest filename. */
 function downloadToolBytes(
