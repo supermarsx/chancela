@@ -1268,6 +1268,22 @@ export interface TemplateSpec {
   locale: string;
 }
 
+/**
+ * The versioned template import/export envelope (`chancela.template-bundle`, t43). `GET
+ * /v1/templates/{id}/export` now emits this bundle rather than a bare {@link TemplateSpec}: the
+ * spec half carries the authored body (with the seed `default_body` stripped), and the seed rides
+ * exactly once as `body_markdown`, so the two halves cannot disagree. `POST /v1/templates/import`
+ * accepts this envelope AND a legacy bare spec (no `format` key) for back-compat, and an exported
+ * bundle re-imports byte-for-byte. The web never authors a bundle; it downloads one and posts one
+ * back unchanged.
+ */
+export interface TemplateBundle {
+  format: 'chancela.template-bundle';
+  format_version: number;
+  spec: TemplateSpec;
+  body_markdown: string;
+}
+
 /** The persisted PDF's metadata inside the DOC-03 bundle (t48-e5). */
 export interface DocumentBundleDocument {
   id: string;

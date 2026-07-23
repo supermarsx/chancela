@@ -1430,10 +1430,29 @@ export function useExportTemplate() {
 export function useTemplateSpec(id: string, enabled = true) {
   return useQuery({
     queryKey: keys.templateSpec(id),
-    queryFn: async () => JSON.parse((await api.exportTemplate(id)).text) as TemplateSpec,
+    queryFn: async () => templateSpecFromExport(JSON.parse((await api.exportTemplate(id)).text)),
     enabled: enabled && id !== '',
     staleTime: 60_000,
   });
+}
+
+/**
+ * Read the {@link TemplateSpec} out of what `GET /v1/templates/{id}/export` returns. Since t43 the
+ * endpoint emits the `chancela.template-bundle` envelope `{ format, format_version, spec,
+ * body_markdown }`, so the spec is the `spec` half. A legacy/bare spec (no `format` key) is still
+ * read as-is, so an older export — and the detail-page fixtures — keep resolving. This is a read for
+ * the block/field views only; the stripped seed (`default_body`) is not needed here.
+ */
+function templateSpecFromExport(raw: unknown): TemplateSpec {
+  if (
+    raw !== null &&
+    typeof raw === 'object' &&
+    (raw as { format?: unknown }).format === 'chancela.template-bundle' &&
+    'spec' in raw
+  ) {
+    return (raw as { spec: TemplateSpec }).spec;
+  }
+  return raw as TemplateSpec;
 }
 
 /**

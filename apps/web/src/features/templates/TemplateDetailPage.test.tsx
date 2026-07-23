@@ -157,6 +157,44 @@ describe('TemplateDetailPage', () => {
     expect(screen.queryByText('item.text')).toBeNull();
   });
 
+  it('reads the blocks out of the t43 bundle envelope the export now returns', async () => {
+    // Since t43-e3 `/export` emits `{ format, format_version, spec, body_markdown }` rather than a
+    // bare spec; the page must read its blocks from the `spec` half, not from the envelope root.
+    const bundleStub = ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/export')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              format: 'chancela.template-bundle',
+              format_version: 1,
+              spec: SPEC,
+              body_markdown: '## Convocatória\n\nTexto.',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([BUILTIN]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', bundleStub);
+
+    renderDetail(BUILTIN.id);
+    await screen.findByText('Convocatória — Assembleia Geral');
+
+    screen.getByRole('button', { name: 'Blocos' }).click();
+    expect(await screen.findByText('KeyValue')).toBeTruthy();
+    expect(screen.getByText('Convocatória de {{ entity.name }}')).toBeTruthy();
+
+    screen.getByRole('button', { name: 'Campos esperados' }).click();
+    expect(await screen.findByText('entity.name')).toBeTruthy();
+  });
+
   it('warns on a user template that it cannot yet produce a sealed document', async () => {
     vi.stubGlobal('fetch', stub([USER]));
 
