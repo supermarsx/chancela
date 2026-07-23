@@ -307,8 +307,7 @@ async fn the_auth_slice_is_additive_ceilinged_and_survives_a_client_that_has_nev
         true
     );
     assert_eq!(
-        after["platform"]["public_base_url"],
-        "https://livros.example.pt",
+        after["platform"]["public_base_url"], "https://livros.example.pt",
         "an old client blanked the link origin: {after}"
     );
 

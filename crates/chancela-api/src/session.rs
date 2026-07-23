@@ -42,7 +42,10 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientPeer {
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         Ok(ClientPeer(
-            parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0),
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|c| c.0),
         ))
     }
 }
@@ -232,7 +235,11 @@ impl DurableSessionRegistry {
     /// The live records for a user, for the self-scoped active-sign-ins list (t95). Clones the
     /// records (metadata only — never token material beyond the digest, which stays internal). Only
     /// meaningful on a durable single-node registry; HA reads the shared store instead.
-    pub(crate) async fn list_for_user(&self, user_id: Uuid, now: OffsetDateTime) -> Vec<DurableSessionRecord> {
+    pub(crate) async fn list_for_user(
+        &self,
+        user_id: Uuid,
+        now: OffsetDateTime,
+    ) -> Vec<DurableSessionRecord> {
         let now = now.unix_timestamp();
         let mut out: Vec<DurableSessionRecord> = self
             .0
@@ -243,10 +250,13 @@ impl DurableSessionRegistry {
             .filter(|r| r.user_id == user_id && now < r.expires_at_unix)
             .cloned()
             .collect();
-        out.sort_by(|a, b| b.last_seen_unix.cmp(&a.last_seen_unix).then(a.session_id.cmp(&b.session_id)));
+        out.sort_by(|a, b| {
+            b.last_seen_unix
+                .cmp(&a.last_seen_unix)
+                .then(a.session_id.cmp(&b.session_id))
+        });
         out
     }
-
 
     /// Slide a record only when it belongs to this registry. This keeps manually injected test/e2e
     /// sessions working while every session minted through the production handler is write-through.
@@ -581,9 +591,7 @@ pub enum RequiredAction {
 pub fn required_action_for(user: &User) -> Option<RequiredAction> {
     if user.force_password_change {
         Some(RequiredAction::ChangePassword)
-    } else if user.two_factor_required
-        && !user.totp.as_ref().is_some_and(|t| t.confirmed)
-    {
+    } else if user.two_factor_required && !user.totp.as_ref().is_some_and(|t| t.confirmed) {
         Some(RequiredAction::EnrolTwoFactor)
     } else {
         None
@@ -1049,7 +1057,8 @@ pub async fn complete_two_factor_challenge(
     Json(req): Json<CompleteChallenge>,
 ) -> Result<Json<SessionCreated>, ApiError> {
     let now = OffsetDateTime::now_utc();
-    let invalid = || ApiError::Unauthorized("desafio de segundo fator inválido ou expirado".to_owned());
+    let invalid =
+        || ApiError::Unauthorized("desafio de segundo fator inválido ou expirado".to_owned());
 
     // Take the record out (single-use per attempt); prune expired while we hold the lock.
     let Some(mut pending) = ({
@@ -1240,7 +1249,11 @@ pub async fn list_sessions(
     let now = OffsetDateTime::now_utc();
     let (user_id, own_digest) = resolve_self(&state, &actor, &headers).await?;
     let mut listed = listed_sessions_for(&state, user_id, now).await?;
-    listed.sort_by(|a, b| b.last_seen_unix.cmp(&a.last_seen_unix).then(a.session_id.cmp(&b.session_id)));
+    listed.sort_by(|a, b| {
+        b.last_seen_unix
+            .cmp(&a.last_seen_unix)
+            .then(a.session_id.cmp(&b.session_id))
+    });
     let sessions = listed
         .into_iter()
         .map(|s| SessionInfoView {
@@ -1619,7 +1632,10 @@ mod durable_tests {
         let record = records.get(&digest).expect("the record is present");
         assert_eq!(record.user_id, user_id);
         // The new fields take honest defaults: a fresh handle, no device/IP, last-seen = issued.
-        assert!(!record.session_id.is_nil(), "a v1 record gets a real handle");
+        assert!(
+            !record.session_id.is_nil(),
+            "a v1 record gets a real handle"
+        );
         assert_eq!(record.last_seen_unix, record.issued_at_unix);
         assert_eq!(record.device, None);
         assert_eq!(record.ip, None);
@@ -1678,7 +1694,15 @@ mod durable_tests {
         let issued_at = OffsetDateTime::now_utc();
 
         registry
-            .insert(token, Uuid::new_v4(), uid, None, None, issued_at, issued_at + Duration::hours(1))
+            .insert(
+                token,
+                Uuid::new_v4(),
+                uid,
+                None,
+                None,
+                issued_at,
+                issued_at + Duration::hours(1),
+            )
             .await
             .unwrap();
         for minutes in [2, 3, 4] {
@@ -1727,7 +1751,15 @@ mod durable_tests {
         std::fs::write(&path, b"{ definitely not valid json").unwrap();
         let recovered = DurableSessionRegistry::load(path.clone());
         recovered
-            .insert("new-token", Uuid::new_v4(), uid, None, None, issued_at, issued_at + Duration::hours(1))
+            .insert(
+                "new-token",
+                Uuid::new_v4(),
+                uid,
+                None,
+                None,
+                issued_at,
+                issued_at + Duration::hours(1),
+            )
             .await
             .unwrap();
         let document: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();

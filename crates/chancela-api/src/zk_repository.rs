@@ -236,7 +236,10 @@ pub(crate) fn resolve_declared_shared_root(
     {
         return (Some(value), ZkSharedRootSource::Environment);
     }
-    match settings_value.map(str::trim).filter(|value| !value.is_empty()) {
+    match settings_value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         Some(value) => (Some(PathBuf::from(value)), ZkSharedRootSource::Settings),
         None => (None, ZkSharedRootSource::Unset),
     }
@@ -259,7 +262,10 @@ pub(crate) fn resolve_declared_shared_root(
 /// there is the dangerous one — every node would pass this check against its own private directory
 /// and the cluster would silently split its object storage. That assurance is the operator's
 /// declaration, and the UI copy says so rather than implying this function verified it.
-pub(crate) fn validate_shared_object_root(data_dir: &FsPath, candidate: &str) -> Result<(), String> {
+pub(crate) fn validate_shared_object_root(
+    data_dir: &FsPath,
+    candidate: &str,
+) -> Result<(), String> {
     let candidate = candidate.trim();
     if candidate.is_empty() {
         return Err("the shared object root must not be blank".to_owned());
@@ -302,7 +308,10 @@ fn probe_writable(root: &FsPath) -> Result<(), String> {
             let _ = fs::remove_file(&probe);
             Ok(())
         }
-        Err(e) => Err(format!("{} is not writable by the server ({e})", root.display())),
+        Err(e) => Err(format!(
+            "{} is not writable by the server ({e})",
+            root.display()
+        )),
     }
 }
 
@@ -345,9 +354,9 @@ impl ZkRepositoryStore {
             ready: matches!(self.availability, RepositoryStoreAvailability::Ready),
             reason: match &self.availability {
                 RepositoryStoreAvailability::Ready => None,
-                RepositoryStoreAvailability::NotPersistent => {
-                    Some("zero-knowledge repositories require CHANCELA_DATA_DIR persistence".to_owned())
-                }
+                RepositoryStoreAvailability::NotPersistent => Some(
+                    "zero-knowledge repositories require CHANCELA_DATA_DIR persistence".to_owned(),
+                ),
                 RepositoryStoreAvailability::FailClosed(message) => Some(message.clone()),
             },
             requires_shared_root: self.requires_shared_root,
@@ -3077,7 +3086,12 @@ mod tests {
         assert!(!status.ready);
         assert!(status.requires_shared_root);
         assert_eq!(status.source, ZkSharedRootSource::Unset);
-        assert!(status.reason.unwrap().contains("is disabled on PostgreSQL/HA"));
+        assert!(
+            status
+                .reason
+                .unwrap()
+                .contains("is disabled on PostgreSQL/HA")
+        );
     }
 
     #[test]

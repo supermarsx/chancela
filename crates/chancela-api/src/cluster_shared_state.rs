@@ -787,7 +787,9 @@ mod redis_backed {
                 Err(()) => return SessionListResult::Unavailable,
             };
             let epoch = match self.0.with_conn("session list epoch", |conn| {
-                redis::cmd("GET").arg(SESSION_EPOCH_KEY).query::<Option<i64>>(conn)
+                redis::cmd("GET")
+                    .arg(SESSION_EPOCH_KEY)
+                    .query::<Option<i64>>(conn)
             }) {
                 Ok(epoch) => epoch.unwrap_or(0),
                 Err(()) => return SessionListResult::Unavailable,
@@ -803,7 +805,11 @@ mod redis_backed {
                     Ok(raw) => raw,
                     Err(()) => return SessionListResult::Unavailable,
                 };
-                match raw.as_deref().map(str::trim).map(serde_json::from_str::<RedisSessionValue>) {
+                match raw
+                    .as_deref()
+                    .map(str::trim)
+                    .map(serde_json::from_str::<RedisSessionValue>)
+                {
                     // Live, current-epoch, belongs to this user.
                     Some(Ok(v)) if v.epoch == epoch && v.user_id == user_id => {
                         out.push(SharedSessionInfo {
@@ -1031,7 +1037,11 @@ mod tests {
         // put / revoke are no-ops; resolve always says "not shared" so the caller uses its local map
         // — byte-identical to today's single-node behaviour.
         assert_eq!(
-            store.put("tok", SessionPut::identity(uid, 1_700_000_000), Duration::from_secs(60)),
+            store.put(
+                "tok",
+                SessionPut::identity(uid, 1_700_000_000),
+                Duration::from_secs(60)
+            ),
             SessionMutation::NotShared
         );
         assert_eq!(
@@ -1122,7 +1132,11 @@ mod tests {
         let uid = Uuid::new_v4();
 
         // Node A mints a session.
-        node_a.put("tok", SessionPut::identity(uid, 1_700_000_000), Duration::from_secs(60));
+        node_a.put(
+            "tok",
+            SessionPut::identity(uid, 1_700_000_000),
+            Duration::from_secs(60),
+        );
         // Node B recognises it (session minted on the leader valid on a follower).
         assert_eq!(
             node_b.resolve("tok", Duration::from_secs(60)),
@@ -1138,8 +1152,16 @@ mod tests {
             SessionLookup::NotFound
         );
 
-        node_a.put("one", SessionPut::identity(uid, 1_700_000_000), Duration::from_secs(60));
-        node_b.put("two", SessionPut::identity(uid, 1_700_000_001), Duration::from_secs(60));
+        node_a.put(
+            "one",
+            SessionPut::identity(uid, 1_700_000_000),
+            Duration::from_secs(60),
+        );
+        node_b.put(
+            "two",
+            SessionPut::identity(uid, 1_700_000_001),
+            Duration::from_secs(60),
+        );
         assert_eq!(node_a.clear_all(), SessionMutation::Stored);
         assert_eq!(
             node_b.resolve("one", Duration::from_secs(60)),
@@ -1199,7 +1221,11 @@ mod tests {
     async fn whole_instance_invalidation_clears_shared_and_local_sessions_fail_closed() {
         let backend = FakeSharedSessions::default();
         let uid = Uuid::new_v4();
-        backend.put("tok", SessionPut::identity(uid, 1_700_000_000), Duration::from_secs(60));
+        backend.put(
+            "tok",
+            SessionPut::identity(uid, 1_700_000_000),
+            Duration::from_secs(60),
+        );
         let mut state = crate::AppState::default();
         state.cluster_shared.sessions = SharedSessionStore::new(backend.clone());
         state.sessions.write().await.insert(
@@ -1250,7 +1276,11 @@ mod tests {
     async fn session_authority_probe_fails_closed_without_touching_live_sessions() {
         let backend = FakeSharedSessions::default();
         let uid = Uuid::new_v4();
-        backend.put("tok", SessionPut::identity(uid, 1_700_000_000), Duration::from_secs(60));
+        backend.put(
+            "tok",
+            SessionPut::identity(uid, 1_700_000_000),
+            Duration::from_secs(60),
+        );
         let mut state = crate::AppState::default();
         state.cluster_shared.sessions = SharedSessionStore::new(backend.clone());
         state.sessions.write().await.insert(

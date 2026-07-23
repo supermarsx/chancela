@@ -302,9 +302,11 @@ fn allocate_username(
 /// Whether any existing account already claims this address (case-insensitive; stored addresses are
 /// normalised lowercase, and this stays tolerant of a legacy record that is not).
 fn address_is_claimed(users: &std::collections::HashMap<UserId, User>, email: &str) -> bool {
-    users
-        .values()
-        .any(|u| u.email.as_deref().is_some_and(|e| e.eq_ignore_ascii_case(email)))
+    users.values().any(|u| {
+        u.email
+            .as_deref()
+            .is_some_and(|e| e.eq_ignore_ascii_case(email))
+    })
 }
 
 // --- The default-role ceiling ---------------------------------------------------------------------
@@ -316,18 +318,12 @@ fn address_is_claimed(users: &std::collections::HashMap<UserId, User>, email: &s
 /// lookup and covers the case neither of the others can: a `roles.json` edited on disk, or restored
 /// from a backup taken before the ceiling existed.
 async fn resolve_self_signup_role(state: &AppState, id: RoleId) -> Result<Role, ApiError> {
-    let role = state
-        .roles
-        .read()
-        .await
-        .get(id)
-        .cloned()
-        .ok_or_else(|| {
-            ApiError::Conflict(format!(
-                "auth.signup.default_role {id} does not name a role in the catalog; self-signup \
+    let role = state.roles.read().await.get(id).cloned().ok_or_else(|| {
+        ApiError::Conflict(format!(
+            "auth.signup.default_role {id} does not name a role in the catalog; self-signup \
                  cannot grant a role that does not exist"
-            ))
-        })?;
+        ))
+    })?;
     if let Some(refusal) = role.signup_default_refusal() {
         return Err(ApiError::Conflict(format!(
             "auth.signup.default_role {:?} cannot be granted by self-signup because {refusal}",
@@ -890,14 +886,18 @@ mod tests {
             assert!(!base.is_empty(), "{address}");
             assert!(base.len() <= 56, "{address}: {base}");
             assert!(
-                base.chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-')),
+                base.chars().all(|c| c.is_ascii_lowercase()
+                    || c.is_ascii_digit()
+                    || matches!(c, '.' | '_' | '-')),
                 "{address}: {base}"
             );
             // And a collision suffix keeps it inside the 64-character limit.
             assert!(format!("{base}9999").len() <= 64, "{address}");
         }
-        assert_eq!(derive_username_base("amelia.marques@example.pt"), "amelia.marques");
+        assert_eq!(
+            derive_username_base("amelia.marques@example.pt"),
+            "amelia.marques"
+        );
         assert_eq!(derive_username_base("-.-@example.pt"), "user");
     }
 
@@ -979,8 +979,7 @@ mod tests {
     #[test]
     fn the_domain_allow_list_matches_exactly_and_never_by_suffix() {
         let allowed = vec!["example.pt".to_owned()];
-        let permits =
-            |email: &str| allowed.iter().any(|d| d == domain_of(email));
+        let permits = |email: &str| allowed.iter().any(|d| d == domain_of(email));
         assert!(permits("amelia.marques@example.pt"));
         assert!(!permits("amelia.marques@evil.example.pt"));
         assert!(!permits("amelia.marques@example.pt.evil.example"));

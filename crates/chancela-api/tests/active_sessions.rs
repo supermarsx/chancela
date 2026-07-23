@@ -38,7 +38,9 @@ impl Drop for TempDir {
 async fn send(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
     let response = router(state).oneshot(req).await.expect("router responds");
     let status = response.status();
-    let bytes = to_bytes(response.into_body(), usize::MAX).await.expect("body");
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
     let value = if bytes.is_empty() {
         Value::Null
     } else {
@@ -53,7 +55,11 @@ fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
     req
 }
 fn get(uri: &str) -> Request<Body> {
-    Request::builder().method("GET").uri(uri).body(Body::empty()).expect("req")
+    Request::builder()
+        .method("GET")
+        .uri(uri)
+        .body(Body::empty())
+        .expect("req")
 }
 
 async fn seed_user(state: &AppState, username: &str, role: RoleId) -> UserId {
@@ -65,7 +71,9 @@ async fn seed_user(state: &AppState, username: &str, role: RoleId) -> UserId {
             username: username.to_owned(),
             display_name: username.to_owned(),
             email: None,
-            created_at: OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default(),
+            created_at: OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
             active: true,
             password_hash: Some(password_hash()),
             attestation_key: None,
@@ -84,7 +92,12 @@ async fn seed_user(state: &AppState, username: &str, role: RoleId) -> UserId {
 
 /// Sign in, optionally sending a `User-Agent` (for the device label) and an `X-Forwarded-For` (for
 /// the IP, when the instance trusts forwarded headers). Returns the token.
-async fn sign_in(state: &AppState, uid: UserId, user_agent: Option<&str>, xff: Option<&str>) -> String {
+async fn sign_in(
+    state: &AppState,
+    uid: UserId,
+    user_agent: Option<&str>,
+    xff: Option<&str>,
+) -> String {
     let mut req = Request::builder()
         .method("POST")
         .uri("/v1/session")
@@ -96,7 +109,9 @@ async fn sign_in(state: &AppState, uid: UserId, user_agent: Option<&str>, xff: O
         req = req.header("x-forwarded-for", xff);
     }
     let req = req
-        .body(Body::from(json!({ "user_id": uid.0, "password": TEST_PASSWORD }).to_string()))
+        .body(Body::from(
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }).to_string(),
+        ))
         .unwrap();
     let (status, body) = send(state.clone(), req).await;
     assert_eq!(status, StatusCode::OK, "sign-in: {body}");
@@ -113,7 +128,8 @@ async fn the_list_is_self_scoped_and_flags_the_current_session_with_device() {
     let bob = seed_user(&state, "bruno.dias", OWNER_ROLE_ID).await;
 
     // Alice signs in on two "devices"; Bob on one.
-    let chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36";
+    let chrome =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36";
     let firefox = "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0";
     let alice_a = sign_in(&state, alice, Some(chrome), None).await;
     let _alice_b = sign_in(&state, alice, Some(firefox), None).await;
@@ -123,15 +139,26 @@ async fn the_list_is_self_scoped_and_flags_the_current_session_with_device() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let sessions = body["sessions"].as_array().expect("sessions");
     // Alice sees her TWO sessions and not Bob's — self-scoped.
-    assert_eq!(sessions.len(), 2, "self-scoped list must show only the caller's sessions: {body}");
+    assert_eq!(
+        sessions.len(),
+        2,
+        "self-scoped list must show only the caller's sessions: {body}"
+    );
 
     let current: Vec<&Value> = sessions.iter().filter(|s| s["current"] == true).collect();
-    assert_eq!(current.len(), 1, "exactly one session is the caller's current one");
+    assert_eq!(
+        current.len(),
+        1,
+        "exactly one session is the caller's current one"
+    );
     assert_eq!(current[0]["device"], "Chrome on Windows");
     // The handle is opaque and is NOT the token.
     let handle = current[0]["session_id"].as_str().unwrap();
     assert_ne!(handle, alice_a, "the handle must not be the token");
-    assert!(!body.to_string().contains(&alice_a), "the token must never appear in the list");
+    assert!(
+        !body.to_string().contains(&alice_a),
+        "the token must never appear in the list"
+    );
 }
 
 #[tokio::test]
@@ -194,10 +221,17 @@ async fn revoking_a_session_rejects_its_token_on_the_next_request() {
     // `GET /v1/session` returns `{user: null}` for an unknown session rather than 401, so assert the
     // session no longer resolves to a user.
     let (_, sess) = send(state.clone(), with_session(get("/v1/session"), &victim)).await;
-    assert!(sess["user"].is_null(), "the revoked token still authenticates: {sess}");
+    assert!(
+        sess["user"].is_null(),
+        "the revoked token still authenticates: {sess}"
+    );
     // And on a gated endpoint the revoked token is a hard 401.
     let (status_gated, _) = send(state.clone(), with_session(get("/v1/users"), &victim)).await;
-    assert_eq!(status_gated, StatusCode::UNAUTHORIZED, "revoked token must be rejected");
+    assert_eq!(
+        status_gated,
+        StatusCode::UNAUTHORIZED,
+        "revoked token must be rejected"
+    );
     let _ = status;
 
     // `keep` still works.
@@ -229,16 +263,27 @@ async fn revoke_others_keeps_the_current_session_and_drops_the_rest() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{revoked}");
-    assert_eq!(revoked["revoked"], 2, "both other sessions revoked: {revoked}");
+    assert_eq!(
+        revoked["revoked"], 2,
+        "both other sessions revoked: {revoked}"
+    );
 
     // The current session survives.
     let (status, _) = send(state.clone(), with_session(get("/v1/users"), &current)).await;
-    assert_eq!(status, StatusCode::OK, "the current session must survive revoke-others");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the current session must survive revoke-others"
+    );
 
     // The others are rejected on their next request.
     for token in [&other_a, &other_b] {
         let (status, _) = send(state.clone(), with_session(get("/v1/users"), token)).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED, "a revoked-other token must be rejected");
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "a revoked-other token must be rejected"
+        );
     }
 
     // And the list now shows only the current one.
@@ -272,7 +317,11 @@ async fn revoking_another_users_session_handle_is_a_404() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "one user must not revoke another's session");
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "one user must not revoke another's session"
+    );
 
     // Bob's session is untouched.
     let (status, _) = send(state.clone(), with_session(get("/v1/users"), &bob_token)).await;

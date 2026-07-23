@@ -119,9 +119,7 @@ pub async fn put_server_env(
     let change = OverrideChange::between(&previous.overrides, &desired);
 
     // 4. Persist the override file (atomic temp + rename) before acknowledging success.
-    let overrides = EnvOverrides {
-        overrides: desired,
-    };
+    let overrides = EnvOverrides { overrides: desired };
     env_overrides::save(&data_dir, &overrides)
         .map_err(|e| ApiError::Internal(format!("failed to persist the overrides: {e}")))?;
 
@@ -414,7 +412,10 @@ fn expand_dynamic_secret_families(overrides: &EnvOverrides) -> Vec<ServerEnvVarV
     // Connector secret refs: any ambient `CHANCELA_CONNECTOR_SECRET_*` the deployment set.
     for (key, _value) in std::env::vars() {
         if key.starts_with("CHANCELA_CONNECTOR_SECRET_") && emitted.insert(key.clone()) {
-            rows.push(masked_secret_row(key, env_overrides::EnvVarGroup::Connectors));
+            rows.push(masked_secret_row(
+                key,
+                env_overrides::EnvVarGroup::Connectors,
+            ));
         }
     }
 
@@ -605,7 +606,10 @@ mod tests {
         assert_eq!(db_key["tier"], "B");
         assert_eq!(db_key["secret"], true);
         assert_eq!(db_key["editable"], false);
-        assert!(db_key["effective_value"].is_null(), "secret value must be null");
+        assert!(
+            db_key["effective_value"].is_null(),
+            "secret value must be null"
+        );
         assert!(db_key["override_value"].is_null());
         assert!(db_key["default_value"].is_null());
 
@@ -647,11 +651,17 @@ mod tests {
         let body = json!({ "overrides": { "CHANCELA_DB_KEY": "hunter2" }, "acknowledge": [] });
         let (status, err) = send(state, put_req("/v1/platform/env", body), Some(&token)).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        let msg = err["error"].as_str().or_else(|| err["message"].as_str()).unwrap_or_default();
+        let msg = err["error"]
+            .as_str()
+            .or_else(|| err["message"].as_str())
+            .unwrap_or_default();
         assert!(msg.contains("secret"), "refusal must say why: {err}");
         // Nothing was written.
         let stored = env_overrides::load(&temp.dir).expect("load");
-        assert!(stored.overrides.is_empty(), "a rejected PUT must persist nothing");
+        assert!(
+            stored.overrides.is_empty(),
+            "a rejected PUT must persist nothing"
+        );
     }
 
     #[tokio::test]
@@ -677,8 +687,14 @@ mod tests {
         });
         let (status, err) = send(state, put_req("/v1/platform/env", body), Some(&token)).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        let msg = err["error"].as_str().or_else(|| err["message"].as_str()).unwrap_or_default();
-        assert!(msg.contains("typed settings slice"), "refusal must name the slice: {err}");
+        let msg = err["error"]
+            .as_str()
+            .or_else(|| err["message"].as_str())
+            .unwrap_or_default();
+        assert!(
+            msg.contains("typed settings slice"),
+            "refusal must name the slice: {err}"
+        );
     }
 
     #[tokio::test]
@@ -697,7 +713,8 @@ mod tests {
         let state = AppState::with_data_dir(temp.dir.clone());
         let token = seed_token(&state, OWNER_ROLE_ID).await;
         // CHANCELA_HSTS_MAX_AGE is an Unsigned; a non-numeric value must be rejected by the validator.
-        let body = json!({ "overrides": { "CHANCELA_HSTS_MAX_AGE": "forever" }, "acknowledge": [] });
+        let body =
+            json!({ "overrides": { "CHANCELA_HSTS_MAX_AGE": "forever" }, "acknowledge": [] });
         let (status, _) = send(state, put_req("/v1/platform/env", body), Some(&token)).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -716,10 +733,19 @@ mod tests {
         });
         let (status, err) = send(state, put_req("/v1/platform/env", body), Some(&token)).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        let msg = err["error"].as_str().or_else(|| err["message"].as_str()).unwrap_or_default();
-        assert!(msg.contains("acknowledge"), "refusal must name the gate: {err}");
+        let msg = err["error"]
+            .as_str()
+            .or_else(|| err["message"].as_str())
+            .unwrap_or_default();
+        assert!(
+            msg.contains("acknowledge"),
+            "refusal must name the gate: {err}"
+        );
         let stored = env_overrides::load(&temp.dir).expect("load");
-        assert!(stored.overrides.is_empty(), "the ungated boundary change must not persist");
+        assert!(
+            stored.overrides.is_empty(),
+            "the ungated boundary change must not persist"
+        );
     }
 
     #[tokio::test]
@@ -733,13 +759,24 @@ mod tests {
             "overrides": { "CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR": "true" },
             "acknowledge": ["CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR"],
         });
-        let (status, view) = send(state.clone(), put_req("/v1/platform/env", body), Some(&token)).await;
-        assert_eq!(status, StatusCode::OK, "acknowledged boundary change saves: {view}");
+        let (status, view) = send(
+            state.clone(),
+            put_req("/v1/platform/env", body),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "acknowledged boundary change saves: {view}"
+        );
 
         // The override is persisted and reflected as restart_pending (the process has not applied it).
         let stored = env_overrides::load(&temp.dir).expect("load");
         assert_eq!(
-            stored.overrides.get("CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR"),
+            stored
+                .overrides
+                .get("CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR"),
             Some(&"true".to_owned())
         );
         let row = var(&view, "CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR");
@@ -765,7 +802,10 @@ mod tests {
         let (status, view) = send(state, put_req("/v1/platform/env", body), Some(&token)).await;
         assert_eq!(status, StatusCode::OK, "Tier A saves without ack: {view}");
         let stored = env_overrides::load(&temp.dir).expect("load");
-        assert_eq!(stored.overrides.get("CHANCELA_LOG"), Some(&"debug".to_owned()));
+        assert_eq!(
+            stored.overrides.get("CHANCELA_LOG"),
+            Some(&"debug".to_owned())
+        );
     }
 
     // --- Enforcement helpers, exercised directly -------------------------------------------------
@@ -814,10 +854,10 @@ mod tests {
             ("C".to_owned(), "drop".to_owned()),
         ]);
         let desired = BTreeMap::from([
-            ("A".to_owned(), "2".to_owned()), // modified
+            ("A".to_owned(), "2".to_owned()),    // modified
             ("B".to_owned(), "keep".to_owned()), // unchanged
-            ("D".to_owned(), "new".to_owned()), // added
-                                              // C removed
+            ("D".to_owned(), "new".to_owned()),  // added
+                                                 // C removed
         ]);
         let change = OverrideChange::between(&previous, &desired);
         assert_eq!(change.added, vec!["D".to_owned()]);
@@ -826,7 +866,10 @@ mod tests {
         assert!(change.is_change());
 
         let payload = serde_json::to_string(&change.audit_payload(&["A".to_owned()])).unwrap();
-        assert!(!payload.contains('1') && !payload.contains('2'), "no values in the payload: {payload}");
+        assert!(
+            !payload.contains('1') && !payload.contains('2'),
+            "no values in the payload: {payload}"
+        );
     }
 
     #[test]
@@ -839,7 +882,10 @@ mod tests {
         let view = build_view(spec, &overrides);
         assert!(view.secret);
         assert!(view.effective_value.is_none());
-        assert!(view.override_value.is_none(), "a secret is never echoed, even from the file");
+        assert!(
+            view.override_value.is_none(),
+            "a secret is never echoed, even from the file"
+        );
         assert!(view.default_value.is_none());
     }
 }

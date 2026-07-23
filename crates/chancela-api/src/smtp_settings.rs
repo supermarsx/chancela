@@ -45,9 +45,7 @@ use crate::error::ApiError;
 use crate::provider_credentials_write::map_store_err_for;
 use crate::secretstore_persist::{FIELD_SMTP_PASSWORD, SmtpCredentialFields};
 use crate::settings::EmailSettings;
-use crate::smtp::{
-    SmtpClient, SmtpDelivery, SmtpEncryption, SmtpFailure, SmtpMessage, SmtpTrace,
-};
+use crate::smtp::{SmtpClient, SmtpDelivery, SmtpEncryption, SmtpFailure, SmtpMessage, SmtpTrace};
 use crate::{AppState, CredentialMode};
 
 /// The ledger scope every mail-configuration change is recorded under.
@@ -917,9 +915,16 @@ async fn record_send_outcome(
             }),
         ),
     };
-    let event_seq =
-        append_audit_as(state, actor, attestor, SEND_SCOPE, kind, Some(&justification), payload)
-            .await?;
+    let event_seq = append_audit_as(
+        state,
+        actor,
+        attestor,
+        SEND_SCOPE,
+        kind,
+        Some(&justification),
+        payload,
+    )
+    .await?;
 
     // The durable, erasable half. `failure_detail` is the relay's own words — kept only here.
     let (tls, authenticated, failure_stage, failure_kind, failure_code, failure_detail) =
@@ -1165,9 +1170,17 @@ async fn append_audit(
     payload: serde_json::Value,
 ) -> Result<(), ApiError> {
     let actor_label = actor.resolve("system");
-    append_audit_as(state, &actor_label, attestor, AUDIT_SCOPE, kind, None, payload)
-        .await
-        .map(|_seq| ())
+    append_audit_as(
+        state,
+        &actor_label,
+        attestor,
+        AUDIT_SCOPE,
+        kind,
+        None,
+        payload,
+    )
+    .await
+    .map(|_seq| ())
 }
 
 /// [`append_audit`] for a caller that already holds a resolved actor label and needs to choose the
@@ -1187,7 +1200,9 @@ async fn append_audit_as(
 ) -> Result<u64, ApiError> {
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     let mut ledger = state.ledger.write().await;
-    let seq = ledger.append(actor_label, scope, kind, justification, &bytes).seq;
+    let seq = ledger
+        .append(actor_label, scope, kind, justification, &bytes)
+        .seq;
     state
         .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
         .await?;
@@ -1199,11 +1214,11 @@ async fn append_audit_as(
 mod tests {
     use super::*;
     use crate::ProviderCredentialStore;
-    use chancela_store::StoredEmailDelivery;
     use crate::actor::SESSION_TTL_SECS;
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
     use chancela_authz::{OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId};
+    use chancela_store::StoredEmailDelivery;
     use serde_json::{Value, json};
     use std::path::{Path as StdPath, PathBuf};
     use std::sync::Arc;
@@ -1855,7 +1870,10 @@ mod tests {
             .find(|(kind, ..)| kind.starts_with("user.welcome_email"))
             .expect("the send was recorded");
         assert_eq!(kind, "user.welcome_email_sent");
-        assert_eq!(scope, "user", "the outcome belongs in the user's audit trail");
+        assert_eq!(
+            scope, "user",
+            "the outcome belongs in the user's audit trail"
+        );
         assert_eq!(actor, "rui.bastos", "the record names who caused the send");
         assert!(
             justification.contains(&user_id.to_string()),
@@ -1896,7 +1914,10 @@ mod tests {
         assert_eq!(kind, "user.welcome_email_failed");
         assert_eq!(scope, "user");
         // Enough to act on: which account, and where in the conversation it died.
-        assert!(justification.contains(&user_id.to_string()), "{justification}");
+        assert!(
+            justification.contains(&user_id.to_string()),
+            "{justification}"
+        );
         assert!(
             justification.contains("rcpt_to"),
             "the record does not say where it failed: {justification}"
@@ -1959,7 +1980,9 @@ mod tests {
 
         let events = readable_events(&state).await;
         assert!(
-            events.iter().any(|(k, ..)| k == "user.welcome_email_failed"),
+            events
+                .iter()
+                .any(|(k, ..)| k == "user.welcome_email_failed"),
             "nothing was recorded, so this test proved nothing"
         );
         // The body a recipient would have read, in the locale it was rendered in.
@@ -2028,7 +2051,10 @@ mod tests {
         assert_eq!(row.template_id, WELCOME_TEMPLATE_ID);
         assert_eq!(row.user_id.as_deref(), Some(user_id.to_string().as_str()));
         assert_eq!(row.attempt, 1);
-        assert!(row.previous_id.is_none(), "a first attempt links to nothing");
+        assert!(
+            row.previous_id.is_none(),
+            "a first attempt links to nothing"
+        );
         assert!(
             row.token_subject.is_none(),
             "the welcome message carries no bearer credential"
@@ -2172,7 +2198,10 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["status"], "sent", "the resend reached the working relay");
+        assert_eq!(
+            body["status"], "sent",
+            "the resend reached the working relay"
+        );
         assert_eq!(body["attempt"], 2, "a resend is the next attempt");
         assert_eq!(body["previous_id"], failed_id);
         assert_eq!(body["resendable"], true);
@@ -2211,23 +2240,41 @@ mod tests {
             event_seq: Some(1),
             actor: "rui.bastos".to_owned(),
         };
-        state.store.as_ref().unwrap().insert_email_delivery(&invite).unwrap();
+        state
+            .store
+            .as_ref()
+            .unwrap()
+            .insert_email_delivery(&invite)
+            .unwrap();
 
         let (status, body) = send_with(
             state.clone(),
-            body_req("POST", "/v1/settings/email/deliveries/inv-1/resend", json!({})),
+            body_req(
+                "POST",
+                "/v1/settings/email/deliveries/inv-1/resend",
+                json!({}),
+            ),
             Some(&token),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
         assert!(
-            body["error"].as_str().unwrap_or_default().contains("re-issue"),
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("re-issue"),
             "the refusal names the alternative: {body}"
         );
 
         // And nothing was sent or appended — the refusal is before any send.
         assert_eq!(
-            state.store.as_ref().unwrap().email_deliveries(10).unwrap().len(),
+            state
+                .store
+                .as_ref()
+                .unwrap()
+                .email_deliveries(10)
+                .unwrap()
+                .len(),
             1,
             "a refused resend must not append an attempt"
         );

@@ -59,7 +59,11 @@ fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
     req
 }
 fn get(uri: &str) -> Request<Body> {
-    Request::builder().method("GET").uri(uri).body(Body::empty()).expect("req")
+    Request::builder()
+        .method("GET")
+        .uri(uri)
+        .body(Body::empty())
+        .expect("req")
 }
 fn post(uri: &str, body: Value) -> Request<Body> {
     Request::builder()
@@ -79,7 +83,9 @@ async fn seed_user(state: &AppState, username: &str, role: RoleId) -> UserId {
             username: username.to_owned(),
             display_name: username.to_owned(),
             email: None,
-            created_at: OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default(),
+            created_at: OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
             active: true,
             password_hash: Some(password_hash()),
             attestation_key: None,
@@ -100,7 +106,10 @@ async fn seed_user(state: &AppState, username: &str, role: RoleId) -> UserId {
 async fn sign_in(state: &AppState, uid: UserId) -> String {
     let (status, body) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "sign-in: {body}");
@@ -111,7 +120,13 @@ async fn sign_in(state: &AppState, uid: UserId) -> String {
 async fn enrol_totp(state: &AppState, uid: UserId, token: &str) -> String {
     let (status, started) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/totp/enrol", uid.0), Value::Null), token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/totp/enrol", uid.0),
+                Value::Null,
+            ),
+            token,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "enrol: {started}");
@@ -120,7 +135,10 @@ async fn enrol_totp(state: &AppState, uid: UserId, token: &str) -> String {
     let (status, _) = send(
         state.clone(),
         with_session(
-            post(&format!("/v1/users/{}/two-factor/totp/confirm", uid.0), json!({ "code": code })),
+            post(
+                &format!("/v1/users/{}/two-factor/totp/confirm", uid.0),
+                json!({ "code": code }),
+            ),
             token,
         ),
     )
@@ -169,11 +187,17 @@ async fn a_password_sign_in_with_a_confirmed_factor_returns_a_challenge_not_a_to
     // Now a fresh password sign-in must NOT mint a token — it returns a challenge.
     let (status, body) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.get("token").is_none(), "a confirmed factor must gate the token: {body}");
+    assert!(
+        body.get("token").is_none(),
+        "a confirmed factor must gate the token: {body}"
+    );
     let challenge = &body["two_factor_challenge"];
     assert!(challenge["challenge_id"].is_string(), "{body}");
     assert_eq!(challenge["methods"][0], "totp");
@@ -181,7 +205,10 @@ async fn a_password_sign_in_with_a_confirmed_factor_returns_a_challenge_not_a_to
     // A wrong password never even reaches the challenge — same uniform 401 as before.
     let (status, _) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": "wrong-password" })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": "wrong-password" }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -191,11 +218,17 @@ async fn a_password_sign_in_with_a_confirmed_factor_returns_a_challenge_not_a_to
     let code = current_code(&secret);
     let (status, minted) = send(
         state.clone(),
-        post("/v1/session/challenge", json!({ "challenge_id": challenge_id, "code": code })),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": challenge_id, "code": code }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{minted}");
-    assert!(minted["token"].is_string(), "the completed challenge mints a token: {minted}");
+    assert!(
+        minted["token"].is_string(),
+        "the completed challenge mints a token: {minted}"
+    );
 
     // And that token is a real, working session.
     let (status, sess) = send(
@@ -219,7 +252,10 @@ async fn an_attested_act_after_a_two_step_sign_in_is_actually_attested() {
     // unlock from the password at sign-in.
     let (status, created) = send(
         state.clone(),
-        post("/v1/users", json!({ "username": "amelia.marques", "password": TEST_PASSWORD })),
+        post(
+            "/v1/users",
+            json!({ "username": "amelia.marques", "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "bootstrap owner: {created}");
@@ -231,14 +267,22 @@ async fn an_attested_act_after_a_two_step_sign_in_is_actually_attested() {
     // Two-step sign in afresh.
     let (_, challenge) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
-    let challenge_id = challenge["two_factor_challenge"]["challenge_id"].as_str().unwrap();
+    let challenge_id = challenge["two_factor_challenge"]["challenge_id"]
+        .as_str()
+        .unwrap();
     let code = current_code(&secret);
     let (status, minted) = send(
         state.clone(),
-        post("/v1/session/challenge", json!({ "challenge_id": challenge_id, "code": code })),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": challenge_id, "code": code }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{minted}");
@@ -283,16 +327,25 @@ async fn a_challenge_is_single_use_and_capped_and_a_wrong_code_is_uniform() {
     let new_challenge = |state: AppState| async move {
         let (_, body) = send(
             state,
-            post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+            post(
+                "/v1/session",
+                json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+            ),
         )
         .await;
-        body["two_factor_challenge"]["challenge_id"].as_str().unwrap().to_owned()
+        body["two_factor_challenge"]["challenge_id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
     };
 
     // Unknown challenge id → uniform 401.
     let (status, _) = send(
         state.clone(),
-        post("/v1/session/challenge", json!({ "challenge_id": "made-up", "code": "000000" })),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": "made-up", "code": "000000" }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -302,17 +355,27 @@ async fn a_challenge_is_single_use_and_capped_and_a_wrong_code_is_uniform() {
     let code = current_code(&secret);
     let (status, _) = send(
         state.clone(),
-        post("/v1/session/challenge", json!({ "challenge_id": cid, "code": code })),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": cid, "code": code }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     let code2 = current_code(&secret);
     let (status, _) = send(
         state.clone(),
-        post("/v1/session/challenge", json!({ "challenge_id": cid, "code": code2 })),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": cid, "code": code2 }),
+        ),
     )
     .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "a spent challenge must not be reusable");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "a spent challenge must not be reusable"
+    );
 
     // Attempt cap: five wrong codes discard the challenge; a subsequent correct code fails because
     // the challenge is gone.
@@ -320,7 +383,10 @@ async fn a_challenge_is_single_use_and_capped_and_a_wrong_code_is_uniform() {
     for _ in 0..5 {
         let (status, _) = send(
             state.clone(),
-            post("/v1/session/challenge", json!({ "challenge_id": &cid, "code": wrong_code(&secret) })),
+            post(
+                "/v1/session/challenge",
+                json!({ "challenge_id": &cid, "code": wrong_code(&secret) }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -328,10 +394,17 @@ async fn a_challenge_is_single_use_and_capped_and_a_wrong_code_is_uniform() {
     let code = current_code(&secret);
     let (status, _) = send(
         state.clone(),
-        post("/v1/session/challenge", json!({ "challenge_id": &cid, "code": code })),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": &cid, "code": code }),
+        ),
     )
     .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "a challenge discarded after the cap is gone");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "a challenge discarded after the cap is gone"
+    );
 }
 
 /// A backup code satisfies the challenge when the authenticator is unavailable, and is single-use.
@@ -344,14 +417,23 @@ async fn a_backup_code_completes_the_challenge_and_is_consumed() {
     // Enrol + capture the backup codes from the confirm response.
     let (_, started) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/totp/enrol", uid.0), Value::Null), &token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/totp/enrol", uid.0),
+                Value::Null,
+            ),
+            &token,
+        ),
     )
     .await;
     let secret = started["secret"].as_str().unwrap().to_owned();
     let (_, confirmed) = send(
         state.clone(),
         with_session(
-            post(&format!("/v1/users/{}/two-factor/totp/confirm", uid.0), json!({ "code": current_code(&secret) })),
+            post(
+                &format!("/v1/users/{}/two-factor/totp/confirm", uid.0),
+                json!({ "code": current_code(&secret) }),
+            ),
             &token,
         ),
     )
@@ -360,31 +442,60 @@ async fn a_backup_code_completes_the_challenge_and_is_consumed() {
 
     let (_, challenge) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
-    assert_eq!(challenge["two_factor_challenge"]["methods"][1], "backup_code");
-    let cid = challenge["two_factor_challenge"]["challenge_id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        challenge["two_factor_challenge"]["methods"][1],
+        "backup_code"
+    );
+    let cid = challenge["two_factor_challenge"]["challenge_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let (status, minted) = send(
         state.clone(),
-        post("/v1/session/challenge", json!({ "challenge_id": cid, "code": backup })),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": cid, "code": backup }),
+        ),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "a backup code should complete the challenge: {minted}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a backup code should complete the challenge: {minted}"
+    );
 
     // The same backup code is now spent.
     let (_, challenge) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
-    let cid = challenge["two_factor_challenge"]["challenge_id"].as_str().unwrap().to_owned();
+    let cid = challenge["two_factor_challenge"]["challenge_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let (status, _) = send(
         state.clone(),
-        post("/v1/session/challenge", json!({ "challenge_id": cid, "code": backup })),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": cid, "code": backup }),
+        ),
     )
     .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "a spent backup code must not work again");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "a spent backup code must not work again"
+    );
 }
 
 // =================================================================================================
@@ -401,39 +512,60 @@ async fn a_required_but_unenrolled_owner_can_still_reach_enrolment() {
     let uid = seed_user(&state, "amelia.marques", OWNER_ROLE_ID).await;
     // Instance supports TOTP; the account is required to hold a factor but has none.
     state.settings.write().await.auth.two_factor.totp_enabled = true;
-    state.users.write().await.get_mut(&uid).unwrap().two_factor_required = true;
+    state
+        .users
+        .write()
+        .await
+        .get_mut(&uid)
+        .unwrap()
+        .two_factor_required = true;
 
     // Sign-in succeeds (no factor yet ⇒ no challenge) and reports the wall.
     let (status, body) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let token = body["token"].as_str().expect("a token, walled but real").to_owned();
+    let token = body["token"]
+        .as_str()
+        .expect("a token, walled but real")
+        .to_owned();
     assert_eq!(body["required_action"], "enrol_two_factor", "{body}");
 
     // The wall blocks ordinary work...
-    let (status, blocked) = send(
-        state.clone(),
-        with_session(get("/v1/users"), &token),
-    )
-    .await;
+    let (status, blocked) = send(state.clone(), with_session(get("/v1/users"), &token)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{blocked}");
     assert_eq!(blocked["required_action"], "enrol_two_factor");
 
     // ...but the enrolment path is open, so the Owner is never locked out.
     let (status, started) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/totp/enrol", uid.0), Value::Null), &token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/totp/enrol", uid.0),
+                Value::Null,
+            ),
+            &token,
+        ),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "enrolment must be reachable behind the wall: {started}");
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "enrolment must be reachable behind the wall: {started}"
+    );
     let secret = started["secret"].as_str().unwrap().to_owned();
     let (status, _) = send(
         state.clone(),
         with_session(
-            post(&format!("/v1/users/{}/two-factor/totp/confirm", uid.0), json!({ "code": current_code(&secret) })),
+            post(
+                &format!("/v1/users/{}/two-factor/totp/confirm", uid.0),
+                json!({ "code": current_code(&secret) }),
+            ),
             &token,
         ),
     )
@@ -442,7 +574,11 @@ async fn a_required_but_unenrolled_owner_can_still_reach_enrolment() {
 
     // The wall is now lifted for this same session — the factor exists.
     let (status, view) = send(state.clone(), with_session(get("/v1/users"), &token)).await;
-    assert_eq!(status, StatusCode::OK, "the wall must lift once enrolled: {view}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the wall must lift once enrolled: {view}"
+    );
 }
 
 // =================================================================================================
@@ -454,11 +590,20 @@ async fn a_forced_change_session_can_only_change_the_password() {
     let temp = TempDir::new();
     let state = AppState::with_data_dir(&temp.0);
     let uid = seed_user(&state, "amelia.marques", OWNER_ROLE_ID).await;
-    state.users.write().await.get_mut(&uid).unwrap().force_password_change = true;
+    state
+        .users
+        .write()
+        .await
+        .get_mut(&uid)
+        .unwrap()
+        .force_password_change = true;
 
     let (status, body) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -481,11 +626,19 @@ async fn a_forced_change_session_can_only_change_the_password() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "the password change must be reachable");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the password change must be reachable"
+    );
 
     // Wall lifted.
     let (status, _) = send(state.clone(), with_session(get("/v1/users"), &token)).await;
-    assert_eq!(status, StatusCode::OK, "the wall must lift after the change");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the wall must lift after the change"
+    );
 
     // GET /v1/session no longer reports a required action.
     let (_, sess) = send(state.clone(), with_session(get("/v1/session"), &token)).await;

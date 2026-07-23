@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
-use chancela_api::totp::{STEP_SECONDS, TotpSecret, verify_code_against_secret, VerifyOutcome};
+use chancela_api::totp::{STEP_SECONDS, TotpSecret, VerifyOutcome, verify_code_against_secret};
 use chancela_api::{AppState, User, UserId, router};
 use chancela_authz::{OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleId, Scope};
 use serde_json::{Value, json};
@@ -59,7 +59,11 @@ fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
     req
 }
 fn get(uri: &str) -> Request<Body> {
-    Request::builder().method("GET").uri(uri).body(Body::empty()).expect("req")
+    Request::builder()
+        .method("GET")
+        .uri(uri)
+        .body(Body::empty())
+        .expect("req")
 }
 fn json_request(method: &str, uri: &str, body: Value) -> Request<Body> {
     Request::builder()
@@ -82,7 +86,9 @@ async fn seed_user(state: &AppState, username: &str, role: RoleId) -> UserId {
             username: username.to_owned(),
             display_name: username.to_owned(),
             email: None,
-            created_at: OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default(),
+            created_at: OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
             active: true,
             password_hash: Some(password_hash()),
             attestation_key: None,
@@ -102,7 +108,10 @@ async fn seed_user(state: &AppState, username: &str, role: RoleId) -> UserId {
 async fn open_session(state: &AppState, uid: UserId) -> String {
     let (status, body) = send(
         state.clone(),
-        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+        post(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "session: {body}");
@@ -114,7 +123,13 @@ async fn open_session(state: &AppState, uid: UserId) -> String {
 async fn enrol_and_confirm(state: &AppState, uid: UserId, token: &str) -> String {
     let (status, started) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/totp/enrol", uid.0), Value::Null), token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/totp/enrol", uid.0),
+                Value::Null,
+            ),
+            token,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "enrol: {started}");
@@ -161,15 +176,26 @@ async fn a_confirmed_enrolment_activates_the_factor_and_shows_backup_codes_once(
     let token = open_session(&state, uid).await;
 
     // Before enrolment: not a factor.
-    let (status, view) = send(state.clone(), with_session(get(&format!("/v1/users/{}", uid.0)), &token)).await;
+    let (status, view) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}", uid.0)), &token),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{view}");
     assert_eq!(view["has_totp"], false);
 
     enrol_and_confirm(&state, uid, &token).await;
 
-    let (status, view) = send(state.clone(), with_session(get(&format!("/v1/users/{}", uid.0)), &token)).await;
+    let (status, view) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}", uid.0)), &token),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{view}");
-    assert_eq!(view["has_totp"], true, "confirmed factor must read as active");
+    assert_eq!(
+        view["has_totp"], true,
+        "confirmed factor must read as active"
+    );
 
     let (status, twofa) = send(
         state.clone(),
@@ -193,13 +219,26 @@ async fn a_pending_enrolment_is_not_yet_a_factor() {
 
     let (status, _) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/totp/enrol", uid.0), Value::Null), &token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/totp/enrol", uid.0),
+                Value::Null,
+            ),
+            &token,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let (_, view) = send(state.clone(), with_session(get(&format!("/v1/users/{}", uid.0)), &token)).await;
-    assert_eq!(view["has_totp"], false, "an unconfirmed secret is not a factor");
+    let (_, view) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}", uid.0)), &token),
+    )
+    .await;
+    assert_eq!(
+        view["has_totp"], false,
+        "an unconfirmed secret is not a factor"
+    );
     let (_, twofa) = send(
         state.clone(),
         with_session(get(&format!("/v1/users/{}/two-factor", uid.0)), &token),
@@ -218,7 +257,13 @@ async fn confirming_with_a_wrong_code_does_not_activate() {
 
     let (status, started) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/totp/enrol", uid.0), Value::Null), &token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/totp/enrol", uid.0),
+                Value::Null,
+            ),
+            &token,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{started}");
@@ -229,13 +274,20 @@ async fn confirming_with_a_wrong_code_does_not_activate() {
     let (status, body) = send(
         state.clone(),
         with_session(
-            post(&format!("/v1/users/{}/two-factor/totp/confirm", uid.0), json!({ "code": bad })),
+            post(
+                &format!("/v1/users/{}/two-factor/totp/confirm", uid.0),
+                json!({ "code": bad }),
+            ),
             &token,
         ),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
-    let (_, view) = send(state.clone(), with_session(get(&format!("/v1/users/{}", uid.0)), &token)).await;
+    let (_, view) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}", uid.0)), &token),
+    )
+    .await;
     assert_eq!(view["has_totp"], false);
 }
 
@@ -253,7 +305,13 @@ async fn only_the_account_holder_may_manage_their_own_second_factor() {
     // Bob (an Owner) cannot enrol a factor for Alice.
     let (status, body) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/totp/enrol", alice.0), Value::Null), &bob_token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/totp/enrol", alice.0),
+                Value::Null,
+            ),
+            &bob_token,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
@@ -261,7 +319,10 @@ async fn only_the_account_holder_may_manage_their_own_second_factor() {
     // Unauthenticated is a 401.
     let (status, _) = send(
         state.clone(),
-        post(&format!("/v1/users/{}/two-factor/totp/enrol", alice.0), Value::Null),
+        post(
+            &format!("/v1/users/{}/two-factor/totp/enrol", alice.0),
+            Value::Null,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -277,10 +338,20 @@ async fn re_enrolling_over_an_active_factor_is_refused() {
 
     let (status, body) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/totp/enrol", uid.0), Value::Null), &token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/totp/enrol", uid.0),
+                Value::Null,
+            ),
+            &token,
+        ),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "an active factor must not be silently replaced: {body}");
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "an active factor must not be silently replaced: {body}"
+    );
 }
 
 // =================================================================================================
@@ -296,7 +367,13 @@ async fn a_user_can_disable_their_own_factor_unless_it_is_required() {
     enrol_and_confirm(&state, uid, &token).await;
 
     // Make it required (directly on state — the admin toggle has its own test).
-    state.users.write().await.get_mut(&uid).unwrap().two_factor_required = true;
+    state
+        .users
+        .write()
+        .await
+        .get_mut(&uid)
+        .unwrap()
+        .two_factor_required = true;
     let (status, body) = send(
         state.clone(),
         with_session(
@@ -309,10 +386,20 @@ async fn a_user_can_disable_their_own_factor_unless_it_is_required() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "a required factor must not be self-disabled: {body}");
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "a required factor must not be self-disabled: {body}"
+    );
 
     // Lift the requirement, then disable succeeds.
-    state.users.write().await.get_mut(&uid).unwrap().two_factor_required = false;
+    state
+        .users
+        .write()
+        .await
+        .get_mut(&uid)
+        .unwrap()
+        .two_factor_required = false;
     let (status, view) = send(
         state.clone(),
         with_session(
@@ -339,7 +426,13 @@ async fn regenerating_backup_codes_requires_an_active_factor_and_replaces_the_ol
     // No factor yet → refused.
     let (status, _) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/backup-codes", uid.0), Value::Null), &token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/backup-codes", uid.0),
+                Value::Null,
+            ),
+            &token,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -347,7 +440,13 @@ async fn regenerating_backup_codes_requires_an_active_factor_and_replaces_the_ol
     enrol_and_confirm(&state, uid, &token).await;
     let (status, first) = send(
         state.clone(),
-        with_session(post(&format!("/v1/users/{}/two-factor/backup-codes", uid.0), Value::Null), &token),
+        with_session(
+            post(
+                &format!("/v1/users/{}/two-factor/backup-codes", uid.0),
+                Value::Null,
+            ),
+            &token,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{first}");
@@ -373,18 +472,31 @@ async fn requiring_two_factor_needs_totp_enabled_instance_wide() {
     let (status, body) = send(
         state.clone(),
         with_session(
-            json_request("PATCH", &format!("/v1/users/{}", target.0), json!({ "two_factor_required": true })),
+            json_request(
+                "PATCH",
+                &format!("/v1/users/{}", target.0),
+                json!({ "two_factor_required": true }),
+            ),
             &admin_token,
         ),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert!(
-        body["error"].as_str().unwrap_or_default().contains("totp_enabled"),
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("totp_enabled"),
         "{body}"
     );
     assert_eq!(
-        state.users.read().await.get(&target).unwrap().two_factor_required,
+        state
+            .users
+            .read()
+            .await
+            .get(&target)
+            .unwrap()
+            .two_factor_required,
         false
     );
 
@@ -393,7 +505,11 @@ async fn requiring_two_factor_needs_totp_enabled_instance_wide() {
     let (status, view) = send(
         state.clone(),
         with_session(
-            json_request("PATCH", &format!("/v1/users/{}", target.0), json!({ "two_factor_required": true })),
+            json_request(
+                "PATCH",
+                &format!("/v1/users/{}", target.0),
+                json!({ "two_factor_required": true }),
+            ),
             &admin_token,
         ),
     )
@@ -435,7 +551,13 @@ async fn a_welcome_email_account_is_flagged_for_a_forced_change() {
     let new_id = created["id"].as_str().unwrap();
     let uid = UserId(Uuid::parse_str(new_id).unwrap());
     assert!(
-        state.users.read().await.get(&uid).unwrap().force_password_change,
+        state
+            .users
+            .read()
+            .await
+            .get(&uid)
+            .unwrap()
+            .force_password_change,
         "an account created with a welcome email must be flagged"
     );
 
@@ -453,7 +575,15 @@ async fn a_welcome_email_account_is_flagged_for_a_forced_change() {
     .await;
     assert_eq!(status, StatusCode::CREATED, "{plain}");
     let plain_uid = UserId(Uuid::parse_str(plain["id"].as_str().unwrap()).unwrap());
-    assert!(!state.users.read().await.get(&plain_uid).unwrap().force_password_change);
+    assert!(
+        !state
+            .users
+            .read()
+            .await
+            .get(&plain_uid)
+            .unwrap()
+            .force_password_change
+    );
 }
 
 /// The interaction the lead flagged as the one that must be right: a forced first-login change goes
@@ -491,7 +621,15 @@ async fn a_forced_first_login_change_preserves_the_attestation_fingerprint() {
         .as_str()
         .expect("the account was created with an attestation key")
         .to_owned();
-    assert!(state.users.read().await.get(&uid).unwrap().force_password_change);
+    assert!(
+        state
+            .users
+            .read()
+            .await
+            .get(&uid)
+            .unwrap()
+            .force_password_change
+    );
 
     // The user signs in and changes their own password (the forced-change flow drives this).
     let user_token = open_session(&state, uid).await;
@@ -516,7 +654,13 @@ async fn a_forced_first_login_change_preserves_the_attestation_fingerprint() {
     );
     // And the flag is cleared, so the account is no longer walled off.
     assert!(
-        !state.users.read().await.get(&uid).unwrap().force_password_change,
+        !state
+            .users
+            .read()
+            .await
+            .get(&uid)
+            .unwrap()
+            .force_password_change,
         "the forced-change flag must clear on the first successful change"
     );
     // Belt and braces: the account still has an active key (it was re-wrapped, not dropped).
@@ -543,10 +687,17 @@ async fn the_totp_secret_never_reappears_after_enrolment() {
         with_session(get(&format!("/v1/users/{}/two-factor", uid.0)), &token),
     )
     .await;
-    assert!(!twofa.to_string().contains(&secret), "status leaked the secret");
+    assert!(
+        !twofa.to_string().contains(&secret),
+        "status leaked the secret"
+    );
 
     // The user view carries no secret.
-    let (_, view) = send(state.clone(), with_session(get(&format!("/v1/users/{}", uid.0)), &token)).await;
+    let (_, view) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}", uid.0)), &token),
+    )
+    .await;
     assert!(!view.to_string().contains(&secret));
 
     // The ledger carries no secret.

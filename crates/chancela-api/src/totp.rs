@@ -304,11 +304,11 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::AppState;
+use crate::CredentialMode;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::error::ApiError;
 use crate::secretstore_persist::{CredentialFieldSet, FIELD_TOTP_SECRET, TotpCredentialFields};
 use crate::users::{TotpEnrolment, User, UserId, UserView};
-use crate::CredentialMode;
 
 /// The one entry id per user's single TOTP record.
 const TOTP_ENTRY_ID: &str = "default";
@@ -803,8 +803,12 @@ pub(crate) async fn verify_and_consume_second_factor(
         let Some(secret) = read_totp_secret(state, user_id).await? else {
             return Ok(false);
         };
-        match verify_code_against_secret(&secret, trimmed, now.unix_timestamp(), enrolment.last_accepted_step)
-        {
+        match verify_code_against_secret(
+            &secret,
+            trimmed,
+            now.unix_timestamp(),
+            enrolment.last_accepted_step,
+        ) {
             VerifyOutcome::Accepted { step } => {
                 let mut users = state.users.write().await;
                 if let Some(user) = users.get_mut(&user_id)
@@ -862,7 +866,12 @@ mod tests {
 
     #[test]
     fn base32_round_trips() {
-        for sample in [&b"12345678901234567890"[..], b"\x00\xff\x10hello", b"", b"a"] {
+        for sample in [
+            &b"12345678901234567890"[..],
+            b"\x00\xff\x10hello",
+            b"",
+            b"a",
+        ] {
             let encoded = base32_encode(sample);
             assert_eq!(base32_decode(&encoded).as_deref(), Some(sample));
         }
@@ -918,7 +927,10 @@ mod tests {
     fn an_accepted_step_cannot_be_replayed() {
         let secret = TotpSecret::generate();
         let now = 1_700_000_000;
-        let code = format!("{:06}", code_at(secret.expose(), now, 0).expect("decodable"));
+        let code = format!(
+            "{:06}",
+            code_at(secret.expose(), now, 0).expect("decodable")
+        );
         let VerifyOutcome::Accepted { step } =
             verify_code_against_secret(secret.expose(), &code, now, None)
         else {
@@ -974,7 +986,8 @@ mod tests {
             assert_eq!(code.len(), 11, "{code}");
             assert_eq!(code.as_bytes()[5], b'-');
             assert!(
-                code.chars().all(|c| c == '-' || "ABCDEFGHJKMNPQRSTUVWXYZ23456789".contains(c)),
+                code.chars()
+                    .all(|c| c == '-' || "ABCDEFGHJKMNPQRSTUVWXYZ23456789".contains(c)),
                 "ambiguous character in {code}"
             );
             assert!(seen.insert(code), "the CSPRNG repeated a backup code");

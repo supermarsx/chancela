@@ -493,24 +493,23 @@ impl SessionStore for SharedSessionBackend {
             .retain(|token, _| crate::session::session_token_digest(token) != digest);
         SessionMutation::Stored
     }
-    fn list_for_user(
-        &self,
-        user_id: Uuid,
-    ) -> crate::cluster_shared_state::SessionListResult {
+    fn list_for_user(&self, user_id: Uuid) -> crate::cluster_shared_state::SessionListResult {
         let sessions = self
             .map
             .lock()
             .unwrap()
             .iter()
             .filter(|(_, put)| put.user_id == user_id)
-            .map(|(token, put)| crate::cluster_shared_state::SharedSessionInfo {
-                session_id: put.session_id,
-                token_sha256: crate::session::session_token_digest(token),
-                issued_at_unix: put.issued_at_unix,
-                last_seen_unix: put.issued_at_unix,
-                device: put.device.clone(),
-                ip: put.ip.clone(),
-            })
+            .map(
+                |(token, put)| crate::cluster_shared_state::SharedSessionInfo {
+                    session_id: put.session_id,
+                    token_sha256: crate::session::session_token_digest(token),
+                    issued_at_unix: put.issued_at_unix,
+                    last_seen_unix: put.issued_at_unix,
+                    device: put.device.clone(),
+                    ip: put.ip.clone(),
+                },
+            )
             .collect();
         crate::cluster_shared_state::SessionListResult::Sessions(sessions)
     }
@@ -533,7 +532,11 @@ fn a_session_minted_on_the_old_leader_is_honored_after_failover() {
 
     // A user signs in on the OLD leader.
     let issued_at_unix = 1_700_000_000;
-    old_leader.put("session-tok", crate::cluster_shared_state::SessionPut::identity(uid, issued_at_unix), ttl);
+    old_leader.put(
+        "session-tok",
+        crate::cluster_shared_state::SessionPut::identity(uid, issued_at_unix),
+        ttl,
+    );
     // Failover happens; the client's next request lands on the NEW leader — the session is still valid.
     assert_eq!(
         new_leader.resolve("session-tok", ttl),

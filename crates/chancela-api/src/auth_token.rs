@@ -252,8 +252,9 @@ mod verifier_hex {
 
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 32], D::Error> {
         let raw = String::deserialize(d)?;
-        crate::hex::parse_hex32(&raw)
-            .ok_or_else(|| serde::de::Error::custom("auth token verifier must be 64-char sha256 hex"))
+        crate::hex::parse_hex32(&raw).ok_or_else(|| {
+            serde::de::Error::custom("auth token verifier must be 64-char sha256 hex")
+        })
     }
 }
 
@@ -480,10 +481,11 @@ mod tests {
         let mut store = AuthTokenStore::new();
         let mut seen = std::collections::BTreeSet::new();
         for _ in 0..64 {
-            let (secret, _) =
-                store.issue_default_ttl(AuthTokenPurpose::Invite, AuthTokenSubject::email(
-                    &format!("{}@example.pt", Uuid::new_v4()),
-                ), t0());
+            let (secret, _) = store.issue_default_ttl(
+                AuthTokenPurpose::Invite,
+                AuthTokenSubject::email(&format!("{}@example.pt", Uuid::new_v4())),
+                t0(),
+            );
             let raw = secret.expose().to_owned();
             // 32 bytes base64url without padding is 43 characters.
             assert_eq!(raw.len(), 43, "unexpected token length: {}", raw.len());
@@ -583,7 +585,10 @@ mod tests {
         );
         assert_eq!(expired, Err(AuthTokenError::Invalid));
         assert_eq!(expired, unknown);
-        assert_eq!(expired.unwrap_err().to_string(), unknown.unwrap_err().to_string());
+        assert_eq!(
+            expired.unwrap_err().to_string(),
+            unknown.unwrap_err().to_string()
+        );
     }
 
     /// A token is still live one instant before it expires and dead at the instant itself, so a
@@ -660,7 +665,8 @@ mod tests {
     fn supersession_does_not_cross_purposes_or_subjects() {
         let mut store = AuthTokenStore::new();
         let other = AuthTokenSubject::user(Uuid::from_u128(0x5eed_0002));
-        let (recovery, _) = store.issue_default_ttl(AuthTokenPurpose::PasswordRecovery, user(), t0());
+        let (recovery, _) =
+            store.issue_default_ttl(AuthTokenPurpose::PasswordRecovery, user(), t0());
         let (theirs, _) =
             store.issue_default_ttl(AuthTokenPurpose::PasswordRecovery, other.clone(), t0());
         let recovery_raw = recovery.expose().to_owned();
@@ -686,10 +692,12 @@ mod tests {
     fn invalidating_a_user_kills_every_purpose_for_that_user_only() {
         let mut store = AuthTokenStore::new();
         let other = AuthTokenSubject::user(Uuid::from_u128(0x5eed_0002));
-        let (recovery, _) = store.issue_default_ttl(AuthTokenPurpose::PasswordRecovery, user(), t0());
+        let (recovery, _) =
+            store.issue_default_ttl(AuthTokenPurpose::PasswordRecovery, user(), t0());
         let (second_factor, _) =
             store.issue_default_ttl(AuthTokenPurpose::TwoFactorEmailCode, user(), t0());
-        let (untouched, _) = store.issue_default_ttl(AuthTokenPurpose::PasswordRecovery, other, t0());
+        let (untouched, _) =
+            store.issue_default_ttl(AuthTokenPurpose::PasswordRecovery, other, t0());
         let recovery_raw = recovery.expose().to_owned();
         let second_factor_raw = second_factor.expose().to_owned();
         let untouched_raw = untouched.expose().to_owned();
@@ -750,7 +758,10 @@ mod tests {
             AuthTokenPurpose::TwoFactorEmailCode,
         ] {
             let (min, max) = purpose.ttl_bounds();
-            assert!(min <= purpose.default_ttl() && purpose.default_ttl() <= max, "{purpose}");
+            assert!(
+                min <= purpose.default_ttl() && purpose.default_ttl() <= max,
+                "{purpose}"
+            );
             assert_eq!(purpose.clamp_ttl(Duration::days(3650)), max, "{purpose}");
             assert_eq!(purpose.clamp_ttl(Duration::ZERO), min, "{purpose}");
             assert_eq!(purpose.clamp_ttl(-Duration::days(1)), min, "{purpose}");
@@ -787,7 +798,11 @@ mod tests {
         assert_eq!(store.len(), 1);
         assert!(
             store
-                .redeem(AuthTokenPurpose::Invite, &live_raw, t0() + Duration::hours(2))
+                .redeem(
+                    AuthTokenPurpose::Invite,
+                    &live_raw,
+                    t0() + Duration::hours(2)
+                )
                 .is_ok()
         );
     }
@@ -818,10 +833,16 @@ mod tests {
         for (purpose, id) in [
             (AuthTokenPurpose::Invite, "invite"),
             (AuthTokenPurpose::PasswordRecovery, "password_recovery"),
-            (AuthTokenPurpose::TwoFactorEmailCode, "two_factor_email_code"),
+            (
+                AuthTokenPurpose::TwoFactorEmailCode,
+                "two_factor_email_code",
+            ),
         ] {
             assert_eq!(purpose.as_str(), id);
-            assert_eq!(serde_json::to_string(&purpose).unwrap(), format!("\"{id}\""));
+            assert_eq!(
+                serde_json::to_string(&purpose).unwrap(),
+                format!("\"{id}\"")
+            );
             assert_eq!(
                 serde_json::from_str::<AuthTokenPurpose>(&format!("\"{id}\"")).unwrap(),
                 purpose

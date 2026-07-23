@@ -181,7 +181,10 @@ async fn signup_is_refused_on_an_instance_with_no_users_however_it_is_configured
 
     // Nothing was created — and in particular no Owner.
     let users = state.users.read().await;
-    assert!(users.is_empty(), "signup created an account on an empty instance");
+    assert!(
+        users.is_empty(),
+        "signup created an account on an empty instance"
+    );
 
     // And the bootstrap door itself is untouched: the first user still arrives through
     // `POST /v1/users`, still as Owner@Global.
@@ -245,7 +248,8 @@ async fn a_domain_outside_the_allow_list_is_refused_and_a_subdomain_is_not_a_mat
         "outsider@abandonado.example.pt",
         "outsider@example.pt.evil.example",
     ] {
-        let (status, body) = send(state.clone(), post("/v1/auth/signup", signup_body(refused))).await;
+        let (status, body) =
+            send(state.clone(), post("/v1/auth/signup", signup_body(refused))).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{refused}: {body}");
     }
     assert_eq!(state.users.read().await.len(), 1, "nothing was created");
@@ -254,7 +258,10 @@ async fn a_domain_outside_the_allow_list_is_refused_and_a_subdomain_is_not_a_mat
         state.clone(),
         // Case and padding must not decide the outcome: the stored list is normalized and the
         // address is normalized, so the comparison is a byte match on both sides.
-        post("/v1/auth/signup", signup_body("  Amelia.Marques@Example.PT ")),
+        post(
+            "/v1/auth/signup",
+            signup_body("  Amelia.Marques@Example.PT "),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::ACCEPTED, "{body}");
@@ -584,7 +591,11 @@ async fn a_role_widened_first_cannot_then_be_named_the_signup_default() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "widening a non-default role is legal: {body}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "widening a non-default role is legal: {body}"
+    );
 
     // Now name it. The settings-validate site is what stands here.
     let (status, document) = send(state.clone(), with_session(get("/v1/settings"), &token)).await;
@@ -658,7 +669,10 @@ async fn an_invitation_grants_the_default_role_and_can_be_accepted_exactly_once(
     assert_eq!(issued["email"], "convidada@example.pt");
     assert_eq!(issued["role_id"], GUEST_ROLE_ID.0.to_string());
     assert_eq!(issued["scope"], json!({ "kind": "global" }));
-    let accept_url = issued["accept_url"].as_str().expect("accept url").to_owned();
+    let accept_url = issued["accept_url"]
+        .as_str()
+        .expect("accept url")
+        .to_owned();
     // The origin is the configured one, never anything derived from the request.
     assert!(
         accept_url.starts_with("https://livros.example.pt/invite?token="),
@@ -719,7 +733,8 @@ async fn an_expired_or_superseded_invitation_is_refused_uniformly() {
     let session = invite_ready(&state).await;
 
     // --- superseded --------------------------------------------------------------------------
-    let (_, first) = issue_invite(&state, &session, json!({ "email": "convidada@example.pt" })).await;
+    let (_, first) =
+        issue_invite(&state, &session, json!({ "email": "convidada@example.pt" })).await;
     let first_token = token_from(first["accept_url"].as_str().expect("url"));
     let (_, second) =
         issue_invite(&state, &session, json!({ "email": "convidada@example.pt" })).await;
@@ -764,7 +779,8 @@ async fn a_cross_subject_invitation_is_refused_and_the_address_comes_from_the_in
     let state = AppState::with_data_dir(&temp.0);
     let session = invite_ready(&state).await;
 
-    let (_, issued) = issue_invite(&state, &session, json!({ "email": "convidada@example.pt" })).await;
+    let (_, issued) =
+        issue_invite(&state, &session, json!({ "email": "convidada@example.pt" })).await;
     let accept_url = issued["accept_url"].as_str().expect("url").to_owned();
 
     let (status, body) = send(
@@ -834,7 +850,10 @@ async fn an_invitation_cannot_be_issued_without_a_configured_public_base_url() {
     let session = invite_ready(&state).await;
     state.settings.write().await.platform.public_base_url = None;
 
-    let mut request = post("/v1/auth/invites", json!({ "email": "convidada@example.pt" }));
+    let mut request = post(
+        "/v1/auth/invites",
+        json!({ "email": "convidada@example.pt" }),
+    );
     // A poisoned Host header must change nothing: there is no request-derived accessor.
     request
         .headers_mut()
@@ -873,7 +892,10 @@ async fn issuing_an_invitation_requires_the_user_invite_permission() {
     // And unauthenticated is a 401, not a silent accept.
     let (status, body) = send(
         state.clone(),
-        post("/v1/auth/invites", json!({ "email": "convidada@example.pt" })),
+        post(
+            "/v1/auth/invites",
+            json!({ "email": "convidada@example.pt" }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
@@ -963,7 +985,8 @@ async fn no_ledger_event_from_this_module_carries_token_material() {
     let state = AppState::with_data_dir(&temp.0);
     let session = invite_ready(&state).await;
 
-    let (_, issued) = issue_invite(&state, &session, json!({ "email": "convidada@example.pt" })).await;
+    let (_, issued) =
+        issue_invite(&state, &session, json!({ "email": "convidada@example.pt" })).await;
     let accept_url = issued["accept_url"].as_str().expect("url").to_owned();
     let invite_token = token_from(&accept_url);
     let (status, created) = send(
@@ -982,7 +1005,10 @@ async fn no_ledger_event_from_this_module_carries_token_material() {
         !rendered.contains(&invite_token),
         "a token reached the ledger"
     );
-    assert!(!rendered.contains(&accept_url), "an invite url reached the ledger");
+    assert!(
+        !rendered.contains(&accept_url),
+        "an invite url reached the ledger"
+    );
     let kinds: Vec<&str> = ledger.events().iter().map(|e| e.kind.as_str()).collect();
     assert!(kinds.contains(&"user.invite.created"), "{kinds:?}");
     assert!(kinds.contains(&"user.created"), "{kinds:?}");
