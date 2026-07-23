@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-24 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `757bf81`,
+and implementation snapshot `4f231d9`,
 including coverage notes for the mobile companion foundation docs/scripts,
 destructive erasure preflight/approve/execute route wiring plus local gate
 evidence, append-only rectification/restriction ledger annotation routes and
@@ -997,11 +997,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `757bf81`
+## Focused Gate Snapshot Through `4f231d9`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `757bf81`. This is not an exhaustive current
+current implementation head `4f231d9`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -2446,7 +2446,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `757bf81`
+- Current checkpoint metadata/static checks through `4f231d9`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
