@@ -21,7 +21,16 @@ const checks = [
     name: "API paper import tests",
     command: [
       "cargo",
-      ["test", "-p", "chancela-api", "--test", "paper_import", "--locked"],
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "api-records",
+        "--locked",
+        "--",
+        "paper_import",
+      ],
     ],
   },
   {
@@ -33,8 +42,10 @@ const checks = [
         "-p",
         "chancela-api",
         "--test",
-        "external_signer_invites",
+        "api-signatures",
         "--locked",
+        "--",
+        "external_signer_invites",
       ],
     ],
   },
@@ -42,7 +53,16 @@ const checks = [
     name: "API archive package and DocTimeStamp evidence tests",
     command: [
       "cargo",
-      ["test", "-p", "chancela-api", "--test", "archive_package", "--locked"],
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "api-archive-privacy",
+        "--locked",
+        "--",
+        "archive_package",
+      ],
     ],
   },
   {
@@ -123,9 +143,10 @@ const checks = [
         "-p",
         "chancela-api",
         "--test",
-        "privacy",
+        "api-archive-privacy",
         "--locked",
-        "retention_",
+        "--",
+        "privacy::retention_",
       ],
     ],
   },
@@ -155,8 +176,10 @@ const checks = [
         "-p",
         "chancela-api",
         "--test",
-        "rbac_ledger_verify",
+        "api-records",
         "--locked",
+        "--",
+        "rbac_ledger_verify",
       ],
     ],
   },
@@ -252,8 +275,10 @@ const checks = [
         "-p",
         "chancela-api",
         "--test",
-        "asic_signature_validation",
+        "api-signatures",
         "--locked",
+        "--",
+        "asic_signature_validation",
       ],
     ],
   },
@@ -294,8 +319,10 @@ const checks = [
         "-p",
         "chancela-api",
         "--test",
-        "backup_recovery_drill",
+        "api-archive-privacy",
         "--locked",
+        "--",
+        "backup_recovery_drill",
       ],
     ],
   },
@@ -326,9 +353,10 @@ const checks = [
         "-p",
         "chancela-api",
         "--test",
-        "privacy",
+        "api-archive-privacy",
         "--locked",
-        "breach_playbooks_allow_settings_manage_persist_and_audit",
+        "--",
+        "privacy::breach_playbooks_allow_settings_manage_persist_and_audit",
       ],
     ],
   },
@@ -341,9 +369,10 @@ const checks = [
         "-p",
         "chancela-api",
         "--test",
-        "privacy",
+        "api-archive-privacy",
         "--locked",
-        "transfer_controls_allow_user_manage_validate_persist_and_audit",
+        "--",
+        "privacy::transfer_controls_allow_user_manage_validate_persist_and_audit",
       ],
     ],
   },
@@ -385,9 +414,10 @@ const checks = [
         "-p",
         "chancela-api",
         "--test",
-        "official_signature_import",
+        "api-signatures",
         "--locked",
-        "official_import_requires_guardrail_acknowledgement_without_artifact_or_event",
+        "--",
+        "official_signature_import::official_import_requires_guardrail_acknowledgement_without_artifact_or_event",
       ],
     ],
   },
@@ -672,7 +702,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/session/session.test.tsx",
-    "switches to a has_secret user by prompting for the password",
+    "switches to a remembered user by prompting for the password",
     "web current-user switch password coverage",
   );
   assertFileContains(
@@ -680,9 +710,9 @@ function assertCheckpointMap() {
     "api.createSession({ user_id: user.id, password: createdPassword })",
     "web bootstrap sign-in uses created password marker",
   );
-  assertFileContains(
+  assertFileContainsNormalized(
     "apps/web/src/features/session/CurrentUserPicker.tsx",
-    "picking one prompts for a password",
+    "reveals an inline password prompt",
     "web current-user picker password marker",
   );
   assertFileContains(
@@ -1233,22 +1263,22 @@ function assertCheckpointMap() {
     "browser external-signing operator evidence no-provider-calls marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalSigningWorkflowsPage.tsx",
+    "apps/web/src/features/tools/ExternalSigningWorkflowsPage.tsx",
     "if (workflow === 'external_envelope') return t('signing.invites.workflow.externalEnvelope');",
     "web Ferramentas external envelope workflow label marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx",
+    "apps/web/src/features/tools/ExternalSigningWorkflowsPage.test.tsx",
     "expect(screen.getByText('Fluxo com envelope')).toBeTruthy();",
     "web Ferramentas external envelope localized row coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx",
+    "apps/web/src/features/tools/ExternalSigningWorkflowsPage.test.tsx",
     "expect(screen.queryByText('external_envelope')).toBeNull();",
     "web Ferramentas raw workflow label redaction coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx",
+    "apps/web/src/features/tools/ExternalSigningWorkflowsPage.test.tsx",
     "expect(JSON.parse(String(lookup?.init?.body))).toEqual({ token: unsafeLookingToken });",
     "web Ferramentas token lookup body-only coverage",
   );
@@ -1433,32 +1463,32 @@ function assertCheckpointMap() {
     "web hook per-book import preflight no-mutation marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.tsx",
     "importPreflightPreview.policy === importPolicy",
     "web per-book import preflight policy-gated confirm marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.tsx",
     "if (!isCurrentImportRequest(generation, file, policy)) return;",
     "web per-book import preflight stale response guard marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.test.tsx",
     "preflights a selected bundle before confirm import and shows the honest final verdict",
     "web per-book import preflight preview-confirm coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.test.tsx",
     "clears a stale book import preflight when a different file is selected",
     "web per-book import preflight stale selected-file coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.test.tsx",
     "ignores a deferred import preflight when the policy changes before it resolves",
     "web per-book import preflight stale policy coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.test.tsx",
     "ignores a deferred import preflight when a different file is selected before it resolves",
     "web per-book import preflight deferred stale file coverage",
   );
@@ -2083,12 +2113,12 @@ function assertCheckpointMap() {
     "API seeded role drift role.manage and subset coverage",
   );
   assertFileContains(
-    "apps/web/src/features/rbac/FuncoesSection.tsx",
+    "apps/web/src/features/rbac/RolesSection.tsx",
     "drift.requires_manual_review",
     "web RBAC seeded role drift manual-review marker",
   );
   assertFileContains(
-    "apps/web/src/features/rbac/FuncoesSection.tsx",
+    "apps/web/src/features/rbac/RolesSection.tsx",
     "uiLiteral.funcoesSection.aplicarDefaultsEmFalta",
     "web RBAC seeded role drift explicit apply action key marker",
   );
@@ -3533,13 +3563,13 @@ function assertCheckpointMap() {
     "web i18n locale key coverage marker",
   );
   assertFileContains(
-    "apps/web/src/features/templates/TemplateEditorForm.tsx",
-    "Create/edit form for a user-authored template",
-    "web template editor form marker",
+    "apps/web/src/features/templates/TemplateCreatePage.tsx",
+    "this is the one create/fork surface.",
+    "web template create/fork page marker",
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplateImportDialog.tsx",
-    "Import a user-authored template from a JSON file",
+    "Import a user-authored template — from a JSON file OR pasted JSON",
     "web template import dialog marker",
   );
   assertFileContains(
@@ -5404,7 +5434,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
-    "Fonte privacy-dpia-review / privacy-dpia",
+    "Fonte Revisão da avaliação de impacto sobre a proteção de dados",
     "web dashboard DPIA privacy review source-rule marker",
   );
   assertFileContains(
@@ -5623,13 +5653,18 @@ function assertCheckpointMap() {
     "web contract data status DB-backed sidecar telemetry marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "data!.persistence.sidecar_storage_mode === 'database'",
     "web data status DB-backed sidecar rendering gate marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
-    "payload lógico sidecar",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
+    "sidecar_logical_payload: 'data.status.basis.sidecar_logical_payload'",
+    "web data status sidecar logical payload translation mapping marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'data.status.basis.sidecar_logical_payload': 'payload lógico sidecar'",
     "web data status sidecar logical payload label marker",
   );
   assertFileContains(
@@ -5908,32 +5943,32 @@ function assertCheckpointMap() {
     "API trust identifier filter regression coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    "apps/web/src/features/tools/TrustCatalogPage.tsx",
     'id="trust-identifier-filter"',
     "web TSL identifier lookup control",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    "apps/web/src/features/tools/TrustCatalogPage.tsx",
     'id="tsa-identifier-filter"',
     "web TSA identifier lookup control",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "passes identifier lookups to the TSL catalog endpoint and renders matching services",
     "web TSL identifier lookup coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "passes identifier lookups to TSA search and shows the empty state for no matches",
     "web TSA identifier lookup coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    "apps/web/src/features/tools/TrustCatalogPage.tsx",
     'className="trust-accepted-hash"',
     "web TSA accepted hash wrapper marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    "apps/web/src/features/tools/TrustCatalogPage.tsx",
     "trust.tsa.results.aria",
     "web TSA records result group i18n key marker",
   );
@@ -5943,12 +5978,12 @@ function assertCheckpointMap() {
     "web TSA records result group pt-PT catalog marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "expect(acceptedHashGroup.classList.contains('trust-accepted-hash')).toBe(true);",
     "web TSA accepted hash compact-display coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "const tsaRecordsGroup = screen.getByRole('group', { name: 'Registos TSA' });",
     "web TSA Registos TSA grouped-list coverage",
   );
@@ -5968,37 +6003,37 @@ function assertCheckpointMap() {
     "API trust catalog omits identifier_match without identifier filter coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    "apps/web/src/features/tools/TrustCatalogPage.tsx",
     "IDENTIFIER_MATCH_LABELS",
     "web trust identifier-match label map marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    "apps/web/src/features/tools/TrustCatalogPage.tsx",
     "Matched by technical catalog identifier only",
     "web trust identifier-match technical explanation marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "Matched by technical catalog identifier only: certificate SHA-256",
     "web TSL identifier-match explanation coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "expect(writeText).toHaveBeenCalledWith(certificateSha256);",
     "web TSL copy-safe full certificate hash coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "Matched by technical catalog identifier only: subject key ID",
     "web TSA identifier-match explanation coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "expect(writeText).toHaveBeenCalledWith(ski);",
     "web TSA copy-safe full SKI coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "apps/web/src/features/tools/trust.test.tsx",
     "legal validity|external validation|provider approval|qualified-status",
     "web trust identifier-match no legal/provider claim marker",
   );
@@ -7259,7 +7294,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
-    "/atas/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence",
+    "/acts/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence",
     "web dashboard absent-owner expected deep-link href marker",
   );
   assertFileContains(
@@ -7284,7 +7319,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/notifications/notifications.test.ts",
-    "/atas/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence",
+    "/acts/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence",
     "web notifications absent-owner expected deep-link href marker",
   );
   assertFileContains(
@@ -8334,72 +8369,72 @@ function assertCheckpointMap() {
     "entity table-wrap overflow CSS marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "copies the technical JSON report after validation returns a report body",
     "PDF validator report copy coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "saves the technical JSON report as a browser-save/download Blob",
     "PDF validator report save coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "ExternalValidatorReportsPanel",
     "Ferramentas external-validator metadata panel",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "downloadSummary",
     "Ferramentas external-validator metadata summary save action",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "externalValidatorReports.table.metadataOnly",
     "Ferramentas external-validator compact metadata-only action marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "const RAW_REPORT_MAX_BYTES = 2 * 1024 * 1024;",
     "Ferramentas external-validator raw report local size bound marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "function safeSourceFilename",
     "Ferramentas external-validator safe source filename helper marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "async function selectRawReportFile",
     "Ferramentas external-validator raw report file selection marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "content_base64: rawReport.contentBase64",
     "Ferramentas external-validator raw report content_base64 submit marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "source_filename: rawReport.sourceFilename",
     "Ferramentas external-validator safe source filename submit marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "sourceFilename: safeSourceFilename(next.name)",
     "Ferramentas external-validator local safe filename summary marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "apps/web/src/features/tools/ExternalValidatorReportsPanel.tsx",
     "(!rawReportFile || !!rawReport)",
     "Ferramentas external-validator raw report upload waits for local summary marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "apps/web/src/features/tools/PdfSignatureValidatorPanel.tsx",
     "pdf-validator-report-actions",
     "PDF validator compact report action layout marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "apps/web/src/features/tools/PdfSignatureValidatorPanel.tsx",
     "pdfValidator.report.status",
     "PDF validator compact report status copy marker",
   );
@@ -8408,47 +8443,47 @@ function assertCheckpointMap() {
   // owns the report action/status markers asserted above; these two now assert
   // against the component that actually renders the evidence rows.
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
+    "apps/web/src/features/tools/PdfValidationResultTable.tsx",
     "dss.vri_tu_keys",
     "PDF validator DSS VRI /TU UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
+    "apps/web/src/features/tools/PdfValidationResultTable.tsx",
     "DocTimeStampValidationReport",
     "PDF validator DocTimeStamp validation UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
+    "apps/web/src/features/tools/PdfValidationResultTable.tsx",
     "multi_signature_local_renewal_plan",
     "PDF validator multi-signature renewal-plan UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
+    "apps/web/src/features/tools/PdfValidationResultTable.tsx",
     "report.trust.live_trusted_list_validation_performed",
     "PDF validator live trust guardrail UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/PdfValidationResultTable.tsx",
+    "apps/web/src/features/tools/PdfValidationResultTable.tsx",
     "report.qualification.legal_effect_assessed",
     "PDF validator legal-effect guardrail UI marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "renders a valid response with structure, PAdES, DSS, LTV and trust sections",
     "PDF validator DSS/LTV/trust UI coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "DSS-VRI-TU-1",
     "PDF validator VRI /TU fixture marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "record_signature_dss_validation_time",
     "PDF validator local renewal gap coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "technical PDF/PAdES evidence validation only",
     "PDF validator no-live-trust legal notice marker",
   );
@@ -8463,32 +8498,32 @@ function assertCheckpointMap() {
     "PDF validator i18n legal LTV guardrail key",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "Ferramentas — external-validator reports panel",
     "Ferramentas external-validator metadata panel coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "downloads a client-generated metadata summary, not raw report bytes",
     "Ferramentas external-validator metadata summary-save coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "selecting a raw report does not upload automatically",
     "Ferramentas external-validator raw report no-auto-upload coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "submits selected raw report bytes through raw_report.content_base64 without rendering them",
     "Ferramentas external-validator raw report explicit upload coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "renders backend raw report summary and no-claim notice without raw bytes",
     "Ferramentas external-validator raw report summary/no-claim coverage",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "expect(screen.queryByText(RAW_EXTERNAL_VALIDATOR_REPORT_TEXT)).toBeNull()",
     "Ferramentas external-validator raw report DOM redaction assertion",
   );
@@ -8673,14 +8708,14 @@ function assertCheckpointMap() {
     "book closing structured signatory submit coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function permissionSummary",
     "data management permission summary marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
-    "data-status-cleanups",
-    "data management cleanup list marker",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
+    "data-status-cleanup-table",
+    "data management cleanup table marker",
   );
   assertFileContains(
     "crates/chancela-api/src/data_status.rs",
@@ -8703,22 +8738,22 @@ function assertCheckpointMap() {
     "API data cleanup settings.manage gate marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "target: 'platform_logs'",
     "data management platform-log cleanup row target marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "data.status.help.platformLogsCleanup",
     "data management platform-log cleanup help marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "cleanupRows).toHaveLength(3)",
     "data management three cleanup rows coverage marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "Remove apenas o ficheiro local platform-logs.json",
     "data management platform-log sidecar-only row copy marker",
   );
@@ -8733,7 +8768,7 @@ function assertCheckpointMap() {
     "web data cleanup target union platform_logs marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "previews retained export cleanup before explicit confirmed execution",
     "data management retained-export preview-before-execution coverage",
   );
@@ -8783,47 +8818,47 @@ function assertCheckpointMap() {
     "Settings retained-export cleanup policy source-locale marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function exportCleanupBody",
     "data management retained-export settings-derived payload builder marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "settings.data?.data_management?.retained_export_cleanup ?? DEFAULT_EXPORT_CLEANUP_POLICY",
     "data management retained-export settings fallback marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "minimum_age_days: 45",
     "data management retained-export settings minimum-age marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "preview_token: 'export-preview-token-1'",
     "data management retained-export preview token marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "keep_latest: 9",
     "data management retained-export settings keep-latest marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "Nenhum ficheiro foi removido",
     "data management retained-export no-files-removed copy marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "foram removidos",
     "data management retained-export deleted-counter execution copy marker",
   );
   assertFileMatches(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     /activeCleanup\.target === 'exports'[\s\S]{0,900}cleanup\.mutateAsync\(\{[\s\S]{0,200}\.\.\.exportCleanupExecutionBody,[\s\S]{0,200}preview_token:\s*exportCleanupPreviewToken,[\s\S]{0,200}\}\)/u,
     "data management retained-export execution preview-token payload marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "keeps retained export cleanup confirmation disabled when preview has no server token",
     "data management retained-export no-token disabled coverage",
   );
@@ -8858,12 +8893,12 @@ function assertCheckpointMap() {
     "API retained-export selected preview manifest directory deletion marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "data-status-cleanup__main",
     "data management compact cleanup row DOM coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "data-status-cleanup__main",
     "data management compact cleanup row implementation marker",
   );
@@ -8893,67 +8928,67 @@ function assertCheckpointMap() {
     "data status contract largest SQLite payload table fixture marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "kind: 'sqlite_logical_table'",
     "web data status sqlite logical table fixture marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "sqlite_largest_payload_table",
     "web data status sqlite largest table fixture marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "Média: 256 B/linha",
     "web data status sqlite average bytes rendering coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "não provam eliminação, retenção, custódia",
     "web data status sqlite local-estimate no-claim copy coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
-    "const tablePayloads = sqliteGroup.querySelector('.data-status-sqlite-table-list')!;",
-    "web data status sqlite table list DOM coverage",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
+    "const tablePayloads = sqliteGroup.querySelector('.data-status-sqlite-table .table')!;",
+    "web data status sqlite table DOM coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
-    "const tableRows = tablePayloads.querySelectorAll('.data-status-sqlite-table-row');",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
+    "const tableRows = tablePayloads.querySelectorAll('tbody tr');",
     "web data status sqlite table row DOM coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "expect(tablePayloads.textContent).not.toContain('SQLite table ledger_events');",
     "web data status sqlite table redundant-label coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "const SQLITE_LOGICAL_TABLE_KIND = 'sqlite_logical_table';",
     "web data status sqlite logical table kind marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function isSqliteTableConcern",
     "web data status sqlite table classifier marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function sqliteTableLabel",
     "web data status sqlite table label helper marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function SqliteTablePayloadList",
     "web data status sqlite table list component marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function sqlitePayloadStats",
     "web data status sqlite payload stats helper marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "data.status.usage.sqliteLogicalHint",
     "web data status sqlite local-estimate caveat marker",
   );
@@ -9007,9 +9042,9 @@ function assertCheckpointMap() {
     "pub async fn restore_store_preflight",
     "API restore preflight route marker",
   );
-  assertFileContains(
+  assertFileContainsNormalized(
     "crates/chancela-api/src/recovery.rs",
-    "but never swaps the live DB, stages sidecars, appends restore events, reloads memory, or mutates",
+    "but never swaps the live DB, stages sidecars, appends restore events, reloads",
     "API restore preflight non-mutating boundary marker",
   );
   assertFileContains(
@@ -9028,7 +9063,7 @@ function assertCheckpointMap() {
     "web restore preflight bounded manifest contract marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function BackupManifestReport",
     "web bounded backup manifest evidence marker",
   );
@@ -9213,7 +9248,7 @@ function assertCheckpointMap() {
     "web settings backup recovery policy source-locale marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function RecoveryFreshnessReviewReport",
     "web recovery freshness summary UI marker",
   );
@@ -9253,17 +9288,17 @@ function assertCheckpointMap() {
     "web backup recovery drill optional receipt keys marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function buildRecoveryDrillBody",
     "web backup recovery drill exact-submit body helper marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "setDrillPassphrase('');",
     "web backup recovery drill passphrase clearing marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "uiLiteral.gestaoDadosSection.ensaioExplicitoEIniciadoPeloOperadorSemRestauro",
     "web backup recovery drill explicit bounded UI copy key marker",
   );
@@ -9273,22 +9308,22 @@ function assertCheckpointMap() {
     "web backup recovery drill explicit bounded UI copy pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "posts a preflight-only recovery drill receipt with exact passphrase",
     "web backup recovery drill exact passphrase coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "Verificação isolada",
     "web backup recovery drill isolated verification rendering coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "Ficheiros sidecar materializados",
     "web backup recovery drill sidecar readback rendering coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "expect(calls.some((c) => c.url === '/v1/ledger/recovery/restore')).toBe(false);",
     "web backup recovery drill no live restore call coverage",
   );
@@ -9298,7 +9333,7 @@ function assertCheckpointMap() {
     "web settings backup recovery policy coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "renders local backup recovery policy freshness without claiming restore or RPO/RTO certification",
     "web recovery freshness no-claim coverage",
   );
@@ -9488,12 +9523,12 @@ function assertCheckpointMap() {
     "web sync handoff hook no-provider marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function SyncHandoffPreflightReportCard",
     "web sync handoff local report card marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "uiLiteral.gestaoDadosSection.compoeApenasEvidenciaLocalCandidatosDeBackupEnsaios",
     "web sync handoff local-only UI key marker",
   );
@@ -9503,37 +9538,37 @@ function assertCheckpointMap() {
     "web sync handoff local-only UI pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "renders sync handoff preflight as local-only evidence with missing verified backup proof",
     "web sync handoff conservative UI coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "const SYNC_HANDOFF_PREFLIGHT_EXPORT_FILENAME = 'chancela-sync-handoff-preflight.json';",
     "web sync handoff local JSON filename marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "const SYNC_HANDOFF_PREFLIGHT_EXPORT_CONTENT_TYPE = 'application/json;charset=utf-8';",
     "web sync handoff local JSON content-type marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "function syncHandoffPreflightReportJson(report: SyncHandoffPreflightReport): string",
     "web sync handoff in-memory JSON serialization marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "preferBrowserSavePicker: true",
     "web sync handoff browser save-picker marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "saves the loaded sync handoff preflight report as JSON without extra requests",
     "web sync handoff local JSON export coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "expect(calls).toHaveLength(callsBeforeSave)",
     "web sync handoff no-extra-request save coverage",
   );
@@ -9578,24 +9613,24 @@ function assertCheckpointMap() {
     "CI checkpoints sync handoff local export no-claim marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.test.tsx",
     "clicking restore preflight preserves exact passphrase and calls only preflight, not restore",
     "web restore preflight exact passphrase/no-restore coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.test.tsx",
     "renders failed restore preflight safely when manifest is null",
     "web restore preflight nullable manifest coverage",
   );
   assertFileContains(
     "apps/web/src/theme.css",
-    ".data-status-sqlite-table-list",
-    "web data status sqlite table list CSS marker",
+    ".data-status-sqlite-table-summary",
+    "web data status sqlite table summary CSS marker",
   );
   assertFileContains(
     "apps/web/src/theme.css",
-    ".data-status-sqlite-table-row",
-    "web data status sqlite table row CSS marker",
+    ".data-status-sqlite-table-row__label",
+    "web data status sqlite table row-label CSS marker",
   );
   assertFileContains(
     "crates/chancela-api/src/data_status.rs",
@@ -9888,9 +9923,9 @@ function assertCheckpointMap() {
     "platform operations effective logging coverage",
   );
   assertFileContains(
-    "apps/web/src/features/settings/PlatformOperationsSection.tsx",
+    "apps/web/src/features/settings/PlatformLoggingTable.tsx",
     "function effectiveLogLevel",
-    "platform operations effective log helper marker",
+    "platform logging effective-level helper marker",
   );
   assertFileContains(
     "apps/web/src/features/settings/PlatformOperationsSection.tsx",
@@ -9909,7 +9944,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/e2e/platform-operations.spec.ts",
-    "platform operations renders API/MCP rows and records MCP start as supervisor-required only",
+    "the API and MCP tabs own their service rows, and MCP start records as supervisor-required only",
     "platform operations route-stubbed browser proof marker",
   );
   assertFileContains(
@@ -10062,32 +10097,32 @@ function assertCheckpointMap() {
     "web contract automated-review third-state marker",
   );
   assertFileContains(
-    "apps/web/src/features/legislacao/CorpusReader.tsx",
+    "apps/web/src/features/legislation/CorpusReader.tsx",
     "Verified / automated-review / Pending",
     "Legislacao corpus three-tier badge marker",
   );
   assertFileContains(
-    "apps/web/src/features/legislacao/CorpusReader.tsx",
+    "apps/web/src/features/legislation/CorpusReader.tsx",
     "Badge tone=\"info\"",
     "Legislacao automated-review info badge marker",
   );
   assertFileContains(
-    "apps/web/src/features/legislacao/CorpusReader.tsx",
+    "apps/web/src/features/legislation/CorpusReader.tsx",
     "reviewNote={article.source.review_note}",
     "Legislacao automated-review caveat propagation marker",
   );
   assertFileContains(
-    "apps/web/src/features/legislacao/legislacao.test.tsx",
+    "apps/web/src/features/legislation/legislation.test.tsx",
     "badges an automated-review article as its own honest tier",
     "Legislacao automated-review tier coverage marker",
   );
   assertFileContains(
-    "apps/web/src/features/legislacao/legislacao.test.tsx",
+    "apps/web/src/features/legislation/legislation.test.tsx",
     "badge--info",
     "Legislacao automated-review badge tone coverage marker",
   );
   assertFileContains(
-    "apps/web/src/features/legislacao/legislacao.test.tsx",
+    "apps/web/src/features/legislation/legislation.test.tsx",
     "NÃO aprovado juridicamente por revisor humano",
     "Legislacao automated-review human-review caveat coverage marker",
   );
@@ -10437,7 +10472,7 @@ function assertCheckpointMap() {
     "CI/E2E hardening archive active-filter count marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "apps/web/src/features/recovery/BookIntegritySection.test.tsx",
     "exports a book bundle through the save prompt helper",
     "book bundle export save prompt coverage",
   );
@@ -10572,7 +10607,7 @@ function assertCheckpointMap() {
     "web contract plaintext migration pending fixture marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "uiLiteral.gestaoDadosSection.prontidaoSqlcipherECustodiaDaChave",
     "web data management key custody readiness title key marker",
   );
@@ -10582,7 +10617,7 @@ function assertCheckpointMap() {
     "web data management key custody readiness title pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao",
     "web data management key custody secret-free boundary key marker",
   );
@@ -10597,37 +10632,37 @@ function assertCheckpointMap() {
     "web data management key custody no-claim copy pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "Migração direta plaintext bloqueada",
     "web data management plaintext blocked gap marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "renders SQLCipher and key-custody readiness gaps without key material or completion claims",
     "web data management key custody readiness coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "expect(document.body.textContent).not.toContain('operator-key-secret')",
     "web data management key custody no-secret assertion marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "expect(document.body.textContent).not.toContain('custódia de produção concluída')",
     "web data management key custody no-production-completion assertion marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "runs a secret-clearing data key rotation preflight and renders only returned evidence",
     "web data key rotation preflight coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "clears key rotation secrets after a failed preflight request",
     "web data key rotation failed-request secret clearing coverage",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "executes a guarded data key rekey only after a ready preflight and clears secrets",
     "web data key rotation execution coverage",
   );
@@ -10707,7 +10742,7 @@ function assertCheckpointMap() {
     "web contract data key rotation no database path marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "uiLiteral.gestaoDadosSection.recibosLocaisDeRotacao",
     "web data key rotation receipt summary UI key marker",
   );
@@ -10717,7 +10752,7 @@ function assertCheckpointMap() {
     "web data key rotation receipt summary UI pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.tsx",
     "uiLiteral.gestaoDadosSection.semChaveGuardada",
     "web data key rotation no-key receipt UI key marker",
   );
@@ -10727,7 +10762,7 @@ function assertCheckpointMap() {
     "web data key rotation no-key receipt UI pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "apps/web/src/features/recovery/DataManagementSection.test.tsx",
     "renders secret-free key rotation receipt history as local evidence only",
     "web data key rotation receipt history coverage",
   );
@@ -10748,12 +10783,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplatesCatalogPage.tsx",
-    "templates-controls__primary templates-filterbar__primary",
+    'className="templates-filterbar__primary"',
     "web template compact primary filter marker",
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplatesCatalogPage.tsx",
-    'details className="templates-controls__advanced templates-advanced-filters filter-advanced"',
+    'details className="templates-advanced-filters filter-advanced"',
     "web template collapsed advanced filter marker",
   );
   assertFileContains(
@@ -10767,8 +10802,8 @@ function assertCheckpointMap() {
     "web template advanced filters collapsed assertion",
   );
   assertFileContains(
-    "apps/web/src/theme.css",
-    ".templates-controls__filters",
+    "apps/web/src/features/templates/templatesCatalog.css",
+    ".templates-catalog-page .templates-advanced-filters__body",
     "web template advanced filter CSS marker",
   );
   assertFileContains(
@@ -11868,7 +11903,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "cargo\n  test -p chancela-api --test asic_signature_validation --locked",
+    "cargo\n  test -p chancela-api --test api-signatures --locked -- asic_signature_validation",
     "CI/E2E hardening plan ASiC API command marker",
   );
   assertFileContains(
@@ -13320,7 +13355,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/e2e/convening-dispatch-evidence.spec.ts",
-    "await expect(action).toHaveAttribute('href', `/atas/${ACT_ID}#convening-guidance`);",
+    "await expect(action).toHaveAttribute('href', `/acts/${ACT_ID}#convening-guidance`);",
     "browser convening dispatch guidance href marker",
   );
   assertFileContains(
@@ -13735,7 +13770,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/notifications/notifications.ts",
-    "? (actConveningGuidanceRoute(`/atas/${actId}`) ?? `/atas/${actId}`)",
+    "? (actConveningGuidanceRoute(`/acts/${actId}`) ?? `/acts/${actId}`)",
     "notification-center convocation reminder target guidance route marker",
   );
   assertFileContains(
@@ -13765,12 +13800,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
-    "expect(link.getAttribute('href')).toBe('/atas/act-notice-1#convening-guidance');",
+    "expect(link.getAttribute('href')).toBe('/acts/act-notice-1#convening-guidance');",
     "dashboard convocation reminder guidance href coverage marker",
   );
   assertFileContains(
     "apps/web/src/features/notifications/notifications.test.ts",
-    "action: { href: '/atas/act-notice-1#convening-guidance', label: 'Rever convocatória' }",
+    "action: { href: '/acts/act-notice-1#convening-guidance', label: 'Rever convocatória' }",
     "notification-center convocation reminder guidance href coverage marker",
   );
   assertFileContains(
@@ -15166,7 +15201,7 @@ function assertCheckpointMap() {
     "web ASiC inspector client route marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "apps/web/src/features/tools/AsicSignatureInspectorPanel.tsx",
     "uiLiteral.asicSignatureInspectorPanel.inspetorTecnicoAsic",
     "web ASiC inspector panel title key marker",
   );
@@ -15176,7 +15211,7 @@ function assertCheckpointMap() {
     "web ASiC inspector panel title pt-PT marker",
   );
   assertFileContainsNormalized(
-    "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "apps/web/src/features/tools/AsicSignatureInspectorPanel.tsx",
     "uiLiteral.asicSignatureInspectorPanel.leiaApenasContentoresLocaisAsiceSceZipNao",
     "web ASiC inspector no-call/no-mutation boundary key marker",
   );
@@ -15186,7 +15221,7 @@ function assertCheckpointMap() {
     "web ASiC inspector no-call/no-mutation boundary pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "apps/web/src/features/tools/AsicSignatureInspectorPanel.tsx",
     "uiLiteral.asicSignatureInspectorPanel.limitacoesExplicitas",
     "web ASiC inspector visible limitations key marker",
   );
@@ -15196,17 +15231,17 @@ function assertCheckpointMap() {
     "web ASiC inspector visible limitations pt-PT marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "uploads an ASiC container as base64 with declared SHA-256 and size",
     "web ASiC inspector request body coverage marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "unreferenced_timestamp_token_member",
     "web ASiC inspector unreferenced timestamp marker",
   );
   assertFileContains(
-    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "apps/web/src/features/tools/tools.test.tsx",
     "archive timestamp META-INF/ASiCArchiveManifest.tst could not be parsed",
     "web ASiC inspector archive timestamp diagnostic marker",
   );
