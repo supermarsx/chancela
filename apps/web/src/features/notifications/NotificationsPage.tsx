@@ -171,18 +171,20 @@ export function NotificationsPage() {
             <ErrorNote error={error ?? triage.error} />
           ) : (
             <div className="stack">
-              {/* Mirrors the entities inline filterbar (EntitiesPage.tsx): a role="search" bar of
-                  Field + Input[type=search] + Select + clear IconButton, reusing the same UI
-                  primitives and the shared `.filter` classes rather than a new component. Applied
-                  to the post-tab `visible` list, so it composes with every tab including
-                  Descartadas. */}
+              {/* Mirrors the Atas/books NARROW-page filterbar (AtasListPage `.acts-filterbar*`): a
+                  role="search" bar of Field + Input[type=search] + Select + clear IconButton,
+                  reusing the same UI primitives and the shared `.filter` classes rather than a new
+                  component. The Action Center is a narrow reading column (no `wide-page`), so it uses
+                  the wrapping narrow-friendly `.acts-*` classes, not the wide non-wrapping entities
+                  ones. Applied to the post-tab `visible` list, so it composes with every tab
+                  including Descartadas. */}
               <div
-                className="stack--tight entities-filters"
+                className="stack--tight acts-filters"
                 role="search"
                 aria-label={nt('notifications.filter.aria')}
               >
-                <div className="entities-filterbar filter">
-                  <div className="entities-filterbar__primary">
+                <div className="acts-filterbar filter">
+                  <div className="acts-filterbar__primary">
                     <Field
                       label={nt('notifications.filter.search.label')}
                       htmlFor="notifications-search"
@@ -207,6 +209,7 @@ export function NotificationsPage() {
                       />
                     </Field>
                     <IconButton
+                      className="acts-filterbar__clear"
                       icon={<Icon.Close />}
                       label={nt('notifications.filter.clear.aria')}
                       disabled={!hasFilters}
