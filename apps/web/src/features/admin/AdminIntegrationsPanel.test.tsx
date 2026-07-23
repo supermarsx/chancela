@@ -56,9 +56,7 @@ describe('AdminIntegrationsPanel', () => {
 
     renderWithProviders(<AdminIntegrationsPanel sub="groups" />, ['/admin/groups']);
 
-    expect(
-      await screen.findByText('Ainda não existe uma organização selecionável'),
-    ).toBeTruthy();
+    expect(await screen.findByText('Ainda não existe uma organização selecionável')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Criar entidade' }).getAttribute('href')).toBe(
       '/entities/new',
     );

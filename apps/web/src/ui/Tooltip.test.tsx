@@ -222,7 +222,13 @@ describe('Tooltip', () => {
     const rect = (r: Partial<DOMRect>) => () => ({ toJSON: () => ({}), ...r }) as DOMRect;
 
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
-    wrapper.getBoundingClientRect = rect({ left: 100, right: 140, width: 40, top: 400, bottom: 420 });
+    wrapper.getBoundingClientRect = rect({
+      left: 100,
+      right: 140,
+      width: 40,
+      top: 400,
+      bottom: 420,
+    });
     bubble.getBoundingClientRect = rect({ width: 120, height: 40 });
 
     fireEvent.focus(trigger);

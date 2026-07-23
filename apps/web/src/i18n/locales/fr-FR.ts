@@ -1663,14 +1663,19 @@ export const frFR: Catalog = {
   'users.edit.subnav.access': 'Accès et audit',
   'users.edit.subnav.security': 'Sécurité',
   'users.security.title': 'Sécurité du compte',
-  'users.security.intro.self': 'Gérez ici la sécurité de votre propre compte. Les mêmes identifiants apparaissent sous Accès et audit, où un administrateur les inspecte et les réinitialise — ici vous les voyez en tant que titulaire.',
-  'users.security.intro.other': 'État de sécurité de ce compte. Seul le titulaire peut gérer ses identifiants ; pour les réinitialiser en tant qu’administrateur, utilisez Accès et audit.',
+  'users.security.intro.self':
+    'Gérez ici la sécurité de votre propre compte. Les mêmes identifiants apparaissent sous Accès et audit, où un administrateur les inspecte et les réinitialise — ici vous les voyez en tant que titulaire.',
+  'users.security.intro.other':
+    'État de sécurité de ce compte. Seul le titulaire peut gérer ses identifiants ; pour les réinitialiser en tant qu’administrateur, utilisez Accès et audit.',
   'users.security.password.hint': 'Mot de passe de connexion.',
-  'users.security.recovery.hint': 'Phrase de récupération, une alternative au mot de passe en cas d’oubli.',
-  'users.security.key.hint': 'Clé d’attestation d’audit. La faire pivoter crée une nouvelle clé pour les attestations futures ; les précédentes restent vérifiables.',
+  'users.security.recovery.hint':
+    'Phrase de récupération, une alternative au mot de passe en cas d’oubli.',
+  'users.security.key.hint':
+    'Clé d’attestation d’audit. La faire pivoter crée une nouvelle clé pour les attestations futures ; les précédentes restent vérifiables.',
   'users.security.manage': 'Gérer dans Accès et audit',
   'users.totp.title': 'Authentification à deux facteurs',
-  'users.totp.intro': 'Un second facteur confirme la connexion avec un code de votre application d’authentification, en plus du mot de passe.',
+  'users.totp.intro':
+    'Un second facteur confirme la connexion avec un code de votre application d’authentification, en plus du mot de passe.',
   'users.totp.on': 'Activée',
   'users.totp.off': 'Désactivée',
   'users.totp.stateLabel': 'État',
@@ -1678,7 +1683,8 @@ export const frFR: Catalog = {
   'users.totp.enrolled': 'Deux facteurs activés.',
   'users.totp.confirm': 'Confirmer',
   'users.totp.qr.alt': 'Code QR pour configurer l’authentification à deux facteurs',
-  'users.totp.qr.hint': 'Scannez ce code avec votre application d’authentification (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Scannez ce code avec votre application d’authentification (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'Ou saisissez cette clé manuellement :',
   'users.totp.code.label': 'Code de vérification',
   'users.totp.code.hint': 'Saisissez le code à 6 chiffres affiché par l’application.',
@@ -1686,21 +1692,25 @@ export const frFR: Catalog = {
   'users.totp.disable': 'Désactiver les deux facteurs',
   'users.totp.disabled': 'Deux facteurs désactivés.',
   'users.totp.backup.title': 'Enregistrez vos codes de secours',
-  'users.totp.backup.body': 'Enregistrez-les maintenant, en lieu sûr. Chaque code vous connecte une fois sans le second facteur et ils ne sont plus affichés.',
+  'users.totp.backup.body':
+    'Enregistrez-les maintenant, en lieu sûr. Chaque code vous connecte une fois sans le second facteur et ils ne sont plus affichés.',
   'users.totp.backup.copy': 'Copier les codes',
   'users.totp.backup.copied': 'Codes copiés.',
   'users.totp.backup.regenerate': 'Générer de nouveaux codes',
   'users.totp.backup.regenerated': 'Nouveaux codes générés ; les précédents ne sont plus valides.',
   'users.totp.backup.remainingLabel': 'Codes de secours restants',
   'users.totp.required.label': 'Exiger les deux facteurs',
-  'users.totp.required.hint': 'Oblige ce compte à disposer d’un second facteur, appliqué à la prochaine connexion. Ne bloque jamais l’accès immédiatement.',
+  'users.totp.required.hint':
+    'Oblige ce compte à disposer d’un second facteur, appliqué à la prochaine connexion. Ne bloque jamais l’accès immédiatement.',
   'users.totp.required.add': 'Exiger',
   'users.totp.required.remove': 'Ne pas exiger',
   'users.totp.required.on': 'Les deux facteurs sont désormais requis.',
   'users.totp.required.off': 'Les deux facteurs ne sont plus requis.',
-  'users.totp.required.locked': 'Ce compte doit conserver les deux facteurs et ne peut donc pas les désactiver.',
+  'users.totp.required.locked':
+    'Ce compte doit conserver les deux facteurs et ne peut donc pas les désactiver.',
   'users.sessions.title': 'Sessions actives',
-  'users.sessions.intro': 'Les connexions actives sur ce compte. Terminez une session que vous ne reconnaissez plus ; elle est rejetée à sa prochaine requête.',
+  'users.sessions.intro':
+    'Les connexions actives sur ce compte. Terminez une session que vous ne reconnaissez plus ; elle est rejetée à sa prochaine requête.',
   'users.sessions.caption': 'Sessions actives sur ce compte',
   'users.sessions.col.device': 'Appareil',
   'users.sessions.col.network': 'Réseau',

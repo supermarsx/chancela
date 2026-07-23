@@ -1653,14 +1653,19 @@ export const esES: Catalog = {
   'users.edit.subnav.access': 'Acceso y auditoría',
   'users.edit.subnav.security': 'Seguridad',
   'users.security.title': 'Seguridad de la cuenta',
-  'users.security.intro.self': 'Gestione aquí la seguridad de su propia cuenta. Las mismas credenciales aparecen en Acceso y auditoría, donde un administrador las inspecciona y restablece — aquí las ve como titular.',
-  'users.security.intro.other': 'Estado de seguridad de esta cuenta. Solo el titular puede gestionar sus credenciales; para restablecerlas como administrador, use Acceso y auditoría.',
+  'users.security.intro.self':
+    'Gestione aquí la seguridad de su propia cuenta. Las mismas credenciales aparecen en Acceso y auditoría, donde un administrador las inspecciona y restablece — aquí las ve como titular.',
+  'users.security.intro.other':
+    'Estado de seguridad de esta cuenta. Solo el titular puede gestionar sus credenciales; para restablecerlas como administrador, use Acceso y auditoría.',
   'users.security.password.hint': 'Contraseña de inicio de sesión.',
-  'users.security.recovery.hint': 'Frase de recuperación, una alternativa a la contraseña si se olvida.',
-  'users.security.key.hint': 'Clave de atestación de auditoría. Rotarla crea una nueva clave para atestaciones futuras; las anteriores siguen siendo verificables.',
+  'users.security.recovery.hint':
+    'Frase de recuperación, una alternativa a la contraseña si se olvida.',
+  'users.security.key.hint':
+    'Clave de atestación de auditoría. Rotarla crea una nueva clave para atestaciones futuras; las anteriores siguen siendo verificables.',
   'users.security.manage': 'Gestionar en Acceso y auditoría',
   'users.totp.title': 'Autenticación de dos factores',
-  'users.totp.intro': 'Un segundo factor confirma el inicio de sesión con un código de su aplicación de autenticación, además de la contraseña.',
+  'users.totp.intro':
+    'Un segundo factor confirma el inicio de sesión con un código de su aplicación de autenticación, además de la contraseña.',
   'users.totp.on': 'Activada',
   'users.totp.off': 'Desactivada',
   'users.totp.stateLabel': 'Estado',
@@ -1668,7 +1673,8 @@ export const esES: Catalog = {
   'users.totp.enrolled': 'Dos factores activados.',
   'users.totp.confirm': 'Confirmar',
   'users.totp.qr.alt': 'Código QR para configurar la autenticación de dos factores',
-  'users.totp.qr.hint': 'Escanee este código con su aplicación de autenticación (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Escanee este código con su aplicación de autenticación (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'O introduzca esta clave manualmente:',
   'users.totp.code.label': 'Código de verificación',
   'users.totp.code.hint': 'Introduzca el código de 6 dígitos que muestra la aplicación.',
@@ -1676,21 +1682,25 @@ export const esES: Catalog = {
   'users.totp.disable': 'Desactivar dos factores',
   'users.totp.disabled': 'Dos factores desactivados.',
   'users.totp.backup.title': 'Guarde sus códigos de recuperación',
-  'users.totp.backup.body': 'Guárdelos ahora en un lugar seguro. Cada código sirve una vez para iniciar sesión sin el segundo factor y no se vuelven a mostrar.',
+  'users.totp.backup.body':
+    'Guárdelos ahora en un lugar seguro. Cada código sirve una vez para iniciar sesión sin el segundo factor y no se vuelven a mostrar.',
   'users.totp.backup.copy': 'Copiar códigos',
   'users.totp.backup.copied': 'Códigos copiados.',
   'users.totp.backup.regenerate': 'Generar códigos nuevos',
   'users.totp.backup.regenerated': 'Códigos nuevos generados; los anteriores ya no son válidos.',
   'users.totp.backup.remainingLabel': 'Códigos de recuperación restantes',
   'users.totp.required.label': 'Exigir dos factores',
-  'users.totp.required.hint': 'Obliga a esta cuenta a tener un segundo factor, aplicado en el próximo inicio de sesión. Nunca bloquea el acceso de inmediato.',
+  'users.totp.required.hint':
+    'Obliga a esta cuenta a tener un segundo factor, aplicado en el próximo inicio de sesión. Nunca bloquea el acceso de inmediato.',
   'users.totp.required.add': 'Exigir',
   'users.totp.required.remove': 'No exigir',
   'users.totp.required.on': 'Los dos factores ahora son obligatorios.',
   'users.totp.required.off': 'Los dos factores ya no son obligatorios.',
-  'users.totp.required.locked': 'Esta cuenta debe mantener los dos factores, por lo que no se pueden desactivar.',
+  'users.totp.required.locked':
+    'Esta cuenta debe mantener los dos factores, por lo que no se pueden desactivar.',
   'users.sessions.title': 'Sesiones activas',
-  'users.sessions.intro': 'Los inicios de sesión activos en esta cuenta. Cierre una sesión que ya no reconozca; se rechaza en su siguiente solicitud.',
+  'users.sessions.intro':
+    'Los inicios de sesión activos en esta cuenta. Cierre una sesión que ya no reconozca; se rechaza en su siguiente solicitud.',
   'users.sessions.caption': 'Sesiones activas en esta cuenta',
   'users.sessions.col.device': 'Dispositivo',
   'users.sessions.col.network': 'Red',

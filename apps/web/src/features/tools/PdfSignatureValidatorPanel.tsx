@@ -187,7 +187,6 @@ function ValidationReport({ report }: { report: PdfSignatureValidationResponse }
   );
 }
 
-
 export function PdfSignatureValidatorPanel() {
   const t = useT();
   const validate = useValidatePdfSignature();

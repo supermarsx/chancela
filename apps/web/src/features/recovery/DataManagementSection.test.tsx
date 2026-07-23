@@ -608,7 +608,9 @@ describe('DataManagementSection', () => {
     renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_BACKUP);
 
-    expect(await screen.findByRole('table', { name: 'Política local de recuperação' })).toBeTruthy();
+    expect(
+      await screen.findByRole('table', { name: 'Política local de recuperação' }),
+    ).toBeTruthy();
     expect(screen.getByText('Estado do ensaio')).toBeTruthy();
     expect(screen.getAllByText('Sem recibo local').length).toBeGreaterThan(0);
     expect(screen.getByText('RPO alvo declarado')).toBeTruthy();
@@ -1816,7 +1818,9 @@ describe('DataManagementSection', () => {
       within(isolated).getByText('Bytes sidecar materializados').closest('tr')?.textContent,
     ).toContain('4 KB');
     expect(
-      within(isolatedBlock).getByText('isolated database snapshot was materialized, opened, and loaded'),
+      within(isolatedBlock).getByText(
+        'isolated database snapshot was materialized, opened, and loaded',
+      ),
     ).toBeTruthy();
     expect(
       within(isolatedBlock).getByText(/record as preflight-only isolated snapshot evidence/),

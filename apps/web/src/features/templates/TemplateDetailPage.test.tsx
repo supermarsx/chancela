@@ -233,7 +233,9 @@ describe('TemplateDetailPage', () => {
     const source = await screen.findByLabelText('Origem body_markdown');
     expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
     expect(source.textContent).toBe(bodyMarkdown);
-    expect(screen.getByRole('tab', { name: 'Markdown' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Markdown' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
     expect(document.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
   });
 

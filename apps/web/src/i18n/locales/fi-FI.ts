@@ -1647,14 +1647,18 @@ export const fiFI: Catalog = {
   'users.edit.subnav.access': 'Käyttöoikeus ja auditointi',
   'users.edit.subnav.security': 'Suojaus',
   'users.security.title': 'Tilin suojaus',
-  'users.security.intro.self': 'Hallitse oman tilisi suojausta täällä. Samat tunnukset näkyvät kohdassa Käyttöoikeus ja auditointi, jossa järjestelmänvalvoja tarkastaa ja nollaa ne — täällä näet ne tilin haltijana.',
-  'users.security.intro.other': 'Tämän tilin suojaustila. Vain haltija voi hallita tunnuksiaan; nollaa ne järjestelmänvalvojana kohdassa Käyttöoikeus ja auditointi.',
+  'users.security.intro.self':
+    'Hallitse oman tilisi suojausta täällä. Samat tunnukset näkyvät kohdassa Käyttöoikeus ja auditointi, jossa järjestelmänvalvoja tarkastaa ja nollaa ne — täällä näet ne tilin haltijana.',
+  'users.security.intro.other':
+    'Tämän tilin suojaustila. Vain haltija voi hallita tunnuksiaan; nollaa ne järjestelmänvalvojana kohdassa Käyttöoikeus ja auditointi.',
   'users.security.password.hint': 'Kirjautumissalasana.',
   'users.security.recovery.hint': 'Palautuslause, vaihtoehto salasanalle, jos se unohtuu.',
-  'users.security.key.hint': 'Auditoinnin vahvistusavain. Sen kierrättäminen luo uuden avaimen tuleville vahvistuksille; aiemmat pysyvät todennettavina.',
+  'users.security.key.hint':
+    'Auditoinnin vahvistusavain. Sen kierrättäminen luo uuden avaimen tuleville vahvistuksille; aiemmat pysyvät todennettavina.',
   'users.security.manage': 'Hallitse kohdassa Käyttöoikeus ja auditointi',
   'users.totp.title': 'Kaksivaiheinen todennus',
-  'users.totp.intro': 'Toinen tekijä vahvistaa kirjautumisen todennussovelluksen koodilla salasanan lisäksi.',
+  'users.totp.intro':
+    'Toinen tekijä vahvistaa kirjautumisen todennussovelluksen koodilla salasanan lisäksi.',
   'users.totp.on': 'Käytössä',
   'users.totp.off': 'Pois',
   'users.totp.stateLabel': 'Tila',
@@ -1662,7 +1666,8 @@ export const fiFI: Catalog = {
   'users.totp.enrolled': 'Kaksivaiheinen otettu käyttöön.',
   'users.totp.confirm': 'Vahvista',
   'users.totp.qr.alt': 'QR-koodi kaksivaiheisen todennuksen määrittämiseen',
-  'users.totp.qr.hint': 'Skannaa tämä koodi todennussovelluksellasi (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Skannaa tämä koodi todennussovelluksellasi (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'Tai syötä tämä avain manuaalisesti:',
   'users.totp.code.label': 'Vahvistuskoodi',
   'users.totp.code.hint': 'Syötä sovelluksen näyttämä 6-numeroinen koodi.',
@@ -1670,21 +1675,25 @@ export const fiFI: Catalog = {
   'users.totp.disable': 'Poista kaksivaiheinen käytöstä',
   'users.totp.disabled': 'Kaksivaiheinen poistettu käytöstä.',
   'users.totp.backup.title': 'Tallenna varakoodisi',
-  'users.totp.backup.body': 'Tallenna ne nyt turvalliseen paikkaan. Kukin koodi kirjaa sinut sisään kerran ilman toista tekijää, eikä niitä näytetä uudelleen.',
+  'users.totp.backup.body':
+    'Tallenna ne nyt turvalliseen paikkaan. Kukin koodi kirjaa sinut sisään kerran ilman toista tekijää, eikä niitä näytetä uudelleen.',
   'users.totp.backup.copy': 'Kopioi koodit',
   'users.totp.backup.copied': 'Koodit kopioitu.',
   'users.totp.backup.regenerate': 'Luo uudet koodit',
   'users.totp.backup.regenerated': 'Uudet koodit luotu; aiemmat eivät ole enää voimassa.',
   'users.totp.backup.remainingLabel': 'Varakoodeja jäljellä',
   'users.totp.required.label': 'Vaadi kaksivaiheinen',
-  'users.totp.required.hint': 'Vaatii tältä tililtä toisen tekijän, voimassa seuraavasta kirjautumisesta. Ei koskaan estä pääsyä välittömästi.',
+  'users.totp.required.hint':
+    'Vaatii tältä tililtä toisen tekijän, voimassa seuraavasta kirjautumisesta. Ei koskaan estä pääsyä välittömästi.',
   'users.totp.required.add': 'Vaadi',
   'users.totp.required.remove': 'Älä vaadi',
   'users.totp.required.on': 'Kaksivaiheinen on nyt pakollinen.',
   'users.totp.required.off': 'Kaksivaiheinen ei ole enää pakollinen.',
-  'users.totp.required.locked': 'Tämän tilin on pidettävä kaksivaiheinen, joten sitä ei voi poistaa käytöstä.',
+  'users.totp.required.locked':
+    'Tämän tilin on pidettävä kaksivaiheinen, joten sitä ei voi poistaa käytöstä.',
   'users.sessions.title': 'Aktiiviset istunnot',
-  'users.sessions.intro': 'Tämän tilin aktiiviset kirjautumiset. Päätä istunto, jota et enää tunnista; se hylätään seuraavassa pyynnössä.',
+  'users.sessions.intro':
+    'Tämän tilin aktiiviset kirjautumiset. Päätä istunto, jota et enää tunnista; se hylätään seuraavassa pyynnössä.',
   'users.sessions.caption': 'Tämän tilin aktiiviset istunnot',
   'users.sessions.col.device': 'Laite',
   'users.sessions.col.network': 'Verkko',

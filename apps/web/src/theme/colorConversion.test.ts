@@ -5,9 +5,7 @@ import { hexToHsv, hsvToHex, type Hsv } from './colorConversion';
 function normaliseHex(hex: string): string {
   const body = hex.slice(1).toLowerCase();
   const wide =
-    body.length === 3
-      ? body[0]! + body[0]! + body[1]! + body[1]! + body[2]! + body[2]!
-      : body;
+    body.length === 3 ? body[0]! + body[0]! + body[1]! + body[1]! + body[2]! + body[2]! : body;
   return `#${wide}`;
 }
 
@@ -42,7 +40,17 @@ describe('hexToHsv', () => {
   });
 
   it('returns null for malformed input', () => {
-    for (const bad of ['', '#', '#12', '#1234', '#12345', '#1234567', 'ff0000', '#gggggg', '#xyz']) {
+    for (const bad of [
+      '',
+      '#',
+      '#12',
+      '#1234',
+      '#12345',
+      '#1234567',
+      'ff0000',
+      '#gggggg',
+      '#xyz',
+    ]) {
       expect(hexToHsv(bad)).toBeNull();
     }
   });

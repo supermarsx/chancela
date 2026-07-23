@@ -5122,7 +5122,13 @@ describe('contract fixtures parse through the real client', () => {
     expect(Object.keys(settings.email)).not.toContain('password');
     const platform = assertExactKeys<PlatformSettings>(
       settings.platform,
-      { logging: true, api_server: true, mcp_stdio_server: true, audit: true, public_base_url: true },
+      {
+        logging: true,
+        api_server: true,
+        mcp_stdio_server: true,
+        audit: true,
+        public_base_url: true,
+      },
       'Settings.platform',
     );
     assertPlatformLogging(platform.logging, 'Settings.platform.logging');

@@ -72,7 +72,8 @@ export const opsConfigPtPT = {
   'settings.database.env.hint':
     'Variáveis de ambiente lidas em AppState::try_from_env. A coluna da direita indica o valor assumido quando a variável não está definida.',
   'settings.database.env.backend': 'Motor durável selecionado: sqlite (predefinição) ou postgres.',
-  'settings.database.env.url': 'Cadeia de ligação libpq do PostgreSQL, exigida com o backend postgres.',
+  'settings.database.env.url':
+    'Cadeia de ligação libpq do PostgreSQL, exigida com o backend postgres.',
   'settings.database.env.urlFile':
     'Ficheiro que contém a cadeia de ligação, para entrega por segredo de contentor. Tem precedência sobre DATABASE_URL.',
   'settings.database.env.dataDir': 'Diretoria de dados que suporta a persistência em ficheiro.',
@@ -165,7 +166,8 @@ export const opsConfigEnglish = {
   'settings.database.env.hint':
     'Environment variables read in AppState::try_from_env. The right-hand column is the value assumed when the variable is not set.',
   'settings.database.env.backend': 'Selected durable engine: sqlite (default) or postgres.',
-  'settings.database.env.url': 'PostgreSQL libpq connection string, required with the postgres backend.',
+  'settings.database.env.url':
+    'PostgreSQL libpq connection string, required with the postgres backend.',
   'settings.database.env.urlFile':
     'File containing the connection string, for container-secret delivery. Takes precedence over DATABASE_URL.',
   'settings.database.env.dataDir': 'Data directory backing on-disk persistence.',

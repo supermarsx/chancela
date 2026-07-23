@@ -60,13 +60,7 @@ import { entityFieldHelp } from './fieldHelp';
  * averbamentos" gets a shorter label than its card, whose title is the full
  * "Inscrições, averbamentos e anotações".
  */
-type EntitySection =
-  | 'books'
-  | 'identification'
-  | 'fiscal'
-  | 'registry'
-  | 'filings'
-  | 'chronology';
+type EntitySection = 'books' | 'identification' | 'fiscal' | 'registry' | 'filings' | 'chronology';
 
 const ENTITY_SECTIONS: { id: EntitySection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'books', label: 'entities.booksCard', icon: <Icon.BookClosed /> },

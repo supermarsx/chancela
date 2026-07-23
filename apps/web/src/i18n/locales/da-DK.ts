@@ -1648,14 +1648,19 @@ export const daDK: Catalog = {
   'users.edit.subnav.access': 'Adgang og revision',
   'users.edit.subnav.security': 'Sikkerhed',
   'users.security.title': 'Kontosikkerhed',
-  'users.security.intro.self': 'Administrer sikkerheden for din egen konto her. De samme legitimationsoplysninger vises under Adgang og revision, hvor en administrator inspicerer og nulstiller dem — her ser du dem som kontoindehaver.',
-  'users.security.intro.other': 'Denne kontos sikkerhedstilstand. Kun indehaveren kan administrere sine legitimationsoplysninger; brug Adgang og revision for at nulstille dem som administrator.',
+  'users.security.intro.self':
+    'Administrer sikkerheden for din egen konto her. De samme legitimationsoplysninger vises under Adgang og revision, hvor en administrator inspicerer og nulstiller dem — her ser du dem som kontoindehaver.',
+  'users.security.intro.other':
+    'Denne kontos sikkerhedstilstand. Kun indehaveren kan administrere sine legitimationsoplysninger; brug Adgang og revision for at nulstille dem som administrator.',
   'users.security.password.hint': 'Adgangskode til login.',
-  'users.security.recovery.hint': 'Gendannelsessætning, et alternativ til adgangskoden, hvis den glemmes.',
-  'users.security.key.hint': 'Attesteringsnøgle til revision. At rotere den laver en ny nøgle til fremtidige attesteringer; tidligere forbliver verificerbare.',
+  'users.security.recovery.hint':
+    'Gendannelsessætning, et alternativ til adgangskoden, hvis den glemmes.',
+  'users.security.key.hint':
+    'Attesteringsnøgle til revision. At rotere den laver en ny nøgle til fremtidige attesteringer; tidligere forbliver verificerbare.',
   'users.security.manage': 'Administrer i Adgang og revision',
   'users.totp.title': 'Tofaktorgodkendelse',
-  'users.totp.intro': 'En anden faktor bekræfter login med en kode fra din autentificeringsapp ud over adgangskoden.',
+  'users.totp.intro':
+    'En anden faktor bekræfter login med en kode fra din autentificeringsapp ud over adgangskoden.',
   'users.totp.on': 'Til',
   'users.totp.off': 'Fra',
   'users.totp.stateLabel': 'Tilstand',
@@ -1663,7 +1668,8 @@ export const daDK: Catalog = {
   'users.totp.enrolled': 'Tofaktor aktiveret.',
   'users.totp.confirm': 'Bekræft',
   'users.totp.qr.alt': 'QR-kode til opsætning af tofaktorgodkendelse',
-  'users.totp.qr.hint': 'Scan denne kode med din autentificeringsapp (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Scan denne kode med din autentificeringsapp (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'Eller indtast denne nøgle manuelt:',
   'users.totp.code.label': 'Bekræftelseskode',
   'users.totp.code.hint': 'Indtast den 6-cifrede kode, appen viser.',
@@ -1671,21 +1677,25 @@ export const daDK: Catalog = {
   'users.totp.disable': 'Deaktivér tofaktor',
   'users.totp.disabled': 'Tofaktor deaktiveret.',
   'users.totp.backup.title': 'Gem dine gendannelseskoder',
-  'users.totp.backup.body': 'Gem dem nu et sikkert sted. Hver kode logger dig ind én gang uden den anden faktor, og de vises ikke igen.',
+  'users.totp.backup.body':
+    'Gem dem nu et sikkert sted. Hver kode logger dig ind én gang uden den anden faktor, og de vises ikke igen.',
   'users.totp.backup.copy': 'Kopiér koder',
   'users.totp.backup.copied': 'Koder kopieret.',
   'users.totp.backup.regenerate': 'Generér nye koder',
   'users.totp.backup.regenerated': 'Nye koder genereret; de tidligere er ikke længere gyldige.',
   'users.totp.backup.remainingLabel': 'Resterende gendannelseskoder',
   'users.totp.required.label': 'Kræv tofaktor',
-  'users.totp.required.hint': 'Kræver, at denne konto har en anden faktor, håndhævet ved næste login. Det spærrer aldrig adgangen med det samme.',
+  'users.totp.required.hint':
+    'Kræver, at denne konto har en anden faktor, håndhævet ved næste login. Det spærrer aldrig adgangen med det samme.',
   'users.totp.required.add': 'Kræv',
   'users.totp.required.remove': 'Kræv ikke',
   'users.totp.required.on': 'Tofaktor er nu påkrævet.',
   'users.totp.required.off': 'Tofaktor er ikke længere påkrævet.',
-  'users.totp.required.locked': 'Denne konto skal beholde tofaktor og kan derfor ikke deaktivere den.',
+  'users.totp.required.locked':
+    'Denne konto skal beholde tofaktor og kan derfor ikke deaktivere den.',
   'users.sessions.title': 'Aktive sessioner',
-  'users.sessions.intro': 'De aktive logins på denne konto. Afslut en session, du ikke længere genkender; den afvises ved næste anmodning.',
+  'users.sessions.intro':
+    'De aktive logins på denne konto. Afslut en session, du ikke længere genkender; den afvises ved næste anmodning.',
   'users.sessions.caption': 'Aktive sessioner på denne konto',
   'users.sessions.col.device': 'Enhed',
   'users.sessions.col.network': 'Netværk',

@@ -95,7 +95,10 @@ describe('server-env client + hooks', () => {
     const { qc, wrapper } = harness();
     qc.setQueryData(keys.serverEnv, RESPONSE);
     vi.spyOn(api, 'updateServerEnv').mockRejectedValue(
-      new ApiError(422, { error: 'acknowledgement required', field: 'CHANCELA_RATE_LIMIT_ENABLED' }),
+      new ApiError(422, {
+        error: 'acknowledgement required',
+        field: 'CHANCELA_RATE_LIMIT_ENABLED',
+      }),
     );
 
     const { result } = renderHook(() => useUpdateServerEnv(), { wrapper });

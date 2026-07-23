@@ -63,9 +63,9 @@ describe('connector egress allowlist entry validation', () => {
   });
 
   it('normalises the textarea into trimmed, lowercased, duplicate-free entries', () => {
-    expect(parseAllowedHosts('  Backup.Example.com \n\n10.42.0.0/16\nbackup.example.com\n')).toEqual(
-      ['backup.example.com', '10.42.0.0/16'],
-    );
+    expect(
+      parseAllowedHosts('  Backup.Example.com \n\n10.42.0.0/16\nbackup.example.com\n'),
+    ).toEqual(['backup.example.com', '10.42.0.0/16']);
     expect(parseAllowedHosts('   \n \n')).toEqual([]);
   });
 });

@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-
 // A plain left-click on an external link routes through openExternal (which opens the
 // OS browser under the desktop shell); stub it so we can assert the interception.
 const openExternal = vi.fn();

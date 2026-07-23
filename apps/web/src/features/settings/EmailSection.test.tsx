@@ -15,12 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { EmailSection } from './EmailSection';
 import { DEFAULT_SETTINGS } from '../../api/types';
-import type {
-  EmailSettings,
-  EmailStatusView,
-  EmailTestResult,
-  SmtpTrace,
-} from '../../api/types';
+import type { EmailSettings, EmailStatusView, EmailTestResult, SmtpTrace } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 
 interface Call {
@@ -73,7 +68,10 @@ function stubFetch(
   const { status = statusView(), test, writeStatus = 200 } = opts;
   const calls: Call[] = [];
   const json = (body: unknown, code = 200) =>
-    new Response(JSON.stringify(body), { status: code, headers: { 'Content-Type': 'application/json' } });
+    new Response(JSON.stringify(body), {
+      status: code,
+      headers: { 'Content-Type': 'application/json' },
+    });
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
@@ -255,7 +253,12 @@ describe('EmailSection', () => {
     vi.stubGlobal(
       'fetch',
       stubFetch({
-        test: { ok: true, tls: true, authenticated: true, accepted_detail: '2.0.0 Ok: queued as 4F2' },
+        test: {
+          ok: true,
+          tls: true,
+          authenticated: true,
+          accepted_detail: '2.0.0 Ok: queued as 4F2',
+        },
       }).fn,
     );
     renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
@@ -274,9 +277,7 @@ describe('EmailSection', () => {
   it('warns loudly and demands an acknowledgement before sending without encryption', async () => {
     vi.stubGlobal('fetch', stubFetch().fn);
     const onChange = vi.fn();
-    renderWithProviders(
-      <EmailSection email={email({ encryption: 'none' })} onChange={onChange} />,
-    );
+    renderWithProviders(<EmailSection email={email({ encryption: 'none' })} onChange={onChange} />);
 
     expect(await screen.findByText('Ligação sem encriptação')).toBeTruthy();
     expect(screen.getByLabelText('Confirmo que quero enviar sem encriptação')).toBeTruthy();
@@ -347,7 +348,10 @@ describe('EmailSection', () => {
     vi.stubGlobal('fetch', stub.fn);
     const onChange = vi.fn();
     renderWithProviders(
-      <EmailSection email={email({ encryption: 'none', allow_insecure: false })} onChange={onChange} />,
+      <EmailSection
+        email={email({ encryption: 'none', allow_insecure: false })}
+        onChange={onChange}
+      />,
     );
 
     const confirm = await screen.findByLabelText('Confirmo que quero enviar sem encriptação');
@@ -363,7 +367,9 @@ describe('EmailSection', () => {
     // The flag is only meaningful without encryption; showing it otherwise would invite an
     // operator to pre-authorise something they have not chosen.
     vi.stubGlobal('fetch', stubFetch().fn);
-    renderWithProviders(<EmailSection email={email({ encryption: 'starttls' })} onChange={vi.fn()} />);
+    renderWithProviders(
+      <EmailSection email={email({ encryption: 'starttls' })} onChange={vi.fn()} />,
+    );
 
     expect(await screen.findByLabelText('Servidor')).toBeTruthy();
     expect(screen.queryByLabelText('Confirmo que quero enviar sem encriptação')).toBeNull();
@@ -424,9 +430,9 @@ describe('EmailSection', () => {
     const save = await screen.findByRole('button', { name: 'Guardar palavra-passe' });
     fireEvent.click(save);
 
-    expect((save as HTMLButtonElement).disabled || save.getAttribute('aria-disabled') === 'true').toBe(
-      true,
-    );
+    expect(
+      (save as HTMLButtonElement).disabled || save.getAttribute('aria-disabled') === 'true',
+    ).toBe(true);
     expect(stub.calls.some((c) => c.method === 'PUT')).toBe(false);
   });
 
@@ -446,10 +452,7 @@ describe('EmailSection', () => {
   it('reports a failed send that carries no failure detail rather than rendering nothing', async () => {
     // `ok: false` with no `failure` object is a shape the relay path can produce; falling through
     // to an empty card would read as "the test send did nothing", which is the wrong conclusion.
-    vi.stubGlobal(
-      'fetch',
-      stubFetch({ test: { ok: false, tls: false, authenticated: false } }).fn,
-    );
+    vi.stubGlobal('fetch', stubFetch({ test: { ok: false, tls: false, authenticated: false } }).fn);
     renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
 
     fireEvent.change(await screen.findByLabelText('Destinatário'), {
@@ -504,7 +507,9 @@ describe('EmailSection', () => {
       'fetch',
       stubFetch({
         status: statusView({
-          warnings: ['A username is configured but no password is stored, so authentication will fail.'],
+          warnings: [
+            'A username is configured but no password is stored, so authentication will fail.',
+          ],
         }),
       }).fn,
     );

@@ -166,8 +166,7 @@ export function ColorPicker({ value, onChange, onClear, isSet = false, label }: 
     const roomAbove = rect.top;
     const placement: 'top' | 'bottom' =
       roomBelow >= panelH + gap || roomBelow >= roomAbove ? 'bottom' : 'top';
-    const top =
-      placement === 'bottom' ? rect.bottom + gap : Math.max(gap, rect.top - panelH - gap);
+    const top = placement === 'bottom' ? rect.bottom + gap : Math.max(gap, rect.top - panelH - gap);
 
     // Left-align to the trigger, then clamp so a wide panel near the right edge stays on screen.
     const margin = 8;
@@ -249,7 +248,8 @@ export function ColorPicker({ value, onChange, onClear, isSet = false, label }: 
 
   const onAreaPointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const el = event.currentTarget;
-    if (typeof el.hasPointerCapture === 'function' && !el.hasPointerCapture(event.pointerId)) return;
+    if (typeof el.hasPointerCapture === 'function' && !el.hasPointerCapture(event.pointerId))
+      return;
     if (event.buttons === 0) return;
     areaFromPointer(event.clientX, event.clientY);
   };
@@ -305,7 +305,8 @@ export function ColorPicker({ value, onChange, onClear, isSet = false, label }: 
 
   const onHuePointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const el = event.currentTarget;
-    if (typeof el.hasPointerCapture === 'function' && !el.hasPointerCapture(event.pointerId)) return;
+    if (typeof el.hasPointerCapture === 'function' && !el.hasPointerCapture(event.pointerId))
+      return;
     if (event.buttons === 0) return;
     hueFromPointer(event.clientX);
   };

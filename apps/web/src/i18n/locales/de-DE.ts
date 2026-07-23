@@ -1665,14 +1665,19 @@ export const deDE: Catalog = {
   'users.edit.subnav.access': 'Zugang und Audit',
   'users.edit.subnav.security': 'Sicherheit',
   'users.security.title': 'Kontosicherheit',
-  'users.security.intro.self': 'Verwalten Sie hier die Sicherheit Ihres eigenen Kontos. Dieselben Anmeldedaten erscheinen unter Zugang und Audit, wo ein Administrator sie prüft und zurücksetzt — hier sehen Sie sie als Kontoinhaber.',
-  'users.security.intro.other': 'Sicherheitsstatus dieses Kontos. Nur der Inhaber kann seine Anmeldedaten verwalten; zum Zurücksetzen als Administrator verwenden Sie Zugang und Audit.',
+  'users.security.intro.self':
+    'Verwalten Sie hier die Sicherheit Ihres eigenen Kontos. Dieselben Anmeldedaten erscheinen unter Zugang und Audit, wo ein Administrator sie prüft und zurücksetzt — hier sehen Sie sie als Kontoinhaber.',
+  'users.security.intro.other':
+    'Sicherheitsstatus dieses Kontos. Nur der Inhaber kann seine Anmeldedaten verwalten; zum Zurücksetzen als Administrator verwenden Sie Zugang und Audit.',
   'users.security.password.hint': 'Anmeldekennwort.',
-  'users.security.recovery.hint': 'Wiederherstellungsphrase, eine Alternative zum Kennwort, falls es vergessen wird.',
-  'users.security.key.hint': 'Audit-Attestierungsschlüssel. Beim Rotieren entsteht ein neuer Schlüssel für künftige Attestierungen; frühere bleiben überprüfbar.',
+  'users.security.recovery.hint':
+    'Wiederherstellungsphrase, eine Alternative zum Kennwort, falls es vergessen wird.',
+  'users.security.key.hint':
+    'Audit-Attestierungsschlüssel. Beim Rotieren entsteht ein neuer Schlüssel für künftige Attestierungen; frühere bleiben überprüfbar.',
   'users.security.manage': 'In Zugang und Audit verwalten',
   'users.totp.title': 'Zwei-Faktor-Authentifizierung',
-  'users.totp.intro': 'Ein zweiter Faktor bestätigt die Anmeldung mit einem Code aus Ihrer Authenticator-App, zusätzlich zum Kennwort.',
+  'users.totp.intro':
+    'Ein zweiter Faktor bestätigt die Anmeldung mit einem Code aus Ihrer Authenticator-App, zusätzlich zum Kennwort.',
   'users.totp.on': 'Ein',
   'users.totp.off': 'Aus',
   'users.totp.stateLabel': 'Status',
@@ -1680,7 +1685,8 @@ export const deDE: Catalog = {
   'users.totp.enrolled': 'Zwei-Faktor aktiviert.',
   'users.totp.confirm': 'Bestätigen',
   'users.totp.qr.alt': 'QR-Code zur Einrichtung der Zwei-Faktor-Authentifizierung',
-  'users.totp.qr.hint': 'Scannen Sie diesen Code mit Ihrer Authenticator-App (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Scannen Sie diesen Code mit Ihrer Authenticator-App (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'Oder geben Sie diesen Schlüssel manuell ein:',
   'users.totp.code.label': 'Bestätigungscode',
   'users.totp.code.hint': 'Geben Sie den von der App angezeigten 6-stelligen Code ein.',
@@ -1688,21 +1694,25 @@ export const deDE: Catalog = {
   'users.totp.disable': 'Zwei-Faktor deaktivieren',
   'users.totp.disabled': 'Zwei-Faktor deaktiviert.',
   'users.totp.backup.title': 'Sichern Sie Ihre Backup-Codes',
-  'users.totp.backup.body': 'Sichern Sie sie jetzt an einem sicheren Ort. Jeder Code meldet Sie einmal ohne den zweiten Faktor an und wird nicht erneut angezeigt.',
+  'users.totp.backup.body':
+    'Sichern Sie sie jetzt an einem sicheren Ort. Jeder Code meldet Sie einmal ohne den zweiten Faktor an und wird nicht erneut angezeigt.',
   'users.totp.backup.copy': 'Codes kopieren',
   'users.totp.backup.copied': 'Codes kopiert.',
   'users.totp.backup.regenerate': 'Neue Codes erzeugen',
   'users.totp.backup.regenerated': 'Neue Codes erzeugt; die vorherigen sind nicht mehr gültig.',
   'users.totp.backup.remainingLabel': 'Verbleibende Backup-Codes',
   'users.totp.required.label': 'Zwei-Faktor verlangen',
-  'users.totp.required.hint': 'Verlangt von diesem Konto einen zweiten Faktor, wirksam bei der nächsten Anmeldung. Der Zugang wird nie sofort gesperrt.',
+  'users.totp.required.hint':
+    'Verlangt von diesem Konto einen zweiten Faktor, wirksam bei der nächsten Anmeldung. Der Zugang wird nie sofort gesperrt.',
   'users.totp.required.add': 'Verlangen',
   'users.totp.required.remove': 'Nicht verlangen',
   'users.totp.required.on': 'Zwei-Faktor ist jetzt erforderlich.',
   'users.totp.required.off': 'Zwei-Faktor ist nicht mehr erforderlich.',
-  'users.totp.required.locked': 'Dieses Konto muss Zwei-Faktor behalten und kann es daher nicht deaktivieren.',
+  'users.totp.required.locked':
+    'Dieses Konto muss Zwei-Faktor behalten und kann es daher nicht deaktivieren.',
   'users.sessions.title': 'Aktive Sitzungen',
-  'users.sessions.intro': 'Die aktiven Anmeldungen dieses Kontos. Beenden Sie eine Sitzung, die Sie nicht mehr kennen; sie wird bei der nächsten Anfrage abgewiesen.',
+  'users.sessions.intro':
+    'Die aktiven Anmeldungen dieses Kontos. Beenden Sie eine Sitzung, die Sie nicht mehr kennen; sie wird bei der nächsten Anfrage abgewiesen.',
   'users.sessions.caption': 'Aktive Sitzungen dieses Kontos',
   'users.sessions.col.device': 'Gerät',
   'users.sessions.col.network': 'Netzwerk',

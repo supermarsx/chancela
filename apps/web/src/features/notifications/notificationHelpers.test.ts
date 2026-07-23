@@ -39,9 +39,7 @@ describe('notification routing and ordering helpers', () => {
     expect(frontendNotificationRouteFromApi('/books')).toBe('/books');
     expect(frontendNotificationRouteFromApi('/acts/act-1')).toBe('/acts/act-1');
     expect(frontendNotificationRouteFromApi('/archive?kind=sealed')).toBe('/archive?kind=sealed');
-    expect(frontendNotificationRouteFromApi('/settings#privacy')).toBe(
-      '/settings#privacy',
-    );
+    expect(frontendNotificationRouteFromApi('/settings#privacy')).toBe('/settings#privacy');
     expect(frontendNotificationRouteFromApi('/v1/entities/entity-2?x=1')).toBe(
       '/entities/entity-2',
     );

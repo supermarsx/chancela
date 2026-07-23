@@ -769,7 +769,11 @@ function EntityColumnCell({
     case 'Name':
       return (
         <EntityTableCell column={column}>
-          <Link className="truncate entity-cell-line__link" to={`/entities/${entity.id}`} title={entity.name}>
+          <Link
+            className="truncate entity-cell-line__link"
+            to={`/entities/${entity.id}`}
+            title={entity.name}
+          >
             {entity.name}
           </Link>
         </EntityTableCell>

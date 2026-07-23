@@ -26,7 +26,6 @@ function describedText(el: Element | null | undefined): string | null {
   return id ? (document.getElementById(id)?.textContent ?? null) : null;
 }
 
-
 const ENTITY: Entity = {
   id: 'new-ent-1',
   tenant_id: 'tenant-1',
@@ -1139,7 +1138,11 @@ describe('EntityDetailPage — sub-tabs', () => {
     renderAtEntity();
 
     const subnav = await screen.findByRole('group', { name: SUBNAV });
-    expect(within(subnav).getAllByRole('button').map((b) => b.textContent)).toEqual(TAB_LABELS);
+    expect(
+      within(subnav)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(TAB_LABELS);
   });
 
   it('lands on Livros with no section segment, and marks only that tab pressed', async () => {
@@ -1147,9 +1150,9 @@ describe('EntityDetailPage — sub-tabs', () => {
     renderAtEntity();
 
     const subnav = await screen.findByRole('group', { name: SUBNAV });
-    expect(within(subnav).getByRole('button', { name: 'Livros' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    expect(
+      within(subnav).getByRole('button', { name: 'Livros' }).getAttribute('aria-pressed'),
+    ).toBe('true');
     for (const label of TAB_LABELS.slice(1)) {
       expect(within(subnav).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe(
         'false',
@@ -1310,9 +1313,9 @@ describe('EntityDetailPage — sub-tabs', () => {
     renderAtEntity('/entities/new-ent-1/inventado');
 
     const subnav = await screen.findByRole('group', { name: SUBNAV });
-    expect(within(subnav).getByRole('button', { name: 'Livros' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    expect(
+      within(subnav).getByRole('button', { name: 'Livros' }).getAttribute('aria-pressed'),
+    ).toBe('true');
     expect(screen.getByRole('link', { name: /abrir livro/i })).toBeTruthy();
   });
 

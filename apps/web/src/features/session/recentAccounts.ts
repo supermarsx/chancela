@@ -74,9 +74,10 @@ function parseEntry(value: unknown): RecentAccount | null {
   const username = typeof record.username === 'string' ? record.username.trim() : '';
   if (username.length === 0) return null;
   const displayName = typeof record.displayName === 'string' ? record.displayName : undefined;
-  const lastUsedAt = typeof record.lastUsedAt === 'number' && Number.isFinite(record.lastUsedAt)
-    ? record.lastUsedAt
-    : 0;
+  const lastUsedAt =
+    typeof record.lastUsedAt === 'number' && Number.isFinite(record.lastUsedAt)
+      ? record.lastUsedAt
+      : 0;
   return displayName ? { username, displayName, lastUsedAt } : { username, lastUsedAt };
 }
 

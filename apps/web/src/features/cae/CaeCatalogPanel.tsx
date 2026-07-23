@@ -15,7 +15,16 @@ import { Link } from 'react-router-dom';
 import { useCaeCatalog, useRefreshCae } from '../../api/hooks';
 import { ApiError } from '../../api/client';
 import { useT } from '../../i18n';
-import { Badge, Button, Card, DateTime, ErrorNote, Icon, SkeletonDeflist, useToast } from '../../ui';
+import {
+  Badge,
+  Button,
+  Card,
+  DateTime,
+  ErrorNote,
+  Icon,
+  SkeletonDeflist,
+  useToast,
+} from '../../ui';
 import type { CaeLevelCounts } from '../../api/types';
 
 /** Total nodes across all five levels of a revision. */

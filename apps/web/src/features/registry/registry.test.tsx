@@ -213,9 +213,9 @@ describe('ImportFromRegistryForm', () => {
     // And it is reversible.
     fireEvent.click(hide);
     expect(codeInput.type).toBe('password');
-    expect(screen.getByRole('button', { name: 'Mostrar código' }).getAttribute('aria-pressed')).toBe(
-      'false',
-    );
+    expect(
+      screen.getByRole('button', { name: 'Mostrar código' }).getAttribute('aria-pressed'),
+    ).toBe('false');
   });
 
   it('does not carry the reveal state across a remount', () => {

@@ -111,12 +111,7 @@ export function ToolsPage() {
       {/* No `crumbs`: Tools is a top-level tab with no parent, so a breadcrumb
           would only repeat the title on the line above it. */}
       <PageHeader title={t('tools.title')}>
-        <div
-          className="tools-subnav"
-          role="group"
-          aria-label={t('tools.subnav.aria')}
-          ref={navRef}
-        >
+        <div className="tools-subnav" role="group" aria-label={t('tools.subnav.aria')} ref={navRef}>
           <span
             className="tools-subnav__indicator"
             aria-hidden="true"
@@ -138,9 +133,7 @@ export function ToolsPage() {
                 btnRefs.current[s.id] = el;
               }}
               type="button"
-              className={
-                s.id === section ? 'tools-subnav__btn is-active' : 'tools-subnav__btn'
-              }
+              className={s.id === section ? 'tools-subnav__btn is-active' : 'tools-subnav__btn'}
               aria-pressed={s.id === section}
               onClick={() => selectSection(s.id)}
             >

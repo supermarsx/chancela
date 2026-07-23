@@ -33,12 +33,10 @@ export function getByRevealedText(
 ): HTMLElement {
   const hit = (value: string) => (typeof text === 'string' ? value === text : text.test(value));
   const matches = Array.from(container.querySelectorAll('[aria-describedby]')).filter((el) =>
-    (el.getAttribute('aria-describedby') ?? '')
-      .split(/\s+/)
-      .some((id) => {
-        const bubble = document.getElementById(id);
-        return bubble ? hit(bubble.textContent ?? '') : false;
-      }),
+    (el.getAttribute('aria-describedby') ?? '').split(/\s+/).some((id) => {
+      const bubble = document.getElementById(id);
+      return bubble ? hit(bubble.textContent ?? '') : false;
+    }),
   );
   if (matches.length !== 1) {
     throw new Error(
