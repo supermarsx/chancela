@@ -165,7 +165,7 @@ export function Layout() {
           {
             to: '/admin',
             label: at('nav.admin'),
-            icon: <Icon.Power />,
+            icon: <Icon.Server />,
             active: isActive('/admin'),
           },
         ]

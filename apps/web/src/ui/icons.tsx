@@ -300,20 +300,21 @@ export function Calendar(props: IconProps) {
 }
 
 /**
- * settings / Configurações — a cog wheel (t103).
+ * settings / Configurações — a cog wheel (t103, teeth reworked t46).
  *
  * Deliberately a **cog**, not {@link Sliders}: the app already uses `Sliders` for filter and
  * preference controls *inside* pages, and the top bar needed a glyph that reads as "the settings
- * surface" at a glance beside the tools wrench. Two teeth-rings plus a hub, drawn in the same
- * single-stroke 24×24 style as the rest of the set, so it inherits the stroke, sizing and
- * `aria-hidden` chrome from {@link Icon} and cannot drift from the house line weight.
+ * surface" at a glance beside the tools wrench. A real toothed gear — a closed ring of eight
+ * evenly-spaced teeth with a hollow hub — rather than the earlier hub-with-spokes, which read as an
+ * asterisk more than a gear. Drawn in the same single-stroke 24×24 style as the rest of the set, so
+ * it inherits the stroke, sizing and `aria-hidden` chrome from {@link Icon} and the round line-join
+ * softens the tooth corners to the house line weight.
  */
 export function Cog(props: IconProps) {
   return (
     <Icon {...props}>
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5" />
-      <path d="M18.01 5.99l-1.56 1.56M7.55 16.45l-1.56 1.56M18.01 18.01l-1.56-1.56M7.55 7.55L5.99 5.99" />
+      <path d="M21.11 10.72L21.11 13.28L18.49 13.68L17.77 15.40L19.35 17.54L17.54 19.35L15.40 17.77L13.68 18.49L13.28 21.11L10.72 21.11L10.32 18.49L8.60 17.77L6.46 19.35L4.65 17.54L6.23 15.40L5.51 13.68L2.89 13.28L2.89 10.72L5.51 10.32L6.23 8.60L4.65 6.46L6.46 4.65L8.60 6.23L10.32 5.51L10.72 2.89L13.28 2.89L13.68 5.51L15.40 6.23L17.54 4.65L19.35 6.46L17.77 8.60L18.49 10.32Z" />
+      <circle cx="12" cy="12" r="3.1" />
     </Icon>
   );
 }
@@ -405,6 +406,25 @@ export function Sliders(props: IconProps) {
   );
 }
 
+/**
+ * statistics / Estatísticas — a bar chart on an axis (t46).
+ *
+ * The dashboard statistics tab used {@link Sliders} (adjustment controls), which reads as
+ * "settings", not "numbers". This is an axis with three ascending columns — the universal
+ * "statistics/chart" glyph — in the same single-stroke 24×24 style, so it inherits the shared
+ * {@link Icon} chrome and cannot drift from the house line weight.
+ */
+export function BarChart(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 4v15.5h15" />
+      <rect x="7" y="13" width="2.6" height="6.5" rx="0.4" />
+      <rect x="11.4" y="9.5" width="2.6" height="10" rx="0.4" />
+      <rect x="15.8" y="6" width="2.6" height="13.5" rx="0.4" />
+    </Icon>
+  );
+}
+
 /** information / Sobre — an "i" in a circle. */
 export function Info(props: IconProps) {
   return (
@@ -453,6 +473,27 @@ export function Shield(props: IconProps) {
     <Icon {...props}>
       <path d="M12 3.5 5 6.2v5c0 4.3 2.9 7.4 7 8.8 4.1-1.4 7-4.5 7-8.8v-5z" />
       <path d="M9 11.7l2.2 2.2L15 8.6" />
+    </Icon>
+  );
+}
+
+/**
+ * administration / Administração — stacked server racks (t46).
+ *
+ * The admin surface is where an operator reaches operations, integrations, storage/backups and
+ * keys — infrastructure, not personal settings. It needed a glyph that reads as "the machinery
+ * behind the app" and stays distinct from every other top-bar glyph: {@link Cog} (Configurações),
+ * {@link Wrench} (Ferramentas), {@link Shield} (Segurança) and {@link Sliders} (in-page Gestão).
+ * Two stacked rack units with a status light and vents, drawn in the same single-stroke 24×24
+ * style, so it inherits the shared {@link Icon} chrome and cannot drift from the house line weight.
+ */
+export function Server(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="4.5" width="16" height="6" rx="1.5" />
+      <rect x="4" y="13.5" width="16" height="6" rx="1.5" />
+      <path d="M7.5 7.5h.01M7.5 16.5h.01" />
+      <path d="M14.5 7.5h3M14.5 16.5h3" />
     </Icon>
   );
 }

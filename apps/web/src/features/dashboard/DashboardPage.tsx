@@ -1108,7 +1108,7 @@ function DashboardHeader({
         onSelect={onSelect}
         items={[
           { id: 'current', label: t('dashboard.tabs.current'), icon: <Icon.Layers /> },
-          { id: 'stats', label: t('dashboard.tabs.stats'), icon: <Icon.Sliders /> },
+          { id: 'stats', label: t('dashboard.tabs.stats'), icon: <Icon.BarChart /> },
           { id: 'activity', label: t('dashboard.tabs.activity'), icon: <Icon.Bell /> },
           { id: 'dates', label: t('dashboard.tabs.dates'), icon: <Icon.Calendar /> },
           { id: 'queue', label: t('dashboard.tabs.queue'), icon: <Icon.Tray /> },
