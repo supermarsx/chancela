@@ -223,8 +223,9 @@ impl Role {
     /// `tenant.admin`), the two t22 security-configuration verbs `legal_hold.manage` and
     /// `trust.manage`, and the four t27 verbs split off the broad authorities it already held
     /// (`privacy.manage`/`retention.manage` from `user.manage`|`settings.manage`;
-    /// `ledger.reanchor`/`ledger.restore` from `ledger.recover`) — so the split preserves its exact
-    /// reach. It still lacks the Owner-only destructive reset/wipe verbs.
+    /// `ledger.reanchor`/`ledger.restore` from `ledger.recover`) and the t50 `signing.configure`
+    /// split off `settings.manage` — so the split preserves its exact reach. It still lacks the
+    /// Owner-only destructive reset/wipe verbs.
     #[must_use]
     pub fn platform_administrator() -> Self {
         Role {
@@ -255,6 +256,8 @@ impl Role {
                 Permission::ActRevert,
                 Permission::ActArchive,
                 Permission::SigningPerform,
+                // t50: grandfathered from `settings.manage`, which this role holds (below).
+                Permission::SigningConfigure,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
                 Permission::LedgerRead,
@@ -743,6 +746,25 @@ pub const T27_VERB_SPLIT_GRANDFATHER: &[(Permission, &[Permission])] = &[
 pub const T30_ACT_REVERT_GRANDFATHER: &[(Permission, &[Permission])] =
     &[(Permission::ActRevert, &[Permission::ActAdvance])];
 
+/// The t50 **`signing.configure` grandfather map**, structured exactly like
+/// [`T27_VERB_SPLIT_GRANDFATHER`]: holding **any** verb in `parents` grants `child`.
+///
+/// t50 relocates the signature-policy configuration surface into the Administração area behind a
+/// dedicated `signing.configure` verb, split off the `settings.manage` that used to gate the signing
+/// slice of the settings document (and the provider-credential write endpoints). Splitting it strips
+/// authority from everyone who held `settings.manage` unless the child is granted back, so
+/// `signing.configure` is granted to every prior holder of `settings.manage`. Introducing the verb
+/// therefore strips no reach. Applied from the same single source of truth as t27/t30:
+///
+/// 1. **Seeded roles (code):** every constructor holding `settings.manage` bakes in
+///    `signing.configure` (Owner via [`Permission::ALL`], Platform Administrator explicitly), so
+///    migrating a fresh install is a no-op.
+/// 2. **Operator-authored roles (on disk):** reconciled with [`grandfather_signing_configure_catalog`]
+///    under its **own** one-time migration marker (kept distinct from t27's and t30's, so a store
+///    already migrated past them still picks the new verb up — see `chancela-api`).
+pub const T50_SIGNING_CONFIGURE_GRANDFATHER: &[(Permission, &[Permission])] =
+    &[(Permission::SigningConfigure, &[Permission::SettingsManage])];
+
 /// Grant each child verb in `table` whose parent the role already holds. Returns `true` if the set
 /// changed. Shared engine behind [`grandfather_split_verbs`] (t27) and [`grandfather_act_revert`]
 /// (t30).
@@ -823,6 +845,23 @@ pub fn grandfather_act_revert(role: &mut Role) -> bool {
 #[must_use]
 pub fn grandfather_act_revert_catalog(catalog: &mut RoleCatalog) -> bool {
     apply_grandfather_table_catalog(catalog, T30_ACT_REVERT_GRANDFATHER)
+}
+
+/// Grandfather the t50 `signing.configure` grant onto one role's permission-set: grant
+/// `signing.configure` when the role already holds `settings.manage` (see
+/// [`T50_SIGNING_CONFIGURE_GRANDFATHER`]). Returns `true` if the set changed. Idempotent; protected
+/// roles are skipped.
+#[must_use]
+pub fn grandfather_signing_configure(role: &mut Role) -> bool {
+    apply_grandfather_table(role, T50_SIGNING_CONFIGURE_GRANDFATHER)
+}
+
+/// Apply [`grandfather_signing_configure`] across a whole catalog. Returns `true` if any role
+/// changed. Idempotent; protected roles are untouched. Runs under its own one-time migration marker
+/// in `chancela-api`, independent of the t27/t30 markers.
+#[must_use]
+pub fn grandfather_signing_configure_catalog(catalog: &mut RoleCatalog) -> bool {
+    apply_grandfather_table_catalog(catalog, T50_SIGNING_CONFIGURE_GRANDFATHER)
 }
 
 #[cfg(test)]
@@ -1366,6 +1405,9 @@ mod tests {
                 Permission::DelegationRevoke,
                 Permission::UserManage,
                 Permission::SettingsManage,
+                // t50: administering signing configuration is split off `settings.manage` and is
+                // platform authority, never a company archetype's.
+                Permission::SigningConfigure,
                 Permission::PlatformLogsWrite,
                 Permission::LedgerRecover,
                 // t27: the recovery-split verbs share `ledger.recover`'s exclusion here.
@@ -1852,6 +1894,79 @@ mod tests {
             legacy.permission_set,
             Role::company_owner().permission_set,
             "migration must restore the role's exact pre-t30 reach — no more, no less"
+        );
+    }
+
+    /// t50: the `signing.configure` grandfather grants the new verb to every prior `settings.manage`
+    /// holder and nothing else, is idempotent, and skips protected roles. The "no reach lost" proof
+    /// for operator-authored roles that could configure signing via `settings.manage` but predate the
+    /// dedicated verb.
+    #[test]
+    fn t50_signing_configure_grandfather_grants_to_settings_manage_holders_and_nothing_else() {
+        let base = |perms: &[Permission]| Role {
+            id: RoleId(Uuid::from_u128(0x7465737450000000_0000000000000abc)),
+            name: "Custom".to_owned(),
+            permission_set: perms.iter().copied().collect(),
+            protected: false,
+        };
+
+        // settings.manage → signing.configure.
+        let mut sm = base(&[Permission::SettingsManage]);
+        assert!(grandfather_signing_configure(&mut sm));
+        assert!(sm.permission_set.contains(&Permission::SigningConfigure));
+
+        // No settings.manage → no signing.configure, and the call reports no change. Notably,
+        // holding only `signing.perform` (the seal) does NOT grant the configuration verb.
+        let mut none = base(&[Permission::SigningPerform, Permission::SettingsRead]);
+        assert!(!grandfather_signing_configure(&mut none));
+        assert!(!none.permission_set.contains(&Permission::SigningConfigure));
+
+        // Idempotent.
+        assert!(!grandfather_signing_configure(&mut sm));
+
+        // Protected roles are skipped even when they hold the parent.
+        let mut protected = Role {
+            protected: true,
+            ..base(&[Permission::SettingsManage])
+        };
+        assert!(!grandfather_signing_configure(&mut protected));
+        assert!(!protected.permission_set.contains(&Permission::SigningConfigure));
+
+        // The grandfather generations are independent: neither t27 nor t30 grants signing.configure.
+        let mut sm_only = base(&[Permission::SettingsManage]);
+        assert!(grandfather_split_verbs(&mut sm_only)); // t27 grants privacy/retention…
+        assert!(!grandfather_act_revert(&mut sm_only)); // …t30 grants nothing…
+        assert!(
+            !sm_only.permission_set.contains(&Permission::SigningConfigure),
+            "only the t50 pass may grant signing.configure"
+        );
+    }
+
+    /// The seeded catalog already bakes `signing.configure` into every `settings.manage` holder, so
+    /// migrating a fresh install is a no-op; and a Platform Administrator persisted before t50
+    /// (today's set minus `signing.configure`) is restored to its exact current reach — the
+    /// anti-lockout guarantee for the signing-configuration verb.
+    #[test]
+    fn t50_signing_configure_grandfather_is_noop_on_seed_and_restores_a_pre_t50_admin() {
+        let mut seeded = RoleCatalog::seeded_defaults();
+        assert!(
+            !grandfather_signing_configure_catalog(&mut seeded),
+            "seeded roles already carry signing.configure; migrating a fresh install must not \
+             change anything"
+        );
+
+        // A Platform Administrator as persisted before t50: today's set minus signing.configure. It
+        // still holds settings.manage, so the grandfather must grant signing.configure back.
+        let mut legacy = Role::platform_administrator();
+        legacy.permission_set.remove(&Permission::SigningConfigure);
+        assert!(
+            grandfather_signing_configure(&mut legacy),
+            "a pre-t50 settings.manage holder must be migrated"
+        );
+        assert_eq!(
+            legacy.permission_set,
+            Role::platform_administrator().permission_set,
+            "migration must restore the role's exact pre-t50 reach — no more, no less"
         );
     }
 }

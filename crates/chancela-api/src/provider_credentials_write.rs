@@ -18,8 +18,10 @@
 //!   directory is a 422 instead, because the operator's next step is persistence, not a key.
 //! - **Sanitized audit.** Every mutation appends a ledger event carrying only mode / provider_id /
 //!   entry_id / action / changed field NAMES / enabled / priority — never a secret value.
-//! - **Gating.** Mutations require `settings.manage`; the management list requires `settings.read`
-//!   (the same gate the status endpoint uses). No new permission is introduced.
+//! - **Gating.** Mutations require `signing.configure` (t50 — the dedicated signing-configuration
+//!   verb split off `settings.manage`, granted to every prior `settings.manage` holder by the
+//!   grandfather migration, so no current operator loses access); the management list requires
+//!   `settings.read` (the same gate the status endpoint uses).
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -281,7 +283,7 @@ pub async fn create_entry(
     attestor: CurrentAttestor,
     body: Bytes,
 ) -> Result<(StatusCode, Json<EntryMutationResponse>), ApiError> {
-    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
     let mode = parse_mode(&mode_raw)?;
     let provider_id = resolve_provider(mode, &provider_raw)?;
     let req: CreateEntryRequest = parse_body(&body)?;
@@ -361,7 +363,7 @@ pub async fn update_entry(
     attestor: CurrentAttestor,
     body: Bytes,
 ) -> Result<Json<EntryMutationResponse>, ApiError> {
-    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
     let mode = parse_mode(&mode_raw)?;
     let provider_id = resolve_provider(mode, &provider_raw)?;
     let req: UpdateEntryRequest = parse_body(&body)?;
@@ -437,7 +439,7 @@ pub async fn delete_entry(
     actor: CurrentActor,
     attestor: CurrentAttestor,
 ) -> Result<Json<EntryMutationResponse>, ApiError> {
-    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
     let mode = parse_mode(&mode_raw)?;
     let provider_id = resolve_provider(mode, &provider_raw)?;
 
@@ -477,7 +479,7 @@ pub async fn reorder_entries(
     attestor: CurrentAttestor,
     body: Bytes,
 ) -> Result<Json<EntryListResponse>, ApiError> {
-    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
     let mode = parse_mode(&mode_raw)?;
     let provider_id = resolve_provider(mode, &provider_raw)?;
     let req: ReorderRequest = parse_body(&body)?;
@@ -558,7 +560,10 @@ pub async fn list_provider_credentials(
         // The SMTP relay account and the per-user TOTP secrets ride the same store but are not
         // signing providers; they belong to the mail-settings and user-security screens, so they
         // must not appear in the Assinaturas list.
-        if matches!(record.mode, CredentialMode::Smtp | CredentialMode::TwoFactorTotp) {
+        if matches!(
+            record.mode,
+            CredentialMode::Smtp | CredentialMode::TwoFactorTotp
+        ) {
             continue;
         }
         let entries = state
@@ -969,7 +974,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_entry_requires_settings_manage() {
+    async fn create_entry_requires_signing_configure() {
         let tmp = TempDir::new();
         let state = state_with_store(&tmp.dir);
         let uri = "/v1/signature/provider-credentials/csc/encosto-qtsp/entries";
@@ -979,7 +984,7 @@ mod tests {
         let (status, _) = send_with(state.clone(), body_req("POST", uri, body.clone()), None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-        // settings.read but not settings.manage (LEITOR) → 403.
+        // settings.read but not signing.configure (LEITOR) → 403 (t50 gate).
         let leitor = seed_token(&state, READER_ROLE_ID).await;
         let (status, b) = send_with(
             state.clone(),
@@ -989,7 +994,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{b}");
 
-        // settings.manage (OWNER) → 201.
+        // signing.configure (OWNER holds it via Permission::ALL) → 201.
         let owner = seed_token(&state, OWNER_ROLE_ID).await;
         let (status, b) = send_with(state, body_req("POST", uri, body), Some(&owner)).await;
         assert_eq!(status, StatusCode::CREATED, "{b}");

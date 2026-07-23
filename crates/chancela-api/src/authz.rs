@@ -783,15 +783,15 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     (
         "/v1/signature/provider-credentials/{mode}/{provider_id}/entries",
         RouteClass::Gated,
-    ), // POST settings.manage@Global
+    ), // POST signing.configure@Global (t50)
     (
         "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/reorder",
         RouteClass::Gated,
-    ), // POST settings.manage@Global
+    ), // POST signing.configure@Global (t50)
     (
         "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/{entry_id}",
         RouteClass::Gated,
-    ), // PATCH/DELETE settings.manage@Global
+    ), // PATCH/DELETE signing.configure@Global (t50)
     ("/v1/acts/{id}/signature", RouteClass::Gated),            // GET act.read@Book
     ("/v1/acts/{id}/document/signed", RouteClass::Gated),      // GET act.read@Book
     ("/v1/templates", RouteClass::Gated), // GET act.read@Global · POST template.manage@Global

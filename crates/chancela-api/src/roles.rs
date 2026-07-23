@@ -233,6 +233,13 @@ pub(crate) const T27_SPLIT_VERB_GRANDFATHER_MIGRATION: &str = "t27_split_verb_gr
 /// leave already-migrated stores without `act.revert`.
 pub(crate) const T30_ACT_REVERT_GRANDFATHER_MIGRATION: &str = "t30_act_revert_grandfather";
 
+/// Marker id for the **t50 `signing.configure` grandfather** reconciliation
+/// ([`reconcile_signing_configure_grandfather`]). Kept DISTINCT from the t27 and t30 markers so a
+/// catalog store that already ran the earlier grandfathers still applies this later grant on the
+/// next boot — a shared marker would leave already-migrated stores without `signing.configure`.
+pub(crate) const T50_SIGNING_CONFIGURE_GRANDFATHER_MIGRATION: &str =
+    "t50_signing_configure_grandfather";
+
 /// The set of one-time role-catalog data migrations already applied to a given catalog store.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RoleMigrationState {
@@ -385,6 +392,38 @@ pub(crate) fn reconcile_act_revert_grandfather(
     }
     let catalog_changed = chancela_authz::grandfather_act_revert_catalog(catalog);
     state.mark(T30_ACT_REVERT_GRANDFATHER_MIGRATION);
+    RoleMigrationOutcome {
+        catalog_changed,
+        marker_changed: true,
+    }
+}
+
+/// **t50 `signing.configure` grandfather, on-disk half — version-guarded so it runs at most once.**
+///
+/// t50 relocates the signature-policy configuration surface into the Administração area behind a
+/// dedicated `signing.configure` verb, split off the `settings.manage` that used to gate it. The
+/// policy: whoever could configure signing via `settings.manage` keeps that reach, so
+/// `signing.configure` is granted to every prior holder of `settings.manage` —
+/// [`chancela_authz::grandfather_signing_configure_catalog`] is that grant (protected Owner skipped:
+/// it already holds every verb via `Permission::ALL`, and its set is locked).
+///
+/// The guard: if `state` already records [`T50_SIGNING_CONFIGURE_GRANDFATHER_MIGRATION`], this is a
+/// no-op. Otherwise it reconciles the catalog and records the marker. Its **own** marker — kept
+/// distinct from t27's and t30's — is what lets a store already migrated past them still pick this
+/// grant up exactly once, while never re-adding the verb an operator later deliberately removed from
+/// a `settings.manage` role.
+///
+/// **Zero UserView/ledger impact:** only the role catalog's permission-sets are touched.
+#[must_use]
+pub(crate) fn reconcile_signing_configure_grandfather(
+    catalog: &mut RoleCatalog,
+    state: &mut RoleMigrationState,
+) -> RoleMigrationOutcome {
+    if state.has_run(T50_SIGNING_CONFIGURE_GRANDFATHER_MIGRATION) {
+        return RoleMigrationOutcome::default();
+    }
+    let catalog_changed = chancela_authz::grandfather_signing_configure_catalog(catalog);
+    state.mark(T50_SIGNING_CONFIGURE_GRANDFATHER_MIGRATION);
     RoleMigrationOutcome {
         catalog_changed,
         marker_changed: true,
@@ -2284,5 +2323,116 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- t50 signing.configure grandfather (version-guarded on-disk reconciliation) --------------
+
+    /// A fresh seed already lists `signing.configure` for every `settings.manage` holder (Owner via
+    /// `Permission::ALL`, Platform Administrator explicitly), so the reconcile changes no permission —
+    /// but it must STILL burn the marker so the one-time grant never runs again.
+    #[test]
+    fn t50_grandfather_reconcile_is_noop_on_a_fresh_seed_but_still_records_the_marker() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        let mut state = RoleMigrationState::default();
+
+        let outcome = reconcile_signing_configure_grandfather(&mut cat, &mut state);
+        assert!(
+            !outcome.catalog_changed,
+            "the seed already holds signing.configure wherever settings.manage is held"
+        );
+        assert!(
+            outcome.marker_changed,
+            "the marker must be recorded even when nothing changed, or the grant re-runs forever"
+        );
+        assert!(state.has_run(T50_SIGNING_CONFIGURE_GRANDFATHER_MIGRATION));
+
+        assert_eq!(
+            reconcile_signing_configure_grandfather(&mut cat, &mut state),
+            RoleMigrationOutcome::default()
+        );
+    }
+
+    /// A role an operator built BEFORE the split, holding `settings.manage`, gains `signing.configure`
+    /// — and a role holding only `signing.perform` (the seal) gains nothing, proving the two signing
+    /// verbs are not conflated.
+    #[test]
+    fn t50_grandfather_reconcile_grants_signing_configure_to_pre_split_settings_role() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        let settings_role = custom_role(0x5E11, "Ops", &[Permission::SettingsManage]);
+        let seal_role = custom_role(0x5EA1, "Sealer", &[Permission::SigningPerform]);
+        cat.insert(settings_role.clone());
+        cat.insert(seal_role.clone());
+
+        let mut state = RoleMigrationState::default();
+        assert!(reconcile_signing_configure_grandfather(&mut cat, &mut state).catalog_changed);
+
+        assert!(
+            cat.get(settings_role.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SigningConfigure)
+        );
+        assert!(
+            !cat.get(seal_role.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SigningConfigure),
+            "signing.perform (seal) must NOT confer signing.configure"
+        );
+    }
+
+    /// The t50 marker is DISTINCT from t27's and t30's: a catalog store that already ran the earlier
+    /// grandfathers still applies the signing.configure grant exactly once. A shared marker would have
+    /// silently skipped it, locking a migrated store out of the new verb.
+    #[test]
+    fn t50_grandfather_applies_even_when_t27_and_t30_already_ran() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        let role = custom_role(0x5E11, "Ops", &[Permission::SettingsManage]);
+        cat.insert(role.clone());
+
+        // Simulate a store already migrated past t27 and t30 but never t50.
+        let mut state = RoleMigrationState::default();
+        state.mark(T27_SPLIT_VERB_GRANDFATHER_MIGRATION);
+        state.mark(T30_ACT_REVERT_GRANDFATHER_MIGRATION);
+
+        let outcome = reconcile_signing_configure_grandfather(&mut cat, &mut state);
+        assert!(
+            outcome.catalog_changed,
+            "the t50 grant must still run for a store that already ran t27/t30"
+        );
+        assert!(
+            cat.get(role.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SigningConfigure)
+        );
+    }
+
+    /// The marker guards a purely-additive grant from undoing an operator's later removal: grant
+    /// signing.configure once, let the operator remove it while keeping settings.manage, then re-run —
+    /// the removal must stand.
+    #[test]
+    fn t50_marker_stops_the_grant_from_undoing_a_later_operator_removal() {
+        let mut cat = RoleCatalog::seeded_defaults();
+        let role = custom_role(0x5E11, "Ops", &[Permission::SettingsManage]);
+        cat.insert(role.clone());
+
+        let mut state = RoleMigrationState::default();
+        assert!(reconcile_signing_configure_grandfather(&mut cat, &mut state).catalog_changed);
+
+        let mut edited = cat.get(role.id).unwrap().clone();
+        assert!(edited.permission_set.remove(&Permission::SigningConfigure));
+        cat.insert(edited);
+
+        assert_eq!(
+            reconcile_signing_configure_grandfather(&mut cat, &mut state),
+            RoleMigrationOutcome::default()
+        );
+        assert!(
+            !cat.get(role.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SigningConfigure)
+        );
     }
 }

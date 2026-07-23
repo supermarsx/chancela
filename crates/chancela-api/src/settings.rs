@@ -2430,7 +2430,8 @@ impl Settings {
     /// no URL — is what "unavailable and says so" means in practice. The alternative is an operator
     /// who believes recovery is on, and users who find out it is not while locked out.
     fn validate_auth_prerequisites(&self) -> Result<(), ApiError> {
-        if self.auth.requires_instance_base_url() && self.platform.resolved_public_base_url().is_none()
+        if self.auth.requires_instance_base_url()
+            && self.platform.resolved_public_base_url().is_none()
         {
             return Err(ApiError::Unprocessable(
                 "this authentication setting emails a link back to this instance, so \
@@ -3244,6 +3245,21 @@ pub async fn get_settings(
     Ok(Json(settings))
 }
 
+/// Whether the operator-authored signing **policy** differs between two slices, ignoring the
+/// server-owned [`SigningSettings::providers`] metadata — that list is re-stamped from live
+/// credential/env state on every GET/PUT ([`stamp_signing_provider_metadata`]), so it can differ
+/// between two saves the operator never touched and must not, on its own, trip the `signing.configure`
+/// gate. Everything an operator actually authors — preferred family, the seal-status rule, the
+/// TSA/TSL sources and anchors, and the CMD selectors — is compared.
+fn signing_policy_changed(previous: &SigningSettings, next: &SigningSettings) -> bool {
+    let policy = |s: &SigningSettings| {
+        let mut s = s.clone();
+        s.providers = Vec::new();
+        s
+    };
+    policy(previous) != policy(next)
+}
+
 /// `PUT /v1/settings` — replace the whole settings document.
 ///
 /// The body is the entire [`Settings`] document. It is parsed leniently (missing fields
@@ -3298,6 +3314,25 @@ pub async fn put_settings(
     // Always stamp the current schema version regardless of what the client sent.
     settings.schema_version = SETTINGS_SCHEMA_VERSION;
     stamp_signing_provider_metadata(&state, &mut settings);
+
+    // t50: the signature-policy slice is gated on the dedicated `signing.configure` verb — a finer
+    // authority than the document-wide `settings.manage` this PUT already required. A caller may
+    // replace every other slice with `settings.manage` alone, but CHANGING the signing policy
+    // (preferred family, the seal-status rule, TSL/TSA sources and trust anchors, CMD config)
+    // additionally requires `signing.configure`. Only a real change is gated, so a `settings.manage`
+    // holder saving an unrelated tab (the web always PUTs the whole document) is never blocked; and
+    // grandfathering grants `signing.configure` to every current `settings.manage` holder, so this
+    // narrows only future custom roles. The server-owned `providers` metadata is excluded from the
+    // diff because it is re-stamped from live credential/env state on every save.
+    if signing_policy_changed(&previous.signing, &settings.signing) {
+        require_permission(
+            &state,
+            &current_actor,
+            Permission::SigningConfigure,
+            Scope::Global,
+        )
+        .await?;
+    }
     // Store the egress allowlist normalized, so the ledger diff below compares boundaries rather
     // than whitespace and casing. The stamped ceiling is server-owned: drop whatever came back.
     settings.connectors.allowed_hosts = settings.connectors.normalized();
@@ -3320,15 +3355,16 @@ pub async fn put_settings(
     // own object storage. Only a *changed* value is checked, so an instance whose directory has
     // since become unwritable can still save an unrelated tab rather than being locked out of
     // settings entirely.
-    if settings.data_management.zk_shared_object_root != previous.data_management.zk_shared_object_root
+    if settings.data_management.zk_shared_object_root
+        != previous.data_management.zk_shared_object_root
         && let Some(candidate) = settings.data_management.zk_shared_object_root.as_deref()
     {
-        let data_dir = state
-            .data_dir()
-            .ok_or_else(|| ApiError::Unprocessable(
+        let data_dir = state.data_dir().ok_or_else(|| {
+            ApiError::Unprocessable(
                 "data_management.zk_shared_object_root requires CHANCELA_DATA_DIR persistence"
                     .to_owned(),
-            ))?;
+            )
+        })?;
         crate::zk_repository::validate_shared_object_root(&data_dir, candidate).map_err(
             |reason| {
                 ApiError::Unprocessable(format!(
@@ -3808,7 +3844,10 @@ mod tests {
         assert!(!settings.auth.two_factor.required);
         assert!(!settings.auth.two_factor.acknowledge_single_channel_risk);
         assert!(settings.auth.signup.allowed_domains.is_empty());
-        assert_eq!(settings.auth.signup.default_role, chancela_authz::GUEST_ROLE_ID);
+        assert_eq!(
+            settings.auth.signup.default_role,
+            chancela_authz::GUEST_ROLE_ID
+        );
         // P0-3: no base URL, so no link-issuing feature can be live either.
         assert_eq!(settings.platform.public_base_url, None);
         assert_eq!(settings.platform.resolved_public_base_url(), None);
@@ -3897,7 +3936,11 @@ mod tests {
         let mut guest = Role::guest();
         guest.permission_set.insert(Permission::SettingsManage);
         edited.insert(guest);
-        let message = refusal(Settings::default().auth.validate_default_role_against(&edited));
+        let message = refusal(
+            Settings::default()
+                .auth
+                .validate_default_role_against(&edited),
+        );
         assert!(message.contains("settings.manage"), "{message}");
     }
 
@@ -3932,8 +3975,11 @@ mod tests {
         }
 
         let mut settings = Settings::default();
-        settings.auth.signup.allowed_domains =
-            vec![" Example.PT ".to_owned(), "example.pt".to_owned(), "b.example.pt".to_owned()];
+        settings.auth.signup.allowed_domains = vec![
+            " Example.PT ".to_owned(),
+            "example.pt".to_owned(),
+            "b.example.pt".to_owned(),
+        ];
         settings.validate().expect("valid domains");
         assert_eq!(
             settings.auth.signup.normalized_domains(),
@@ -3956,7 +4002,13 @@ mod tests {
 
     #[test]
     fn token_lifetimes_are_bounded() {
-        for (hours, ok) in [(0, false), (1, true), (168, true), (720, true), (721, false)] {
+        for (hours, ok) in [
+            (0, false),
+            (1, true),
+            (168, true),
+            (720, true),
+            (721, false),
+        ] {
             let mut settings = Settings::default();
             settings.auth.signup.invite_ttl_hours = hours;
             assert_eq!(settings.validate().is_ok(), ok, "invite_ttl_hours {hours}");
@@ -3964,7 +4016,11 @@ mod tests {
         for (minutes, ok) in [(4, false), (5, true), (15, true), (60, true), (61, false)] {
             let mut settings = Settings::default();
             settings.auth.password_recovery.link_ttl_minutes = minutes;
-            assert_eq!(settings.validate().is_ok(), ok, "link_ttl_minutes {minutes}");
+            assert_eq!(
+                settings.validate().is_ok(),
+                ok,
+                "link_ttl_minutes {minutes}"
+            );
         }
     }
 
@@ -3977,12 +4033,17 @@ mod tests {
         settings.auth.two_factor.email_enabled = true;
         settings.auth.password_recovery.email_link_enabled = true;
         let message = refusal(settings.validate());
-        assert!(message.contains("acknowledge_single_channel_risk"), "{message}");
+        assert!(
+            message.contains("acknowledge_single_channel_risk"),
+            "{message}"
+        );
 
         // TOTP alongside it removes the objection: the mailbox is no longer the whole model.
         let mut with_totp = settings.clone();
         with_totp.auth.two_factor.totp_enabled = true;
-        with_totp.validate().expect("TOTP resolves the single-channel risk");
+        with_totp
+            .validate()
+            .expect("TOTP resolves the single-channel risk");
 
         // Or the operator acknowledges it on purpose.
         let mut acknowledged = settings.clone();
@@ -4003,7 +4064,9 @@ mod tests {
         assert!(message.contains("totp_enabled"), "{message}");
 
         settings.auth.two_factor.totp_enabled = true;
-        settings.validate().expect("TOTP makes the requirement satisfiable");
+        settings
+            .validate()
+            .expect("TOTP makes the requirement satisfiable");
     }
 
     /// P0-3. The base URL is the origin of every emailed link, so the shapes that could aim one
@@ -4044,7 +4107,9 @@ mod tests {
         ] {
             let mut settings = Settings::default();
             settings.platform.public_base_url = Some(good.to_owned());
-            settings.validate().unwrap_or_else(|e| panic!("{good:?}: {e:?}"));
+            settings
+                .validate()
+                .unwrap_or_else(|e| panic!("{good:?}: {e:?}"));
         }
 
         // Resolution strips trailing slashes so the link builder can append a path unconditionally.
@@ -4057,7 +4122,9 @@ mod tests {
         // Blank is "unset", not "the empty origin".
         settings.platform.public_base_url = Some("   ".to_owned());
         assert_eq!(settings.platform.resolved_public_base_url(), None);
-        settings.validate().expect("a blank value is treated as unset");
+        settings
+            .validate()
+            .expect("a blank value is treated as unset");
     }
 
     /// P0-3's other half: with no configured origin, a feature that emails a link cannot be turned
@@ -4110,6 +4177,8 @@ mod tests {
 
         let mut settings = settings_ready_for_links();
         settings.auth.password_recovery.username_by_email = true;
-        settings.validate().expect("with the relay on it is accepted");
+        settings
+            .validate()
+            .expect("with the relay on it is accepted");
     }
 }

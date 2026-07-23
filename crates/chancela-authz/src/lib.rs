@@ -45,9 +45,10 @@ pub use role::{
     RECORDS_MANAGER_ROLE_ID, RETIRED_GESTOR_ROLE_ID, RETIRED_SEEDED_ROLES,
     RETIRED_SIGNATARIO_ROLE_ID, REVIEWER_ROLE_ID, Role, RoleCatalog, RoleId, SIGNATORY_ROLE_ID,
     SignupDefaultRefusal, T27_VERB_SPLIT_GRANDFATHER, T30_ACT_REVERT_GRANDFATHER,
-    TENANT_ADMIN_ROLE_ID, default_roles, grandfather_act_revert, grandfather_act_revert_catalog,
-    grandfather_split_verbs, grandfather_split_verbs_catalog, is_seeded_role,
-    retired_role_successor,
+    T50_SIGNING_CONFIGURE_GRANDFATHER, TENANT_ADMIN_ROLE_ID, default_roles, grandfather_act_revert,
+    grandfather_act_revert_catalog, grandfather_signing_configure,
+    grandfather_signing_configure_catalog, grandfather_split_verbs, grandfather_split_verbs_catalog,
+    is_seeded_role, retired_role_successor,
 };
 pub use scope::{
     ActId, ArchiveId, BookId, BookScope, CompanyId, EntityId, FolderId, IntegrationId, NoBooks,

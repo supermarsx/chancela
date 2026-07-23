@@ -93,6 +93,15 @@ pub enum Permission {
     /// Gates act **seal**.
     #[serde(rename = "signing.perform")]
     SigningPerform,
+    /// Gates **signing configuration** (t50): the signature-policy surface relocated into the
+    /// Administração area — preferred family + the seal-status rule, Trusted-List sources and
+    /// anchors, Time-Stamp-Authority providers, Chave Móvel Digital config, and the
+    /// provider-credential write endpoints. Distinct from `signing.perform`, which *performs* a
+    /// seal: this administers *how* signing is configured, never performs one. Split off the
+    /// `settings.manage` that used to gate the signing slice of the settings document, and
+    /// grandfathered to every prior `settings.manage` holder, so carving it out strips no reach.
+    #[serde(rename = "signing.configure")]
+    SigningConfigure,
 
     // --- Documents ---
     #[serde(rename = "document.generate")]
@@ -205,7 +214,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 50] = [
+    pub const ALL: [Permission; 51] = [
         Permission::TenantRead,
         Permission::TenantCreate,
         Permission::TenantAdmin,
@@ -229,6 +238,7 @@ impl Permission {
         Permission::ActRevert,
         Permission::ActArchive,
         Permission::SigningPerform,
+        Permission::SigningConfigure,
         Permission::DocumentGenerate,
         Permission::TemplateManage,
         Permission::LedgerRead,
@@ -283,7 +293,7 @@ impl Permission {
     ///
     /// Owner is excluded by `protected`, not by this list — it holds every permission anyway, but
     /// the refusal names protection so the message is honest about *why*.
-    pub const SELF_SIGNUP_FORBIDDEN: [Permission; 13] = [
+    pub const SELF_SIGNUP_FORBIDDEN: [Permission; 14] = [
         Permission::UserManage,
         Permission::RoleManage,
         Permission::RoleAssign,
@@ -299,6 +309,10 @@ impl Permission {
         Permission::RetentionManage,
         Permission::LedgerReanchor,
         Permission::LedgerRestore,
+        // t50: administering the signing configuration (trust anchors, TSL/TSA sources, the
+        // seal-status rule, provider credentials) is privileged security configuration, split off
+        // `settings.manage` which is already forbidden here — so it must be too.
+        Permission::SigningConfigure,
     ];
 
     /// The stable dotted id (matches the serde representation).
@@ -328,6 +342,7 @@ impl Permission {
             Permission::ActRevert => "act.revert",
             Permission::ActArchive => "act.archive",
             Permission::SigningPerform => "signing.perform",
+            Permission::SigningConfigure => "signing.configure",
             Permission::DocumentGenerate => "document.generate",
             Permission::TemplateManage => "template.manage",
             Permission::LedgerRead => "ledger.read",
@@ -422,6 +437,7 @@ mod tests {
                 | Permission::ActRevert
                 | Permission::ActArchive
                 | Permission::SigningPerform
+                | Permission::SigningConfigure
                 | Permission::DocumentGenerate
                 | Permission::TemplateManage
                 | Permission::LedgerRead
@@ -477,6 +493,7 @@ mod tests {
             Permission::ActRevert,
             Permission::ActArchive,
             Permission::SigningPerform,
+            Permission::SigningConfigure,
             Permission::DocumentGenerate,
             Permission::TemplateManage,
             Permission::LedgerRead,
@@ -663,6 +680,30 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Permission>(&json).unwrap(),
             Permission::ActRevert
+        );
+    }
+
+    /// t50: `signing.configure` is the new verb gating the signature-policy configuration surface
+    /// (relocated into the Administração area), split off `settings.manage`. Its dotted id is the
+    /// wire/on-disk form the route classification, the web gate and the on-disk grandfather migration
+    /// all key off — freeze it so a rename is deliberate. It is an ordinary (delegable) authority, not
+    /// RBAC meta, distinct from `signing.perform` (the seal), and IS on the self-signup ceiling
+    /// because it is privileged security configuration.
+    #[test]
+    fn signing_configure_has_a_stable_dotted_id_and_is_forbidden_to_signup() {
+        assert_eq!(Permission::SigningConfigure.as_str(), "signing.configure");
+        assert_ne!(Permission::SigningConfigure, Permission::SigningPerform);
+        assert!(Permission::ALL.contains(&Permission::SigningConfigure));
+        assert!(!Permission::SigningConfigure.is_meta());
+        assert!(
+            Permission::SELF_SIGNUP_FORBIDDEN.contains(&Permission::SigningConfigure),
+            "signing.configure is privileged and must be forbidden to a self-signup default role"
+        );
+        let json = serde_json::to_string(&Permission::SigningConfigure).unwrap();
+        assert_eq!(json, "\"signing.configure\"");
+        assert_eq!(
+            serde_json::from_str::<Permission>(&json).unwrap(),
+            Permission::SigningConfigure
         );
     }
 }
