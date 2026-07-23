@@ -8012,6 +8012,20 @@ a.btn--primary {
   display: none;
 }
 
+/* Pin any sub-tab strip to the reading measure, centred, so a widened shell (`.wide-page`)
+   never stretches or shifts it — the same unconditional treatment `.page-header` gets (t33),
+   applied to strips that render OUTSIDE a PageHeader (Configurações' 2nd/3rd-level strips ride
+   `.app:has(.wide-page)` when a wide sub-section mounts and jumped to full width). The rail is a
+   block-level box centred at the reading box; the inline-flex `.subnav-wrap` inside it left-aligns,
+   reproducing the level-1 tab left edge on every shell width. No `:has()` dependency → nothing to
+   lag, nothing to flicker. On a narrow shell the cap equals the content box and the auto margins
+   resolve to 0 (no-op); nested inside a PageHeader it is also a no-op (same measure, margins 0).
+   Every `<SubNav>` renders inside `.app`, so the `--app-*` vars always resolve here. */
+.subnav-rail {
+  max-width: calc(var(--app-measure) - 2 * var(--app-gutter));
+  margin-inline: auto;
+}
+
 /* Overflow scroll-shadows: the shared `<SubNav>` wraps the scroller so a fixed fade can be
    pinned to each visible edge, hinting at more sub-tabs when the strip overflows. The wrapper
    owns the placement (margin/align that `.subnav` otherwise carries) so the inner pill can

@@ -249,68 +249,70 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
   const isScrollable = overflow.start || overflow.end;
 
   return (
-    <div
-      className="subnav-wrap"
-      data-scrollable={isScrollable ? 'true' : undefined}
-      data-overflow-start={overflow.start ? 'true' : undefined}
-      data-overflow-end={overflow.end ? 'true' : undefined}
-    >
-      {overflow.start ? renderScrollButton('start') : null}
+    <div className="subnav-rail">
       <div
-        className="subnav"
-        role="group"
-        aria-label={ariaLabel}
-        ref={scrollRef}
-        onScroll={updateShadows}
+        className="subnav-wrap"
+        data-scrollable={isScrollable ? 'true' : undefined}
+        data-overflow-start={overflow.start ? 'true' : undefined}
+        data-overflow-end={overflow.end ? 'true' : undefined}
       >
-        <span
-          className="subnav__indicator"
-          aria-hidden="true"
-          style={
-            indicator
-              ? {
-                  transform: `translateX(${indicator.left}px)`,
-                  top: `${indicator.top}px`,
-                  width: `${indicator.width}px`,
-                  height: `${indicator.height}px`,
-                }
-              : { opacity: 0 }
-          }
-        />
-        {items.map((item) => {
-          const button = (
-            <button
-              key={item.iconOnly ? undefined : item.id}
-              ref={(el) => {
-                btnRefs.current[item.id] = el;
-              }}
-              type="button"
-              className={`${item.id === active ? 'subnav__btn is-active' : 'subnav__btn'}${
-                item.iconOnly ? ' subnav__btn--iconOnly' : ''
-              }`}
-              aria-label={item.iconOnly ? item.tooltipLabel : undefined}
-              aria-pressed={item.id === active}
-              onClick={() => onSelect(item.id)}
-            >
-              {item.icon ? (
-                <span className="subnav__icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-              ) : null}
-              {item.iconOnly ? null : item.label}
-            </button>
-          );
+        {overflow.start ? renderScrollButton('start') : null}
+        <div
+          className="subnav"
+          role="group"
+          aria-label={ariaLabel}
+          ref={scrollRef}
+          onScroll={updateShadows}
+        >
+          <span
+            className="subnav__indicator"
+            aria-hidden="true"
+            style={
+              indicator
+                ? {
+                    transform: `translateX(${indicator.left}px)`,
+                    top: `${indicator.top}px`,
+                    width: `${indicator.width}px`,
+                    height: `${indicator.height}px`,
+                  }
+                : { opacity: 0 }
+            }
+          />
+          {items.map((item) => {
+            const button = (
+              <button
+                key={item.iconOnly ? undefined : item.id}
+                ref={(el) => {
+                  btnRefs.current[item.id] = el;
+                }}
+                type="button"
+                className={`${item.id === active ? 'subnav__btn is-active' : 'subnav__btn'}${
+                  item.iconOnly ? ' subnav__btn--iconOnly' : ''
+                }`}
+                aria-label={item.iconOnly ? item.tooltipLabel : undefined}
+                aria-pressed={item.id === active}
+                onClick={() => onSelect(item.id)}
+              >
+                {item.icon ? (
+                  <span className="subnav__icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                ) : null}
+                {item.iconOnly ? null : item.label}
+              </button>
+            );
 
-          return item.iconOnly ? (
-            <Tooltip key={item.id} label={item.tooltipLabel} placement="bottom">
-              {button}
-            </Tooltip>
-          ) : (
-            button
-          );
-        })}
+            return item.iconOnly ? (
+              <Tooltip key={item.id} label={item.tooltipLabel} placement="bottom">
+                {button}
+              </Tooltip>
+            ) : (
+              button
+            );
+          })}
+        </div>
+        {overflow.end ? renderScrollButton('end') : null}
       </div>
-      {overflow.end ? renderScrollButton('end') : null}
     </div>
   );
 }

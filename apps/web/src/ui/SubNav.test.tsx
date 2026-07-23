@@ -110,6 +110,22 @@ describe('SubNav', () => {
     expect(container.querySelector('.subnav__indicator')).toBeTruthy();
   });
 
+  it('wraps the strip in a self-pinning rail so a widened shell cannot stretch it', () => {
+    const { container } = render(
+      <SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />,
+    );
+
+    // The rail is the outermost node; the scrolling wrap sits directly inside it (the rail
+    // holds the centred reading-measure cap, the wrap keeps the inline-flex pill/scroll math).
+    const rail = container.querySelector('.subnav-rail');
+    expect(rail).toBeTruthy();
+    expect(rail).toBe(container.firstElementChild);
+
+    const wrap = rail?.querySelector(':scope > .subnav-wrap');
+    expect(wrap).toBeTruthy();
+    expect(wrap?.querySelector(':scope > .subnav')).toBeTruthy();
+  });
+
   it('exposes only usable scroll arrows for the current overflow edge', () => {
     render(<SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />);
     const strip = screen.getByRole('group', { name: 'Secções' });
