@@ -18,6 +18,7 @@ import {
   type TemplateSummary,
 } from '../../api/types';
 import { useT, type MessageKey } from '../../i18n';
+import { useTemplatesCatalogT } from '../../i18n/templatesCatalogFallback';
 import {
   ButtonLink,
   Card,
@@ -95,7 +96,13 @@ function searchText(value: string): string {
     .toLowerCase();
 }
 
-function templateMatches(template: TemplateSummary, query: string): boolean {
+type TemplateOriginFilter = '' | 'builtin' | 'user';
+
+function templateMatches(
+  template: TemplateSummary,
+  query: string,
+  translatedOrigin: string,
+): boolean {
   if (!query) return true;
   const channelParts = template.channels.flatMap((channel) => [
     channel,
@@ -119,6 +126,8 @@ function templateMatches(template: TemplateSummary, query: string): boolean {
     template.stage,
     template.rule_pack_id,
     template.signature_policy,
+    template.source,
+    translatedOrigin,
     entityFamilyLabels[template.family],
     lifecycleStageLabels[template.stage],
     signaturePolicyLabels[template.signature_policy],
@@ -147,6 +156,7 @@ function sortTemplates(a: TemplateSummary, b: TemplateSummary): number {
 
 export function TemplatesCatalogPage() {
   const t = useT();
+  const ct = useTemplatesCatalogT();
   const toast = useToast();
   const templates = useTemplates();
   const exportTemplate = useExportTemplate();
@@ -160,6 +170,7 @@ export function TemplatesCatalogPage() {
   const [channel, setChannel] = useState<MeetingChannel | ''>('');
   const [signaturePolicy, setSignaturePolicy] = useState<SignaturePolicyHint | ''>('');
   const [rulePack, setRulePack] = useState('');
+  const [origin, setOrigin] = useState<TemplateOriginFilter>('');
   // The visible columns are now a per-user server preference (t37), resolved through the shared
   // mechanism; the legacy device-local `localStorage` value is migrated once on first load below.
   const columns = useTableColumns(TEMPLATES_COLUMN_SPEC);
@@ -209,7 +220,12 @@ export function TemplatesCatalogPage() {
       (!channel || template.channels.includes(channel)) &&
       (!signaturePolicy || template.signature_policy === signaturePolicy) &&
       (!rulePack || template.rule_pack_id === rulePack) &&
-      templateMatches(template, normalizedQuery),
+      (!origin || template.source === origin) &&
+      templateMatches(
+        template,
+        normalizedQuery,
+        template.source === 'user' ? t('templates.source.user') : t('templates.source.builtin'),
+      ),
   );
   const hasFilters =
     query.trim() !== '' ||
@@ -218,7 +234,8 @@ export function TemplatesCatalogPage() {
     locale !== '' ||
     channel !== '' ||
     signaturePolicy !== '' ||
-    rulePack !== '';
+    rulePack !== '' ||
+    origin !== '';
 
   function clearFilters() {
     setQuery('');
@@ -228,6 +245,7 @@ export function TemplatesCatalogPage() {
     setChannel('');
     setSignaturePolicy('');
     setRulePack('');
+    setOrigin('');
   }
 
   function showSaveResult(result: SaveBlobResult) {
@@ -349,6 +367,18 @@ export function TemplatesCatalogPage() {
                       })),
                     ]}
                     onChange={(event) => setStage(event.target.value as LifecycleStage | '')}
+                  />
+                </Field>
+                <Field label={t('templates.table.source')} htmlFor="templates-origin">
+                  <Select
+                    id="templates-origin"
+                    value={origin}
+                    options={[
+                      { value: '', label: ct('templates.catalog.source.all') },
+                      { value: 'builtin', label: t('templates.source.builtin') },
+                      { value: 'user', label: t('templates.source.user') },
+                    ]}
+                    onChange={(event) => setOrigin(event.target.value as TemplateOriginFilter)}
                   />
                 </Field>
                 <div className="templates-controls__actions templates-filterbar__clear">

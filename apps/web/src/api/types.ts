@@ -1249,7 +1249,8 @@ export type TemplateBlockSpec =
     }
   | { kind: 'SignatureBlock'; source: string; role: string; name: string }
   | { kind: 'PageBreak' }
-  | { kind: 'Rule' };
+  | { kind: 'Rule' }
+  | { kind: 'NarrativeBody' };
 
 /**
  * The canonical authored template spec (`TemplateSpecDto`, wp23) — the request body for

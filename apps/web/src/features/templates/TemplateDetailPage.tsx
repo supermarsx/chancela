@@ -6,8 +6,9 @@
  * the ninth surface on the shared `<SubNav>` + path-segment idiom (`ui/SubNav.tsx`), matching the
  * entity and book detail pages rather than inventing a second sub-tab convention.
  *
- * Four sections, in the order the questions get asked:
+ * Five sections, in the order the questions get asked:
  *   Identificação — id, version, family, stage, channels, signature policy, rule pack, origin;
+ *   Pré-visualização — the authored structure in document form, with merge fields unresolved;
  *   Fonte legal   — the law references, in full. This is where they belong now that the
  *                   catalog table hides that column by default (`templateColumns.ts`);
  *   Blocos        — the authored block structure, in document order;
@@ -19,9 +20,9 @@
  * There is no `GET /v1/templates/{id}`: metadata comes from the catalog list and the body from
  * the export endpoint, so this page joins two reads that the API does not join for it.
  */
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useTemplateSpec, useTemplates } from '../../api/hooks';
+import { useTemplateBodyPreview, useTemplateBundle, useTemplates } from '../../api/hooks';
 import {
   entityFamilyLabels,
   lifecycleStageLabels,
@@ -30,6 +31,7 @@ import {
 } from '../../api/labels';
 import type { TemplateBlockSpec, TemplateSummary } from '../../api/types';
 import { useT, type MessageKey, type TFunction } from '../../i18n';
+import { useTemplatesCatalogT } from '../../i18n/templatesCatalogFallback';
 import {
   Badge,
   ButtonLink,
@@ -48,6 +50,10 @@ import { useSectionNav } from '../../app/navPath';
 import { GateButton } from '../session/permissions';
 import { TemplateEditPage } from './TemplateEditPage';
 import { templateIdBase, templateIdVersion } from './templateFork';
+import {
+  TemplateAuthoredPreview,
+  type TemplateNarrativePreviewState,
+} from './TemplateAuthoredPreview';
 import { hasTemplateName, templateDisplayName } from './templateNames';
 import { templatePlaceholders } from './templatePlaceholders';
 import { useTemplateEditor } from './useTemplateEditor';
@@ -61,11 +67,16 @@ import { useTemplateEditor } from './useTemplateEditor';
  * in review. A closed set with one more member cannot shadow anything, and `edit` inherits the
  * existing unknown-segment fallback and deep-link-on-first-paint behaviour for free.
  */
-type TemplateSection = 'identification' | 'source' | 'blocks' | 'fields' | 'edit';
+type TemplateSection = 'identification' | 'preview' | 'source' | 'blocks' | 'fields' | 'edit';
 
-/** The sections shown in the SubNav strip — the four READ views. See `EDIT_SECTION` below. */
-const TEMPLATE_SECTIONS: { id: TemplateSection; label: MessageKey; icon: ReactNode }[] = [
+/** The sections shown in the SubNav strip — the five READ views. See `EDIT_SECTION` below. */
+const TEMPLATE_SECTIONS: {
+  id: TemplateSection;
+  label: MessageKey | null;
+  icon: ReactNode;
+}[] = [
   { id: 'identification', label: 'templates.detail.section.overview', icon: <Icon.Layers /> },
+  { id: 'preview', label: null, icon: <Icon.FileText /> },
   { id: 'source', label: 'documents.metadata.legalSource', icon: <Icon.Scale /> },
   { id: 'blocks', label: 'templates.editor.field.blocks.label', icon: <Icon.Layers /> },
   { id: 'fields', label: 'templates.detail.section.placeholders', icon: <Icon.Search /> },
@@ -105,9 +116,57 @@ function blockSummary(block: TemplateBlockSpec): string {
       return block.label;
     case 'SignatureBlock':
       return `${block.role} · ${block.name}`;
+    case 'NarrativeBody':
+      return 'NarrativeBody';
     default:
       return '';
   }
+}
+
+/**
+ * Compile the bundle's real narrative seed once and pass it to the shared authored renderer.
+ *
+ * A template can contain more than one `NarrativeBody` marker; compilation still happens once and
+ * the same authoritative result is inserted at every authored marker in document order.
+ */
+function TemplateDetailAuthoredPreview({
+  template,
+  blocks,
+  bodyMarkdown,
+}: {
+  template: TemplateSummary;
+  blocks: TemplateBlockSpec[];
+  bodyMarkdown: string;
+}) {
+  const preview = useTemplateBodyPreview();
+  const mutate = preview.mutate;
+
+  useEffect(() => {
+    if (bodyMarkdown.trim()) mutate({ source: bodyMarkdown });
+  }, [bodyMarkdown, mutate]);
+
+  const title = hasTemplateName(template.id) ? templateDisplayName(template.id) : template.id;
+  const narrative: TemplateNarrativePreviewState = !bodyMarkdown.trim()
+    ? { status: 'empty' }
+    : preview.isIdle || preview.isPending
+      ? { status: 'loading' }
+      : preview.error
+        ? {
+            status: 'error',
+            diagnostic:
+              preview.error instanceof Error ? preview.error.message : String(preview.error),
+          }
+        : { status: 'ready', blocks: preview.data?.blocks ?? [] };
+
+  return (
+    <TemplateAuthoredPreview
+      title={title}
+      templateId={template.id}
+      locale={template.locale}
+      blocks={blocks}
+      narrative={narrative}
+    />
+  );
 }
 
 function DefRow({ label, children }: { label: string; children: ReactNode }) {
@@ -125,6 +184,7 @@ function sourceLabel(template: TemplateSummary, t: TFunction): string {
 
 export function TemplateDetailPage() {
   const t = useT();
+  const ct = useTemplatesCatalogT();
   const { id = '' } = useParams();
   // Identificação is the default and carries no segment, so `/templates/:id` still lands on it.
   // The base is sliced off the RAW pathname, so the `%2F` inside an id like `csc-ata-ag/v1`
@@ -137,7 +197,14 @@ export function TemplateDetailPage() {
 
   const templates = useTemplates();
   const template = (templates.data ?? []).find((row) => row.id === id);
-  const spec = useTemplateSpec(id, template !== undefined);
+  const bundle = useTemplateBundle(id, template !== undefined);
+  // Keep the existing spec-state vocabulary below while retaining the bundle's narrative seed
+  // for the read-only preview.
+  const spec = {
+    data: bundle.data?.spec,
+    error: bundle.error,
+    isLoading: bundle.isLoading,
+  };
   // Edit / duplicate are full pages now (t56); the controller navigates rather than opening a modal.
   const editor = useTemplateEditor();
 
@@ -222,7 +289,11 @@ export function TemplateDetailPage() {
         }
       >
         <SubNav
-          items={TEMPLATE_SECTIONS.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
+          items={TEMPLATE_SECTIONS.map((s) => ({
+            id: s.id,
+            label: s.label ? t(s.label) : ct('templates.catalog.preview.action'),
+            icon: s.icon,
+          }))}
           active={section}
           onSelect={selectSection}
           ariaLabel={t('templates.detail.subnav.aria')}
@@ -278,6 +349,25 @@ export function TemplateDetailPage() {
                 <Badge tone={isUser ? 'accent' : 'neutral'}>{sourceLabel(template, t)}</Badge>
               </DefRow>
             </dl>
+          </Card>
+        ) : null}
+
+        {section === 'preview' ? (
+          <Card title={ct('templates.catalog.preview.title')}>
+            <p className="field__hint">{ct('templates.catalog.preview.hint')}</p>
+            {spec.isLoading ? (
+              <SkeletonDeflist />
+            ) : spec.error ? (
+              <p className="muted">{t('templates.detail.spec.error')}</p>
+            ) : (spec.data?.blocks ?? []).length === 0 ? (
+              <p className="muted">{t('templates.detail.blocks.empty')}</p>
+            ) : (
+              <TemplateDetailAuthoredPreview
+                template={template}
+                blocks={spec.data?.blocks ?? []}
+                bodyMarkdown={bundle.data?.body_markdown ?? ''}
+              />
+            )}
           </Card>
         ) : null}
 

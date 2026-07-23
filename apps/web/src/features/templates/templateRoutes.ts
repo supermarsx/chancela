@@ -9,6 +9,11 @@ export function templateDetailPath(id: string): string {
   return `/templates/${encodeURIComponent(id)}`;
 }
 
+/** The explicit read-only authored preview for a template. */
+export function templatePreviewPath(id: string): string {
+  return `${templateDetailPath(id)}/preview`;
+}
+
 /**
  * A user template's full-width editing view (t109).
  *

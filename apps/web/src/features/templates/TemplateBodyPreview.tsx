@@ -12,6 +12,11 @@
  * yields headings, paragraphs (with bold/italic runs) and rules; the remaining `Block` variants
  * cannot arise from markdown but are handled for completeness so a future compiler change never
  * crashes the pane. It borrows the shared `.doc-*` block styles so screen and PDF/A read alike.
+ *
+ * Authored heading levels are nested under the preview's labelled level-2 boundary. They therefore
+ * render as paragraphs carrying the matching `.doc-heading--N` class plus an explicit ARIA heading
+ * level offset by two. A template containing `# ...` remains navigable as a level-3 heading without
+ * injecting a second native `<h1>` into the application page.
  */
 import type { Block, Run } from '../../api/types';
 import '../documents/documents.css';
@@ -30,12 +35,25 @@ function headingLevel(level: number): 1 | 2 | 3 | 4 | 5 | 6 {
   return Math.min(6, Math.max(1, Math.round(level))) as 1 | 2 | 3 | 4 | 5 | 6;
 }
 
+/** Place a document heading beneath the application page and its level-2 preview label. */
+export function previewHeadingAriaLevel(level: number): 3 | 4 | 5 | 6 {
+  return Math.min(6, headingLevel(level) + 2) as 3 | 4 | 5 | 6;
+}
+
 function BlockView({ block }: { block: Block }) {
   switch (block.type) {
     case 'Heading': {
       const level = headingLevel(block.level);
-      const Tag = `h${level}` as const;
-      return <Tag className={`doc-block doc-heading doc-heading--${level}`}>{block.text}</Tag>;
+      return (
+        <p
+          className={`doc-block doc-heading doc-heading--${level}`}
+          data-heading-level={level}
+          role="heading"
+          aria-level={previewHeadingAriaLevel(level)}
+        >
+          {block.text}
+        </p>
+      );
     }
     case 'Paragraph':
       return (

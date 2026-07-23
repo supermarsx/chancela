@@ -4,8 +4,8 @@
  * The catalog used to be a card grid, which read as a wall of boxes once the built-in
  * corpus grew past a hundred documents: nothing lined up, so two templates could not be
  * compared without scrolling. A table lines the metadata up in columns and keeps every
- * per-row action the cards carried (edit / export / delete for user templates, "escolher
- * ata" for all of them).
+ * per-row action the cards carried (edit / export / delete for user templates, plus an
+ * explicit read-only preview and "escolher ata" for all of them).
  *
  * Sorting is deliberately small — four label columns, one state, no data grid. Rows keep
  * the catalog's own order (family → stage → rule pack → locale → id) until the reader
@@ -25,11 +25,12 @@ import {
 } from '../../api/labels';
 import type { TemplateLawReference, TemplateSummary } from '../../api/types';
 import { useT, type TFunction } from '../../i18n';
+import { useTemplatesCatalogT } from '../../i18n/templatesCatalogFallback';
 import { Badge, EmptyState, Icon, Table, Tooltip } from '../../ui';
 import { GateIconButton } from '../session/permissions';
 import type { TemplateColumn } from './templateColumns';
 import { hasTemplateName, templateDisplayName } from './templateNames';
-import { templateDetailPath } from './templateRoutes';
+import { templateDetailPath, templatePreviewPath } from './templateRoutes';
 
 type SortColumn = 'Name' | 'Family' | 'Stage' | 'Origin';
 type SortDirection = 'asc' | 'desc';
@@ -148,6 +149,7 @@ export function TemplatesTable({
   exportPending?: boolean;
 }) {
   const t = useT();
+  const ct = useTemplatesCatalogT();
   const [sort, setSort] = useState<SortState | null>(null);
   const shows = (column: TemplateColumn) => visibleColumns.includes(column);
   // A sort whose column the operator has since hidden is unreachable, so it is released
@@ -157,6 +159,7 @@ export function TemplatesTable({
   const rows = useMemo(() => sortRows(templates, activeSort, t), [templates, activeSort, t]);
   const openLabel = t('templates.openAct');
   const detailLabel = t('templates.detail.open');
+  const previewLabel = ct('templates.catalog.preview.action');
 
   function toggleSort(column: SortColumn) {
     setSort((current) =>
@@ -323,6 +326,17 @@ export function TemplatesTable({
               ) : null}
               <td data-template-column="Actions">
                 <span className="templates-table__actions">
+                  <Tooltip label={previewLabel}>
+                    <Link
+                      className="btn btn--ghost btn--icon btn--iconOnly"
+                      to={templatePreviewPath(template.id)}
+                      aria-label={previewLabel}
+                    >
+                      <span className="btn__icon" aria-hidden="true">
+                        <Icon.FileText />
+                      </span>
+                    </Link>
+                  </Tooltip>
                   {/* "Editar" is offered on a BUILT-IN too, and opens a fork dialog rather
                       than an in-place editor (see `useTemplateEditor`). Withholding it left
                       the operator no route at all from a shipped template to an editable one. */}

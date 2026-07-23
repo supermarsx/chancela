@@ -271,6 +271,38 @@ describe('TemplatesCatalogPage', () => {
     expect(screen.getByText('Certidão de ata')).toBeTruthy();
   });
 
+  it('discovers user-authored templates by origin filter and by raw or translated source text', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([{ match: '/v1/templates', body: [CATALOG[0], USER_TEMPLATE] }]),
+    );
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+
+    const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar' });
+    const origin = within(filters).getByLabelText('Origem');
+    expect(await screen.findByText('2 de 2 modelos')).toBeTruthy();
+
+    fireEvent.change(origin, { target: { value: 'user' } });
+    expect(screen.getByText('1 de 2 modelos')).toBeTruthy();
+    expect(screen.getByText('user-encosto-ata/v1')).toBeTruthy();
+    expect(screen.queryByText('csc-ata-ag/v1')).toBeNull();
+
+    fireEvent.change(origin, { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
+      target: { value: 'criado pelo utilizador' },
+    });
+    expect(screen.getByText('1 de 2 modelos')).toBeTruthy();
+    expect(screen.getByText('user-encosto-ata/v1')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
+      target: { value: 'builtin' },
+    });
+    expect(screen.getByText('1 de 2 modelos')).toBeTruthy();
+    expect(screen.getByText('csc-ata-ag/v1')).toBeTruthy();
+    expect(screen.queryByText('user-encosto-ata/v1')).toBeNull();
+  });
+
   it('renders the catalog as a named, sortable table over the operator column set', async () => {
     vi.stubGlobal(
       'fetch',
@@ -385,10 +417,11 @@ describe('TemplatesCatalogPage', () => {
     expect(filters.classList.contains('templates-filters')).toBe(true);
     const primary = filters.querySelector('.templates-filterbar__primary') as HTMLElement;
     expect(primary).toBeTruthy();
-    expect(primary.querySelectorAll('.field')).toHaveLength(3);
+    expect(primary.querySelectorAll('.field')).toHaveLength(4);
     expect(within(primary).getByLabelText('Pesquisa')).toBeTruthy();
     expect(within(primary).getByLabelText('Família da entidade')).toBeTruthy();
     expect(within(primary).getByLabelText('Fase da minuta')).toBeTruthy();
+    expect(within(primary).getByLabelText('Origem')).toBeTruthy();
     const advanced = container.querySelector(
       'details.templates-advanced-filters.filter-advanced',
     ) as HTMLDetailsElement;
@@ -639,12 +672,18 @@ describe('TemplatesCatalogPage', () => {
 
     const userRow = (await screen.findByText('user-encosto-ata/v1')).closest('tr') as HTMLElement;
     expect(within(userRow).getByText('Criado pelo utilizador')).toBeTruthy();
+    expect(
+      within(userRow).getByRole('link', { name: 'Pré-visualizar modelo' }).getAttribute('href'),
+    ).toBe('/templates/user-encosto-ata%2Fv1/preview');
     expect(within(userRow).getByRole('button', { name: 'Editar' })).toBeTruthy();
     expect(within(userRow).getByRole('button', { name: 'Exportar' })).toBeTruthy();
     expect(within(userRow).getByRole('button', { name: 'Eliminar' })).toBeTruthy();
 
     const builtinRow = screen.getByText('csc-ata-ag/v1').closest('tr') as HTMLElement;
     expect(within(builtinRow).getByText('Incluído (só leitura)')).toBeTruthy();
+    expect(
+      within(builtinRow).getByRole('link', { name: 'Pré-visualizar modelo' }).getAttribute('href'),
+    ).toBe('/templates/csc-ata-ag%2Fv1/preview');
     // A built-in is still never DELETED or exported from the row, but it is no longer a dead
     // end: "Editar" and "Duplicar" both lead to a fork (see the fork test below).
     expect(within(builtinRow).getByRole('button', { name: 'Editar' })).toBeTruthy();
