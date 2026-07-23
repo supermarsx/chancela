@@ -6437,6 +6437,13 @@ a.btn--primary {
   align-items: start;
 }
 
+/* t52 — the TSA diagnostics read full-width instead of being auto-fit tiled into cramped
+   side-by-side columns. Scoped to `.trust-tsa` so only the TSA sub-tab stacks; the TSL status
+   panel's own `.trust-diagnostics-grid` (outside `.trust-tsa`) is deliberately untouched. */
+.trust-tsa .trust-diagnostics-grid {
+  grid-template-columns: 1fr;
+}
+
 .trust-notes {
   display: flex;
   flex-direction: column;

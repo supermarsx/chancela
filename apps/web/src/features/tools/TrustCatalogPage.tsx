@@ -35,9 +35,12 @@ import {
   SkeletonDeflist,
   ColumnHead,
   SkeletonRegion,
+  SubNav,
   Table,
   Toggle,
 } from '../../ui';
+import { useSectionNav } from '../../app/navPath';
+import { useTrustSectionsT } from '../../i18n/trustSectionsFallback';
 import type {
   TslCatalogSearchParams,
   TslCatalogView,
@@ -1909,12 +1912,57 @@ function TrustCatalogExplorer() {
   );
 }
 
+/**
+ * The two domains this surface holds are unrelated jobs — the eIDAS Trusted List (scheme status +
+ * provider/service catalogue) and the local time-stamp authority (RFC 3161 diagnostics + record
+ * picker) — and stacking all three panels on one scroll made the TSA fact tables read as cramped
+ * side-by-side columns. They are now sub-tabs, mirroring the second level of the PDF validator
+ * ({@link TechnicalValidatorSection}): TSL is the default and owns the bare `/tools/trust` address,
+ * TSA lives at `/tools/trust/tsa`, and the switch pushes history so Back returns to the sibling tab.
+ */
+export type TrustSectionId = 'tsl' | 'tsa';
+
+const DEFAULT_TRUST_SECTION: TrustSectionId = 'tsl';
+
+/** An unknown segment falls back to the Trusted List rather than blanking the panel. */
+export function parseTrustSection(value: string | null | undefined): TrustSectionId {
+  return value === 'tsa' ? 'tsa' : DEFAULT_TRUST_SECTION;
+}
+
 export function TrustCatalogPage() {
+  const st = useTrustSectionsT();
+  // Second level under `/tools/trust`. The Trusted List is the default, so it carries no segment of
+  // its own — `/tools/trust` stays the canonical link to it — while TSA is `/tools/trust/tsa`.
+  const { section, select: selectSection } = useSectionNav<TrustSectionId>({
+    base: '/tools/trust',
+    parse: parseTrustSection,
+    fallback: DEFAULT_TRUST_SECTION,
+  });
+
   return (
     <div className="stack">
-      <TsaToolingPanel />
-      <TrustStatusPanel />
-      <TrustCatalogExplorer />
+      <SubNav
+        items={[
+          { id: 'tsl', label: st('tools.trust.section.tsl'), icon: <Icon.Seal /> },
+          { id: 'tsa', label: st('tools.trust.section.tsa'), icon: <Icon.Calendar /> },
+        ]}
+        active={section}
+        onSelect={selectSection}
+        ariaLabel={st('tools.trust.subnav.aria')}
+      />
+
+      {/* Replays the enter animation on sub-tab switch, keyed on the sub-section so the panels'
+          own URL-backed state (search terms, a selected record) does not re-key. */}
+      <div className="route-transition" key={section} data-subanim-key={section}>
+        {section === 'tsa' ? (
+          <TsaToolingPanel />
+        ) : (
+          <div className="stack">
+            <TrustStatusPanel />
+            <TrustCatalogExplorer />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -573,19 +573,27 @@ afterEach(() => {
 });
 
 describe('Ferramentas — TSL trust catalog', () => {
-  it('exposes the trust section and renders scheme/source/signature status', async () => {
+  it('splits the trust surface into TSL and TSA sub-tabs', async () => {
     vi.stubGlobal('fetch', trustFetch());
     renderWithProviders(<ToolsPage />, ['/tools/trust']);
 
+    // The level-1 tool stays "Lista de confiança"; TSL is the default sub-tab, so `/tools/trust`
+    // paints the Trusted List and the TSA panel is NOT co-rendered on the same page any more.
     expect(
       screen.getByRole('button', { name: 'Lista de confiança' }).getAttribute('aria-pressed'),
     ).toBe('true');
     expect(await screen.findByText('Gabinete Nacional de Segurança')).toBeTruthy();
     expect(screen.getByText('Assinatura válida')).toBeTruthy();
-    expect(screen.getByText('TSA / RFC 3161')).toBeTruthy();
-    expect(screen.getAllByText('Fixture OK').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('group', { name: 'Resumo TSL' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Cobertura' })).toBeTruthy();
+    expect(screen.queryByText('TSA / RFC 3161')).toBeNull();
+
+    // Switching to the TSA sub-tab reveals the timestamp-authority diagnostics and drops the
+    // Trusted List panels — the two domains live on their own tabs now.
+    fireEvent.click(screen.getByRole('button', { name: 'Selos temporais (TSA)' }));
+    expect(await screen.findByText('TSA / RFC 3161')).toBeTruthy();
+    expect((await screen.findAllByText('Fixture OK')).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('group', { name: 'Resumo TSL' })).toBeNull();
   });
 
   it('imports the TSL on operator request and renders the persisted attempt status', async () => {
@@ -615,7 +623,8 @@ describe('Ferramentas — TSL trust catalog', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+    // TSA now has its own sub-tab; deep-link straight to it.
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa']);
 
     const acceptedHash = TSA_CATALOG.summary.accepted_hash.digest;
 
@@ -757,7 +766,7 @@ describe('Ferramentas — TSL trust catalog', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa']);
 
     await screen.findByRole('group', { name: 'Resumo TSA' });
     const ski = TSA_CATALOG.records[0].identities.subject_key_ids[0];
@@ -801,7 +810,7 @@ describe('Ferramentas — TSL trust catalog', () => {
   it('passes identifier lookups to TSA search and shows the empty state for no matches', async () => {
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa']);
 
     await screen.findByRole('group', { name: 'Resumo TSA' });
     fireEvent.change(screen.getByLabelText('Procurar registos TSA por identificador técnico'), {
