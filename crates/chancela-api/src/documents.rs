@@ -8258,12 +8258,6 @@ fn template_deleted_payload(id: &str) -> Value {
     json!({ "template_id": id, "action": "deleted", "source": "user" })
 }
 
-/// Read a raw request body as UTF-8 template JSON, mapping non-UTF-8 to a 422.
-fn user_template_body_str(body: &[u8]) -> Result<&str, ApiError> {
-    std::str::from_utf8(body)
-        .map_err(|_| ApiError::Unprocessable("template body must be valid UTF-8".to_owned()))
-}
-
 /// Whether `id` is already taken — by a built-in catalog id or an existing user-template row. The
 /// reserved `user-` id namespace means a valid user id can never collide with a built-in, but the
 /// built-in check is kept as defence-in-depth so an id can never shadow the read-only catalog.
@@ -8426,11 +8420,26 @@ fn markdown_to_seed_clauses(md: &str) -> Result<Vec<DefaultBodyClause>, Template
     Ok(clauses)
 }
 
-/// Hold a seed's clauses to the same plain-text/non-empty bar shipped seeds meet
-/// (`chancela-templates`' `shipped_template_seeds_are_well_formed`): non-empty clause text, no
-/// minijinja syntax (a seed is rendered as a *value*, never compiled), and any present heading
-/// non-empty and minijinja-free. t43-e1 flagged that `validate_user_template` does not check the
-/// seed; this is where an imported/authored seed is held to it. **Reject, never transform.**
+/// Hold a template's narrative seed body to the same bar an act body meets at save time.
+///
+/// The USER DECISION (t56) is that a template narrative body carries the operator's full editing
+/// vocabulary INCLUDING **replaceable merge tags** (`{{ … }}`, `{% … %}`) — the tokens that resolve
+/// only when a real act is generated against its context (they are stored UNRESOLVED, ride the
+/// md+JSON export/import round-trip verbatim, and never enter the digest because `default_body` is
+/// serde-skip). So the old "a seed is a value, never compiled — reject any minijinja" rule is gone:
+/// merge tags are now first-class. What is still rejected, **loudly** (reject, never silently
+/// transform), is content the representation genuinely cannot preserve:
+///
+/// - empty clause text, or a present-but-empty heading;
+/// - a **malformed** placeholder (`{{ unclosed`), caught by the same minijinja compile the act body
+///   uses ([`body_render::check_markdown_body`]);
+/// - markup with **no place in the frozen `md-block/v1` block set** (lists, tables, links, code,
+///   raw HTML, …) — the identical structural bar the bundle's `body_markdown` already clears.
+///
+/// The whole reconstructed body (not each clause in isolation) is validated so a heading and its
+/// text are checked together exactly as they will render. Shipped seeds are validated by
+/// `chancela-templates`' own `shipped_template_seeds_are_well_formed`; this is the user-template
+/// gate t43-e1 flagged `validate_user_template` was missing.
 fn validate_seed_clauses(clauses: &[DefaultBodyClause]) -> Result<(), TemplateErrorBody> {
     for (i, clause) in clauses.iter().enumerate() {
         if clause.text.trim().is_empty() {
@@ -8440,30 +8449,31 @@ fn validate_seed_clauses(clauses: &[DefaultBodyClause]) -> Result<(), TemplateEr
                 message: format!("seed clause {i} has empty text"),
             });
         }
-        if clause.text.contains("{{") || clause.text.contains("{%") {
+        if let Some(heading) = &clause.heading
+            && heading.trim().is_empty()
+        {
             return Err(TemplateErrorBody {
                 code: "invalid_seed",
                 field: Some("default_body".to_owned()),
-                message: format!(
-                    "seed clause {i} contains minijinja syntax; a seed is a value, never compiled"
-                ),
+                message: format!("seed clause {i} has a present-but-empty heading"),
             });
         }
-        if let Some(heading) = &clause.heading {
-            if heading.trim().is_empty() {
-                return Err(TemplateErrorBody {
-                    code: "invalid_seed",
-                    field: Some("default_body".to_owned()),
-                    message: format!("seed clause {i} has a present-but-empty heading"),
-                });
-            }
-            if heading.contains("{{") || heading.contains("{%") {
-                return Err(TemplateErrorBody {
-                    code: "invalid_seed",
-                    field: Some("default_body".to_owned()),
-                    message: format!("seed clause {i} heading contains minijinja syntax"),
-                });
-            }
+    }
+    // Validate the body the way an act body is validated at save time: well-formed placeholders
+    // (merge tags PERMITTED, malformed rejected) + md-block-representable structure. Reconstructing
+    // the markdown here reuses the one authoritative round-trip (`seed_clauses_to_markdown`), so a
+    // seed that clears this clears the bundle's `body_markdown` compile too, and vice versa.
+    if !clauses.is_empty() {
+        let md = seed_clauses_to_markdown(clauses);
+        if let Err(e) = chancela_templates::body_render::check_markdown_body(&md) {
+            return Err(TemplateErrorBody {
+                code: e.code(),
+                field: Some("default_body".to_owned()),
+                message: match e.offset() {
+                    Some(offset) => format!("{e} (at byte {offset})"),
+                    None => e.to_string(),
+                },
+            });
         }
     }
     Ok(())
@@ -8556,15 +8566,21 @@ fn prepare_template_import(body: &[u8]) -> PreparedImport {
         });
     }
 
-    // The seed markdown must be representable in the frozen `md-block/v1` subset (no lists, tables,
-    // links, code, …) — reject, never silently keep unrepresentable markup as literal seed text.
+    // The seed markdown must be a well-formed, representable narrative body: replaceable merge tags
+    // (`{{ … }}`, `{% … %}`) are PERMITTED and stored unresolved, but a malformed placeholder and any
+    // markup with no place in the frozen `md-block/v1` block set (lists, tables, links, code, raw
+    // HTML, …) are rejected — never silently kept as literal seed text. This is the same save-time
+    // gate an act body clears, attributed to the `body_markdown` field the editor writes.
     if !bundle.body_markdown.trim().is_empty()
-        && let Err(e) = chancela_templates::markdown::compile_markdown(&bundle.body_markdown)
+        && let Err(e) = chancela_templates::body_render::check_markdown_body(&bundle.body_markdown)
     {
         return PreparedImport::Rejected(TemplateErrorBody {
             code: e.code(),
             field: Some("body_markdown".to_owned()),
-            message: e.to_string(),
+            message: match e.offset() {
+                Some(offset) => format!("{e} (at byte {offset})"),
+                None => e.to_string(),
+            },
         });
     }
     let clauses = match markdown_to_seed_clauses(&bundle.body_markdown) {
@@ -8632,8 +8648,17 @@ async fn persist_created_user_template(
             "user template management requires on-disk persistence".to_owned(),
         ));
     }
-    let json = user_template_body_str(body)?;
-    let spec = match validate_user_template_checked(json) {
+    // Accept BOTH a bare spec (legacy) and the portable bundle envelope, folding `body_markdown`
+    // into `default_body` (idempotent for an already-prepared bare spec: it carries no `format`
+    // key, so it passes through unchanged). This is what lets `POST /v1/templates` store a narrative
+    // body without a second code path — the seed is folded once, here, and never enters the digest.
+    let json = match prepare_template_import(body) {
+        PreparedImport::Rejected(err) => {
+            return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
+        }
+        PreparedImport::Ready(json) => json,
+    };
+    let spec = match validate_user_template_checked(&json) {
         Ok(spec) => spec,
         Err(err) => {
             return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
@@ -8643,7 +8668,7 @@ async fn persist_created_user_template(
     if user_template_id_taken(state, &id).await? {
         return Ok((StatusCode::CONFLICT, Json(template_conflict_body(&id))).into_response());
     }
-    let stored_json = json.to_owned();
+    let stored_json = json;
     let summary = user_template_summary(&spec);
     let payload = serde_json::to_vec(&template_event_payload(&spec, "created"))?;
 
@@ -8715,8 +8740,16 @@ pub async fn replace_template(
         return Err(ApiError::NotFound);
     }
 
-    let json = user_template_body_str(&body)?;
-    let spec = match validate_user_template_checked(json) {
+    // Accept BOTH a bare spec (legacy) and the portable bundle envelope on replace, mirroring the
+    // create path — storing a narrative body via PUT folds `body_markdown` into `default_body`
+    // without touching the freeze pin (`default_body` is serde-skip / out of the canonical digest).
+    let json = match prepare_template_import(&body) {
+        PreparedImport::Rejected(err) => {
+            return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
+        }
+        PreparedImport::Ready(json) => json,
+    };
+    let spec = match validate_user_template_checked(&json) {
         Ok(spec) => spec,
         Err(err) => {
             return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
@@ -8734,7 +8767,7 @@ pub async fn replace_template(
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response());
     }
 
-    let stored_json = json.to_owned();
+    let stored_json = json;
     let summary = user_template_summary(&spec);
     let payload = serde_json::to_vec(&template_event_payload(&spec, "updated"))?;
 
@@ -8934,13 +8967,78 @@ pub async fn import_template(
     if q.dry_run {
         return template_import_dry_run(&state, &body).await;
     }
-    match prepare_template_import(&body) {
-        PreparedImport::Rejected(error) => {
-            Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(error)).into_response())
-        }
-        PreparedImport::Ready(json) => {
-            persist_created_user_template(&state, &attestor, &actor_name, json.as_bytes()).await
-        }
+    // `persist_created_user_template` runs `prepare_template_import` itself (shared with the create
+    // path), so a non-dry-run import is exactly a create over the same normalized body.
+    persist_created_user_template(&state, &attestor, &actor_name, &body).await
+}
+
+/// Body of `POST /v1/templates/body/preview` — the template narrative markdown being authored.
+#[derive(Deserialize)]
+pub struct PreviewTemplateBody {
+    /// The editor's current template body source. Absent/empty ⇒ an empty preview (`blocks: []`),
+    /// which is the normal state of a freshly-opened editor.
+    #[serde(default)]
+    pub source: String,
+}
+
+/// Success response of `POST /v1/templates/body/preview`: the compiled blocks plus the identity of
+/// the compiler that produced them, so a client can tell a `md-block/v1` preview from a later one.
+#[derive(Serialize)]
+pub struct TemplateBodyPreviewResponse {
+    pub compiler_id: &'static str,
+    pub blocks: Vec<Block>,
+}
+
+/// 422 diagnostic of `POST /v1/templates/body/preview`: a stable `code`, the byte `offset` of the
+/// offending construct (so the editor can underline it in place), and a human message.
+#[derive(Serialize)]
+pub struct TemplateBodyPreviewError {
+    pub code: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
+    pub message: String,
+}
+
+/// `POST /v1/templates/body/preview` — compile a template's narrative markdown body into `Block[]`,
+/// **statelessly** (no act, no context). Gate `template.manage@Global`.
+///
+/// The template-authoring twin of [`crate::acts::preview_act_body`], but deliberately context-free:
+/// a template body is authored before any act exists, so there is nothing to resolve placeholders
+/// against. Replaceable merge tags (`{{ … }}`, `{% … %}`) therefore render as their **literal token
+/// form** — honest, because they only resolve when a real act is generated. The operator sees the
+/// document STRUCTURE (headings, paragraphs, bold/italic, rules) exactly as it will seal, with tags
+/// shown as the tokens they are.
+///
+/// Uses the same [`markdown::compile_markdown`](chancela_templates::markdown::compile_markdown) the
+/// seal path compiles through, so the previewed structure is authoritative and the client never
+/// compiles document content. Read-only — writes nothing, so it is usable at any time. An
+/// unrepresentable construct is a `422 {code, offset?, message}` the editor can underline in place.
+/// (Placeholder *syntax* is not evaluated here — a malformed tag previews as literal text and is
+/// caught by the write path; the preview's job is honest structure, not resolution.)
+pub async fn preview_template_body(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(req): Json<PreviewTemplateBody>,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    match chancela_templates::markdown::compile_markdown(&req.source) {
+        Ok(blocks) => Ok((
+            StatusCode::OK,
+            Json(TemplateBodyPreviewResponse {
+                compiler_id: chancela_templates::markdown::COMPILER_ID,
+                blocks,
+            }),
+        )
+            .into_response()),
+        Err(e) => Ok((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(TemplateBodyPreviewError {
+                code: e.code(),
+                offset: e.offset(),
+                message: e.to_string(),
+            }),
+        )
+            .into_response()),
     }
 }
 
@@ -13923,10 +14021,12 @@ mod tests {
         );
     }
 
-    /// A seed body carrying minijinja syntax is rejected (a seed is a value, never compiled) —
-    /// reject, never silently transform it into a live template fragment.
+    /// A seed body carrying a **well-formed replaceable merge tag** (`{{ meeting_date }}`) is now
+    /// ACCEPTED and stored UNRESOLVED (t56 user decision): the template narrative body carries the
+    /// operator's full vocabulary including merge tokens, which resolve only when a real act is
+    /// generated against its context. The token must survive into the stored `default_body` verbatim.
     #[tokio::test]
-    async fn import_rejects_seed_markdown_with_minijinja() {
+    async fn import_accepts_seed_markdown_with_merge_tags() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.path());
         let actor = seed_owner(&state).await;
@@ -13947,9 +14047,55 @@ mod tests {
         )
         .await
         .expect("handler returns a response");
+        assert_eq!(
+            resp.status(),
+            StatusCode::CREATED,
+            "a well-formed merge tag in a template body is accepted, not rejected"
+        );
+
+        // The token rides into the stored default_body unresolved.
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template("user-encosto-ata/v1")
+            .expect("store read")
+            .expect("template row");
+        let stored_value: Value = serde_json::from_str(&stored).expect("stored json");
+        assert_eq!(
+            stored_value["default_body"][0]["text"], "Reunida a assembleia em {{ meeting_date }}.",
+            "the merge tag survives storage unresolved and verbatim"
+        );
+    }
+
+    /// A **malformed** placeholder (`{{ unclosed`) is rejected loudly — merge tags are welcome, but
+    /// broken minijinja that could never resolve at act generation is caught at the write path, not
+    /// silently stored. (Reject, never silently transform.)
+    #[tokio::test]
+    async fn import_rejects_seed_markdown_with_malformed_placeholder() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let spec: Value = serde_json::from_str(&valid_user_template_json()).expect("spec json");
+        let bundle = serde_json::json!({
+            "format": "chancela.template-bundle",
+            "format_version": 1,
+            "spec": spec,
+            "body_markdown": "Reunida a assembleia em {{ meeting_date."
+        });
+        let resp = import_template(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: false }),
+            Bytes::from(bundle.to_string()),
+        )
+        .await
+        .expect("handler returns a response");
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let body = response_json(resp).await;
-        assert_eq!(body["code"], "invalid_seed");
+        assert_eq!(body["code"], "invalid_placeholder");
     }
 
     /// A seed body using a construct outside the `md-block/v1` subset (a list) is rejected, not
@@ -13979,6 +14125,166 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let body = response_json(resp).await;
         assert_eq!(body["code"], "unsupported_markdown");
+    }
+
+    /// `POST /v1/templates` (create) accepts the portable bundle envelope, not only a bare spec:
+    /// `body_markdown` is folded into `default_body` and stored, so an operator can create a
+    /// template WITH a narrative body in one call.
+    #[tokio::test]
+    async fn create_template_accepts_a_bundle_envelope() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let spec: Value = serde_json::from_str(&valid_user_template_json()).expect("spec json");
+        let bundle = serde_json::json!({
+            "format": "chancela.template-bundle",
+            "format_version": 1,
+            "spec": spec,
+            "body_markdown": "## Abertura\n\nReunida a assembleia em {{ meeting_date }}."
+        });
+        let resp = create_template(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Bytes::from(bundle.to_string()),
+        )
+        .await
+        .expect("create from a bundle");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template("user-encosto-ata/v1")
+            .expect("store read")
+            .expect("template row");
+        let stored_value: Value = serde_json::from_str(&stored).expect("stored json");
+        assert_eq!(stored_value["default_body"][0]["heading"], "Abertura");
+        assert!(
+            stored_value["default_body"][0]["text"]
+                .as_str()
+                .expect("clause text")
+                .contains("{{ meeting_date }}"),
+            "the bundle body_markdown is folded into default_body with its merge tag intact"
+        );
+    }
+
+    /// `PUT /v1/templates/{id}` (replace) accepts the bundle envelope too — storing a narrative body
+    /// via replace folds `body_markdown` into `default_body`.
+    #[tokio::test]
+    async fn replace_template_accepts_a_bundle_envelope() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        // Create bare, then replace with a bundle carrying a body.
+        create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("create bare");
+
+        let spec: Value = serde_json::from_str(&valid_user_template_json()).expect("spec json");
+        let bundle = serde_json::json!({
+            "format": "chancela.template-bundle",
+            "format_version": 1,
+            "spec": spec,
+            "body_markdown": "Corpo revisto com {{ ata_number }}."
+        });
+        let resp = replace_template(
+            State(state.clone()),
+            Path("user-encosto-ata/v1".to_owned()),
+            actor,
+            CurrentAttestor::default(),
+            Bytes::from(bundle.to_string()),
+        )
+        .await
+        .expect("replace from a bundle");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template("user-encosto-ata/v1")
+            .expect("store read")
+            .expect("template row");
+        let stored_value: Value = serde_json::from_str(&stored).expect("stored json");
+        assert!(
+            stored_value["default_body"][0]["text"]
+                .as_str()
+                .expect("clause text")
+                .contains("{{ ata_number }}"),
+            "replace folds the bundle body into default_body"
+        );
+    }
+
+    /// `POST /v1/templates/body/preview` compiles the template body's STRUCTURE statelessly, with
+    /// replaceable merge tags shown in their literal token form (unresolved — there is no act
+    /// context). This is the authoritative preview the authoring editor renders against.
+    #[tokio::test]
+    async fn preview_template_body_compiles_structure_with_tags_literal() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let resp = preview_template_body(
+            State(state.clone()),
+            actor,
+            Json(PreviewTemplateBody {
+                source: "# Ata n.º {{ ata_number }}\n\nReunida em **{{ meeting_date }}**."
+                    .to_owned(),
+            }),
+        )
+        .await
+        .expect("preview compiles");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = response_json(resp).await;
+        assert_eq!(body["compiler_id"], "md-block/v1");
+        assert_eq!(body["blocks"][0]["type"], "Heading");
+        assert_eq!(
+            body["blocks"][0]["text"], "Ata n.º {{ ata_number }}",
+            "the heading's merge tag renders as its literal token form"
+        );
+        assert_eq!(body["blocks"][1]["type"], "Paragraph");
+        // The bolded run carries the literal token, unresolved.
+        let runs = body["blocks"][1]["runs"].as_array().expect("runs");
+        assert!(
+            runs.iter()
+                .any(|r| r["bold"] == true && r["text"] == "{{ meeting_date }}"),
+            "the paragraph's merge tag survives as a literal token inside the operator's emphasis"
+        );
+    }
+
+    /// The preview rejects a construct outside the `md-block/v1` block set with a `{code, offset}`
+    /// the editor can underline in place — never a silent drop.
+    #[tokio::test]
+    async fn preview_template_body_rejects_unrepresentable_construct() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let resp = preview_template_body(
+            State(state.clone()),
+            actor,
+            Json(PreviewTemplateBody {
+                source: "- um\n- dois".to_owned(),
+            }),
+        )
+        .await
+        .expect("preview returns a response");
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(resp).await;
+        assert_eq!(body["code"], "unsupported_markdown");
+        assert!(
+            body["offset"].is_number(),
+            "diagnostics carry a byte offset"
+        );
     }
 
     /// The dry-run preflight covers the bundle: an unknown version is a `{ok:false}` verdict.

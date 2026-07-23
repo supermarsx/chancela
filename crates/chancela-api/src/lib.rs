@@ -2400,6 +2400,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/templates/{id}/export", get(documents::export_template))
         .route("/v1/templates/import", post(documents::import_template))
+        .route(
+            "/v1/templates/body/preview",
+            post(documents::preview_template_body),
+        )
         .route("/v1/ledger/events", get(ledger::list_ledger_events))
         .route(
             "/v1/ledger/events/page",
