@@ -119,7 +119,7 @@ async function themeCss(): Promise<string> {
 
 describe('will-change budget', () => {
   /** Selectors allowed a permanent promotion hint: small, few, animated on later input. */
-  const ALLOWED = ['.ferramentas-subnav__indicator', '.subnav__indicator'];
+  const ALLOWED = ['.tools-subnav__indicator', '.subnav__indicator'];
 
   async function willChangeSelectors(): Promise<string[]> {
     const css = (await themeCss()).replace(/\/\*[\s\S]*?\*\//g, '');

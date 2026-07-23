@@ -14,7 +14,7 @@ const saveFileMock = vi.hoisted(() => ({
 
 vi.mock('../../desktop/saveFile', () => saveFileMock);
 
-import { GestaoDadosSection } from './GestaoDadosSection';
+import { DataManagementSection } from './DataManagementSection';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -579,10 +579,10 @@ async function selectTab(name: string) {
   fireEvent.click(await screen.findByRole('button', { name }));
 }
 
-describe('GestaoDadosSection', () => {
+describe('DataManagementSection', () => {
   it('offers backup creation plus the five distinct data-management operations across sub-sub-tabs', async () => {
     installFetch();
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     // Storage sub-sub-tab is the default landing surface.
     expect(await screen.findByText('Estado do armazenamento')).toBeTruthy();
     // Backup + recovery sub-sub-tab hosts the hot backup action.
@@ -605,7 +605,7 @@ describe('GestaoDadosSection', () => {
 
   it('renders local backup recovery policy freshness without claiming restore or RPO/RTO certification', async () => {
     installFetch();
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_BACKUP);
 
     expect(await screen.findByRole('table', { name: 'Política local de recuperação' })).toBeTruthy();
@@ -622,7 +622,7 @@ describe('GestaoDadosSection', () => {
 
   it('renders sync handoff preflight as local-only evidence with missing verified backup proof', async () => {
     installFetch();
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_BACKUP);
 
     expect((await screen.findAllByText('Pré-validação local de handoff')).length).toBeGreaterThan(
@@ -664,7 +664,7 @@ describe('GestaoDadosSection', () => {
     });
 
     const calls = installFetch();
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_BACKUP);
 
     expect(
@@ -706,7 +706,7 @@ describe('GestaoDadosSection', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     installFetch();
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
 
     expect(await screen.findByText('Durável')).toBeTruthy();
     expect(screen.getByText('F:\\ChancelaData')).toBeTruthy();
@@ -796,7 +796,7 @@ describe('GestaoDadosSection', () => {
 
   it('renders the in-memory empty state without a data folder', async () => {
     installFetch([inMemoryStatus]);
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
 
     expect((await screen.findAllByText('Em memória')).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('Sem pasta de dados configurada')).toBeTruthy();
@@ -812,7 +812,7 @@ describe('GestaoDadosSection', () => {
 
   it('renders every probe outcome in pt-PT, never the English wire message', async () => {
     installFetch([permissionStatus]);
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
 
     expect(await screen.findByText('Ler pasta')).toBeTruthy();
     const permissionsSection = screen
@@ -849,7 +849,7 @@ describe('GestaoDadosSection', () => {
     const partialPermissions = { ...durableStatus.permissions };
     delete (partialPermissions as Partial<DataStatusResponse['permissions']>).durable_store_open;
     installFetch([{ ...durableStatus, permissions: partialPermissions }]);
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
 
     expect(await screen.findByText('Ler pasta')).toBeTruthy();
     const permissionsSection = screen
@@ -870,7 +870,7 @@ describe('GestaoDadosSection', () => {
       persistence: { ...durableStatus.persistence, ledger_length: 43 },
     };
     const calls = installFetch([durableStatus, refreshed]);
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
 
     expect(await screen.findByText('F:\\ChancelaData')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar estado' }));
@@ -920,7 +920,7 @@ describe('GestaoDadosSection', () => {
     receiptStatus.key_rotation.history = [receiptStatus.key_rotation.latest_receipt!];
 
     installFetch([receiptStatus]);
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_KEYS);
 
     expect(await screen.findByRole('table', { name: 'Recibos locais de rotação' })).toBeTruthy();
@@ -992,7 +992,7 @@ describe('GestaoDadosSection', () => {
     };
 
     installFetch([gapStatus]);
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_KEYS);
 
     expect(
@@ -1042,7 +1042,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_KEYS);
     const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
     const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
@@ -1110,7 +1110,7 @@ describe('GestaoDadosSection', () => {
       return null;
     });
 
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_KEYS);
     const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
     const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
@@ -1154,7 +1154,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_KEYS);
     const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
     const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
@@ -1194,7 +1194,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await screen.findByText('F:\\ChancelaData');
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
@@ -1247,7 +1247,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await screen.findByText('F:\\ChancelaData');
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar registos' }));
@@ -1322,7 +1322,7 @@ describe('GestaoDadosSection', () => {
       },
       settings,
     );
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await screen.findByText('F:\\ChancelaData');
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
@@ -1443,7 +1443,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await screen.findByText('F:\\ChancelaData');
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
@@ -1492,7 +1492,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await screen.findByText('F:\\ChancelaData');
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
@@ -1541,7 +1541,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await screen.findByText('F:\\ChancelaData');
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
@@ -1562,7 +1562,7 @@ describe('GestaoDadosSection', () => {
 
   it('viewing and refreshing the data tab do not PUT settings or call platform logs', async () => {
     const calls = installFetch([durableStatus, durableStatus]);
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
 
     expect(await screen.findByText('F:\\ChancelaData')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar estado' }));
@@ -1608,7 +1608,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_BACKUP);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Criar backup' }));
@@ -1644,7 +1644,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_BACKUP);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Criar backup' }));
@@ -1741,7 +1741,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await selectTab(TAB_BACKUP);
 
     fireEvent.change(await screen.findByLabelText('Arquivo do backup para ensaio'), {
@@ -1857,7 +1857,7 @@ describe('GestaoDadosSection', () => {
 
   it('disables backup creation when the instance is not using durable storage', async () => {
     installFetch([inMemoryStatus]);
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
 
     expect(await screen.findByText('Sem pasta de dados configurada')).toBeTruthy();
     await selectTab(TAB_BACKUP);
@@ -1879,7 +1879,7 @@ describe('GestaoDadosSection', () => {
       }
       return null;
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await screen.findByText('Estado do armazenamento');
     await selectTab(TAB_KEYS);
 
@@ -1922,7 +1922,7 @@ describe('GestaoDadosSection', () => {
       value: { ...window.location, reload: reloadSpy },
       writable: true,
     });
-    renderWithProviders(<GestaoDadosSection />);
+    renderWithProviders(<DataManagementSection />);
     await screen.findByText('Estado do armazenamento');
     await selectTab(TAB_KEYS);
 

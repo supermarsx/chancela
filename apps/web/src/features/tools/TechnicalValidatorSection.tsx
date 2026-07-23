@@ -1,5 +1,5 @@
 /**
- * The second navigation level inside Ferramentas → Validador PDF.
+ * The second navigation level inside Tools → Validador PDF.
  *
  * The tool used to stack all three panels on one page — PDF validation, ASiC inspection
  * and the external-validator report shelf — which made a long scroll out of three
@@ -19,7 +19,7 @@
  * and existing deep links are unchanged.
  *
  * **Deliberate divergence: this level pushes history instead of replacing it.**
- * `SettingsPage` and the outer Ferramentas tool switch both pass `{ replace: true }`, which
+ * `SettingsPage` and the outer Tools tool switch both pass `{ replace: true }`, which
  * means browser Back skips straight out of the surface. That is the failure `t34-lawback`
  * is fixing in Legislação, so the sub-tab switch here pushes: Back returns to the sub-tab
  * you came from and keeps you inside the tool.
@@ -32,12 +32,12 @@ import { PdfSignatureValidatorPanel } from './PdfSignatureValidatorPanel';
 import { AsicSignatureInspectorPanel } from './AsicSignatureInspectorPanel';
 import { ExternalValidatorReportsPanel } from './ExternalValidatorReportsPanel';
 
-export type ValidadorTecnicoSectionId = 'pdf' | 'asic' | 'reports';
+export type TechnicalValidatorSectionId = 'pdf' | 'asic' | 'reports';
 
-const DEFAULT_SECTION: ValidadorTecnicoSectionId = 'pdf';
+const DEFAULT_SECTION: TechnicalValidatorSectionId = 'pdf';
 
 const SECTIONS: {
-  id: ValidadorTecnicoSectionId;
+  id: TechnicalValidatorSectionId;
   label: MessageKey;
   icon: React.ReactNode;
 }[] = [
@@ -47,20 +47,20 @@ const SECTIONS: {
 ];
 
 /** An unknown segment falls back to the default rather than rendering nothing. */
-export function parseValidadorTecnicoSection(
+export function parseTechnicalValidatorSection(
   value: string | null | undefined,
-): ValidadorTecnicoSectionId {
+): TechnicalValidatorSectionId {
   if (value === 'asic' || value === 'reports') return value;
   return DEFAULT_SECTION;
 }
 
-export function ValidadorTecnicoSection() {
+export function TechnicalValidatorSection() {
   const t = useT();
   // Second level under `/tools/pdf`. The PDF validator itself is the default, so it
   // carries no segment of its own — `/tools/pdf` stays the canonical link to it.
-  const { section, select: selectSection } = useSectionNav<ValidadorTecnicoSectionId>({
+  const { section, select: selectSection } = useSectionNav<TechnicalValidatorSectionId>({
     base: '/tools/pdf',
-    parse: parseValidadorTecnicoSection,
+    parse: parseTechnicalValidatorSection,
     fallback: DEFAULT_SECTION,
   });
 

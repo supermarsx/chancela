@@ -94,7 +94,7 @@ type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
  *  "Cópias e recuperação" holds backup, recovery drills and the restore/handoff preflights;
  *  "Chaves e reposição" holds data-key rotation plus the reset/recomeço operations, keeping
  *  the destructive resets separated from the everyday storage view. */
-type GestaoTab = 'armazenamento' | 'copias' | 'chaves';
+type DataTab = 'storage' | 'backups' | 'keys';
 
 const DEFAULT_EXPORT_CLEANUP_POLICY = DEFAULT_SETTINGS.data_management.retained_export_cleanup;
 const SYNC_HANDOFF_PREFLIGHT_EXPORT_FILENAME = 'chancela-sync-handoff-preflight.json';
@@ -1979,7 +1979,7 @@ function SqliteLogicalUsageList({
   );
 }
 
-function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls: ReactNode }) {
+function DataStatusPanel({ tab, resetControls }: { tab: DataTab; resetControls: ReactNode }) {
   const t = useT();
   const locale = useLocale();
   const toast = useToast();
@@ -2178,7 +2178,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
   return (
     <>
       <div className="route-transition stack" key={tab}>
-        {tab === 'armazenamento' ? (
+        {tab === 'storage' ? (
           <Card
             title={t('data.status.title')}
             actions={
@@ -2597,7 +2597,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
           </Card>
         ) : null}
 
-        {tab === 'copias' ? (
+        {tab === 'backups' ? (
           <Card title={t('data.status.tab.backup')}>
             {/* What arrives is `.data-status` — a two-column fact table over sectioned blocks
                 — so the placeholder reserves that instead of a line of text. */}
@@ -2807,7 +2807,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
           </Card>
         ) : null}
 
-        {tab === 'chaves' ? (
+        {tab === 'keys' ? (
           <>
             <Card title={t('data.status.tab.keys')}>
               {/* What arrives is `.data-status` — a two-column fact table over sectioned blocks
@@ -3057,7 +3057,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: GestaoTab; resetControls
  *   internal `<SubNav>` is not rendered; each pane is its own route subtab. When omitted the
  *   component is self-contained, driving its own strip (its unit test renders it this way).
  */
-export function GestaoDadosSection({ tab: tabProp }: { tab?: GestaoTab } = {}) {
+export function DataManagementSection({ tab: tabProp }: { tab?: DataTab } = {}) {
   const t = useT();
   const toast = useToast();
   const qc = useQueryClient();
@@ -3067,14 +3067,14 @@ export function GestaoDadosSection({ tab: tabProp }: { tab?: GestaoTab } = {}) {
   const [dialog, setDialog] = useState<Dialog>('none');
   const [reason, setReason] = useState('');
   const [lastOutcome, setLastOutcome] = useState<ResetOutcomeView | null>(null);
-  const [internalTab, setInternalTab] = useState<GestaoTab>('armazenamento');
+  const [internalTab, setInternalTab] = useState<DataTab>('storage');
   const tab = tabProp ?? internalTab;
   const close = () => setDialog('none');
 
   const tabDescription =
-    tab === 'armazenamento'
+    tab === 'storage'
       ? t('data.status.tab.storage.desc')
-      : tab === 'copias'
+      : tab === 'backups'
         ? t('data.status.tab.backup.desc')
         : t('data.status.tab.keys.desc');
 
@@ -3192,17 +3192,17 @@ export function GestaoDadosSection({ tab: tabProp }: { tab?: GestaoTab } = {}) {
         <SubNav
           items={[
             {
-              id: 'armazenamento',
+              id: 'storage',
               label: t('data.status.tab.storage'),
               icon: <Icon.Layers />,
             },
             {
-              id: 'copias',
+              id: 'backups',
               label: t('data.status.tab.backup'),
               icon: <Icon.Archive />,
             },
             {
-              id: 'chaves',
+              id: 'keys',
               label: t('data.status.tab.keys'),
               icon: <Icon.Shuffle />,
             },

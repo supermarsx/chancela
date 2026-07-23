@@ -1,5 +1,5 @@
 /**
- * Legislação (t24, extended t55-E3) — the law surface on the Ferramentas tab.
+ * Legislação (t24, extended t55-E3) — the law surface on the Tools tab.
  *
  * It hosts two complementary views behind a {@link SubNav}, deep-linked as a path segment
  * (`/tools/legislation/shelf`):
@@ -23,7 +23,7 @@ import { CuratedShelf } from './CuratedShelf';
 
 type LegView = 'corpus' | 'shelf';
 
-export function LegislacaoPage() {
+export function LegislationPage() {
   const t = useT();
   // Second level under `/tools/legislation`; the corpus reader is the default, so it
   // carries no segment of its own.

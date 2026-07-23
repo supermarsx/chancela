@@ -3447,8 +3447,8 @@ body {
   .titlebar *,
   .subnav,
   .subnav *,
-  .ferramentas-subnav,
-  .ferramentas-subnav *,
+  .tools-subnav,
+  .tools-subnav *,
   .ledger-export-controls,
   .ledger-export-controls *,
   .ledger-filterbar,
@@ -7818,7 +7818,7 @@ a.btn--primary {
  * CAE revision switch. On narrow viewports the generic variant scrolls rather than wraps
  * so the indicator's offset math stays valid.
  * ========================================================================== */
-.ferramentas-subnav,
+.tools-subnav,
 .subnav {
   position: relative;
   display: inline-flex;
@@ -7846,7 +7846,7 @@ a.btn--primary {
 /* Overflow scroll-shadows: the shared `<SubNav>` wraps the scroller so a fixed fade can be
    pinned to each visible edge, hinting at more sub-tabs when the strip overflows. The wrapper
    owns the placement (margin/align that `.subnav` otherwise carries) so the inner pill can
-   flex to its natural width and scroll inside. Ferramentas keeps its own `.ferramentas-subnav`
+   flex to its natural width and scroll inside. Ferramentas keeps its own `.tools-subnav`
    markup (no wrapper) and is untouched.
    The strip stays flush to the content edge: overflow is handled entirely by the scroll,
    the floating edge arrows and the gradient fades (::before/::after, sized to cover the arrow
@@ -7971,9 +7971,9 @@ a.btn--primary {
 }
 
 /* The gliding gilt pill behind the active sub-tab — its geometry is set inline from the
-   measured active button (see FerramentasPage / SubNav), and it slides on the same easing
+   measured active button (see ToolsPage / SubNav), and it slides on the same easing
    as the top bar's active-tab indicator. It sits behind the button labels (z-index 0 vs 1). */
-.ferramentas-subnav__indicator,
+.tools-subnav__indicator,
 .subnav__indicator {
   position: absolute;
   left: 0;
@@ -7999,7 +7999,7 @@ a.btn--primary {
   will-change: transform;
 }
 
-.ferramentas-subnav__btn,
+.tools-subnav__btn,
 .subnav__btn {
   position: relative;
   z-index: 1;
@@ -8024,7 +8024,7 @@ a.btn--primary {
 
 /* The decorative sub-tab glyph inherits the button's ink and sizes to the label. */
 .subnav__icon,
-.ferramentas-subnav__icon {
+.tools-subnav__icon {
   display: inline-flex;
   flex: none;
   font-size: 1.05em;
@@ -8033,13 +8033,13 @@ a.btn--primary {
 
 /* The active pill is the sliding indicator; the button itself stays transparent and only
    flips its ink to read on the gilt. */
-.ferramentas-subnav__btn.is-active,
+.tools-subnav__btn.is-active,
 .subnav__btn.is-active {
   background: transparent;
   color: var(--on-accent);
 }
 
-.ferramentas-subnav__btn:not(.is-active):hover,
+.tools-subnav__btn:not(.is-active):hover,
 .subnav__btn:not(.is-active):hover {
   color: var(--accent);
 }
@@ -8059,8 +8059,8 @@ a.btn--primary {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ferramentas-subnav__btn,
-  .ferramentas-subnav__indicator,
+  .tools-subnav__btn,
+  .tools-subnav__indicator,
   .subnav__btn,
   .subnav__indicator {
     transition: none;

@@ -1,6 +1,6 @@
 /**
  * The full-text law corpus reader (t55-E3) — the prominent, searchable view of the Legislação
- * surface, hosted beside the curated {@link CuratedShelf} by {@link LegislacaoPage}.
+ * surface, hosted beside the curated {@link CuratedShelf} by {@link LegislationPage}.
  *
  * It surfaces the embedded statute corpus (`chancela-law`, t55) over the read-only corpus API:
  *  - **Full-text search** (`GET /v1/law/corpus/search`) — a prominent, debounced box that ranks

@@ -85,11 +85,11 @@ import { colorStore } from '../../theme/colorStore';
 import { applyAppearance, applyLocale, COLOR_OVERRIDE_FIELDS } from '../../theme/appearance';
 import type { ColorOverrideField } from '../../theme/appearance';
 import { ColorPicker } from '../../theme/ColorPicker';
-import { LivrosIntegridadeSection } from '../recovery/LivrosIntegridadeSection';
-import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
+import { BookIntegritySection } from '../recovery/BookIntegritySection';
+import { DataManagementSection } from '../recovery/DataManagementSection';
 import { ZkObjectRootSection } from '../recovery/ZkObjectRootSection';
-import { FuncoesSection } from '../rbac/FuncoesSection';
-import { DelegacoesSection } from '../rbac/DelegacoesSection';
+import { RolesSection } from '../rbac/RolesSection';
+import { DelegationsSection } from '../rbac/DelegationsSection';
 import { AdminIntegrationsPanel } from '../admin/AdminIntegrationsPanel';
 import { ApiKeysSection } from './ApiKeysSection';
 import { ConnectorEgressSection, parseAllowedHosts } from './ConnectorEgressSection';
@@ -2688,7 +2688,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
 
               {/* Gestão de dados (t105/t28). Its three former internal panes are now three subtabs.
                   STANDALONE: each manages its own data behind its own gates, so `editingLocked`
-                  leaves it alone exactly as it did when it was one tab. `GestaoDadosSection` is now
+                  leaves it alone exactly as it did when it was one tab. `DataManagementSection` is now
                   driven by the `tab` prop (its internal SubNav is used only when rendered standalone,
                   e.g. its own unit test) so the route decides which pane shows.
 
@@ -2701,7 +2701,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
               {sub === 'storage' ? (
                 <div className="stack">
                   <ZkObjectRootSection />
-                  <GestaoDadosSection tab="armazenamento" />
+                  <DataManagementSection tab="storage" />
                   <fieldset className="settings-fieldset" disabled={!canManageSettings}>
                     <Card title={t('settings.retainedExportCleanup.cardTitle')}>
                       <div className="form settings-rows">
@@ -2768,7 +2768,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   reason as Armazenamento's policy above. */}
               {sub === 'backups' ? (
                 <div className="stack">
-                  <GestaoDadosSection tab="copias" />
+                  <DataManagementSection tab="backups" />
                   <fieldset className="settings-fieldset" disabled={!canManageSettings}>
                     <Card title={t('settings.backupRecovery.cardTitle')}>
                       <div className="form settings-rows">
@@ -2854,7 +2854,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
               ) : null}
 
               {/* Chaves e reposição. Data-key rotation + the reset/recomeço operations. */}
-              {sub === 'keys' ? <GestaoDadosSection tab="chaves" /> : null}
+              {sub === 'keys' ? <DataManagementSection tab="keys" /> : null}
 
               {/* API — t82b, the "Servidor" pane. Same working copy, same endpoints, same
                   `settings.manage` gate the API service row and API log levels already had. */}
@@ -2943,17 +2943,17 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           {section === 'privacy' ? <PrivacyComplianceSection /> : null}
 
           {/* Funções e permissões (t64-E6) — a sub-tab of Utilizadores since t106 -------- */}
-          {/* The components are mounted, not changed: FuncoesSection still gates itself on
-              `role.manage` and DelegacoesSection on `delegation.revoke`/grantor identity, exactly
+          {/* The components are mounted, not changed: RolesSection still gates itself on
+              `role.manage` and DelegationsSection on `delegation.revoke`/grantor identity, exactly
               as they did as top-level sections. Moving where a panel hangs must not move who may
               use it, in either direction. */}
-          {section === 'users' && sub === 'roles' ? <FuncoesSection /> : null}
+          {section === 'users' && sub === 'roles' ? <RolesSection /> : null}
 
           {/* Delegações (t64-E6) — a sub-tab of Utilizadores since t106 ------------------ */}
-          {section === 'users' && sub === 'delegations' ? <DelegacoesSection /> : null}
+          {section === 'users' && sub === 'delegations' ? <DelegationsSection /> : null}
 
           {/* Livros & Integridade ---------------------------------------------------- */}
-          {section === 'integrity' ? <LivrosIntegridadeSection /> : null}
+          {section === 'integrity' ? <BookIntegritySection /> : null}
 
           {/* Sobre ------------------------------------------------------------------- */}
           {/* Name/value version facts are genuinely tabular, so they render as a table with a

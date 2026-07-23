@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { FerramentasPage } from './FerramentasPage';
+import { ToolsPage } from './ToolsPage';
 import { makeClient, renderWithProviders } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
 
@@ -53,7 +53,7 @@ function subnav(): HTMLElement {
 describe('Ferramentas — validador técnico sub-tabs', () => {
   it('reuses the shared SubNav with the three sections in the requested order', () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     expect(
       within(subnav())
@@ -61,13 +61,13 @@ describe('Ferramentas — validador técnico sub-tabs', () => {
         .map((b) => b.textContent),
     ).toEqual(['Assinaturas PDF', 'Contentores ASiC', 'Relatórios técnicos']);
     // The shared primitive, not a fork: SubNav renders `.subnav`, the Ferramentas tool
-    // level renders `.ferramentas-subnav`.
+    // level renders `.tools-subnav`.
     expect(document.querySelector('.subnav-wrap')).toBeTruthy();
   });
 
   it('lands on the PDF validator with no sec param and marks only that tab pressed', () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     expect(screen.getByText('Validador técnico de assinaturas PDF')).toBeTruthy();
     expect(
@@ -83,23 +83,23 @@ describe('Ferramentas — validador técnico sub-tabs', () => {
   it('deep-links each section, and an unknown sec falls back to the PDF validator', () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
 
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/asic']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/asic']);
     expect(screen.getByText('Inspetor técnico ASiC')).toBeTruthy();
     cleanup();
 
     vi.stubGlobal('fetch', validatorToolsFetch());
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
     expect(screen.getByText('Relatórios técnicos de validador externo')).toBeTruthy();
     cleanup();
 
     vi.stubGlobal('fetch', validatorToolsFetch());
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/nao-existe']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/nao-existe']);
     expect(screen.getByText('Validador técnico de assinaturas PDF')).toBeTruthy();
   });
 
   it('re-keys the content on sub-tab switch so the enter animation replays', () => {
     vi.stubGlobal('fetch', validatorToolsFetch());
-    const { container } = renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    const { container } = renderWithProviders(<ToolsPage />, ['/tools/pdf']);
     const animKey = () =>
       container.querySelector('[data-subanim-key]')?.getAttribute('data-subanim-key');
 
@@ -129,7 +129,7 @@ describe('Ferramentas — validador técnico deep-link and Back behaviour', () =
         <ToastProvider>
           <MemoryRouter initialEntries={[entry]}>
             <HistoryProbe />
-            <FerramentasPage />
+            <ToolsPage />
           </MemoryRouter>
         </ToastProvider>
       </QueryClientProvider>,

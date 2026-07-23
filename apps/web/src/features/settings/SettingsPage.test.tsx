@@ -1208,7 +1208,7 @@ function settingsFetch(
     }
     // The Operações › Armazenamento / Cópias e recuperação subtabs (t28) host the two policy
     // editors, so a settings test that opens one pulls in the data-management readouts too. Those
-    // panes belong to `GestaoDadosSection.test.tsx`, which owns their fixtures; here they only need
+    // panes belong to `DataManagementSection.test.tsx`, which owns their fixtures; here they only need
     // to render without a live backend, so the status is the empty state and the ZK interlock is
     // reported disabled — the same benign shapes the t105/t28 gate tests use.
     if (url.includes('/v1/zk-repositories/storage-status')) {
@@ -6828,7 +6828,7 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
         return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
       }
       // These tests are about the gate, the ZK pane and the policy-editor placement; the data
-      // readouts belong to `GestaoDadosSection.test.tsx`, which owns their fixtures. `null` puts
+      // readouts belong to `DataManagementSection.test.tsx`, which owns their fixtures. `null` puts
       // that panel in its own empty state instead of duplicating a 200-line status document here.
       if (url.includes('/v1/data/status')) return Promise.resolve(jsonResponse(null));
       return Promise.resolve(jsonResponse([]));

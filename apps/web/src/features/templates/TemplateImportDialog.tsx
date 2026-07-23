@@ -1,7 +1,7 @@
 /**
  * Import a user-authored template — from a JSON file OR pasted JSON (wp23-e6, envelope t43).
  *
- * Follows the book-import verify-then-confirm UX (`LivrosIntegridadeSection`): providing the JSON
+ * Follows the book-import verify-then-confirm UX (`BookIntegritySection`): providing the JSON
  * (picking a `.json` file, or pasting and pressing Validar) reads its text verbatim and runs a
  * NON-persisting dry-run preflight (`useImportTemplate({ dryRun: true })`). The verdict is shown
  * honestly — valid, or invalid with the mapped reason — and Confirm stays disabled until the dry-run

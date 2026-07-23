@@ -9,7 +9,7 @@ const saveFileMock = vi.hoisted(() => ({
 
 vi.mock('../../desktop/saveFile', () => saveFileMock);
 
-import { LivrosIntegridadeSection } from './LivrosIntegridadeSection';
+import { BookIntegritySection } from './BookIntegritySection';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -191,11 +191,11 @@ afterEach(() => {
   saveFileMock.saveBlobResultMessage.mockClear();
 });
 
-describe('LivrosIntegridadeSection', () => {
+describe('BookIntegritySection', () => {
   it('renders the per-chain integrity report with the exact break location when broken', async () => {
     const { fn } = sectionFetch(BROKEN_REPORT);
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     // A broken chain also puts the instance in read-only (degraded) mode.
     expect(await screen.findByText('Modo só-leitura ativo')).toBeTruthy();
@@ -212,7 +212,7 @@ describe('LivrosIntegridadeSection', () => {
   it('disables re-anchor when all chains are intact', async () => {
     const { fn } = sectionFetch(HEALTHY_REPORT);
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     expect(await screen.findByText('Todas as cadeias íntegras')).toBeTruthy();
     const reanchor = screen.getByRole('button', { name: /Re-ancorar cadeia/ });
@@ -237,7 +237,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     fireEvent.click(await screen.findByRole('button', { name: /Exportar/ }));
     await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
@@ -283,7 +283,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [makeZipFile()] } });
@@ -320,7 +320,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [makeZipFile('first.zip')] } });
@@ -363,7 +363,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [makeZipFile()] } });
@@ -403,7 +403,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     fireEvent.change(document.querySelector('input[type=file]') as HTMLInputElement, {
       target: { files: [makeZipFile('policy-a.zip')] },
@@ -460,7 +460,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [makeZipFile('file-a.zip')] } });
@@ -528,7 +528,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     await openRestoreModal();
     fireEvent.change(screen.getByLabelText('Cópia de segurança (nome ou caminho)'), {
@@ -591,7 +591,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     await openRestoreModal();
     fireEvent.change(screen.getByLabelText('Cópia de segurança (nome ou caminho)'), {
@@ -656,7 +656,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     await openRestoreModal();
     fireEvent.change(screen.getByLabelText('Cópia de segurança (nome ou caminho)'), {
@@ -692,7 +692,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     await openRestoreModal();
     fireEvent.change(screen.getByLabelText('Cópia de segurança (nome ou caminho)'), {
@@ -728,7 +728,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     await openRestoreModal();
     fireEvent.change(screen.getByLabelText('Cópia de segurança (nome ou caminho)'), {
@@ -759,7 +759,7 @@ describe('LivrosIntegridadeSection', () => {
     };
     const { fn } = sectionFetch(report);
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     expect(await screen.findByText('Segmentos re-ancorados')).toBeTruthy();
     // The permanent-disclosure copy is shown verbatim, per-segment.
@@ -777,7 +777,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     // Open the last-resort re-anchor modal (enabled because the chain is broken).
     await openReanchorModal();
@@ -817,7 +817,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     await openReanchorModal();
     fireEvent.change(screen.getByLabelText('Motivo (obrigatório)'), {
@@ -847,7 +847,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     await openReanchorModal();
     fireEvent.change(screen.getByLabelText('Motivo (obrigatório)'), {
@@ -874,7 +874,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     fireEvent.click(await screen.findByRole('button', { name: /Exportar/ }));
 
@@ -894,7 +894,7 @@ describe('LivrosIntegridadeSection', () => {
       return null;
     });
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<LivrosIntegridadeSection />);
+    renderWithProviders(<BookIntegritySection />);
 
     fireEvent.change(document.querySelector('input[type=file]') as HTMLInputElement, {
       target: { files: [makeZipFile()] },

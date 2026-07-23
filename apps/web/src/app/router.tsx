@@ -160,7 +160,7 @@ export const routeModuleLoaders = {
   ledger: () => import('../features/ledger/LedgerPage'),
   notifications: () => import('../features/notifications/NotificationsPage'),
   admin: () => import('../features/admin/AdminPage'),
-  ferramentas: () => import('../features/ferramentas/FerramentasPage'),
+  tools: () => import('../features/tools/ToolsPage'),
   settings: () => import('../features/settings/SettingsPage'),
   cae: () => import('../features/cae/CaePage'),
   notFound: () => import('../features/NotFoundPage'),
@@ -306,7 +306,7 @@ export const router = createBrowserRouter([
       {
         path: 'tools/:tool?/:sec?',
         handle: { navDepth: 1 },
-        element: lazyRoute(routeModuleLoaders.ferramentas, 'FerramentasPage'),
+        element: lazyRoute(routeModuleLoaders.tools, 'ToolsPage'),
       },
       {
         path: 'settings/:sec?/:sub?',

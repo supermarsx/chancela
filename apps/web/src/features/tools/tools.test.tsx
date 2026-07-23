@@ -22,7 +22,7 @@ const saveFileMock = vi.hoisted(() => ({
 
 vi.mock('../../desktop/saveFile', () => saveFileMock);
 
-import { FerramentasPage } from './FerramentasPage';
+import { ToolsPage } from './ToolsPage';
 import { CaeExplorer } from '../cae/CaeExplorer';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -110,7 +110,7 @@ const SEARCHES: Record<string, CaeNode[]> = {
  * A branching fetch stub for the Ferramentas surface. Order matters: refresh (POST) →
  * single-code lookup (`/v1/cae/<code>`) → search (`?search=`) → catalog metadata.
  */
-function ferramentasFetch(
+function toolsFetch(
   refresh: () => Response = () => jsonResponse({ updated: false }),
 ): typeof fetch {
   return ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -577,7 +577,7 @@ function deferred<T>() {
 describe('Ferramentas — ASiC signature inspector', () => {
   it('renders the ASiC inspector with the action disabled until a container is selected', async () => {
     vi.stubGlobal('fetch', asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/asic']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/asic']);
 
     expect(screen.getByText('Inspetor técnico ASiC')).toBeTruthy();
     expect(screen.getByText('Inspeção técnica local')).toBeTruthy();
@@ -592,7 +592,7 @@ describe('Ferramentas — ASiC signature inspector', () => {
   it('uploads an ASiC container as base64 with declared SHA-256 and size', async () => {
     const fetchMock = vi.fn(asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/asic']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/asic']);
 
     const file = new File(['asic zip'], 'sample.asice', { type: 'application/zip' });
     fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
@@ -624,7 +624,7 @@ describe('Ferramentas — ASiC signature inspector', () => {
 
   it('renders ASiC diagnostics and visible no-claim caveats from the backend response', async () => {
     vi.stubGlobal('fetch', asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/asic']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/asic']);
 
     const file = new File(['asic zip'], 'sample.asice', { type: 'application/zip' });
     fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
@@ -657,7 +657,7 @@ describe('Ferramentas — ASiC signature inspector', () => {
         ),
       ),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/asic']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/asic']);
 
     const file = new File(['asic zip'], 'mismatch.asice', { type: 'application/zip' });
     fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
@@ -688,7 +688,7 @@ describe('Ferramentas — ASiC signature inspector', () => {
       return Promise.reject(new Error(`no stub for ${url}`));
     });
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/asic']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/asic']);
 
     const input = await screen.findByLabelText('Contentor ASiC');
     fireEvent.change(input, {
@@ -780,7 +780,7 @@ function externalValidatorReportsFetch(
 describe('Ferramentas — PDF signature validator', () => {
   it('keeps validation disabled until a PDF is selected', async () => {
     vi.stubGlobal('fetch', pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     expect(
       (await screen.findByRole('button', { name: /validar pdf/i })).hasAttribute('disabled'),
@@ -790,7 +790,7 @@ describe('Ferramentas — PDF signature validator', () => {
   it('uploads a PDF as base64 with declared SHA-256 and size', async () => {
     const fetchMock = vi.fn(pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     const file = new File(['%PDF-1.7\n%%EOF'], 'signed.pdf', { type: 'application/pdf' });
     fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
@@ -820,7 +820,7 @@ describe('Ferramentas — PDF signature validator', () => {
 
   it('renders a valid response with structure, PAdES, DSS, LTV and trust sections', async () => {
     vi.stubGlobal('fetch', pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     const file = new File(['%PDF-1.7\n%%EOF'], 'signed.pdf', { type: 'application/pdf' });
     fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
@@ -852,7 +852,7 @@ describe('Ferramentas — PDF signature validator', () => {
       configurable: true,
     });
     vi.stubGlobal('fetch', pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     const file = new File(['%PDF-1.7\n%%EOF'], 'signed.pdf', { type: 'application/pdf' });
     fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
@@ -875,7 +875,7 @@ describe('Ferramentas — PDF signature validator', () => {
       bytes: 1,
     });
     vi.stubGlobal('fetch', pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     const file = new File(['%PDF-1.7\n%%EOF'], 'signed.pdf', { type: 'application/pdf' });
     fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
@@ -920,7 +920,7 @@ describe('Ferramentas — PDF signature validator', () => {
         } satisfies PdfSignatureValidationResponse),
       ),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     const file = new File(['%PDF-1.7\n%%EOF'], 'bad.pdf', { type: 'application/pdf' });
     fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
@@ -941,7 +941,7 @@ describe('Ferramentas — PDF signature validator', () => {
         ),
       ),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf']);
 
     const file = new File(['%PDF-1.7\n%%EOF'], 'mismatch.pdf', { type: 'application/pdf' });
     fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
@@ -958,7 +958,7 @@ describe('Ferramentas — PDF signature validator', () => {
 describe('Ferramentas — external-validator reports panel', () => {
   it('renders under its own sub-tab of the PDF tools surface', async () => {
     vi.stubGlobal('fetch', externalValidatorReportsFetch());
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     expect(
       screen.getByRole('button', { name: 'Relatórios técnicos' }).getAttribute('aria-pressed'),
@@ -971,7 +971,7 @@ describe('Ferramentas — external-validator reports panel', () => {
 
   it('renders empty and list states from the redacted metadata endpoint', async () => {
     vi.stubGlobal('fetch', externalValidatorReportsFetch());
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     expect(await screen.findByText('Sem relatórios de validador externo')).toBeTruthy();
     cleanup();
@@ -986,7 +986,7 @@ describe('Ferramentas — external-validator reports panel', () => {
         },
       }),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     expect(await screen.findByText('CASE-001')).toBeTruthy();
     expect(screen.getByText('AMA DSS')).toBeTruthy();
@@ -1005,7 +1005,7 @@ describe('Ferramentas — external-validator reports panel', () => {
   it('rejects invalid JSON in the browser without posting it', async () => {
     const fetchMock = vi.fn(externalValidatorReportsFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     const file = new File(['{ not json'], 'bad.json', { type: 'application/json' });
     fireEvent.change(await screen.findByLabelText('JSON do validador externo'), {
@@ -1034,7 +1034,7 @@ describe('Ferramentas — external-validator reports panel', () => {
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     const raw = '{\n  "case_id": "CASE-001",\n  "validator_family": "AMA DSS"\n}\n';
     const file = new File([raw], 'report.json', { type: 'application/json' });
@@ -1069,7 +1069,7 @@ describe('Ferramentas — external-validator reports panel', () => {
   it('selecting a raw report does not upload automatically', async () => {
     const fetchMock = vi.fn(externalValidatorReportsFetch());
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     const metadata = new File(['{"case_id":"CASE-001"}'], 'metadata.json', {
       type: 'application/json',
@@ -1110,7 +1110,7 @@ describe('Ferramentas — external-validator reports panel', () => {
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     const metadata = new File(
       ['{"case_id":"CASE-001","validator_family":"AMA DSS"}'],
@@ -1185,7 +1185,7 @@ describe('Ferramentas — external-validator reports panel', () => {
         },
       }),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     expect(await screen.findByText('Resumo redigido do relatório bruto')).toBeTruthy();
     expect(screen.getByText('raw_report_attached')).toBeTruthy();
@@ -1216,7 +1216,7 @@ describe('Ferramentas — external-validator reports panel', () => {
         },
       }),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/reports']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/reports']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Guardar resumo de metadados' }));
 
@@ -1241,8 +1241,8 @@ describe('Ferramentas — external-validator reports panel', () => {
 
 describe('Ferramentas — CAE catalog panel', () => {
   it('shows catalog metadata (origin + per-revision totals)', async () => {
-    vi.stubGlobal('fetch', ferramentasFetch());
-    renderWithProviders(<FerramentasPage />, ['/tools']);
+    vi.stubGlobal('fetch', toolsFetch());
+    renderWithProviders(<ToolsPage />, ['/tools']);
 
     expect(await screen.findByText('Incorporado')).toBeTruthy();
     // Rev.4 total = sum of the five level counts.
@@ -1252,7 +1252,7 @@ describe('Ferramentas — CAE catalog panel', () => {
   it('reports a successful refresh distinctly', async () => {
     vi.stubGlobal(
       'fetch',
-      ferramentasFetch(() =>
+      toolsFetch(() =>
         jsonResponse({
           updated: true,
           metadata: { ...CATALOG, origin: 'Cache' },
@@ -1260,7 +1260,7 @@ describe('Ferramentas — CAE catalog panel', () => {
         }),
       ),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools']);
 
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     expect(await screen.findByText('Catálogo atualizado')).toBeTruthy();
@@ -1269,7 +1269,7 @@ describe('Ferramentas — CAE catalog panel', () => {
   it('routes a 422 "not configured" to Configurações (contract F1b)', async () => {
     vi.stubGlobal(
       'fetch',
-      ferramentasFetch(() =>
+      toolsFetch(() =>
         jsonResponse(
           {
             error:
@@ -1279,7 +1279,7 @@ describe('Ferramentas — CAE catalog panel', () => {
         ),
       ),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools']);
 
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     expect(await screen.findByText('Configuração em falta')).toBeTruthy();
@@ -1293,9 +1293,9 @@ describe('Ferramentas — CAE catalog panel', () => {
   it('reports a 502 upstream failure distinctly from the 422 config state', async () => {
     vi.stubGlobal(
       'fetch',
-      ferramentasFetch(() => jsonResponse({ error: 'cae source failed: connection refused' }, 502)),
+      toolsFetch(() => jsonResponse({ error: 'cae source failed: connection refused' }, 502)),
     );
-    renderWithProviders(<FerramentasPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools']);
 
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     expect(await screen.findByText('Fonte do catálogo indisponível')).toBeTruthy();
@@ -1308,7 +1308,7 @@ describe('Ferramentas — page title', () => {
     vi.stubGlobal('fetch', asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
     // The browser tab title is owned by index.html; no page may clobber it.
     document.title = 'Chancela — Livro de Atas Digital';
-    renderWithProviders(<FerramentasPage />, ['/tools/pdf/asic']);
+    renderWithProviders(<ToolsPage />, ['/tools/pdf/asic']);
 
     // The header used to carry a self-referential breadcrumb repeating "Ferramentas"
     // above the title; only the <h1> survives.
@@ -1333,8 +1333,8 @@ describe('Ferramentas — sub-tab animation + indicator', () => {
   };
 
   // A stub that also answers the Legislação surface's corpus + `/v1/law` probes cleanly.
-  function toolsFetch(): typeof fetch {
-    const base = ferramentasFetch();
+  function lawAwareToolsFetch(): typeof fetch {
+    const base = toolsFetch();
     return ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url.includes('/v1/law/corpus')) return Promise.resolve(jsonResponse(EMPTY_CORPUS));
@@ -1344,14 +1344,14 @@ describe('Ferramentas — sub-tab animation + indicator', () => {
   }
 
   it('re-keys the content on tool switch but not on an unrelated (?q) param change', async () => {
-    vi.stubGlobal('fetch', toolsFetch());
-    const { container } = renderWithProviders(<FerramentasPage />, ['/tools']);
+    vi.stubGlobal('fetch', lawAwareToolsFetch());
+    const { container } = renderWithProviders(<ToolsPage />, ['/tools']);
     const animKey = () => container.querySelector('[data-anim-key]')?.getAttribute('data-anim-key');
 
     // Default surface is CAE; its indicator + active pill track the CAE sub-tab.
     expect(await screen.findByText('Incorporado')).toBeTruthy();
     expect(animKey()).toBe('cae');
-    expect(container.querySelector('.ferramentas-subnav__indicator')).toBeTruthy();
+    expect(container.querySelector('.tools-subnav__indicator')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Catálogo CAE' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
@@ -1374,7 +1374,7 @@ describe('Ferramentas — sub-tab animation + indicator', () => {
 
 describe('Ferramentas — CAE explorer', () => {
   it('searches, and selecting a hit resolves its detail with a hierarchy breadcrumb', async () => {
-    vi.stubGlobal('fetch', ferramentasFetch());
+    vi.stubGlobal('fetch', toolsFetch());
     renderWithProviders(<CaeExplorer />, ['/tools']);
 
     fireEvent.change(screen.getByLabelText('Procurar no catálogo CAE'), {
@@ -1392,7 +1392,7 @@ describe('Ferramentas — CAE explorer', () => {
   });
 
   it('drills DOWN a numeric node to its exact prefix children, dropping non-children', async () => {
-    vi.stubGlobal('fetch', ferramentasFetch());
+    vi.stubGlobal('fetch', toolsFetch());
     // Deep-link straight to the divisão so its subníveis load.
     renderWithProviders(<CaeExplorer />, ['/tools?code=68&rev=Rev4']);
 
@@ -1406,7 +1406,7 @@ describe('Ferramentas — CAE explorer', () => {
   });
 
   it('switches revision (Rev.3 / Rev.4) via the segmented control', async () => {
-    vi.stubGlobal('fetch', ferramentasFetch());
+    vi.stubGlobal('fetch', toolsFetch());
     renderWithProviders(<CaeExplorer />, ['/tools']);
 
     const rev3 = await screen.findByRole('button', { name: 'Rev.3' });

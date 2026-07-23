@@ -54,10 +54,10 @@ function isSettingsSurface(path: string): boolean {
   return (
     path.startsWith('./') ||
     path.endsWith('/pairing/PairingPanel.tsx') ||
-    path.endsWith('/rbac/FuncoesSection.tsx') ||
-    path.endsWith('/rbac/DelegacoesSection.tsx') ||
-    path.endsWith('/recovery/GestaoDadosSection.tsx') ||
-    path.endsWith('/recovery/LivrosIntegridadeSection.tsx') ||
+    path.endsWith('/rbac/RolesSection.tsx') ||
+    path.endsWith('/rbac/DelegationsSection.tsx') ||
+    path.endsWith('/recovery/DataManagementSection.tsx') ||
+    path.endsWith('/recovery/BookIntegritySection.tsx') ||
     path.endsWith('/users/NewUserPage.tsx') ||
     path.endsWith('/users/EditUserPage.tsx')
   );

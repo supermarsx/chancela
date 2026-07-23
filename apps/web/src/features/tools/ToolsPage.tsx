@@ -1,5 +1,5 @@
 /**
- * Ferramentas (t22-web item 3) — the tools surface reached from the fixed tab bar.
+ * Tools (t22-web item 3) — the tools surface reached from the fixed tab bar.
  *
  * A sub-navigation (segmented control) switches between three consultation surfaces:
  *  - **Catálogo CAE** (default) — the CAE explorer (search + revision switch + hierarchy
@@ -8,7 +8,7 @@
  *  - **Legislação** (t24) — a curated law shelf: the diplomas that ground the product,
  *    each with a faithful extract, official links and a last-reviewed date.
  *  - **Validador PDF** — itself split into a second sub-tab level (a second path segment, see
- *    `ValidadorTecnicoSection`): PDF/PAdES validation, ASiC container inspection, and the
+ *    `TechnicalValidatorSection`): PDF/PAdES validation, ASiC container inspection, and the
  *    external-validator technical report shelf.
  *  - **Lista de confiança** — the read-only TSL trust catalog/status surface for
  *    checking the parsed scheme, provider and service trust metadata.
@@ -28,14 +28,14 @@ import { Icon, PageHeader } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { CaeExplorer } from '../cae/CaeExplorer';
 import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
-import { LegislacaoPage } from '../legislacao/LegislacaoPage';
-import { ValidadorTecnicoSection } from './ValidadorTecnicoSection';
+import { LegislationPage } from '../legislation/LegislationPage';
+import { TechnicalValidatorSection } from './TechnicalValidatorSection';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import { ExternalSigningWorkflowsPage } from './ExternalSigningWorkflowsPage';
 
-type FerramentasSection = 'cae' | 'legislation' | 'pdf' | 'trust' | 'external-signing';
+type ToolsSection = 'cae' | 'legislation' | 'pdf' | 'trust' | 'external-signing';
 
-const SECTIONS: { id: FerramentasSection; label: MessageKey; icon: ReactNode }[] = [
+const SECTIONS: { id: ToolsSection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'cae', label: 'tools.section.cae', icon: <Icon.Layers /> },
   { id: 'legislation', label: 'tools.section.legislacao', icon: <Icon.Scale /> },
   { id: 'pdf', label: 'tools.section.pdfValidator', icon: <Icon.FileText /> },
@@ -43,18 +43,18 @@ const SECTIONS: { id: FerramentasSection; label: MessageKey; icon: ReactNode }[]
   { id: 'external-signing', label: 'tools.section.externalSigning', icon: <Icon.PenNib /> },
 ];
 
-const isFerramentasSection = (value: string | undefined): value is FerramentasSection =>
+const isToolsSection = (value: string | undefined): value is ToolsSection =>
   SECTIONS.some((s) => s.id === value);
 
-export function FerramentasPage() {
+export function ToolsPage() {
   const t = useT();
   const locale = useActiveLocale();
   // The CAE surface is the default, so it carries no segment (keeps `/cae` and the smoke
   // flow landing straight on the explorer). Derived from the path on every render, so a
   // `/tools/pdf` deep link paints the validator on the first frame.
-  const { section, select: selectSection } = useSectionNav<FerramentasSection>({
+  const { section, select: selectSection } = useSectionNav<ToolsSection>({
     base: '/tools',
-    parse: (raw) => (isFerramentasSection(raw) ? raw : 'cae'),
+    parse: (raw) => (isToolsSection(raw) ? raw : 'cae'),
     fallback: 'cae',
     replace: true,
   });
@@ -64,7 +64,7 @@ export function FerramentasPage() {
   // labels' differing widths and re-measures on locale change / resize; the CSS
   // transition does the sliding and collapses under prefers-reduced-motion.
   const navRef = useRef<HTMLDivElement>(null);
-  const btnRefs = useRef<Record<FerramentasSection, HTMLButtonElement | null>>({
+  const btnRefs = useRef<Record<ToolsSection, HTMLButtonElement | null>>({
     cae: null,
     legislation: null,
     pdf: null,
@@ -108,17 +108,17 @@ export function FerramentasPage() {
 
   return (
     <div className="stack">
-      {/* No `crumbs`: Ferramentas is a top-level tab with no parent, so a breadcrumb
+      {/* No `crumbs`: Tools is a top-level tab with no parent, so a breadcrumb
           would only repeat the title on the line above it. */}
       <PageHeader title={t('tools.title')}>
         <div
-          className="ferramentas-subnav"
+          className="tools-subnav"
           role="group"
           aria-label={t('tools.subnav.aria')}
           ref={navRef}
         >
           <span
-            className="ferramentas-subnav__indicator"
+            className="tools-subnav__indicator"
             aria-hidden="true"
             style={
               indicator
@@ -139,12 +139,12 @@ export function FerramentasPage() {
               }}
               type="button"
               className={
-                s.id === section ? 'ferramentas-subnav__btn is-active' : 'ferramentas-subnav__btn'
+                s.id === section ? 'tools-subnav__btn is-active' : 'tools-subnav__btn'
               }
               aria-pressed={s.id === section}
               onClick={() => selectSection(s.id)}
             >
-              <span className="ferramentas-subnav__icon" aria-hidden="true">
+              <span className="tools-subnav__icon" aria-hidden="true">
                 {s.icon}
               </span>
               {t(s.label)}
@@ -161,11 +161,11 @@ export function FerramentasPage() {
         {section === 'trust' ? (
           <TrustCatalogPage />
         ) : section === 'pdf' ? (
-          <ValidadorTecnicoSection />
+          <TechnicalValidatorSection />
         ) : section === 'external-signing' ? (
           <ExternalSigningWorkflowsPage />
         ) : section === 'legislation' ? (
-          <LegislacaoPage />
+          <LegislationPage />
         ) : (
           <div className="stack">
             <CaeExplorer />

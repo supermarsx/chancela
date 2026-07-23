@@ -493,7 +493,7 @@ function DelegationRow({ d, now }: { d: DelegationView; now: number }) {
   );
 }
 
-export function DelegacoesSection() {
+export function DelegationsSection() {
   const t = useT();
   const delegations = useDelegations();
   const users = useUsers();

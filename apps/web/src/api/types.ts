@@ -3476,7 +3476,7 @@ export type TsaCatalogSearchParams = TslCatalogSearchParams;
 //
 // IMPORTANT — the manifest is its own curation (9 diplomas, its own ids; only the two CAE
 // diplomas carry a non-null `pdf_url`, i.e. are archivable). Our display shelf
-// (`features/legislacao/diplomas.ts`, 16 finer-grained entries) is the DISPLAY source of
+// (`features/legislation/diplomas.ts`, 16 finer-grained entries) is the DISPLAY source of
 // truth; the manifest is the authority for STORED state. We look up the manifest by id and
 // only offer archive actions where a matching server entry exists AND its `pdf_url` is
 // non-null; everywhere else the card is links-only. The id-scheme reconciliation (our

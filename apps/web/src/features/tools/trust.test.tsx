@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { getByRevealedText, renderWithProviders } from '../../test/utils';
-import { FerramentasPage } from './FerramentasPage';
+import { ToolsPage } from './ToolsPage';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import type {
   TslCatalogView,
@@ -575,7 +575,7 @@ afterEach(() => {
 describe('Ferramentas — TSL trust catalog', () => {
   it('exposes the trust section and renders scheme/source/signature status', async () => {
     vi.stubGlobal('fetch', trustFetch());
-    renderWithProviders(<FerramentasPage />, ['/tools/trust']);
+    renderWithProviders(<ToolsPage />, ['/tools/trust']);
 
     expect(
       screen.getByRole('button', { name: 'Lista de confiança' }).getAttribute('aria-pressed'),

@@ -484,7 +484,7 @@ function ChainStatusRow({ status, label }: { status: ChainStatusView; label: str
   );
 }
 
-export function LivrosIntegridadeSection() {
+export function BookIntegritySection() {
   const t = useT();
   const toast = useToast();
   const integrity = useLedgerIntegrity();

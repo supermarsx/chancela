@@ -1,6 +1,6 @@
 /**
  * A segmented sub-navigation pill shared by surfaces that split into sub-tabs. It mirrors
- * the Ferramentas sub-nav visually (same `.subnav*` styling, aliased to `.ferramentas-subnav*`
+ * the Ferramentas sub-nav visually (same `.subnav*` styling, aliased to `.tools-subnav*`
  * in theme.css) — a gliding gilt indicator that slides under the active button, measured
  * from the live button box so it tracks label widths. Pair it with the app's
  * `.route-transition` (keyed on the active id) to fade the content in on switch.

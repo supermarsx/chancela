@@ -21,9 +21,9 @@ import {
 } from '../session/permissions';
 import type { PermissionGrant, UserView } from '../../api/types';
 import { PermissionMatrix } from './PermissionMatrix';
-import { FuncoesSection } from './FuncoesSection';
+import { RolesSection } from './RolesSection';
 import { RoleAssignmentManager } from './RoleAssignmentManager';
-import { DelegacoesSection } from './DelegacoesSection';
+import { DelegationsSection } from './DelegationsSection';
 
 afterEach(() => cleanup());
 
@@ -162,7 +162,7 @@ describe('PermissionMatrix — subset honesty', () => {
 
 // --- Roles view -----------------------------------------------------------------
 
-describe('FuncoesSection — role create + gating', () => {
+describe('RolesSection — role create + gating', () => {
   it('an Owner creates a role within their permissions (POST /v1/roles)', async () => {
     const { fn, calls } = mockFetch([
       { method: 'GET', match: '/v1/roles', body: [] },
@@ -175,7 +175,7 @@ describe('FuncoesSection — role create + gating', () => {
     ]);
     vi.stubGlobal('fetch', fn);
 
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
     fireEvent.click(await screen.findByRole('button', { name: 'Nova função' }));
 
     fireEvent.change(screen.getByLabelText('Nome da função'), {
@@ -205,7 +205,7 @@ describe('FuncoesSection — role create + gating', () => {
     ]);
     vi.stubGlobal('fetch', fn);
 
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
     fireEvent.click(await screen.findByRole('button', { name: 'Nova função' }));
 
     const group = screen.getByRole('group', { name: 'Permissões' });
@@ -228,7 +228,7 @@ describe('FuncoesSection — role create + gating', () => {
 
     // Holds reads but NOT role.manage.
     renderRbac(
-      <FuncoesSection />,
+      <RolesSection />,
       value((p) => p !== 'role.manage'),
     );
 
@@ -261,7 +261,7 @@ describe('FuncoesSection — role create + gating', () => {
     ]);
     vi.stubGlobal('fetch', fn);
 
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     const row = (await screen.findByText('Platform Administrator')).closest('tr')!;
     expect(within(row).getByText('Revisão manual')).toBeTruthy();
@@ -320,7 +320,7 @@ describe('FuncoesSection — role create + gating', () => {
     ]);
     vi.stubGlobal('fetch', fn);
 
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     const row = (await screen.findByText('Platform Administrator')).closest('tr')!;
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
@@ -371,7 +371,7 @@ describe('FuncoesSection — role create + gating', () => {
     vi.stubGlobal('fetch', fn);
 
     renderRbac(
-      <FuncoesSection />,
+      <RolesSection />,
       value((p) => p !== 'role.manage'),
     );
 
@@ -389,7 +389,7 @@ describe('FuncoesSection — role create + gating', () => {
 // PATCHes becomes, immediately, the authority every live delegation of that função conveys. These
 // pin the ways that editor could silently convey the wrong set.
 
-describe('FuncoesSection — editing and deleting a função', () => {
+describe('RolesSection — editing and deleting a função', () => {
   const ROLE = {
     id: 'r7',
     name: 'Secretário',
@@ -411,7 +411,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
     const calls = stubRoles([
       { method: 'PATCH', match: '/v1/roles/r7', body: { ...ROLE, permissions: ['entity.read'] } },
     ]);
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
     expect(screen.getByRole('heading', { name: 'Editar função' })).toBeTruthy();
@@ -442,7 +442,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
 
   it('trims the name and refuses to save a blank one', async () => {
     const calls = stubRoles([{ method: 'PATCH', match: '/v1/roles/r7', body: ROLE }]);
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
     fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
 
     const name = screen.getByLabelText('Nome da função');
@@ -463,7 +463,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
 
   it('cancelling the editor discards the draft instead of writing it', async () => {
     const calls = stubRoles();
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
     fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
 
     fireEvent.change(screen.getByLabelText('Nome da função'), { target: { value: 'Outra coisa' } });
@@ -479,7 +479,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
 
   it('deleting a função takes two deliberate steps, and cancelling writes nothing', async () => {
     const calls = stubRoles([{ method: 'DELETE', match: '/v1/roles/r7', status: 204 }]);
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     // The first click only arms the confirmation — deleting a função silently drops the authority
     // of every delegation of it, so a single misclick must not do it.
@@ -512,7 +512,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
         body: { error: 'A função está atribuída a utilizadores.' },
       },
     ]);
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminação' }));
@@ -530,7 +530,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
     stubRoles([], [
       { id: 'owner', name: 'Proprietário', permissions: ['entity.read', 'role.manage'], protected: true },
     ]);
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     const row = (await screen.findByText('Proprietário')).closest('tr')!;
     expect(within(row).getByText('Protegida')).toBeTruthy();
@@ -546,7 +546,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
 
   it('offers an empty state rather than a headed table with no rows', async () => {
     stubRoles([], []);
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     expect(await screen.findByText('Sem funções')).toBeTruthy();
     expect(screen.getByText('Crie uma função para agrupar permissões.')).toBeTruthy();
@@ -561,7 +561,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
         seeded_role_drift: { missing_default_permissions: [], requires_manual_review: false },
       },
     ]);
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     const row = (await screen.findByText('Secretário')).closest('tr')!;
     expect(within(row).getByText('Atual')).toBeTruthy();
@@ -601,7 +601,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
         },
       ],
     );
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     const row = (await screen.findByText('Secretário')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'Rever defaults' }));
@@ -620,7 +620,7 @@ describe('FuncoesSection — editing and deleting a função', () => {
       { method: 'GET', match: '/v1/permissions', body: CATALOG },
     ]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<FuncoesSection />);
+    renderRbac(<RolesSection />);
 
     expect(await screen.findByText(/catálogo indisponível/)).toBeTruthy();
     expect(screen.queryByText('Sem funções')).toBeNull();
@@ -717,7 +717,7 @@ describe('RoleAssignmentManager — scoped assignment + last-Owner 409', () => {
 
 // --- Scoped delegation ----------------------------------------------------------
 
-describe('DelegacoesSection — hand over a função, suspend it, revoke it', () => {
+describe('DelegationsSection — hand over a função, suspend it, revoke it', () => {
   /** The catalog the picker reads: one fully-held função, one above the ceiling, one meta-laden. */
   const ROLES = [
     {
@@ -798,7 +798,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
   it('offers only funções the grantor fully holds, and shows what each one carries', async () => {
     const { fn } = mockFetch([{ method: 'GET', match: '/v1/delegations', body: [] }, ...BASE]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<DelegacoesSection />, GRANTOR());
+    renderRbac(<DelegationsSection />, GRANTOR());
 
     fireEvent.click(await screen.findByRole('button', { name: 'Nova delegação' }));
     const group = () => screen.getByRole('group', { name: 'Funções a delegar' });
@@ -830,7 +830,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       { method: 'POST', match: '/v1/delegations', body: delegation() },
     ]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<DelegacoesSection />, GRANTOR());
+    renderRbac(<DelegationsSection />, GRANTOR());
 
     fireEvent.click(await screen.findByRole('button', { name: 'Nova delegação' }));
     await waitFor(() => {
@@ -873,7 +873,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       ...BASE,
     ]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<DelegacoesSection />, GRANTOR());
+    renderRbac(<DelegationsSection />, GRANTOR());
 
     const row = (await screen.findByRole('cell', { name: /Secretário/ })).closest('tr')!;
     // The função is named for a human, and its current contents are shown alongside.
@@ -915,7 +915,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       ...BASE,
     ]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<DelegacoesSection />, GRANTOR());
+    renderRbac(<DelegationsSection />, GRANTOR());
 
     const legacyRow = (await screen.findByText('entity.read')).closest('tr')!;
     // The start of a delegation renders through the shared evidentiary formatter, not as the
@@ -941,7 +941,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       },
     ]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<DelegacoesSection />, GRANTOR());
+    renderRbac(<DelegationsSection />, GRANTOR());
 
     const row = (await screen.findByRole('cell', { name: /Secretário/ })).closest('tr')!;
     expect(within(row).getByText('Ativa')).toBeTruthy();
@@ -961,7 +961,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       { method: 'POST', match: '/v1/delegations/d1/resume', body: delegation() },
     ]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<DelegacoesSection />, GRANTOR());
+    renderRbac(<DelegationsSection />, GRANTOR());
 
     // A suspended delegation is NOT hidden: it conveys nothing because the server stops it where
     // authority resolves, and the row says so honestly.
@@ -999,7 +999,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       ...BASE,
     ]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<DelegacoesSection />, GRANTOR());
+    renderRbac(<DelegationsSection />, GRANTOR());
 
     await screen.findByRole('cell', { name: /Secretário/ });
     expect(screen.getByRole('cell', { name: /Auxiliar Júnior/ })).toBeTruthy();
@@ -1041,7 +1041,7 @@ describe('DelegacoesSection — hand over a função, suspend it, revoke it', ()
       { method: 'DELETE', match: '/v1/delegations/d1', status: 204, body: null },
     ]);
     vi.stubGlobal('fetch', fn);
-    renderRbac(<DelegacoesSection />, GRANTOR());
+    renderRbac(<DelegationsSection />, GRANTOR());
 
     const row = (await screen.findByRole('cell', { name: /Secretário/ })).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'Revogar' }));

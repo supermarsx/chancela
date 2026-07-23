@@ -1,6 +1,6 @@
 /**
  * The curated Legislação shelf (t24, archive-aware t27) — the editorial highlights view of
- * the Legislação surface, one of the two sub-tabs {@link LegislacaoPage} hosts (beside the
+ * the Legislação surface, one of the two sub-tabs {@link LegislationPage} hosts (beside the
  * full-text {@link CorpusReader}).
  *
  * Renders the {@link DIPLOMAS} inventory grouped by theme. Each diploma is an editorial
@@ -52,9 +52,9 @@ import {
 import { ExternalLink } from './links';
 import {
   DIPLOMAS,
-  LEGISLACAO_TEMAS,
+  LEGISLATION_THEMES,
   REVIEWED_ON,
-  diplomasByTema,
+  diplomasByTheme,
   searchDiplomas,
   type Diploma,
 } from './diplomas';
@@ -284,12 +284,12 @@ export function CuratedShelf() {
             <p>{t('legislacao.search.empty.body', { term: query })}</p>
           </EmptyState>
         ) : (
-          LEGISLACAO_TEMAS.map((tema) => {
-            const items = diplomasByTema(tema.id).filter((d) => !matchIds || matchIds.has(d.id));
+          LEGISLATION_THEMES.map((theme) => {
+            const items = diplomasByTheme(theme.id).filter((d) => !matchIds || matchIds.has(d.id));
             if (items.length === 0) return null;
             return (
-              <section key={tema.id} className="leg-group" aria-label={tema.label}>
-                <h3 className="leg-group__title">{tema.label}</h3>
+              <section key={theme.id} className="leg-group" aria-label={theme.label}>
+                <h3 className="leg-group__title">{theme.label}</h3>
                 <div className="leg-group__cards">
                   {items.map((d) => (
                     <DiplomaCard key={d.id} diploma={d} archive={archive.data} />

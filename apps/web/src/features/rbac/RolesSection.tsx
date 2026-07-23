@@ -317,7 +317,7 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
 
 type EditorState = { mode: 'create' } | { mode: 'edit'; role: RoleView } | null;
 
-export function FuncoesSection() {
+export function RolesSection() {
   const t = useT();
   const roles = useRoles();
   const catalog = usePermissionCatalog();

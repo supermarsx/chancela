@@ -5,7 +5,7 @@ import { renderWithProviders } from '../../test/utils';
 import { CaeRefList } from './CaeRefList';
 import { CaePage } from './CaePage';
 import { CaeCatalogPanel } from './CaeCatalogPanel';
-import { FerramentasPage } from '../ferramentas/FerramentasPage';
+import { ToolsPage } from '../tools/ToolsPage';
 import type { CaeCatalogView, CaeRefView, CaeRefreshResult } from '../../api/types';
 
 afterEach(() => {
@@ -168,7 +168,7 @@ describe('CaePage redirect', () => {
     renderWithProviders(
       <Routes>
         <Route path="/cae" element={<CaePage />} />
-        <Route path="/tools" element={<FerramentasPage />} />
+        <Route path="/tools" element={<ToolsPage />} />
       </Routes>,
       ['/cae?code=68110&rev=Rev4'],
     );

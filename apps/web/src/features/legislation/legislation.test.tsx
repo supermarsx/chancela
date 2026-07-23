@@ -3,14 +3,14 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { useLocation, useNavigate } from 'react-router-dom';
 import { formatDate, formatTimestamp } from '../../format';
 import { renderWithProviders } from '../../test/utils';
-import { LegislacaoPage } from './LegislacaoPage';
+import { LegislationPage } from './LegislationPage';
 import { CorpusReader } from './CorpusReader';
-import { FerramentasPage } from '../ferramentas/FerramentasPage';
+import { ToolsPage } from '../tools/ToolsPage';
 import {
   DIPLOMAS,
-  LEGISLACAO_TEMAS,
+  LEGISLATION_THEMES,
   REVIEWED_ON,
-  diplomasByTema,
+  diplomasByTheme,
   searchDiplomas,
 } from './diplomas';
 import type {
@@ -93,7 +93,7 @@ afterEach(() => {
 
 describe('Legislação — data module', () => {
   it('every diploma has the required fields and a themed, unique id', () => {
-    const temaIds = new Set(LEGISLACAO_TEMAS.map((t) => t.id));
+    const themeIds = new Set(LEGISLATION_THEMES.map((t) => t.id));
     const seen = new Set<string>();
     for (const d of DIPLOMAS) {
       expect(d.id).toBeTruthy();
@@ -104,7 +104,7 @@ describe('Legislação — data module', () => {
       expect(d.ref.trim().length).toBeGreaterThan(0);
       expect(d.why.trim().length).toBeGreaterThan(0);
       expect(d.extract.trim().length).toBeGreaterThan(0);
-      expect(temaIds.has(d.tema)).toBe(true);
+      expect(themeIds.has(d.theme)).toBe(true);
 
       // Official link is present and stable (DRE or EUR-Lex, https).
       expect(d.officialUrl).toMatch(/^https:\/\/(diariodarepublica\.pt|eur-lex\.europa\.eu)\//);
@@ -117,7 +117,7 @@ describe('Legislação — data module', () => {
     const pdfPattern =
       /^https:\/\/(files\.(dre\.pt|diariodarepublica\.pt)\/.+\.pdf|eur-lex\.europa\.eu\/legal-content\/PT\/TXT\/PDF\/\?uri=CELEX:\w+)$/;
     for (const d of DIPLOMAS) {
-      expect(['quote', 'resumo']).toContain(d.extractKind);
+      expect(['quote', 'summary']).toContain(d.extractKind);
       if (d.pdfUrl !== null) expect(d.pdfUrl).toMatch(pdfPattern);
     }
     // The verbatim quotes are the two canonical EU provisions (eIDAS art. 25 + RGPD art. 5).
@@ -136,8 +136,8 @@ describe('Legislação — data module', () => {
 
   it('populates every declared theme and carries the expanded curation', () => {
     // No theme is an empty shelf.
-    for (const tema of LEGISLACAO_TEMAS) {
-      expect(diplomasByTema(tema.id).length).toBeGreaterThan(0);
+    for (const theme of LEGISLATION_THEMES) {
+      expect(diplomasByTheme(theme.id).length).toBeGreaterThan(0);
     }
     // The t34 additions are present, grouped into their themes.
     const ids = new Set(DIPLOMAS.map((d) => d.id));
@@ -157,7 +157,7 @@ describe('Legislação — data module', () => {
       expect(ids.has(id), id).toBe(true);
     }
     // The new "Registo e identificação" theme is populated.
-    expect(diplomasByTema('registo-identificacao').length).toBeGreaterThanOrEqual(3);
+    expect(diplomasByTheme('registo-identificacao').length).toBeGreaterThanOrEqual(3);
   });
 
   it('searchDiplomas folds accents and case across title/ref/why/extract', () => {
@@ -178,8 +178,8 @@ describe('Legislação — data module', () => {
 describe('Legislação — page', () => {
   it('renders every theme group and the informative caveat', () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
-    for (const t of LEGISLACAO_TEMAS) {
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
+    for (const t of LEGISLATION_THEMES) {
       expect(screen.getByRole('heading', { name: t.label })).toBeTruthy();
     }
     expect(screen.getByText(/faz fé a publicação oficial no Diário da República/)).toBeTruthy();
@@ -187,7 +187,7 @@ describe('Legislação — page', () => {
 
   it('shows a diploma card with its amendment + last-reviewed badges', () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
     // DL 268/94 records an amendment (Lei 8/2022) and the review date.
     const card = screen.getByText('Atas das assembleias de condóminos').closest('article');
     expect(card).not.toBeNull();
@@ -201,7 +201,7 @@ describe('Legislação — page', () => {
 
   it('routes the official-source link through openExternal on a plain click', () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
     const card = screen.getByText('Atas das assembleias de condóminos').closest('article');
     const link = within(card as HTMLElement).getByRole('link', { name: 'Publicação oficial' });
     // The anchor keeps its real href for modified/middle clicks…
@@ -224,7 +224,7 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
 
   it('falls back to links-only when the server has no law store (404)', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
     const scope = within(screen.getByText(CAE4).closest('article') as HTMLElement);
     // The official PDF link is shown, but no "Guardar PDF" action (feature absent).
     expect(scope.getByRole('link', { name: 'PDF oficial' })).toBeTruthy();
@@ -235,7 +235,7 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
     // The server manifest for dl-12-2021 has a null pdf_url (cannot pin the DR files. URL) —
     // even though our shelf has a curated pdfUrl, no Guardar action is offered.
     vi.stubGlobal('fetch', lawFetch({ manifest: [lawEntry({ id: 'dl-12-2021', pdf_url: null })] }));
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
     const scope = within(screen.getByText(EIDAS).closest('article') as HTMLElement);
     expect(scope.getByRole('link', { name: 'PDF oficial' })).toBeTruthy();
     await waitFor(() => expect(scope.queryByRole('button', { name: /Guardar PDF/ })).toBeNull());
@@ -246,7 +246,7 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
       manifest: [lawEntry({ id: 'dl-9-2025', pdf_url: 'https://files.x/y.pdf', stored: false })],
     });
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
 
     const card = screen.getByText(CAE4).closest('article') as HTMLElement;
     const button = await within(card).findByRole('button', { name: 'Guardar PDF' });
@@ -281,7 +281,7 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
         ],
       }),
     );
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
 
     const scope = within(screen.getByText(CAE4).closest('article') as HTMLElement);
     // The stored badge appears (digest + date), and "Abrir PDF" targets the local endpoint.
@@ -298,7 +298,7 @@ describe('Legislação — search', () => {
 
   it('filters the cards live (accent- and case-folded) and shows a match count', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
     const box = screen.getByLabelText('Procurar na legislação');
     // A query typed without accents still matches accented content. Wait for the debounced
     // filter to drop the non-matching diplomas from the shelf.
@@ -312,7 +312,7 @@ describe('Legislação — search', () => {
 
   it('shows an empty state when nothing matches', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
     fireEvent.change(screen.getByLabelText('Procurar na legislação'), {
       target: { value: 'zzzznaoexiste' },
     });
@@ -321,7 +321,7 @@ describe('Legislação — search', () => {
 
   it('clears the search with the clear affordance', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, ['/tools/legislation/shelf']);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf']);
     const box = screen.getByLabelText('Procurar na legislação');
     fireEvent.change(box, { target: { value: 'condominio' } });
     await waitFor(() => expect(screen.queryByText(FUNDACOES)).toBeNull());
@@ -332,7 +332,7 @@ describe('Legislação — search', () => {
 
   it('is deep-linkable via ?q= — seeds the field and pre-filters the shelf', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, [
+    renderWithProviders(<LegislationPage />, [
       '/tools/legislation/shelf?q=eIDAS',
     ]);
     const box = screen.getByLabelText('Procurar na legislação') as HTMLInputElement;
@@ -352,7 +352,7 @@ describe('Ferramentas — Legislação sub-navigation', () => {
     // Stub fetch so the mounted CAE panels + law manifest resolve quietly. The corpus reader's
     // /v1/law/corpus probe simply errors under this stub — its search box still renders.
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<FerramentasPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools']);
 
     // Default: the CAE explorer search is present (keeps the /cae smoke flow intact).
     expect(screen.getByLabelText('Procurar no catálogo CAE')).toBeTruthy();
