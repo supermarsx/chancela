@@ -102,6 +102,74 @@ describe('DraftAtaForm', () => {
     });
   });
 
+  it('threads the chosen ata template id into the draft when the family offers templates (t59)', async () => {
+    // Book → entity family → ata-template catalog all resolve, so the optional picker appears and its
+    // choice rides `POST /v1/acts` as `template_id` for the server to seed the narrative from.
+    const responder = (call: RecordedCall): Response => {
+      if (call.method === 'POST' && call.url === '/v1/acts') return jsonResponse(NEW_ACT, 201);
+      if (call.url.startsWith('/v1/books/')) return jsonResponse({ id: 'book-1', entity_id: 'ent-1' });
+      if (call.url.startsWith('/v1/entities/'))
+        return jsonResponse({ id: 'ent-1', family: 'CommercialCompany' });
+      if (call.url.startsWith('/v1/templates'))
+        return jsonResponse([{ id: 'csc-ata-ag/v1', family: 'CommercialCompany', stage: 'Ata' }]);
+      return jsonResponse({}, 200);
+    };
+    const { fn, calls } = recordingFetch(responder);
+    vi.stubGlobal('fetch', fn);
+    renderDraft();
+
+    fireEvent.change(screen.getByLabelText('Título da ata'), {
+      target: { value: 'Assembleia Geral Ordinária' },
+    });
+
+    // The picker only surfaces once the book → family → catalog chain resolves.
+    const picker = (await screen.findByLabelText('Modelo da ata (opcional)')) as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: 'csc-ata-ag/v1' } });
+    fireEvent.click(screen.getByRole('button', { name: /nova ata/i }));
+
+    expect(await screen.findByText('EDITOR DE ATA')).toBeTruthy();
+    const draftCall = calls.find((c) => c.method === 'POST' && c.url === '/v1/acts');
+    expect(draftCall?.body).toEqual({
+      book_id: 'book-1',
+      title: 'Assembleia Geral Ordinária',
+      channel: 'Physical',
+      template_id: 'csc-ata-ag/v1',
+    });
+  });
+
+  it('omits template_id when the default model is kept (t59)', async () => {
+    // Same resolved chain, but the operator leaves "Modelo predefinido" selected: the wire stays
+    // byte-identical to a pre-t59 draft (no `template_id`), and the server resolves the family default.
+    const responder = (call: RecordedCall): Response => {
+      if (call.method === 'POST' && call.url === '/v1/acts') return jsonResponse(NEW_ACT, 201);
+      if (call.url.startsWith('/v1/books/')) return jsonResponse({ id: 'book-1', entity_id: 'ent-1' });
+      if (call.url.startsWith('/v1/entities/'))
+        return jsonResponse({ id: 'ent-1', family: 'CommercialCompany' });
+      if (call.url.startsWith('/v1/templates'))
+        return jsonResponse([{ id: 'csc-ata-ag/v1', family: 'CommercialCompany', stage: 'Ata' }]);
+      return jsonResponse({}, 200);
+    };
+    const { fn, calls } = recordingFetch(responder);
+    vi.stubGlobal('fetch', fn);
+    renderDraft();
+
+    fireEvent.change(screen.getByLabelText('Título da ata'), {
+      target: { value: 'Assembleia Geral Ordinária' },
+    });
+    // Wait for the picker so the chain has resolved, but leave it on the default.
+    await screen.findByLabelText('Modelo da ata (opcional)');
+    fireEvent.click(screen.getByRole('button', { name: /nova ata/i }));
+
+    expect(await screen.findByText('EDITOR DE ATA')).toBeTruthy();
+    const draftCall = calls.find((c) => c.method === 'POST' && c.url === '/v1/acts');
+    expect(draftCall?.body).toEqual({
+      book_id: 'book-1',
+      title: 'Assembleia Geral Ordinária',
+      channel: 'Physical',
+    });
+    expect(draftCall?.body).not.toHaveProperty('template_id');
+  });
+
   it('disables the submit and shows the pending label while the draft is in flight', async () => {
     vi.stubGlobal('fetch', pendingFetch());
     renderDraft();

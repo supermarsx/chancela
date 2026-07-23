@@ -5771,6 +5771,14 @@ export interface DraftActBody {
   convening?: ActConvening | null;
   convening_waiver?: ActConveningWaiver | null;
   retifies?: string;
+  /**
+   * The ata template the operator chose at draft (t59), mirroring the Rust `DraftAct.template_id`
+   * (`#[serde(default)]`). When it names an ata template that both anchors a narrative body and
+   * ships a non-empty default body, the server seeds the new act's editable body with that
+   * template's default markdown. Omitted ⇒ the server resolves the family default (byte-identical
+   * to pre-t59). A family/stage-mismatched or unknown id is rejected (422) at draft.
+   */
+  template_id?: string;
 }
 
 export interface AiProvenanceInput {

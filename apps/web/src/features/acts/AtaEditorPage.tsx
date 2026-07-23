@@ -3658,8 +3658,15 @@ export function AtaEditorPage() {
               <p className="field__hint">{bt('acts.body.card.hint')}</p>
               {/* One-time, operator-confirmed, non-destructive seed: offered only when the narrative
                   is empty and the legacy plain notes are not, so an act drafted before the WYSIWYG
-                  can carry its notes forward into formatting. The notes are left intact. */}
-              {!readOnly && draft.body.trim() === '' && draft.deliberations.trim() !== '' ? (
+                  can carry its notes forward into formatting. The notes are left intact.
+                  SEED PRECEDENCE (t59): a server-seeded body (from the ata template's default body at
+                  draft) wins — the deliberations seed is never offered while the act carries a server
+                  body, even if the operator has since cleared the working copy, so the template's
+                  narrative can never be clobbered by the plain notes. */}
+              {!readOnly &&
+              (a.body?.source ?? '').trim() === '' &&
+              draft.body.trim() === '' &&
+              draft.deliberations.trim() !== '' ? (
                 <div className="stack--tight">
                   <p className="field__hint">{bt('acts.body.seed.hint')}</p>
                   <Button

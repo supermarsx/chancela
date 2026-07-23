@@ -250,6 +250,43 @@ describe('AtaEditorPage — the WYSIWYG narrative body', () => {
     );
   });
 
+  it('lets a server-seeded body win over the deliberations seed and never resurrects it (t59 precedence)', async () => {
+    // The ata was drafted from a template that seeded its narrative server-side, AND it carries the
+    // legacy plain notes. The one-time "copy the notes into the narrative" seed must never be offered
+    // here — not on mount, and not even after the operator clears the working body.
+    const shared = stateful({
+      ...baseAct,
+      deliberations: 'Notas em texto simples.',
+      body: {
+        format: 'Markdown',
+        source: 'Corpo semeado pelo modelo.',
+        compiler_id: '',
+        compiled_digest: '',
+      },
+    });
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    await screen.findByDisplayValue('Assembleia Geral Anual');
+    const body = screen.getByLabelText('corpo-markdown') as HTMLTextAreaElement;
+    // The server-seeded narrative is what the editor shows — the deliberations seed did not clobber it.
+    expect(body.value).toBe('Corpo semeado pelo modelo.');
+    expect(
+      screen.queryByRole('button', { name: 'Copiar estas notas para a narrativa' }),
+    ).toBeNull();
+
+    // Clearing the working body must NOT bring the deliberations seed back: a template-seeded act
+    // never lets the plain notes overwrite the server's narrative.
+    fireEvent.change(body, { target: { value: '' } });
+    expect(
+      screen.queryByRole('button', { name: 'Copiar estas notas para a narrativa' }),
+    ).toBeNull();
+    // The plain notes remain intact.
+    expect((screen.getByLabelText('Texto') as HTMLTextAreaElement).value).toBe(
+      'Notas em texto simples.',
+    );
+  });
+
   it('surfaces the server rejection of a body source as an in-place diagnostic', async () => {
     const shared = stateful(baseAct);
     vi.stubGlobal('fetch', shared.fetchImpl);
