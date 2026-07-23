@@ -194,8 +194,8 @@ export const svSE: Catalog = {
   'toast.genericError': 'Ett oväntat fel inträffade.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Aviseringar',
-  'notifications.bell.label': 'Aviseringar',
+  'notifications.title': 'Åtgärdscenter',
+  'notifications.bell.label': 'Åtgärdscenter',
   'notifications.bell.labelWithCount': '{count} väntande aviseringar',
   'notifications.viewAll': 'Visa alla',
   'notifications.popup.empty': 'Inga väntande varningar eller påminnelser.',

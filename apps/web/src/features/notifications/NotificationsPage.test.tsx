@@ -186,7 +186,7 @@ describe('NotificationsPage', () => {
     const resolvedItem = screen
       .getByText('Rever conformidade da ata')
       .closest('.notifications-list__item') as HTMLElement;
-    expect(screen.getByRole('list', { name: 'Notificações' }).className).toContain(
+    expect(screen.getByRole('list', { name: 'Centro de Ações' }).className).toContain(
       'notifications-list--compact',
     );
     expect(
@@ -246,7 +246,7 @@ describe('NotificationsPage', () => {
       .getByText('Rever conformidade da ata')
       .closest('.notifications-list__item') as HTMLElement;
 
-    expect(screen.getByRole('list', { name: 'Notificações' }).className).toContain(
+    expect(screen.getByRole('list', { name: 'Centro de Ações' }).className).toContain(
       'notifications-list--compact',
     );
     expect(

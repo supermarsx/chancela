@@ -192,8 +192,8 @@ export const daDK: Catalog = {
   'toast.genericError': 'Der opstod en uventet fejl.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Notifikationer',
-  'notifications.bell.label': 'Notifikationer',
+  'notifications.title': 'Handlingscenter',
+  'notifications.bell.label': 'Handlingscenter',
   'notifications.bell.labelWithCount': '{count} afventende notifikationer',
   'notifications.viewAll': 'Vis alle',
   'notifications.popup.empty': 'Ingen afventende varsler eller påmindelser.',

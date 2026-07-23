@@ -197,8 +197,8 @@ export const enUS = {
   'toast.genericError': 'An unexpected error occurred.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Notifications',
-  'notifications.bell.label': 'Notifications',
+  'notifications.title': 'Action Center',
+  'notifications.bell.label': 'Action Center',
   'notifications.bell.labelWithCount': '{count} pending notifications',
   'notifications.viewAll': 'View all',
   'notifications.popup.empty': 'No pending alerts or reminders.',

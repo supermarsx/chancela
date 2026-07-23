@@ -195,8 +195,8 @@ export const frFR: Catalog = {
   'toast.genericError': 'Une erreur inattendue s’est produite.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Notifications',
-  'notifications.bell.label': 'Notifications',
+  'notifications.title': 'Centre d’actions',
+  'notifications.bell.label': 'Centre d’actions',
   'notifications.bell.labelWithCount': '{count} notifications en attente',
   'notifications.viewAll': 'Tout afficher',
   'notifications.popup.empty': 'Aucune alerte ou rappel en attente.',

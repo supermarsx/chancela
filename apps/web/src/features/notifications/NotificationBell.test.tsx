@@ -158,14 +158,14 @@ describe('NotificationBell', () => {
 
     fireEvent.click(bell);
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
     const action = within(dialog).getByRole('link', { name: 'Rever ata' });
     expect(action.getAttribute('href')).toBe('/acts/act-1');
 
     fireEvent.click(action);
 
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Notificações' })).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'Centro de Ações' })).toBeNull();
     });
     expect(bell.getAttribute('aria-expanded')).toBe('false');
   });
@@ -183,7 +183,7 @@ describe('NotificationBell', () => {
 
     fireEvent.click(bell);
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
     const action = within(dialog).getByRole('link', { name: 'Rever ata' });
     const read = within(dialog).getByRole('button', { name: 'Marcar como lida' });
     const acknowledge = within(dialog).getByRole('button', { name: 'Reconhecer' });
@@ -212,7 +212,7 @@ describe('NotificationBell', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '2 notificações pendentes' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
     const items = Array.from(dialog.querySelectorAll('.notifications-list__item'));
     const alertItem = items.find((item) => item.textContent?.includes('Rever conformidade da ata'));
     const reminderItem = items.find((item) =>
@@ -279,7 +279,7 @@ describe('NotificationBell', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '1 notificações pendentes' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
     expect(within(dialog).getByText('Assembleia anual de condomínio pendente')).toBeTruthy();
     expect(within(dialog).queryByText('Raw backend condominium fallback.')).toBeNull();
 
@@ -292,15 +292,15 @@ describe('NotificationBell', () => {
 
     renderWithProviders(<NotificationBell />, ['/']);
 
-    const bell = await screen.findByRole('button', { name: 'Notificações' });
+    const bell = await screen.findByRole('button', { name: 'Centro de Ações' });
     fireEvent.click(bell);
 
-    expect(await screen.findByRole('dialog', { name: 'Notificações' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'Centro de Ações' })).toBeTruthy();
 
     fireEvent.pointerDown(document.body);
 
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Notificações' })).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'Centro de Ações' })).toBeNull();
     });
     expect(bell.getAttribute('aria-expanded')).toBe('false');
   });
@@ -315,7 +315,7 @@ describe('NotificationBell', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '1 notificações pendentes' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
     const titleRow = dialog.querySelector('.panel__head') as HTMLElement;
     const badge = within(titleRow).getByText('1');
 
@@ -388,13 +388,13 @@ describe('NotificationBell', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '1 notificações pendentes' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
     expect(within(dialog).getByRole('link', { name: 'Rever ata' })).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Marcar como lida' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Notificações' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Centro de Ações' })).toBeTruthy();
       expect(within(dialog).getByText('Sem alertas ou lembretes pendentes.')).toBeTruthy();
     });
     expect(
@@ -426,7 +426,7 @@ describe('NotificationBell', () => {
 
     renderWithProviders(<NotificationBell />, ['/']);
 
-    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Centro de Ações' })).toBeTruthy();
     expect(screen.queryByText('1')).toBeNull();
   });
 
@@ -440,9 +440,9 @@ describe('NotificationBell', () => {
       ['/'],
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Notificações' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Centro de Ações' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
     const backdrop = document.body.querySelector('.notification-center__backdrop');
     const center = document.querySelector('.notification-center');
     const clippingAncestor = document.querySelector('.route-transition');
@@ -465,14 +465,14 @@ describe('NotificationBell', () => {
     try {
       renderWithProviders(<NotificationBell />, ['/']);
 
-      const bell = await screen.findByRole('button', { name: 'Notificações' });
+      const bell = await screen.findByRole('button', { name: 'Centro de Ações' });
       const center = bell.closest('.notification-center') as HTMLElement;
       center.getBoundingClientRect = () =>
         rect({ left: 948, right: 980, top: 24, bottom: 56, width: 32, height: 32 });
 
       fireEvent.click(bell);
 
-      const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+      const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
       expect(dialog.style.left).toBe('596px');
       expect(dialog.style.top).toBe('64px');
       expect(dialog.style.maxHeight).toBe('624px');

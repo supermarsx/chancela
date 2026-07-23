@@ -195,8 +195,8 @@ export const deDE: Catalog = {
   'toast.genericError': 'Ein unerwarteter Fehler ist aufgetreten.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Benachrichtigungen',
-  'notifications.bell.label': 'Benachrichtigungen',
+  'notifications.title': 'Aktionszentrum',
+  'notifications.bell.label': 'Aktionszentrum',
   'notifications.bell.labelWithCount': '{count} ausstehende Benachrichtigungen',
   'notifications.viewAll': 'Alle anzeigen',
   'notifications.popup.empty': 'Keine ausstehenden Warnungen oder Erinnerungen.',

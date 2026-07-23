@@ -194,8 +194,8 @@ export const itIT: Catalog = {
   'toast.genericError': 'Si è verificato un errore imprevisto.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Notifiche',
-  'notifications.bell.label': 'Notifiche',
+  'notifications.title': 'Centro azioni',
+  'notifications.bell.label': 'Centro azioni',
   'notifications.bell.labelWithCount': '{count} notifiche in sospeso',
   'notifications.viewAll': 'Visualizza tutte',
   'notifications.popup.empty': 'Nessun avviso o promemoria in sospeso.',

@@ -203,8 +203,8 @@ export const ptPT: Catalog = {
   'toast.genericError': 'Ocorreu um erro inesperado.',
 
   // --- Notification centre -------------------------------------------------------
-  'notifications.title': 'Notificações',
-  'notifications.bell.label': 'Notificações',
+  'notifications.title': 'Centro de Ações',
+  'notifications.bell.label': 'Centro de Ações',
   'notifications.bell.labelWithCount': '{count} notificações pendentes',
   'notifications.viewAll': 'Ver todas',
   'notifications.popup.empty': 'Sem alertas ou lembretes pendentes.',

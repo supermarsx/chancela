@@ -193,8 +193,8 @@ export const esES: Catalog = {
   'toast.genericError': 'Se ha producido un error inesperado.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Notificaciones',
-  'notifications.bell.label': 'Notificaciones',
+  'notifications.title': 'Centro de acciones',
+  'notifications.bell.label': 'Centro de acciones',
   'notifications.bell.labelWithCount': '{count} notificaciones pendientes',
   'notifications.viewAll': 'Ver todo',
   'notifications.popup.empty': 'Sin alertas ni recordatorios pendientes.',

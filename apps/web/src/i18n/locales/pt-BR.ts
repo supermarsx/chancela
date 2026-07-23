@@ -193,8 +193,8 @@ export const ptBR: Catalog = {
   'toast.genericError': 'Ocorreu um erro inesperado.',
 
   // --- Central de notificações ---------------------------------------------------
-  'notifications.title': 'Notificações',
-  'notifications.bell.label': 'Notificações',
+  'notifications.title': 'Central de Ações',
+  'notifications.bell.label': 'Central de Ações',
   'notifications.bell.labelWithCount': '{count} notificações pendentes',
   'notifications.viewAll': 'Ver tudo',
   'notifications.popup.empty': 'Não há alertas ou lembretes pendentes.',

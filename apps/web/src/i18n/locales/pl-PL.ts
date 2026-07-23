@@ -193,8 +193,8 @@ export const plPL: Catalog = {
   'toast.genericError': 'Wystąpił nieoczekiwany błąd.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Powiadomienia',
-  'notifications.bell.label': 'Powiadomienia',
+  'notifications.title': 'Centrum działań',
+  'notifications.bell.label': 'Centrum działań',
   'notifications.bell.labelWithCount': '{count} oczekujących powiadomień',
   'notifications.viewAll': 'Zobacz wszystkie',
   'notifications.popup.empty': 'Brak oczekujących alertów lub przypomnień.',

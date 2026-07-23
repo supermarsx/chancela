@@ -198,8 +198,8 @@ export const enGB: Catalog = {
   'toast.genericError': 'An unexpected error occurred.',
 
   // --- Notification centre -------------------------------------------------------
-  'notifications.title': 'Notifications',
-  'notifications.bell.label': 'Notifications',
+  'notifications.title': 'Action Centre',
+  'notifications.bell.label': 'Action Centre',
   'notifications.bell.labelWithCount': '{count} pending notifications',
   'notifications.viewAll': 'View all',
   'notifications.popup.empty': 'No pending alerts or reminders.',

@@ -192,8 +192,8 @@ export const nlNL: Catalog = {
   'toast.genericError': 'Er is een onverwachte fout opgetreden.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Meldingen',
-  'notifications.bell.label': 'Meldingen',
+  'notifications.title': 'Actiecentrum',
+  'notifications.bell.label': 'Actiecentrum',
   'notifications.bell.labelWithCount': '{count} openstaande meldingen',
   'notifications.viewAll': 'Alles bekijken',
   'notifications.popup.empty': 'Geen openstaande waarschuwingen of herinneringen.',

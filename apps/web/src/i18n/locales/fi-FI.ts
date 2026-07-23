@@ -193,8 +193,8 @@ export const fiFI: Catalog = {
   'toast.genericError': 'Tapahtui odottamaton virhe.',
 
   // --- Notification center -------------------------------------------------------
-  'notifications.title': 'Ilmoitukset',
-  'notifications.bell.label': 'Ilmoitukset',
+  'notifications.title': 'Toimintokeskus',
+  'notifications.bell.label': 'Toimintokeskus',
   'notifications.bell.labelWithCount': '{count} odottavaa ilmoitusta',
   'notifications.viewAll': 'Näytä kaikki',
   'notifications.popup.empty': 'Ei odottavia hälytyksiä tai muistutuksia.',
