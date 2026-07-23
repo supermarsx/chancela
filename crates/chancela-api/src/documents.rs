@@ -40,7 +40,7 @@ use chancela_signing::{
 use chancela_store::{
     StoredDocument, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
     StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
-    StoredImportedDocumentReviewStatus, StoredSignedDocument,
+    StoredImportedDocumentReviewStatus, StoredSignedDocument, StoredUserTemplateVersion,
 };
 use chancela_templates::authoring::{TemplateValidationError, validate_user_template};
 use chancela_templates::{DefaultBodyClause, Registry, TemplateLawReference, TemplateSpec};
@@ -8234,13 +8234,23 @@ pub async fn list_templates(
 /// company/book chains, so a template-management event can safely be the first event in a fresh
 /// instance.
 const TEMPLATE_EVENT_SCOPE: &str = "global";
+const MAX_TEMPLATE_VERSION_NAME_CHARS: usize = 200;
 
 /// Query for `POST /v1/templates/import` — `?dry_run=true` runs validation + uniqueness and
 /// returns a verdict WITHOUT persisting (the web import preflight).
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 pub struct TemplateImportQuery {
     #[serde(default)]
     pub dry_run: bool,
+    /// Optional friendly name for the initial retained save (ignored by dry-run because no save is
+    /// created). Empty/whitespace clears to an unnamed save.
+    pub version_name: Option<String>,
+}
+
+/// Optional save metadata accepted by template create/replace.
+#[derive(Default, Deserialize)]
+pub struct TemplateSaveQuery {
+    pub version_name: Option<String>,
 }
 
 /// Error body for the template authoring endpoints (`{code, field?, message}`). Distinct from the
@@ -8282,8 +8292,21 @@ fn template_conflict_body(id: &str) -> TemplateErrorBody {
     }
 }
 
+fn template_persistence_required_body() -> TemplateErrorBody {
+    TemplateErrorBody {
+        code: "persistence_required",
+        field: None,
+        message: "user template management requires on-disk persistence".to_owned(),
+    }
+}
+
 /// The ledger payload recorded for a `template.created`/`template.updated` mutation.
-fn template_event_payload(spec: &TemplateSpec, action: &str) -> Value {
+fn template_event_payload(
+    spec: &TemplateSpec,
+    action: &str,
+    version: &StoredUserTemplateVersion,
+    history_limit: usize,
+) -> Value {
     json!({
         "template_id": spec.id,
         "action": action,
@@ -8291,12 +8314,58 @@ fn template_event_payload(spec: &TemplateSpec, action: &str) -> Value {
         "stage": spec.stage,
         "locale": spec.locale,
         "source": "user",
+        "version_id": version.version_id,
+        "version_name": version.name,
+        "history_limit": history_limit,
     })
 }
 
 /// The ledger payload recorded for a `template.deleted` mutation (only the id survives deletion).
 fn template_deleted_payload(id: &str) -> Value {
     json!({ "template_id": id, "action": "deleted", "source": "user" })
+}
+
+fn normalized_template_version_name(
+    value: Option<String>,
+) -> Result<Option<String>, TemplateErrorBody> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.chars().count() > MAX_TEMPLATE_VERSION_NAME_CHARS {
+        return Err(TemplateErrorBody {
+            code: "invalid_version_name",
+            field: Some("name".to_owned()),
+            message: format!("version name exceeds {MAX_TEMPLATE_VERSION_NAME_CHARS} characters"),
+        });
+    }
+    Ok(Some(value))
+}
+
+fn template_history_limit(state: &AppState) -> usize {
+    state
+        .template_history_limit
+        .0
+        .clamp(1, crate::MAX_TEMPLATE_HISTORY_LIMIT)
+}
+
+fn new_template_version(
+    template_id: &str,
+    template_json: &str,
+    name: Option<String>,
+    actor: &str,
+) -> StoredUserTemplateVersion {
+    StoredUserTemplateVersion {
+        version_id: Uuid::new_v4().to_string(),
+        template_id: template_id.to_owned(),
+        name,
+        template_json: template_json.to_owned(),
+        created_at: OffsetDateTime::now_utc(),
+        created_by: actor.to_owned(),
+    }
 }
 
 /// Whether `id` is already taken — by a built-in catalog id or an existing user-template row. The
@@ -8683,11 +8752,14 @@ async fn persist_created_user_template(
     attestor: &CurrentAttestor,
     actor_name: &str,
     body: &[u8],
+    version_name: Option<String>,
 ) -> Result<Response, ApiError> {
     if state.store.is_none() {
-        return Err(ApiError::Unprocessable(
-            "user template management requires on-disk persistence".to_owned(),
-        ));
+        return Ok((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(template_persistence_required_body()),
+        )
+            .into_response());
     }
     // Accept BOTH a bare spec (legacy) and the portable bundle envelope, folding `body_markdown`
     // into `default_body` (idempotent for an already-prepared bare spec: it carries no `format`
@@ -8706,12 +8778,28 @@ async fn persist_created_user_template(
         }
     };
     let id = spec.id.clone();
-    if user_template_id_taken(state, &id).await? {
+    let version_name = match normalized_template_version_name(version_name) {
+        Ok(name) => name,
+        Err(err) => {
+            return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
+        }
+    };
+    // Built-ins are reserved before the durable write. Existing user-template ids are resolved by
+    // the insert-only database boundary below: a read-then-write check here would still race across
+    // concurrent requests or PostgreSQL nodes.
+    if registry().get(&id).is_some() {
         return Ok((StatusCode::CONFLICT, Json(template_conflict_body(&id))).into_response());
     }
     let stored_json = json;
     let summary = user_template_summary(&spec);
-    let payload = serde_json::to_vec(&template_event_payload(&spec, "created"))?;
+    let history_limit = template_history_limit(state);
+    let version = new_template_version(&id, &stored_json, version_name, actor_name);
+    let payload = serde_json::to_vec(&template_event_payload(
+        &spec,
+        "created",
+        &version,
+        history_limit,
+    ))?;
 
     let mut ledger = state.ledger.write().await;
     crate::try_append_event(
@@ -8724,11 +8812,22 @@ async fn persist_created_user_template(
     )?;
     let id_for_store = id.clone();
     let stored_json_for_store = stored_json.clone();
-    state
+    let version_for_store = version.clone();
+    let persist_result = state
         .persist_write_through(&mut ledger, 1, move |tx| {
-            tx.upsert_user_template(&id_for_store, &stored_json_for_store)
+            tx.insert_user_template(&id_for_store, &stored_json_for_store)?;
+            tx.insert_user_template_version(&version_for_store, history_limit)
         })
-        .await?;
+        .await;
+    if let Err(error) = persist_result {
+        // Preserve the structured template-create conflict body while the store supplies the
+        // backend-independent 409 classification. `persist_write_through` has already rolled the
+        // speculative ledger event back before returning this error.
+        if matches!(&error, ApiError::Conflict(_)) {
+            return Ok((StatusCode::CONFLICT, Json(template_conflict_body(&id))).into_response());
+        }
+        return Err(error);
+    }
     state.attest_latest(attestor, &ledger).await;
     drop(ledger);
 
@@ -8740,21 +8839,23 @@ pub async fn create_template(
     State(state): State<AppState>,
     actor: CurrentActor,
     attestor: CurrentAttestor,
+    Query(q): Query<TemplateSaveQuery>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
     require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
     let actor_name = actor.resolve("api");
-    persist_created_user_template(&state, &attestor, &actor_name, &body).await
+    persist_created_user_template(&state, &attestor, &actor_name, &body, q.version_name).await
 }
 
 /// `PUT /v1/templates/{id}` — replace an existing user template (gate `template.manage@Global`).
 /// `404` on a built-in id or an unknown user id; the body's own id MUST equal the path id (else
-/// `422 {code:"id_mismatch"}`); appends `template.updated` + upserts the canonical stored JSON.
+/// `422 {code:"id_mismatch"}`); appends `template.updated` + updates the canonical stored JSON.
 pub async fn replace_template(
     State(state): State<AppState>,
     Path(id): Path<String>,
     actor: CurrentActor,
     attestor: CurrentAttestor,
+    Query(q): Query<TemplateSaveQuery>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
     require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
@@ -8768,6 +8869,9 @@ pub async fn replace_template(
     if registry().get(&id).is_some() {
         return Err(ApiError::NotFound);
     }
+    // Serialize the local existence read with template DELETE/restore mutations. PostgreSQL nodes
+    // additionally revalidate through the affected-row UPDATE in the durable transaction below.
+    let mut ledger = state.ledger.write().await;
     let store = state.store.clone().expect("store present");
     if {
         let id = id.clone();
@@ -8807,12 +8911,24 @@ pub async fn replace_template(
         };
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response());
     }
+    let version_name = match normalized_template_version_name(q.version_name) {
+        Ok(name) => name,
+        Err(err) => {
+            return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
+        }
+    };
 
     let stored_json = json;
     let summary = user_template_summary(&spec);
-    let payload = serde_json::to_vec(&template_event_payload(&spec, "updated"))?;
+    let history_limit = template_history_limit(&state);
+    let version = new_template_version(&id, &stored_json, version_name, &actor_name);
+    let payload = serde_json::to_vec(&template_event_payload(
+        &spec,
+        "updated",
+        &version,
+        history_limit,
+    ))?;
 
-    let mut ledger = state.ledger.write().await;
     crate::try_append_event(
         &mut ledger,
         &actor_name,
@@ -8823,9 +8939,14 @@ pub async fn replace_template(
     )?;
     let id_for_store = id.clone();
     let stored_json_for_store = stored_json.clone();
+    let version_for_store = version.clone();
     state
         .persist_write_through(&mut ledger, 1, move |tx| {
-            tx.upsert_user_template(&id_for_store, &stored_json_for_store)
+            // Update-only is the transaction-time existence check. A DELETE that committed after
+            // request validation produces NotFound here and the speculative ledger event rolls
+            // back; this path can never recreate the template.
+            tx.update_user_template(&id_for_store, &stored_json_for_store)?;
+            tx.insert_user_template_version(&version_for_store, history_limit)
         })
         .await?;
     state.attest_latest(&attestor, &ledger).await;
@@ -8886,6 +9007,273 @@ pub async fn delete_template(
     drop(ledger);
 
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// Public metadata for one retained template save. The complete JSON snapshot is deliberately not
+/// listed; it stays server-side until an authorized restore.
+#[derive(Debug, Clone, Serialize)]
+pub struct TemplateVersionView {
+    pub id: String,
+    pub template_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+}
+
+impl From<&StoredUserTemplateVersion> for TemplateVersionView {
+    fn from(version: &StoredUserTemplateVersion) -> Self {
+        Self {
+            id: version.version_id.clone(),
+            template_id: version.template_id.clone(),
+            name: version.name.clone(),
+            created_at: version.created_at.format(&Rfc3339).unwrap_or_default(),
+            created_by: version.created_by.clone(),
+        }
+    }
+}
+
+/// `GET /v1/templates/{id}/versions` response. The effective retention bound is server-resolved and
+/// returned beside the entries so the editor can state honestly how many saves are retained.
+#[derive(Serialize)]
+pub struct TemplateVersionsResponse {
+    pub history_limit: usize,
+    pub entries: Vec<TemplateVersionView>,
+}
+
+#[derive(Deserialize)]
+pub struct RenameTemplateVersionBody {
+    /// `null`, absent, or whitespace clears the friendly name.
+    pub name: Option<String>,
+}
+
+/// Resolve a durable user template by id. Built-ins are intentionally indistinguishable from
+/// unknown ids on the version-management surface: shipped defaults have no mutable history.
+async fn stored_user_template(
+    state: &AppState,
+    id: &str,
+) -> Result<(chancela_store::Store, String), ApiError> {
+    if registry().get(id).is_some() {
+        return Err(ApiError::NotFound);
+    }
+    let store = state.store.clone().ok_or(ApiError::NotFound)?;
+    let template_id = id.to_owned();
+    let template_json = store
+        .read_blocking_async(move |s| s.user_template(&template_id))
+        .await
+        .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+    Ok((store, template_json))
+}
+
+/// `GET /v1/templates/{id}/versions` — newest-first retained saves for a user template.
+pub async fn list_template_versions(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    actor: CurrentActor,
+) -> Result<Json<TemplateVersionsResponse>, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    let (store, _) = stored_user_template(&state, &id).await?;
+    let history_limit = template_history_limit(&state);
+    let template_id = id.clone();
+    let versions = store
+        .read_blocking_async(move |s| s.user_template_versions_limited(&template_id, history_limit))
+        .await
+        .map_err(|e| ApiError::Internal(format!("template version store read failed: {e}")))?;
+    Ok(Json(TemplateVersionsResponse {
+        history_limit,
+        entries: versions.iter().map(TemplateVersionView::from).collect(),
+    }))
+}
+
+/// `PATCH /v1/templates/{id}/versions/{version_id}` — set or clear a save's friendly name.
+pub async fn rename_template_version(
+    State(state): State<AppState>,
+    Path((id, version_id)): Path<(String, String)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(body): Json<RenameTemplateVersionBody>,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    let name = match normalized_template_version_name(body.name) {
+        Ok(name) => name,
+        Err(err) => {
+            return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(err)).into_response());
+        }
+    };
+    let (store, _) = stored_user_template(&state, &id).await?;
+    let template_id_for_read = id.clone();
+    let version_id_for_read = version_id.clone();
+    let mut version = store
+        .read_blocking_async(move |s| {
+            s.user_template_version(&template_id_for_read, &version_id_for_read)
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("template version store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+
+    let actor_name = actor.resolve("api");
+    let payload = serde_json::to_vec(&json!({
+        "template_id": id,
+        "version_id": version_id,
+        "action": "renamed",
+        "name": name,
+        "source": "user",
+    }))?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &actor_name,
+        TEMPLATE_EVENT_SCOPE,
+        "template.version.renamed",
+        Some(&id),
+        &payload,
+    )?;
+    let id_for_store = id.clone();
+    let version_id_for_store = version_id.clone();
+    let name_for_store = name.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.rename_user_template_version(
+                &id_for_store,
+                &version_id_for_store,
+                name_for_store.as_deref(),
+            )
+        })
+        .await?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    version.name = name;
+    Ok((StatusCode::OK, Json(TemplateVersionView::from(&version))).into_response())
+}
+
+/// `DELETE /v1/templates/{id}/versions/{version_id}` — remove one restore point without touching
+/// the current template.
+pub async fn delete_template_version(
+    State(state): State<AppState>,
+    Path((id, version_id)): Path<(String, String)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    let (store, _) = stored_user_template(&state, &id).await?;
+    let template_id_for_read = id.clone();
+    let version_id_for_read = version_id.clone();
+    if store
+        .read_blocking_async(move |s| {
+            s.user_template_version(&template_id_for_read, &version_id_for_read)
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("template version store read failed: {e}")))?
+        .is_none()
+    {
+        return Err(ApiError::NotFound);
+    }
+
+    let actor_name = actor.resolve("api");
+    let payload = serde_json::to_vec(&json!({
+        "template_id": id,
+        "version_id": version_id,
+        "action": "deleted",
+        "source": "user",
+    }))?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &actor_name,
+        TEMPLATE_EVENT_SCOPE,
+        "template.version.deleted",
+        Some(&id),
+        &payload,
+    )?;
+    let id_for_store = id.clone();
+    let version_id_for_store = version_id.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.delete_user_template_version(&id_for_store, &version_id_for_store)
+        })
+        .await?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `POST /v1/templates/{id}/versions/{version_id}/restore` — replace the current template with the
+/// exact retained JSON and append that restored state as a new (bounded) save.
+pub async fn restore_template_version(
+    State(state): State<AppState>,
+    Path((id, version_id)): Path<(String, String)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    // Acquire the local mutation serializer before reading the current template/version. Across
+    // PostgreSQL nodes the transaction below repeats the existence check under a row lock.
+    let mut ledger = state.ledger.write().await;
+    let (store, _) = stored_user_template(&state, &id).await?;
+    let template_id_for_read = id.clone();
+    let version_id_for_read = version_id.clone();
+    let source_version = store
+        .read_blocking_async(move |s| {
+            s.user_template_version(&template_id_for_read, &version_id_for_read)
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("template version store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+
+    // A retained snapshot was valid when written, but validate again before it becomes current so
+    // post-write corruption can never be restored silently.
+    let spec = validate_user_template_checked(&source_version.template_json).map_err(|err| {
+        ApiError::Internal(format!(
+            "stored template version {} is no longer valid: {}",
+            source_version.version_id, err.message
+        ))
+    })?;
+    if spec.id != id {
+        return Err(ApiError::Internal(format!(
+            "stored template version {} belongs to body id {:?}, expected {:?}",
+            source_version.version_id, spec.id, id
+        )));
+    }
+
+    let actor_name = actor.resolve("api");
+    let history_limit = template_history_limit(&state);
+    let restored_version =
+        new_template_version(&id, &source_version.template_json, None, &actor_name);
+    let payload = serde_json::to_vec(&json!({
+        "template_id": id,
+        "action": "restored",
+        "restored_from_version_id": source_version.version_id,
+        "restored_from_name": source_version.name,
+        "version_id": restored_version.version_id,
+        "history_limit": history_limit,
+        "source": "user",
+    }))?;
+    let summary = user_template_summary(&spec);
+    crate::try_append_event(
+        &mut ledger,
+        &actor_name,
+        TEMPLATE_EVENT_SCOPE,
+        "template.restored",
+        Some(&id),
+        &payload,
+    )?;
+    let id_for_store = id.clone();
+    let source_version_id_for_store = source_version.version_id.clone();
+    let json_for_store = source_version.template_json.clone();
+    let version_for_store = restored_version.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.require_user_template_version(&id_for_store, &source_version_id_for_store)?;
+            tx.update_user_template(&id_for_store, &json_for_store)?;
+            tx.insert_user_template_version(&version_for_store, history_limit)
+        })
+        .await?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    Ok((StatusCode::OK, Json(summary)).into_response())
 }
 
 /// `GET /v1/templates/{id}/export` — return a template's portable bundle as a download (gate
@@ -8956,11 +9344,25 @@ pub async fn export_template(
     Ok(response)
 }
 
-/// Run the import dry-run preflight: bundle-normalize + validate + seed bar + uniqueness only, no
-/// persistence. Always `200` with a `{ok, error?}` verdict. Covers the envelope and the legacy
-/// bare spec identically (`prepare_template_import`), so the web preflight verdict matches what the
-/// non-dry-run import would do.
-async fn template_import_dry_run(state: &AppState, body: &[u8]) -> Result<Response, ApiError> {
+/// Run the import dry-run preflight: bundle-normalize + validate + seed bar + save-name validation
+/// + uniqueness, with no persistence. Always `200` with a `{ok, error?}` verdict. Covers the
+/// envelope and the legacy bare spec identically (`prepare_template_import`), so the web preflight
+/// verdict matches what the non-dry-run import would do.
+async fn template_import_dry_run(
+    state: &AppState,
+    body: &[u8],
+    version_name: Option<String>,
+) -> Result<Response, ApiError> {
+    if state.store.is_none() {
+        return Ok((
+            StatusCode::OK,
+            Json(TemplateImportVerdict {
+                ok: false,
+                error: Some(template_persistence_required_body()),
+            }),
+        )
+            .into_response());
+    }
     let verdict = match prepare_template_import(body) {
         PreparedImport::Rejected(error) => TemplateImportVerdict {
             ok: false,
@@ -8972,7 +9374,12 @@ async fn template_import_dry_run(state: &AppState, body: &[u8]) -> Result<Respon
                 error: Some(error),
             },
             Ok(spec) => {
-                if user_template_id_taken(state, &spec.id).await? {
+                if let Err(error) = normalized_template_version_name(version_name) {
+                    TemplateImportVerdict {
+                        ok: false,
+                        error: Some(error),
+                    }
+                } else if user_template_id_taken(state, &spec.id).await? {
                     TemplateImportVerdict {
                         ok: false,
                         error: Some(template_conflict_body(&spec.id)),
@@ -9006,11 +9413,11 @@ pub async fn import_template(
     require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
     let actor_name = actor.resolve("api");
     if q.dry_run {
-        return template_import_dry_run(&state, &body).await;
+        return template_import_dry_run(&state, &body, q.version_name).await;
     }
     // `persist_created_user_template` runs `prepare_template_import` itself (shared with the create
     // path), so a non-dry-run import is exactly a create over the same normalized body.
-    persist_created_user_template(&state, &attestor, &actor_name, &body).await
+    persist_created_user_template(&state, &attestor, &actor_name, &body, q.version_name).await
 }
 
 /// Body of `POST /v1/templates/body/preview` — the template narrative markdown being authored.
@@ -9041,7 +9448,8 @@ pub struct TemplateBodyPreviewError {
 }
 
 /// `POST /v1/templates/body/preview` — compile a template's narrative markdown body into `Block[]`,
-/// **statelessly** (no act, no context). Gate `template.manage@Global`.
+/// **statelessly** (no act, no context). Gate `act.read@Global`, matching template catalog/detail
+/// and export reads; previewing content does not grant authoring authority.
 ///
 /// The template-authoring twin of [`crate::acts::preview_act_body`], but deliberately context-free:
 /// a template body is authored before any act exists, so there is nothing to resolve placeholders
@@ -9061,7 +9469,7 @@ pub async fn preview_template_body(
     actor: CurrentActor,
     Json(req): Json<PreviewTemplateBody>,
 ) -> Result<Response, ApiError> {
-    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
     match chancela_templates::markdown::compile_markdown(&req.source) {
         Ok(blocks) => Ok((
             StatusCode::OK,
@@ -9685,7 +10093,7 @@ mod tests {
 
     use axum::extract::{Query, State};
     use axum::http::StatusCode;
-    use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
+    use chancela_authz::{OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
     use chancela_cades::{
         RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
     };
@@ -9804,6 +10212,39 @@ mod tests {
             secret_source: Default::default(),
             recovery_hash: None,
             role_assignments: vec![],
+            language: Default::default(),
+        };
+        state.users.write().await.insert(uid, user);
+        CurrentActor::from_session_username(Some(username))
+    }
+
+    async fn seed_reader_actor(state: &AppState) -> CurrentActor {
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
+        let uid = UserId(Uuid::new_v4());
+        let username = format!("document.reader.{}", Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: username.clone(),
+            display_name: "Document Reader".to_owned(),
+            email: None,
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
+            attestation_key: None,
+            retired_attestation_keys: Vec::new(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: vec![RoleAssignment::new(READER_ROLE_ID, Scope::Global)],
             language: Default::default(),
         };
         state.users.write().await.insert(uid, user);
@@ -13490,6 +13931,7 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -13579,7 +14021,10 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: false }),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
             exported_bytes,
         )
         .await
@@ -13625,6 +14070,7 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(bad),
         )
         .await
@@ -13640,22 +14086,27 @@ mod tests {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.path());
         let actor = seed_owner(&state).await;
+        let original = valid_user_template_json();
 
         let first = create_template(
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
-            Bytes::from(valid_user_template_json()),
+            Query(TemplateSaveQuery::default()),
+            Bytes::from(original.clone()),
         )
         .await
         .expect("first create ok");
         assert_eq!(first.status(), StatusCode::CREATED);
 
+        let collision =
+            original.replace("Ata n.º {{ ata_number }}", "COLLIDING CREATE MUST NOT WIN");
         let second = create_template(
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
-            Bytes::from(valid_user_template_json()),
+            Query(TemplateSaveQuery::default()),
+            Bytes::from(collision),
         )
         .await
         .expect("second create returns a response");
@@ -13663,6 +14114,37 @@ mod tests {
         let body = response_json(second).await;
         assert_eq!(body["code"], "conflict");
         assert_eq!(body["field"], "id");
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template("user-encosto-ata/v1")
+            .expect("read template")
+            .expect("stored template");
+        assert_eq!(stored, original, "duplicate create does not overwrite");
+        assert_eq!(
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .user_template_versions("user-encosto-ata/v1")
+                .expect("history")
+                .len(),
+            1,
+            "a rejected duplicate does not append a snapshot"
+        );
+        assert_eq!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .filter(|event| event.kind == "template.created")
+                .count(),
+            1,
+            "the speculative duplicate create event is rolled back"
+        );
     }
 
     #[tokio::test]
@@ -13675,6 +14157,7 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -13690,6 +14173,7 @@ mod tests {
             Path("user-encosto-ata/v1".to_owned()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(replacement.clone()),
         )
         .await
@@ -13718,6 +14202,255 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replace_unknown_template_is_transactionally_404_without_update_event() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let error = replace_template(
+            State(state.clone()),
+            Path("user-encosto-ata/v1".to_owned()),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect_err("update-only durable write rejects an absent template");
+        assert!(matches!(error, ApiError::NotFound));
+        assert!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .all(|event| event.kind != "template.updated"),
+            "the speculative update event is rolled back with the zero-row update"
+        );
+    }
+
+    #[tokio::test]
+    async fn template_history_is_bounded_named_and_restores_exact_spec_and_body() {
+        let tmp = TempDir::new();
+        let mut state = AppState::with_data_dir(tmp.path());
+        state.template_history_limit = crate::TemplateHistoryLimit(2);
+        let actor = seed_owner(&state).await;
+        let template_id = "user-encosto-seeded/v1";
+
+        let created = create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateSaveQuery {
+                version_name: Some("  Initial save  ".to_owned()),
+            }),
+            Bytes::from(valid_user_template_with_seed_json()),
+        )
+        .await
+        .expect("create");
+        assert_eq!(created.status(), StatusCode::CREATED);
+
+        let second_json =
+            valid_user_template_with_seed_json().replace("ordem de trabalhos", "segunda versão");
+        replace_template(
+            State(state.clone()),
+            Path(template_id.to_owned()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateSaveQuery {
+                version_name: Some("Second save".to_owned()),
+            }),
+            Bytes::from(second_json),
+        )
+        .await
+        .expect("second save");
+        let exact_second = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template(template_id)
+            .expect("read current")
+            .expect("current exists");
+        assert!(
+            exact_second.contains("\"default_body\""),
+            "the retained source includes the narrative body"
+        );
+
+        let third_json =
+            valid_user_template_with_seed_json().replace("ordem de trabalhos", "terceira versão");
+        replace_template(
+            State(state.clone()),
+            Path(template_id.to_owned()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateSaveQuery {
+                version_name: Some("Third save".to_owned()),
+            }),
+            Bytes::from(third_json),
+        )
+        .await
+        .expect("third save");
+
+        let Json(history) = list_template_versions(
+            State(state.clone()),
+            Path(template_id.to_owned()),
+            actor.clone(),
+        )
+        .await
+        .expect("history");
+        assert_eq!(history.history_limit, 2);
+        assert_eq!(history.entries.len(), 2, "initial save was pruned");
+        assert_eq!(history.entries[0].name.as_deref(), Some("Third save"));
+        assert_eq!(history.entries[1].name.as_deref(), Some("Second save"));
+        let third_id = history.entries[0].id.clone();
+        let second_id = history.entries[1].id.clone();
+
+        let renamed = rename_template_version(
+            State(state.clone()),
+            Path((template_id.to_owned(), second_id.clone())),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Json(RenameTemplateVersionBody {
+                name: Some("  Friendly checkpoint  ".to_owned()),
+            }),
+        )
+        .await
+        .expect("rename");
+        assert_eq!(renamed.status(), StatusCode::OK);
+        assert_eq!(response_json(renamed).await["name"], "Friendly checkpoint");
+
+        let restored = restore_template_version(
+            State(state.clone()),
+            Path((template_id.to_owned(), second_id)),
+            actor.clone(),
+            CurrentAttestor::default(),
+        )
+        .await
+        .expect("restore");
+        assert_eq!(restored.status(), StatusCode::OK);
+        let after_restore = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template(template_id)
+            .expect("read restored")
+            .expect("restored current");
+        assert_eq!(
+            after_restore, exact_second,
+            "restore reinstates the exact complete stored JSON, including default_body"
+        );
+
+        let Json(after_restore_history) = list_template_versions(
+            State(state.clone()),
+            Path(template_id.to_owned()),
+            actor.clone(),
+        )
+        .await
+        .expect("history after restore");
+        assert_eq!(after_restore_history.history_limit, 2);
+        assert_eq!(after_restore_history.entries.len(), 2);
+        assert_eq!(
+            after_restore_history.entries[0].name, None,
+            "the restored state is appended as a new unnamed save"
+        );
+
+        let deleted = delete_template_version(
+            State(state.clone()),
+            Path((template_id.to_owned(), third_id)),
+            actor,
+            CurrentAttestor::default(),
+        )
+        .await
+        .expect("delete retained third save");
+        assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .user_template_versions(template_id)
+                .expect("versions")
+                .len(),
+            1
+        );
+
+        let ledger = state.ledger.read().await;
+        let kinds = ledger
+            .events()
+            .iter()
+            .map(|event| event.kind.as_str())
+            .filter(|kind| kind.starts_with("template."))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            vec![
+                "template.created",
+                "template.updated",
+                "template.updated",
+                "template.version.renamed",
+                "template.restored",
+                "template.version.deleted",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn template_history_list_never_exceeds_a_newly_lowered_advertised_limit() {
+        let tmp = TempDir::new();
+        let mut state = AppState::with_data_dir(tmp.path());
+        state.template_history_limit = crate::TemplateHistoryLimit(100);
+        let actor = seed_owner(&state).await;
+        let template_id = "user-encosto-seeded/v1";
+
+        create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
+            Bytes::from(valid_user_template_with_seed_json()),
+        )
+        .await
+        .expect("create");
+        for save in 2..=5 {
+            let json = valid_user_template_with_seed_json()
+                .replace("ordem de trabalhos", &format!("save {save}"));
+            replace_template(
+                State(state.clone()),
+                Path(template_id.to_owned()),
+                actor.clone(),
+                CurrentAttestor::default(),
+                Query(TemplateSaveQuery::default()),
+                Bytes::from(json),
+            )
+            .await
+            .expect("append history");
+        }
+        assert_eq!(
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .user_template_versions(template_id)
+                .expect("unpruned history")
+                .len(),
+            5
+        );
+
+        state.template_history_limit = crate::TemplateHistoryLimit(2);
+        let Json(history) =
+            list_template_versions(State(state), Path(template_id.to_owned()), actor)
+                .await
+                .expect("bounded list");
+        assert_eq!(history.history_limit, 2);
+        assert_eq!(
+            history.entries.len(),
+            2,
+            "the response never exceeds the newly advertised limit"
+        );
+    }
+
+    #[tokio::test]
     async fn replace_user_template_rejects_body_path_id_mismatch() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.path());
@@ -13727,6 +14460,7 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -13742,6 +14476,7 @@ mod tests {
             Path("user-encosto-ata/v1".to_owned()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(mismatch),
         )
         .await
@@ -13791,6 +14526,7 @@ mod tests {
             Path(builtin_id),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -13809,7 +14545,10 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: true }),
+            Query(TemplateImportQuery {
+                dry_run: true,
+                ..Default::default()
+            }),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -13840,6 +14579,7 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -13848,7 +14588,10 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: true }),
+            Query(TemplateImportQuery {
+                dry_run: true,
+                ..Default::default()
+            }),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -13856,6 +14599,105 @@ mod tests {
         let conflict_body = response_json(conflict).await;
         assert_eq!(conflict_body["ok"], false);
         assert_eq!(conflict_body["error"]["code"], "conflict");
+    }
+
+    #[tokio::test]
+    async fn import_dry_run_and_commit_reject_the_same_invalid_version_name() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let invalid_name = "x".repeat(MAX_TEMPLATE_VERSION_NAME_CHARS + 1);
+
+        let dry_run = import_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery {
+                dry_run: true,
+                version_name: Some(invalid_name.clone()),
+            }),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("dry-run verdict");
+        assert_eq!(dry_run.status(), StatusCode::OK);
+        let dry_run_body = response_json(dry_run).await;
+        assert_eq!(dry_run_body["ok"], false);
+        assert_eq!(dry_run_body["error"]["code"], "invalid_version_name");
+
+        let commit = import_template(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                version_name: Some(invalid_name),
+            }),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("commit validation response");
+        assert_eq!(commit.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let commit_body = response_json(commit).await;
+        assert_eq!(
+            dry_run_body["error"], commit_body,
+            "dry-run exposes the same version-name validation error as commit"
+        );
+        assert!(
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .user_template("user-encosto-ata/v1")
+                .expect("read")
+                .is_none(),
+            "neither validation path persists"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_dry_run_without_store_matches_commit_persistence_required_contract() {
+        let state = AppState::default();
+        let actor = seed_owner(&state).await;
+
+        let dry_run = import_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery {
+                dry_run: true,
+                ..Default::default()
+            }),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("dry-run persistence verdict");
+        assert_eq!(dry_run.status(), StatusCode::OK);
+        let dry_run_body = response_json(dry_run).await;
+        assert_eq!(dry_run_body["ok"], false);
+        assert_eq!(
+            dry_run_body["error"]["code"], "persistence_required",
+            "in-memory preflight must not claim the import is commit-ready"
+        );
+
+        let commit = import_template(
+            State(state),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("commit persistence response");
+        assert_eq!(commit.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let commit_body = response_json(commit).await;
+        assert_eq!(
+            dry_run_body["error"], commit_body,
+            "dry-run and commit expose the same structured persistence requirement"
+        );
     }
 
     #[tokio::test]
@@ -13868,6 +14710,7 @@ mod tests {
             State(state.clone()),
             powerless,
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -14005,6 +14848,7 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(valid_user_template_with_seed_json()),
         )
         .await
@@ -14044,7 +14888,10 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: false }),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
             first_bytes.clone(),
         )
         .await
@@ -14100,7 +14947,10 @@ mod tests {
             State(state.clone()),
             actor,
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: false }),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -14130,7 +14980,10 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: false }),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
             Bytes::from(bundle.to_string()),
         )
         .await
@@ -14176,7 +15029,10 @@ mod tests {
             State(state.clone()),
             actor,
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: false }),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
             Bytes::from(bundle.to_string()),
         )
         .await
@@ -14222,7 +15078,10 @@ mod tests {
             State(state.clone()),
             actor,
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: false }),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
             Bytes::from(bundle.to_string()),
         )
         .await
@@ -14251,7 +15110,10 @@ mod tests {
             State(state.clone()),
             actor,
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: false }),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
             Bytes::from(bundle.to_string()),
         )
         .await
@@ -14281,6 +15143,7 @@ mod tests {
             State(state.clone()),
             actor,
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(bundle.to_string()),
         )
         .await
@@ -14318,6 +15181,7 @@ mod tests {
             State(state.clone()),
             actor.clone(),
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(valid_user_template_json()),
         )
         .await
@@ -14335,6 +15199,7 @@ mod tests {
             Path("user-encosto-ata/v1".to_owned()),
             actor,
             CurrentAttestor::default(),
+            Query(TemplateSaveQuery::default()),
             Bytes::from(bundle.to_string()),
         )
         .await
@@ -14356,6 +15221,36 @@ mod tests {
                 .contains("{{ ata_number }}"),
             "replace folds the bundle body into default_body"
         );
+    }
+
+    #[tokio::test]
+    async fn preview_template_body_allows_act_reader_and_rejects_actor_without_act_read() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let reader = seed_reader_actor(&state).await;
+        let no_read = seed_powerless_actor(&state).await;
+
+        let readable = preview_template_body(
+            State(state.clone()),
+            reader,
+            Json(PreviewTemplateBody {
+                source: "# Preview".to_owned(),
+            }),
+        )
+        .await
+        .expect("the read-only Reader role may preview");
+        assert_eq!(readable.status(), StatusCode::OK);
+
+        let forbidden = preview_template_body(
+            State(state),
+            no_read,
+            Json(PreviewTemplateBody {
+                source: "# Preview".to_owned(),
+            }),
+        )
+        .await
+        .expect_err("an actor without act.read may not preview");
+        assert!(matches!(forbidden, ApiError::Forbidden(_)));
     }
 
     /// `POST /v1/templates/body/preview` compiles the template body's STRUCTURE statelessly, with
@@ -14439,7 +15334,10 @@ mod tests {
             State(state.clone()),
             actor,
             CurrentAttestor::default(),
-            Query(TemplateImportQuery { dry_run: true }),
+            Query(TemplateImportQuery {
+                dry_run: true,
+                ..Default::default()
+            }),
             Bytes::from(bundle.to_string()),
         )
         .await

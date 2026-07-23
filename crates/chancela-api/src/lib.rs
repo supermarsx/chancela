@@ -363,6 +363,23 @@ pub struct ExportCleanupPreviewStore {
 /// and finally to pure in-memory state.
 pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 
+/// Maximum retained saves per user-authored template. The running server resolves this once from
+/// [`TEMPLATE_HISTORY_LIMIT_ENV`]; test/embedding states use [`DEFAULT_TEMPLATE_HISTORY_LIMIT`].
+pub const TEMPLATE_HISTORY_LIMIT_ENV: &str = "CHANCELA_TEMPLATE_HISTORY_LIMIT";
+pub const DEFAULT_TEMPLATE_HISTORY_LIMIT: usize = 25;
+pub const MAX_TEMPLATE_HISTORY_LIMIT: usize = 100;
+
+/// Resolved user-template history retention. Kept as a newtype so [`AppState::default`] has the
+/// production-safe default instead of `usize::default()` (zero).
+#[derive(Clone, Copy, Debug)]
+pub struct TemplateHistoryLimit(pub usize);
+
+impl Default for TemplateHistoryLimit {
+    fn default() -> Self {
+        Self(DEFAULT_TEMPLATE_HISTORY_LIMIT)
+    }
+}
+
 /// Shared application state: in-memory maps, plus optional data-dir/store-backed durability.
 ///
 /// Every field is `Arc<RwLock<..>>` so the state is cheap to clone into each handler and safe
@@ -539,6 +556,9 @@ pub struct AppState {
     /// [`AppState::try_from_env`]. Used by the list read-filter and the on-write prune; the on-load
     /// prune resolves the same env var directly in `notifications::load_notification_triage`.
     pub notification_dismiss_retention: Option<time::Duration>,
+    /// Number of complete user-template saves retained per template. Each successful create/import,
+    /// edit, or restore writes a snapshot and transactionally prunes older rows to this bound.
+    pub template_history_limit: TemplateHistoryLimit,
     /// Where `privacy-processors.json` is persisted, or `None` for in-memory registers.
     pub processor_records_path: Option<Arc<PathBuf>>,
     /// Where `privacy-dpias.json` is persisted, or `None` for in-memory registers.
@@ -1359,6 +1379,10 @@ impl AppState {
     pub(crate) fn map_store_write_error(context: &str, e: StoreError) -> ApiError {
         match e {
             StoreError::NotLeader => Self::not_leader_error(),
+            StoreError::NotFound(_) => ApiError::NotFound,
+            StoreError::AlreadyExists(resource) => {
+                ApiError::Conflict(format!("{resource} already exists"))
+            }
             other => ApiError::Internal(format!("{context}: {other}")),
         }
     }
@@ -1755,6 +1779,28 @@ impl AppState {
         state.rate_limit = rate_limit_config_from_env();
         state.session_max_lifetime = session_max_lifetime_from_env();
         state.notification_dismiss_retention = notifications::notification_dismiss_retention();
+        state.template_history_limit = template_history_limit_from_env();
+        if let Some(store) = state.store.as_ref() {
+            match store.prune_user_template_versions(state.template_history_limit.0) {
+                Ok(_) => {}
+                // A PostgreSQL follower cannot perform startup maintenance. Its list query still
+                // applies the same read-side LIMIT, while the elected leader performs the physical
+                // prune against the shared table.
+                Err(StoreError::NotLeader) => {
+                    tracing::debug!(
+                        "template history retention prune deferred to the PostgreSQL writer leader"
+                    );
+                }
+                Err(source) => {
+                    let data_dir = state
+                        .persist_path
+                        .as_ref()
+                        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+                        .unwrap_or_else(|| PathBuf::from(DATA_DIR_ENV));
+                    return Err(AppStateInitError::StoreLoad { data_dir, source });
+                }
+            }
+        }
         if state.persist_path.is_none() {
             state.cluster_shared = cluster_shared_state::SharedClusterState::from_env();
         }
@@ -2397,6 +2443,19 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/templates/{id}",
             put(documents::replace_template).delete(documents::delete_template),
+        )
+        .route(
+            "/v1/templates/{id}/versions",
+            get(documents::list_template_versions),
+        )
+        .route(
+            "/v1/templates/{id}/versions/{version_id}",
+            patch(documents::rename_template_version)
+                .delete(documents::delete_template_version),
+        )
+        .route(
+            "/v1/templates/{id}/versions/{version_id}/restore",
+            post(documents::restore_template_version),
         )
         .route("/v1/templates/{id}/export", get(documents::export_template))
         .route("/v1/templates/import", post(documents::import_template))
@@ -3152,6 +3211,25 @@ fn session_max_lifetime_from_env() -> SessionMaxLifetime {
             }
         },
         Err(_) => SessionMaxLifetime::default(),
+    }
+}
+
+/// Resolve bounded user-template save retention. An unset/malformed value uses 25; valid integers
+/// are clamped to `1..=100` so an operator can choose a small history without disabling restores or
+/// accidentally creating an unbounded table.
+fn template_history_limit_from_env() -> TemplateHistoryLimit {
+    match std::env::var(TEMPLATE_HISTORY_LIMIT_ENV) {
+        Ok(raw) => match raw.trim().parse::<usize>() {
+            Ok(limit) => TemplateHistoryLimit(limit.clamp(1, MAX_TEMPLATE_HISTORY_LIMIT)),
+            Err(_) => {
+                tracing::warn!(
+                    value = %raw,
+                    "{TEMPLATE_HISTORY_LIMIT_ENV} is not a non-negative integer; using default"
+                );
+                TemplateHistoryLimit::default()
+            }
+        },
+        Err(_) => TemplateHistoryLimit::default(),
     }
 }
 

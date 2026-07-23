@@ -21,6 +21,7 @@ are baked into an image.
 | `CHANCELA_WEB_DIST` | Path to the built web UI assets (set by the image). |
 | `CHANCELA_CORS_ALLOWED_ORIGINS` | Optional comma-separated exact HTTP(S) origins allowed to call the API from a companion WebView/browser. Blank/unset keeps same-origin only; wildcards and malformed origins fail startup closed. |
 | `CHANCELA_SESSION_MAX_LIFETIME` | Absolute session lifetime in seconds (default seven days), independent of the sliding 24-hour idle expiry. A non-positive value disables the absolute cap. |
+| `CHANCELA_TEMPLATE_HISTORY_LIMIT` | Retained saves per user-authored template (default `25`; values are clamped to `1..100`). Editable as a non-secret server override and applied after restart. |
 
 ### Remote companion and session durability
 

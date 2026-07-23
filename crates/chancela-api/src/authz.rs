@@ -796,9 +796,18 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/document/signed", RouteClass::Gated),      // GET act.read@Book
     ("/v1/templates", RouteClass::Gated), // GET act.read@Global · POST template.manage@Global
     ("/v1/templates/{id}", RouteClass::Gated), // PUT/DELETE template.manage@Global
+    ("/v1/templates/{id}/versions", RouteClass::Gated), // GET template.manage@Global
+    (
+        "/v1/templates/{id}/versions/{version_id}",
+        RouteClass::Gated,
+    ), // PATCH/DELETE template.manage@Global
+    (
+        "/v1/templates/{id}/versions/{version_id}/restore",
+        RouteClass::Gated,
+    ), // POST template.manage@Global
     ("/v1/templates/{id}/export", RouteClass::Gated), // GET act.read@Global
     ("/v1/templates/import", RouteClass::Gated), // POST template.manage@Global (dry_run preflight = read-only)
-    ("/v1/templates/body/preview", RouteClass::Gated), // POST template.manage@Global (stateless md-block compile, never writes)
+    ("/v1/templates/body/preview", RouteClass::Gated), // POST act.read@Global (stateless md-block compile, never writes)
     // --- Ledger ---------------------------------------------------------------------------------
     ("/v1/ledger/events", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/events/page", RouteClass::Gated), // GET ledger.read@Global

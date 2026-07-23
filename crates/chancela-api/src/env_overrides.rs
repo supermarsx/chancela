@@ -578,6 +578,15 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         None,
         V::Path,
     ),
+    // ---- Template save history ---------------------------------------------------------------
+    // Non-secret storage-retention tuning. `AppState::try_from_env` resolves it once at startup
+    // and clamps the operator-supplied unsigned value to the supported 1..=100 range.
+    spec_a(
+        crate::TEMPLATE_HISTORY_LIMIT_ENV,
+        G::Storage,
+        Some("25"),
+        V::Unsigned,
+    ),
     // ---- ZK shared object root (typed slice; env wins) ----------------------------------------
     EnvVarSpec {
         name: "CHANCELA_ZK_SHARED_OBJECT_ROOT",
@@ -978,6 +987,17 @@ mod tests {
         assert!(V::Enum(&["a", "b"]).validate("c").is_err());
         assert!(V::Duration.validate("10s").is_ok());
         assert!(V::Duration.validate("10").is_ok());
+    }
+
+    #[test]
+    fn template_history_limit_is_editable_non_secret_unsigned_storage_config() {
+        let spec = find(crate::TEMPLATE_HISTORY_LIMIT_ENV).expect("history limit registered");
+        assert_eq!(spec.group, G::Storage);
+        assert_eq!(spec.tier, T::A);
+        assert!(!spec.secret);
+        assert!(spec.is_editable());
+        assert_eq!(spec.default_value, Some("25"));
+        assert_eq!(spec.validator, V::Unsigned);
     }
 
     #[test]
