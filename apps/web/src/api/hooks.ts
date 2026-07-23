@@ -1456,10 +1456,14 @@ export function useTemplateSpec(id: string, enabled = true) {
  * Read the {@link TemplateSpec} out of what `GET /v1/templates/{id}/export` returns. Since t43 the
  * endpoint emits the `chancela.template-bundle` envelope `{ format, format_version, spec,
  * body_markdown }`, so the spec is the `spec` half. A legacy/bare spec (no `format` key) is still
- * read as-is, so an older export — and the detail-page fixtures — keep resolving. This is a read for
- * the block/field views only; the stripped seed (`default_body`) is not needed here.
+ * read as-is, so an older export — and the detail-page fixtures — keep resolving. Every consumer of
+ * the export text MUST go through here rather than casting `JSON.parse(text)` straight to
+ * `TemplateSpec`: the envelope has no `rule_pack_id`/`blocks` at its top level, so a raw cast yields
+ * a "spec" whose required fields are `undefined` (the fork editor then crashed on
+ * `spec.rule_pack_id.trim()`). This is a read for the block/field views only; the stripped seed
+ * (`default_body`) is not needed here.
  */
-function templateSpecFromExport(raw: unknown): TemplateSpec {
+export function templateSpecFromExport(raw: unknown): TemplateSpec {
   if (
     raw !== null &&
     typeof raw === 'object' &&

@@ -13,7 +13,7 @@
  */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useExportTemplate } from '../../api/hooks';
+import { templateSpecFromExport, useExportTemplate } from '../../api/hooks';
 import { templateEditPath } from './templateRoutes';
 import type { TemplateSpec, TemplateSummary } from '../../api/types';
 import { useToast } from '../../ui';
@@ -49,7 +49,10 @@ export function useTemplateEditor(existingIds: readonly string[]): TemplateEdito
   async function withSpec(id: string, apply: (spec: TemplateSpec) => void) {
     try {
       const download = await loadSpec.mutateAsync(id);
-      apply(JSON.parse(download.text) as TemplateSpec);
+      // The export is the `chancela.template-bundle` envelope (t43), whose spec lives under `.spec`;
+      // unwrap it rather than casting the envelope to `TemplateSpec` (that left `rule_pack_id` and
+      // `blocks` undefined, crashing the fork editor on `spec.rule_pack_id.trim()`).
+      apply(templateSpecFromExport(JSON.parse(download.text)));
     } catch (err) {
       toast.error(err);
     }

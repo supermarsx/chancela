@@ -734,6 +734,54 @@ describe('TemplatesCatalogPage', () => {
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
   });
 
+  // The export endpoint emits the `chancela.template-bundle` envelope (t43), where the spec lives
+  // under `.spec`. The fork path used to cast the envelope straight to `TemplateSpec`, leaving
+  // `rule_pack_id`/`blocks` undefined — which crashed the fork editor on `spec.rule_pack_id.trim()`
+  // (`can't access property "trim", p.rule_pack_id is undefined`). The bare-spec fork tests above
+  // never caught it because they mock the legacy shape; this one mocks the real envelope.
+  const BUILTIN_BUNDLE = JSON.stringify({
+    format: 'chancela.template-bundle',
+    format_version: 1,
+    spec: JSON.parse(BUILTIN_SPEC),
+    body_markdown: '',
+  });
+
+  it('forks from the real template-bundle envelope without crashing on an undefined rule pack', async () => {
+    const { fn, calls } = templatesFetch([CATALOG[0]], (url, method) => {
+      if (url.includes('/export') && method === 'GET') {
+        return new Response(BUILTIN_BUNDLE, {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return url.endsWith('/v1/templates') && method === 'POST'
+        ? jsonResponse(USER_TEMPLATE, 201)
+        : null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+
+    const builtinRow = (await screen.findByText('csc-ata-ag/v1')).closest('tr') as HTMLElement;
+    fireEvent.click(within(builtinRow).getByRole('button', { name: 'Duplicar' }));
+
+    // Before the fix the modal threw while rendering (canSubmit's `.trim()`); it now opens.
+    const dialog = await screen.findByRole('dialog', { name: 'Duplicar modelo' });
+    // The spec was unwrapped from `.spec`: the rule pack carried through rather than being undefined.
+    expect((within(dialog).getByLabelText('Pacote de regras') as HTMLInputElement).value).toBe(
+      'csc-art63/v2',
+    );
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'))).toBe(true),
+    );
+    const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'));
+    // The saved fork carries the source's rule pack and body — proof the envelope was unwrapped.
+    expect(String(post?.body)).toContain('"rule_pack_id":"csc-art63/v2"');
+    expect(String(post?.body)).toContain('Ata de {{ entity.name }}.');
+  });
+
   // Behaviour CHANGED in t109: a user template is still edited in place (never forked), but the
   // editing surface is now its own full-width page rather than the dialog — its body is canonical
   // BlockSpec JSON and needs the room. The invariant under test is unchanged and is the one that
