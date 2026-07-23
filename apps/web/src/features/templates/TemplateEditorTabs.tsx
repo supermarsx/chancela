@@ -1,5 +1,6 @@
 import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
 import { Icon, SubNav } from '../../ui';
+import './templateEditor.css';
 
 export type TemplateEditorTab = 'content' | 'properties';
 export type UserTemplateEditorTab = TemplateEditorTab | 'versions';
@@ -37,11 +38,13 @@ export function TemplateEditorTabs({
       : []),
   ];
   return (
-    <SubNav
-      items={items}
-      active={active}
-      onSelect={onSelect}
-      ariaLabel={bt('templates.editor.tabs.aria')}
-    />
+    <div className="template-editor-tabs">
+      <SubNav
+        items={items}
+        active={active}
+        onSelect={onSelect}
+        ariaLabel={bt('templates.editor.tabs.aria')}
+      />
+    </div>
   );
 }

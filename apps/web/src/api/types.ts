@@ -1322,6 +1322,31 @@ export interface TemplateBundleInput {
 }
 
 /**
+ * Input to the stateless structural PDF/A proof (`POST /v1/templates/document/preview`).
+ *
+ * `draft` previews the editor's unsaved authored halves. `catalog` resolves a shipped or durable
+ * user template by id. Neither form carries an act context: placeholders and collection bindings
+ * therefore remain visibly unresolved, and the returned PDF must not be described as a final ata.
+ */
+export type TemplateDocumentPreviewRequest =
+  | {
+      source: 'draft';
+      spec: TemplateSpec;
+      body_markdown: string;
+    }
+  | {
+      source: 'catalog';
+      template_id: string;
+    };
+
+/** Real PDF/A bytes plus the server's explicit context-free proof classification. */
+export interface TemplateDocumentPreviewResult {
+  data: ArrayBuffer;
+  content_type: string;
+  preview_kind: 'structural-unresolved' | string;
+}
+
+/**
  * The read model `useTemplateBundle` yields for the editor: the authored {@link TemplateSpec} (read
  * via `templateSpecFromExport`, which preserves the t48 fork crash-fix) plus the seed narrative
  * markdown read back from the export bundle. A legacy bare-spec export that carries no seed reads

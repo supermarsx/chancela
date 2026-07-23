@@ -28,6 +28,7 @@ import { useCreateTemplate, useTemplateBundle, useTemplates } from '../../api/ho
 import { ApiError } from '../../api/client';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useT } from '../../i18n';
+import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
 import {
   Button,
   ButtonLink,
@@ -42,14 +43,18 @@ import {
 } from '../../ui';
 import { mappedTemplateError } from './templateErrors';
 import { TemplateSpecFields } from './TemplateSpecFields';
-import { TemplateBlocksEditor, parseTemplateBlocksText } from './TemplateBlocksEditor';
+import {
+  TemplateBlocksEditor,
+  parseTemplateBlocksText,
+  withNarrativeBodyPlacement,
+} from './TemplateBlocksEditor';
 import { TemplateBodyEditor } from './TemplateBodyEditor';
 import { TemplateEditorTabs, type TemplateEditorTab } from './TemplateEditorTabs';
 import { forkTemplateSpec, forkedTemplateId } from './templateFork';
 import { templateDetailPath } from './templateRoutes';
 import { PermissionDeniedNote, useCan } from '../session/permissions';
 
-/** A default authored spec for a brand-new template (a single empty paragraph block). */
+/** A new template places its narrative editor by default; no raw-structure repair is required. */
 function blankSpec(): TemplateSpec {
   return {
     id: '',
@@ -58,13 +63,14 @@ function blankSpec(): TemplateSpec {
     channels: [],
     signature_policy: 'QualifiedPreferred',
     rule_pack_id: '',
-    blocks: [{ kind: 'Paragraph', template: '' }],
+    blocks: [{ kind: 'NarrativeBody' }],
     locale: 'pt-PT',
   };
 }
 
 export function TemplateCreatePage() {
   const t = useT();
+  const et = useTemplatesEditorT();
   const toast = useToast();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -219,6 +225,11 @@ export function TemplateCreatePage() {
     }
   }
 
+  function addBodyPlacement() {
+    const next = withNarrativeBodyPlacement(blocksText);
+    if (next !== null) setBlocksText(next);
+  }
+
   const canSubmit =
     draft !== null &&
     draft.id.trim().length > 0 &&
@@ -226,7 +237,7 @@ export function TemplateCreatePage() {
     blocksText.trim().length > 0;
 
   return (
-    <div className="stack wide-page">
+    <div className="stack wide-page template-editor-page">
       <PageHeader
         crumbs={<Link to="/templates">{t('templates.title')}</Link>}
         title={title}
@@ -273,29 +284,36 @@ export function TemplateCreatePage() {
 
             <div className="route-transition stack" key={tab}>
               {tab === 'content' ? (
-                <>
-                  <TemplateBlocksEditor
-                    value={blocksText}
-                    onChange={setBlocksText}
-                    idPrefix="tpl-new-blocks"
-                  />
-                  <TemplateBodyEditor
-                    spec={authoredSpec}
-                    value={body}
-                    onChange={setBody}
-                    disabled={createTemplate.isPending}
-                    idPrefix="tpl-new"
-                  />
-                </>
-              ) : (
-                <TemplateSpecFields
-                  spec={draft}
-                  onSpecChange={(next) =>
-                    setDraft((current) => (current ? next(current) : current))
-                  }
-                  idLocked={false}
+                <TemplateBodyEditor
+                  spec={authoredSpec}
+                  value={body}
+                  onChange={setBody}
+                  onAddBodyPlacement={addBodyPlacement}
+                  disabled={createTemplate.isPending}
                   idPrefix="tpl-new"
                 />
+              ) : (
+                <>
+                  <TemplateSpecFields
+                    spec={draft}
+                    onSpecChange={(next) =>
+                      setDraft((current) => (current ? next(current) : current))
+                    }
+                    idLocked={false}
+                    idPrefix="tpl-new"
+                  />
+                  <details className="template-editor__document-structure">
+                    <summary>{et('templates.editor.structure.summary')}</summary>
+                    <div className="stack--tight template-editor__document-structure-body">
+                      <p className="field__hint">{et('templates.editor.structure.hint')}</p>
+                      <TemplateBlocksEditor
+                        value={blocksText}
+                        onChange={setBlocksText}
+                        idPrefix="tpl-new-blocks"
+                      />
+                    </div>
+                  </details>
+                </>
               )}
             </div>
 

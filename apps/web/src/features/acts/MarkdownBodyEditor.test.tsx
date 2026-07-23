@@ -34,6 +34,18 @@ afterEach(() => {
 /** One round trip through the editor's model. */
 const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
 
+const TOOLBAR_LABELS = {
+  ariaLabel: 'Formatação do corpo',
+  editor: 'Corpo narrativo',
+  paragraph: 'Parágrafo',
+  headings: ['Título 1', 'Título 2', 'Título 3', 'Título 4', 'Título 5', 'Título 6'],
+  bold: 'Negrito',
+  italic: 'Itálico',
+  horizontalRule: 'Linha horizontal',
+  undo: 'Desfazer',
+  redo: 'Refazer',
+} as const;
+
 describe('the schema is the frozen block set', () => {
   it('declares exactly the node types a Block can be, and no others', () => {
     // This is the mechanism that makes unsupported constructs *unrepresentable* rather than merely
@@ -287,9 +299,7 @@ describe('paste', () => {
     // A table inside a list inside a quote is ordinary Word output. The rewrite loop is iterative,
     // so it needs a termination guarantee, not an assumption.
     const nested =
-      '<blockquote>'.repeat(30) +
-      '<table><tr><td>x</td></tr></table>' +
-      '</blockquote>'.repeat(30);
+      '<blockquote>'.repeat(30) + '<table><tr><td>x</td></tr></table>' + '</blockquote>'.repeat(30);
     const { html, changes } = sanitizePastedHtml(nested);
     expect(changes.length).toBeGreaterThan(0);
     expect(html).toContain('x');
@@ -343,6 +353,85 @@ describe('MarkdownBodyEditor', () => {
     renderWithProviders(<MarkdownBodyEditor value="# Título" onChange={onChange} />);
     expect(await screen.findByTestId('markdown-editor-host')).toBeTruthy();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('exposes a named multiline textbox and a functional visible formatting toolbar', async () => {
+    // ProseMirror scrolls toolbar commands to the selection. jsdom's Range omits the geometry
+    // methods browsers provide, so supply zero geometry without changing editor behaviour.
+    const createRange = document.createRange.bind(document);
+    vi.spyOn(document, 'createRange').mockImplementation(() => {
+      const range = createRange();
+      Object.defineProperties(range, {
+        getClientRects: { value: () => [] },
+        getBoundingClientRect: {
+          value: () => ({
+            bottom: 0,
+            height: 0,
+            left: 0,
+            right: 0,
+            top: 0,
+            width: 0,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          }),
+        },
+      });
+      return range;
+    });
+
+    function Harness() {
+      const [value, setValue] = useState('Texto');
+      return (
+        <MarkdownBodyEditor
+          value={value}
+          onChange={setValue}
+          ariaLabel="Corpo narrativo"
+          toolbarLabels={TOOLBAR_LABELS}
+        />
+      );
+    }
+
+    renderWithProviders(<Harness />);
+
+    const textbox = await screen.findByRole('textbox', { name: 'Corpo narrativo' });
+    expect(textbox.getAttribute('aria-multiline')).toBe('true');
+    const toolbar = screen.getByRole('toolbar', { name: 'Formatação do corpo' });
+    expect(toolbar.querySelectorAll('button')).toHaveLength(12);
+    for (const label of [
+      'Parágrafo',
+      'Título 1',
+      'Título 2',
+      'Título 3',
+      'Título 4',
+      'Título 5',
+      'Título 6',
+      'Negrito',
+      'Itálico',
+      'Linha horizontal',
+      'Desfazer',
+      'Refazer',
+    ]) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    }
+
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Título 2' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Título 2' }));
+    await waitFor(() => expect(textbox.querySelector('h2')?.textContent).toBe('Texto'));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Título 2' }).getAttribute('aria-pressed')).toBe(
+        'true',
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }));
+    await waitFor(() => expect(textbox.querySelector('p')?.textContent).toBe('Texto'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refazer' }));
+    await waitFor(() => expect(textbox.querySelector('h2')?.textContent).toBe('Texto'));
   });
 
   it('surfaces the server’s rejection at the byte offset the server reported', async () => {

@@ -16,7 +16,12 @@ import { useT } from '../../i18n';
 import { Skeleton, SkeletonRegion } from '../../ui';
 import type { MarkdownBodyEditorProps } from './markdownBodyTypes';
 
-export type { MarkdownBodyEditorProps, MarkdownDiagnostic, PasteReport } from './markdownBodyTypes';
+export type {
+  MarkdownBodyEditorProps,
+  MarkdownBodyToolbarLabels,
+  MarkdownDiagnostic,
+  PasteReport,
+} from './markdownBodyTypes';
 export { byteLength, charIndexForByteOffset, locateIndex } from './markdownBodyTypes';
 
 const Inner = lazy(() => import('./MarkdownBodyEditorInner'));

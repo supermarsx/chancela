@@ -1,7 +1,48 @@
 /*
  * Template authoring stays feature-scoped: the shell, controls and `.field-table` density come
- * from the shared design system, while these rules only arrange the block collection itself.
+ * from the shared design system. Content is a one-column writing flow; structured blocks stay in
+ * the Properties tab behind the explicit advanced disclosure below.
  */
+.template-editor-page .template-editor-tabs {
+  width: 100%;
+}
+
+/* Shared SubNav is centred to the normal reading measure by default. An editor Card already owns
+   its measure, so its local tabs align with the Card's left edge instead. */
+.template-editor-page .template-editor-tabs .subnav-rail {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
+}
+
+.template-editor-page .template-editor-tabs .subnav-wrap {
+  margin-top: 0;
+}
+
+.template-editor__document-structure {
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.template-editor__document-structure > summary {
+  padding: 0.75rem 0.85rem;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.template-editor__document-structure[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.template-editor__document-structure-body {
+  padding: 0.85rem;
+}
+
 .template-block-editor__list {
   display: grid;
   gap: 0.55rem;
@@ -87,30 +128,239 @@
   padding-bottom: 0.1rem;
 }
 
-.template-editor__document-preview.preview {
-  padding: 0.45rem;
-  overflow: auto;
+/* Primary one-column visual editor ------------------------------------------------- */
+
+.template-body-composer {
+  min-width: 0;
 }
 
-.template-editor__document-preview .doc-preview {
+.template-body-composer__editor {
+  min-width: 0;
+}
+
+.template-body-composer .markdown-body-editor {
+  display: grid;
+  min-width: 0;
+  overflow: clip;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 0.4rem 1.3rem color-mix(in srgb, #000 9%, transparent);
+}
+
+.template-body-composer .markdown-body-editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+  font-family: var(--font-sans);
+}
+
+.template-body-composer .markdown-body-editor__tool-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.template-body-composer .markdown-body-editor__tool-group + .markdown-body-editor__tool-group {
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--border);
+}
+
+.template-body-composer .markdown-body-editor__tool {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 1px);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: 650 0.76rem/1 var(--font-sans);
+}
+
+.template-body-composer .markdown-body-editor__tool:hover:not(:disabled),
+.template-body-composer .markdown-body-editor__tool:focus-visible {
+  border-color: var(--field-border);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  outline: none;
+}
+
+.template-body-composer .markdown-body-editor__tool[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.template-body-composer .markdown-body-editor__tool:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.template-body-composer .markdown-body-editor__host {
+  min-width: 0;
+  padding: clamp(0.75rem, 2vw, 1.4rem);
+  overflow: auto;
+  background: color-mix(in srgb, var(--bg) 72%, var(--surface));
+}
+
+.template-body-composer .markdown-body-editor__surface.ProseMirror {
+  position: relative;
   width: 100%;
   max-width: none;
+  min-height: 28rem;
   margin: 0;
-  padding: 1.2rem 1.35rem;
-  font-size: 0.9rem;
+  padding: clamp(1.5rem, 4vw, 3.25rem) clamp(1.25rem, 6vw, 5rem);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0.55rem 1.6rem color-mix(in srgb, #000 14%, transparent);
+  font: 1rem/1.72 var(--font-body);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
-.template-editor__document-preview .doc-preview__head {
-  margin-bottom: 1rem;
-  padding-bottom: 0.7rem;
+.template-body-composer .markdown-body-editor__surface.ProseMirror:focus {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent),
+    0 0.55rem 1.6rem color-mix(in srgb, #000 14%, transparent);
 }
 
-.template-editor__document-preview .doc-heading {
-  margin: 1rem 0 0.4rem;
+.template-body-composer .markdown-body-editor__surface.ProseMirror[contenteditable='false'] {
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+  cursor: default;
 }
 
-.template-editor__document-preview .doc-paragraph {
+.template-body-composer .markdown-body-editor__surface.ProseMirror p {
+  min-height: 1.72em;
+  margin: 0 0 0.85rem;
+}
+
+.template-body-composer .markdown-body-editor__surface.ProseMirror h1,
+.template-body-composer .markdown-body-editor__surface.ProseMirror h2,
+.template-body-composer .markdown-body-editor__surface.ProseMirror h3,
+.template-body-composer .markdown-body-editor__surface.ProseMirror h4,
+.template-body-composer .markdown-body-editor__surface.ProseMirror h5,
+.template-body-composer .markdown-body-editor__surface.ProseMirror h6 {
+  margin: 1.25em 0 0.55em;
+  color: var(--text);
+  font-family: var(--font-display);
+  line-height: 1.18;
+}
+
+.template-body-composer .markdown-body-editor__surface.ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.template-body-composer .markdown-body-editor__surface.ProseMirror hr {
+  margin: 1.5rem 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.template-body-composer .md-placeholder {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+.template-body-composer .markdown-body-editor > .field__hint,
+.template-body-composer .markdown-body-editor > .field__error {
+  margin-inline: 0.75rem;
+}
+
+/* One full-width preview, one mounted representation -------------------------------- */
+
+.template-preview {
+  min-width: 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.template-preview__heading {
+  display: grid;
+  justify-items: start;
+  gap: 0.65rem;
+}
+
+.template-preview__heading .panel__title,
+.template-preview__heading .field__hint {
   margin: 0;
+}
+
+.template-preview__tabs {
+  display: inline-flex;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  padding: 0.18rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 80%, var(--bg));
+}
+
+.template-preview__tabs [role='tab'] {
+  padding: 0.38rem 0.85rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: 650 0.78rem/1.2 var(--font-sans);
+}
+
+.template-preview__tabs [role='tab']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.template-preview__tabs [role='tab'].is-active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.template-preview__panel {
+  width: 100%;
+  min-height: 18rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 88%, var(--bg));
+}
+
+.template-preview__markdown-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.template-preview__markdown-head > p {
+  flex: 1 1 28rem;
+  margin: 0;
+}
+
+.template-preview__markdown-source {
+  min-height: 14rem;
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  color: var(--text);
+  font: 0.84rem/1.58 var(--font-mono);
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {
@@ -128,5 +378,19 @@
 
   .template-editor__save-bar {
     grid-template-columns: 1fr;
+  }
+
+  .template-body-composer .markdown-body-editor__tool-group + .markdown-body-editor__tool-group {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .template-body-composer .markdown-body-editor__surface.ProseMirror {
+    min-height: 22rem;
+    padding: 1.25rem 1rem;
+  }
+
+  .template-preview__markdown-head {
+    align-items: stretch;
   }
 }

@@ -139,6 +139,17 @@ export function parseTemplateBlocksText(value: string): BlocksParseResult {
   return { blocks: parsed, error: null };
 }
 
+/**
+ * Add the narrative-body placement marker without disturbing any existing structured block.
+ * Invalid Advanced JSON returns `null` so the recovery button never overwrites half-typed source.
+ */
+export function withNarrativeBodyPlacement(value: string): string | null {
+  const parsed = parseTemplateBlocksText(value);
+  if (!parsed.blocks) return null;
+  if (parsed.blocks.some((block) => block.kind === 'NarrativeBody')) return value;
+  return JSON.stringify([...parsed.blocks, { kind: 'NarrativeBody' }], null, 2);
+}
+
 /** A valid seed for each block kind. The server applies its normal default for omitted fields. */
 export function newTemplateBlock(kind: BlockKind): TemplateBlockSpec {
   switch (kind) {

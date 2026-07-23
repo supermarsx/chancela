@@ -49,7 +49,11 @@ import {
 } from '../../ui';
 import { mappedTemplateError } from './templateErrors';
 import { TemplateSpecFields } from './TemplateSpecFields';
-import { TemplateBlocksEditor, parseTemplateBlocksText } from './TemplateBlocksEditor';
+import {
+  TemplateBlocksEditor,
+  parseTemplateBlocksText,
+  withNarrativeBodyPlacement,
+} from './TemplateBlocksEditor';
 import { TemplateBodyEditor } from './TemplateBodyEditor';
 import { TemplateEditorTabs, type UserTemplateEditorTab } from './TemplateEditorTabs';
 import { TemplateVersionHistory } from './TemplateVersionHistory';
@@ -285,8 +289,13 @@ export function TemplateEditPage() {
     }
   }
 
+  function addBodyPlacement() {
+    const next = withNarrativeBodyPlacement(blocksText);
+    if (next !== null) setBlocksText(next);
+  }
+
   return (
-    <div className="stack wide-page">
+    <div className="stack wide-page template-editor-page">
       <PageHeader
         crumbs={
           <>
@@ -340,29 +349,36 @@ export function TemplateEditPage() {
               <form className="form" onSubmit={submit}>
                 <div className="route-transition stack" key={tab}>
                   {tab === 'content' ? (
-                    <>
-                      <TemplateBlocksEditor
-                        value={blocksText}
-                        onChange={setBlocksText}
-                        idPrefix="tpl-page-blocks"
-                      />
-                      <TemplateBodyEditor
-                        spec={authoredSpec}
-                        value={body}
-                        onChange={setBody}
-                        disabled={updateTemplate.isPending}
-                        idPrefix="tpl-page"
-                      />
-                    </>
-                  ) : (
-                    <TemplateSpecFields
-                      spec={draft}
-                      onSpecChange={(next) =>
-                        setDraft((current) => (current ? next(current) : current))
-                      }
-                      idLocked
+                    <TemplateBodyEditor
+                      spec={authoredSpec}
+                      value={body}
+                      onChange={setBody}
+                      onAddBodyPlacement={addBodyPlacement}
+                      disabled={updateTemplate.isPending}
                       idPrefix="tpl-page"
                     />
+                  ) : (
+                    <>
+                      <TemplateSpecFields
+                        spec={draft}
+                        onSpecChange={(next) =>
+                          setDraft((current) => (current ? next(current) : current))
+                        }
+                        idLocked
+                        idPrefix="tpl-page"
+                      />
+                      <details className="template-editor__document-structure">
+                        <summary>{et('templates.editor.structure.summary')}</summary>
+                        <div className="stack--tight template-editor__document-structure-body">
+                          <p className="field__hint">{et('templates.editor.structure.hint')}</p>
+                          <TemplateBlocksEditor
+                            value={blocksText}
+                            onChange={setBlocksText}
+                            idPrefix="tpl-page-blocks"
+                          />
+                        </div>
+                      </details>
+                    </>
                   )}
                 </div>
 

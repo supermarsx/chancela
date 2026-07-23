@@ -32,6 +32,25 @@ export interface PasteReport {
   changes: { construct: string; kind: 'downgraded' | 'removed'; count: number }[];
 }
 
+/**
+ * Copy for the optional visible formatting toolbar.
+ *
+ * The editor engine is shared by several surfaces, but each feature owns its translated chrome.
+ * Passing the labels opts into the toolbar without pulling feature copy into the lazy ProseMirror
+ * chunk or forcing every existing caller to grow a toolbar at once.
+ */
+export interface MarkdownBodyToolbarLabels {
+  ariaLabel: string;
+  editor: string;
+  paragraph: string;
+  headings: readonly [string, string, string, string, string, string];
+  bold: string;
+  italic: string;
+  horizontalRule: string;
+  undo: string;
+  redo: string;
+}
+
 export interface MarkdownBodyEditorProps {
   /** The markdown source — the stored, sealed, compiled artifact. */
   value: string;
@@ -42,8 +61,12 @@ export interface MarkdownBodyEditorProps {
   diagnostic?: MarkdownDiagnostic | null;
   /** Byte ceiling for the body (t74 §9.6). Displayed; nothing is ever truncated to fit it. */
   maxBytes?: number;
-  /** DOM id applied to the editable surface, so a `<label>` can point at it. */
+  /** DOM id applied to the editable surface. */
   id?: string;
+  /** Accessible name for the `role="textbox"` editing surface. */
+  ariaLabel?: string;
+  /** Supplying translated labels opts this instance into the visible formatting toolbar. */
+  toolbarLabels?: MarkdownBodyToolbarLabels;
 }
 
 /** UTF-8 byte length — what the server's cap is expressed in, not `String.length`. */

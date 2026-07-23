@@ -1,67 +1,55 @@
 /**
- * TemplateBodyEditor — the template's narrative body as a WYSIWYG surface beside the complete
- * currently-authored template preview. Shared by create and edit so the two cannot drift.
+ * TemplateBodyEditor — the template's primary narrative authoring surface.
  *
- * ## What this edits
+ * The ProseMirror editor owns only `body_markdown`; structured `blocks[]` stay in Properties
+ * because they carry document bindings prose cannot represent. A template still needs one explicit
+ * `NarrativeBody` block to place this prose, so older templates without that marker get both an
+ * honest warning and a direct recovery action.
  *
- * The NARRATIVE body only — the markdown seed that rides the `chancela.template-bundle` envelope as
- * `body_markdown` and is folded into the template's `default_body`. It is a pure consumer of the
- * ata's `MarkdownBodyEditor` (the t35/t74 ProseMirror surface whose schema IS the frozen block set,
- * so unsupported constructs are unrepresentable rather than rejected after the fact). The structured
- * `blocks[]` stays a separate structured editor — the WYSIWYG never touches it, because a
- * `BlockSpec[]` carries non-prose bindings markdown cannot represent.
- *
- * ## Preview is the server's, unresolved
- *
- * The preview pane renders the complete authored `TemplateBlockSpec[]` in order. At each
- * `NarrativeBody` marker it inserts ONLY the `Block[]` returned by the stateless
- * `POST /v1/templates/body/preview` compiler used by the seal path (debounced). Merge tags stay
- * literal because this stateless preview has no act context. A rejected body carries its server
- * diagnostic both into the editor and into the in-place preview error state.
- *
- * ## The no-anchor hint
- *
- * A body only reaches the generated document if the template's blocks carry a `NarrativeBody`
- * placement anchor (t35-e1). When they do not, the body is stored and round-tripped but never
- * rendered — so the author is told, next to the editor, rather than left to wonder why their prose
- * vanished from the output.
+ * Preview is deliberately exclusive: either the real stateless PDF/A proof or the exact stored
+ * markdown source is mounted. The PDF is visibly classified as structural and unresolved; it is
+ * never presented as the final context-filled ata.
  */
-import { useEffect, useState } from 'react';
-import type { Block, TemplateSpec } from '../../api/types';
+import { useEffect, useId, useState } from 'react';
+import type { TemplateSpec } from '../../api/types';
 import { useTemplateBodyPreview } from '../../api/hooks';
 import { ApiError } from '../../api/client';
-import { MarkdownBodyEditor, type MarkdownDiagnostic } from '../acts/MarkdownBodyEditor';
+import {
+  MarkdownBodyEditor,
+  type MarkdownBodyToolbarLabels,
+  type MarkdownDiagnostic,
+} from '../acts/MarkdownBodyEditor';
 import { useActBodyT, bodyDiagnosticKey } from '../../i18n/actBodyFallback';
 import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
-import { InlineWarning } from '../../ui';
-import {
-  TemplateAuthoredPreview,
-  type TemplateNarrativePreviewState,
-} from './TemplateAuthoredPreview';
+import { Button, Icon, InlineWarning } from '../../ui';
+import { TemplatePdfPreview } from './TemplatePdfPreview';
 
 /** The narrative-body byte ceiling — the server's cap for a template body seed (mirrors the ata). */
 export const MAX_TEMPLATE_BODY_BYTES = 64 * 1024;
 
-/**
- * Does the template place a narrative body? The `NarrativeBody` anchor (t35-e1) is a kind-tagged
- * fieldless block and is represented explicitly in the authored `TemplateBlockSpec` union.
- */
+/** Does the structured document include the marker that places `body_markdown`? */
 export function placesNarrativeBody(blocks: TemplateSpec['blocks']): boolean {
   return blocks.some((block) => block.kind === 'NarrativeBody');
 }
+
+type PreviewMode = 'pdf' | 'markdown';
+type CopyState = 'idle' | 'copied' | 'failed';
 
 export function TemplateBodyEditor({
   spec,
   value,
   onChange,
+  onAddBodyPlacement,
   disabled,
   idPrefix = 'tpl',
 }: {
-  /** The current spec — read only to check whether it places a narrative body. */
+  /** The current spec is read only to check whether it places the narrative body. */
   spec: TemplateSpec;
   /** The narrative-body markdown (`body_markdown`), the WYSIWYG's source of truth. */
   value: string;
   onChange: (next: string) => void;
+  /** Adds a `NarrativeBody` marker without sending the operator hunting through raw JSON. */
+  onAddBodyPlacement?: () => void;
   /** True while the body is not editable (loading, or a non-user template). */
   disabled: boolean;
   /** Prefix for the editor's DOM id, so two mounts never collide. */
@@ -69,59 +57,35 @@ export function TemplateBodyEditor({
 }) {
   const bt = useTemplatesEditorT();
   const abt = useActBodyT();
-  const preview = useTemplateBodyPreview();
-  const mutatePreview = preview.mutate;
-  const [compiled, setCompiled] = useState<{ source: string; blocks: Block[] } | null>(null);
-  const [compileFailure, setCompileFailure] = useState<{
-    source: string;
-    diagnostic: string;
-  } | null>(null);
-  // Server-only verdict on the current source, when it refused to compile. The editor never
-  // compiles content itself — this is populated from a `422` preview response and cleared on a clean
-  // one, exactly as the ata body editor does (t35-e2).
+  const previewValidation = useTemplateBodyPreview();
+  const mutatePreview = previewValidation.mutate;
   const [diagnostic, setDiagnostic] = useState<MarkdownDiagnostic | null>(null);
-
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('pdf');
+  const [copyState, setCopyState] = useState<CopyState>('idle');
+  const previewId = useId();
   const hasAnchor = placesNarrativeBody(spec.blocks);
 
-  // Debounced stateless preview. The server compiles the SAME way it will at generation, so its
-  // verdict — clean blocks or a rejected `{ code, offset }` — is what the document would carry; the
-  // pane shows that rather than guessing. Suspended while the body is not editable.
+  // Keep the existing server-authoritative validation loop even though its old HTML rendering is
+  // gone. A 422 still points at the exact rejected source offset in the visual editor.
   useEffect(() => {
     setDiagnostic(null);
-    setCompileFailure(null);
-    if (!value.trim()) {
-      setCompiled(null);
-      return;
-    }
-    if (disabled) {
-      return;
-    }
+    if (!value.trim() || disabled) return;
     const source = value;
     let active = true;
     const handle = window.setTimeout(() => {
       mutatePreview(
         { source },
         {
-          onSuccess: (response) => {
-            if (!active) return;
-            setCompiled({ source, blocks: response.blocks });
-            setCompileFailure(null);
-            setDiagnostic(null);
+          onSuccess: () => {
+            if (active) setDiagnostic(null);
           },
           onError: (err) => {
             if (!active) return;
-            // A rejected body is a 422 with a byte offset; anything else (transport, 403) is not a
-            // body rejection, so it leaves no spurious underline. The `construct` shown is a friendly
-            // noun resolved from the server's machine `code`.
-            if (err instanceof ApiError && err.status === 422 && err.offset != null) {
-              setDiagnostic({ construct: abt(bodyDiagnosticKey(err.code)), offset: err.offset });
-            } else {
-              setDiagnostic(null);
-            }
-            setCompileFailure({
-              source,
-              diagnostic: err instanceof Error ? err.message : String(err),
-            });
+            setDiagnostic(
+              err instanceof ApiError && err.status === 422 && err.offset != null
+                ? { construct: abt(bodyDiagnosticKey(err.code)), offset: err.offset }
+                : null,
+            );
           },
         },
       );
@@ -132,50 +96,149 @@ export function TemplateBodyEditor({
     };
   }, [abt, disabled, mutatePreview, value]);
 
-  const narrative: TemplateNarrativePreviewState = !value.trim()
-    ? { status: 'empty' }
-    : compileFailure?.source === value
-      ? { status: 'error', diagnostic: compileFailure.diagnostic }
-      : compiled?.source === value
-        ? { status: 'ready', blocks: compiled.blocks }
-        : { status: 'loading' };
+  const toolbarLabels: MarkdownBodyToolbarLabels = {
+    ariaLabel: bt('templates.editor.body.toolbar.aria'),
+    editor: bt('templates.editor.body.editorLabel'),
+    paragraph: bt('templates.editor.body.toolbar.paragraph'),
+    headings: [
+      bt('templates.editor.body.toolbar.heading', { level: 1 }),
+      bt('templates.editor.body.toolbar.heading', { level: 2 }),
+      bt('templates.editor.body.toolbar.heading', { level: 3 }),
+      bt('templates.editor.body.toolbar.heading', { level: 4 }),
+      bt('templates.editor.body.toolbar.heading', { level: 5 }),
+      bt('templates.editor.body.toolbar.heading', { level: 6 }),
+    ],
+    bold: bt('templates.editor.body.toolbar.bold'),
+    italic: bt('templates.editor.body.toolbar.italic'),
+    horizontalRule: bt('templates.editor.body.toolbar.rule'),
+    undo: bt('templates.editor.body.toolbar.undo'),
+    redo: bt('templates.editor.body.toolbar.redo'),
+  };
+
+  async function copyMarkdown() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(value);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+  }
 
   return (
-    <div className="stack--tight">
-      <p className="field__hint">{bt('templates.editor.body.hint')}</p>
+    <section className="stack template-body-composer">
+      <div className="stack--tight template-body-composer__editor">
+        <h3 className="panel__title">{bt('templates.editor.body.title')}</h3>
+        <p className="field__hint">{bt('templates.editor.body.hint')}</p>
 
-      {/* Stored and round-tripped, but it never reaches the document without a placement anchor —
-          said here, next to the editor, so an author is not left wondering where the prose went. */}
-      {!hasAnchor ? (
-        <InlineWarning tone="info" title={bt('templates.editor.noAnchor.title')}>
-          <p>{bt('templates.editor.noAnchor.body')}</p>
-        </InlineWarning>
-      ) : null}
+        {!hasAnchor ? (
+          <InlineWarning tone="info" title={bt('templates.editor.noAnchor.title')}>
+            <p>{bt('templates.editor.noAnchor.body')}</p>
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Icon.Plus />}
+              disabled={disabled || !onAddBodyPlacement}
+              onClick={onAddBodyPlacement}
+            >
+              {bt('templates.editor.noAnchor.add')}
+            </Button>
+          </InlineWarning>
+        ) : null}
 
-      <div className="delib">
-        <div className="delib__edit stack--tight">
-          <MarkdownBodyEditor
-            id={`${idPrefix}-body`}
-            value={value}
-            disabled={disabled}
-            diagnostic={diagnostic}
-            maxBytes={MAX_TEMPLATE_BODY_BYTES}
-            onChange={onChange}
-          />
-        </div>
-        <div className="delib__preview stack--tight">
-          <p className="field__hint">{bt('templates.editor.preview.hint')}</p>
-          <div className="preview template-editor__document-preview">
-            <TemplateAuthoredPreview
-              title={bt('templates.editor.preview.title')}
-              templateId={spec.id}
-              locale={spec.locale}
-              blocks={spec.blocks}
-              narrative={narrative}
-            />
+        <MarkdownBodyEditor
+          id={`${idPrefix}-body`}
+          ariaLabel={bt('templates.editor.body.editorLabel')}
+          toolbarLabels={toolbarLabels}
+          value={value}
+          disabled={disabled}
+          diagnostic={diagnostic}
+          maxBytes={MAX_TEMPLATE_BODY_BYTES}
+          onChange={onChange}
+        />
+      </div>
+
+      <section className="stack--tight template-preview" aria-labelledby={`${previewId}-title`}>
+        <div className="template-preview__heading">
+          <div>
+            <h3 className="panel__title" id={`${previewId}-title`}>
+              {bt('templates.editor.preview.title')}
+            </h3>
+            <p className="field__hint">{bt('templates.editor.preview.hint')}</p>
+          </div>
+          <div
+            className="template-preview__tabs"
+            role="tablist"
+            aria-label={bt('templates.editor.preview.tabs.aria')}
+          >
+            {(['pdf', 'markdown'] as const).map((mode) => (
+              <button
+                key={mode}
+                id={`${previewId}-${mode}-tab`}
+                type="button"
+                role="tab"
+                className={previewMode === mode ? 'is-active' : undefined}
+                aria-selected={previewMode === mode}
+                aria-controls={`${previewId}-${mode}-panel`}
+                onClick={() => setPreviewMode(mode)}
+              >
+                {bt(
+                  mode === 'pdf'
+                    ? 'templates.editor.preview.tabs.pdf'
+                    : 'templates.editor.preview.tabs.markdown',
+                )}
+              </button>
+            ))}
           </div>
         </div>
-      </div>
-    </div>
+
+        {previewMode === 'pdf' ? (
+          <div
+            id={`${previewId}-pdf-panel`}
+            className="template-preview__panel"
+            role="tabpanel"
+            aria-labelledby={`${previewId}-pdf-tab`}
+          >
+            <TemplatePdfPreview
+              request={{ source: 'draft', spec, body_markdown: value }}
+              idPrefix={`${idPrefix}-pdf`}
+              downloadFilename={`${spec.id || 'template'}-structural-preview.pdf`}
+            />
+          </div>
+        ) : (
+          <div
+            id={`${previewId}-markdown-panel`}
+            className="template-preview__panel stack--tight"
+            role="tabpanel"
+            aria-labelledby={`${previewId}-markdown-tab`}
+          >
+            <div className="template-preview__markdown-head">
+              <p className="field__hint">{bt('templates.editor.preview.markdown.note')}</p>
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<Icon.Copy />}
+                onClick={() => void copyMarkdown()}
+              >
+                {bt(
+                  copyState === 'copied'
+                    ? 'templates.editor.preview.markdown.copied'
+                    : copyState === 'failed'
+                      ? 'templates.editor.preview.markdown.copyFailed'
+                      : 'templates.editor.preview.markdown.copy',
+                )}
+              </Button>
+            </div>
+            <pre
+              className="template-preview__markdown-source"
+              aria-label={bt('templates.editor.preview.markdown.sourceLabel')}
+              tabIndex={0}
+            >
+              <code>{value}</code>
+            </pre>
+          </div>
+        )}
+      </section>
+    </section>
   );
 }

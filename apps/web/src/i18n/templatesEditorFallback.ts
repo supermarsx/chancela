@@ -104,17 +104,47 @@ export const templatesEditorPtPT = {
   'templates.editor.body.title': 'Corpo do modelo',
   'templates.editor.body.hint':
     'Escreva aqui o corpo da narrativa com formatação. Os campos substituíveis mantêm-se tal como os escreve e só são preenchidos quando uma ata é gerada a partir deste modelo.',
+  'templates.editor.body.editorLabel': 'Corpo narrativo do modelo',
+  'templates.editor.body.toolbar.aria': 'Formatação do corpo narrativo',
+  'templates.editor.body.toolbar.paragraph': 'Parágrafo',
+  'templates.editor.body.toolbar.heading': 'Título de nível {level}',
+  'templates.editor.body.toolbar.bold': 'Negrito',
+  'templates.editor.body.toolbar.italic': 'Itálico',
+  'templates.editor.body.toolbar.rule': 'Linha horizontal',
+  'templates.editor.body.toolbar.undo': 'Desfazer',
+  'templates.editor.body.toolbar.redo': 'Refazer',
 
-  // — The live complete-template preview pane ——————————————————————————————————————
+  // — Document structure (secondary, under Properties) —————————————————————————————
+  'templates.editor.structure.summary': 'Estrutura avançada do documento',
+  'templates.editor.structure.hint':
+    'Ajuste blocos estruturados, tabelas e marcadores de posição apenas quando o corpo narrativo não for suficiente.',
+
+  // — The exclusive PDF / markdown preview surface —————————————————————————————————
   'templates.editor.preview.title': 'Pré-visualização do modelo',
   'templates.editor.preview.hint':
-    'Mostra todos os blocos pela ordem atual. Os campos substituíveis permanecem literais e só são preenchidos quando uma ata é gerada.',
+    'Escolha um formato de cada vez. A origem Markdown é o texto exato guardado; a vista PDF só será apresentada quando o PDF real estiver disponível.',
   'templates.editor.preview.empty': 'Ainda não há corpo para pré-visualizar.',
+  'templates.editor.preview.tabs.aria': 'Formato da pré-visualização',
+  'templates.editor.preview.tabs.pdf': 'PDF',
+  'templates.editor.preview.tabs.markdown': 'Markdown',
+  'templates.editor.preview.pdf.loading.title': 'A preparar a pré-visualização PDF',
+  'templates.editor.preview.pdf.loading.body':
+    'O PDF real está a ser gerado. Esta área não apresenta uma imitação em HTML.',
+  'templates.editor.preview.pdf.unavailable.title': 'Pré-visualização PDF indisponível',
+  'templates.editor.preview.pdf.unavailable.body':
+    'O PDF real ainda não está disponível nesta sessão. Não é apresentada uma aproximação em HTML como se fosse o documento final.',
+  'templates.editor.preview.markdown.note':
+    'Esta vista mostra exatamente a origem body_markdown guardada. Não representa a paginação nem a aparência final do PDF.',
+  'templates.editor.preview.markdown.sourceLabel': 'Origem body_markdown',
+  'templates.editor.preview.markdown.copy': 'Copiar Markdown',
+  'templates.editor.preview.markdown.copied': 'Markdown copiado',
+  'templates.editor.preview.markdown.copyFailed': 'Não foi possível copiar o Markdown',
 
   // — The no-anchor hint (the body has nowhere to render in this template) ——————————————
   'templates.editor.noAnchor.title': 'O corpo não será incluído no documento',
   'templates.editor.noAnchor.body':
     'Os blocos deste modelo não incluem um marcador de corpo da narrativa (um bloco NarrativeBody), por isso o texto acima não é inserido no documento gerado. Acrescente esse bloco aos blocos do modelo para o incluir.',
+  'templates.editor.noAnchor.add': 'Adicionar posição do corpo',
 } as const;
 
 /** The key set the template-editor body/preview copy resolves. */
@@ -191,15 +221,44 @@ export const templatesEditorEnglish = {
   'templates.editor.body.title': 'Template body',
   'templates.editor.body.hint':
     'Write the narrative body here, with formatting. Replaceable fields are kept exactly as you type them and are only filled in when a set of minutes is generated from this template.',
+  'templates.editor.body.editorLabel': 'Template narrative body',
+  'templates.editor.body.toolbar.aria': 'Narrative body formatting',
+  'templates.editor.body.toolbar.paragraph': 'Paragraph',
+  'templates.editor.body.toolbar.heading': 'Heading level {level}',
+  'templates.editor.body.toolbar.bold': 'Bold',
+  'templates.editor.body.toolbar.italic': 'Italic',
+  'templates.editor.body.toolbar.rule': 'Horizontal rule',
+  'templates.editor.body.toolbar.undo': 'Undo',
+  'templates.editor.body.toolbar.redo': 'Redo',
+
+  'templates.editor.structure.summary': 'Advanced document structure',
+  'templates.editor.structure.hint':
+    'Adjust structured blocks, tables, and placement markers only when the narrative body is not enough.',
 
   'templates.editor.preview.title': 'Template preview',
   'templates.editor.preview.hint':
-    'Shows every block in its current order. Replaceable fields remain literal and are only filled when minutes are generated.',
+    'Choose one format at a time. Markdown source is the exact stored text; the PDF view only appears when a real PDF is available.',
   'templates.editor.preview.empty': 'There is no body to preview yet.',
+  'templates.editor.preview.tabs.aria': 'Preview format',
+  'templates.editor.preview.tabs.pdf': 'PDF',
+  'templates.editor.preview.tabs.markdown': 'Markdown',
+  'templates.editor.preview.pdf.loading.title': 'Preparing the PDF preview',
+  'templates.editor.preview.pdf.loading.body':
+    'The real PDF is being generated. This area does not show an HTML imitation.',
+  'templates.editor.preview.pdf.unavailable.title': 'PDF preview unavailable',
+  'templates.editor.preview.pdf.unavailable.body':
+    'The real PDF is not available in this session yet. An HTML approximation is not presented as the final document.',
+  'templates.editor.preview.markdown.note':
+    'This view shows the exact stored body_markdown source. It does not represent pagination or the final PDF appearance.',
+  'templates.editor.preview.markdown.sourceLabel': 'body_markdown source',
+  'templates.editor.preview.markdown.copy': 'Copy Markdown',
+  'templates.editor.preview.markdown.copied': 'Markdown copied',
+  'templates.editor.preview.markdown.copyFailed': 'Could not copy Markdown',
 
   'templates.editor.noAnchor.title': 'The body will not be included in the document',
   'templates.editor.noAnchor.body':
     'This template’s blocks do not include a narrative-body placement marker (a NarrativeBody block), so the text above is not inserted into the generated document. Add that block to the template’s blocks to include it.',
+  'templates.editor.noAnchor.add': 'Add body placement',
 } as const satisfies Record<TemplatesEditorCopyKey, string>;
 
 /**

@@ -47,6 +47,25 @@ vi.mock('../acts/MarkdownBodyEditor', () => ({
   ),
 }));
 
+// PDF generation/rendering has its own focused contract test. Here we prove that the current
+// unsaved spec/body reach that seam and that Markdown remains an exclusive sibling mode.
+vi.mock('./TemplatePdfPreview', () => ({
+  TemplatePdfPreview: ({
+    request,
+  }: {
+    request: { source: string; spec: { id: string }; body_markdown: string };
+  }) => (
+    <div
+      role="status"
+      data-testid="real-template-pdf-preview"
+      data-template-id={request.spec.id}
+      data-body-markdown={request.body_markdown}
+    >
+      Pré-visualização PDF/A estrutural
+    </div>
+  ),
+}));
+
 const USER_TEMPLATE: TemplateSummary = {
   id: 'user-encosto-ata/v1',
   family: 'CommercialCompany',
@@ -160,6 +179,21 @@ function renderEdit(id: string, permissions?: PermissionsContextValue) {
   );
 }
 
+async function openPropertiesStructure(): Promise<HTMLDetailsElement> {
+  const properties = await screen.findByRole('button', { name: 'Propriedades' });
+  if (properties.getAttribute('aria-pressed') !== 'true') fireEvent.click(properties);
+  const summary = await screen.findByText('Estrutura avançada do documento');
+  const details = summary.closest('details') as HTMLDetailsElement | null;
+  if (!details) throw new Error('advanced document structure disclosure missing');
+  if (!details.open) fireEvent.click(summary);
+  return details;
+}
+
+function openContent() {
+  const content = screen.getByRole('button', { name: 'Editor e pré-visualização' });
+  if (content.getAttribute('aria-pressed') !== 'true') fireEvent.click(content);
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -211,12 +245,12 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
+    await openPropertiesStructure();
     const blockTemplate = (await screen.findByLabelText('Texto do modelo')) as HTMLTextAreaElement;
     expect(blockTemplate.value).toBe('Ata de {{ entity.name }}.');
     fireEvent.change(blockTemplate, { target: { value: 'Reescrito.' } });
 
-    // Metadata is deliberately isolated in a compact properties table.
-    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
+    // Metadata and advanced document structure share Properties, while the body remains separate.
     const id = screen.getByLabelText('Identificador') as HTMLInputElement;
     expect(id.disabled).toBe(true);
     expect(id.closest('.field-table')).toBeTruthy();
@@ -282,8 +316,8 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
-    await screen.findByText('JSON avançado');
-    fireEvent.click(screen.getByText('JSON avançado'));
+    const structure = await openPropertiesStructure();
+    fireEvent.click(within(structure).getByText('JSON avançado'));
     fireEvent.change(screen.getByLabelText('JSON avançado'), { target: { value: '[]' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 
@@ -388,13 +422,20 @@ describe('TemplateEditPage', () => {
     // The narrative body rides the bundle envelope as `body_markdown` and hydrates the editor.
     const body = (await screen.findByLabelText('corpo-markdown')) as HTMLTextAreaElement;
     expect(body.value).toBe('## Corpo\n\nTexto com {{ campo }}.');
-    // Structured blocks stay beside the WYSIWYG; raw JSON is an advanced disclosure only.
-    expect(await screen.findByText('Bloco 1')).toBeTruthy();
-    expect(screen.getByText('JSON avançado')).toBeTruthy();
+    // Content is body-first. Structured blocks move to a collapsed Properties disclosure.
+    expect(screen.queryByText('Bloco 1')).toBeNull();
     expect(screen.queryByLabelText('Identificador')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
+    const structure = (await screen.findByText('Estrutura avançada do documento')).closest(
+      'details',
+    ) as HTMLDetailsElement;
+    expect(structure.open).toBe(false);
+    fireEvent.click(within(structure).getByText('Estrutura avançada do documento'));
+    expect(await within(structure).findByText('Bloco 1')).toBeTruthy();
+    expect(within(structure).getByText('JSON avançado')).toBeTruthy();
   });
 
-  it('renders the server-compiled preview beside the editor, tags in literal form', async () => {
+  it('renders one exclusive preview and exposes tags as exact markdown source', async () => {
     const anchored = {
       ...BUNDLE_EXPORT,
       spec: { ...SPEC, blocks: [...SPEC.blocks, { kind: 'NarrativeBody' }] },
@@ -408,12 +449,24 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
-    // The pane's own chrome is immediate; the compiled block arrives after the debounced preview.
     expect(await screen.findByText('Pré-visualização do modelo')).toBeTruthy();
-    expect(await screen.findByText('Ata n.º {{ ata_number }}')).toBeTruthy();
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+    const pdf = screen.getByTestId('real-template-pdf-preview');
+    expect(pdf.textContent).toBe('Pré-visualização PDF/A estrutural');
+    expect(pdf.getAttribute('data-template-id')).toBe(USER_TEMPLATE.id);
+    expect(pdf.getAttribute('data-body-markdown')).toBe('## Corpo\n\nTexto com {{ campo }}.');
+    expect(screen.queryByText('Ata n.º {{ ata_number }}')).toBeNull();
+    expect(screen.queryByRole('article')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+    expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
+    expect(screen.getByLabelText('Origem body_markdown').textContent).toBe(
+      '## Corpo\n\nTexto com {{ campo }}.',
+    );
   });
 
-  it('updates the complete authored preview from structured controls and preserves body placement', async () => {
+  it('updates advanced structured controls without moving them back into Content', async () => {
     const fullPreviewBundle = {
       ...BUNDLE_EXPORT,
       spec: {
@@ -444,6 +497,7 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
+    await openPropertiesStructure();
     const firstBlock = (await screen.findByText('Bloco 1')).closest('details');
     const secondBlock = screen.getByText('Bloco 2').closest('details');
     if (!firstBlock || !secondBlock) throw new Error('structured block controls missing');
@@ -455,25 +509,28 @@ describe('TemplateEditPage', () => {
       target: { value: '{{ entity.legal_name }}' },
     });
 
-    const preview = await screen.findByRole('article', {
-      name: 'Pré-visualização do modelo',
-    });
-    expect(within(preview).getByText('Título depois')).toBeTruthy();
-    expect(within(preview).getByText('{{ entity.legal_name }}')).toBeTruthy();
-    expect(within(preview).getByText('Texto depois do corpo.')).toBeTruthy();
-    expect(
-      Array.from(
-        preview.querySelectorAll<HTMLElement>('[data-template-block-kind]'),
-        (node) => node.dataset.templateBlockKind,
-      ),
-    ).toEqual(['Heading', 'KeyValue', 'NarrativeBody', 'Paragraph']);
+    const raw = screen.getByText('JSON avançado').closest('details');
+    if (!raw) throw new Error('advanced JSON disclosure missing');
+    fireEvent.click(within(raw).getByText('JSON avançado'));
+    const persisted = JSON.parse(
+      (screen.getByLabelText('JSON avançado') as HTMLTextAreaElement).value,
+    );
+    expect(persisted).toMatchObject([
+      { kind: 'Heading', template: 'Título depois' },
+      { kind: 'KeyValue', rows: [{ value: '{{ entity.legal_name }}' }] },
+      { kind: 'NarrativeBody' },
+      { kind: 'Paragraph', template: 'Texto depois do corpo.' },
+    ]);
 
-    const narrative = preview.querySelector('[data-template-narrative]');
-    if (!narrative) throw new Error('narrative placement marker missing');
-    expect(
-      await within(narrative as HTMLElement).findByText('Corpo compilado {{ campo }}'),
-    ).toBeTruthy();
-    expect(document.querySelectorAll('h1')).toHaveLength(1);
+    openContent();
+    expect(await screen.findByLabelText('corpo-markdown')).toBeTruthy();
+    expect(screen.queryByText('Bloco 1')).toBeNull();
+    expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
+    expect(screen.getByLabelText('Origem body_markdown').textContent).toBe(
+      '## Corpo\n\nTexto com {{ campo }}.',
+    );
+    expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
   });
 
   it('saves the narrative body through the bundle envelope', async () => {
@@ -501,6 +558,15 @@ describe('TemplateEditPage', () => {
 
     const withoutAnchor = renderEdit(USER_TEMPLATE.id);
     expect(await screen.findByText('O corpo não será incluído no documento')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar posição do corpo' }));
+    await waitFor(() =>
+      expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull(),
+    );
+    const structure = await openPropertiesStructure();
+    fireEvent.click(within(structure).getByText('JSON avançado'));
+    expect(
+      JSON.parse((screen.getByLabelText('JSON avançado') as HTMLTextAreaElement).value),
+    ).toContainEqual({ kind: 'NarrativeBody' });
     withoutAnchor.unmount();
     cleanup();
 
@@ -546,8 +612,8 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
-    fireEvent.change(await screen.findByLabelText('Texto do modelo'), {
-      target: { value: 'Alteração local não guardada.' },
+    fireEvent.change(await screen.findByLabelText('corpo-markdown'), {
+      target: { value: '## Alteração local não guardada' },
     });
     await waitFor(() => expect(hasUnsavedChanges()).toBe(true));
 
@@ -593,7 +659,7 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
-    await screen.findByLabelText('Texto do modelo');
+    await screen.findByLabelText('corpo-markdown');
     await waitFor(() => expect(hasUnsavedChanges()).toBe(false));
 
     fireEvent.click(screen.getByRole('button', { name: 'Histórico de versões' }));
@@ -617,8 +683,6 @@ describe('TemplateEditPage', () => {
       ).toBe(true),
     );
 
-    const restoredBlock = (await screen.findByLabelText('Texto do modelo')) as HTMLTextAreaElement;
-    expect(restoredBlock.value).toBe('Conteúdo reposto.');
     expect((screen.getByLabelText('corpo-markdown') as HTMLTextAreaElement).value).toBe(
       '## Corpo reposto\n\nVersão guardada.',
     );
@@ -631,5 +695,9 @@ describe('TemplateEditPage', () => {
         .getAttribute('aria-pressed'),
     ).toBe('true');
     await waitFor(() => expect(hasUnsavedChanges()).toBe(false));
+
+    await openPropertiesStructure();
+    const restoredBlock = (await screen.findByLabelText('Texto do modelo')) as HTMLTextAreaElement;
+    expect(restoredBlock.value).toBe('Conteúdo reposto.');
   });
 });

@@ -30,8 +30,8 @@ use chancela_core::book::BookId;
 use chancela_core::termo::{TermoClause, TermoInstrument, TermoKind};
 use chancela_core::{
     Act, ActBody, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel,
-    DocumentModel, Entity, EntityFamily, LifecycleStage, MeetingChannel, NumberingScheme,
-    PresenceMode, Run, SignaturePolicyHint, TermoDeAbertura, TermoDeEncerramento,
+    DocumentModel, Entity, EntityFamily, KvRow, LifecycleStage, MeetingChannel, NumberingScheme,
+    PresenceMode, Run, SignaturePolicyHint, SignatureSlot, TermoDeAbertura, TermoDeEncerramento,
 };
 use chancela_signing::{
     BaselineProfile, EvidentiaryLevel, SignatureArtifact, SignatureFormat, SigningFamily,
@@ -42,8 +42,12 @@ use chancela_store::{
     StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
     StoredImportedDocumentReviewStatus, StoredSignedDocument, StoredUserTemplateVersion,
 };
-use chancela_templates::authoring::{TemplateValidationError, validate_user_template};
-use chancela_templates::{DefaultBodyClause, Registry, TemplateLawReference, TemplateSpec};
+use chancela_templates::authoring::{
+    MAX_TEMPLATE_BYTES, TemplateValidationError, validate_user_template,
+};
+use chancela_templates::{
+    BlockSpec, DefaultBodyClause, Registry, TemplateLawReference, TemplateSpec,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -71,6 +75,11 @@ use crate::external_validator_evidence::{
 /// The frozen PDF/A profile string bound into every `document.generated` event and stored row
 /// (plan §1-D4 step 3 / §3.4). Self-describing: MIME type + PDF/A part+conformance.
 pub(crate) const PDFA_PROFILE: &str = "application/pdf; profile=PDF/A-2u";
+
+/// HTTP envelope limit for the stateless template PDF proof. A draft carries at most one
+/// 64-KiB spec plus one 64-KiB Markdown body; the remainder is bounded JSON envelope overhead.
+pub(crate) const TEMPLATE_DOCUMENT_PREVIEW_ENVELOPE_BYTES: usize =
+    MAX_TEMPLATE_BYTES * 2 + 32 * 1024;
 
 /// Post-act communication automatically generated for absent condominium owners after sealing.
 pub(crate) const CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID: &str =
@@ -9491,6 +9500,265 @@ pub async fn preview_template_body(
     }
 }
 
+/// Source accepted by the stateless template PDF/A proof endpoint.
+///
+/// A draft carries the two currently-authored halves and therefore previews unsaved edits. A
+/// catalog request resolves either a shipped template or a durable user template by id. The two
+/// variants are deliberately disjoint so a caller cannot submit a draft while implying it is the
+/// catalog version.
+#[derive(Deserialize)]
+#[serde(tag = "source", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PreviewTemplateDocument {
+    Draft {
+        spec: Value,
+        #[serde(default)]
+        body_markdown: String,
+    },
+    Catalog {
+        template_id: String,
+    },
+}
+
+const TEMPLATE_PREVIEW_KIND: &str = "structural-unresolved";
+const TEMPLATE_PREVIEW_TITLE: &str = "Prova estrutural do modelo";
+const TEMPLATE_PREVIEW_SUBJECT: &str = "Pré-visualização PDF/A sem dados de uma ata. Os campos \
+substituíveis e as origens de coleções permanecem por resolver; este ficheiro não é uma ata final.";
+
+fn structural_note(text: impl Into<String>) -> Block {
+    Block::Paragraph {
+        runs: vec![Run {
+            text: text.into(),
+            bold: false,
+            italic: true,
+        }],
+    }
+}
+
+fn structural_template_preview_model(spec: &TemplateSpec, narrative: &[Block]) -> DocumentModel {
+    let mut blocks = vec![Block::Paragraph {
+        runs: vec![Run {
+            text: TEMPLATE_PREVIEW_SUBJECT.to_owned(),
+            bold: true,
+            italic: false,
+        }],
+    }];
+
+    for block in &spec.blocks {
+        match block {
+            BlockSpec::Heading { level, template } => blocks.push(Block::Heading {
+                level: *level,
+                text: template.clone(),
+            }),
+            BlockSpec::Paragraph { items, template } => {
+                if let Some(path) = items {
+                    blocks.push(structural_note(format!(
+                        "Parágrafo repetido pela coleção por resolver: {path}"
+                    )));
+                }
+                blocks.push(Block::Paragraph {
+                    runs: vec![Run {
+                        text: template.clone(),
+                        bold: false,
+                        italic: false,
+                    }],
+                });
+            }
+            BlockSpec::KeyValue { items, rows } => {
+                if let Some(path) = items {
+                    blocks.push(structural_note(format!(
+                        "Tabela repetida pela coleção por resolver: {path}"
+                    )));
+                }
+                blocks.push(Block::KeyValue {
+                    rows: rows
+                        .iter()
+                        .map(|row| KvRow {
+                            key: row.key.clone(),
+                            value: row.value.clone(),
+                        })
+                        .collect(),
+                });
+            }
+            BlockSpec::VoteTable {
+                items,
+                label,
+                vote_field,
+                unanimous_total,
+            } => {
+                // A VoteTable's wire model accepts numeric counts only. Inventing zeros would look
+                // like a real tally, so the context-free proof uses an explicit structural table
+                // and keeps every authored expression literal instead.
+                let mut rows = vec![
+                    KvRow {
+                        key: "Tabela de votação (dados por resolver)".to_owned(),
+                        value: label.clone(),
+                    },
+                    KvRow {
+                        key: "Coleção".to_owned(),
+                        value: items.clone(),
+                    },
+                    KvRow {
+                        key: "Campo de voto".to_owned(),
+                        value: vote_field.clone(),
+                    },
+                ];
+                if let Some(total) = unanimous_total {
+                    rows.push(KvRow {
+                        key: "Total unânime".to_owned(),
+                        value: total.clone(),
+                    });
+                }
+                blocks.push(Block::KeyValue { rows });
+            }
+            BlockSpec::SignatureBlock { source, role, name } => {
+                blocks.push(structural_note(format!(
+                    "Assinaturas provenientes da coleção por resolver: {source}"
+                )));
+                blocks.push(Block::SignatureBlock {
+                    slots: vec![SignatureSlot {
+                        role: role.clone(),
+                        name: name.clone(),
+                    }],
+                });
+            }
+            BlockSpec::PageBreak => blocks.push(Block::PageBreak),
+            BlockSpec::Rule => blocks.push(Block::Rule),
+            BlockSpec::NarrativeBody => blocks.extend(narrative.iter().cloned()),
+        }
+    }
+
+    DocumentModel {
+        title: TEMPLATE_PREVIEW_TITLE.to_owned(),
+        entity_name: spec.id.clone(),
+        entity_nipc: None,
+        subject: TEMPLATE_PREVIEW_SUBJECT.to_owned(),
+        language: spec.locale.clone(),
+        created_at: None,
+        blocks,
+    }
+}
+
+fn prepare_draft_template_preview(
+    spec: Value,
+    body_markdown: String,
+) -> Result<(TemplateSpec, String), TemplateErrorBody> {
+    // Re-enter through the portable bundle normalization used by create/update/import. This keeps
+    // the proof's size, schema, MiniJinja, threshold, locale and body-representability verdicts
+    // identical to a real save, without writing the draft anywhere.
+    let envelope = TemplateBundle {
+        format: TEMPLATE_BUNDLE_FORMAT.to_owned(),
+        format_version: TEMPLATE_BUNDLE_FORMAT_VERSION,
+        spec,
+        body_markdown: body_markdown.clone(),
+    };
+    let bytes = serde_json::to_vec(&envelope).map_err(|error| TemplateErrorBody {
+        code: "malformed",
+        field: None,
+        message: error.to_string(),
+    })?;
+    let normalized = match prepare_template_import(&bytes) {
+        PreparedImport::Ready(json) => json,
+        PreparedImport::Rejected(error) => return Err(error),
+    };
+    let spec = validate_user_template_checked(&normalized)?;
+    Ok((spec, body_markdown))
+}
+
+async fn resolve_catalog_template_preview(
+    state: &AppState,
+    template_id: String,
+) -> Result<(TemplateSpec, String), ApiError> {
+    if let Some(spec) = registry().get(template_id.trim()) {
+        return Ok((spec.clone(), seed_clauses_to_markdown(spec.default_body())));
+    }
+
+    let Some(store) = state.store.clone() else {
+        return Err(ApiError::NotFound);
+    };
+    let id = template_id.trim().to_owned();
+    let stored = store
+        .read_blocking_async(move |store| store.user_template(&id))
+        .await
+        .map_err(|error| ApiError::Internal(format!("user template store read failed: {error}")))?
+        .ok_or(ApiError::NotFound)?;
+    let spec = validate_user_template_checked(&stored).map_err(|error| {
+        ApiError::Internal(format!(
+            "stored user template is not previewable ({}): {}",
+            error.code, error.message
+        ))
+    })?;
+    let body_markdown = seed_clauses_to_markdown(spec.default_body());
+    Ok((spec, body_markdown))
+}
+
+/// `POST /v1/templates/document/preview` — produce a real, ephemeral PDF/A-2u proof from either an
+/// unsaved draft or a catalog template.
+///
+/// There is intentionally no invented act/entity/book context. MiniJinja expressions, collection
+/// paths, signatory bindings and the template body's merge tags remain visible as authored. Vote
+/// counts are represented as labelled unresolved fields rather than false zero tallies. The
+/// resulting bytes pass through the same [`chancela_doc::pdfa::write`] production writer as sealed
+/// documents, but carry a visible structural-proof warning and MUST NOT be described as the final
+/// resolved ata.
+///
+/// The endpoint is read-only (`act.read@Global`), bounded at the router, emits no ledger event and
+/// touches no store/history mutation path. `Cache-Control: no-store` also prevents an unsaved draft
+/// from becoming a browser/proxy cache artifact.
+pub async fn preview_template_document(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(request): Json<PreviewTemplateDocument>,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
+
+    let (spec, body_markdown) = match request {
+        PreviewTemplateDocument::Draft {
+            spec,
+            body_markdown,
+        } => match prepare_draft_template_preview(spec, body_markdown) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(error)).into_response());
+            }
+        },
+        PreviewTemplateDocument::Catalog { template_id } => {
+            resolve_catalog_template_preview(&state, template_id).await?
+        }
+    };
+
+    let narrative = match chancela_templates::markdown::compile_markdown(&body_markdown) {
+        Ok(blocks) => blocks,
+        Err(error) => {
+            return Ok((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(TemplateBodyPreviewError {
+                    code: error.code(),
+                    offset: error.offset(),
+                    message: error.to_string(),
+                }),
+            )
+                .into_response());
+        }
+    };
+    let model = structural_template_preview_model(&spec, &narrative);
+    let bytes = chancela_doc::pdfa::write(&model)
+        .map_err(|error| ApiError::Internal(format!("template PDF/A preview failed: {error}")))?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, PDFA_PROFILE)
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(
+            header::CONTENT_DISPOSITION,
+            "inline; filename=\"template-structural-preview.pdf\"",
+        )
+        .header("x-chancela-template-preview", TEMPLATE_PREVIEW_KIND)
+        .body(Body::from(bytes))
+        .map_err(|error| {
+            ApiError::Internal(format!("template PDF/A preview response failed: {error}"))
+        })
+}
+
 /// t74 §8 — the template-identity binding.
 ///
 /// The hazard these guard: template version lives only in the id string, so editing a shipped
@@ -15314,6 +15582,173 @@ mod tests {
             body["offset"].is_number(),
             "diagnostics carry a byte offset"
         );
+    }
+
+    #[tokio::test]
+    async fn template_document_preview_writes_real_stateless_pdfa_without_fake_vote_counts() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let ledger_before = state.ledger.read().await.len();
+
+        let mut spec: Value =
+            serde_json::from_str(&valid_user_template_json()).expect("valid template JSON");
+        spec["blocks"] = json!([
+            {
+                "kind": "Heading",
+                "level": 1,
+                "template": "Ata n.º {{ ata_number }}"
+            },
+            {
+                "kind": "VoteTable",
+                "items": "deliberation_items",
+                "label": "{{ text }}",
+                "vote_field": "vote",
+                "unanimous_total": "{{ members_present }}"
+            },
+            {
+                "kind": "SignatureBlock",
+                "source": "signatories",
+                "role": "{{ capacity | role_label }}",
+                "name": "{{ name }}"
+            },
+            { "kind": "NarrativeBody" }
+        ]);
+        let body_markdown =
+            "# Texto de {{ ata_number }}\n\nReunião em **{{ meeting_date }}**.".to_owned();
+
+        let response = preview_template_document(
+            State(state.clone()),
+            actor,
+            Json(PreviewTemplateDocument::Draft {
+                spec: spec.clone(),
+                body_markdown: body_markdown.clone(),
+            }),
+        )
+        .await
+        .expect("stateless preview succeeds");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            PDFA_PROFILE
+        );
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get("x-chancela-template-preview")
+                .unwrap(),
+            TEMPLATE_PREVIEW_KIND
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("PDF response bytes");
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+
+        // Inspect the PDF input seam too: placeholders remain literal, and the context-free proof
+        // does not invent a numeric VoteTable row (zero would look like a real result).
+        let (prepared, _) =
+            prepare_draft_template_preview(spec, body_markdown.clone()).expect("draft validates");
+        let narrative =
+            chancela_templates::markdown::compile_markdown(&body_markdown).expect("body compiles");
+        let model = structural_template_preview_model(&prepared, &narrative);
+        let model_json = serde_json::to_string(&model).expect("model serializes");
+        assert!(model_json.contains("{{ ata_number }}"));
+        assert!(model_json.contains("{{ meeting_date }}"));
+        assert!(
+            !model
+                .blocks
+                .iter()
+                .any(|block| matches!(block, Block::VoteTable { .. })),
+            "an unresolved vote table must not become a fake all-zero tally"
+        );
+        assert!(
+            model.blocks.iter().any(|block| matches!(
+                block,
+                Block::KeyValue { rows }
+                    if rows.iter().any(|row| row.key.contains("dados por resolver"))
+            )),
+            "the vote shape remains visible as an explicitly unresolved structural table"
+        );
+
+        // Preview is a pure read: no current template, retained version or ledger event appears.
+        let store = state.store.as_ref().expect("durable test store");
+        assert!(
+            store
+                .user_template("user-encosto-ata/v1")
+                .expect("template read")
+                .is_none()
+        );
+        assert!(
+            store
+                .user_template_versions("user-encosto-ata/v1")
+                .expect("history read")
+                .is_empty()
+        );
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
+    }
+
+    #[tokio::test]
+    async fn template_document_preview_supports_catalog_and_enforces_act_read() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let reader = seed_reader_actor(&state).await;
+        let no_read = seed_powerless_actor(&state).await;
+
+        let response = preview_template_document(
+            State(state.clone()),
+            reader,
+            Json(PreviewTemplateDocument::Catalog {
+                template_id: "csc-ata-ag/v1".to_owned(),
+            }),
+        )
+        .await
+        .expect("a reader may preview a shipped template");
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("PDF bytes");
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+
+        let forbidden = preview_template_document(
+            State(state),
+            no_read,
+            Json(PreviewTemplateDocument::Catalog {
+                template_id: "csc-ata-ag/v1".to_owned(),
+            }),
+        )
+        .await
+        .expect_err("an actor without act.read may not preview");
+        assert!(matches!(forbidden, ApiError::Forbidden(_)));
+    }
+
+    #[tokio::test]
+    async fn template_document_preview_rejects_an_invalid_unsaved_bundle_without_writing() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let ledger_before = state.ledger.read().await.len();
+        let mut spec: Value =
+            serde_json::from_str(&valid_user_template_json()).expect("template JSON");
+        spec["locale"] = json!("en-GB");
+
+        let response = preview_template_document(
+            State(state.clone()),
+            actor,
+            Json(PreviewTemplateDocument::Draft {
+                spec,
+                body_markdown: String::new(),
+            }),
+        )
+        .await
+        .expect("validation is an HTTP response");
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(response).await;
+        assert_eq!(body["code"], "unsupported_locale");
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
     }
 
     /// The dry-run preflight covers the bundle: an unknown version is a `{ok:false}` verdict.
