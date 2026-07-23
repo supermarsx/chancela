@@ -156,6 +156,9 @@ import type {
   TsaCatalogSearchParams,
   TemplateSummary,
   TemplateSpec,
+  TemplateBundleInput,
+  TemplateBundleView,
+  PreviewTemplateBody,
   TemplateImportVerdict,
   AppendGroupTemplateLibraryRevisionBody,
   CompanyGroupView,
@@ -219,6 +222,7 @@ export const keys = {
   templates: (family?: EntityFamily, stage?: LifecycleStage) =>
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
   templateSpec: (id: string) => ['templates', 'spec', id] as const,
+  templateBundle: (id: string) => ['templates', 'bundle', id] as const,
   ledger: (params: LedgerQueryParams) => ['ledger', params] as const,
   ledgerPage: (params: LedgerQueryParams) => ['ledger', 'page', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
@@ -1381,14 +1385,32 @@ export function useTemplates(family?: EntityFamily, stage?: LifecycleStage, enab
 }
 
 /**
- * Create a user-authored template (`POST /v1/templates`, wp23). On success refetches the whole
- * template catalog (every family × stage variant) so the new template appears. 422/409 surface as
- * an `ApiError` carrying `code`/`field` for the editor to map to a field-level message.
+ * Input to {@link useCreateTemplate}: either the legacy raw spec JSON string (a bare spec, back-compat
+ * with the existing editor) OR a {@link TemplateBundleInput} `{ spec, body_markdown }`, which the
+ * client wraps into a `chancela.template-bundle` envelope so the authored body is persisted (t56 §5a).
+ */
+export type CreateTemplateInput = string | TemplateBundleInput;
+
+/**
+ * Input to {@link useUpdateTemplate}: `{ id, rawJson }` (legacy bare-spec replace) OR
+ * `{ id, bundle }` (bundle-envelope replace that persists `body_markdown`).
+ */
+export type UpdateTemplateInput =
+  | { id: string; rawJson: string }
+  | { id: string; bundle: TemplateBundleInput };
+
+/**
+ * Create a user-authored template (`POST /v1/templates`, wp23/t56). Accepts a bare-spec raw JSON
+ * string OR a `{ spec, body_markdown }` bundle — the latter is posted as the `chancela.template-bundle`
+ * envelope so the narrative body (with any merge tags) is persisted as the seed. On success refetches
+ * the whole template catalog so the new template appears. 422/409 surface as an `ApiError` carrying
+ * `code`/`field` for the editor to map to a field-level message.
  */
 export function useCreateTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (rawJson: string) => api.createTemplate(rawJson),
+    mutationFn: (input: CreateTemplateInput) =>
+      typeof input === 'string' ? api.createTemplate(input) : api.createTemplateBundle(input),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['templates'] });
     },
@@ -1396,14 +1418,18 @@ export function useCreateTemplate() {
 }
 
 /**
- * Replace a user-authored template (`PUT /v1/templates/{id}`, wp23). The body `id` must equal the
- * path `id` (else 422 `id_mismatch`); 404 for a built-in or unknown id. Refetches the catalog.
+ * Replace a user-authored template (`PUT /v1/templates/{id}`, wp23/t56). Accepts `{ id, rawJson }`
+ * (bare spec) or `{ id, bundle }` (bundle envelope that persists `body_markdown`). The body `id` must
+ * equal the path `id` (else 422 `id_mismatch`); 404 for a built-in or unknown id. Refetches the
+ * catalog (the `['templates']` prefix also drops the cached spec/bundle reads).
  */
 export function useUpdateTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, rawJson }: { id: string; rawJson: string }) =>
-      api.updateTemplate(id, rawJson),
+    mutationFn: (input: UpdateTemplateInput) =>
+      'bundle' in input
+        ? api.updateTemplateBundle(input.id, input.bundle)
+        : api.updateTemplate(input.id, input.rawJson),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['templates'] });
     },
@@ -1473,6 +1499,61 @@ export function templateSpecFromExport(raw: unknown): TemplateSpec {
     return (raw as { spec: TemplateSpec }).spec;
   }
   return raw as TemplateSpec;
+}
+
+/**
+ * The sibling of {@link templateSpecFromExport}: read the seed narrative markdown out of a
+ * `GET /v1/templates/{id}/export` payload. The `chancela.template-bundle` envelope carries it as
+ * `body_markdown` (with any merge tags intact); a legacy bare spec — and the detail-page fixtures —
+ * carry no seed, which reads as the empty string. Kept as its own reader (rather than folded into
+ * the spec unwrapper) so the spec half stays exactly the t48 crash-fix path.
+ */
+export function templateBodyMarkdownFromExport(raw: unknown): string {
+  if (
+    raw !== null &&
+    typeof raw === 'object' &&
+    (raw as { format?: unknown }).format === 'chancela.template-bundle' &&
+    typeof (raw as { body_markdown?: unknown }).body_markdown === 'string'
+  ) {
+    return (raw as { body_markdown: string }).body_markdown;
+  }
+  return '';
+}
+
+/**
+ * Both authored halves of one template (`GET /v1/templates/{id}/export`, t56): the {@link TemplateSpec}
+ * (via {@link templateSpecFromExport}, preserving the t48 fork crash-fix) plus its seed
+ * `body_markdown`. The editor (t56-e3) reads the block/field structure from `spec` and hydrates the
+ * narrative-body editor from `body_markdown`. Shares the export read with — but is cached separately
+ * from — {@link useTemplateSpec}, so a spec-only consumer is unaffected. Both write paths invalidate
+ * the `['templates']` prefix, which also drops this cache.
+ */
+export function useTemplateBundle(id: string, enabled = true) {
+  return useQuery<TemplateBundleView>({
+    queryKey: keys.templateBundle(id),
+    queryFn: async () => {
+      const raw: unknown = JSON.parse((await api.exportTemplate(id)).text);
+      return {
+        spec: templateSpecFromExport(raw),
+        body_markdown: templateBodyMarkdownFromExport(raw),
+      };
+    },
+    enabled: enabled && id !== '',
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Compile a template narrative-body source server-side (`POST /v1/templates/body/preview`, t56 §5b).
+ * STATELESS — no act, no id — mirroring {@link useActBodyPreview}: a mutation the editor drives from
+ * its live (t56-e3 will debounce) buffer, transient and never cached. Merge tags render as literal
+ * token text (there is no context to resolve them). A rejected source rejects the mutation with an
+ * `ApiError` carrying `{ code, offset }` for an in-place diagnostic; it writes nothing back.
+ */
+export function useTemplateBodyPreview() {
+  return useMutation({
+    mutationFn: (body: PreviewTemplateBody) => api.previewTemplateBody(body),
+  });
 }
 
 /**

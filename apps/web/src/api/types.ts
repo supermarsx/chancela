@@ -1284,6 +1284,52 @@ export interface TemplateBundle {
   body_markdown: string;
 }
 
+/**
+ * The two authored halves the template editor (t56-e3) persists, wrapped into a
+ * {@link TemplateBundle} envelope by the client before `POST`/`PUT /v1/templates` (t56 §5a): the
+ * spec WITHOUT its seed `default_body`, plus the narrative `body_markdown`. `body_markdown` is
+ * `md-block/v1` markdown that MAY carry unresolved merge tags (`{{ … }}` / `{% … %}`); the server
+ * folds it into `spec.default_body` and it never enters the frozen digest. An empty string means
+ * "no seed". The client stamps `format`/`format_version`, so authors supply only these two halves.
+ */
+export interface TemplateBundleInput {
+  spec: TemplateSpec;
+  body_markdown: string;
+}
+
+/**
+ * The read model `useTemplateBundle` yields for the editor: the authored {@link TemplateSpec} (read
+ * via `templateSpecFromExport`, which preserves the t48 fork crash-fix) plus the seed narrative
+ * markdown read back from the export bundle. A legacy bare-spec export that carries no seed reads
+ * `body_markdown: ''`.
+ */
+export interface TemplateBundleView {
+  spec: TemplateSpec;
+  body_markdown: string;
+}
+
+/**
+ * Body of `POST /v1/templates/body/preview` (t56 §5b) — the STATELESS template-body preview (no act,
+ * no id). `source` is the editor's current markdown buffer; omitted/empty ⇒ `blocks: []`. Mirrors
+ * {@link PreviewActBody}, but the compile has no context, so merge tags render as their literal
+ * token form rather than resolved values.
+ */
+export interface PreviewTemplateBody {
+  source?: string | null;
+}
+
+/**
+ * Response of `POST /v1/templates/body/preview`: the `md-block/v1` blocks the server compiled from
+ * `source`, plus the compiler id. The SAME `compile_markdown` the seal path runs, so the preview is
+ * authoritative structure (the client never compiles content). Merge tags appear as literal token
+ * text (e.g. heading `"Ata n.º {{ ata_number }}"`) because a stateless preview has no context. A
+ * rejected source is a `422` carrying `{ code, offset, message }` on the {@link ApiError} instead.
+ */
+export interface TemplateBodyPreviewResponse {
+  compiler_id: string;
+  blocks: Block[];
+}
+
 /** The persisted PDF's metadata inside the DOC-03 bundle (t48-e5). */
 export interface DocumentBundleDocument {
   id: string;

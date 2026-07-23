@@ -79,6 +79,10 @@ import type {
   LifecycleStage,
   TemplateImportVerdict,
   TemplateSummary,
+  TemplateBundle,
+  TemplateBundleInput,
+  PreviewTemplateBody,
+  TemplateBodyPreviewResponse,
   ImportFromRegistryBody,
   LawEntryView,
   LawCorpusView,
@@ -775,6 +779,20 @@ function importTemplate(
   );
 }
 
+/**
+ * Wrap the editor's two authored halves into the frozen `chancela.template-bundle` envelope (t56
+ * §5a / t43) the create/replace endpoints fold `body_markdown` into `spec.default_body` from.
+ * `format_version` is pinned to the frozen `1`.
+ */
+function templateBundleEnvelope(input: TemplateBundleInput): TemplateBundle {
+  return {
+    format: 'chancela.template-bundle',
+    format_version: 1,
+    spec: input.spec,
+    body_markdown: input.body_markdown,
+  };
+}
+
 export const api = {
   health: () => get<HealthResponse>('/health'),
 
@@ -1148,6 +1166,26 @@ export const api = {
   createTemplate: (rawJson: string) => postRawJsonText<TemplateSummary>('/v1/templates', rawJson),
   updateTemplate: (id: string, rawJson: string) =>
     putRawJsonText<TemplateSummary>(`/v1/templates/${encodeURIComponent(id)}`, rawJson),
+  // Create/replace a user template through the `chancela.template-bundle` envelope (t56 §5a), so the
+  // authored `body_markdown` (which MAY carry unresolved merge tags) is persisted as the spec's seed
+  // `default_body` instead of a bare spec. The server also accepts a legacy bare spec via
+  // {@link createTemplate}/{@link updateTemplate}; these are the body-preserving variants e3 posts.
+  createTemplateBundle: (input: TemplateBundleInput) =>
+    postRawJsonText<TemplateSummary>(
+      '/v1/templates',
+      JSON.stringify(templateBundleEnvelope(input)),
+    ),
+  updateTemplateBundle: (id: string, input: TemplateBundleInput) =>
+    putRawJsonText<TemplateSummary>(
+      `/v1/templates/${encodeURIComponent(id)}`,
+      JSON.stringify(templateBundleEnvelope(input)),
+    ),
+  // Compile a template narrative-body source into `Block[]` server-side (t56 §5b) — STATELESS (no act,
+  // no id), the SAME `md-block/v1` compiler the seal runs. Merge tags render as literal token text
+  // (there is no context to resolve them). A rejected source is a `422` carrying `{ code, offset,
+  // message }` on the `ApiError`, never a silently-dropped construct.
+  previewTemplateBody: (body: PreviewTemplateBody) =>
+    post<TemplateBodyPreviewResponse>('/v1/templates/body/preview', body),
   deleteTemplate: (id: string) => del<void>(`/v1/templates/${encodeURIComponent(id)}`),
   exportTemplate: (id: string) =>
     fetchTextDownload(`/v1/templates/${encodeURIComponent(id)}/export`),
