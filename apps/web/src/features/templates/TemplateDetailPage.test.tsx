@@ -10,7 +10,7 @@
  *    a week later never saw that dialog.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { TemplateDetailPage } from './TemplateDetailPage';
 import { forkedTemplateId, templateIdBase, templateIdVersion } from './templateFork';
@@ -23,6 +23,22 @@ import {
 } from './templateColumns';
 import { renderWithProviders } from '../../test/utils';
 import type { TemplateSummary } from '../../api/types';
+
+vi.mock('./TemplatePdfPreview', () => ({
+  TemplatePdfPreview: ({
+    request,
+    downloadFilename,
+  }: {
+    request: unknown;
+    downloadFilename: string;
+  }) => (
+    <div
+      data-testid="real-template-pdf-preview"
+      data-request={JSON.stringify(request)}
+      data-download-filename={downloadFilename}
+    />
+  ),
+}));
 
 const BUILTIN: TemplateSummary = {
   id: 'assoc-convocatoria-ga/v1',
@@ -95,50 +111,6 @@ function stub(catalog: TemplateSummary[]) {
   }) as typeof fetch;
 }
 
-interface PreviewRequest {
-  url: string;
-  method: string;
-  body?: BodyInit | null;
-}
-
-/**
- * Serve a real export bundle and let each test control the stateless body-compiler response.
- * The recorded request proves the detail preview compiles the stored `body_markdown`, not a
- * client-side reconstruction of the authored prose.
- */
-function previewStub(bodyMarkdown: string, reply: () => Promise<Response>) {
-  const calls: PreviewRequest[] = [];
-  const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input.toString();
-    const method = (init?.method ?? 'GET').toUpperCase();
-    calls.push({ url, method, body: init?.body });
-    if (url.includes('/v1/templates/body/preview')) return reply();
-    if (url.includes('/export')) {
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            format: 'chancela.template-bundle',
-            format_version: 1,
-            spec: SPEC,
-            body_markdown: bodyMarkdown,
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      );
-    }
-    if (url.includes('/v1/templates')) {
-      return Promise.resolve(
-        new Response(JSON.stringify([BUILTIN]), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    return Promise.reject(new Error(`no stub for ${method} ${url}`));
-  }) as typeof fetch;
-  return { fn, calls };
-}
-
 function renderDetail(id: string, section = '') {
   return renderWithProviders(
     <Routes>
@@ -202,123 +174,67 @@ describe('TemplateDetailPage', () => {
     expect(screen.queryByText('item.text')).toBeNull();
   });
 
-  it('compiles the narrative with a labelled, navigable preview and no duplicate native page h1', async () => {
-    const bodyMarkdown =
-      '# Corpo de {{ entity.name }}\n\nTexto para **{{ meeting_date | long_date }}**.';
-    const { fn, calls } = previewStub(bodyMarkdown, () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            compiler_id: 'md-block/v1',
-            blocks: [
-              { type: 'Heading', level: 1, text: 'Corpo de {{ entity.name }}' },
-              {
-                type: 'Paragraph',
-                runs: [
-                  { text: 'Texto para ', bold: false, italic: false },
-                  {
-                    text: '{{ meeting_date | long_date }}',
-                    bold: true,
-                    italic: false,
-                  },
-                  { text: '.', bold: false, italic: false },
-                ],
-              },
-            ],
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    );
-    vi.stubGlobal('fetch', fn);
+  it('opens the real catalog PDF preview by default and mounts only one representation', async () => {
+    vi.stubGlobal('fetch', stub([BUILTIN]));
 
     renderDetail(BUILTIN.id, 'preview');
 
     expect(await screen.findByText('Pré-visualização do modelo')).toBeTruthy();
     expect(
       screen.getByText(
-        'Esta leitura mostra a estrutura escrita no modelo. Os campos substituíveis permanecem visíveis tal como foram escritos e só recebem dados quando uma ata é gerada.',
+        'Escolha uma vista de cada vez: o PDF é a prova estrutural real gerada pelo servidor e o Markdown é a origem exata guardada. Os campos substituíveis permanecem por preencher.',
       ),
     ).toBeTruthy();
-    const previewHeading = await screen.findByText('Convocatória de {{ entity.name }}');
-    const preview = previewHeading.closest('.doc-preview') as HTMLElement;
-    expect(preview).toBeTruthy();
-    expect(previewHeading).toBeTruthy();
-    const previewTitle = within(preview).getByRole('heading', {
-      name: 'Convocatória — Assembleia Geral',
-      level: 2,
+    const pdf = await screen.findByTestId('real-template-pdf-preview');
+    expect(JSON.parse(pdf.getAttribute('data-request') ?? '{}')).toEqual({
+      source: 'catalog',
+      template_id: BUILTIN.id,
     });
-    expect(preview.getAttribute('aria-labelledby')).toBe(previewTitle.id);
-    expect(
-      within(preview).getByRole('heading', {
-        name: 'Convocatória de {{ entity.name }}',
-        level: 3,
-      }),
-    ).toBe(previewHeading);
-    expect(within(preview).getByText('agenda_items')).toBeTruthy();
-    const narrative = preview.querySelector('[data-template-narrative]') as HTMLElement;
-    const compiledHeading = await within(narrative).findByText('Corpo de {{ entity.name }}');
-    expect(compiledHeading.getAttribute('data-heading-level')).toBe('1');
-    expect(
-      within(narrative).getByRole('heading', {
-        name: 'Corpo de {{ entity.name }}',
-        level: 3,
-      }),
-    ).toBe(compiledHeading);
-    expect(within(narrative).getByText('{{ meeting_date | long_date }}')).toBeTruthy();
-
-    const compile = calls.find((call) => call.url.includes('/v1/templates/body/preview'));
-    expect(compile?.method).toBe('POST');
-    expect(JSON.parse(String(compile?.body))).toEqual({ source: bodyMarkdown });
-
-    // The app page retains one native PageHeader <h1>. The nested document stays visually faithful
-    // without native page headings while its ARIA-only level-2/3 hierarchy remains navigable.
-    expect(document.querySelectorAll('h1')).toHaveLength(1);
-    expect(preview.querySelectorAll('h1, h2, h3, h4, h5, h6')).toHaveLength(0);
-    expect(previewHeading.tagName).toBe('P');
-    expect(compiledHeading.tagName).toBe('P');
-  });
-
-  it('announces narrative compilation while the server preview is pending', async () => {
-    const { fn } = previewStub('Texto ainda a compilar.', () => new Promise<Response>(() => {}));
-    vi.stubGlobal('fetch', fn);
-
-    renderDetail(BUILTIN.id, 'preview');
-
-    const narrative = await waitFor(() => {
-      const node = document.querySelector('[data-template-narrative]');
-      expect(node).toBeTruthy();
-      return node as HTMLElement;
-    });
-    const status = within(narrative).getByRole('status');
-    expect(status.getAttribute('aria-busy')).toBe('true');
-    expect(within(status).getByText('A carregar…')).toBeTruthy();
-  });
-
-  it('announces a rejected narrative compile without implying that the template changed', async () => {
-    const { fn } = previewStub('> citação não suportada', () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            code: 'unsupported_markdown',
-            message: 'Citação não suportada neste corpo.',
-          }),
-          { status: 422, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
+    expect(pdf.getAttribute('data-download-filename')).toBe(
+      'assoc-convocatoria-ga/v1-structural-preview.pdf',
     );
-    vi.stubGlobal('fetch', fn);
+    expect(screen.getByRole('tab', { name: 'PDF' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByLabelText('Origem body_markdown')).toBeNull();
+    expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
+  });
+
+  it('switches exclusively to the exact stored Markdown source', async () => {
+    const bodyMarkdown =
+      '# Corpo de {{ entity.name }}\n\nTexto para **{{ meeting_date | long_date }}**.';
+    const bundleStub = ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/export')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              format: 'chancela.template-bundle',
+              format_version: 1,
+              spec: SPEC,
+              body_markdown: bodyMarkdown,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([BUILTIN]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', bundleStub);
 
     renderDetail(BUILTIN.id, 'preview');
+    await screen.findByTestId('real-template-pdf-preview');
 
-    const alert = await screen.findByRole('alert');
-    expect(within(alert).getByText('Não foi possível pré-visualizar o corpo')).toBeTruthy();
-    expect(
-      within(alert).getByText(
-        'O compilador recusou o corpo guardado. O modelo não foi alterado; reveja o corpo no editor antes de o utilizar.',
-      ),
-    ).toBeTruthy();
-    expect(within(alert).getByText('Citação não suportada neste corpo.')).toBeTruthy();
+    screen.getByRole('tab', { name: 'Markdown' }).click();
+
+    const source = await screen.findByLabelText('Origem body_markdown');
+    expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
+    expect(source.textContent).toBe(bodyMarkdown);
+    expect(screen.getByRole('tab', { name: 'Markdown' }).getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
   });
 
   it('reads the blocks out of the t43 bundle envelope the export now returns', async () => {
@@ -365,6 +281,20 @@ describe('TemplateDetailPage', () => {
     renderDetail(USER.id);
 
     expect(await screen.findByText('Uma cópia ainda não produz documentos')).toBeTruthy();
+  });
+
+  it('previews a user template through the same read-only catalog PDF path', async () => {
+    vi.stubGlobal('fetch', stub([USER]));
+
+    renderDetail(USER.id, 'preview');
+
+    const pdf = await screen.findByTestId('real-template-pdf-preview');
+    expect(JSON.parse(pdf.getAttribute('data-request') ?? '{}')).toEqual({
+      source: 'catalog',
+      template_id: USER.id,
+    });
+    expect(screen.getByRole('tab', { name: 'PDF' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Markdown' })).toBeTruthy();
   });
 
   it('does not carry that warning on a built-in, which does seal', async () => {

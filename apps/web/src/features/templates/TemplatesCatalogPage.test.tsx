@@ -180,6 +180,14 @@ async function themeCss(): Promise<string> {
   return readFileSync('src/theme.css', 'utf8');
 }
 
+async function catalogCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/features/templates/templatesCatalog.css', 'utf8');
+}
+
 function expectCssRule(css: string, selector: RegExp, declarations: string[]) {
   const match = css.match(selector);
   expect(match?.[1]).toBeTruthy();
@@ -279,7 +287,7 @@ describe('TemplatesCatalogPage', () => {
 
     renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
-    const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar' });
+    const filters = await screen.findByRole('search', { name: 'Pesquisar e filtrar' });
     const origin = within(filters).getByLabelText('Origem');
     expect(await screen.findByText('2 de 2 modelos')).toBeTruthy();
 
@@ -333,7 +341,7 @@ describe('TemplatesCatalogPage', () => {
     expect(within(ataRow).getByText('Sociedade comercial')).toBeTruthy();
     expect(within(ataRow).getByText('Assinatura qualificada preferencial')).toBeTruthy();
     expect(within(ataRow).getByText('csc-art63/v2')).toBeTruthy();
-    expect(within(ataRow).getByText('Deliberação por escrito')).toBeTruthy();
+    expect(within(ataRow).getByText(/Deliberação por escrito/)).toBeTruthy();
     expect(within(ataRow).getByText('Incluído (só leitura)')).toBeTruthy();
     expect(within(ataRow).getByText('pt-PT')).toBeTruthy();
 
@@ -408,12 +416,73 @@ describe('TemplatesCatalogPage', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 
+  it('keeps the catalog controls out of empty and error states', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: [] }]));
+
+    const empty = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+
+    expect(await screen.findByText('Ainda não existem modelos')).toBeTruthy();
+    expect(
+      screen.getByText('Crie um modelo novo ou importe um ficheiro de modelo para começar.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('search', { name: 'Pesquisar e filtrar' })).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+
+    empty.unmount();
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([{ match: '/v1/templates', status: 500, body: { error: 'unavailable' } }]),
+    );
+
+    const failed = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+    await waitFor(() =>
+      expect(failed.container.querySelector('.inline-warning--error')).toBeTruthy(),
+    );
+    expect(screen.queryByRole('search', { name: 'Pesquisar e filtrar' })).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('paginates a large catalog and returns filtered results to the first page', async () => {
+    const paginatedCatalog: TemplateSummary[] = Array.from({ length: 28 }, (_, index) => ({
+      ...USER_TEMPLATE,
+      id: `user-page-${String(index + 1).padStart(2, '0')}/v1`,
+    }));
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: paginatedCatalog }]));
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+
+    expect(await screen.findByText('28 de 28 modelos')).toBeTruthy();
+    expect(catalogRows()).toHaveLength(25);
+    const pagination = screen.getByRole('navigation', {
+      name: 'Paginação do catálogo de minutas',
+    });
+    expect(within(pagination).getByText(/A mostrar 1–25 de 28/)).toBeTruthy();
+    expect(within(pagination).getByText(/Página 1 de 2/)).toBeTruthy();
+    expect(
+      (within(pagination).getByRole('button', { name: 'Página anterior' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Página seguinte' }));
+    await waitFor(() => expect(catalogRows()).toHaveLength(3));
+    expect(screen.getByText(/Página 2 de 2/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
+      target: { value: 'user-page-28' },
+    });
+    await waitFor(() => expect(catalogRows()).toHaveLength(1));
+    expect(screen.getByText('user-page-28/v1')).toBeTruthy();
+    expect(
+      screen.queryByRole('navigation', { name: 'Paginação do catálogo de minutas' }),
+    ).toBeNull();
+  });
+
   it('browses the existing template catalog and points generation back to acts', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 
     const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
-    const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar' });
+    const filters = await screen.findByRole('search', { name: 'Pesquisar e filtrar' });
     expect(filters.classList.contains('templates-filters')).toBe(true);
     const primary = filters.querySelector('.templates-filterbar__primary') as HTMLElement;
     expect(primary).toBeTruthy();
@@ -456,7 +525,7 @@ describe('TemplatesCatalogPage', () => {
       within(ataRow as HTMLElement).getByText('Assinatura qualificada preferencial'),
     ).toBeTruthy();
     expect(within(ataRow as HTMLElement).getByText('csc-art63/v2')).toBeTruthy();
-    expect(within(ataRow as HTMLElement).getByText('Deliberação por escrito')).toBeTruthy();
+    expect(within(ataRow as HTMLElement).getByText(/Deliberação por escrito/)).toBeTruthy();
     expect(screen.getByText('4 de 4 modelos')).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Escolher ata' })[0].getAttribute('href')).toBe(
       '/books',
@@ -506,18 +575,22 @@ describe('TemplatesCatalogPage', () => {
     });
     const catalog = screen.getByRole('region', { name: 'Catálogo de minutas' });
     expect(within(catalog).getByText('assoc-convocatoria-ga/v1')).toBeTruthy();
-    expect(within(catalog).getByText('Convocatória')).toBeTruthy();
+    expect(
+      within(within(catalog).getByRole('table', { name: 'Catálogo de minutas' })).getByText(
+        'Convocatória',
+      ),
+    ).toBeTruthy();
   });
 
   it('combines folded search, locale filters, empty state and clear without stale results', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: EDGE_CATALOG }]));
 
     const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
+    await screen.findByText('assoc-convocatoria-ga/pt');
     const advanced = container.querySelector(
       'details.templates-advanced-filters',
     ) as HTMLDetailsElement;
 
-    expect(await screen.findByText('assoc-convocatoria-ga/pt')).toBeTruthy();
     expect(advanced.open).toBe(false);
     fireEvent.click(within(advanced).getByText('Filtros avançados'));
     expect(advanced.open).toBe(true);
@@ -553,45 +626,72 @@ describe('TemplatesCatalogPage', () => {
   });
 
   it('keeps templates filters compact, collapsible, and overflow-safe in CSS', async () => {
-    const css = await themeCss();
+    const css = await catalogCss();
 
-    expectCssRule(css, /\.templates-filters\s*\{([^}]*)\}/, [
-      'min-width: 0;',
-      'max-width: 100%;',
-      'overflow-x: clip;',
-    ]);
-    expectCssRule(css, /\.templates-filterbar\s*\{([^}]*)\}/, [
-      'max-width: 100%;',
-      'overflow-x: clip;',
-    ]);
-    expectCssRule(css, /\.templates-controls__primary\s*\{([^}]*)\}/, [
+    expectCssRule(
+      css,
+      /(?:^|\})\s*\.templates-catalog-page \.templates-filters,\s*\.templates-catalog-page \.templates-filterbar\s*\{([^}]*)\}/,
+      ['overflow-x: clip;'],
+    );
+    expectCssRule(
+      css,
+      /\.templates-catalog-page \.templates-catalog__body,\s*\.templates-catalog-page \.templates-filters,\s*\.templates-catalog-page \.templates-filterbar\s*\{([^}]*)\}/,
+      ['min-width: 0;', 'max-width: 100%;'],
+    );
+    expectCssRule(css, /\.templates-catalog-page \.templates-filterbar__primary\s*\{([^}]*)\}/, [
       'display: flex;',
       'flex-wrap: wrap;',
       'max-width: 100%;',
     ]);
-    expectCssRule(css, /\.templates-controls__search\s*\{([^}]*)\}/, [
-      'min-width: min(100%, 16rem);',
-      'max-width: 100%;',
-    ]);
-    expectCssRule(css, /\.templates-controls__primary > \.field\s*\{([^}]*)\}/, [
-      'min-width: min(100%, 11rem);',
-      'max-width: 100%;',
-    ]);
-    expectCssRule(css, /\.templates-controls__advanced\s*\{([^}]*)\}/, [
+    expectCssRule(
+      css,
+      /\.templates-catalog-page \.templates-filterbar__primary \.field:first-child\s*\{([^}]*)\}/,
+      ['flex: 2 1 18rem;', 'min-width: min(100%, 18rem);'],
+    );
+    expectCssRule(
+      css,
+      /\.templates-catalog-page \.templates-filterbar__primary \.field\s*\{([^}]*)\}/,
+      ['flex: 1 1 10rem;', 'min-width: min(100%, 10rem);', 'max-width: 100%;'],
+    );
+    expectCssRule(css, /\.templates-catalog-page \.templates-advanced-filters\s*\{([^}]*)\}/, [
       'max-width: 100%;',
       'overflow-x: clip;',
     ]);
-    expectCssRule(css, /\.templates-controls__filters\s*\{([^}]*)\}/, [
-      'display: grid;',
-      'grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));',
-      'min-width: 0;',
-      'max-width: 100%;',
+    expectCssRule(
+      css,
+      /\.templates-catalog-page \.templates-advanced-filters__body\s*\{([^}]*)\}/,
+      [
+        'display: grid;',
+        'grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));',
+        'min-width: 0;',
+        'max-width: 100%;',
+      ],
+    );
+    expectCssRule(css, /\.templates-catalog-page \.templates-table \.table\s*\{([^}]*)\}/, [
+      'width: 100%;',
+      'min-width: var(--templates-table-floor);',
+      'table-layout: fixed;',
     ]);
-    expectCssRule(css, /\.templates-controls__actions \.btn\s*\{([^}]*)\}/, [
-      'max-width: 100%;',
-      'overflow: hidden;',
-      'white-space: nowrap;',
+    expectCssRule(
+      css,
+      /\.templates-catalog-page \.templates-table \.table th,\s*\.templates-catalog-page \.templates-table \.table td\s*\{([^}]*)\}/,
+      ['vertical-align: middle;', 'text-overflow: ellipsis;', 'white-space: nowrap;'],
+    );
+    expectCssRule(
+      css,
+      /\.templates-catalog-page \.templates-table \.table th\[data-template-column='Actions'\]\s*\{([^}]*)\}/,
+      ['width: var(--tc-actions);', 'text-align: right;'],
+    );
+    expectCssRule(css, /\.templates-catalog-page \.templates-pagination\s*\{([^}]*)\}/, [
+      'display: flex;',
+      'justify-content: space-between;',
+      'border-top: 1px solid var(--border);',
     ]);
+    expectCssRule(css, /\.templates-catalog-page \.templates-pagination__actions\s*\{([^}]*)\}/, [
+      'display: inline-flex;',
+      'flex-wrap: nowrap;',
+    ]);
+    expect(css).not.toMatch(/(?:^|\})\s*\.templates-pagination(?:__[\w-]+)?\s*\{/);
   });
 
   it('opts the catalog out of the shell prose measure so nine columns get the room', async () => {
