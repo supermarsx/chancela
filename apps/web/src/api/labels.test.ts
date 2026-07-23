@@ -55,6 +55,9 @@ describe('ledgerEventKindLabel', () => {
       'Certidão do registo comercial importada',
     );
     expect(ledgerEventKindLabel('book.opened')).toBe('Livro aberto');
+    expect(ledgerEventKindLabel('template.restored')).toBe('Minuta restaurada');
+    expect(ledgerEventKindLabel('template.version.deleted')).toBe('Versão da minuta eliminada');
+    expect(ledgerEventKindLabel('template.version.renamed')).toBe('Versão da minuta renomeada');
   });
 
   it('falls back to the raw identifier for a kind a newer server introduces', () => {
@@ -404,7 +407,10 @@ describe('roleNameLabel', () => {
     for (const [locale, catalog] of Object.entries(ALL_CATALOGS)) {
       for (const slug of slugs) {
         const key = `enum.roleName.${slug}`;
-        expect((catalog as Record<string, string>)[key], `${locale} is missing ${key}`).toBeTruthy();
+        expect(
+          (catalog as Record<string, string>)[key],
+          `${locale} is missing ${key}`,
+        ).toBeTruthy();
       }
     }
   });
