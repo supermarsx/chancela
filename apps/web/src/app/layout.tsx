@@ -113,10 +113,13 @@ export function Layout() {
   // right rather than disable-with-tooltip: a surface the operator cannot reach should not be
   // advertised, and the route itself redirects a non-holder away. The predicate is the
   // no-regression UNION of every verb that gates any pane the admin surface hosts, so nobody loses
-  // a surface they reach today (settings-ops panes, storage/backups/keys, api-keys). `canAny`
-  // (holds the verb at ANY scope) matches how those panes are reached now — a tenant-scoped holder
-  // still gets there. Under-revealing would strip a surface; over-revealing is harmless because
-  // every endpoint and pane enforces on its own. (The integrations verbs join this union with t36-e5.)
+  // a surface they reach today (settings-ops panes, storage/backups/keys, api-keys, and — since t50 —
+  // the signing-configuration cluster). `canAny` (holds the verb at ANY scope) matches how those
+  // panes are reached now — a tenant-scoped holder still gets there. Under-revealing would strip a
+  // surface; over-revealing is harmless because every endpoint and pane enforces on its own. The new
+  // `signing.configure` verb (t50) is added so a holder of ONLY it still sees the Administração glyph;
+  // it is grandfathered onto every `settings.manage` holder, so the reveal never narrows.
+  // (The integrations verbs join this union with t36-e5.)
   const canAdmin =
     canAny('settings.manage') ||
     canAny('settings.read') ||
@@ -124,7 +127,8 @@ export function Layout() {
     canAny('backup.manage') ||
     canAny('user.manage') ||
     canAny('entity.update') ||
-    canAny('template.manage');
+    canAny('template.manage') ||
+    canAny('signing.configure');
 
   // Which reflow tier the header is in. `wide` lays every control out inline; `medium` folds the
   // primary tabs into a burger; `narrow` also folds the utility glyphs into a "more" menu and drops

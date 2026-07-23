@@ -564,7 +564,13 @@ type SettingsSectionNav =
 const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'appearance', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
   { id: 'documents', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
-  { id: 'signing', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
+  // Assinaturas is no longer a Configurações tab (t50): the whole signing-configuration cluster
+  // (providers / policy / tsl / tsa / trust-services / cmd) moved to the Administração surface at
+  // `/admin/signing`, joining Operações as the second admin section. Exactly like the t36 operations
+  // move, the `signing` section id, its SUBSECTION_NAV / SETTINGS_SUBSECTIONS / STANDALONE / WIDE /
+  // RETIRED entries and the ~600-line render block all remain in place — they are reached only from
+  // the admin surface (and, for the settings surface, from the retired `signing-providers` /
+  // pt-PT `assinaturas` aliases that forward on to `/admin/signing/*`, see the forward guard below).
   { id: 'management', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
   // Operações is no longer a Configurações tab (t36): its panes moved to the Administração surface
   // at `/admin`, reached through the `<SettingsPage surface="admin">` wrapper. The `operations`
@@ -581,6 +587,20 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   // Gestão de dados moved into Operações (t105). It is instance operations — storage, backups,
   // keys — not a subject of its own beside Livros. Its old address resolves via RETIRED_SECTIONS.
   { id: 'about', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
+];
+
+/**
+ * The Administração surface's OWN top-level sections (t50). Where Configurações hides its section
+ * strip on the admin surface, /admin now hosts TWO sections and shows a strip for them: Operações
+ * (the t36 panes + integrations subtabs) and Assinaturas (the signing-configuration cluster t50
+ * moved here). Both ids, their sub-navs and render blocks already live in this page; this list is
+ * only what the admin section strip renders, and both labels reuse their existing frozen catalog
+ * card titles (Operações → "Plataforma"; Assinaturas → settings.signing.cardTitle "Assinaturas"),
+ * so the move needs no new UI string.
+ */
+const ADMIN_SECTIONS: SettingsSectionNav[] = [
+  { id: 'operations', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
+  { id: 'signing', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
 ];
 
 /** The sub-tabs that manage their OWN data (not the settings working copy), so the
@@ -910,7 +930,8 @@ function providerModeLabel(provider: SigningProviderMetadata, t: ReturnType<type
  *  operator's own machine (a card reader plus the Autenticação.gov middleware), so its row
  *  carries a muted note rather than a navigating control — there is no route to invent. The
  *  `configure` value is the URL contract consumed by `ProviderCredentialsSection` (t12-e3):
- *  `/settings/signing/providers?configure=<mode>`, mode ∈ {cmd, csc, pkcs12}. */
+ *  `/admin/signing/providers?configure=<mode>` since the cluster moved to Administração (t50),
+ *  mode ∈ {cmd, csc, pkcs12}. */
 function providerConfigureMode(provider: SigningProviderMetadata): 'cmd' | 'csc' | 'pkcs12' | null {
   switch (provider.mode) {
     case 'CMD':
@@ -1213,10 +1234,11 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const at = useAdminT();
   // The entities-column card is now the ORG DEFAULT (t37): its hint says so, from an owned module.
   const ct = useTableColumnsT();
-  // The Administração surface (`/admin`) renders this page with `surface="admin"`: it forces the
-  // Operações section, hides the Configurações section strip, titles the page "Administração", and
-  // reads its sub off `/admin/:sub`. Every operations pane, the standalone/RETIRED machinery and
-  // the autosave savebar are reused unchanged — only the chrome around them differs.
+  // The Administração surface (`/admin`) renders this page with `surface="admin"`: it titles the
+  // page "Administração", shows a two-section strip (Operações + Assinaturas, t50) in place of the
+  // Configurações one, and reads its section+sub off the `/admin/:sub?/:detail?` path. Every
+  // operations/signing pane, the standalone/RETIRED machinery and the autosave savebar are reused
+  // unchanged — only the chrome around them differs.
   const isAdmin = surface === 'admin';
   const toast = useToast();
   const [params] = useSearchParams();
@@ -1240,13 +1262,20 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     // carried onto another section's address.
     dropParams: ['user'],
   });
-  // The admin surface hosts exactly one section — Operações — with the section strip hidden and the
-  // sub read off `/admin/:sub`; the section-level nav above is only meaningful for `/settings`, so on
-  // the admin surface its result is discarded and `retired` (a settings-alias table) is not
-  // consulted. On the settings surface a retired alias (`/settings/email`, `/settings/data`, …) can
-  // still resolve INTO operations — the forward guard below then sends it on to `/admin/*`.
+  // The admin surface hosts two sections — Operações and Assinaturas (t50). The first `/admin`
+  // segment names the section: `signing` selects Assinaturas (sub read one level deeper off
+  // `/admin/signing/:detail`), everything else is an Operações sub read off `/admin/:sub` exactly as
+  // t36 left it (no operations sub is named `signing`, so there is no collision). The settings
+  // section-level nav above is only meaningful for `/settings`, so on the admin surface its result is
+  // discarded and `retired` (a settings-alias table) is not consulted. On the settings surface a
+  // retired alias (`/settings/email`, `/settings/data`, `/settings/signing-providers`, …) can still
+  // resolve INTO operations or signing — the forward guard below then sends it on to `/admin/*`.
   const retired = isAdmin || secSegment === undefined ? undefined : RETIRED_SECTIONS[secSegment];
-  const section: SettingsSection = isAdmin ? 'operations' : (retired?.section ?? rawSection);
+  const section: SettingsSection = isAdmin
+    ? secSegment === 'signing'
+      ? 'signing'
+      : 'operations'
+    : (retired?.section ?? rawSection);
   // The second level, for the two sections that have one. Like the section, the first sub-tab is
   // the default and carries no segment; an unknown one falls back to it rather than blanking the
   // panel. A retired address names its own destination sub-tab and wins over any sub segment.
@@ -1256,7 +1285,9 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // A PUSH, so the browser Back button walks back through the sub-tabs the operator opened
   // (the t34/t62 rule: navigation the user performed must be undoable).
   const { section: subSegment, select: selectRawSub } = useSectionNav<string>({
-    base: isAdmin ? '/admin' : `/settings/${section}`,
+    // On the admin surface the signing section adds a path level (`/admin/signing/:detail`), so its
+    // sub is read one segment deeper than the operations section (`/admin/:sub`). t50.
+    base: isAdmin ? (section === 'signing' ? '/admin/signing' : '/admin') : `/settings/${section}`,
     parse: (raw) => raw ?? '',
     fallback: '',
   });
@@ -1277,12 +1308,22 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // fire on `/settings/users/roles?user=u1` too, throwing an operator off the Funções panel.
   const selectedUser = section === 'users' && sub === 'users' ? params.get('user') : null;
   // Leaving a section drops its sub-tab: the base is rebuilt from `/settings`, so the new
-  // section opens on its own default rather than on a stale child id.
-  const selectSection = (next: SettingsSection) => selectRawSection(next);
+  // section opens on its own default rather than on a stale child id. On the admin surface the two
+  // sections address off `/admin` instead (Assinaturas at `/admin/signing`, Operações at the bare
+  // `/admin`), so section selection is rebuilt from that base rather than the settings one. t50.
+  const selectSection = (next: SettingsSection) => {
+    if (isAdmin) {
+      navigate(next === 'signing' ? '/admin/signing' : '/admin');
+      return;
+    }
+    selectRawSection(next);
+  };
   const selectSub = (next: SettingsSubsection) =>
     selectRawSub(subNav && next === subNav[0].id ? '' : next);
   // The fragment of the current location, carried through the `?user=` → edit-screen redirect.
-  const { hash, pathname } = useLocation();
+  // `search` is preserved verbatim by the retired-alias → /admin forwarding below, so the provider
+  // `?configure=` deep link survives a `/settings/signing-providers?configure=…` bookmark (t50).
+  const { hash, pathname, search } = useLocation();
   const settings = useSettings();
   const health = useHealth();
   const ledger = useLedgerVerify();
@@ -1297,10 +1338,19 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // lock. Reads (`settings.read`) still render everything.
   const can = useCan();
   const canManageSettings = can('settings.manage');
+  // The signing-configuration cluster is gated on its own dedicated verb since t50 (the whole
+  // cluster moved into /admin and was re-permissioned): `signing.configure`, not `settings.manage`.
+  // Grandfathering grants it to every prior `settings.manage` holder (t50-e1), so this narrows who
+  // may future-custom-role edit signing policy WITHOUT removing it from any current operator.
+  const canConfigureSigning = can('signing.configure');
+  // The verb that gates the ACTIVE section's editors: signing → `signing.configure`, everything else
+  // → `settings.manage`. This is the page-level lock; the server is the real gate (put_settings
+  // signing-slice guard + the provider-credential endpoints, t50-e1).
+  const sectionEditGate = section === 'signing' ? canConfigureSigning : canManageSettings;
   // Lock only the editable working-copy sections (not the self-gating standalone sub-tabs,
   // nor the read-only "Sobre").
   const standalone = isStandalone(section, sub);
-  const editingLocked = !canManageSettings && !standalone && section !== 'about';
+  const editingLocked = !sectionEditGate && !standalone && section !== 'about';
   // The two standalone subtabs that, since t28, host a `settings.manage` working-copy policy editor
   // co-located with their readouts (Armazenamento → retained-export cleanup; Cópias e recuperação →
   // backup-recovery). They DO touch the settings document, so — unlike other standalone subtabs —
@@ -1386,17 +1436,28 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
       </Card>
     </div>
   );
-  // Retired-alias forwarding into the Administração surface (t36). Operações is no longer a
-  // Configurações tab, but its RETIRED settings aliases still reach THIS page (only it knows the
-  // RETIRED_SECTIONS table): `/settings/email`, `/settings/mcp`, `/settings/api`,
-  // `/settings/api-keys` and `/settings/data` each resolve `section` to operations. Forward them on
-  // to `/admin/<sub>` so the bookmark lands on the moved pane rather than 404ing or dropping to
-  // Aparência. The literal `/settings/operations/*` never arrives here — the router redirect
-  // intercepts it first (t36-e1) — so the two forwarding mechanisms are disjoint. Guarded to genuine
-  // `/settings` addresses so a `/admin/*` render (whose segment[1] can coincide with a retired alias
-  // name) never re-forwards. `sub` is always defined here because operations carries a sub-nav.
+  // Retired-alias forwarding into the Administração surface (t36 + t50). Neither Operações nor
+  // Assinaturas is a Configurações tab any more, but their RETIRED settings aliases still reach THIS
+  // page (only it knows the RETIRED_SECTIONS table): `/settings/email`, `/settings/mcp`,
+  // `/settings/api`, `/settings/api-keys` and `/settings/data` resolve `section` to operations, and
+  // `/settings/signing-providers` (plus the pt-PT `/configuracoes/assinaturas` slug, via
+  // `legacySlugs`) resolve to signing. Forward each on to `/admin/<…>` so the bookmark lands on the
+  // moved pane rather than 404ing or dropping to Aparência. The literal `/settings/operations/*` and
+  // `/settings/signing/*` never arrive here — the router redirects intercept them first (t36/t50) —
+  // so the two forwarding mechanisms are disjoint. Guarded to genuine `/settings` addresses so a
+  // `/admin/*` render (whose segment[1] can coincide with a retired alias name) never re-forwards.
+  // `search` (the provider `?configure=` deep link) and `hash` are preserved verbatim. `sub` is
+  // always defined here because both operations and signing carry a sub-nav.
   if (!isAdmin && pathname.startsWith('/settings') && section === 'operations') {
-    return <Navigate to={sub ? `/admin/${sub}` : '/admin'} replace />;
+    return <Navigate to={`${sub ? `/admin/${sub}` : '/admin'}${search}${hash}`} replace />;
+  }
+  if (!isAdmin && pathname.startsWith('/settings') && section === 'signing') {
+    return (
+      <Navigate
+        to={`${sub ? `/admin/signing/${sub}` : '/admin/signing'}${search}${hash}`}
+        replace
+      />
+    );
   }
   if (settings.isLoading) return settingsSkeleton;
   if (settings.error) return <ErrorNote error={settings.error} />;
@@ -1575,22 +1636,21 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     // admin-surface behaviour off `surface` here.
     <div className="stack" data-surface={surface}>
       {/* No `crumbs`: both surfaces are a top-level tab with no parent, so a breadcrumb would only
-          restate the title. On the Administração surface (t36) the Configurações section strip is
-          hidden — that surface has exactly one section (Operações), so the second-level strip below
-          IS its primary nav — and the header reads "Administração" from the owned admin fallback. */}
+          restate the title. On the Administração surface the header reads "Administração" from the
+          owned admin fallback, and the section strip lists the admin sections — Operações and
+          Assinaturas (t50) — rather than the Configurações ones. (t36 hid this strip entirely when
+          admin had a single section; t50 restores it now that admin hosts two.) */}
       <PageHeader title={isAdmin ? at('admin.title') : t('settings.page.title')}>
-        {isAdmin ? null : (
-          <SubNav
-            items={SETTINGS_SECTIONS.map((s) => ({
-              id: s.id,
-              label: 'literal' in s ? s.literal : t(s.label),
-              icon: s.icon,
-            }))}
-            active={section}
-            onSelect={selectSection}
-            ariaLabel={t('settings.subnav.aria')}
-          />
-        )}
+        <SubNav
+          items={(isAdmin ? ADMIN_SECTIONS : SETTINGS_SECTIONS).map((s) => ({
+            id: s.id,
+            label: 'literal' in s ? s.literal : t(s.label),
+            icon: s.icon,
+          }))}
+          active={section}
+          onSelect={selectSection}
+          ariaLabel={t('settings.subnav.aria')}
+        />
       </PageHeader>
 
       {/* Honest disable-with-explanation for the editable settings when the user lacks
@@ -2364,7 +2424,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                                     mode: providerModeLabel(provider, t),
                                   })}
                                   onClick={() =>
-                                    navigate(`/settings/signing/providers?configure=${configure}`)
+                                    navigate(`/admin/signing/providers?configure=${configure}`)
                                   }
                                 >
                                   {t('settings.signing.providers.action.configure')}

@@ -2480,14 +2480,16 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/settings']);
 
-    // A segmented sub-tab per section (Gestão included). Operações is NOT here since t36 — its
-    // panes moved to the Administração surface (`/admin`), so Configurações no longer lists it.
-    for (const name of ['Aparência', 'Documentos', 'Assinaturas', 'Gestão', 'Sobre']) {
+    // A segmented sub-tab per section (Gestão included). Operações is NOT here since t36 and
+    // Assinaturas is NOT here since t50 — both moved to the Administração surface (`/admin`), so
+    // Configurações no longer lists either.
+    for (const name of ['Aparência', 'Documentos', 'Gestão', 'Sobre']) {
       expect(await screen.findByRole('button', { name })).toBeTruthy();
     }
-    // The Operações section button is gone from the Configurações strip.
+    // The Operações and Assinaturas section buttons are gone from the Configurações strip.
     const sections = within(await screen.findByRole('group', { name: 'Secções de configuração' }));
     expect(sections.queryByRole('button', { name: 'Operações' })).toBeNull();
+    expect(sections.queryByRole('button', { name: 'Assinaturas' })).toBeNull();
     // Aparência is the default section: its theme control is present…
     expect(await screen.findByLabelText('Tema')).toBeTruthy();
     // …while a Documentos-only field is not rendered until that sub-tab is active.
@@ -5668,7 +5670,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/tsa']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsa']);
 
     const tsa = (await screen.findByLabelText(
       'URL da autoridade de selo temporal (TSA)',
@@ -5695,7 +5697,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/trust-services']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/trust-services']);
 
     // By `heading`, not by text: since t73 the sub-tab that opens this card is a button carrying
     // the very same words, so a bare text query would match two nodes.
@@ -5715,7 +5717,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/trust-services']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/trust-services']);
 
     // The new column is a real `columnheader` named "Ações" carrying its own FieldHelp glyph —
     // distinct from the four column tooltips t101 already built, which this must not disturb.
@@ -5742,9 +5744,9 @@ describe('SettingsPage', () => {
     renderWithProviders(
       <>
         <LocationRecorder />
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </>,
-      ['/settings/signing/trust-services'],
+      ['/admin/signing/trust-services'],
     );
 
     // The three configurable modes each expose a "Configurar" control; CC does not.
@@ -5760,14 +5762,14 @@ describe('SettingsPage', () => {
 
     // Clicking one navigates to the frozen deep-link contract ProviderCredentialsSection consumes.
     fireEvent.click(screen.getByRole('button', { name: 'Configurar o modo CSC/QTSP' }));
-    expect(seen).toContain('/settings/signing/providers?configure=csc');
+    expect(seen).toContain('/admin/signing/providers?configure=csc');
   });
 
   it('explains what each signing mode is for below the table', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/trust-services']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/trust-services']);
 
     expect(
       await screen.findByRole('heading', {
@@ -5785,7 +5787,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithoutProviderMetadata());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/trust-services']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/trust-services']);
 
     expect(await screen.findByText(/Local soft certificate \(PKCS#12\/PFX\)/)).toBeTruthy();
   });
@@ -5794,7 +5796,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
 
     // Every source is now one grid row whose name is an editable cell, so the names read back as
     // input values rather than headings — that is the point of the redesign: two sources can be
@@ -5823,7 +5825,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
 
     const cachedSource = await screen.findByRole('group', { name: 'Operator cached TSL' });
     // One control per row, and its label states the row's current state (t36) — the row used to
@@ -5853,7 +5855,7 @@ describe('SettingsPage', () => {
     const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/tsa']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsa']);
 
     const backupTsa = await screen.findByRole('group', { name: 'Backup Timestamp TSA' });
     fireEvent.click(within(backupTsa).getByRole('button', { name: 'Tornar predefinido' }));
@@ -5877,7 +5879,7 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch(settingsWithoutTrustSourceMetadata());
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
 
     expect(await screen.findByDisplayValue('Portugal GNS Trusted List')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Prestadores TSA' }));
@@ -5909,7 +5911,7 @@ describe('SettingsPage', () => {
     });
     const { fn, calls } = settingsFetch(initial);
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Adicionar fonte TSL' }));
     const newSource = screen.getByRole('group', { name: 'Nova fonte TSL' });
@@ -6171,14 +6173,20 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
   it('lists every operations pane plus the three integrations subtabs in the Administração strip', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    // The operations panes moved to the Administração surface (t36); Operações is no longer a
-    // Configurações section, so on `/admin` there is NO section strip above — the operations
-    // sub-nav IS the primary strip.
+    // The operations panes moved to the Administração surface (t36). Since t50 that surface hosts
+    // TWO sections — Operações and Assinaturas — so a section strip IS present above, listing exactly
+    // those two; the operations sub-nav is the second-level strip below it.
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     await screen.findByRole('group', { name: 'Áreas de operações' });
     const operations = childStrip('Áreas de operações');
-    expect(screen.queryByRole('group', { name: 'Secções de configuração' })).toBeNull();
+    // The admin section strip lists the two admin sections, and nothing else (no Configurações
+    // sections leak onto /admin).
+    const sections = within(screen.getByRole('group', { name: 'Secções de configuração' }));
+    expect(labels(sections)).toEqual(['Operações', 'Assinaturas']);
+    expect(sections.getByRole('button', { name: 'Operações' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
 
     // The eleven settings-ops panes, then — folded in by t36 — the three integrations subtabs the
     // retired standalone `/operations` tab used to hold (Grupos / Conectores / Repositórios ZK),
@@ -6230,7 +6238,9 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
     const operations = within(await screen.findByRole('group', { name: 'Áreas de operações' }));
     expect(
-      operations.getByRole('button', { name: 'Conectores e trabalhos' }).getAttribute('aria-pressed'),
+      operations
+        .getByRole('button', { name: 'Conectores e trabalhos' })
+        .getAttribute('aria-pressed'),
     ).toBe('true');
     expect(await screen.findByText('Ainda não existe uma organização selecionável')).toBeTruthy();
   });
@@ -6283,7 +6293,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
   it('lists the six Assinaturas sub-tabs in the requested order', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    renderWithProviders(<SettingsPage />, ['/settings/signing']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing']);
     await loaded();
 
     expect(labels(childStrip('Áreas de assinaturas'))).toEqual([
@@ -6294,7 +6304,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       'Modos de prestador configurados',
       'Chave Móvel Digital (CMD)',
     ]);
-    // The first is the default: bare `/settings/signing` opens the credentials manager. Asserted
+    // The first is the default: bare `/admin/signing` opens the credentials manager. Asserted
     // on the strip, not on the card heading — that section loads its own data over its own
     // endpoint, which this settings-document stub deliberately does not serve.
     expect(
@@ -6320,7 +6330,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       ['cmd', false],
     ] as const) {
       vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
-      renderWithProviders(<SettingsPage />, [`/settings/signing/${sub}`]);
+      renderWithProviders(<SettingsPage surface="admin" />, [`/admin/signing/${sub}`]);
       await loaded();
       expect(panel(), sub).toBeTruthy();
       expect(panel()?.classList.contains('wide-page'), sub).toBe(wide);
@@ -6329,7 +6339,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
     // …and it follows a live tab switch, not only the first paint.
     vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
-    renderWithProviders(<SettingsPage />, ['/settings/signing/tsl']);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
     await loaded();
     expect(panel()?.classList.contains('wide-page')).toBe(true);
     fireEvent.click(
@@ -6405,7 +6415,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
     for (const grid of grids) {
       vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
-      renderWithProviders(<SettingsPage />, [`/settings/signing/${grid.sub}`]);
+      renderWithProviders(<SettingsPage surface="admin" />, [`/admin/signing/${grid.sub}`]);
       await loaded();
 
       for (const column of grid.columns) {
@@ -6436,11 +6446,12 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     }
   });
 
-  it('forwards the retired operations aliases to /admin and keeps signing aliases on Configurações', async () => {
+  it('forwards the retired operations and signing aliases into the Administração surface', async () => {
     // The retired top-level operations addresses used to open Operações panes; since t36 Operações
     // IS the Administração surface, so they forward to `/admin/*` (the in-page guard) and land on
-    // the moved pane rather than 404ing. Rendered through BOTH surfaces so the forward resolves the
-    // way it does under the app router (which mounts `/admin` as `<SettingsPage surface="admin">`).
+    // the moved pane rather than 404ing. Since t50 the signing aliases do the same into
+    // `/admin/signing/*`. Rendered through BOTH surfaces so the forward resolves the way it does
+    // under the app router (which mounts `/admin` as `<SettingsPage surface="admin">`).
     const surfaces = (
       <Routes>
         <Route path="/settings/*" element={<SettingsPage />} />
@@ -6476,11 +6487,13 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
     cleanup();
 
-    // /settings/signing-providers → Assinaturas › Fornecedores stays on Configurações (only
-    // operations moved; signing is still a Configurações section).
+    // /settings/signing-providers → /admin/signing/providers → Assinaturas › Fornecedores, on the
+    // Administração surface (t50). The single-segment retired alias is forwarded in-page (it does
+    // not match the router's `settings/signing/:sub?` redirect), the same disjoint split the
+    // operations aliases use.
     vi.stubGlobal('fetch', settingsFetch().fn);
-    renderWithProviders(<SettingsPage />, ['/settings/signing-providers']);
-    await loaded();
+    renderWithProviders(surfaces, ['/settings/signing-providers']);
+    expect(await screen.findByRole('heading', { name: 'Administração' })).toBeTruthy();
     expect(
       childStrip('Áreas de assinaturas')
         .getByRole('button', { name: 'Fornecedores de assinatura' })
@@ -6494,9 +6507,9 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     renderWithProviders(
       <>
         <NavProbe />
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </>,
-      ['/settings/signing/tsl'],
+      ['/admin/signing/tsl'],
     );
 
     // Deep-linkable: the URL alone selects the sub-tab.
@@ -6509,7 +6522,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       }),
     );
     expect(await screen.findByRole('heading', { name: 'Chave Móvel Digital (CMD)' })).toBeTruthy();
-    expect(path()).toBe('/settings/signing/cmd');
+    expect(path()).toBe('/admin/signing/cmd');
     expect(screen.getByTestId('navtype-probe').textContent).toBe('PUSH');
 
     // The default sub-tab carries no segment at all, exactly like the default section.
@@ -6518,7 +6531,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
         name: 'Fornecedores de assinatura',
       }),
     );
-    expect(path()).toBe('/settings/signing');
+    expect(path()).toBe('/admin/signing');
   });
 
   it('falls back to the first sub-tab for an unknown one, and drops it when the section changes', async () => {
@@ -6527,9 +6540,9 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     renderWithProviders(
       <>
         <NavProbe />
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </>,
-      ['/settings/signing/naoexiste'],
+      ['/admin/signing/naoexiste'],
     );
 
     await loaded();
@@ -6540,23 +6553,32 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
 
     // A `sub` belongs to the section that declared it: leaving Assinaturas discards it rather
-    // than carrying a stale child id into another section. (Operações is no longer a Configurações
-    // section since t36, so this crosses into Sobre instead.)
-    fireEvent.click((await loaded()).getByRole('button', { name: 'Sobre' }));
-    expect(path()).toBe('/settings/about');
-    expect(await screen.findByRole('heading', { name: 'Sobre' })).toBeTruthy();
+    // than carrying a stale child id into another section. On the Administração surface the sibling
+    // section is Operações, so crossing to it lands on the bare `/admin` (Operações' own default,
+    // Serviços) — never `/admin/naoexiste`.
+    fireEvent.click((await loaded()).getByRole('button', { name: 'Operações' }));
+    expect(path()).toBe('/admin');
+    // Landed on Operações' own default sub (Serviços), not a stale `naoexiste` — the operations
+    // sub-nav is present and Serviços reads active.
+    const operations = within(await screen.findByRole('group', { name: 'Áreas de operações' }));
+    expect(operations.getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
   });
 
-  it('keeps the sub-tab strip operable for a reader who may not edit the settings', async () => {
+  it('keeps the sub-tab strip operable for a reader who may not configure signing', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
+    // The signing cluster is gated on its own verb since t50 — `signing.configure`, NOT
+    // `settings.manage`. Denying it is what inerts the policy card here; a `settings.manage` holder
+    // who lacks `signing.configure` no longer edits signing policy (asserted separately below).
     renderWithProviders(
       <StaticPermissionsProvider
-        value={permissionsValue((permission) => permission !== 'settings.manage')}
+        value={permissionsValue((permission) => permission !== 'signing.configure')}
       >
-        <SettingsPage />
+        <SettingsPage surface="admin" />
       </StaticPermissionsProvider>,
-      ['/settings/signing/policy'],
+      ['/admin/signing/policy'],
     );
 
     // The editable card is inerted by the disabled fieldset, with the honest explanation…
@@ -6574,6 +6596,44 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     expect(cmd.hasAttribute('disabled')).toBe(false);
     fireEvent.click(cmd);
     expect(await screen.findByRole('heading', { name: 'Chave Móvel Digital (CMD)' })).toBeTruthy();
+  });
+
+  it('gates the signing policy on signing.configure, not settings.manage (t50 flip)', async () => {
+    // The verb that governs the signing cluster changed (t50). This asserts the flip in BOTH
+    // directions on the same policy card:
+    //  - a holder of ONLY `signing.configure` (no `settings.manage`) may edit it — the fieldset is
+    //    live — because the section no longer keys its lock on `settings.manage`;
+    //  - a holder of ONLY `settings.manage` (no `signing.configure`) may NOT — the fieldset is
+    //    inerted — because `settings.manage` no longer reaches signing configuration.
+    const { fn } = settingsFetch();
+
+    vi.stubGlobal('fetch', fn);
+    const { unmount } = renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue((p) => p === 'signing.configure')}>
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/signing/policy'],
+    );
+    expect(await screen.findByRole('heading', { name: 'Política de assinatura' })).toBeTruthy();
+    expect(screen.queryByText('Sem permissão')).toBeNull();
+    expect((document.querySelector('.settings-fieldset') as HTMLFieldSetElement).disabled).toBe(
+      false,
+    );
+    unmount();
+    cleanup();
+
+    vi.stubGlobal('fetch', settingsFetch().fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue((p) => p === 'settings.manage')}>
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/signing/policy'],
+    );
+    expect(await screen.findByRole('heading', { name: 'Política de assinatura' })).toBeTruthy();
+    expect(screen.getByText('Sem permissão')).toBeTruthy();
+    expect((document.querySelector('.settings-fieldset') as HTMLFieldSetElement).disabled).toBe(
+      true,
+    );
   });
 });
 

@@ -544,6 +544,9 @@ describe('Layout — the Administração glyph is permission-gated (t36)', () =>
     'user.manage',
     'entity.update',
     'template.manage',
+    // t50: the signing-configuration cluster moved under /admin gated on its own verb, so a holder
+    // of ONLY `signing.configure` must still see the Administração glyph.
+    'signing.configure',
   ];
 
   it('reveals the glyph for a holder of any single verb in the no-regression union', async () => {

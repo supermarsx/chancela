@@ -23,7 +23,9 @@
  *
  * Mirrors the `ApiKeysSection` idioms: `Card`/`Field`/`Input`/`GateButton`, disabled+pending
  * mutating controls (CONVENTIONS §5), inline error + toast (§2), `EmptyState` when empty, and
- * RBAC-gated on `settings.manage` (the same permission the backend writes require).
+ * RBAC-gated on `signing.configure` — the dedicated signing-configuration verb the backend writes
+ * now require since the cluster moved into Administração and was re-permissioned (t50). It is
+ * grandfathered to every prior `settings.manage` holder, so no current operator loses the pane.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -704,7 +706,7 @@ function EntryForm({
             {t('common.cancel')}
           </Button>
           <GateButton
-            perm="settings.manage"
+            perm="signing.configure"
             type="submit"
             variant="primary"
             icon={<Icon.Check />}
@@ -830,21 +832,21 @@ function EntryRow({
       <td data-label={t('settings.providerCredentials.table.actions')}>
         <span className="row-wrap">
           <GateIconButton
-            perm="settings.manage"
+            perm="signing.configure"
             icon={<Icon.ArrowUp />}
             label={t('settings.providerCredentials.entry.moveUp')}
             disabled={busy || index === 0}
             onClick={() => move(-1)}
           />
           <GateIconButton
-            perm="settings.manage"
+            perm="signing.configure"
             icon={<Icon.ArrowDown />}
             label={t('settings.providerCredentials.entry.moveDown')}
             disabled={busy || index === count - 1}
             onClick={() => move(1)}
           />
           <GateButton
-            perm="settings.manage"
+            perm="signing.configure"
             type="button"
             variant="ghost"
             icon={<Icon.Pencil />}
@@ -854,7 +856,7 @@ function EntryRow({
             {t('settings.providerCredentials.entry.edit')}
           </GateButton>
           <GateButton
-            perm="settings.manage"
+            perm="signing.configure"
             type="button"
             variant="ghost"
             icon={<Icon.Trash />}
@@ -907,7 +909,7 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
       title={title}
       actions={
         <GateButton
-          perm="settings.manage"
+          perm="signing.configure"
           variant="secondary"
           icon={<Icon.Plus />}
           onClick={() => {
@@ -1041,7 +1043,7 @@ export function ProviderCredentialsSection() {
         <EntryForm
           key={createMode}
           mode={createMode}
-          disabled={!can('settings.manage') || !storable}
+          disabled={!can('signing.configure') || !storable}
           onDone={() => setCreating(false)}
           onCancel={() => setCreating(false)}
         />
@@ -1050,7 +1052,7 @@ export function ProviderCredentialsSection() {
           title={t('settings.providerCredentials.cardTitle')}
           actions={
             <GateButton
-              perm="settings.manage"
+              perm="signing.configure"
               variant="primary"
               icon={<Icon.Plus />}
               disabled={!storable}

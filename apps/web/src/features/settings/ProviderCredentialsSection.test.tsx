@@ -600,7 +600,7 @@ describe('ProviderCredentialsSection', () => {
           <ProviderCredentialsSection />
           <SearchProbe />
         </>,
-        [`/settings/signing/providers${query}`],
+        [`/admin/signing/providers${query}`],
       );
     }
 

@@ -138,6 +138,24 @@ export function LegacySettingsOperationsRedirect() {
   return <Navigate to={`${target}${search}${hash}`} replace />;
 }
 
+/**
+ * `/settings/signing/:sub?` → `/admin/signing/:sub?` (t50). The signature-policy cluster (providers,
+ * policy, tsl, tsa, trust-services, cmd) left Configurações for the Administração surface, so its
+ * literal address is forwarded at the router level — a static `settings/signing` outranks the generic
+ * `settings/:sec?/:sub?`, so SettingsPage never renders for it. The provider table's `?configure=`
+ * deep link (and any fragment) is preserved verbatim so a `/settings/signing/providers?configure=csc`
+ * bookmark lands on the moved create form. Bare `/settings/signing` lands on `/admin/signing` (its
+ * Fornecedores default). The single-segment retired alias `/settings/signing-providers` and the pt-PT
+ * `/configuracoes/assinaturas` slug do NOT match this route — they reach SettingsPage and are
+ * forwarded in-page (t50), the same disjoint split the operations move uses.
+ */
+export function LegacySettingsSigningRedirect() {
+  const { sub } = useParams();
+  const { search, hash } = useLocation();
+  const target = sub ? `/admin/signing/${encodeURIComponent(sub)}` : '/admin/signing';
+  return <Navigate to={`${target}${search}${hash}`} replace />;
+}
+
 export const routeModuleLoaders = {
   onboarding: () => import('../features/onboarding/OnboardingWizard'),
   externalSigner: () => import('../features/signing/ExternalSignerInvitePage'),
@@ -287,10 +305,14 @@ export const router = createBrowserRouter([
         path: 'notifications',
         element: lazyRoute(routeModuleLoaders.notifications, 'NotificationsPage'),
       },
-      // Administração (t36): the operations panes + the folded-in integrations subtabs, at their
-      // own top-level address. A thin `AdminPage` renders SettingsPage in admin-surface mode.
+      // Administração (t36 + t50): the operations panes, the folded-in integrations subtabs and the
+      // signing-configuration cluster, at their own top-level address. A thin `AdminPage` renders
+      // SettingsPage in admin-surface mode. The extra `:detail?` level (t50) carries the signing
+      // section's own sub — `/admin/signing/:detail` (e.g. `/admin/signing/policy`) — while the
+      // Operações section keeps reading its sub off `/admin/:sub`; no operations sub is named
+      // `signing`, so the resolver keys the section on segment 1 === `signing` without collision.
       {
-        path: 'admin/:sub?',
+        path: 'admin/:sub?/:detail?',
         handle: { navDepth: 1 },
         element: lazyRoute(routeModuleLoaders.admin, 'AdminPage'),
       },
@@ -300,6 +322,11 @@ export const router = createBrowserRouter([
       // React Router, so it intercepts the literal address before SettingsPage sees it.
       { path: 'operations/:view?', element: <LegacyOperationsRedirect /> },
       { path: 'settings/operations/:sub?', element: <LegacySettingsOperationsRedirect /> },
+      // Assinaturas left Configurações for the Administração surface too (t50). Same pattern as the
+      // operations redirect above: the literal `settings/signing/:sub?` is forwarded to
+      // `/admin/signing/:sub?`, ranked above the generic `settings/:sec?/:sub?` so SettingsPage never
+      // renders for it, and the `?configure=` provider deep link + fragment travel through untouched.
+      { path: 'settings/signing/:sub?', element: <LegacySettingsSigningRedirect /> },
       // Two levels: the tool, then that tool's own sub-tab — the PDF validator spelled its
       // second level `?sec=` and Legislação spelled it `?leg=`, and both are the same
       // segment now (`/tools/pdf/asic`, `/tools/legislation/shelf`).
