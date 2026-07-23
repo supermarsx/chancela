@@ -2904,7 +2904,7 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     // On the Administração surface the operations sub-nav is the primary strip (no section strip).
-    expect(await screen.findByRole('group', { name: 'Áreas de operações' })).toBeTruthy();
+    expect(await screen.findByRole('group', { name: 'Áreas de administração' })).toBeTruthy();
 
     // Both service rows moved out (t82, t82b). `GET /v1/platform/services` returns exactly these
     // two, so the list here is empty by design — the pane routes rather than showing "no services".
@@ -2964,7 +2964,7 @@ describe('SettingsPage', () => {
 
     // The bookmarkable address still lands on the keys pane, now under the API button.
     expect(await screen.findByRole('heading', { name: 'Chaves API' })).toBeTruthy();
-    const operations = within(screen.getByRole('group', { name: 'Áreas de operações' }));
+    const operations = within(screen.getByRole('group', { name: 'Áreas de administração' }));
     expect(operations.getByRole('button', { name: 'API' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
@@ -3137,7 +3137,7 @@ describe('SettingsPage', () => {
     );
 
     expect(
-      (await screen.findByRole('group', { name: 'Áreas de operações' })).querySelector(
+      (await screen.findByRole('group', { name: 'Áreas de administração' })).querySelector(
         'button[aria-pressed="true"]',
       )?.textContent,
     ).toContain('MCP');
@@ -3373,7 +3373,7 @@ describe('SettingsPage', () => {
       (await screen.findAllByText(/MCP start desired state was recorded/)).length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
-    expect(screen.getByRole('group', { name: 'Áreas de operações' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Áreas de administração' })).toBeTruthy();
   });
 
   it('autosaves platform logging levels through the whole settings document, across Registos and MCP', async () => {
@@ -3392,7 +3392,7 @@ describe('SettingsPage', () => {
     // one PUT carries an edit made on Registos and an edit made on MCP.
     expect(screen.queryByLabelText('MCP stdio')).toBeNull();
     fireEvent.click(
-      within(screen.getByRole('group', { name: 'Áreas de operações' })).getByRole('button', {
+      within(screen.getByRole('group', { name: 'Áreas de administração' })).getByRole('button', {
         name: 'IA e MCP',
       }),
     );
@@ -6159,9 +6159,11 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
   const path = () => screen.getByTestId('search-probe').textContent;
 
-  /** The page renders a loader until the settings document arrives; the strips come with it. */
+  /** The page renders a loader until the settings document arrives; the strip comes with it. Since
+   *  t60 (Option B) the admin surface has ONE flat subtab strip and no section strip, so the strip
+   *  the loader resolves to is the combined "Áreas de administração" one. */
   const loaded = async () =>
-    within(await screen.findByRole('group', { name: 'Secções de configuração' }));
+    within(await screen.findByRole('group', { name: 'Áreas de administração' }));
 
   /** The parent strip and the child strip are two separate `role="group"` landmarks. */
   const childStrip = (name: string) => within(screen.getByRole('group', { name }));
@@ -6170,29 +6172,25 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       .getAllByRole('button')
       .map((b: HTMLElement) => b.textContent?.replace(/\s+/gu, ' ').trim());
 
-  it('lists every operations pane plus the three integrations subtabs in the Administração strip', async () => {
+  it('lists every operations pane and every signing card in ONE flat Administração strip', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    // The operations panes moved to the Administração surface (t36). Since t50 that surface hosts
-    // TWO sections — Operações and Assinaturas — so a section strip IS present above, listing exactly
-    // those two; the operations sub-nav is the second-level strip below it.
+    // t60 (Option B): the admin section level (Operações | Assinaturas) is dissolved into ONE flat
+    // subtab strip. There is NO section strip on /admin — the strip below lists every admin area
+    // across both clusters, the fourteen operations panes then the six signing cards.
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
-    await screen.findByRole('group', { name: 'Áreas de operações' });
-    const operations = childStrip('Áreas de operações');
-    // The admin section strip lists the two admin sections, and nothing else (no Configurações
-    // sections leak onto /admin).
-    const sections = within(screen.getByRole('group', { name: 'Secções de configuração' }));
-    expect(labels(sections)).toEqual(['Operações', 'Assinaturas']);
-    expect(sections.getByRole('button', { name: 'Operações' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    const admin = within(await screen.findByRole('group', { name: 'Áreas de administração' }));
+    // No section strip survives: the two-level structure collapsed to one, and no Configurações
+    // section strip leaks onto /admin either.
+    expect(screen.queryByRole('group', { name: 'Secções de configuração' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Operações' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assinaturas' })).toBeNull();
 
-    // The eleven settings-ops panes, then — folded in by t36 — the three integrations subtabs the
-    // retired standalone `/operations` tab used to hold (Grupos / Conectores / Repositórios ZK),
-    // reusing the existing `operations.tabs.*` labels. Their strip order reads outwards from the
-    // platform panes through the stores and the env override to the per-tenant integrations.
-    expect(labels(operations)).toEqual([
+    // The fourteen settings-ops panes (platform → stores → env override → integrations), then folded
+    // in after them the six signing cards — one flat strip, in cluster order.
+    expect(labels(admin)).toEqual([
+      // Operations cluster (t36) — reached off `/admin/:sub`.
       'Serviços',
       'Registos',
       'API',
@@ -6203,18 +6201,25 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       'Chaves e reposição',
       'IA e MCP',
       'Email',
-      // Ambiente do servidor (t14) — the editable env-override superset, last of the platform panes.
-      // Its label resolves through the serverEnvFallback module, not the frozen catalog.
+      // Ambiente do servidor (t14) — the editable env-override superset. Its label resolves through
+      // the serverEnvFallback module, not the frozen catalog.
       'Ambiente do servidor',
-      // Integrations (t36) — the three areas folded in from the retired `/operations` tab.
+      // Integrations (t36) — folded in from the retired `/operations` tab.
       'Grupos e bibliotecas',
       'Conectores e trabalhos',
       'Repositórios ZK',
+      // Signing cluster (t50) — reached off `/admin/signing/:detail`, now part of the same strip.
+      'Fornecedores de assinatura',
+      'Política de assinatura',
+      'Fontes TSL',
+      'Prestadores TSA',
+      'Modos de prestador configurados',
+      'Chave Móvel Digital (CMD)',
     ]);
 
     // Serviços is the default and carries no `sub` segment; the surface is titled "Administração".
     expect(await screen.findByRole('heading', { name: 'Administração' })).toBeTruthy();
-    expect(operations.getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed')).toBe(
+    expect(admin.getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
   });
@@ -6236,7 +6241,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     vi.stubGlobal('fetch', fn);
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin/connectors']);
 
-    const operations = within(await screen.findByRole('group', { name: 'Áreas de operações' }));
+    const operations = within(await screen.findByRole('group', { name: 'Áreas de administração' }));
     expect(
       operations
         .getByRole('button', { name: 'Conectores e trabalhos' })
@@ -6254,10 +6259,10 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin/logs']);
-    await screen.findByRole('group', { name: 'Áreas de operações' });
+    await screen.findByRole('group', { name: 'Áreas de administração' });
 
     // Deep-linkable in its own right, and the strip agrees with the address.
-    const operations = childStrip('Áreas de operações');
+    const operations = childStrip('Áreas de administração');
     expect(operations.getByRole('button', { name: 'Registos' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
@@ -6282,21 +6287,23 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     // Aparência.
     vi.stubGlobal('fetch', settingsFetch().fn);
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin/platform']);
-    await screen.findByRole('group', { name: 'Áreas de operações' });
+    await screen.findByRole('group', { name: 'Áreas de administração' });
     expect(
-      childStrip('Áreas de operações')
+      childStrip('Áreas de administração')
         .getByRole('button', { name: 'Serviços' })
         .getAttribute('aria-pressed'),
     ).toBe('true');
   });
 
-  it('lists the six Assinaturas sub-tabs in the requested order', async () => {
+  it('lists the six signing cards, in order, as the tail of the flat Administração strip', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing']);
-    await loaded();
+    const admin = await loaded();
 
-    expect(labels(childStrip('Áreas de assinaturas'))).toEqual([
+    // Since t60 the six signing cards are the tail of the one flat strip (t50's own Assinaturas
+    // strip is gone). They keep their order, and cluster after the operations panes.
+    expect(labels(admin).slice(-6)).toEqual([
       'Fornecedores de assinatura',
       'Política de assinatura',
       'Fontes TSL',
@@ -6304,11 +6311,11 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       'Modos de prestador configurados',
       'Chave Móvel Digital (CMD)',
     ]);
-    // The first is the default: bare `/admin/signing` opens the credentials manager. Asserted
-    // on the strip, not on the card heading — that section loads its own data over its own
+    // The first signing card is the default: bare `/admin/signing` opens the credentials manager.
+    // Asserted on the strip, not on the card heading — that section loads its own data over its own
     // endpoint, which this settings-document stub deliberately does not serve.
     expect(
-      childStrip('Áreas de assinaturas')
+      admin
         .getByRole('button', { name: 'Fornecedores de assinatura' })
         .getAttribute('aria-pressed'),
     ).toBe('true');
@@ -6343,11 +6350,11 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     await loaded();
     expect(panel()?.classList.contains('wide-page')).toBe(true);
     fireEvent.click(
-      childStrip('Áreas de assinaturas').getByRole('button', { name: 'Política de assinatura' }),
+      childStrip('Áreas de administração').getByRole('button', { name: 'Política de assinatura' }),
     );
     await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(false));
     fireEvent.click(
-      childStrip('Áreas de assinaturas').getByRole('button', { name: 'Prestadores TSA' }),
+      childStrip('Áreas de administração').getByRole('button', { name: 'Prestadores TSA' }),
     );
     await waitFor(() => expect(panel()?.classList.contains('wide-page')).toBe(true));
 
@@ -6464,7 +6471,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     renderWithProviders(surfaces, ['/settings/email']);
     expect(await screen.findByRole('heading', { name: 'Administração' })).toBeTruthy();
     expect(
-      childStrip('Áreas de operações')
+      childStrip('Áreas de administração')
         .getByRole('button', { name: 'Email' })
         .getAttribute('aria-pressed'),
     ).toBe('true');
@@ -6476,7 +6483,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     renderWithProviders(surfaces, ['/settings/api-keys']);
     expect(await screen.findByRole('heading', { name: 'Chaves API' })).toBeTruthy();
     expect(
-      childStrip('Áreas de operações')
+      childStrip('Áreas de administração')
         .getByRole('button', { name: 'API' })
         .getAttribute('aria-pressed'),
     ).toBe('true');
@@ -6495,7 +6502,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     renderWithProviders(surfaces, ['/settings/signing-providers']);
     expect(await screen.findByRole('heading', { name: 'Administração' })).toBeTruthy();
     expect(
-      childStrip('Áreas de assinaturas')
+      childStrip('Áreas de administração')
         .getByRole('button', { name: 'Fornecedores de assinatura' })
         .getAttribute('aria-pressed'),
     ).toBe('true');
@@ -6517,7 +6524,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
     // Choosing another PUSHES, so browser Back is what undoes it (the t34/t62 rule).
     fireEvent.click(
-      childStrip('Áreas de assinaturas').getByRole('button', {
+      childStrip('Áreas de administração').getByRole('button', {
         name: 'Chave Móvel Digital (CMD)',
       }),
     );
@@ -6527,14 +6534,14 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
     // The default sub-tab carries no segment at all, exactly like the default section.
     fireEvent.click(
-      childStrip('Áreas de assinaturas').getByRole('button', {
+      childStrip('Áreas de administração').getByRole('button', {
         name: 'Fornecedores de assinatura',
       }),
     );
     expect(path()).toBe('/admin/signing');
   });
 
-  it('falls back to the first sub-tab for an unknown one, and drops it when the section changes', async () => {
+  it('falls back to the first sub-tab for an unknown one, and crosses clusters via the flat strip', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
     renderWithProviders(
@@ -6545,25 +6552,57 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       ['/admin/signing/naoexiste'],
     );
 
-    await loaded();
+    const admin = await loaded();
     expect(
-      childStrip('Áreas de assinaturas')
+      admin
         .getByRole('button', { name: 'Fornecedores de assinatura' })
         .getAttribute('aria-pressed'),
     ).toBe('true');
 
-    // A `sub` belongs to the section that declared it: leaving Assinaturas discards it rather
-    // than carrying a stale child id into another section. On the Administração surface the sibling
-    // section is Operações, so crossing to it lands on the bare `/admin` (Operações' own default,
-    // Serviços) — never `/admin/naoexiste`.
-    fireEvent.click((await loaded()).getByRole('button', { name: 'Operações' }));
+    // t60: the flat strip crosses clusters directly. Clicking an operations subtab (Serviços) while
+    // a signing pane is open must route to the operations base — the bare `/admin` (Serviços is the
+    // operations default, so it carries no segment) — never `/admin/naoexiste` and never
+    // `/admin/signing/services`.
+    fireEvent.click((await loaded()).getByRole('button', { name: 'Serviços' }));
     expect(path()).toBe('/admin');
-    // Landed on Operações' own default sub (Serviços), not a stale `naoexiste` — the operations
-    // sub-nav is present and Serviços reads active.
-    const operations = within(await screen.findByRole('group', { name: 'Áreas de operações' }));
-    expect(operations.getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed')).toBe(
-      'true',
+    // Landed on the operations default with Serviços active — the same one flat strip, re-marked.
+    expect(
+      (await loaded()).getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('routes each flat subtab to its own cluster base regardless of the current cluster (t60)', async () => {
+    // Option B's one real logic change: `selectAdminSub` sends every id to the RIGHT base whichever
+    // cluster is currently mounted. Both directions are asserted on the same flat strip.
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(
+      <>
+        <NavProbe />
+        <SettingsPage surface="admin" />
+      </>,
+      ['/admin/logs'],
     );
+    // Operations → signing: a signing tab while an operations pane is open lands under `/admin/signing`.
+    (await loaded()).getByRole('button', { name: 'Registos' });
+    fireEvent.click((await loaded()).getByRole('button', { name: 'Prestadores TSA' }));
+    expect(path()).toBe('/admin/signing/tsa');
+    cleanup();
+
+    // Signing → operations: an operations tab while a signing pane is open lands under `/admin`.
+    vi.stubGlobal('fetch', settingsFetch().fn);
+    renderWithProviders(
+      <>
+        <NavProbe />
+        <SettingsPage surface="admin" />
+      </>,
+      ['/admin/signing/tsl'],
+    );
+    fireEvent.click((await loaded()).getByRole('button', { name: 'Email' }));
+    expect(path()).toBe('/admin/email');
+    // …and a cluster's own default id carries no segment, from either side.
+    fireEvent.click((await loaded()).getByRole('button', { name: 'Fornecedores de assinatura' }));
+    expect(path()).toBe('/admin/signing');
   });
 
   it('keeps the sub-tab strip operable for a reader who may not configure signing', async () => {
@@ -6589,7 +6628,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     expect(fieldset.contains(screen.getByLabelText('Família de assinatura preferida'))).toBe(true);
 
     // …but the strip lives OUTSIDE that fieldset, so navigating away is still possible.
-    const cmd = childStrip('Áreas de assinaturas').getByRole('button', {
+    const cmd = childStrip('Áreas de administração').getByRole('button', {
       name: 'Chave Móvel Digital (CMD)',
     });
     expect(fieldset.contains(cmd)).toBe(false);
@@ -6895,7 +6934,7 @@ describe('Operações › Gestão de dados (t105/t28)', () => {
     }) as typeof fetch;
   }
 
-  const opsStrip = () => within(screen.getByRole('group', { name: 'Áreas de operações' }));
+  const opsStrip = () => within(screen.getByRole('group', { name: 'Áreas de administração' }));
 
   it('mounts Armazenamento at the former `/operations/data` address (sub-level alias)', async () => {
     // `/settings/operations/data` was a real, bookmarkable address before the split. It resolves

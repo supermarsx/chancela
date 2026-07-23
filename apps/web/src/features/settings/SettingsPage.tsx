@@ -589,20 +589,6 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'about', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
 ];
 
-/**
- * The Administração surface's OWN top-level sections (t50). Where Configurações hides its section
- * strip on the admin surface, /admin now hosts TWO sections and shows a strip for them: Operações
- * (the t36 panes + integrations subtabs) and Assinaturas (the signing-configuration cluster t50
- * moved here). Both ids, their sub-navs and render blocks already live in this page; this list is
- * only what the admin section strip renders, and both labels reuse their existing frozen catalog
- * card titles (Operações → "Plataforma"; Assinaturas → settings.signing.cardTitle "Assinaturas"),
- * so the move needs no new UI string.
- */
-const ADMIN_SECTIONS: SettingsSectionNav[] = [
-  { id: 'operations', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
-  { id: 'signing', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
-];
-
 /** The sub-tabs that manage their OWN data (not the settings working copy), so the
  *  autosave savebar is not shown for them. The RBAC tabs (Funções, Delegações) self-gate
  *  their own `role.manage`/`delegation.*` affordances, so they are standalone too. */
@@ -726,6 +712,21 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
     { id: 'roles', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
   ],
 };
+
+/**
+ * The Administração surface's single FLAT subtab strip (t60, Option B). The admin section level was
+ * dissolved: instead of an Operações | Assinaturas section strip sitting over a per-section
+ * sub-strip, `/admin` now shows ONE strip that lists every admin area — the fourteen operations
+ * panes, then the six signing cards. The two clusters' ids are globally unique (no operations sub is
+ * named like a signing one), so the flat concatenation needs no de-duplication; `selectAdminSub`
+ * routes each id back to its correct base (`/admin` vs `/admin/signing`) regardless of which cluster
+ * is currently mounted. Every entry keeps the same shape it has under SUBSECTION_NAV (including the
+ * one `serverEnvLabel` entry, Ambiente do servidor), so the strip renders it identically.
+ */
+const ADMIN_SUBSECTION_NAV: SettingsSubsectionNav[] = [
+  ...(SUBSECTION_NAV.operations ?? []),
+  ...(SUBSECTION_NAV.signing ?? []),
+];
 
 /** Each strip gets its own aria-label, so the two levels are told apart by AT. Deliberately NOT
  *  the wording of `settings.platform.subnav.aria`, which labels the THIRD-level strip inside
@@ -1320,6 +1321,19 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   };
   const selectSub = (next: SettingsSubsection) =>
     selectRawSub(subNav && next === subNav[0].id ? '' : next);
+  // t60 (Option B): the admin surface shows ONE flat strip spanning both clusters, so a click must
+  // route to the RIGHT base regardless of which cluster is currently mounted — clicking a signing
+  // tab while an operations pane is open lands on `/admin/signing/<id>`, and clicking an operations
+  // tab while a signing pane is open lands on `/admin/<id>`. This replaces the section-relative
+  // `selectRawSub` for the admin strip (that helper is anchored to whichever cluster is mounted and
+  // could not cross to the other). The first id of each cluster is the default and carries no
+  // segment (Operações → Serviços at `/admin`; Assinaturas → Fornecedores at `/admin/signing`).
+  const selectAdminSub = (next: SettingsSubsection) => {
+    const isSigning = (SETTINGS_SUBSECTIONS.signing as readonly string[]).includes(next);
+    const base = isSigning ? '/admin/signing' : '/admin';
+    const first = isSigning ? 'providers' : 'services';
+    navigate(next === first ? base : `${base}/${next}`);
+  };
   // The fragment of the current location, carried through the `?user=` → edit-screen redirect.
   // `search` is preserved verbatim by the retired-alias → /admin forwarding below, so the provider
   // `?configure=` deep link survives a `/settings/signing-providers?configure=…` bookmark (t50).
@@ -1637,20 +1651,23 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     <div className="stack" data-surface={surface}>
       {/* No `crumbs`: both surfaces are a top-level tab with no parent, so a breadcrumb would only
           restate the title. On the Administração surface the header reads "Administração" from the
-          owned admin fallback, and the section strip lists the admin sections — Operações and
-          Assinaturas (t50) — rather than the Configurações ones. (t36 hid this strip entirely when
-          admin had a single section; t50 restores it now that admin hosts two.) */}
+          owned admin fallback and shows NO section strip: t60 (Option B) dissolved the admin section
+          level (Operações | Assinaturas) into ONE flat subtab strip below — rendered where the
+          second-level strip used to be. The Configurações section strip is unchanged and still
+          renders on the settings surface. */}
       <PageHeader title={isAdmin ? at('admin.title') : t('settings.page.title')}>
-        <SubNav
-          items={(isAdmin ? ADMIN_SECTIONS : SETTINGS_SECTIONS).map((s) => ({
-            id: s.id,
-            label: 'literal' in s ? s.literal : t(s.label),
-            icon: s.icon,
-          }))}
-          active={section}
-          onSelect={selectSection}
-          ariaLabel={t('settings.subnav.aria')}
-        />
+        {isAdmin ? null : (
+          <SubNav
+            items={SETTINGS_SECTIONS.map((s) => ({
+              id: s.id,
+              label: 'literal' in s ? s.literal : t(s.label),
+              icon: s.icon,
+            }))}
+            active={section}
+            onSelect={selectSection}
+            ariaLabel={t('settings.subnav.aria')}
+          />
+        )}
       </PageHeader>
 
       {/* Honest disable-with-explanation for the editable settings when the user lacks
@@ -1662,19 +1679,36 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
         </InlineWarning>
       ) : null}
 
-      {/* The second-level strip for the sections that have one (Operações, Assinaturas). It sits
-          OUTSIDE the fieldset on purpose: `editingLocked` inerts the fieldset, and a reader
-          without `settings.manage` must still be able to move between sub-tabs — including to
-          the standalone ones that are not locked at all. */}
-      {subNav && sub ? (
+      {/* The primary sub-tab strip. It sits OUTSIDE the fieldset on purpose: `editingLocked` inerts
+          the fieldset, and a reader without the section's edit verb must still be able to move
+          between sub-tabs — including to the standalone ones that are not locked at all.
+
+          On the Administração surface (t60, Option B) this is the ONE flat strip that dissolved the
+          admin section level: it lists every admin area across both clusters (operations panes +
+          signing cards), and `selectAdminSub` routes each id to its correct base. On the
+          Configurações surface it is the per-section second-level strip for the one section that has
+          one there (Utilizadores) — Operações and Assinaturas forward to `/admin` before this
+          renders, so their sub-navs are only ever reached through the admin branch above. */}
+      {isAdmin && sub ? (
         <SubNav
-          items={subNav.map((s) => ({
+          items={ADMIN_SUBSECTION_NAV.map((s) => ({
             id: s.id,
             label: s.serverEnvLabel ? st(s.serverEnvLabel) : t(s.label),
             icon: s.icon,
           }))}
           // `api-keys` is a pane of the API tab, so the API button is the one that reads as
           // active while it is open — otherwise the strip would show nothing selected.
+          active={sub === 'api-keys' ? 'api' : sub}
+          onSelect={selectAdminSub}
+          ariaLabel={at('admin.subnav.aria')}
+        />
+      ) : !isAdmin && subNav && sub ? (
+        <SubNav
+          items={subNav.map((s) => ({
+            id: s.id,
+            label: s.serverEnvLabel ? st(s.serverEnvLabel) : t(s.label),
+            icon: s.icon,
+          }))}
           active={sub === 'api-keys' ? 'api' : sub}
           onSelect={selectSub}
           ariaLabel={t(SUBSECTION_ARIA[section] ?? 'settings.subnav.aria')}

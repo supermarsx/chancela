@@ -28,6 +28,11 @@ import { interpolate, type TParams } from './interpolate';
 export const adminPtPT = {
   'nav.admin': 'Administração',
   'admin.title': 'Administração',
+  // The single flat subtab strip on `/admin` (t60, Option B): the admin section level was dissolved,
+  // so one strip now lists every admin area — the operations panes and the signing cards together —
+  // and this is its landmark name. Distinct from the per-cluster `settings.subnav.*.aria` labels it
+  // replaces, because the strip is no longer scoped to one cluster.
+  'admin.subnav.aria': 'Áreas de administração',
 } as const;
 
 /** The key set the Administração surface resolves through this module. */
@@ -36,6 +41,7 @@ export type AdminCopyKey = keyof typeof adminPtPT;
 export const adminEnglish = {
   'nav.admin': 'Administration',
   'admin.title': 'Administration',
+  'admin.subnav.aria': 'Administration areas',
 } as const satisfies Record<AdminCopyKey, string>;
 
 /**
