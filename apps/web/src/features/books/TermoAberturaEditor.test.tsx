@@ -62,7 +62,9 @@ const SIGNING_TERMO: TermoInstrumentView = {
 /** The termo after the sole required slot carries a real per-slot PAdES signature. */
 const SIGNED_TERMO: TermoInstrumentView = {
   ...SIGNING_TERMO,
-  signatories: [{ ...SIGNING_TERMO.signatories[0], signed: true, signed_at: '2026-01-03T00:00:00Z' }],
+  signatories: [
+    { ...SIGNING_TERMO.signatories[0], signed: true, signed_at: '2026-01-03T00:00:00Z' },
+  ],
   completion: {
     ...SIGNING_TERMO.completion,
     signed_required_slot_count: 1,
@@ -73,6 +75,7 @@ const SIGNED_TERMO: TermoInstrumentView = {
 
 afterEach(() => {
   cleanup();
+  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -152,6 +155,7 @@ describe('TermoAberturaEditor', () => {
   });
 
   it('signs a slot with a real PKCS#12 co-signature, then the book opens', async () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     const calls: RecordedCall[] = [];
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -194,10 +198,12 @@ describe('TermoAberturaEditor', () => {
     expect(screen.queryByText('O termo ainda não está assinado criptograficamente')).toBeNull();
   });
 
-  it('surfaces the desk-app-only note when the PKCS#12 sign is refused off-host (409)', async () => {
+  it('does not collect or submit PKCS#12 secrets outside the desktop app', async () => {
+    const calls: RecordedCall[] = [];
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
+      calls.push({ url, method });
       if (url.endsWith('/termo/abertura/sign/pkcs12'))
         return Promise.resolve(jsonResponse({ error: 'só na aplicação de secretária' }, 409));
       if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNING_TERMO));
@@ -207,14 +213,10 @@ describe('TermoAberturaEditor', () => {
     renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Assinar' }));
-    fireEvent.change(screen.getByLabelText('Ficheiro PKCS#12/PFX'), {
-      target: { files: [new File(['pfx-bytes'], 'cert.pfx', { type: 'application/x-pkcs12' })] },
-    });
-    fireEvent.change(screen.getByLabelText('Frase-passe'), { target: { value: 'segredo' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Assinar com certificado' }));
 
-    expect(
-      await screen.findByText('Disponível apenas na aplicação de secretária'),
-    ).toBeTruthy();
+    expect(await screen.findByText('Disponível apenas na aplicação de secretária')).toBeTruthy();
+    expect(screen.queryByLabelText('Ficheiro PKCS#12/PFX')).toBeNull();
+    expect(screen.queryByLabelText('Frase-passe')).toBeNull();
+    expect(calls.some((call) => call.url.endsWith('/termo/abertura/sign/pkcs12'))).toBe(false);
   });
 });

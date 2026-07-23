@@ -64,7 +64,9 @@ const SIGNING_TERMO: TermoInstrumentView = {
 /** The termo after the sole required slot carries a real per-slot PAdES signature. */
 const SIGNED_TERMO: TermoInstrumentView = {
   ...SIGNING_TERMO,
-  signatories: [{ ...SIGNING_TERMO.signatories[0], signed: true, signed_at: '2026-07-02T00:00:00Z' }],
+  signatories: [
+    { ...SIGNING_TERMO.signatories[0], signed: true, signed_at: '2026-07-02T00:00:00Z' },
+  ],
   completion: {
     ...SIGNING_TERMO.completion,
     signed_required_slot_count: 1,
@@ -75,6 +77,7 @@ const SIGNED_TERMO: TermoInstrumentView = {
 
 afterEach(() => {
   cleanup();
+  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -184,6 +187,7 @@ describe('TermoEncerramentoEditor', () => {
   });
 
   it('signs a slot with a real PKCS#12 co-signature, then the book closes', async () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     const calls: RecordedCall[] = [];
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();

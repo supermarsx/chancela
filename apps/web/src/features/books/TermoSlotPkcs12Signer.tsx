@@ -9,13 +9,15 @@
  * rather than rebuilding it. The bytes + passphrase are TRANSIENT: cleared on success and error,
  * never persisted.
  *
- * Local PKCS#12 signing is the desk-application flow: a remote/browser-hosted server refuses the
- * `sign/pkcs12` call with `409`, surfaced honestly as the co-location note (the same one the act
- * XAdES/ASiC tools show). CMD/CSC remain deferred, so a slot with no local certificate simply stays
- * unsigned and the `open`/`close` gate keeps failing closed — the honest state.
+ * Local PKCS#12 signing is the desk-application flow. The browser UI is gated before rendering the
+ * secret fields, so certificate bytes and passphrases can never be submitted to a remote server.
+ * A defensive `409` fallback still surfaces the co-location note if a desktop server is
+ * misconfigured. CMD/CSC remain deferred, so a slot with no local certificate simply stays unsigned
+ * and the `open`/`close` gate keeps failing closed — the honest state.
  */
 import { useState } from 'react';
 import { ApiError } from '../../api/client';
+import { resolveApiBaseUrl } from '../../api/baseUrl';
 import type { SignTermoSlotPkcs12Body } from '../../api/types';
 import {
   Pkcs12SignerFields,
@@ -25,6 +27,7 @@ import {
 } from '../signing/Pkcs12SignerFields';
 import { Button, ErrorNote, Icon, InlineWarning, useToast } from '../../ui';
 import { useT } from '../../i18n';
+import { isTauri } from '../../desktop/tauri';
 import { useTermoT } from './termoStrings';
 
 export function TermoSlotPkcs12Signer({
@@ -46,7 +49,11 @@ export function TermoSlotPkcs12Signer({
   const toast = useToast();
   const [signer, setSigner] = useState<Pkcs12SignerState>(emptyPkcs12Signer);
   const [error, setError] = useState<unknown>(null);
-  const [coLocationBlocked, setCoLocationBlocked] = useState(false);
+  // Fail closed before collecting either secret. A server-side 409 is too late: by then the request
+  // body has already crossed any remote proxy and been deserialized by the API.
+  const [coLocationBlocked, setCoLocationBlocked] = useState(
+    () => !isTauri() || resolveApiBaseUrl() !== '',
+  );
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -105,9 +112,7 @@ export function TermoSlotPkcs12Signer({
           icon={<Icon.PenNib />}
           disabled={!signer.file || signer.passphrase.length === 0 || isPending}
         >
-          {isPending
-            ? tt('books.termo.action.signing')
-            : tt('books.termo.signing.pkcs12.submit')}
+          {isPending ? tt('books.termo.action.signing') : tt('books.termo.signing.pkcs12.submit')}
         </Button>
         <Button
           type="button"
