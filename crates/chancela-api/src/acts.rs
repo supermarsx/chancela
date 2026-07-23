@@ -2714,8 +2714,7 @@ mod tests {
         act_id: ActId,
         to: &str,
     ) -> Result<Json<ActView>, ApiError> {
-        let req: AdvanceAct =
-            serde_json::from_value(json!({ "to": to })).expect("advance body");
+        let req: AdvanceAct = serde_json::from_value(json!({ "to": to })).expect("advance body");
         advance_act(
             State(state.clone()),
             Path(act_id.0),
@@ -2768,7 +2767,10 @@ mod tests {
         {
             let books = state.books.read().await;
             let b = &books[&book_id];
-            assert_eq!(b.pages_reserved, frozen, "the freeze reserves the page count");
+            assert_eq!(
+                b.pages_reserved, frozen,
+                "the freeze reserves the page count"
+            );
             assert_eq!(b.pages_used, 0, "nothing is consumed before the seal");
         }
 
@@ -2821,7 +2823,10 @@ mod tests {
         {
             let books = state.books.read().await;
             let b = &books[&book_id];
-            assert!(b.is_open(), "an exhausted book stays open (block, never auto-close)");
+            assert!(
+                b.is_open(),
+                "an exhausted book stays open (block, never auto-close)"
+            );
             assert!(b.is_capacity_exhausted());
         }
 
@@ -2914,7 +2919,10 @@ mod tests {
         let books = state.books.read().await;
         let b = &books[&book_id];
         assert!(b.page_capacity.is_none());
-        assert!(!b.is_capacity_exhausted(), "an unlimited book is never exhausted");
+        assert!(
+            !b.is_capacity_exhausted(),
+            "an unlimited book is never exhausted"
+        );
         assert_eq!(b.pages_remaining(), None, "remaining is None, not zero");
         assert!(b.pages_reserved >= 1, "the reservation is still tracked");
     }

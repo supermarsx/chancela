@@ -925,8 +925,10 @@ impl AppState {
         // t50: grandfather `signing.configure` onto operator-authored roles holding `settings.manage`
         // so a role that could configure signing keeps that reach after the verb split. Its own
         // marker (distinct from t27's and t30's) means a store already migrated past them applies it.
-        let signing_configure_migration =
-            roles::reconcile_signing_configure_grandfather(&mut roles_catalog, &mut role_migrations);
+        let signing_configure_migration = roles::reconcile_signing_configure_grandfather(
+            &mut roles_catalog,
+            &mut role_migrations,
+        );
         let catalog_changed = migration.catalog_changed
             || revert_migration.catalog_changed
             || signing_configure_migration.catalog_changed;
