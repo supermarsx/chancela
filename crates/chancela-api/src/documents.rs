@@ -350,6 +350,47 @@ fn resolve_ata_template(
     }
 }
 
+/// The markdown to seed a freshly-drafted ata's editable `body.source` from its template's
+/// narrative default, or `None` when the template carries no seedable narrative.
+///
+/// Resolves the ata template for `family` (honouring an optional `template_override`, an unknown
+/// or family-mismatched id being a loud error, never a silent spine fall-back — same rule the
+/// freeze path enforces) and returns the seed markdown **only when the guard passes**:
+///
+/// - [`TemplateSpec::places_narrative_body`] is true — the template has a `NarrativeBody` anchor to
+///   carry the body. Seeding a body into a template with no anchor would make the act unsealable
+///   ([`ensure_template_can_carry_body`] → 422), so this refuses to seed in that case; AND
+/// - [`TemplateSpec::default_body`] is non-empty — there is actually a narrative default to seed.
+///
+/// When it passes, the clauses are rendered back to markdown through the single authoritative
+/// [`seed_clauses_to_markdown`] round-trip (the exact inverse of the t43 bundle import), so any
+/// `{{ … }}` / `{% … %}` merge tags ride **verbatim** into the drafted `source` — byte-for-byte
+/// what the operator would have typed. Resolution stays where it already is: at content freeze
+/// (`freeze_act_body` / `render_markdown_body` on advance→Signing), which substitutes the tags and
+/// digests the result. This only fills an editable seed; it never fills `compiler_id` /
+/// `compiled_digest`, which are written solely at freeze.
+pub(crate) fn template_narrative_seed_markdown(
+    family: EntityFamily,
+    template_override: Option<&str>,
+) -> Result<Option<String>, ApiError> {
+    let Some(spec) = resolve_ata_template(family, template_override)? else {
+        return Ok(None);
+    };
+    Ok(narrative_seed_for_spec(spec))
+}
+
+/// The pure guard: a resolved template's narrative seed markdown, or `None` when it carries no
+/// seedable narrative. Split from [`template_narrative_seed_markdown`] so the guard is unit-testable
+/// against a hand-built spec without the process registry (no shipped ata template ships a
+/// `default_body` yet). Seeds ONLY when the template both places a `NarrativeBody` anchor (else the
+/// body would be unsealable) AND ships a non-empty narrative default.
+fn narrative_seed_for_spec(spec: &TemplateSpec) -> Option<String> {
+    if !spec.places_narrative_body() || spec.default_body().is_empty() {
+        return None;
+    }
+    Some(seed_clauses_to_markdown(spec.default_body()))
+}
+
 /// A generated document ready to be committed: the row to persist plus the `document.generated`
 /// event payload to append. Produced outside the ledger mutation so a generation failure can
 /// roll the seal / open back cleanly.
@@ -13085,6 +13126,99 @@ mod tests {
         assert!(
             without_body.event_payload.get("body_compiler_id").is_none(),
             "a body-less act must not carry the compiler id"
+        );
+    }
+
+    // --- t59 template narrative-body seed → resolves at freeze ---------------------------------
+
+    /// A real ata spine spec (which carries a `NarrativeBody` anchor), given `text` as its seed
+    /// body. Cloned from the shipped catalog because no shipped ata template ships a `default_body`
+    /// yet — so the seed guard is exercised against a spec that has the anchor but a chosen default.
+    fn ata_spec_with_seed(text: &str) -> TemplateSpec {
+        let mut spec = registry()
+            .specs()
+            .iter()
+            .find(|s| s.places_narrative_body())
+            .expect("the catalog ships anchor-carrying ata templates")
+            .clone();
+        spec.default_body = vec![DefaultBodyClause {
+            heading: None,
+            text: text.to_owned(),
+        }];
+        spec
+    }
+
+    #[test]
+    fn narrative_seed_fires_only_with_both_an_anchor_and_a_nonempty_default() {
+        // (a) anchor + non-empty default → seeds, the merge tag riding in VERBATIM (unresolved).
+        let seeded = ata_spec_with_seed("Presente a sociedade {{ entity.name }}.");
+        let md = narrative_seed_for_spec(&seeded).expect("a template with both seeds");
+        assert!(
+            md.contains("{{ entity.name }}"),
+            "the merge tag must ride into the seed verbatim, got {md:?}"
+        );
+
+        // (c) anchor but EMPTY default → no seed (byte-identical to today).
+        let mut empty = seeded.clone();
+        empty.default_body.clear();
+        assert!(
+            narrative_seed_for_spec(&empty).is_none(),
+            "a template with no narrative default must not seed a body"
+        );
+
+        // (b) a default body but NO anchor → no seed: seeding it would make the act unsealable
+        // (`ensure_template_can_carry_body` → 422), so the guard refuses.
+        let mut anchorless = seeded.clone();
+        anchorless
+            .blocks
+            .retain(|b| !matches!(b, chancela_templates::BlockSpec::NarrativeBody));
+        assert!(
+            !anchorless.places_narrative_body(),
+            "the anchor must truly be gone for this to test what it claims"
+        );
+        assert!(
+            narrative_seed_for_spec(&anchorless).is_none(),
+            "a template with no anchor must not seed a body it cannot carry"
+        );
+    }
+
+    #[test]
+    fn a_seeded_template_tag_resolves_at_content_freeze_and_an_undefined_var_is_empty() {
+        // The evidentiary claim (a)+(e): a template's `{{ }}` tag, seeded into the editable body, is
+        // resolved by the EXISTING freeze-time resolver exactly as if the operator had typed it, and
+        // (D1) an undefined variable renders EMPTY (lenient), never an error.
+        let spec =
+            ata_spec_with_seed("Sociedade {{ entity.name }} — marca INICIO{{ nao_existe }}FIM.");
+        let seed = narrative_seed_for_spec(&spec).expect("seeds");
+
+        let (entity, act) = act_with_body("Encosto Estratégico Lda", &seed);
+        let (_frozen, blocks) = freeze_act_body(&act, &entity)
+            .expect("freeze succeeds — an undefined var is lenient, never an error")
+            .expect("the seeded body freezes to blocks");
+
+        let text: String = blocks
+            .iter()
+            .map(|b| match b {
+                chancela_core::Block::Heading { text, .. } => text.clone(),
+                chancela_core::Block::Paragraph { runs } => {
+                    runs.iter().map(|r| r.text.clone()).collect()
+                }
+                _ => String::new(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            text.contains("Sociedade Encosto Estratégico Lda"),
+            "the seeded `{{{{ entity.name }}}}` must RESOLVE at freeze, got {text:?}"
+        );
+        assert!(
+            !text.contains("{{"),
+            "no merge tag may survive freeze literally, got {text:?}"
+        );
+        assert!(
+            text.contains("INICIOFIM"),
+            "an undefined var must render EMPTY (lenient), got {text:?}"
         );
     }
 

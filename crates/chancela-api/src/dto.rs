@@ -2297,6 +2297,13 @@ pub struct DraftAct {
     #[serde(default)]
     pub convening_waiver: Option<ConveningWaiverInput>,
     pub retifies: Option<Uuid>,
+    /// Optional ata subtype the operator picked. When it names a template that both places a
+    /// narrative-body anchor and ships a narrative default, the freshly-drafted act's editable
+    /// `body.source` is seeded with that default's markdown (merge tags verbatim) so the existing
+    /// freeze-time resolver substitutes the tags at advance→Signing. Additive: absent for every
+    /// existing caller (`#[serde(default)]`), which keeps `body` `None` exactly as before.
+    #[serde(default)]
+    pub template_id: Option<String>,
     #[serde(default = "default_actor")]
     pub actor: String,
 }

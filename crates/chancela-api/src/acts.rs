@@ -92,6 +92,28 @@ pub async fn draft_act(
         act.ai_provenance = Some(ai_provenance.into_core()?);
     }
 
+    // Seed the editable narrative body from the ata template's narrative default (t59), so a
+    // template's `{{ … }}` merge tags reach the operator's body and the EXISTING freeze-time
+    // resolver substitutes them at advance→Signing. The seed rides verbatim (tags literal); it is
+    // byte-for-byte what the operator would have typed. It fills only the editable `source` — an
+    // UNFROZEN body: `compiler_id`/`compiled_digest` stay empty and are written solely at freeze.
+    // The guard (template has a NarrativeBody anchor AND a non-empty narrative default) lives in
+    // the helper; when it fails, `act.body` stays `None` exactly as before. ATA ONLY — termo
+    // drafts are seeded elsewhere and keep their tags literal (deliberate, separate follow-up).
+    if let Some(entity) = entities.get(&entity_id)
+        && let Some(source) = crate::documents::template_narrative_seed_markdown(
+            entity.family,
+            req.template_id.as_deref(),
+        )?
+    {
+        act.body = Some(ActBody {
+            format: chancela_core::BodyFormat::Markdown,
+            source,
+            compiler_id: String::new(),
+            compiled_digest: String::new(),
+        });
+    }
+
     // Non-default tenant → the act genesis joins its tenant chain; the default tenant keeps the
     // exact pre-tenancy `entity:/book:/act:` scope (single-tenant byte-identical).
     let scope = if tenant_id == DEFAULT_TENANT_ID {
@@ -1922,6 +1944,7 @@ mod tests {
             convening: None,
             convening_waiver: None,
             retifies: None,
+            template_id: None,
             actor: "amelia.marques".to_owned(),
         };
         let (status, _view) = draft_act(
@@ -1951,6 +1974,108 @@ mod tests {
         assert!(
             memberships.contains(&chancela_ledger::ChainId::Tenant(tenant.to_string())),
             "act.drafted must join its tenant chain, got {memberships:?}"
+        );
+    }
+
+    // --- t59 template narrative-body seed at draft ---------------------------------------------
+
+    /// Seed a default-tenant open commercial-company book, ready to draft an ata into.
+    async fn seed_open_book_for_draft(state: &AppState) -> (CurrentActor, BookId) {
+        let actor = seed_owner(state).await;
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        let book_id = book.id;
+        seed_opened_book_ledger(state, &entity, &book).await;
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book_id, book);
+        (actor, book_id)
+    }
+
+    fn draft_req(book_id: BookId, template_id: Option<&str>) -> DraftAct {
+        DraftAct {
+            book_id: book_id.0,
+            title: "Ata".to_owned(),
+            channel: MeetingChannel::Physical,
+            ai_provenance: None,
+            convening: None,
+            convening_waiver: None,
+            retifies: None,
+            template_id: template_id.map(str::to_owned),
+            actor: "amelia.marques".to_owned(),
+        }
+    }
+
+    /// (d)/(c): the spine ata template — and any real ata template — ships an empty `default_body`,
+    /// so drafting seeds no body. This is byte-identical to the pre-t59 behaviour and must stay so
+    /// until a template actually carries a narrative default.
+    #[tokio::test]
+    async fn draft_act_seeds_no_body_when_the_template_has_no_narrative_default() {
+        let state = AppState::default();
+        let (actor, book_id) = seed_open_book_for_draft(&state).await;
+
+        // (d) default spine (template_id = None).
+        let (status, view) = draft_act(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Json(draft_req(book_id, None)),
+        )
+        .await
+        .expect("draft succeeds");
+        assert_eq!(status, StatusCode::CREATED);
+        assert!(
+            view.body.is_none(),
+            "the spine ata ships no narrative default → body stays None (byte-identical to today)"
+        );
+
+        // (c) an explicit real ata template that has a NarrativeBody anchor but an empty default.
+        let (_status, view) = draft_act(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Json(draft_req(book_id, Some("csc-ata-ag/v1"))),
+        )
+        .await
+        .expect("draft succeeds");
+        assert!(
+            view.body.is_none(),
+            "an anchor-carrying template with an empty narrative default must not seed a body"
+        );
+    }
+
+    /// The seed resolution is genuinely wired into the handler: an unknown template id is a loud
+    /// 422 (never a silent spine fall-back), and the failure is clean — no act, no ledger event.
+    #[tokio::test]
+    async fn draft_act_rejects_an_unknown_template_id_before_mutating_the_ledger() {
+        let state = AppState::default();
+        let (actor, book_id) = seed_open_book_for_draft(&state).await;
+        let ledger_before = state.ledger.read().await.len();
+        let acts_before = state.acts.read().await.len();
+
+        let err = match draft_act(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Json(draft_req(book_id, Some("nao-existe/v9"))),
+        )
+        .await
+        {
+            Ok(_) => panic!("an unknown template id must be rejected"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(&err, ApiError::Unprocessable(msg) if msg.contains("nao-existe/v9")),
+            "expected a 422 naming the id, got {err:?}"
+        );
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_before,
+            "a rejected draft must append no ledger event"
+        );
+        assert_eq!(
+            state.acts.read().await.len(),
+            acts_before,
+            "a rejected draft must create no act"
         );
     }
 
@@ -2709,6 +2834,7 @@ mod tests {
             convening: None,
             convening_waiver: None,
             retifies: None,
+            template_id: None,
             actor: "patch.owner".to_owned(),
         };
         let draft_err = match draft_act(
