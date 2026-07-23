@@ -495,6 +495,33 @@ describe('EntitiesPage', () => {
     fireEvent.click(open);
     expect(await screen.findByText('DETALHE DA ENTIDADE')).toBeTruthy();
   });
+
+  it('makes the entity name a client-side link straight to its detail page', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [ENTITY] },
+      ]),
+    );
+    renderWithProviders(
+      <Routes>
+        <Route path="/entities" element={<EntitiesPage />} />
+        <Route path="/entities/:id" element={<div>DETALHE DA ENTIDADE</div>} />
+      </Routes>,
+      ['/entities'],
+    );
+
+    // The name is a real router link, not plain truncated text, and points at the detail route.
+    const nameLink = await screen.findByRole('link', { name: ENTITY.name });
+    expect(nameLink.getAttribute('href')).toBe(`/entities/${ENTITY.id}`);
+    expect(nameLink.className).toContain('truncate');
+
+    // Clicking it navigates in-app (SPA) to the detail page — the Actions "Abrir" button remains too.
+    expect(screen.getByRole('button', { name: 'Abrir' })).toBeTruthy();
+    fireEvent.click(nameLink);
+    expect(await screen.findByText('DETALHE DA ENTIDADE')).toBeTruthy();
+  });
 });
 
 describe('NewEntityPage', () => {

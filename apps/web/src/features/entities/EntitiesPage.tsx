@@ -769,7 +769,9 @@ function EntityColumnCell({
     case 'Name':
       return (
         <EntityTableCell column={column}>
-          <Truncate text={entity.name} />
+          <Link className="truncate entity-cell-line__link" to={`/entities/${entity.id}`} title={entity.name}>
+            {entity.name}
+          </Link>
         </EntityTableCell>
       );
     case 'Nipc':
