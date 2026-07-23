@@ -59,11 +59,9 @@ import type {
   RetentionDueCandidate,
 } from '../../api/types';
 import {
-  actStateLabels,
   bookKindLabels,
   bookStateLabels,
   closingReasonLabels,
-  meetingChannelLabels,
   numberingSchemeLabels,
   signatoryCapacityLabels,
 } from '../../api/labels';
@@ -102,6 +100,7 @@ import {
   scopeBook,
   useCan,
 } from '../session/permissions';
+import { BookActsList } from './BookActsList';
 import { TermoAberturaEditor } from './TermoAberturaEditor';
 import { TermoEncerramentoEditor } from './TermoEncerramentoEditor';
 import { useEncerramentoT } from './termoEncerramentoStrings';
@@ -2375,39 +2374,7 @@ export function BookDetailPage() {
                   {isOpen ? <p>{t('books.createFirstAta')}</p> : null}
                 </EmptyState>
               ) : (
-                <Table
-                  head={
-                    <tr>
-                      <th>{t('books.th.number')}</th>
-                      <th>{t('books.th.actTitle')}</th>
-                      <th>{t('books.th.channel')}</th>
-                      <th>{t('books.th.actState')}</th>
-                      <th />
-                    </tr>
-                  }
-                >
-                  {acts.data.map((act) => (
-                    <tr key={act.id}>
-                      <td>{act.ata_number ?? '—'}</td>
-                      <td>{act.title}</td>
-                      <td>{meetingChannelLabels[act.channel]}</td>
-                      <td>
-                        <Badge
-                          tone={
-                            act.state === 'Sealed' || act.state === 'Archived'
-                              ? 'accent'
-                              : 'neutral'
-                          }
-                        >
-                          {actStateLabels[act.state]}
-                        </Badge>
-                      </td>
-                      <td>
-                        <Link to={`/acts/${act.id}`}>{t('common.open')}</Link>
-                      </td>
-                    </tr>
-                  ))}
-                </Table>
+                <BookActsList acts={acts.data} />
               )}
             </Card>
           </>

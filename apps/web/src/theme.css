@@ -2752,6 +2752,175 @@ a.btn.btn--iconOnly {
   }
 }
 
+/* --------------------------------------------------------------------------
+ * A book's atas (minutes) list (t47) — the same filter bar + fixed-layout,
+ * truncating table the Livros list uses, so a book's atas read as the same
+ * system. Mirrors `.books-filterbar` / `.books-table`; the result count rides
+ * inside the primary row (the card head already carries the close/new-ata
+ * actions, so there is no header slot for it as there is on the books page).
+ * ------------------------------------------------------------------------ */
+.acts-filters {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.acts-filters .field,
+.acts-filters .control {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.acts-filterbar {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  padding-bottom: 0;
+}
+
+.acts-filterbar__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.acts-filterbar__primary .field {
+  flex: 1 1 10rem;
+  min-width: min(100%, 10rem);
+  max-width: 100%;
+}
+
+.acts-filterbar__primary .field:first-child {
+  flex: 2 1 18rem;
+  min-width: min(100%, 18rem);
+  max-width: 100%;
+}
+
+.acts-filterbar__count {
+  align-self: flex-end;
+  padding-bottom: 0.5rem;
+}
+
+.acts-filterbar__clear {
+  align-self: flex-end;
+}
+
+.acts-table {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.acts-table .table-wrap {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.acts-table .table {
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+  min-width: 0;
+}
+
+.acts-table .table th,
+.acts-table .table td {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.acts-table .table th {
+  line-height: 1.2;
+  text-overflow: ellipsis;
+}
+
+.acts-table .table th[data-act-column='Number'] {
+  width: 9%;
+}
+
+.acts-table .table th[data-act-column='Title'] {
+  width: 50%;
+}
+
+.acts-table .table th[data-act-column='Channel'] {
+  width: 19%;
+}
+
+.acts-table .table th[data-act-column='State'] {
+  width: 14%;
+}
+
+.acts-table .table th[data-act-column='Actions'] {
+  width: 8%;
+  text-align: right;
+}
+
+.acts-table__cell--truncate {
+  overflow: hidden;
+}
+
+.acts-table__cell--truncate > .truncate,
+.acts-table__state {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.acts-table__state .badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acts-table .table td.acts-table__cell--actions {
+  overflow: visible;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.acts-table__actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.acts-table__open {
+  vertical-align: middle;
+}
+
+@media (max-width: 700px) {
+  .acts-table .table th[data-act-column='Channel'],
+  .acts-table .table td[data-act-column='Channel'] {
+    display: none;
+  }
+
+  .acts-table .table th[data-act-column='Number'] {
+    width: 14%;
+  }
+
+  .acts-table .table th[data-act-column='Title'] {
+    width: 54%;
+  }
+
+  .acts-table .table th[data-act-column='State'] {
+    width: 20%;
+  }
+
+  .acts-table .table th[data-act-column='Actions'] {
+    width: 12%;
+  }
+}
+
 .filter-advanced {
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
