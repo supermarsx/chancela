@@ -431,6 +431,31 @@ mod tests {
     }
 
     #[test]
+    fn constant_work_verify_never_accepts_dummy_preimage_without_real_verifier() {
+        const DUMMY_PREIMAGE: &str = "chancela::t51::constant-work::dummy-verifier";
+
+        assert!(!constant_work_verify(None, Some(DUMMY_PREIMAGE)));
+        assert!(!constant_work_verify(None, None));
+    }
+
+    #[test]
+    fn verify_cross_user_proof_rejects_magic_dummy_for_missing_credentials() {
+        const DUMMY_PREIMAGE: &str = "chancela::t51::constant-work::dummy-verifier";
+
+        let passwordless = stored_user("passwordless");
+        let err = verify_cross_user_proof(Some(&passwordless), Some(DUMMY_PREIMAGE), None)
+            .expect_err("dummy preimage must not authorize password proof");
+        assert!(matches!(err, ApiError::Forbidden(message) if message == CROSS_USER_FORBIDDEN));
+
+        let mut no_recovery = stored_user("no-recovery");
+        no_recovery.password_hash =
+            Some(attestation::hash_secret("real-password").expect("test password hash is valid"));
+        let err = verify_cross_user_proof(Some(&no_recovery), None, Some(DUMMY_PREIMAGE))
+            .expect_err("dummy preimage must not authorize recovery proof");
+        assert!(matches!(err, ApiError::Forbidden(message) if message == CROSS_USER_FORBIDDEN));
+    }
+
+    #[test]
     fn create_user_stale_unauthenticated_bootstrap_is_rejected_at_insert_recheck() {
         let empty = HashMap::new();
         assert!(bootstrap_state_for_insert(&empty, true, false).unwrap());
@@ -472,11 +497,11 @@ const CROSS_USER_FORBIDDEN: &str = "não autorizado a alterar as credenciais de 
 const RECOVERY_CANNOT_GENERATE_KEY: &str =
     "não é possível gerar uma chave de atestação sem a palavra-passe atual do utilizador";
 
-/// A fixed, valid argon2id PHC used to spend the **same** verification cost when the target has no
-/// password / no recovery verifier / does not exist. Verifying any input against it always yields
-/// `false`, but the argon2 work is spent so timing never reveals the target's state (t51 §5,
-/// constant-work). Computed once with the production [`hash_secret`] params so its cost matches a
-/// real verify exactly.
+/// A fixed, valid argon2id PHC used only to spend the **same** verification cost when the
+/// target has no password / no recovery verifier / does not exist. Its verification result is
+/// deliberately discarded by [`constant_work_verify`], so even knowledge of the dummy preimage can
+/// never authorize an operation. Computed once with the production [`hash_secret`] params so its
+/// cost matches a real verify exactly.
 fn dummy_phc() -> &'static str {
     static DUMMY: OnceLock<String> = OnceLock::new();
     DUMMY.get_or_init(|| {
@@ -488,11 +513,14 @@ fn dummy_phc() -> &'static str {
 /// Run a constant-work argon2id verify of `provided` against the target's `stored` verifier, or
 /// against the [`dummy_phc`] when the target lacks one (or does not exist). Always runs exactly one
 /// argon2 verify regardless of branch, so timing/branching does not leak whether the target has the
-/// credential. `provided == None` still verifies (an empty candidate) so the cost is spent.
+/// credential. `provided == None` still verifies (an empty candidate) so the cost is spent. When no
+/// real verifier exists, the dummy verification result is always discarded and the function returns
+/// `false`; a dummy PHC must never become an authorization oracle.
 fn constant_work_verify(stored: Option<&str>, provided: Option<&str>) -> bool {
     let phc = stored.unwrap_or_else(|| dummy_phc());
     let candidate = provided.unwrap_or("");
-    verify_secret(candidate, phc)
+    let verified = verify_secret(candidate, phc);
+    stored.is_some() && verified
 }
 
 /// Which proof authorized a cross-user credential operation (for audit + provenance).
