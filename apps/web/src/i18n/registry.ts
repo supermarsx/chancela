@@ -3,12 +3,15 @@
  * non-source catalog is loaded.
  *
  * Bundle policy: pt-PT is inlined (the eager fallback, imported by the store); every
- * other locale is code-split behind a dynamic `import()` so a session downloads only
- * the catalog it switches to. Vite emits one chunk per locale file.
+ * other locale — en-US included — is code-split behind a dynamic `import()` so a session
+ * downloads only the catalog it switches to. Vite emits one chunk per locale file. The
+ * eager locale is a UX/bundle choice and is deliberately decoupled from the authoring
+ * source (t40 Option A): English is the source, pt-PT is still the primary-market default.
  *
  * Quality tiers (the honesty ledger, mirrored in TRANSLATIONS.md):
- *  - `source`  — pt-PT, extracted from the shipped UI (authoritative).
- *  - `human`   — en-US, en-GB, authored by hand (t19-e3a).
+ *  - `source`  — en-US, the authoring source of truth; its keys define `MessageKey` (t40).
+ *  - `human`   — pt-PT (the original hand-authored UI copy, still the eager runtime
+ *                fallback) and en-GB, authored by hand (t19-e3a).
  *  - `machine` — the remaining 11, good-faith machine translations pending native
  *                review, authored by t19-e3b/e3c. They ship complete (the `Catalog`
  *                type guarantees it) and are clearly flagged as pending.
@@ -20,8 +23,8 @@ export type TranslationQuality = 'source' | 'human' | 'machine';
 
 /** Every supported locale and its translation quality (the shipped-locale manifest). */
 export const LOCALE_QUALITY: Record<Locale, TranslationQuality> = {
-  'pt-PT': 'source',
-  'en-US': 'human',
+  'en-US': 'source',
+  'pt-PT': 'human',
   'en-GB': 'human',
   'pt-BR': 'machine',
   'da-DK': 'machine',

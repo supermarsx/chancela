@@ -1,13 +1,17 @@
 /**
- * en-US — human-authored American English (t19-e3a).
+ * en-US — human-authored American English (t19-e3a) and the SOURCE catalog (t40).
  *
- * A complete `Catalog`: the compiler rejects any missing/extra key against the pt-PT
- * source. Portuguese legal-form names are kept as their proper designations with an
- * English gloss where one is idiomatic; backend legal/compliance text is never here
- * (UX-21). Diverges from en-GB only where the two genuinely differ (spelling,
- * "catalog"/"catalogue", "organization"/"organisation").
+ * English is the authoring source of truth for the codebase, so this bare object literal
+ * DEFINES the `MessageKey` union (see `../types`): its keys ARE the completeness contract,
+ * and every other locale — pt-PT included — is typed `Record<MessageKey, string>` and
+ * rejected by the compiler for a missing or invented key. Portuguese legal-form names are
+ * kept as their proper designations with an English gloss where one is idiomatic; backend
+ * legal/compliance text is never here (UX-21). Diverges from en-GB only where the two
+ * genuinely differ (spelling, "catalog"/"catalogue", "organization"/"organisation").
+ *
+ * Not the eager runtime fallback: pt-PT stays inlined by `store.ts` (t40 Option A), so this
+ * catalog is still code-split behind its own dynamic import in `../registry`.
  */
-import type { Catalog } from '../types';
 import { operationsEnglish } from '../operationsFallback';
 import { opsConfigEnglish } from '../opsConfigFallback';
 import { ledgerEventLabelsEnglish } from '../ledgerEventLabels';
@@ -16,7 +20,7 @@ import { dashboardSourceLabelsEnglish } from '../dashboardSourceLabels';
 import { roleNameLabelsEnglish } from '../roleNameLabels';
 import { attendeeQualityLabelsEnglish } from '../attendeeQualityLabels';
 
-export const enUS: Catalog = {
+export const enUS = {
   ...operationsEnglish,
   ...opsConfigEnglish,
   ...ledgerEventLabelsEnglish,

@@ -38,9 +38,10 @@ import { SHIPPED_LOCALES } from './registry';
  * Which locale a bare primary subtag resolves to, where we ship more than one region for it.
  * Stated explicitly so the answer never depends on `SHIPPED_LOCALES` ordering.
  *
- * `pt` → `pt-PT` and `en` → `en-GB`: this is a Portuguese product whose source locale is pt-PT and
- * whose legal domain is Portuguese, so the European variants are the better default for a reader
- * who did not express a region.
+ * `pt` → `pt-PT` and `en` → `en-GB`: this is a Portuguese product whose default/eager locale is
+ * pt-PT and whose legal domain is Portuguese, so the European variants are the better default for a
+ * reader who did not express a region. (The i18n *authoring* source of truth is en-US since t40, but
+ * which locale a browser resolves to is a market decision, independent of the source — see types.ts.)
  */
 export const REGION_DEFAULT: Partial<Record<string, Locale>> = {
   pt: 'pt-PT',

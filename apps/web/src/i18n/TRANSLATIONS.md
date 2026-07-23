@@ -7,21 +7,44 @@ translations still pending native review.
 
 ## The completeness contract
 
-`src/i18n/locales/pt-PT.ts` is the **source catalog**. Its keys are the `MessageKey`
-union (`src/i18n/types.ts`), so every other locale is typed `Record<MessageKey, string>`
-and the TypeScript compiler rejects a locale that is missing or invents a key. A runtime
-completeness matrix (`src/i18n/i18n.test.ts`) additionally asserts, for every shipped
-locale, an exact key-set match against the source and that no value is empty.
+`src/i18n/locales/en-US.ts` is the **source catalog** (t40: English is the authoring
+source of truth — the codebase is English and Portuguese survives only as translation
+VALUES). Its keys are the `MessageKey` union (`src/i18n/types.ts`), so every other locale —
+pt-PT included — is typed `Record<MessageKey, string>` and the TypeScript compiler rejects a
+locale that is missing or invents a key. A runtime completeness matrix
+(`src/i18n/i18n.test.ts`) additionally asserts, for every shipped locale, an exact key-set
+match against the source and that no value is empty.
 
-`~330` keys. To add a UI string: add it to `pt-PT.ts` (the compiler then flags every
+`~330` keys. To add a UI string: add it to `en-US.ts` (the compiler then flags every
 other locale until they carry it) and use `t('your.key')` via `useT()`.
+
+### Deliberate asymmetry (t40 Option A): source ≠ eager fallback ≠ leak reference
+
+Flipping the **authoring source** to en-US was kept surgical. Three other, independent
+choices stay on pt-PT on purpose — do not "consolidate" them onto en-US without a separate
+decision:
+
+- **Eager runtime fallback** stays **pt-PT** (`store.ts` inlines it; `en-US`, like every
+  non-eager locale, is code-split behind a dynamic import). Portuguese is the primary market,
+  so a pt user still gets pt-PT with no dynamic-import flash and no extra chunk — zero
+  runtime/bundle change from the flip.
+- **Leak-gate reference** stays **pt-PT** (`catalogLeakGate.test.ts` +
+  `reviewedIdenticalValues.ts`). The gate's job — catch catalogs shipping untranslated
+  Portuguese to non-PT users — is valid regardless of which catalog defines `MessageKey`.
+- **Per-slice fallback pairs** (`operationsFallback.ts`, `opsConfigFallback.ts`,
+  `ledgerEventLabels.ts`, and the other typed pairs below) still anchor their key set on
+  their `*PtPT` object, with the English slice `satisfies Record<keyof typeof *PtPT, string>`.
+  Their local structure is unchanged; only the top-level `MessageKey` home moved. Existing
+  slices are left pt-anchored to keep the flip surgical; a **new** fallback slice added from
+  here on should be authored English-first (its `*English` object the `as const` anchor, the
+  `*PtPT` object `satisfies Record<keyof typeof *English, string>`), matching the source.
 
 ## Quality tiers
 
 | Locale                   | Tag     | Tier                     | Status                                                                                                                                                                                                                                                                                     |
 | ------------------------ | ------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Portuguese (Portugal)    | `pt-PT` | **source**               | Authoritative — extracted byte-for-byte from the shipped UI. The default locale.                                                                                                                                                                                                           |
-| English (United States)  | `en-US` | **human**                | Human-authored (t19-e3a).                                                                                                                                                                                                                                                                  |
+| English (United States)  | `en-US` | **source**               | The authoring source of truth (t40) — its keys define `MessageKey`. Human-authored (t19-e3a).                                                                                                                                                                                               |
+| Portuguese (Portugal)    | `pt-PT` | **human**                | The original UI copy, extracted byte-for-byte from the shipped UI; reclassified from source to a `: Catalog` translation (t40). Still the default/eager runtime locale.                                                                                                                      |
 | English (United Kingdom) | `en-GB` | **human**                | Human-authored (t19-e3a); British spelling/terminology (catalogue, organisation, minimise).                                                                                                                                                                                                |
 | Portuguese (Brazil)      | `pt-BR` | machine · pending review | Authored by t19-e3b; Brazilian usage applied over the pt-PT source (registro, usuário, gerund progressives, Salvar). Minutes term: "ata".                                                                                                                                                  |
 | Danish (Denmark)         | `da-DK` | machine · pending review | Authored by t19-e3c (machine, pending native review). Minutes term: "protokol"; register extract "registerattest".                                                                                                                                                                         |
@@ -43,9 +66,11 @@ for pt-BR, English for the others) — an honest, readable fallback, not a crash
 `LOCALE_QUALITY` map in `src/i18n/registry.ts` is the machine-readable copy of this table.
 
 The additive operator surface follows the same review boundary in
-`src/i18n/operationsFallback.ts`: pt-PT is authoritative and every other shipped catalog imports
-the complete English fallback slice until native review. Typed key parity and placeholder gates
-still apply, so a missing safety label fails CI instead of disappearing at runtime.
+`src/i18n/operationsFallback.ts`: its `operationsPtPT` object is the slice's local key anchor and
+every other shipped catalog imports the complete English fallback slice until native review (see
+the deliberate-asymmetry note above — per-slice pairs stay pt-anchored while the top-level
+`MessageKey` home is en-US). Typed key parity and placeholder gates still apply, so a missing
+safety label fails CI instead of disappearing at runtime.
 
 ### Ledger event-kind labels (t17) — a translated key group pending native review
 

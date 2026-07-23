@@ -1,19 +1,22 @@
 /**
- * pt-PT — the SOURCE catalog and the completeness contract for every other locale.
+ * pt-PT — the original hand-authored UI copy, now a `: Catalog` translation locale (t40).
  *
- * The keys of this object ARE the `MessageKey` union (see `../types`): every shipped
- * locale is a `Record<MessageKey, string>`, so the compiler rejects a locale that is
- * missing or adds a key. Values here are byte-identical to the strings that shipped in
- * the UI before i18n (ruling 7), so with the default locale the app renders exactly as
- * before and the Playwright specs stay green.
+ * English (en-US) is the authoring source of truth and DEFINES the `MessageKey` union
+ * (see `../types`); this catalog is typed `Record<MessageKey, string>`, so the compiler
+ * rejects it for a missing or invented key exactly like every other translation. Values
+ * here are byte-identical to the strings that shipped in the UI before i18n (ruling 7),
+ * so with pt-PT as the default/eager locale the app renders exactly as before and the
+ * Playwright specs stay green.
  *
- * This file is loaded eagerly (it is the guaranteed fallback for any key an async
- * locale has not resolved yet); every other locale is code-split behind a dynamic
- * import (see `../registry`).
+ * This file is still loaded eagerly (t40 Option A: pt-PT remains the guaranteed runtime
+ * fallback for any key an async locale has not resolved yet — a UX/bundle choice kept
+ * independent of the authoring-source flip); every other locale, en-US included, is
+ * code-split behind a dynamic import (see `../registry`).
  *
  * NOTE (UX-21): backend-authored legal/compliance messages are NOT in this catalog —
  * they are rendered verbatim as received. Only client-authored UI chrome lives here.
  */
+import type { Catalog } from '../types';
 import { operationsPtPT } from '../operationsFallback';
 import { opsConfigPtPT } from '../opsConfigFallback';
 import { ledgerEventLabelsPtPT } from '../ledgerEventLabels';
@@ -22,7 +25,7 @@ import { dashboardSourceLabelsPtPT } from '../dashboardSourceLabels';
 import { roleNameLabelsPtPT } from '../roleNameLabels';
 import { attendeeQualityLabelsPtPT } from '../attendeeQualityLabels';
 
-export const ptPT = {
+export const ptPT: Catalog = {
   ...operationsPtPT,
   ...opsConfigPtPT,
   ...ledgerEventLabelsPtPT,

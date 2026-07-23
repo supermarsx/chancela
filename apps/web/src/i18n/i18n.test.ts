@@ -23,7 +23,8 @@ import { interpolate } from './interpolate';
 import { i18nStore } from './store';
 import { LOCALE_LOADERS, LOCALE_QUALITY, SHIPPED_LOCALES } from './registry';
 
-const sourceKeys = Object.keys(ptPT).sort();
+// en-US is the authoring source of truth (t40): its keys are the completeness contract.
+const sourceKeys = Object.keys(enUS).sort();
 
 describe('catalog completeness matrix', () => {
   it('the source catalog has a non-trivial key set', () => {
@@ -433,7 +434,12 @@ describe('catalog completeness matrix', () => {
 
   it('every non-source locale has exactly the source key set (no missing/extra keys)', async () => {
     const catalogs = await Promise.all(
-      SHIPPED_LOCALES.filter((locale) => locale !== 'pt-PT').map(async (locale) => {
+      SHIPPED_LOCALES.filter((locale) => locale !== 'en-US').map(async (locale) => {
+        // pt-PT is the eager runtime fallback (t40 Option A): it is inlined by the store and
+        // intentionally absent from LOCALE_LOADERS, so it is checked via its static import.
+        if (locale === 'pt-PT') {
+          return { locale, catalog: ptPT };
+        }
         const loader = LOCALE_LOADERS[locale];
         expect(loader, `missing loader for ${locale}`).toBeDefined();
         const catalog = await loader!();
@@ -445,7 +451,7 @@ describe('catalog completeness matrix', () => {
       const keys = Object.keys(catalog).sort();
       // Symmetric difference is empty ⇒ identical key sets.
       const missing = sourceKeys.filter((k) => !(k in catalog));
-      const extra = keys.filter((k) => !(k in ptPT));
+      const extra = keys.filter((k) => !(k in enUS));
       expect(missing, `${locale} missing keys`).toEqual([]);
       expect(extra, `${locale} extra keys`).toEqual([]);
       // No empty values (a stub seed still fills every key).
