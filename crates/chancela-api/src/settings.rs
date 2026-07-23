@@ -4131,7 +4131,8 @@ mod tests {
     /// on at all. "Unavailable and says so" — not enabled-then-broken, and never a guessed origin.
     #[test]
     fn a_link_issuing_feature_cannot_be_enabled_without_a_configured_base_url() {
-        let link_issuing: [(&str, fn(&mut Settings)); 3] = [
+        type SettingsMutator = fn(&mut Settings);
+        let link_issuing: [(&str, SettingsMutator); 3] = [
             ("recovery link", |s| {
                 s.auth.password_recovery.email_link_enabled = true
             }),

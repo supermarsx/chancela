@@ -1025,18 +1025,17 @@ mod tests {
         }
 
         // Likewise `cae.refresh` no longer carries a TSL import with it.
-        for role in [Role::company_owner()] {
-            assert!(
-                role.permission_set.contains(&Permission::CaeRefresh),
-                "{} unexpectedly lost cae.refresh",
-                role.name
-            );
-            assert!(
-                !role.permission_set.contains(&Permission::TrustManage),
-                "{} still reaches the TSL import through cae.refresh",
-                role.name
-            );
-        }
+        let role = Role::company_owner();
+        assert!(
+            role.permission_set.contains(&Permission::CaeRefresh),
+            "{} unexpectedly lost cae.refresh",
+            role.name
+        );
+        assert!(
+            !role.permission_set.contains(&Permission::TrustManage),
+            "{} still reaches the TSL import through cae.refresh",
+            role.name
+        );
     }
 
     /// t22, stated as the population rather than a hand-picked sample. Before the split, *every*

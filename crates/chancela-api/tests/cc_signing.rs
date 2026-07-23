@@ -1843,7 +1843,7 @@ async fn cc_sign_403_for_role_without_signing_perm() {
             .as_array()
             .expect("roles")
             .iter()
-            .any(|r| r["id"] == serde_json::Value::from(default_role_id.as_str())),
+            .any(|r| r["id"] == default_role_id.as_str()),
         "the seeded default operator role is offered by the catalog"
     );
     let (status, _) = send(

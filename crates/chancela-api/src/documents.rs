@@ -9417,8 +9417,8 @@ pub async fn export_template(
 
 /// Run the import dry-run preflight: bundle-normalize + validate + seed bar + save-name validation
 /// + uniqueness, with no persistence. Always `200` with a `{ok, error?}` verdict. Covers the
-/// envelope and the legacy bare spec identically (`prepare_template_import`), so the web preflight
-/// verdict matches what the non-dry-run import would do.
+///   envelope and the legacy bare spec identically (`prepare_template_import`), so the web preflight
+///   verdict matches what the non-dry-run import would do.
 async fn template_import_dry_run(
     state: &AppState,
     body: &[u8],

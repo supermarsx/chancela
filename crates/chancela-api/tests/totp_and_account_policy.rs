@@ -489,15 +489,14 @@ async fn requiring_two_factor_needs_totp_enabled_instance_wide() {
             .contains("totp_enabled"),
         "{body}"
     );
-    assert_eq!(
-        state
+    assert!(
+        !state
             .users
             .read()
             .await
             .get(&target)
             .unwrap()
-            .two_factor_required,
-        false
+            .two_factor_required
     );
 
     // Enable TOTP instance-wide, then the toggle lands.

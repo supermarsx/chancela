@@ -487,9 +487,7 @@ mod tests {
         // A duplicate within a table.
         assert!(prefs(Some(&["Name", "Name"]), None).validate().is_err());
         // Too many columns.
-        let many: Vec<&str> = std::iter::repeat("A")
-            .take(MAX_COLUMNS_PER_TABLE + 1)
-            .collect();
+        let many: Vec<&str> = std::iter::repeat_n("A", MAX_COLUMNS_PER_TABLE + 1).collect();
         // (all identical would trip the duplicate check first, so make them distinct)
         let distinct: Vec<String> = (0..=MAX_COLUMNS_PER_TABLE)
             .map(|i| format!("Col{i}"))
