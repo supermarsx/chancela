@@ -334,6 +334,56 @@ async fn a_challenge_is_single_use_and_capped_and_a_wrong_code_is_uniform() {
     assert_eq!(status, StatusCode::UNAUTHORIZED, "a challenge discarded after the cap is gone");
 }
 
+#[tokio::test]
+async fn a_wrong_second_factor_throttles_fresh_challenges_for_the_account() {
+    let temp = TempDir::new();
+    let state = AppState::with_data_dir(&temp.0);
+    let uid = seed_user(&state, "amelia.marques", OWNER_ROLE_ID).await;
+    let token = sign_in(&state, uid).await;
+    let secret = enrol_totp(&state, uid, &token).await;
+
+    let (status, body) = send(
+        state.clone(),
+        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "challenge: {body}");
+    let cid = body["two_factor_challenge"]["challenge_id"].as_str().unwrap();
+
+    let (status, _) = send(
+        state.clone(),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": cid, "code": wrong_code(&secret) }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(state.signin_backoff.read().await.get(&uid).unwrap().fails, 1);
+
+    // A correct password must not reset the account throttle merely by minting another disposable
+    // challenge. This is the default LocalOnlyRateLimiter configuration, so the local backoff is
+    // the protection against repeatedly resetting the five-attempt challenge budget.
+    let (status, _) = send(
+        state.clone(),
+        post("/v1/session", json!({ "user_id": uid.0, "password": TEST_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+    // Finishing the original challenge is the successful sign-in and clears the account throttle.
+    let (status, minted) = send(
+        state.clone(),
+        post(
+            "/v1/session/challenge",
+            json!({ "challenge_id": cid, "code": current_code(&secret) }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "completion: {minted}");
+    assert!(!state.signin_backoff.read().await.contains_key(&uid));
+}
+
 /// A backup code satisfies the challenge when the authenticator is unavailable, and is single-use.
 #[tokio::test]
 async fn a_backup_code_completes_the_challenge_and_is_consumed() {

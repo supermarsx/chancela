@@ -553,7 +553,8 @@ pub struct PendingTwoFactor {
     pub unlocked_key: Option<SigningKey>,
     pub expires_at: OffsetDateTime,
     /// Wrong-code attempts so far. At [`TWO_FACTOR_MAX_ATTEMPTS`] the challenge is discarded and the
-    /// user must re-enter their password — the throttle bites the *pending sign-in*, never the account.
+    /// user must re-enter their password; account-scoped backoff also prevents challenge reissuance
+    /// from resetting the guess throttle.
     pub fails: u32,
 }
 
@@ -885,9 +886,6 @@ pub async fn create_session(
     let Some(mut user) = resolved else {
         return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
     };
-    state.signin_backoff.write().await.remove(&uid);
-    // A successful sign-in clears the global counter too (cluster-wide reset).
-    state.cluster_shared.signin_limiter.clear(&signin_limit_key);
     if verification.needs_upgrade {
         let upgraded = hash_secret_with_seed(&req.password, &seed)?;
         if let Some(updated) =
@@ -941,6 +939,9 @@ pub async fn create_session(
         )));
     }
 
+    state.signin_backoff.write().await.remove(&uid);
+    // A completed one-step sign-in clears the global counter too (cluster-wide reset).
+    state.cluster_shared.signin_limiter.clear(&signin_limit_key);
     let token = mint_session(&state, uid, unlocked_key).await?;
 
     Ok(Json(CreateSessionOutcome::Authenticated(SessionCreated {
@@ -954,11 +955,11 @@ pub async fn create_session(
 ///
 /// The password already proved out at [`create_session`], which parked the unlocked key in a pending
 /// record and returned the `challenge_id`. This verifies a TOTP or backup code against that record and,
-/// on success, mints the session with the carried key. Single-use and rate-limited **on the pending
-/// challenge, not the account**: the record is taken out on every attempt, put back only if a wrong
-/// code still has tries left, and discarded after [`TWO_FACTOR_MAX_ATTEMPTS`] — so burning attempts
-/// kills this sign-in, never locks the user out. Unknown / expired / exhausted / wrong all return the
-/// same uniform `401`.
+/// on success, mints the session with the carried key. The record is taken out on every attempt, put
+/// back only if a wrong code still has tries left, and discarded after
+/// [`TWO_FACTOR_MAX_ATTEMPTS`]. Unknown / expired / exhausted / wrong all return the same uniform
+/// `401`. Wrong codes also advance the account's sign-in backoff, preventing a fresh challenge from
+/// resetting this attempt budget.
 pub async fn complete_two_factor_challenge(
     State(state): State<AppState>,
     Json(req): Json<CompleteChallenge>,
@@ -984,6 +985,19 @@ pub async fn complete_two_factor_challenge(
 
     if !accepted {
         pending.fails += 1;
+        // Keep the throttle on the account, not merely on this disposable challenge. In
+        // single-node deployments the shared limiter below is intentionally a no-op, so this local
+        // floor prevents a password holder from resetting the attempt budget by requesting a fresh
+        // challenge after every five guesses.
+        {
+            let mut backoff = state.signin_backoff.write().await;
+            let entry = backoff.entry(user_id).or_insert(Backoff {
+                fails: 0,
+                next_allowed_at: now,
+            });
+            entry.fails += 1;
+            entry.next_allowed_at = now + Duration::seconds(backoff_secs(entry.fails));
+        }
         // Count the failure toward the cluster-wide sign-in cap too, keyed on the user — a TOTP
         // brute-force is a sign-in brute-force.
         let key = format!("signin:{}", user_id);
@@ -1004,6 +1018,14 @@ pub async fn complete_two_factor_challenge(
             "código de segundo fator inválido".to_owned(),
         ));
     }
+
+    // Only the completed second factor makes this a successful sign-in. Do not reset either
+    // account-scoped throttle when the password merely creates a replaceable challenge.
+    state.signin_backoff.write().await.remove(&user_id);
+    state
+        .cluster_shared
+        .signin_limiter
+        .clear(&format!("signin:{user_id}"));
 
     // Accepted. Mint the session with the key carried across the challenge, then re-read the user for
     // the view + any residual wall (a forced password change still applies after the factor).
