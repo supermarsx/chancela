@@ -94,7 +94,8 @@ use crate::{
     StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
     StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
     StoredPaperBookOcrDraft, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
-    StoredSignedDocument, int_to_u32, parse_date, parse_rfc3339, parse_uuid_newtype,
+    StoredSignedDocument, StoredUserTemplateVersion, int_to_u32, parse_date, parse_rfc3339,
+    parse_uuid_newtype,
 };
 
 /// Fixed key for the process-wide writer advisory lock (§4). An arbitrary, stable 64-bit constant
@@ -996,6 +997,53 @@ impl PostgresBackend {
         Ok(row.map(|row| row.get::<_, String>(0)))
     }
 
+    pub(crate) fn user_template_versions(
+        &self,
+        template_id: &str,
+    ) -> Result<Vec<StoredUserTemplateVersion>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT version_id, template_id, name, template_json, created_at, created_by \
+             FROM user_template_versions WHERE template_id = $1 \
+             ORDER BY created_at_unix_nanos DESC, version_id DESC",
+            &[&template_id],
+        )?;
+        rows.iter().map(row_to_user_template_version).collect()
+    }
+
+    pub(crate) fn user_template_versions_limited(
+        &self,
+        template_id: &str,
+        history_limit: usize,
+    ) -> Result<Vec<StoredUserTemplateVersion>, StoreError> {
+        let limit = i64::try_from(history_limit.max(1)).unwrap_or(i64::MAX);
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT version_id, template_id, name, template_json, created_at, created_by \
+             FROM user_template_versions WHERE template_id = $1 \
+             ORDER BY created_at_unix_nanos DESC, version_id DESC LIMIT $2",
+            &[&template_id, &limit],
+        )?;
+        rows.iter().map(row_to_user_template_version).collect()
+    }
+
+    pub(crate) fn user_template_version(
+        &self,
+        template_id: &str,
+        version_id: &str,
+    ) -> Result<Option<StoredUserTemplateVersion>, StoreError> {
+        let mut client = self.read()?;
+        client
+            .query_opt(
+                "SELECT version_id, template_id, name, template_json, created_at, created_by \
+                 FROM user_template_versions WHERE template_id = $1 AND version_id = $2",
+                &[&template_id, &version_id],
+            )?
+            .as_ref()
+            .map(row_to_user_template_version)
+            .transpose()
+    }
+
     pub(crate) fn settings(&self) -> Result<Option<String>, StoreError> {
         let mut client = self.read()?;
         let row = client.query_opt(
@@ -1404,6 +1452,17 @@ pub(crate) fn row_to_generated_dispatch_evidence(
         recipients: serde_json::from_str(&recipients_json)?,
         operator_note: row.get(11),
         recorded_at: parse_rfc3339(&row.get::<_, String>(12))?,
+    })
+}
+
+fn row_to_user_template_version(row: &Row) -> Result<StoredUserTemplateVersion, StoreError> {
+    Ok(StoredUserTemplateVersion {
+        version_id: row.get(0),
+        template_id: row.get(1),
+        name: row.get(2),
+        template_json: row.get(3),
+        created_at: parse_rfc3339(&row.get::<_, String>(4))?,
+        created_by: row.get(5),
     })
 }
 

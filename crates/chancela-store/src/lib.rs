@@ -196,6 +196,11 @@ pub enum StoreError {
     /// export/start-over was not found in the store).
     #[error("not found: {0}")]
     NotFound(String),
+    /// An insert-only durable create addressed a primary/unique key that already exists. Kept
+    /// distinct from a generic engine failure so the API can return an honest `409 Conflict`
+    /// without parsing backend-specific error strings.
+    #[error("already exists: {0}")]
+    AlreadyExists(String),
     /// A store encryption key was supplied to a build that was not compiled with SQLCipher support.
     #[error(
         "store encryption key supplied but this build was not compiled with the sqlcipher feature; \
@@ -245,6 +250,18 @@ impl From<AppendError> for StoreError {
     fn from(error: AppendError) -> Self {
         Self::LedgerAppend(Box::new(error))
     }
+}
+
+fn sqlite_unique_violation(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(code, _)
+            if matches!(
+                code.extended_code,
+                rusqlite::ffi::SQLITE_CONSTRAINT_PRIMARYKEY
+                    | rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE
+            )
+    )
 }
 
 /// A handle to the durable store. Cheap to clone (shares one connection via `Arc`) and lives in
@@ -1797,6 +1814,29 @@ pub struct StoredCredentialRecord {
     pub record_blob: Vec<u8>,
 }
 
+/// One durable save-history snapshot for a user-authored template (`user_template_versions`,
+/// schema v27).
+///
+/// `template_json` is intentionally opaque to the store and byte-for-byte equal to the current
+/// `user_templates.json` value at save time. In particular, it retains the authored
+/// `default_body`; a restore can therefore recover both template properties and narrative content
+/// without reconstructing either from a summary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredUserTemplateVersion {
+    /// Stable opaque save identifier (application-minted UUID).
+    pub version_id: String,
+    /// The owning user-authored template.
+    pub template_id: String,
+    /// Optional operator-friendly save name.
+    pub name: Option<String>,
+    /// Complete stored template JSON, including `default_body` when authored.
+    pub template_json: String,
+    /// When this save was created (UTC).
+    pub created_at: OffsetDateTime,
+    /// Actor that caused the save.
+    pub created_by: String,
+}
+
 /// One `subject_keys` row (schema v18, wp26 GDPR crypto-erasure).
 ///
 /// `wrapped_dek` is the **OPAQUE** wrapped per-subject DEK blob produced by the API's secretstore
@@ -3320,6 +3360,93 @@ impl Store {
     /// is the API's serialized `TemplateSpecDto` value (opaque to the store).
     pub fn user_template(&self, id: &str) -> Result<Option<String>, StoreError> {
         self.document_row("user_templates", id)
+    }
+
+    /// List one user template's retained save-history snapshots, newest first. The complete
+    /// `template_json` is returned to the API service for restore validation but is not exposed by
+    /// the history-list DTO.
+    pub fn user_template_versions(
+        &self,
+        template_id: &str,
+    ) -> Result<Vec<StoredUserTemplateVersion>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.user_template_versions(template_id);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT version_id, template_id, name, template_json, created_at, created_by \
+             FROM user_template_versions WHERE template_id = ?1 \
+             ORDER BY created_at_unix_nanos DESC, version_id DESC",
+        )?;
+        let rows = stmt.query_map(params![template_id], row_to_user_template_version)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
+    /// List at most `history_limit` retained saves, newest first. This read-side ceiling is a
+    /// defence-in-depth companion to physical pruning: a node that has just restarted with a lower
+    /// configured limit never advertises more rows than that limit, even while the leader is still
+    /// applying retention maintenance.
+    pub fn user_template_versions_limited(
+        &self,
+        template_id: &str,
+        history_limit: usize,
+    ) -> Result<Vec<StoredUserTemplateVersion>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.user_template_versions_limited(template_id, history_limit);
+        }
+        let limit = i64::try_from(history_limit.max(1)).unwrap_or(i64::MAX);
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT version_id, template_id, name, template_json, created_at, created_by \
+             FROM user_template_versions WHERE template_id = ?1 \
+             ORDER BY created_at_unix_nanos DESC, version_id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![template_id, limit], row_to_user_template_version)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
+    /// Read one retained save by both its owning template and opaque version id. Pairing both keys
+    /// prevents a caller from addressing a save through another template's route.
+    pub fn user_template_version(
+        &self,
+        template_id: &str,
+        version_id: &str,
+    ) -> Result<Option<StoredUserTemplateVersion>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.user_template_version(template_id, version_id);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT version_id, template_id, name, template_json, created_at, created_by \
+             FROM user_template_versions WHERE template_id = ?1 AND version_id = ?2",
+        )?;
+        stmt.query_row(
+            params![template_id, version_id],
+            row_to_user_template_version,
+        )
+        .optional()
+        .map_err(StoreError::from)
+        .and_then(|value| value.transpose())
+    }
+
+    /// Physically enforce the configured history ceiling across every existing user template.
+    ///
+    /// Intended for startup after `CHANCELA_TEMPLATE_HISTORY_LIMIT` is resolved. The write is one
+    /// transaction on either backend; reopening an older store with a lower limit therefore removes
+    /// excess restore points before normal service. Returns the number of deleted rows.
+    pub fn prune_user_template_versions(&self, history_limit: usize) -> Result<usize, StoreError> {
+        self.persist_result(|tx| tx.prune_user_template_versions(history_limit))
     }
 
     /// Load every stored tenant row as `(id, json)`, ordered by id. Each `json` is the API's
@@ -5414,15 +5541,313 @@ impl Tx<'_> {
         self.delete_document_row("delegations", id)
     }
 
+    /// Insert one new user-authored template row (`user_templates`, `(id, json)`).
+    ///
+    /// This is the durable uniqueness boundary for create/import. A colliding primary key maps to
+    /// [`StoreError::AlreadyExists`] on both SQLite and PostgreSQL; the existing row is never
+    /// overwritten. Keeping this guarantee in the database transaction closes the read-then-write
+    /// race across concurrent requests and PostgreSQL nodes.
+    pub fn insert_user_template(&self, id: &str, json: &str) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => match self.raw()?.execute(
+                "INSERT INTO user_templates (id, json) VALUES (?1, ?2)",
+                params![id, json],
+            ) {
+                Ok(_) => Ok(()),
+                Err(error) if sqlite_unique_violation(&error) => {
+                    Err(StoreError::AlreadyExists(format!("user template {id}")))
+                }
+                Err(error) => Err(error.into()),
+            },
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => match cell.borrow_mut().execute(
+                "INSERT INTO user_templates (id, json) VALUES ($1, $2)",
+                &[&id, &json],
+            ) {
+                Ok(_) => Ok(()),
+                Err(error)
+                    if error.code() == Some(&postgres::error::SqlState::UNIQUE_VIOLATION) =>
+                {
+                    Err(StoreError::AlreadyExists(format!("user template {id}")))
+                }
+                Err(error) => Err(error.into()),
+            },
+        }
+    }
+
     /// Upsert one user-authored template row (`user_templates`, `(id, json)`), idempotent on the id.
-    /// The `json` is the API's serialized `TemplateSpecDto` value (opaque to the store).
+    /// The `json` is the API's serialized `TemplateSpecDto` value (opaque to the store). Retained
+    /// for migrations/fixtures that deliberately need upsert semantics; request create/import uses
+    /// [`Tx::insert_user_template`] and request update/restore uses [`Tx::update_user_template`].
     pub fn upsert_user_template(&self, id: &str, json: &str) -> Result<(), StoreError> {
-        self.upsert_document_row("user_templates", id, json)
+        // Deliberately use a true conflict UPDATE on SQLite instead of the shared `INSERT OR
+        // REPLACE`: REPLACE is implemented as delete+insert, which would fire the schema-v27
+        // `ON DELETE CASCADE` and erase this template's complete save history on every edit.
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT INTO user_templates (id, json) VALUES (?1, ?2) \
+                     ON CONFLICT (id) DO UPDATE SET json = excluded.json",
+                    params![id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO user_templates (id, json) VALUES ($1, $2) \
+                     ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json",
+                    &[&id, &json],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Update an existing user-authored template without ever inserting it.
+    ///
+    /// A zero-row result is [`StoreError::NotFound`]. API update/restore paths use this as their
+    /// transaction-time existence revalidation so a template deleted after an earlier read cannot
+    /// be resurrected by an upsert. SQLite and PostgreSQL both expose affected-row counts here.
+    pub fn update_user_template(&self, id: &str, json: &str) -> Result<(), StoreError> {
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "UPDATE user_templates SET json = ?2 WHERE id = ?1",
+                params![id, json],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell.borrow_mut().execute(
+                "UPDATE user_templates SET json = $2 WHERE id = $1",
+                &[&id, &json],
+            )? as usize,
+        };
+        if changed == 0 {
+            return Err(StoreError::NotFound(format!("user template {id}")));
+        }
+        Ok(())
     }
 
     /// Remove one user-authored template row by id. A no-op when the id is unknown.
     pub fn delete_user_template(&self, id: &str) -> Result<(), StoreError> {
         self.delete_document_row("user_templates", id)
+    }
+
+    /// Append one durable user-template save and prune excess history in the SAME transaction.
+    ///
+    /// Retains the newest `history_limit` rows by `(created_at_unix_nanos, version_id)`. The limit
+    /// is clamped to at least one here as a storage invariant even though the API configuration
+    /// already resolves it to `1..=100`.
+    pub fn insert_user_template_version(
+        &self,
+        version: &StoredUserTemplateVersion,
+        history_limit: usize,
+    ) -> Result<(), StoreError> {
+        let created_at = version
+            .created_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let created_at_unix_nanos = i64::try_from(version.created_at.unix_timestamp_nanos())
+            .map_err(|_| {
+                StoreError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "user template version timestamp is outside the supported nanosecond range",
+                ))
+            })?;
+        let limit = i64::try_from(history_limit.max(1)).unwrap_or(i64::MAX);
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                let raw = self.raw()?;
+                raw.execute(
+                    "INSERT INTO user_template_versions \
+                     (version_id, template_id, name, template_json, created_at, \
+                      created_at_unix_nanos, created_by) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        version.version_id,
+                        version.template_id,
+                        version.name,
+                        version.template_json,
+                        created_at,
+                        created_at_unix_nanos,
+                        version.created_by,
+                    ],
+                )?;
+                raw.execute(
+                    "DELETE FROM user_template_versions \
+                     WHERE template_id = ?1 AND version_id IN (\
+                         SELECT version_id FROM user_template_versions \
+                         WHERE template_id = ?1 \
+                         ORDER BY created_at_unix_nanos DESC, version_id DESC \
+                         LIMIT -1 OFFSET ?2\
+                     )",
+                    params![version.template_id, limit],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let mut tx = cell.borrow_mut();
+                tx.execute(
+                    "INSERT INTO user_template_versions \
+                     (version_id, template_id, name, template_json, created_at, \
+                      created_at_unix_nanos, created_by) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    &[
+                        &version.version_id,
+                        &version.template_id,
+                        &version.name,
+                        &version.template_json,
+                        &created_at,
+                        &created_at_unix_nanos,
+                        &version.created_by,
+                    ],
+                )?;
+                tx.execute(
+                    "DELETE FROM user_template_versions \
+                     WHERE template_id = $1 AND version_id IN (\
+                         SELECT version_id FROM user_template_versions \
+                         WHERE template_id = $1 \
+                         ORDER BY created_at_unix_nanos DESC, version_id DESC \
+                         OFFSET $2\
+                     )",
+                    &[&version.template_id, &limit],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Lock/revalidate the retained restore source inside the mutation transaction.
+    ///
+    /// PostgreSQL's `FOR UPDATE` serializes a concurrent version or parent-template delete behind
+    /// the restore. SQLite already serializes writers through its transaction/connection lock; the
+    /// existence read still ensures a delete that committed before this transaction produces a
+    /// `404` instead of restoring a stale in-memory snapshot.
+    pub fn require_user_template_version(
+        &self,
+        template_id: &str,
+        version_id: &str,
+    ) -> Result<(), StoreError> {
+        let exists = match &self.kind {
+            TxKind::Sqlite(_) => self
+                .raw()?
+                .query_row(
+                    "SELECT 1 FROM user_template_versions \
+                     WHERE template_id = ?1 AND version_id = ?2",
+                    params![template_id, version_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some(),
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell
+                .borrow_mut()
+                .query_opt(
+                    "SELECT 1 FROM user_template_versions \
+                     WHERE template_id = $1 AND version_id = $2 FOR UPDATE",
+                    &[&template_id, &version_id],
+                )?
+                .is_some(),
+        };
+        if !exists {
+            return Err(StoreError::NotFound(format!(
+                "user template version {template_id}/{version_id}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Delete every retained save beyond `history_limit`, partitioned by template and ordered by
+    /// the same deterministic `(created_at_unix_nanos, version_id)` key used by append pruning.
+    /// Returns the number of deleted rows.
+    pub fn prune_user_template_versions(&self, history_limit: usize) -> Result<usize, StoreError> {
+        let limit = i64::try_from(history_limit.max(1)).unwrap_or(i64::MAX);
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "DELETE FROM user_template_versions \
+                 WHERE version_id IN (\
+                     SELECT version_id FROM (\
+                         SELECT version_id, ROW_NUMBER() OVER (\
+                             PARTITION BY template_id \
+                             ORDER BY created_at_unix_nanos DESC, version_id DESC\
+                         ) AS history_rank \
+                         FROM user_template_versions\
+                     ) ranked \
+                     WHERE history_rank > ?1\
+                 )",
+                params![limit],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell.borrow_mut().execute(
+                "DELETE FROM user_template_versions \
+                 WHERE version_id IN (\
+                     SELECT version_id FROM (\
+                         SELECT version_id, ROW_NUMBER() OVER (\
+                             PARTITION BY template_id \
+                             ORDER BY created_at_unix_nanos DESC, version_id DESC\
+                         ) AS history_rank \
+                         FROM user_template_versions\
+                     ) ranked \
+                     WHERE history_rank > $1\
+                 )",
+                &[&limit],
+            )? as usize,
+        };
+        Ok(changed)
+    }
+
+    /// Rename (or clear the name of) one retained save. Both ids are matched so a version cannot be
+    /// mutated through another template's route. Unknown rows fail the surrounding transaction.
+    pub fn rename_user_template_version(
+        &self,
+        template_id: &str,
+        version_id: &str,
+        name: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "UPDATE user_template_versions SET name = ?3 \
+                 WHERE template_id = ?1 AND version_id = ?2",
+                params![template_id, version_id, name],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell.borrow_mut().execute(
+                "UPDATE user_template_versions SET name = $3 \
+                 WHERE template_id = $1 AND version_id = $2",
+                &[&template_id, &version_id, &name],
+            )? as usize,
+        };
+        if changed == 0 {
+            return Err(StoreError::NotFound(format!(
+                "user template version {template_id}/{version_id}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Delete one retained save. The current user-template row is never touched.
+    pub fn delete_user_template_version(
+        &self,
+        template_id: &str,
+        version_id: &str,
+    ) -> Result<(), StoreError> {
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "DELETE FROM user_template_versions \
+                 WHERE template_id = ?1 AND version_id = ?2",
+                params![template_id, version_id],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell.borrow_mut().execute(
+                "DELETE FROM user_template_versions \
+                 WHERE template_id = $1 AND version_id = $2",
+                &[&template_id, &version_id],
+            )? as usize,
+        };
+        if changed == 0 {
+            return Err(StoreError::NotFound(format!(
+                "user template version {template_id}/{version_id}"
+            )));
+        }
+        Ok(())
     }
 
     /// Upsert one tenant row (`tenants`, `(id, json)`), idempotent on the id (wp26 tenancy). The
@@ -6362,6 +6787,30 @@ fn row_to_document(
             created_at: parse_rfc3339(&created_at_raw)?,
             pdf_bytes,
             template_spec_json,
+        })
+    })())
+}
+
+/// Map one `user_template_versions` row to its durable snapshot. Timestamp parsing is deferred into
+/// the inner [`StoreError`] result, matching the other timestamp-bearing row mappers.
+#[allow(clippy::type_complexity)]
+fn row_to_user_template_version(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredUserTemplateVersion, StoreError>> {
+    let version_id: String = row.get(0)?;
+    let template_id: String = row.get(1)?;
+    let name: Option<String> = row.get(2)?;
+    let template_json: String = row.get(3)?;
+    let created_at_raw: String = row.get(4)?;
+    let created_by: String = row.get(5)?;
+    Ok((|| {
+        Ok(StoredUserTemplateVersion {
+            version_id,
+            template_id,
+            name,
+            template_json,
+            created_at: parse_rfc3339(&created_at_raw)?,
+            created_by,
         })
     })())
 }
@@ -7765,6 +8214,326 @@ mod tests {
         drop(store);
         let reopened = Store::open(dir.path()).expect("reopen");
         assert_eq!(reopened.user_templates().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn user_template_insert_refuses_duplicate_without_overwriting_then_upsert_updates() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let id = "user-insert-only/v1";
+        let original = r#"{"id":"user-insert-only/v1","title":"original"}"#;
+        let collision = r#"{"id":"user-insert-only/v1","title":"must-not-win"}"#;
+
+        store
+            .persist(|tx| tx.insert_user_template(id, original))
+            .expect("first insert");
+        let duplicate = store.persist(|tx| tx.insert_user_template(id, collision));
+        assert!(
+            matches!(duplicate, Err(StoreError::AlreadyExists(_))),
+            "duplicate insert must have a backend-independent conflict: {duplicate:?}"
+        );
+        assert_eq!(
+            store.user_template(id).unwrap().as_deref(),
+            Some(original),
+            "the colliding create never overwrites the durable row"
+        );
+
+        store
+            .persist(|tx| tx.upsert_user_template(id, collision))
+            .expect("explicit update");
+        assert_eq!(
+            store.user_template(id).unwrap().as_deref(),
+            Some(collision),
+            "the update path remains a true conflict-update"
+        );
+    }
+
+    #[test]
+    fn update_only_cannot_resurrect_template_deleted_after_barrier_read() {
+        let dir = TempDir::new();
+        let seed = Store::open(dir.path()).expect("open seed");
+        let id = "user-update-race/v1";
+        seed.persist(|tx| tx.insert_user_template(id, r#"{"id":"user-update-race/v1"}"#))
+            .expect("seed template");
+        drop(seed);
+
+        let stale_writer = Store::open(dir.path()).expect("open stale writer");
+        let deleter = Store::open(dir.path()).expect("open deleter");
+        let read_barrier = Arc::new(std::sync::Barrier::new(2));
+        let delete_barrier = Arc::new(std::sync::Barrier::new(2));
+        let worker_read = Arc::clone(&read_barrier);
+        let worker_deleted = Arc::clone(&delete_barrier);
+        let id_for_worker = id.to_owned();
+        let worker = std::thread::spawn(move || {
+            assert!(
+                stale_writer
+                    .user_template(&id_for_worker)
+                    .expect("stale pre-read")
+                    .is_some()
+            );
+            worker_read.wait();
+            worker_deleted.wait();
+            stale_writer.persist(|tx| {
+                tx.update_user_template(
+                    &id_for_worker,
+                    r#"{"id":"user-update-race/v1","resurrected":true}"#,
+                )
+            })
+        });
+
+        read_barrier.wait();
+        deleter
+            .persist(|tx| tx.delete_user_template(id))
+            .expect("delete after stale read");
+        delete_barrier.wait();
+        let update = worker.join().expect("update worker joined");
+        assert!(
+            matches!(update, Err(StoreError::NotFound(_))),
+            "stale update must resolve as not found: {update:?}"
+        );
+        assert!(
+            deleter.user_template(id).expect("final read").is_none(),
+            "update-only semantics cannot resurrect the deleted template"
+        );
+    }
+
+    #[test]
+    fn restore_transaction_cannot_resurrect_template_deleted_after_barrier_read() {
+        let dir = TempDir::new();
+        let seed = Store::open(dir.path()).expect("open seed");
+        let id = "user-restore-race/v1";
+        let source = StoredUserTemplateVersion {
+            version_id: "restore-source".to_owned(),
+            template_id: id.to_owned(),
+            name: Some("Before delete".to_owned()),
+            template_json: r#"{"id":"user-restore-race/v1","body":"exact source"}"#.to_owned(),
+            created_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
+            created_by: "document.owner".to_owned(),
+        };
+        seed.persist(|tx| {
+            tx.insert_user_template(id, &source.template_json)?;
+            tx.insert_user_template_version(&source, 25)
+        })
+        .expect("seed template and restore source");
+        drop(seed);
+
+        let stale_writer = Store::open(dir.path()).expect("open stale writer");
+        let deleter = Store::open(dir.path()).expect("open deleter");
+        let read_barrier = Arc::new(std::sync::Barrier::new(2));
+        let delete_barrier = Arc::new(std::sync::Barrier::new(2));
+        let worker_read = Arc::clone(&read_barrier);
+        let worker_deleted = Arc::clone(&delete_barrier);
+        let id_for_worker = id.to_owned();
+        let worker = std::thread::spawn(move || {
+            let stale_source = stale_writer
+                .user_template_version(&id_for_worker, "restore-source")
+                .expect("stale source read")
+                .expect("source existed before delete");
+            worker_read.wait();
+            worker_deleted.wait();
+            let appended = StoredUserTemplateVersion {
+                version_id: "restored-save".to_owned(),
+                template_id: id_for_worker.clone(),
+                name: None,
+                template_json: stale_source.template_json.clone(),
+                created_at: OffsetDateTime::from_unix_timestamp(2).expect("timestamp"),
+                created_by: "document.owner".to_owned(),
+            };
+            stale_writer.persist(|tx| {
+                tx.require_user_template_version(&id_for_worker, "restore-source")?;
+                tx.update_user_template(&id_for_worker, &stale_source.template_json)?;
+                tx.insert_user_template_version(&appended, 25)
+            })
+        });
+
+        read_barrier.wait();
+        deleter
+            .persist(|tx| tx.delete_user_template(id))
+            .expect("delete after stale restore read");
+        delete_barrier.wait();
+        let restore = worker.join().expect("restore worker joined");
+        assert!(
+            matches!(restore, Err(StoreError::NotFound(_))),
+            "stale restore must resolve as not found: {restore:?}"
+        );
+        assert!(deleter.user_template(id).expect("final read").is_none());
+        assert!(
+            deleter
+                .user_template_versions(id)
+                .expect("final history")
+                .is_empty(),
+            "failed restore neither recreates the parent nor appends a save"
+        );
+    }
+
+    #[test]
+    fn reopened_history_is_pruned_to_lower_limit_and_limited_reads_never_over_advertise() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        for template_id in ["user-retention-a/v1", "user-retention-b/v1"] {
+            store
+                .persist(|tx| tx.insert_user_template(template_id, "{}"))
+                .expect("insert parent");
+            for second in 1..=5 {
+                let version = StoredUserTemplateVersion {
+                    version_id: format!("{template_id}-v{second}"),
+                    template_id: template_id.to_owned(),
+                    name: None,
+                    template_json: format!(r#"{{"id":"{template_id}","save":{second}}}"#),
+                    created_at: OffsetDateTime::from_unix_timestamp(second).expect("timestamp"),
+                    created_by: "document.owner".to_owned(),
+                };
+                store
+                    .persist(|tx| tx.insert_user_template_version(&version, 100))
+                    .expect("append unbounded test save");
+            }
+        }
+        drop(store);
+
+        let reopened = Store::open(dir.path()).expect("reopen");
+        assert_eq!(
+            reopened
+                .user_template_versions_limited("user-retention-a/v1", 2)
+                .expect("limited read")
+                .len(),
+            2,
+            "a lowered advertised limit is honored before maintenance runs"
+        );
+        assert_eq!(
+            reopened
+                .prune_user_template_versions(2)
+                .expect("startup retention prune"),
+            6,
+            "three old saves are removed from each existing template"
+        );
+        for template_id in ["user-retention-a/v1", "user-retention-b/v1"] {
+            let retained = reopened
+                .user_template_versions(template_id)
+                .expect("retained history");
+            assert_eq!(retained.len(), 2);
+            assert!(retained[0].version_id.ends_with("-v5"));
+            assert!(retained[1].version_id.ends_with("-v4"));
+        }
+        drop(reopened);
+
+        let reopened_again = Store::open(dir.path()).expect("reopen after prune");
+        assert_eq!(
+            reopened_again
+                .user_template_versions("user-retention-a/v1")
+                .expect("durable pruned history")
+                .len(),
+            2,
+            "the lowered cap survives another SQLite reopen"
+        );
+    }
+
+    #[test]
+    fn user_template_versions_preserve_body_prune_rename_restore_source_and_cascade() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let template_id = "user-history-ata/v1";
+        let first_json =
+            r#"{"id":"user-history-ata/v1","default_body":[{"heading":"Ata","text":"Primeira"}]}"#;
+        let second_json =
+            r#"{"id":"user-history-ata/v1","default_body":[{"heading":"Ata","text":"Segunda"}]}"#;
+
+        let version = |id: &str, json: &str, second: i64| StoredUserTemplateVersion {
+            version_id: id.to_owned(),
+            template_id: template_id.to_owned(),
+            name: Some(format!("Save {id}")),
+            template_json: json.to_owned(),
+            created_at: OffsetDateTime::from_unix_timestamp(second).expect("test timestamp"),
+            created_by: "amelia.marques".to_owned(),
+        };
+        let v1 = version("v1", first_json, 1);
+        let v2 = version("v2", second_json, 2);
+        let v3 = version("v3", second_json, 3);
+
+        store
+            .persist(|tx| {
+                tx.upsert_user_template(template_id, first_json)?;
+                tx.insert_user_template_version(&v1, 2)
+            })
+            .expect("initial template save");
+        store
+            .persist(|tx| {
+                // This true conflict-update must not fire the history FK's delete cascade.
+                tx.upsert_user_template(template_id, second_json)?;
+                tx.insert_user_template_version(&v2, 2)
+            })
+            .expect("second template save");
+        let first_two = store.user_template_versions(template_id).unwrap();
+        assert_eq!(
+            first_two
+                .iter()
+                .map(|row| row.version_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["v2", "v1"]
+        );
+        assert_eq!(first_two[1].template_json, first_json);
+        assert!(first_two[1].template_json.contains("\"default_body\""));
+
+        store
+            .persist(|tx| tx.insert_user_template_version(&v3, 2))
+            .expect("third save prunes oldest");
+        assert_eq!(
+            store
+                .user_template_versions(template_id)
+                .unwrap()
+                .iter()
+                .map(|row| row.version_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["v3", "v2"]
+        );
+        assert!(
+            store
+                .user_template_version(template_id, "v1")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .user_template_version("user-other/v1", "v2")
+                .unwrap()
+                .is_none(),
+            "a version cannot be addressed through another template id"
+        );
+
+        store
+            .persist(|tx| {
+                tx.rename_user_template_version(template_id, "v2", Some("Friendly checkpoint"))
+            })
+            .expect("rename save");
+        assert_eq!(
+            store
+                .user_template_version(template_id, "v2")
+                .unwrap()
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("Friendly checkpoint")
+        );
+        store
+            .persist(|tx| tx.delete_user_template_version(template_id, "v2"))
+            .expect("delete save");
+
+        drop(store);
+        let reopened = Store::open(dir.path()).expect("reopen");
+        assert_eq!(
+            reopened.user_template_versions(template_id).unwrap().len(),
+            1,
+            "history survives restart"
+        );
+        reopened
+            .persist(|tx| tx.delete_user_template(template_id))
+            .expect("delete parent");
+        assert!(
+            reopened
+                .user_template_versions(template_id)
+                .unwrap()
+                .is_empty(),
+            "deleting the user template cascades its history"
+        );
     }
 
     #[test]

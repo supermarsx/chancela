@@ -160,7 +160,12 @@
 ///   signed* termo is the API's job, and the collected per-slot signatures live in the v23
 ///   `instrument_signatures` history keyed on the same `TermoInstrumentId`. Forward-only, additive:
 ///   existing databases gain the table via [`ALL`] and advance their stamp on next open.
-pub const SCHEMA_VERSION: i64 = 26;
+/// - **v27** — adds `user_template_versions`: bounded save-history snapshots for user-authored
+///   templates. Each row preserves the complete opaque template JSON (including the narrative
+///   `default_body`), an optional operator-friendly name, and audit attribution. The parent
+///   `user_templates` row remains the current value; deleting it cascades to its history.
+///   Retention is enforced transactionally by the writer, not by destructive migration.
+pub const SCHEMA_VERSION: i64 = 27;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -859,6 +864,28 @@ CREATE TABLE IF NOT EXISTS user_templates (
     json TEXT NOT NULL
 ) STRICT;";
 
+/// `user_template_versions` — durable bounded save history for user-authored templates (schema
+/// v27). `template_json` is the exact current `user_templates.json` value at save time, opaque to
+/// the store; this intentionally preserves both the spec properties and its narrative
+/// `default_body`. `created_at_unix_nanos` gives pruning a total chronological key independent of
+/// RFC 3339 textual fractional-second formatting; `version_id` breaks the vanishingly rare tie.
+pub const CREATE_USER_TEMPLATE_VERSIONS: &str = "\
+CREATE TABLE IF NOT EXISTS user_template_versions (
+    version_id            TEXT PRIMARY KEY,
+    template_id           TEXT NOT NULL,
+    name                  TEXT,
+    template_json         TEXT NOT NULL,
+    created_at            TEXT NOT NULL,
+    created_at_unix_nanos INTEGER NOT NULL,
+    created_by            TEXT NOT NULL,
+    FOREIGN KEY (template_id) REFERENCES user_templates(id) ON DELETE CASCADE
+) STRICT;";
+
+/// Template history feed + deterministic retention order.
+pub const CREATE_USER_TEMPLATE_VERSIONS_TEMPLATE_IDX: &str = "\
+CREATE INDEX IF NOT EXISTS idx_user_template_versions_template
+ON user_template_versions (template_id, created_at_unix_nanos DESC, version_id DESC);";
+
 /// `subject_keys` — the per-subject Data-Encryption-Key (DEK) wrapping table (schema v18, wp26 GDPR
 /// crypto-erasure).
 ///
@@ -1037,6 +1064,8 @@ pub const ALL: &[&str] = &[
     CREATE_SETTINGS,
     CREATE_PROVIDER_CREDENTIALS,
     CREATE_USER_TEMPLATES,
+    CREATE_USER_TEMPLATE_VERSIONS,
+    CREATE_USER_TEMPLATE_VERSIONS_TEMPLATE_IDX,
     CREATE_SUBJECT_KEYS,
     CREATE_TENANTS,
     CREATE_COMPANY_GROUPS,
@@ -1104,6 +1133,10 @@ pub const LOGICAL_BACKUP_TABLES: &[&str] = &[
     // enrolled phone unknown to the instance.
     "pairing_devices",
     "user_templates",
+    // Save-history snapshots depend on their current user-template parent and must therefore be
+    // restored immediately after it. The table carries the full authored body, so omitting it from
+    // a Postgres logical backup would silently discard every named restore point.
+    "user_template_versions",
     "subject_keys",
     "tenants",
     "company_groups",
