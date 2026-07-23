@@ -463,6 +463,48 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('Definições atualizadas')).toBeNull();
   });
 
+  it('links the broadened activity kinds (user, administration, tools) and drops non-link scopes', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      recent_events: [
+        eventFor(1, { kind: 'ledger.recovered', scope: 'global' }),
+        eventFor(2, { kind: 'user.created', scope: 'user:user-2' }),
+        eventFor(3, { kind: 'role.updated', scope: 'role:role-3' }),
+        eventFor(4, { kind: 'settings.updated', scope: 'settings' }),
+        eventFor(5, { kind: 'registry.imported', scope: 'tenant:t/repository:repo-5' }),
+        eventFor(6, { kind: 'law.reviewed', scope: 'law' }),
+        eventFor(7, { kind: 'trust.updated', scope: 'trust' }),
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Atividade recente');
+
+    const activity = await screen.findByRole('list', {
+      name: 'Atividade recente de atas, livros e entidades',
+    });
+    const items = within(activity).getAllByRole('listitem');
+    // The `global` recovery event resolves to nothing and is dropped; the other six are shown.
+    expect(items).toHaveLength(6);
+
+    // Each row's title is a real anchor pointing at the page the event refers to; newest first.
+    const links = within(activity).getAllByRole('link');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/tools/trust', // trust.updated (seq 7)
+      '/tools/legislation', // law.reviewed (seq 6)
+      '/admin/repositories', // registry.imported → tenant/repository (seq 5)
+      '/settings', // settings.updated (seq 4)
+      '/settings/users', // role.updated (seq 3)
+      '/users/user-2', // user.created (seq 2)
+    ]);
+
+    // The three broadened badge groups read their pt-PT labels from the owned fallback module.
+    expect(within(activity).getAllByText('Utilizador')).toHaveLength(2); // user + role
+    expect(within(activity).getAllByText('Administração')).toHaveLength(2); // settings + repository
+    expect(within(activity).getAllByText('Ferramentas')).toHaveLength(2); // law + trust
+  });
+
   it('renders open books, active act states, and dated reminders from current dashboard data', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,

@@ -8,6 +8,7 @@ import type {
 } from '../../api/types';
 import type { TFunction } from '../../i18n';
 import {
+  type ActivityCategory,
   buildDashboardWorkQueue,
   compareByRecency,
   compareDashboardQueueItems,
@@ -41,7 +42,9 @@ import {
   profileCalendarPlanMeta,
   recentActivityItems,
   reminderHasMissingMeetingDate,
+  resolveDashboardActivity,
   routeFromDashboardActivity,
+  scopeSegmentId,
   routeFromDashboardAlert,
   routeFromDashboardReminder,
   sortedDashboardOpenBooks,
@@ -49,6 +52,9 @@ import {
 } from './DashboardPage';
 
 const t = ((key: string) => key) as TFunction;
+// The owned-fallback resolver the feed passes for the broadened chip labels; the identity mock
+// mirrors `t` so an assertion can read the key back.
+const activityT = (key: string) => key;
 
 function event(overrides: Partial<LedgerEventView> = {}): LedgerEventView {
   return {
@@ -145,7 +151,9 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
       'warn',
     ]);
     expect(
-      ['act', 'book', 'entity'].map((kind) => dashboardActivityLabel(kind as never, t)),
+      ['act', 'book', 'entity'].map((kind) =>
+        dashboardActivityLabel(kind as never, t, activityT as never),
+      ),
     ).toEqual([
       'dashboard.activity.kind.act',
       'dashboard.activity.kind.book',
@@ -164,6 +172,111 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
         ),
       ]),
     ).toHaveLength(10);
+  });
+
+  it('finds a token id anywhere in a composed scope path, not just at its head', () => {
+    expect(scopeSegmentId('act:A1', 'act')).toBe('A1');
+    expect(scopeSegmentId('book:B1/act:A1', 'act')).toBe('A1');
+    expect(scopeSegmentId('tenant:T/entity:E1/book:B1/act:A1', 'act')).toBe('A1');
+    expect(scopeSegmentId('tenant:T/entity:E1/book:B1/act:A1', 'book')).toBe('B1');
+    expect(scopeSegmentId('book:B1/act:A1', 'entity')).toBeUndefined();
+    // The whole-string prefix test that the old resolver used would have mis-read this.
+    expect(idFromScopedValue('book:B1/act:A1', 'act')).toBeUndefined();
+  });
+
+  it('resolves a composed act scope to the act, not the book prefix it starts with', () => {
+    const composed = event({ kind: 'act.sealed', scope: 'tenant:T/entity:E1/book:B1/act:A1' });
+    expect(dashboardActivityKind(composed)).toBe('act');
+    expect(resolveDashboardActivity(composed)).toEqual({ category: 'act', href: '/acts/A1' });
+    expect(routeFromDashboardActivity(composed, 'act')).toBe('/acts/A1');
+
+    // A composed book scope (no act segment) still resolves the book, not the tenant/entity head.
+    const composedBook = event({ kind: 'book.opened', scope: 'tenant:T/entity:E1/book:B1' });
+    expect(resolveDashboardActivity(composedBook)).toEqual({ category: 'book', href: '/books/B1' });
+  });
+
+  it('routes each broadened scope token to its surface with the right badge group', () => {
+    const cases: {
+      scope: string;
+      category: ActivityCategory;
+      href: string;
+    }[] = [
+      { scope: 'user:U1', category: 'user', href: '/users/U1' },
+      { scope: 'user', category: 'user', href: '/settings/users' },
+      { scope: 'role:R1', category: 'user', href: '/settings/users' },
+      { scope: 'repository:REPO1', category: 'admin', href: '/admin/repositories' },
+      { scope: 'settings', category: 'admin', href: '/settings' },
+      { scope: 'provider_credentials', category: 'admin', href: '/settings/signing/providers' },
+      { scope: 'platform', category: 'admin', href: '/admin' },
+      { scope: 'backup', category: 'admin', href: '/admin' },
+      { scope: 'email', category: 'admin', href: '/admin' },
+      { scope: 'api-key', category: 'admin', href: '/admin' },
+      { scope: 'recovery', category: 'admin', href: '/archive' },
+      { scope: 'book_archive', category: 'admin', href: '/archive' },
+      { scope: 'archive:AR1', category: 'admin', href: '/archive' },
+      { scope: 'law', category: 'tools', href: '/tools/legislation' },
+      { scope: 'cae', category: 'tools', href: '/tools/cae' },
+      { scope: 'trust', category: 'tools', href: '/tools/trust' },
+    ];
+
+    for (const testCase of cases) {
+      const target = resolveDashboardActivity(event({ kind: 'x.changed', scope: testCase.scope }));
+      expect(target).toEqual({ category: testCase.category, href: testCase.href });
+      expect(dashboardActivityKind(event({ kind: 'x.changed', scope: testCase.scope }))).toBe(
+        testCase.category,
+      );
+    }
+
+    // Most-specific wins for a composed admin scope: the deepest routable token, the repository.
+    expect(
+      resolveDashboardActivity(event({ kind: 'x.changed', scope: 'tenant:T/repository:REPO1' })),
+    ).toEqual({ category: 'admin', href: '/admin/repositories' });
+  });
+
+  it('keeps the broadened feed but drops weak, non-linkable scopes', () => {
+    // The previously-dropped kinds now appear in the feed AND carry a link (D1).
+    const broadened = [
+      event({ id: 'U', seq: 5, kind: 'user.created', scope: 'user:U1' }),
+      event({ id: 'S', seq: 4, kind: 'settings.updated', scope: 'settings' }),
+      event({ id: 'L', seq: 3, kind: 'law.reviewed', scope: 'law' }),
+    ];
+    const items = recentActivityItems(broadened);
+    expect(items.map((item) => item.category)).toEqual(['user', 'admin', 'tools']);
+    expect(items.map((item) => item.href)).toEqual([
+      '/users/U1',
+      '/settings',
+      '/tools/legislation',
+    ]);
+
+    // Non-link scopes resolve to nothing and are not shown (D2): tenant/delegation/global/unknown.
+    for (const scope of ['global', 'application', 'tenant:T1', 'delegation:D1', 'mystery']) {
+      expect(resolveDashboardActivity(event({ kind: 'x.changed', scope }))).toBeNull();
+      expect(dashboardActivityKind(event({ kind: 'x.changed', scope }))).toBeNull();
+    }
+    // imported-document / paper-book-import are recognised scope types but deliberately non-link.
+    expect(
+      resolveDashboardActivity(event({ kind: 'x.changed', scope: 'imported-document:DOC1' })),
+    ).toBeNull();
+    expect(
+      resolveDashboardActivity(event({ kind: 'x.changed', scope: 'paper-book-import:PB1' })),
+    ).toBeNull();
+  });
+
+  it('gives the broadened chips a tone and reads their labels from the owned fallback', () => {
+    expect((['user', 'admin', 'tools'] as const).map(dashboardActivityTone)).toEqual([
+      'accent',
+      'neutral',
+      'accent',
+    ]);
+    expect(
+      (['user', 'admin', 'tools'] as const).map((category) =>
+        dashboardActivityLabel(category, t, activityT as never),
+      ),
+    ).toEqual([
+      'dashboard.activity.category.user',
+      'dashboard.activity.category.admin',
+      'dashboard.activity.category.tools',
+    ]);
   });
 
   it('validates reminder dates, status presentation, deduplication, and calendar metadata', () => {
@@ -221,13 +334,7 @@ describe('Dashboard pure routing, ordering, and queue logic', () => {
     expect(dashboardMessageKey('  dashboard.metric.entities ')).toBe('dashboard.metric.entities');
     expect(dashboardMessageKey('  ')).toBeUndefined();
     expect(dashboardMessageKey(undefined)).toBeUndefined();
-    for (const route of [
-      '/entities',
-      '/books/B1',
-      '/acts/A1',
-      '/archive?q=x',
-      '/settings',
-    ]) {
+    for (const route of ['/entities', '/books/B1', '/acts/A1', '/archive?q=x', '/settings']) {
       expect(dashboardFrontendRouteFromApi(route)).toBe(route);
     }
     expect(dashboardFrontendRouteFromApi('/v1/entities/E1?x=1')).toBe('/entities/E1');

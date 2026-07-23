@@ -46,7 +46,12 @@ import {
 } from '../../ui';
 import { LedgerTable } from '../ledger/LedgerTable';
 import { scopeSummaryLabel, useLedgerScopeNames } from '../ledger/LedgerScopeCell';
+import { parseScope } from '../ledger/scopeLabel';
 import { actConveningGuidanceRoute } from '../acts/anchors';
+import {
+  useDashboardActivityT,
+  type DashboardActivityCopyKey,
+} from '../../i18n/dashboardActivityFallback';
 import './DashboardPage.css';
 
 const NO_ACT_COUNTS: DashboardActStateCounts = {
@@ -91,7 +96,14 @@ const SUMMARY_LIST_LIMIT = 5;
 const DASHBOARD_TAB_BASE = '/dashboard';
 
 type QueueTone = 'neutral' | 'accent' | 'warn' | 'error';
-type ActivityKind = 'act' | 'book' | 'entity';
+/**
+ * The badge grouping the activity feed puts on each event. `act`/`book`/`entity` keep the original
+ * chips (shared catalog `dashboard.activity.kind.*`); the broadened feed (t54) adds three grouping
+ * chips — `user` (person / account / role), `admin` (settings, repositories, provider credentials,
+ * platform/backup/e-mail/API keys, recovery, book archive) and `tools` (legislation, CAE, trust) —
+ * whose labels live in the owned `dashboardActivityFallback` module.
+ */
+export type ActivityCategory = 'act' | 'book' | 'entity' | 'user' | 'admin' | 'tools';
 type DashboardTab = 'current' | 'stats' | 'activity' | 'dates' | 'queue' | 'events';
 
 export interface WorkQueueItem {
@@ -115,7 +127,14 @@ interface ReminderCopy {
 
 interface ActivityItem {
   event: LedgerEventView;
-  kind: ActivityKind;
+  category: ActivityCategory;
+  href?: string;
+}
+
+/** What the scope/chain/kind resolution decided about one event: its badge group and its link. */
+interface ActivityTarget {
+  category: ActivityCategory;
+  /** `undefined` ⇒ a recognised event whose specific target is too weak to link (D2). */
   href?: string;
 }
 
@@ -180,57 +199,160 @@ export function firstChainId(event: LedgerEventView, prefix: string): string | u
   return undefined;
 }
 
-export function dashboardActivityKind(event: LedgerEventView): ActivityKind | null {
-  if (event.kind.startsWith('act.') || idFromScopedValue(event.scope, 'act')) return 'act';
+/**
+ * Find a `token:id` segment ANYWHERE in a `/`-joined scope path, not just at its head.
+ *
+ * `idFromScopedValue` prefix-tests the whole string, so a composed scope like `book:{b}/act:{a}`
+ * never yielded its act (the string starts with `book:`). Splitting on `/` first is the fix the
+ * router resolver needs — the same parse `scopeLabel.parseScope` already does for the friendly name.
+ */
+export function scopeSegmentId(scope: string, prefix: string): string | undefined {
+  for (const part of scope.split('/')) {
+    const id = idFromScopedValue(part, prefix);
+    if (id) return id;
+  }
+  return undefined;
+}
+
+/**
+ * The historical bare-id scope: an id-only scope with no discriminator and none of the app-wide
+ * keywords is an entity id at every current emit site (`entity.statute_updated`, registry imports),
+ * so it keeps the entity interpretation the feed always gave it.
+ */
+function bareEntityScope(scope: string): string | undefined {
+  const value = scope.trim();
+  return value &&
+    !value.includes('/') &&
+    !value.includes(':') &&
+    value !== 'global' &&
+    value !== 'application'
+    ? value
+    : undefined;
+}
+
+/**
+ * The broadened, id-less-or-discriminated scope tokens that now carry a link (D1). Each maps a
+ * scope token to the surface it refers to; `act`/`book`/`entity` are handled ahead of this map with
+ * their existing chain/kind fallbacks. Tokens deliberately ABSENT here render as non-links (D2):
+ * `tenant`, `delegation`, `imported-document`, `paper-book-import`, `global`/`application`, and any
+ * unknown token. `parseScope` re-points a bare keyword `user` to `user_accounts` (the admin roster,
+ * distinct from one person `user:{id}`), so both spellings are mapped.
+ */
+const BROADENED_SCOPE_ROUTES: Record<string, (id: string | null) => ActivityTarget> = {
+  user: (id) => ({ category: 'user', href: id ? `/users/${id}` : '/settings/users' }),
+  user_accounts: () => ({ category: 'user', href: '/settings/users' }),
+  role: () => ({ category: 'user', href: '/settings/users' }),
+  repository: () => ({ category: 'admin', href: '/admin/repositories' }),
+  settings: () => ({ category: 'admin', href: '/settings' }),
+  provider_credentials: () => ({ category: 'admin', href: '/settings/signing/providers' }),
+  platform: () => ({ category: 'admin', href: '/admin' }),
+  backup: () => ({ category: 'admin', href: '/admin' }),
+  email: () => ({ category: 'admin', href: '/admin' }),
+  'api-key': () => ({ category: 'admin', href: '/admin' }),
+  recovery: () => ({ category: 'admin', href: '/archive' }),
+  book_archive: () => ({ category: 'admin', href: '/archive' }),
+  archive: () => ({ category: 'admin', href: '/archive' }),
+  law: () => ({ category: 'tools', href: '/tools/legislation' }),
+  cae: () => ({ category: 'tools', href: '/tools/cae' }),
+  trust: () => ({ category: 'tools', href: '/tools/trust' }),
+};
+
+/**
+ * Resolve one event to the page it refers to. Act/book/entity keep their original precedence and
+ * (now composed-scope-aware) resolution; the broadened tokens are read from the DEEPEST routable
+ * scope segment so `tenant:{t}/repository:{r}` resolves the repository, not the tenant prefix. An
+ * event that maps to nothing meaningful (tenant/delegation/global/unknown, no chain, no kind hint)
+ * returns `null` and is dropped from the feed rather than shown as a dead row.
+ */
+export function resolveDashboardActivity(event: LedgerEventView): ActivityTarget | null {
+  if (event.kind.startsWith('act.') || scopeSegmentId(event.scope, 'act')) {
+    const id = scopeSegmentId(event.scope, 'act');
+    return { category: 'act', href: id ? `/acts/${id}` : undefined };
+  }
   if (
     event.kind.startsWith('book.') ||
-    idFromScopedValue(event.scope, 'book') ||
+    scopeSegmentId(event.scope, 'book') ||
     firstChainId(event, 'book')
   ) {
-    return 'book';
+    const id = scopeSegmentId(event.scope, 'book') ?? firstChainId(event, 'book');
+    return { category: 'book', href: id ? `/books/${id}` : undefined };
   }
   if (
     event.kind.startsWith('entity.') ||
-    idFromScopedValue(event.scope, 'entity') ||
+    scopeSegmentId(event.scope, 'entity') ||
     firstChainId(event, 'company')
   ) {
-    return 'entity';
+    const id =
+      scopeSegmentId(event.scope, 'entity') ??
+      firstChainId(event, 'company') ??
+      bareEntityScope(event.scope);
+    return { category: 'entity', href: id ? `/entities/${id}` : undefined };
+  }
+
+  // Broadened tokens: walk the parsed segments most-specific (deepest) first, taking the first
+  // routable token. The same parse the friendly-name renderer uses, so the two never disagree.
+  const segments = parseScope(event.scope);
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const segment = segments[index];
+    const token = segment.token;
+    if (token && Object.prototype.hasOwnProperty.call(BROADENED_SCOPE_ROUTES, token)) {
+      return BROADENED_SCOPE_ROUTES[token](segment.id);
+    }
   }
   return null;
 }
 
+/**
+ * The badge group for an event. Kept for the feed and its tests; delegates to
+ * {@link resolveDashboardActivity}. `null` ⇒ the event does not belong in the feed.
+ */
+export function dashboardActivityKind(event: LedgerEventView): ActivityCategory | null {
+  return resolveDashboardActivity(event)?.category ?? null;
+}
+
+/**
+ * The link an event's title points at, or `undefined` for a non-link row. The `category` argument
+ * is the group already resolved for the event; the href is derived from the same resolution.
+ */
 export function routeFromDashboardActivity(
   event: LedgerEventView,
-  kind: ActivityKind,
+  category: ActivityCategory,
 ): string | undefined {
-  if (kind === 'act') {
-    const actId = idFromScopedValue(event.scope, 'act');
-    return actId ? `/acts/${actId}` : undefined;
-  }
-  if (kind === 'book') {
-    const bookId = idFromScopedValue(event.scope, 'book') ?? firstChainId(event, 'book');
-    return bookId ? `/books/${bookId}` : undefined;
-  }
-
-  const entityId =
-    idFromScopedValue(event.scope, 'entity') ??
-    firstChainId(event, 'company') ??
-    (!event.scope.includes(':') && event.scope !== 'global' && event.scope !== 'application'
-      ? event.scope
-      : undefined);
-  return entityId ? `/entities/${entityId}` : undefined;
+  const target = resolveDashboardActivity(event);
+  return target && target.category === category ? target.href : undefined;
 }
 
-export function dashboardActivityTone(kind: ActivityKind): QueueTone {
-  if (kind === 'act') return 'accent';
-  if (kind === 'book') return 'neutral';
-  return 'warn';
+export function dashboardActivityTone(category: ActivityCategory): QueueTone {
+  if (category === 'act') return 'accent';
+  if (category === 'book') return 'neutral';
+  if (category === 'entity') return 'warn';
+  if (category === 'admin') return 'neutral';
+  return 'accent';
 }
 
-export function dashboardActivityLabel(kind: ActivityKind, t: TFunction): string {
-  if (kind === 'act') return t('dashboard.activity.kind.act');
-  if (kind === 'book') return t('dashboard.activity.kind.book');
-  return t('dashboard.activity.kind.entity');
+const BROADENED_CATEGORY_LABELS: Record<
+  Exclude<ActivityCategory, 'act' | 'book' | 'entity'>,
+  DashboardActivityCopyKey
+> = {
+  user: 'dashboard.activity.category.user',
+  admin: 'dashboard.activity.category.admin',
+  tools: 'dashboard.activity.category.tools',
+};
+
+/**
+ * The badge label for an event's group. The three original chips keep the shared catalog keys; the
+ * broadened chips read the owned fallback via `activityT` (the `dashboardActivityFallback` module),
+ * so nothing new is added to the contended locale catalogs.
+ */
+export function dashboardActivityLabel(
+  category: ActivityCategory,
+  t: TFunction,
+  activityT: (key: DashboardActivityCopyKey) => string,
+): string {
+  if (category === 'act') return t('dashboard.activity.kind.act');
+  if (category === 'book') return t('dashboard.activity.kind.book');
+  if (category === 'entity') return t('dashboard.activity.kind.entity');
+  return activityT(BROADENED_CATEGORY_LABELS[category]);
 }
 
 export function recentActivityItems(events: LedgerEventView[]): ActivityItem[] {
@@ -239,9 +361,9 @@ export function recentActivityItems(events: LedgerEventView[]): ActivityItem[] {
     .sort(compareByRecency)
     .reduce<ActivityItem[]>((items, event) => {
       if (items.length >= RECENT_EVENTS_LIMIT) return items;
-      const kind = dashboardActivityKind(event);
-      if (!kind) return items;
-      items.push({ event, kind, href: routeFromDashboardActivity(event, kind) });
+      const target = resolveDashboardActivity(event);
+      if (!target) return items;
+      items.push({ event, category: target.category, href: target.href });
       return items;
     }, []);
 }
@@ -824,6 +946,7 @@ function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
 
 function RecentActivity({ data }: { data: Dashboard }) {
   const t = useT();
+  const activityT = useDashboardActivityT();
   const items = recentActivityItems(data.recent_events);
   // The same permission-filtered entity/book name resolution the Arquivo's `Âmbito` column uses,
   // so a scope reads as `Entidade — Encosto Estratégico Lda` instead of a raw `entity:0a20de34`.
@@ -840,15 +963,15 @@ function RecentActivity({ data }: { data: Dashboard }) {
           className="dashboard-list dashboard-list--activity"
           aria-label={t('dashboard.activity.aria')}
         >
-          {items.map(({ event, kind, href }) => {
+          {items.map(({ event, category, href }) => {
             const title = ledgerEventKindLabel(event.kind);
             // The raw dotted id is what the Arquivo filter takes, so keep it one hover away.
             const rawKind = t('dashboard.activity.eventTitle', { kind: event.kind });
             return (
               <li className="dashboard-list__item" key={event.id}>
                 <div className="dashboard-list__head">
-                  <Badge tone={dashboardActivityTone(kind)}>
-                    {dashboardActivityLabel(kind, t)}
+                  <Badge tone={dashboardActivityTone(category)}>
+                    {dashboardActivityLabel(category, t, activityT)}
                   </Badge>
                   {href ? (
                     <Tooltip label={rawKind}>
