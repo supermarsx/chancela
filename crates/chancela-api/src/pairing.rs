@@ -114,6 +114,21 @@ impl PairingRegistry {
         }))
     }
 
+    /// Return whether `token` belongs to an active enrolled companion device.
+    ///
+    /// Session authentication alone deliberately grants the companion its user's identity. This
+    /// durable classification preserves the lower assurance of pairing-created sessions across
+    /// restarts, so they cannot be mistaken for password-authenticated operator sessions.
+    pub(crate) async fn is_companion_session(&self, token: &str) -> bool {
+        let digest = session_token_digest(token);
+        self.0
+            .devices
+            .read()
+            .await
+            .values()
+            .any(|device| device.revoked_at_unix.is_none() && device.token_sha256 == digest)
+    }
+
     /// Mint a fresh single-use pairing code for `user_id`, retaining only its digest, and prune any
     /// already-expired outstanding codes. Returns the plaintext code (shown once, as a QR/deep-link).
     async fn mint_code(&self, user_id: Uuid, label: String, now: OffsetDateTime) -> String {
@@ -217,6 +232,11 @@ fn sanitize_label(label: Option<String>) -> String {
 /// Resolve the acting operator's [`UserId`] from an **interactive session** (pairing is initiated by
 /// a signed-in operator, not by an API key). A key-authenticated or user-less request is refused.
 async fn resolve_operator(state: &AppState, actor: &CurrentActor) -> Result<UserId, ApiError> {
+    if actor.is_companion_session() {
+        return Err(ApiError::Forbidden(
+            "o emparelhamento requer uma sessão interativa".to_owned(),
+        ));
+    }
     let Some(username) = actor.session_username() else {
         return Err(ApiError::Forbidden(
             "o emparelhamento requer uma sessão interativa".to_owned(),
@@ -657,6 +677,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn companion_session_cannot_enroll_another_device() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let code = mint_code(&state, &operator).await;
+        let (status, exchanged) = exchange(&state, &code).await;
+        assert_eq!(status, StatusCode::OK, "exchange: {exchanged}");
+
+        let companion = exchanged["token"].as_str().unwrap();
+        let response = crate::router(state.clone())
+            .oneshot(auth_request(
+                Method::POST,
+                "/v1/pairing/codes",
+                companion,
+                json!({ "label": "attacker clone" }),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
     async fn unknown_code_is_rejected() {
         let state = AppState::default();
         let (status, _) = exchange(&state, "definitely-not-a-real-code").await;
@@ -790,6 +832,19 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK, "list after restart: {devices}");
         assert_eq!(devices["devices"][0]["device_id"], device_id);
+
+        // Rehydration preserves the companion session's lower assurance: it still cannot enroll
+        // another device after the process boundary.
+        let response = crate::router(restarted.clone())
+            .oneshot(auth_request(
+                Method::POST,
+                "/v1/pairing/codes",
+                &companion,
+                json!({ "label": "attacker clone" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
         // Revoke on the restarted node (no in-process live token) still kills the companion session.
         let response = crate::router(restarted.clone())

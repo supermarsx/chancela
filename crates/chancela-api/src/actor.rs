@@ -58,7 +58,7 @@ pub struct CurrentActor {
 
 #[derive(Debug, Clone)]
 enum ActorCredential {
-    Session { username: String },
+    Session { username: String, companion: bool },
     ApiKey { principal: RequestPrincipal },
 }
 
@@ -67,7 +67,7 @@ impl CurrentActor {
     /// otherwise `request_actor` (which already carries its own default, e.g. `"api"`).
     pub fn resolve(&self, request_actor: &str) -> String {
         match &self.credential {
-            Some(ActorCredential::Session { username }) => username.clone(),
+            Some(ActorCredential::Session { username, .. }) => username.clone(),
             Some(ActorCredential::ApiKey { principal }) => principal.actor_label.clone(),
             None => request_actor.to_owned(),
         }
@@ -76,9 +76,20 @@ impl CurrentActor {
     /// The session `username`, if a valid session was presented.
     pub fn session_username(&self) -> Option<&str> {
         match &self.credential {
-            Some(ActorCredential::Session { username }) => Some(username),
+            Some(ActorCredential::Session { username, .. }) => Some(username),
             _ => None,
         }
+    }
+
+    /// Whether the request used a lower-assurance companion-device session.
+    pub(crate) fn is_companion_session(&self) -> bool {
+        matches!(
+            self.credential,
+            Some(ActorCredential::Session {
+                companion: true,
+                ..
+            })
+        )
     }
 
     /// The resolved API-key principal, if this request authenticated with `Authorization: Bearer`.
@@ -100,7 +111,10 @@ impl CurrentActor {
     /// present (t64-E3).
     pub(crate) fn from_session_username(username: Option<String>) -> Self {
         CurrentActor {
-            credential: username.map(|username| ActorCredential::Session { username }),
+            credential: username.map(|username| ActorCredential::Session {
+                username,
+                companion: false,
+            }),
         }
     }
 }
@@ -123,7 +137,10 @@ impl FromRequestParts<AppState> for CurrentActor {
         if let Some(token) = session_token {
             return match resolve_session_actor(state, token).await? {
                 Some(username) => Ok(CurrentActor {
-                    credential: Some(ActorCredential::Session { username }),
+                    credential: Some(ActorCredential::Session {
+                        username,
+                        companion: state.pairing.is_companion_session(token).await,
+                    }),
                 }),
                 None => Err(ApiError::Unauthorized("sessão inválida".to_owned())),
             };
