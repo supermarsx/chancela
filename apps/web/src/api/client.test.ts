@@ -60,6 +60,61 @@ describe('parseResponse', () => {
     expect(err.message).toBe('NIPC inválido');
   });
 
+  it('preserves a bare structured template-validation error', async () => {
+    const err = await catchError(
+      parseResponse(
+        jsonResponse(
+          {
+            code: 'invalid_template',
+            field: 'blocks',
+            message: 'O modelo tem de conter pelo menos um bloco.',
+          },
+          422,
+        ),
+      ),
+    );
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(422);
+    expect(err.code).toBe('invalid_template');
+    expect(err.field).toBe('blocks');
+    expect(err.message).toBe('O modelo tem de conter pelo menos um bloco.');
+  });
+
+  it('preserves code, message and byte offset from a body-preview rejection', async () => {
+    const err = await catchError(
+      parseResponse(
+        jsonResponse(
+          {
+            code: 'unsupported_markdown',
+            offset: 17,
+            message: 'O corpo contém uma tabela não suportada.',
+          },
+          422,
+        ),
+      ),
+    );
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(422);
+    expect(err.code).toBe('unsupported_markdown');
+    expect(err.offset).toBe(17);
+    expect(err.message).toBe('O corpo contém uma tabela não suportada.');
+  });
+
+  it('keeps non-object JSON failures on the generic error path', async () => {
+    for (const body of [['internal detail'], 'internal detail', 42, null]) {
+      const err = await catchError(parseResponse(jsonResponse(body, 422)));
+      expect(err).toBeInstanceOf(ApiError);
+      expect(err.status).toBe(422);
+      expect(err.code).toBeUndefined();
+      expect(err.field).toBeUndefined();
+      expect(err.offset).toBeUndefined();
+      expect(err.message).toContain('422');
+      expect(err.message).not.toContain('internal detail');
+    }
+  });
+
   it('surfaces the issues array on a compliance-blocked seal', async () => {
     const body = {
       error: 'compliance blocked',

@@ -490,8 +490,11 @@ export async function parseResponse<T>(res: Response, path?: string): Promise<T>
   }
 
   if (!res.ok) {
+    // Validation endpoints use both the legacy `{ error }` shape and structured
+    // `{ code, field?, offset?, message }` bodies. Preserve every JSON object so ApiError can
+    // expose those diagnostics; arrays and primitives are not error records and stay generic.
     const body: ApiErrorBody =
-      data && typeof data === 'object' && 'error' in data
+      data !== null && typeof data === 'object' && !Array.isArray(data)
         ? (data as ApiErrorBody)
         : { error: t('error.requestFailed', { status: res.status }) };
     throw new ApiError(res.status, body, proof);
