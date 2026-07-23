@@ -1204,17 +1204,22 @@ dependencies = [
  "chancela-zk",
  "ecdsa 0.16.9",
  "futures-core",
+ "hmac 0.12.1",
  "metrics",
  "metrics-exporter-prometheus",
  "moka",
  "p256 0.13.2",
  "rand_core 0.6.4",
  "reqwest",
+ "rustls-native-certs",
  "serde",
  "serde_json",
+ "sha1 0.10.7",
  "sha2 0.10.9",
+ "subtle",
  "time",
  "tokio",
+ "tokio-rustls",
  "tower-http 0.7.0",
  "tracing",
  "uuid",
@@ -1539,6 +1544,7 @@ version = "26.1.0"
 dependencies = [
  "chancela-core",
  "minijinja",
+ "pulldown-cmark",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -5627,6 +5633,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+dependencies = [
+ "bitflags 2.13.1",
+ "memchr",
+ "unicase",
 ]
 
 [[package]]
