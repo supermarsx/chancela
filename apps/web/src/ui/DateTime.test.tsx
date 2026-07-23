@@ -71,7 +71,7 @@ describe('RelativeDateTime', () => {
 /**
  * The web tsconfig has no `@types/node`, so `node:fs` is reached through the indirect
  * dynamic-import convention documented in `app/motion.test.ts` — a static import runs fine
- * under vitest but breaks `tsc -b`. Comments are stripped so prose ABOUT a rule can never
+ * under vitest but breaks `npm run typecheck`. Comments are stripped so prose ABOUT a rule can never
  * satisfy a match.
  */
 async function themeRules(): Promise<string> {

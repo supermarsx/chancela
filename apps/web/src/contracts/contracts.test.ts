@@ -11,7 +11,7 @@
  * Drift breaks a test on **whichever side moved**:
  *  - if a fixture gains/loses/renames a field, the runtime key-set assertion fails;
  *  - if `api/types.ts` gains/loses/renames a field, the `Record<keyof T, true>` key
- *    map below fails to compile (a missing/excess key), so `tsc -b`/vitest fails.
+ *    map below fails to compile (a missing/excess key), so `npm run typecheck`/vitest fails.
  *
  * Together they pin the shape; the Rust harness (`e2e_contracts.rs`) pins the same
  * fixtures against live server bytes, so a server/DTO change is caught on both ends.
@@ -299,8 +299,8 @@ import {
 // Load each contract fixture as raw text (via Vite's `?raw`) so the mocked `fetch`
 // returns the exact fixture BYTES, not a re-serialised object — the client's real
 // JSON/text path runs on the wire representation. `import.meta.glob` (typed by
-// `vite/client`) keeps the files out of the TS program, so `tsc -b`'s composite
-// rootDir stays confined to `src/` while the fixtures live at the repo root.
+// `vite/client`) keeps the files out of the TS program, so the typecheck input
+// stays confined to `src/` while the fixtures live at the repo root.
 const rawFixtures = import.meta.glob('../../../../contracts/*.json', {
   eager: true,
   query: '?raw',
