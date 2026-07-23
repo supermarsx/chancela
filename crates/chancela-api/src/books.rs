@@ -153,7 +153,9 @@ pub async fn create_book(
             kind,
             kind_label,
             purpose,
+            numbering_scheme,
             opening_date,
+            required_signatories,
             predecessor,
             predecessor_note,
             &actor,
@@ -234,11 +236,7 @@ pub async fn create_book(
                     tx.upsert_document(&stored_for_store)
                 })
                 .await?;
-            state
-                .documents
-                .write()
-                .await
-                .insert(made.stored.act_id, made.stored.clone());
+            crate::documents::replace_owner_document_read_model(&state, &made.stored).await;
         }
         None => {
             // Durably persist the genesis event + the new book row (the prior single-event path).
@@ -265,12 +263,22 @@ async fn create_book_two_phase(
     kind: BookKind,
     kind_label: Option<String>,
     purpose: String,
+    numbering_scheme: chancela_core::NumberingScheme,
     opening_date: String,
+    required_signatories: Vec<crate::dto::TermoSignatoryInput>,
     predecessor: Option<Uuid>,
     predecessor_note: Option<String>,
     actor: &str,
 ) -> Result<(StatusCode, Json<BookView>), ApiError> {
     let _ = actor; // no ledger append at this phase; kept for signature symmetry with one-shot.
+    // Draft instrumentos are store-backed. Refuse before parsing or minting a BookId when the
+    // process is running in the in-memory fallback; otherwise the write-through is a no-op and the
+    // API would return a Created book whose termo immediately 404s.
+    if state.store.is_none() {
+        return Err(ApiError::Unavailable(
+            "two-phase book creation requires durable storage; no book was created".to_owned(),
+        ));
+    }
     // A two-phase draft may leave the opening date for a later PATCH; seed it only if supplied.
     let opening_date = {
         let trimmed = opening_date.trim();
@@ -280,6 +288,31 @@ async fn create_book_two_phase(
             Some(crate::dto::parse_date(trimmed)?)
         }
     };
+    let required_signatories =
+        normalize_termo_signatories(required_signatories, "required_signatories")?;
+    let mut initial_slots = Vec::with_capacity(required_signatories.len());
+    for (index, signatory) in required_signatories.into_iter().enumerate() {
+        let Some(capacity) = signatory.capacity else {
+            return Err(ApiError::Unprocessable(format!(
+                "required_signatories[{index}].capacity is required for the two-phase signing workflow"
+            )));
+        };
+        let order = u16::try_from(index).map_err(|_| {
+            ApiError::Unprocessable(
+                "required_signatories contains more signatories than the signing order supports"
+                    .to_owned(),
+            )
+        })?;
+        let mut slot =
+            chancela_core::termo::TermoSignatorySlot::required(signatory.name, capacity, order);
+        if let Some(email) = signatory.email {
+            slot = slot.with_email(email);
+        }
+        if let Some(note) = signatory.capacity_note {
+            slot = slot.with_capacity_note(note);
+        }
+        initial_slots.push(slot);
+    }
 
     // entities → books → ledger (ledger held only to serialize the durable write, no append).
     let entities = state.entities.read().await;
@@ -290,11 +323,16 @@ async fn create_book_two_phase(
 
     let book = build_created_book(entity_id, kind, kind_label, predecessor, predecessor_note)?;
 
-    // Seed the Draft termo from the family's template `default_body`; the operator fills the rest via
-    // PATCH. Signatory slots are added later (they carry a required capacity + order the create body
-    // does not model).
+    // Seed the Draft termo from the family's template `default_body`; the operator may revise all
+    // mutable fields via PATCH. The creation choices are retained rather than silently discarded.
     let mut termo =
         crate::documents::seed_draft_abertura(book.id, family, OffsetDateTime::now_utc());
+    termo.numbering_scheme = Some(numbering_scheme);
+    for slot in initial_slots {
+        termo.add_signatory(slot).map_err(|error| {
+            ApiError::Unprocessable(format!("invalid required_signatories: {error}"))
+        })?;
+    }
     let purpose = purpose.trim();
     if !purpose.is_empty() {
         termo.fields.purpose = Some(purpose.to_owned());
@@ -392,7 +430,14 @@ pub async fn close_book(
     .await?;
 
     if !one_shot {
-        return close_book_two_phase(&state, BookId(id), reason, closing_date).await;
+        return close_book_two_phase(
+            &state,
+            BookId(id),
+            reason,
+            closing_date,
+            required_signatories,
+        )
+        .await;
     }
 
     let closing_date = crate::dto::parse_date(&closing_date)?;
@@ -475,11 +520,7 @@ pub async fn close_book(
                     tx.upsert_document(&stored_for_store)
                 })
                 .await?;
-            state
-                .documents
-                .write()
-                .await
-                .insert(made.stored.act_id, made.stored.clone());
+            crate::documents::replace_owner_document_read_model(&state, &made.stored).await;
         }
         None => {
             let next_for_store = next.clone();
@@ -508,7 +549,14 @@ async fn close_book_two_phase(
     book_id: BookId,
     reason: chancela_core::ClosingReason,
     closing_date: String,
+    required_signatories: Vec<crate::dto::TermoSignatoryInput>,
 ) -> Result<Json<BookView>, ApiError> {
+    if state.store.is_none() {
+        return Err(ApiError::Unavailable(
+            "two-phase book closing requires durable storage; no closing draft was created"
+                .to_owned(),
+        ));
+    }
     // A blank closing date defers the choice to a later PATCH; parse only if supplied.
     let closing_date = {
         let trimmed = closing_date.trim();
@@ -518,6 +566,31 @@ async fn close_book_two_phase(
             Some(crate::dto::parse_date(trimmed)?)
         }
     };
+    let required_signatories =
+        normalize_termo_signatories(required_signatories, "required_signatories")?;
+    let mut initial_slots = Vec::with_capacity(required_signatories.len());
+    for (index, signatory) in required_signatories.into_iter().enumerate() {
+        let Some(capacity) = signatory.capacity else {
+            return Err(ApiError::Unprocessable(format!(
+                "required_signatories[{index}].capacity is required for the two-phase signing workflow"
+            )));
+        };
+        let order = u16::try_from(index).map_err(|_| {
+            ApiError::Unprocessable(
+                "required_signatories contains more signatories than the signing order supports"
+                    .to_owned(),
+            )
+        })?;
+        let mut slot =
+            chancela_core::termo::TermoSignatorySlot::required(signatory.name, capacity, order);
+        if let Some(email) = signatory.email {
+            slot = slot.with_email(email);
+        }
+        if let Some(note) = signatory.capacity_note {
+            slot = slot.with_capacity_note(note);
+        }
+        initial_slots.push(slot);
+    }
 
     // entities → books → ledger (ledger held only to serialize the durable write, no append).
     let entities = state.entities.read().await;
@@ -534,12 +607,17 @@ async fn close_book_two_phase(
     drop(books);
     let mut ledger = state.ledger.write().await;
 
-    // Seed the Draft termo from the family's encerramento `default_body`; the operator fills the
-    // rest (signatory slots, revised reason/date) via PATCH.
+    // Seed the Draft termo from the family's encerramento `default_body`; the operator may revise
+    // the signatory slots and reason/date via PATCH, but creation inputs are retained.
     let mut termo =
         crate::documents::seed_draft_encerramento(book_id, family, OffsetDateTime::now_utc());
     termo.fields.closing_reason = Some(reason);
     termo.fields.instrument_date = closing_date;
+    for slot in initial_slots {
+        termo.add_signatory(slot).map_err(|error| {
+            ApiError::Unprocessable(format!("invalid required_signatories: {error}"))
+        })?;
+    }
 
     // Persist the Draft termo atomically; NOTHING enters the hash chain here. The book is unchanged.
     let termo_for_store = termo.clone();

@@ -44,6 +44,9 @@ export const termoPtPT = {
   'books.termo.state.SigningHint':
     'O conteúdo e o conjunto de signatários estão congelados; as assinaturas estão a ser recolhidas.',
   'books.termo.state.SealedHint': 'O termo produziu efeito e o livro foi aberto. É imutável.',
+  'books.termo.atas.legacyRecord': 'Registo inicial legado',
+  'books.termo.atas.padesAvailable': 'assinaturas PAdES exigidas disponíveis',
+  'books.termo.document.downloadUnsignedBase': 'Descarregar PDF base sem assinaturas',
 
   // — Espécie ————————————————————————————————————————————————————————————————
   'books.termo.kind.Abertura': 'Abertura',
@@ -208,6 +211,9 @@ export const termoEnglish = {
     'The content and signatory set are frozen; signatures are being collected.',
   'books.termo.state.SealedHint':
     'The term has taken effect and the book was opened. It is immutable.',
+  'books.termo.atas.legacyRecord': 'Legacy opening record',
+  'books.termo.atas.padesAvailable': 'required PAdES signatures available',
+  'books.termo.document.downloadUnsignedBase': 'Download unsigned base PDF',
 
   'books.termo.kind.Abertura': 'Opening',
   'books.termo.kind.Encerramento': 'Closing',

@@ -42,8 +42,8 @@ use uuid::Uuid;
 
 use crate::act::SignatoryCapacity;
 use crate::book::{
-    BookId, ClosingReason, TermoClauseRecord, TermoCollectedSignature, TermoDeAbertura,
-    TermoDeEncerramento, TermoSignatory,
+    BookId, ClosingReason, NumberingScheme, TermoClauseRecord, TermoCollectedSignature,
+    TermoDeAbertura, TermoDeEncerramento, TermoSignatory,
 };
 use crate::error::TermoError;
 
@@ -636,6 +636,13 @@ pub struct TermoInstrument {
         skip_serializing_if = "Option::is_none"
     )]
     pub sealed_at: Option<OffsetDateTime>,
+    /// Numbering scheme chosen before an abertura is frozen for signing.
+    ///
+    /// This belongs on the editable instrument because the rendered snapshot and the eventual
+    /// `book.opened` genesis payload must bind the same choice. `None` preserves legacy stored
+    /// drafts, which predate the field and therefore use [`NumberingScheme::Sequential`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numbering_scheme: Option<NumberingScheme>,
 }
 
 impl TermoInstrument {
@@ -666,6 +673,7 @@ impl TermoInstrument {
             created_at,
             signing_started_at: None,
             sealed_at: None,
+            numbering_scheme: None,
         }
     }
 

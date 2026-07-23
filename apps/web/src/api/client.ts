@@ -1123,6 +1123,10 @@ export const api = {
   // signed") until real per-slot PAdES signing lands (t41) — surfaced to the caller, never hidden.
   openBookFromTermo: (bookId: string, body: OpenBookFromTermoBody = {}) =>
     post<BookView>(`/v1/books/${bookId}/termo/abertura/open`, body),
+  fetchBookTermoAberturaDocument: (bookId: string) =>
+    fetchBlob(`/v1/books/${bookId}/termo/abertura/document`),
+  fetchBookTermoAberturaSignatureDocument: (bookId: string, slotId: string) =>
+    fetchBlob(`/v1/books/${bookId}/termo/abertura/signatures/${encodeURIComponent(slotId)}`),
 
   // Termo de encerramento as its own signable ata (two-phase book CLOSE, t44 — the mirror of the
   // abertura above). `closeBook(id, { one_shot: false })` mints a `Draft` encerramento for an OPEN

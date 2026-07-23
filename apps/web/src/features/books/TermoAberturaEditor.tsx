@@ -21,6 +21,8 @@ import { ApiError } from '../../api/client';
 import {
   useAdvanceBookTermoAbertura,
   useBookTermoAbertura,
+  useDownloadBookTermoAberturaDocument,
+  useDownloadBookTermoAberturaSignatureDocument,
   useOpenBookFromTermo,
   usePatchBookTermoAbertura,
   useSignBookTermoAberturaPkcs12,
@@ -35,6 +37,8 @@ import {
   type TermoInstrumentView,
   type TermoSlotView,
 } from '../../api/types';
+import { saveBlobAs } from '../../desktop/saveFile';
+import { useT } from '../../i18n';
 import {
   Badge,
   Button,
@@ -94,6 +98,83 @@ function StateBadge({ termo }: { termo: TermoInstrumentView }) {
   const tt = useTermoT();
   const tone = termo.state === 'Sealed' ? 'ok' : termo.state === 'Signing' ? 'accent' : 'neutral';
   return <Badge tone={tone}>{tt(`books.termo.state.${termo.state}`)}</Badge>;
+}
+
+/**
+ * The preserved termo artifacts. Multi-signatory termos intentionally expose one independently
+ * verifiable PAdES revision per signed slot; no client-side merge can preserve those signatures.
+ */
+function TermoDocumentActions({ termo }: { termo: TermoInstrumentView }) {
+  const t = useT();
+  const tt = useTermoT();
+  const toast = useToast();
+  const base = useDownloadBookTermoAberturaDocument(termo.book_id);
+  const signed = useDownloadBookTermoAberturaSignatureDocument(termo.book_id);
+  // `slot.signed` is only workflow collection state. A signed-PDF action exists solely when the
+  // server confirms that this slot has a stored PAdES artifact.
+  const signedSlots = termo.signatories.filter((slot) => slot.pades_document_available === true);
+
+  function saveBase() {
+    base.mutate(undefined, {
+      onSuccess: async (blob) => {
+        try {
+          await saveBlobAs({
+            blob,
+            filename: `termo-de-abertura-${termo.book_id}-base-sem-assinaturas.pdf`,
+            contentType: 'application/pdf',
+          });
+          toast.success(t('toast.document.downloaded'));
+        } catch (error) {
+          toast.error(error);
+        }
+      },
+      onError: (error) => toast.error(error),
+    });
+  }
+
+  function saveSigned(slot: TermoSlotView) {
+    signed.mutate(slot.id, {
+      onSuccess: async (blob) => {
+        try {
+          await saveBlobAs({
+            blob,
+            filename: `termo-de-abertura-assinado-${slot.id}.pdf`,
+            contentType: 'application/pdf',
+          });
+          toast.success(t('toast.signing.downloaded'));
+        } catch (error) {
+          toast.error(error);
+        }
+      },
+      onError: (error) => toast.error(error),
+    });
+  }
+
+  return (
+    <div className="row-wrap">
+      <Button
+        type="button"
+        variant="secondary"
+        icon={<Icon.Tray />}
+        disabled={base.isPending}
+        onClick={saveBase}
+      >
+        {tt('books.termo.document.downloadUnsignedBase')}
+      </Button>
+      {signedSlots.map((slot) => (
+        <Button
+          key={slot.id}
+          type="button"
+          variant="secondary"
+          icon={<Icon.Tray />}
+          disabled={signed.isPending}
+          onClick={() => saveSigned(slot)}
+        >
+          {t('signing.download')}: {slot.name}
+        </Button>
+      ))}
+    </div>
+  );
 }
 
 /** The draft-editing form. Remounted (via `key`) when the termo identity changes, so it seeds once. */
@@ -521,6 +602,8 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
         ))}
       </ul>
 
+      <TermoDocumentActions termo={termo} />
+
       {openFailedClosed ? (
         <InlineWarning tone="warn" title={tt('books.termo.open.notSignedTitle')}>
           {tt('books.termo.open.notSignedBody')}
@@ -563,6 +646,7 @@ function TermoSealedView({ termo }: { termo: TermoInstrumentView }) {
           <dd>{termo.fields.purpose ?? '—'}</dd>
         </div>
       </dl>
+      <TermoDocumentActions termo={termo} />
     </div>
   );
 }

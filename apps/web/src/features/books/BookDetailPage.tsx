@@ -17,10 +17,12 @@
  */
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { ApiError } from '../../api/client';
 import {
   useBook,
   useBookActs,
   useBookLegalHold,
+  useBookTermoAbertura,
   useCreatePaperBookOcrConversionDossier,
   useClearBookLegalHold,
   useCreatePaperBookOcrDraft,
@@ -100,7 +102,7 @@ import {
   scopeBook,
   useCan,
 } from '../session/permissions';
-import { BookActsList } from './BookActsList';
+import { BookActsList, type OpeningTermRecord } from './BookActsList';
 import { TermoAberturaEditor } from './TermoAberturaEditor';
 import { TermoEncerramentoEditor } from './TermoEncerramentoEditor';
 import { useEncerramentoT } from './termoEncerramentoStrings';
@@ -2095,6 +2097,9 @@ export function BookDetailPage() {
   });
   const book = useBook(id);
   const acts = useBookActs(id);
+  // The opening instrument belongs in the Atas chronology even though it deliberately remains a
+  // distinct unnumbered domain record. The same query also feeds the dedicated Opening tab.
+  const abertura = useBookTermoAbertura(id, section === 'acts' || section === 'opening');
   const packageDownload = useDownloadBookArchivePackage(id);
   const localDglabManifestDownload = useDownloadBookLocalDglabInterchangeManifest(id);
 
@@ -2116,6 +2121,37 @@ export function BookDetailPage() {
 
   const b = book.data;
   const isOpen = b.state === 'Open';
+  const isLegacyOpeningNotFound =
+    abertura.error instanceof ApiError &&
+    abertura.error.status === 404 &&
+    (b.state === 'Open' || b.state === 'Closed');
+  const openingRecord: OpeningTermRecord | null = abertura.data
+    ? {
+        bookId: b.id,
+        title: abertura.data.title,
+        state: abertura.data.state,
+        instrumentDate: abertura.data.fields.instrument_date ?? b.opening_date,
+        legacy: false,
+        documentAvailable: abertura.data.state !== 'Draft',
+        availableSignatures: abertura.data.signatories.filter(
+          (slot) => slot.required && slot.pades_document_available === true,
+        ).length,
+        requiredSignatures: abertura.data.signatories.filter((slot) => slot.required).length,
+      }
+    : isLegacyOpeningNotFound
+      ? {
+          // One-shot books predate the separately-persisted instrument. Present their opening
+          // honestly as a read-only legacy record; never fabricate signature evidence.
+          bookId: b.id,
+          title: t('books.termoAbertura'),
+          state: 'Sealed',
+          instrumentDate: b.opening_date,
+          legacy: true,
+          documentAvailable: true,
+          availableSignatures: 0,
+          requiredSignatures: b.required_signatory_records_abertura?.length ?? 0,
+        }
+      : null;
 
   function showSaveResult(result: SaveBlobResult) {
     if (result.kind === 'cancelled') {
@@ -2365,17 +2401,15 @@ export function BookDetailPage() {
                 ) : null
               }
             >
-              {acts.isLoading ? (
+              {acts.isLoading || abertura.isLoading ? (
                 <SkeletonTable cols={5} />
               ) : acts.error ? (
                 <ErrorNote error={acts.error} />
-              ) : !acts.data || acts.data.length === 0 ? (
-                <EmptyState title={t('books.noAtas')}>
-                  {isOpen ? <p>{t('books.createFirstAta')}</p> : null}
-                </EmptyState>
-              ) : (
-                <BookActsList acts={acts.data} />
-              )}
+              ) : abertura.error && !isLegacyOpeningNotFound ? (
+                <ErrorNote error={abertura.error} />
+              ) : openingRecord ? (
+                <BookActsList acts={acts.data ?? []} opening={openingRecord} />
+              ) : null}
             </Card>
           </>
         ) : null}

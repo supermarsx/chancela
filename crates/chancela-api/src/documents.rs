@@ -977,10 +977,10 @@ pub(crate) fn generate_for_termo(
 /// from the same inputs. `None` for a family with no termo-abertura template (that book opens on the
 /// genesis event alone, no preserved PDF/A — same as the one-shot path).
 ///
-/// ⚠️ `numbering_scheme` is not (yet) a `TermoInstrument` field, so it is fixed here at render time
-/// rather than chosen by the operator before signing. The open path (t41-e3) must render/preserve
-/// with the SAME scheme, or move the choice ahead of `advance`, so the signed snapshot and the
-/// genesis-digested projection cannot disagree. See `termo::advance_abertura`.
+/// ⚠️ `numbering_scheme` is pinned on the `TermoInstrument` before signing (legacy drafts without
+/// the field resolve to `Sequential`). Callers must pass that same effective scheme here so the
+/// signed snapshot and the genesis-digested projection cannot disagree. See
+/// `termo::advance_abertura`.
 pub(crate) fn generate_termo_snapshot(
     termo: &TermoInstrument,
     book: &Book,
@@ -5329,6 +5329,41 @@ async fn load_documents_for_act(
     Ok(docs)
 }
 
+/// Recover the immutable document for one lifecycle stage from an owner's full history.
+///
+/// Book termos deliberately share the book-shaped owner on the legacy one-shot path. That makes
+/// `document_for_act` useful for the historical "latest document" route, but it is not precise
+/// enough for a kind-specific artifact route after the same book later gains an encerramento.
+/// Durable stores retain every row by document id, so stage-specific reads must select from that
+/// history rather than relabel the latest row.
+///
+/// The frozen producing spec is authoritative when present. Rows written before spec snapshots
+/// existed fall back to the current registry by their pinned template id. An unknown historical
+/// row is not guessed: callers receive `None` instead of serving bytes from the wrong instrument.
+pub(crate) async fn load_document_for_stage(
+    state: &AppState,
+    owner: ActId,
+    stage: LifecycleStage,
+) -> Result<Option<StoredDocument>, ApiError> {
+    Ok(load_documents_for_act(state, owner)
+        .await?
+        .into_iter()
+        .find(|document| stored_document_stage(document) == Some(stage)))
+}
+
+fn stored_document_stage(document: &StoredDocument) -> Option<LifecycleStage> {
+    match document.template_spec_json.as_deref() {
+        Some(spec_json) => serde_json::from_str::<Value>(spec_json)
+            .ok()?
+            .get("stage")?
+            .as_str()
+            .and_then(|stage| {
+                serde_json::from_value::<LifecycleStage>(Value::String(stage.to_owned())).ok()
+            }),
+        None => registry().get(&document.template_id).map(|spec| spec.stage),
+    }
+}
+
 async fn generated_document_view(
     state: &AppState,
     doc: StoredDocument,
@@ -6194,6 +6229,33 @@ pub(crate) async fn publish_generated_document_read_model(
 
 fn in_memory_generated_document_key(doc: &StoredDocument) -> Option<ActId> {
     Uuid::parse_str(&doc.id).ok().map(ActId)
+}
+
+/// Replace the legacy owner-keyed document while retaining the displaced row in a pure in-memory
+/// state's history.
+///
+/// SQLite/Postgres preserve both rows in `documents` because the primary key is the document id.
+/// The in-memory read model is a map keyed by owner, so a one-shot encerramento would otherwise
+/// destroy the abertura bytes for the lifetime of that process. Retaining the prior row under its
+/// own UUID mirrors durable history while the owner key keeps its backwards-compatible
+/// newest-document meaning.
+pub(crate) async fn replace_owner_document_read_model(state: &AppState, stored: &StoredDocument) {
+    let mut documents = state.documents.write().await;
+    if state.store.is_none()
+        && let Some(displaced) = documents.get(&stored.act_id).cloned()
+        && displaced.id != stored.id
+        && let Some(mut key) = in_memory_generated_document_key(&displaced)
+    {
+        while key == stored.act_id
+            || documents
+                .get(&key)
+                .is_some_and(|document| document.id != displaced.id)
+        {
+            key = ActId(Uuid::new_v4());
+        }
+        documents.entry(key).or_insert(displaced);
+    }
+    documents.insert(stored.act_id, stored.clone());
 }
 
 /// `GET /v1/acts/{id}/document/working-copy` — Markdown/TXT/HTML/RTF/ODT convenience export of the

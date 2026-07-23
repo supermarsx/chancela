@@ -5,10 +5,9 @@
  * field. The opening date is an ISO `YYYY-MM-DD` string straight from `<input
  * type="date">`, matching §2.1.
  *
- * Two ways to open (t23): the classic **one-shot** (default) creates and opens the book in a
- * single step with a generated termo de abertura; the **two-phase** path mints a `Created` book
- * plus a `Draft` termo de abertura and routes to the termo editor, where the termo is drafted,
- * signed and only then sealed to open the book — the termo treated as an ata in its own right.
+ * Creating a book always mints a `Created` book plus a `Draft` termo de abertura and routes to the
+ * termo editor. The formal instrument is drafted, reviewed, frozen, cryptographically signed and
+ * only then sealed to open the book — it is never bypassed by a one-click UI shortcut.
  *
  * The audit actor is NOT entered here: the current user (the topbar picker) is the
  * identity surface, so the server attributes the ledger actor from the
@@ -208,9 +207,6 @@ export function TermoSignatoryFields({
   );
 }
 
-/** How the operator opens the book: classic one-step, or the drafted-then-signed termo path. */
-type OpenMode = 'oneShot' | 'twoPhase';
-
 interface Props {
   /** When set, the book is fixed to this entity (no picker shown). */
   entityId?: string;
@@ -235,7 +231,6 @@ export function OpenBookForm({ entityId, entities }: Props) {
   const [signatories, setSignatories] = useState<TermoSignatoryDraft[]>([emptySignatory()]);
   const [predecessor, setPredecessor] = useState('');
   const [predecessorNote, setPredecessorNote] = useState('');
-  const [mode, setMode] = useState<OpenMode>('oneShot');
 
   // Seed the numbering scheme from the configured default once the settings document
   // loads (documents.numbering_scheme_default). Only applied once, so a later edit by
@@ -283,7 +278,6 @@ export function OpenBookForm({ entityId, entities }: Props) {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const twoPhase = mode === 'twoPhase';
     open.mutate(
       {
         entity_id: chosen,
@@ -295,19 +289,19 @@ export function OpenBookForm({ entityId, entities }: Props) {
         predecessor: predecessor.trim() || undefined,
         predecessor_note: predecessorNote.trim() || undefined,
         kind_label: isOther ? kindLabel.trim() || undefined : undefined,
-        // Omit for the one-shot default so today's request is byte-for-byte unchanged.
-        ...(twoPhase ? { one_shot: false } : {}),
+        // The product never bypasses the formal opening instrument. The server still accepts the
+        // historical one-shot wire shape for old API clients, but the operator UI does not expose it.
+        one_shot: false,
       },
       {
         // R6: success toast survives the navigate-away; R7: inline ErrorNote stays.
         onSuccess: (book) => {
-          toast.success(twoPhase ? tt('books.termo.createdToast') : t('toast.book.opened'));
+          toast.success(tt('books.termo.createdToast'));
           // The form state is still populated at this point, so the guard would see a
           // dirty surface and prompt on the app's OWN post-save navigation. The work is
           // saved; exempt exactly this navigation.
           allowNextNavigation();
-          // Two-phase lands on the termo editor (the opening section); one-shot on the book.
-          navigate(twoPhase ? `/books/${book.id}/opening` : `/books/${book.id}`);
+          navigate(`/books/${book.id}/opening`);
         },
         onError: (e) => toast.error(e),
       },
@@ -435,25 +429,6 @@ export function OpenBookForm({ entityId, entities }: Props) {
             onChange={(e) => setPredecessorNote(e.target.value)}
           />
         </Field>
-        <Field
-          label={tt('books.termo.mode.legend')}
-          htmlFor="book-open-mode"
-          help={
-            mode === 'twoPhase'
-              ? tt('books.termo.mode.twoPhaseHelp')
-              : tt('books.termo.mode.oneShotHelp')
-          }
-        >
-          <Select
-            id="book-open-mode"
-            value={mode}
-            onChange={(e) => setMode(e.target.value as OpenMode)}
-            options={[
-              { value: 'oneShot', label: tt('books.termo.mode.oneShot') },
-              { value: 'twoPhase', label: tt('books.termo.mode.twoPhase') },
-            ]}
-          />
-        </Field>
         {open.error ? <ErrorNote error={open.error} /> : null}
         <div className="form__actions">
           <Button
@@ -462,11 +437,7 @@ export function OpenBookForm({ entityId, entities }: Props) {
             icon={<Icon.BookPlus />}
             disabled={open.isPending || !chosen}
           >
-            {open.isPending
-              ? t('books.opening')
-              : mode === 'twoPhase'
-                ? tt('books.termo.mode.twoPhase')
-                : t('books.openBook')}
+            {open.isPending ? t('books.opening') : tt('books.termo.mode.twoPhase')}
           </Button>
         </div>
       </form>

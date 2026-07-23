@@ -2052,6 +2052,14 @@ pub fn router(state: AppState) -> Router {
             post(termo::sign_abertura_pkcs12),
         )
         .route(
+            "/v1/books/{id}/termo/abertura/document",
+            get(termo::get_abertura_document),
+        )
+        .route(
+            "/v1/books/{id}/termo/abertura/signatures/{slot_id}",
+            get(termo::get_abertura_signature_document),
+        )
+        .route(
             "/v1/books/{id}/termo/abertura/open",
             post(termo::open_from_termo),
         )
@@ -7687,9 +7695,43 @@ mod tests {
             "opening a book emits a document.generated event: {events}"
         );
 
-        // The termo PDF is preserved, keyed by the book id (book instruments have no owning act).
+        // The historical act-shaped route remains available for backwards compatibility.
         let (status, ctype, bytes) =
             send_bytes(state, get(&format!("/v1/acts/{book_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(ctype.starts_with("application/pdf"), "content-type={ctype}");
+        assert!(bytes.starts_with(b"%PDF-"));
+
+        // New clients use the honest book/termo route: the book id is not pretended to be an act id.
+        let (state, _entity, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let token = auth_token(&state).await;
+        let response = router(state.clone())
+            .oneshot(with_session(
+                get(&format!("/v1/books/{book_id}/termo/abertura/document")),
+                &token,
+            ))
+            .await
+            .expect("router responds");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["cache-control"],
+            "private, no-store",
+            "session-scoped legal documents must never enter a shared cache"
+        );
+        assert_eq!(
+            response.headers()["content-disposition"],
+            "attachment; filename=\"termo-de-abertura-base-sem-assinaturas.pdf\""
+        );
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("PDF body");
+        assert!(bytes.starts_with(b"%PDF-"));
+
+        let (status, ctype, bytes) = send_bytes(
+            state,
+            get(&format!("/v1/books/{book_id}/termo/abertura/document")),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert!(ctype.starts_with("application/pdf"), "content-type={ctype}");
         assert!(bytes.starts_with(b"%PDF-"));
@@ -7720,6 +7762,104 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED, "{entity}");
         let entity_id = entity["id"].as_str().expect("entity id").to_owned();
         (state, token, entity_id, tmp)
+    }
+
+    #[tokio::test]
+    async fn two_phase_create_without_store_fails_before_inserting_a_book() {
+        let state = AppState::default();
+        let token = auth_token(&state).await;
+        let (status, entity) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Memória Volátil, S.A.",
+                        "nipc": "503004642",
+                        "seat": "Lisboa",
+                        "kind": "SociedadeAnonima",
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{entity}");
+
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity["id"],
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas",
+                        "numbering_scheme": "Sequential",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": [],
+                        "one_shot": false,
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+        assert!(
+            state.books.read().await.is_empty(),
+            "a rejected no-store draft must not leave an orphan Created book"
+        );
+    }
+
+    #[tokio::test]
+    async fn two_phase_create_preserves_numbering_and_structured_required_signatories() {
+        let (state, token, entity_id, _tmp) = state_with_entity().await;
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas em folhas soltas",
+                        "numbering_scheme": "LooseLeaf",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": [{
+                            "name": "Amélia Marques",
+                            "email": "amelia@example.test",
+                            "capacity": "Manager"
+                        }],
+                        "one_shot": false,
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{book}");
+        let book_id = book["id"].as_str().expect("book id");
+
+        let (status, termo) = send(
+            state,
+            with_session(get(&format!("/v1/books/{book_id}/termo/abertura")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        assert_eq!(termo["numbering_scheme"], "LooseLeaf");
+        assert_eq!(termo["signatories"].as_array().map(Vec::len), Some(1));
+        assert_eq!(termo["signatories"][0]["name"], "Amélia Marques");
+        assert_eq!(termo["signatories"][0]["email"], "amelia@example.test");
+        assert_eq!(termo["signatories"][0]["capacity"], "Manager");
+        assert_eq!(termo["signatories"][0]["required"], true);
+        assert_eq!(termo["signatories"][0]["order"], 0);
+        assert!(
+            termo["signatories"][0]
+                .get("pades_document_available")
+                .is_none(),
+            "no durable PAdES artifact exists for a fresh Draft slot"
+        );
     }
 
     #[tokio::test]
@@ -7823,6 +7963,20 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{termo}");
         assert_eq!(termo["state"], "Signing");
 
+        // Advancing pins the PDF/A snapshot that every required signer signs. It is addressable as a
+        // book instrument, not through an invented Act record.
+        let (status, content_type, bytes) = send_bytes(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/books/{book_id}/termo/abertura/document")),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(content_type.starts_with("application/pdf"));
+        assert!(bytes.starts_with(b"%PDF-"));
+
         // Sequential order: slot 1 cannot sign before the earlier required slot 0.
         let (status, _blocked) = send(
             state.clone(),
@@ -7839,7 +7993,7 @@ mod tests {
 
         // Sign in order.
         for slot in [&slot0, &slot1] {
-            let (status, _t) = send(
+            let (status, term_view) = send(
                 state.clone(),
                 with_session(
                     post_json(
@@ -7851,6 +8005,14 @@ mod tests {
             )
             .await;
             assert_eq!(status, StatusCode::OK);
+            assert!(
+                term_view["signatories"]
+                    .as_array()
+                    .expect("signatory views")
+                    .iter()
+                    .all(|signatory| signatory.get("pades_document_available").is_none()),
+                "reference-only signing must never advertise a downloadable PAdES artifact: {term_view}"
+            );
         }
 
         // Open FAILS CLOSED: the slots carry only signature *references* (mark_slot_signed), not real
@@ -7940,6 +8102,206 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    }
+
+    #[tokio::test]
+    async fn termo_pkcs12_requires_signing_perform_in_addition_to_book_open() {
+        let (state, owner, entity_id, _tmp) = state_with_entity().await;
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": [],
+                        "one_shot": false,
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{book}");
+        let book_id = book["id"].as_str().expect("book id");
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                body_json(
+                    "PATCH",
+                    &format!("/v1/books/{book_id}/termo/abertura"),
+                    json!({
+                        "signatories": [
+                            {"name": "Amélia Marques", "capacity": "Manager", "order": 0}
+                        ],
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        let slot_id = termo["signatories"][0]["id"]
+            .as_str()
+            .expect("slot id")
+            .to_owned();
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/advance"),
+                    json!({}),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        // Deliberately grant the lifecycle verb but not cryptographic signing authority.
+        let (status, role) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/roles",
+                    json!({
+                        "name": "Preparador de livros",
+                        "permissions": ["book.read", "book.open", "book.close"],
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{role}");
+        let role_id = role["id"].as_str().expect("role id");
+        let (status, user) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/users",
+                    json!({
+                        "username": "preparador.livros",
+                        "display_name": "Preparador",
+                        "password": DEFAULT_TEST_PASSWORD,
+                        "role": {
+                            "role_id": role_id,
+                            "scope": {"kind": "global"},
+                        },
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{user}");
+        let limited = open_session(&state, user["id"].as_str().expect("limited user id")).await;
+        let request_body = json!({
+            "slot_id": slot_id,
+            "pkcs12_base64": "AA==",
+            "passphrase": "not-a-real-secret",
+        });
+        let route = format!("/v1/books/{book_id}/termo/abertura/sign/pkcs12");
+        let (status, denied) = send(
+            state.clone(),
+            with_session(post_json(&route, request_body.clone()), &limited),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
+
+        // The Owner carries signing.perform; it reaches the separate desk-app availability gate.
+        let (status, allowed) = send(
+            state.clone(),
+            with_session(post_json(&route, request_body), &owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{allowed}");
+
+        // Closing uses the same cryptographic operation and therefore the same authority split.
+        let (status, closing_book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro para testar o encerramento",
+                        "opening_date": "2026-01-16",
+                        "required_signatories": ["Administrador"],
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{closing_book}");
+        let closing_book_id = closing_book["id"].as_str().expect("closing book id");
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{closing_book_id}/close"),
+                    json!({
+                        "reason": "BookFull",
+                        "closing_date": "2026-06-30",
+                        "required_signatories": [{
+                            "name": "Amélia Marques",
+                            "capacity": "Manager"
+                        }],
+                        "one_shot": false
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, closing_termo) = send(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/books/{closing_book_id}/termo/encerramento")),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{closing_termo}");
+        let closing_slot_id = closing_termo["signatories"][0]["id"]
+            .as_str()
+            .expect("closing slot id");
+        let (status, advanced) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{closing_book_id}/termo/encerramento/advance"),
+                    json!({}),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{advanced}");
+        let closing_route = format!("/v1/books/{closing_book_id}/termo/encerramento/sign/pkcs12");
+        let closing_request = json!({
+            "slot_id": closing_slot_id,
+            "pkcs12_base64": "AA==",
+            "passphrase": "not-a-real-secret",
+        });
+        let (status, denied) = send(
+            state.clone(),
+            with_session(post_json(&closing_route, closing_request.clone()), &limited),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
+        let (status, allowed) = send(
+            state,
+            with_session(post_json(&closing_route, closing_request), &owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{allowed}");
     }
 
     #[tokio::test]
@@ -8943,6 +9305,17 @@ mod tests {
     #[tokio::test]
     async fn closing_a_book_produces_the_termo_encerramento_document() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let book_owner = ActId(Uuid::parse_str(&book_id).expect("book uuid"));
+        let opening_before = crate::documents::load_document_for_stage(
+            &state,
+            book_owner,
+            chancela_core::LifecycleStage::TermoAbertura,
+        )
+        .await
+        .expect("opening history read")
+        .expect("opening document");
+        let opening_document_id = opening_before.id.clone();
+        let opening_pdf = opening_before.pdf_bytes.clone();
         let act_id = draft_fill_and_advance(&state, &book_id).await;
         let (status, _) = send(
             state.clone(),
@@ -8995,6 +9368,37 @@ mod tests {
         assert_eq!(
             bundle["document"]["template_id"],
             "csc-termo-encerramento/v1"
+        );
+
+        // The honest book/termo route is stage-specific: a later one-shot close must not relabel
+        // the latest encerramento bytes as the abertura base. Pure in-memory states retain the
+        // displaced opening row under its immutable document id, matching durable history.
+        let opening_after = crate::documents::load_document_for_stage(
+            &state,
+            book_owner,
+            chancela_core::LifecycleStage::TermoAbertura,
+        )
+        .await
+        .expect("opening history read after close")
+        .expect("opening document survives close");
+        assert_eq!(
+            opening_after.id, opening_document_id,
+            "one-shot close preserves the immutable opening document identity"
+        );
+        assert_eq!(
+            opening_after.pdf_bytes, opening_pdf,
+            "one-shot close preserves the exact opening PDF bytes"
+        );
+        let (status, ctype, downloaded_opening) = send_bytes(
+            state.clone(),
+            get(&format!("/v1/books/{book_id}/termo/abertura/document")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(ctype.starts_with("application/pdf"), "content-type={ctype}");
+        assert_eq!(
+            downloaded_opening, opening_pdf,
+            "the opening route still returns the original base after close"
         );
 
         let (_, verify) = send(state, get("/v1/ledger/verify")).await;
@@ -19655,6 +20059,42 @@ mod tests {
             status,
             StatusCode::FORBIDDEN,
             "opening a book outside the granted entity is refused"
+        );
+        // The Owner can create the out-of-scope book, but the scoped Gestor still cannot use either
+        // book-scoped termo artifact route to read its legal-document bytes.
+        let (status, outside_book) = send(state.clone(), open(&e2_id)).await;
+        assert_eq!(status, StatusCode::CREATED, "{outside_book}");
+        let outside_book_id = outside_book["id"].as_str().expect("outside book id");
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                get(&format!(
+                    "/v1/books/{outside_book_id}/termo/abertura/document"
+                )),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "the base termo artifact must respect the parent book scope"
+        );
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                get(&format!(
+                    "/v1/books/{outside_book_id}/termo/abertura/signatures/{}",
+                    Uuid::new_v4()
+                )),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "per-slot termo artifacts must reject before revealing whether a slot exists"
         );
         // Scope-escape upward is structurally impossible: the Gestor holds ledger.read, but only at
         // Entity(1) — a **Global** integrity read is NOT satisfied by an entity-scoped grant → 403.

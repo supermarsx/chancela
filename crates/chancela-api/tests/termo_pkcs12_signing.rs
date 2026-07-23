@@ -18,7 +18,7 @@ use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
 use axum::body::{Body, to_bytes};
-use axum::http::{Request, StatusCode};
+use axum::http::{HeaderMap, Request, StatusCode};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use der::Encode;
@@ -75,6 +75,20 @@ async fn send(state: &AppState, req: Request<Body>) -> (StatusCode, Value) {
         serde_json::from_slice(&bytes).unwrap_or(Value::Null)
     };
     (status, value)
+}
+
+async fn send_bytes(state: &AppState, req: Request<Body>) -> (StatusCode, HeaderMap, Vec<u8>) {
+    let resp = router(state.clone())
+        .oneshot(req)
+        .await
+        .expect("router responds");
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("body")
+        .to_vec();
+    (status, headers, bytes)
 }
 
 fn json_req(method: &str, uri: &str, token: &str, body: Value) -> Request<Body> {
@@ -343,6 +357,13 @@ async fn cosign_both_slots(state: &AppState, token: &str, book_id: &str, slot0: 
     )
     .await;
     assert_eq!(status, StatusCode::OK, "sign slot 0: {view}");
+    assert_eq!(view["signatories"][0]["pades_document_available"], true);
+    assert!(
+        view["signatories"][1]
+            .get("pades_document_available")
+            .is_none(),
+        "the unsigned second slot must not advertise a PAdES artifact: {view}"
+    );
     let pfx1 = local_pfx("Bruno Secretario", 2, "bruno");
     let (status, view) = send(
         state,
@@ -350,6 +371,8 @@ async fn cosign_both_slots(state: &AppState, token: &str, book_id: &str, slot0: 
     )
     .await;
     assert_eq!(status, StatusCode::OK, "sign slot 1: {view}");
+    assert_eq!(view["signatories"][0]["pades_document_available"], true);
+    assert_eq!(view["signatories"][1]["pades_document_available"], true);
 }
 
 #[tokio::test]
@@ -364,6 +387,19 @@ async fn genuinely_cosigned_termo_opens_and_preserves_the_signed_set() {
     let (book_id, slot0, slot1) = seed_frozen_termo(&state, &token).await;
 
     let snapshot = snapshot_bytes(&state, &book_id).await;
+    let opening_subject = ActId(Uuid::parse_str(&book_id).expect("book uuid"));
+    let opening_document = state
+        .store
+        .as_ref()
+        .expect("store")
+        .read_blocking_async(move |store| store.documents_for_act(opening_subject))
+        .await
+        .expect("read opening document history")
+        .into_iter()
+        .next()
+        .expect("opening snapshot persisted at advance");
+    assert_eq!(opening_document.pdf_bytes, snapshot);
+    let opening_document_id = opening_document.id.clone();
     cosign_both_slots(&state, &token, &book_id, &slot0, &slot1).await;
 
     // Open now succeeds — the fail-closed gate sees the real per-slot signatures at ActId(book.id).
@@ -400,6 +436,46 @@ async fn genuinely_cosigned_termo_opens_and_preserves_the_signed_set() {
     validate_pdf_signature(&history[0].2).expect("preserved signatory 1 still validates");
     validate_pdf_signature(&history[1].2).expect("preserved signatory 2 still validates");
 
+    // The book-scoped artifact routes expose the preserved base and each independently-verifiable
+    // per-slot revision without inventing a merged "final" PDF.
+    let (status, headers, downloaded_snapshot) = send_bytes(
+        &state,
+        get_req(
+            &format!("/v1/books/{book_id}/termo/abertura/document"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["cache-control"], "private, no-store");
+    assert_eq!(
+        headers["content-disposition"],
+        "attachment; filename=\"termo-de-abertura-base-sem-assinaturas.pdf\""
+    );
+    assert_eq!(downloaded_snapshot, snapshot);
+    for (slot_id, expected) in [(&slot0, &history[0].2), (&slot1, &history[1].2)] {
+        let (status, headers, downloaded) = send_bytes(
+            &state,
+            get_req(
+                &format!("/v1/books/{book_id}/termo/abertura/signatures/{slot_id}"),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers["cache-control"], "private, no-store");
+        assert_eq!(headers["x-chancela-signature-slot-id"], slot_id.as_str());
+        assert!(
+            headers["content-disposition"]
+                .to_str()
+                .expect("safe disposition")
+                .contains(slot_id),
+            "the safe UUID slot id identifies the downloaded signed revision"
+        );
+        assert_eq!(&downloaded, expected);
+        validate_pdf_signature(&downloaded).expect("downloaded co-signature validates");
+    }
+
     // The preserved base document is the FROZEN SNAPSHOT (the exact bytes that were signed), NOT a
     // re-rendered unsigned document.
     assert_eq!(
@@ -407,6 +483,78 @@ async fn genuinely_cosigned_termo_opens_and_preserves_the_signed_set() {
         snapshot,
         "the preserved base PDF/A is the frozen snapshot, byte-for-byte (not re-rendered)"
     );
+
+    // A later legacy one-shot close also writes a book-owned document. It must remain the latest
+    // artifact on the backwards-compatible act-shaped route without replacing the immutable
+    // abertura base or either per-slot PAdES revision.
+    let (status, closed) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/books/{book_id}/close"),
+            &token,
+            json!({
+                "reason": "BookFull",
+                "closing_date": "2026-06-30",
+                "required_signatories": ["Administrador"],
+                "one_shot": true,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "one-shot close: {closed}");
+    assert_eq!(closed["state"], "Closed");
+
+    let preserved_opening = state
+        .store
+        .as_ref()
+        .expect("store")
+        .read_blocking_async({
+            let opening_document_id = opening_document_id.clone();
+            move |store| store.document_by_id(&opening_document_id)
+        })
+        .await
+        .expect("read opening document by immutable id")
+        .expect("opening document survives close");
+    assert_eq!(
+        preserved_opening.id, opening_document_id,
+        "closing does not replace the opening document identity"
+    );
+    assert_eq!(
+        preserved_opening.pdf_bytes, snapshot,
+        "closing does not replace the opening document bytes"
+    );
+
+    let (status, _, downloaded_after_close) = send_bytes(
+        &state,
+        get_req(
+            &format!("/v1/books/{book_id}/termo/abertura/document"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        downloaded_after_close, snapshot,
+        "the stage-specific abertura route returns the original signed base after close"
+    );
+    for (slot_id, expected) in [(&slot0, &history[0].2), (&slot1, &history[1].2)] {
+        let (status, _, downloaded) = send_bytes(
+            &state,
+            get_req(
+                &format!("/v1/books/{book_id}/termo/abertura/signatures/{slot_id}"),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            &downloaded, expected,
+            "one-shot close preserves the exact per-slot opening PAdES artifact"
+        );
+        validate_pdf_signature(&downloaded)
+            .expect("opening co-signature still validates after one-shot close");
+    }
 }
 
 #[tokio::test]
@@ -776,6 +924,19 @@ async fn genuinely_cosigned_encerramento_closes_and_preserves_the_signed_set() {
     let state = signing_state(&tmp).await;
     let token = bootstrap(&state).await;
     let book_id = open_book_one_shot(&state, &token).await;
+    let opening_subject = ActId(Uuid::parse_str(&book_id).expect("book uuid"));
+    let opening_document = state
+        .store
+        .as_ref()
+        .expect("store")
+        .read_blocking_async(move |store| store.documents_for_act(opening_subject))
+        .await
+        .expect("read opening document history")
+        .into_iter()
+        .next()
+        .expect("one-shot opening document");
+    let opening_document_id = opening_document.id.clone();
+    let opening_pdf = opening_document.pdf_bytes.clone();
     let (termo_id, slot0, slot1) = seed_frozen_encerramento(&state, &token, &book_id).await;
 
     let snapshot = snapshot_bytes_for(&state, &termo_id).await;
@@ -854,6 +1015,32 @@ async fn genuinely_cosigned_encerramento_closes_and_preserves_the_signed_set() {
         abertura_doc, snapshot,
         "the abertura and encerramento snapshots are distinct, disjoint documents"
     );
+    let (status, _, downloaded_opening) = send_bytes(
+        &state,
+        get_req(
+            &format!("/v1/books/{book_id}/termo/abertura/document"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        downloaded_opening, opening_pdf,
+        "two-phase close leaves the opening base byte-for-byte unchanged"
+    );
+    let preserved_opening = state
+        .store
+        .as_ref()
+        .expect("store")
+        .read_blocking_async({
+            let opening_document_id = opening_document_id.clone();
+            move |store| store.document_by_id(&opening_document_id)
+        })
+        .await
+        .expect("read opening document by immutable id")
+        .expect("opening document survives two-phase close");
+    assert_eq!(preserved_opening.id, opening_document_id);
+    assert_eq!(preserved_opening.pdf_bytes, opening_pdf);
 }
 
 #[tokio::test]

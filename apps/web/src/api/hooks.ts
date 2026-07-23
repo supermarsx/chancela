@@ -610,6 +610,21 @@ export function useOpenBookFromTermo(id: string) {
   });
 }
 
+/** Download the preserved PDF/A snapshot behind the termo de abertura record. */
+export function useDownloadBookTermoAberturaDocument(id: string) {
+  return useMutation({ mutationFn: () => api.fetchBookTermoAberturaDocument(id) });
+}
+
+/**
+ * Download one independently-verifiable per-slot PAdES revision. A termo with several signatories
+ * intentionally has several signed PDFs; the client never merges them or invents one "final" file.
+ */
+export function useDownloadBookTermoAberturaSignatureDocument(id: string) {
+  return useMutation({
+    mutationFn: (slotId: string) => api.fetchBookTermoAberturaSignatureDocument(id, slotId),
+  });
+}
+
 export function useCloseBook(id: string) {
   const qc = useQueryClient();
   return useMutation({

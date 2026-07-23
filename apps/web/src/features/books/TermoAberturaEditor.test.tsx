@@ -63,7 +63,12 @@ const SIGNING_TERMO: TermoInstrumentView = {
 const SIGNED_TERMO: TermoInstrumentView = {
   ...SIGNING_TERMO,
   signatories: [
-    { ...SIGNING_TERMO.signatories[0], signed: true, signed_at: '2026-01-03T00:00:00Z' },
+    {
+      ...SIGNING_TERMO.signatories[0],
+      signed: true,
+      signed_at: '2026-01-03T00:00:00Z',
+      pades_document_available: true,
+    },
   ],
   completion: {
     ...SIGNING_TERMO.completion,
@@ -151,6 +156,47 @@ describe('TermoAberturaEditor', () => {
     // The 409 is surfaced honestly — the book is NOT pretended open.
     expect(
       await screen.findByText('O termo ainda não está assinado criptograficamente'),
+    ).toBeTruthy();
+  });
+
+  it('labels the frozen base as unsigned and hides downloads for provisional-only signatures', async () => {
+    const provisionalOnly: TermoInstrumentView = {
+      ...SIGNED_TERMO,
+      signatories: [
+        {
+          ...SIGNED_TERMO.signatories[0],
+          signed: true,
+          pades_document_available: false,
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(provisionalOnly));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+
+    expect(
+      await screen.findByRole('button', { name: 'Descarregar PDF base sem assinaturas' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Descarregar PDF assinado:/ })).toBeNull();
+  });
+
+  it('offers a signed-PDF download only when the server reports a stored PAdES artifact', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNED_TERMO));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+
+    expect(
+      await screen.findByRole('button', {
+        name: 'Descarregar PDF assinado: Amélia Marques',
+      }),
     ).toBeTruthy();
   });
 

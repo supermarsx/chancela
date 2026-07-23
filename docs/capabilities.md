@@ -21,8 +21,16 @@ Acts move through an explicit state machine:
   the document (PDF/A); it does not itself require a qualified signature.
 - **Archiving** (`Sealed → Archived`) closes the act.
 
-Books themselves have states `Created → Open → Closed`: opening a book seals a
-*termo de abertura* (genesis event); closing it records a *termo de encerramento*.
+Books themselves have states `Created → Open → Closed`. The operator workflow
+always creates a `Created` book with a draft *termo de abertura*, freezes the
+term's PDF, collects each required PAdES signature independently, and only then
+opens the book and seals the term as the genesis event. The selected numbering
+scheme and required signatory slots are pinned on the draft before its PDF is
+frozen. The term is displayed as an unnumbered genesis record in the book's
+**Atas** chronology; its preserved unsigned PDF and each independently signed revision remain separately
+downloadable. The API retains the historical one-shot opening mode for
+compatibility, but the web UI does not create new books through it. Closing an
+open book records a *termo de encerramento*.
 
 ## Append-only hash-chained ledger
 
