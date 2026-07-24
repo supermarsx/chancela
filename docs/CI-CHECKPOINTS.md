@@ -627,7 +627,7 @@ It intentionally reuses existing test surfaces:
   qualified-status determination, legal trust certification, live provider
   approval, or full trust implementation.
 - Signing DSS/trust-validation checkpoint: `63df508` is the signing validation
-  implementation checkpoint inside the current `5b44346` snapshot. Static markers pin
+  implementation checkpoint inside the current `65c3aa7` snapshot. Static markers pin
   `6292d75` revocation cache plus graceful offline fallback, `ead1aaa`
   full-chain PAdES DSS evidence assembly from validated chain plus revocation
   material, `9be5e00` live end-entity signer-path validation with TSL-resolved
@@ -1100,7 +1100,7 @@ workflow evidence only; it does not claim physical deletion, anonymization,
 backup/archive rewrite, legal GDPR compliance or completion, legal disposal
 approval, production key custody, or full spec completion.
 GDPR sealed-record annotation/remedy markers pin only `58b7e55` append-only API
-annotation and remedy-classification evidence plus the current `5b44346` snapshot's privacy
+annotation and remedy-classification evidence plus the current `65c3aa7` snapshot's privacy
 documentation framing for statutory-retention cases: subject rectification and
 processing-restriction annotations can be appended while prior sealed/signed
 event bytes, hashes, and payload digests remain frozen and ledger verification
