@@ -573,6 +573,13 @@ async fn archive_package_indexes_generated_convening_notice_dispatch_evidence_me
 
     h.restart().await;
     let token = open_password_session(&h, &user_id).await;
+    let (status, before_restart_export) = h
+        .get_json_auth("/v1/ledger/events?limit=1000", &token)
+        .await;
+    assert_eq!(
+        status, 200,
+        "ledger before post-restart package export: {before_restart_export}"
+    );
     let (status, ctype, after_restart) = get_bytes(&h, &package_path, &token).await;
     assert_eq!(status, 200, "archive package after restart");
     assert_eq!(ctype, "application/zip");
@@ -589,7 +596,7 @@ async fn archive_package_indexes_generated_convening_notice_dispatch_evidence_me
         "ledger after restart package export: {after_restart_ledger}"
     );
     assert_eq!(
-        after_restart_ledger, before,
+        after_restart_ledger, before_restart_export,
         "package export remains read-only after restart"
     );
 }
