@@ -332,7 +332,15 @@ pub async fn seed_e2e_sessions_from_data_dir(state: &AppState) {
     if state.durable_sessions.is_durable() {
         state
             .durable_sessions
-            .insert(&seed.token, user_id.0, now, expires_at)
+            .insert(
+                &seed.token,
+                uuid::Uuid::new_v4(),
+                user_id.0,
+                None,
+                None,
+                now,
+                expires_at,
+            )
             .await
             .unwrap_or_else(|e| panic!("persist e2e session seed: {e:?}"));
     }
