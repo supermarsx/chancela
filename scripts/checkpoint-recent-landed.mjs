@@ -11003,12 +11003,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-24 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `79789cb`",
+    "Updated 2026-07-24 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `5b44346`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `79789cb`",
+    "Focused Gate Snapshot Through `5b44346`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11688,7 +11688,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `79789cb`",
+    "Current checkpoint metadata/static checks through `5b44346`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12278,12 +12278,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `79789cb3aaed027a859168702a8fe259f637e5f1`",
+    "implementation snapshot `5b443467d64cfd4c337ff3e6d3ca371ee838f65d`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `79789cb` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
+    "Current `5b44346` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
     "spec coverage erasure workflow current checkpoint marker",
   );
   assertFileContains(
@@ -12318,7 +12318,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `79789cb` snapshot",
+    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `5b44346` snapshot",
     "CI checkpoints signing validation snapshot marker",
   );
   assertFileContains(
@@ -12368,7 +12368,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `79789cb`",
+    "Current checkpoint metadata/static checks through `5b44346`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
