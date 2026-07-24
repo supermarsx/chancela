@@ -7605,6 +7605,15 @@ mod tests {
         assert_eq!(updated["editable"], true);
         assert_eq!(updated["source"], "user");
 
+        let versions = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template_versions(id)
+            .expect("template history");
+        assert_eq!(versions.len(), 2, "create and replace each retain a save");
+        let created_version = versions.last().expect("created version");
+
         let (status, verdict) = send_raw(
             state.clone(),
             with_session(
@@ -7672,6 +7681,9 @@ mod tests {
             "stage": "Ata",
             "locale": "pt-PT",
             "source": "user",
+            "version_id": created_version.version_id.clone(),
+            "version_name": created_version.name.clone(),
+            "history_limit": state.template_history_limit.0,
         }))
         .expect("created payload JSON");
         let deleted_payload = serde_json::to_vec(&json!({
