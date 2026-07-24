@@ -28,6 +28,7 @@ const NEW_PASSWORD: &str = "Trocada-Forte8!Q";
 struct TempDir(PathBuf);
 impl TempDir {
     fn new() -> Self {
+        common::ensure_credential_key();
         let dir = std::env::temp_dir().join(format!("chancela-totp-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         Self(dir)
