@@ -908,14 +908,13 @@ fn encrypted_restore_wrong_key_or_tamper_leaves_live_db_and_sidecars() {
     std::fs::write(&apikeys, br#"[{"prefix":"chk_live"}]"#).unwrap();
     let live_len = store.load().unwrap().ledger.len();
 
-    let wrong = store.restore_encrypted_with_sidecars(
+    let wrong = store.restore_encrypted(
         &mut ledger,
         Path::new(&backup.path),
         dir.path(),
         "amelia.marques",
         at(),
         "wrong passphrase",
-        &sidecars,
     );
     assert!(matches!(wrong, Err(StoreError::BadBackup(_))));
     assert_eq!(store.load().unwrap().ledger.len(), live_len);

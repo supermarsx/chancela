@@ -21,16 +21,16 @@ use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
     EraseTarget, GeneratedDocumentDispatchEvidenceUpsert, LedgerEventPageQuery,
     LedgerEventUpperBound, PaperBookOcrConversionDossierUpsert,
-    PaperBookOcrConversionExecutionArtifactUpsert, Store, StoreError, StoreKeyRotationStatus,
-    StoreOpenOptions, StoredCredentialRecord, StoredDocument, StoredEmailDelivery, StoredFollowUp,
-    StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
-    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
-    StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
-    StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
-    StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
+    PaperBookOcrConversionExecutionArtifactUpsert, Store, StoreDatabaseFormat, StoreError,
+    StoreKeyConfigStatus, StoreKeyOpsMigrationEvidence, StoreKeyOpsMigrationPlan, StoreKeyOpsPlan,
+    StoreKeyOpsStatus, StoreKeyRotationStatus, StoreOpenOptions, StoredCredentialRecord,
+    StoredDocument, StoredEmailDelivery, StoredFollowUp, StoredFollowUpStatus,
+    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
+    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
+    StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
+    StoredPaperBookOcrStatus, normalize_ledger_event_search_text,
 };
-#[cfg(not(feature = "sqlcipher"))]
-use chancela_store::{StoreDatabaseFormat, StoreKeyConfigStatus, StoreKeyOpsPlan};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
@@ -344,6 +344,120 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 // --- tests --------------------------------------------------------------------------------------
+
+#[test]
+fn operator_status_text_normalization_and_sqlite_cluster_seams_are_complete_and_secret_free() {
+    fn key_status(plan: StoreKeyOpsPlan, key_config: StoreKeyConfigStatus) -> StoreKeyOpsStatus {
+        StoreKeyOpsStatus {
+            sqlcipher_available: cfg!(feature = "sqlcipher"),
+            key_config,
+            database_file: PathBuf::from("status-fixture.db"),
+            database_format: StoreDatabaseFormat::Missing,
+            plan,
+            migration_plan: StoreKeyOpsMigrationPlan {
+                required: false,
+                status: "not_required",
+                summary: "test fixture",
+                steps: Vec::new(),
+                evidence: StoreKeyOpsMigrationEvidence {
+                    plan: "test_fixture",
+                    database_format: "missing",
+                    key_config: "configured",
+                    sqlcipher_available: cfg!(feature = "sqlcipher"),
+                    database_file: "status-fixture.db".to_owned(),
+                },
+            },
+        }
+    }
+
+    let plans = [
+        (
+            StoreKeyOpsPlan::CreatePlaintextStore,
+            "create a plaintext SQLite store",
+        ),
+        (
+            StoreKeyOpsPlan::OpenPlaintextStore,
+            "open the plaintext SQLite store",
+        ),
+        (
+            StoreKeyOpsPlan::KeyRequiredForNonPlaintextStore,
+            "configure the correct SQLCipher key",
+        ),
+        (
+            StoreKeyOpsPlan::RejectEmptyKey,
+            "configure a non-empty database key",
+        ),
+        (
+            StoreKeyOpsPlan::SqlcipherBuildRequired,
+            "this build lacks SQLCipher",
+        ),
+        (
+            StoreKeyOpsPlan::CreateEncryptedStore,
+            "create a fresh encrypted store",
+        ),
+        (
+            StoreKeyOpsPlan::OpenEncryptedStore,
+            "before attempting rotation",
+        ),
+        (
+            StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration,
+            "backup/export-restore migration plan",
+        ),
+    ];
+    for (plan, expected_action) in plans {
+        let status = key_status(plan, StoreKeyConfigStatus::Configured);
+        assert!(status.key_configured());
+        assert_eq!(
+            status.rotation_ready(),
+            plan == StoreKeyOpsPlan::OpenEncryptedStore
+        );
+        let action = status.operator_action();
+        assert!(
+            action.contains(expected_action),
+            "{plan:?} action was not actionable: {action}"
+        );
+        assert!(
+            !action.contains("correct horse battery staple"),
+            "operator status must never disclose key material"
+        );
+    }
+    assert!(
+        !key_status(
+            StoreKeyOpsPlan::CreatePlaintextStore,
+            StoreKeyConfigStatus::Unconfigured
+        )
+        .key_configured()
+    );
+
+    assert_eq!(
+        normalize_ledger_event_search_text("A\u{0301} ÀÁÂÃÄÅ Ç ÈÉÊË ÌÍÎÏ Ñ ÒÓÔÕÖ ÙÚÛÜ ÝŸ Æ Œ ß"),
+        "a aaaaaa c eeee iiii n ooooo uuuu yy ae oe ss"
+    );
+
+    let secret = "correct horse battery staple";
+    let debug = format!("{:?}", StoreOpenOptions::new().with_encryption_key(secret));
+    assert!(debug.contains("<redacted>"));
+    assert!(!debug.contains(secret));
+    assert_eq!(
+        format!("{:?}", StoreOpenOptions::new()),
+        "StoreOpenOptions { encryption_key: None }"
+    );
+
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open sqlite store");
+    assert_eq!(
+        store
+            .cluster_leader_address(30)
+            .expect("sqlite leader address"),
+        None
+    );
+    assert!(
+        store
+            .cluster_events_since(42)
+            .expect("sqlite change feed")
+            .is_empty()
+    );
+}
 
 #[test]
 fn open_creates_db_and_reopen_is_idempotent() {
