@@ -1265,6 +1265,20 @@ mod tests {
         }
     }
 
+    /// A durable state whose credential store has the same deterministic test key as
+    /// [`state_with_store`]. Production data-dir states intentionally fail closed on hosts without
+    /// an OS protector or operator key; these cross-platform delivery tests need an explicit source.
+    fn state_with_durable_store(dir: &StdPath) -> AppState {
+        AppState {
+            provider_credentials: Arc::new(ProviderCredentialStore::load_with_db_key(
+                dir,
+                TEST_DB_KEY,
+                false,
+            )),
+            ..AppState::with_data_dir(dir)
+        }
+    }
+
     async fn seed_token(state: &AppState, role: RoleId) -> String {
         use crate::users::{User, UserId};
         use time::format_description::well_known::Rfc3339;
@@ -2022,7 +2036,7 @@ mod tests {
     async fn a_store_backed_send_writes_an_erasable_row_that_the_ledger_event_does_not_mirror() {
         let temp = TempDir::new();
         // A store-backed state, unlike `state_with_store`, actually persists the delivery row.
-        let state = crate::AppState::with_data_dir(&temp.dir);
+        let state = state_with_durable_store(&temp.dir);
         let port = address_quoting_rejecting_relay().await;
         configure_relay(&state, port, crate::settings::Locale::PtPt).await;
         let user_id = uuid::Uuid::new_v4();
@@ -2163,7 +2177,7 @@ mod tests {
     #[tokio::test]
     async fn a_failed_welcome_delivery_can_be_resent_and_the_attempt_chains() {
         let temp = TempDir::new();
-        let state = crate::AppState::with_data_dir(&temp.dir);
+        let state = state_with_durable_store(&temp.dir);
         let token = seed_token(&state, OWNER_ROLE_ID).await;
         let user_id = seed_recipient_account(&state).await;
 
@@ -2216,7 +2230,7 @@ mod tests {
     #[tokio::test]
     async fn a_token_bearing_delivery_is_refused_at_resend_and_pointed_to_reissue() {
         let temp = TempDir::new();
-        let state = crate::AppState::with_data_dir(&temp.dir);
+        let state = state_with_durable_store(&temp.dir);
         let token = seed_token(&state, OWNER_ROLE_ID).await;
         // Record an invite delivery directly: it references a token subject, so it is not
         // resendable regardless of its template.
@@ -2285,7 +2299,7 @@ mod tests {
     #[tokio::test]
     async fn the_admin_list_returns_recorded_deliveries_with_resendability() {
         let temp = TempDir::new();
-        let state = crate::AppState::with_data_dir(&temp.dir);
+        let state = state_with_durable_store(&temp.dir);
         let token = seed_token(&state, OWNER_ROLE_ID).await;
         let user_id = seed_recipient_account(&state).await;
 
