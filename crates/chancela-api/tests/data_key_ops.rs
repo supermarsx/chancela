@@ -521,9 +521,8 @@ async fn successful_guarded_rekey_persists_secret_free_receipt_and_status_histor
     assert_secret_free(&status_body, &[initial_key, replacement_key, "chancela.db"]);
 }
 
-#[cfg(not(feature = "sqlcipher"))]
 #[tokio::test]
-async fn preflight_reports_sqlcipher_build_required_without_leaking_keys() {
+async fn preflight_matches_runtime_sqlcipher_capability_without_leaking_keys() {
     let tmp = TempDir::new("no-sqlcipher");
     std::fs::write(
         tmp.dir.join(chancela_store::DB_FILE),
@@ -534,6 +533,12 @@ async fn preflight_reports_sqlcipher_build_required_without_leaking_keys() {
     let token = owner_session(&state).await;
     let current_key = "current-key-for-no-sqlcipher";
     let new_key = "replacement-key-for-no-sqlcipher";
+    let store_preflight = chancela_store::Store::key_rotation_preflight(
+        &tmp.dir,
+        &chancela_store::StoreOpenOptions::new().with_encryption_key(current_key),
+        new_key,
+    )
+    .expect("canonical store preflight");
 
     let (status, body) = send(
         state,
@@ -547,15 +552,25 @@ async fn preflight_reports_sqlcipher_build_required_without_leaking_keys() {
     )
     .await;
 
-    assert_eq!(status, StatusCode::OK, "no-sqlcipher report: {body}");
-    assert_eq!(body["ready"], false);
-    assert_eq!(body["status"], "sqlcipher_build_required");
+    assert_eq!(status, StatusCode::OK, "key capability report: {body}");
+    assert_eq!(body["ready"], store_preflight.ready);
+    assert_eq!(
+        body["status"],
+        if store_preflight.evidence.sqlcipher_available {
+            "ready"
+        } else {
+            "sqlcipher_build_required"
+        }
+    );
     assert_eq!(
         body["evidence"]["database_format"],
         "non_plaintext_or_encrypted"
     );
     assert_eq!(body["evidence"]["current_key_config"], "configured");
     assert_eq!(body["evidence"]["requested_key_config"], "configured");
-    assert_eq!(body["evidence"]["sqlcipher_available"], false);
+    assert_eq!(
+        body["evidence"]["sqlcipher_available"],
+        store_preflight.evidence.sqlcipher_available
+    );
     assert_secret_free(&body, &[current_key, new_key]);
 }

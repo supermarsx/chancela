@@ -11,7 +11,7 @@ use std::process::{Command, Output, Stdio};
 use chancela_api::{DB_KEY_ENV, DB_KEY_FILE_ENV, User};
 use chancela_authz::OWNER_ROLE_ID;
 use chancela_core::{Book, BookKind, Entity, EntityKind, Nipc};
-use chancela_store::{DB_FILE, Store};
+use chancela_store::{DB_FILE, Store, StoreOpenOptions};
 
 /// A throwaway data directory unique to one test.
 fn tmp_dir() -> PathBuf {
@@ -126,59 +126,91 @@ fn status_on_fresh_store() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-#[cfg(not(feature = "sqlcipher"))]
 #[test]
-fn db_key_env_fails_closed_without_sqlcipher_and_does_not_create_plaintext_db() {
+fn db_key_env_matches_runtime_sqlcipher_capability_without_leaking_key() {
     let dir = tmp_dir();
     let secret = "correct horse battery staple";
+    let sqlcipher_available =
+        Store::key_ops_status(&dir, &StoreOpenOptions::new().with_encryption_key(secret))
+            .expect("key capability status")
+            .sqlcipher_available;
 
     let out = cli_with_env(&dir, &["status"], &[(DB_KEY_ENV, secret)]);
 
-    assert!(
-        !out.status.success(),
-        "keyed status must fail without sqlcipher"
-    );
     let err = stderr(&out);
-    assert!(err.contains("sqlcipher feature"), "{err}");
     assert!(
         !err.contains(secret),
         "database key must not be printed: {err}"
     );
-    assert!(
-        !dir.join(DB_FILE).exists(),
-        "no plaintext store should be created for a keyed default build"
-    );
+    if sqlcipher_available {
+        assert!(
+            out.status.success(),
+            "keyed status must succeed with sqlcipher: {err}"
+        );
+        assert_encrypted_store_opens(&dir, secret);
+    } else {
+        assert!(
+            !out.status.success(),
+            "keyed status must fail without sqlcipher"
+        );
+        assert!(err.contains("sqlcipher feature"), "{err}");
+        assert!(
+            !dir.join(DB_FILE).exists(),
+            "no plaintext store should be created for a keyed default build"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-#[cfg(not(feature = "sqlcipher"))]
 #[test]
-fn db_key_file_env_fails_closed_without_sqlcipher_and_does_not_leak_key() {
+fn db_key_file_env_matches_runtime_sqlcipher_capability_without_leaking_key() {
     let dir = tmp_dir();
     let key_file = dir.join("db.key");
     let secret = "file-backed database key";
     std::fs::write(&key_file, format!("{secret}\n")).unwrap();
     let key_file = key_file.to_string_lossy().into_owned();
+    let sqlcipher_available =
+        Store::key_ops_status(&dir, &StoreOpenOptions::new().with_encryption_key(secret))
+            .expect("key capability status")
+            .sqlcipher_available;
 
     let out = cli_with_env(&dir, &["status"], &[(DB_KEY_FILE_ENV, key_file.as_str())]);
 
-    assert!(
-        !out.status.success(),
-        "key-file status must fail without sqlcipher"
-    );
     let err = stderr(&out);
-    assert!(err.contains("sqlcipher feature"), "{err}");
     assert!(
         !err.contains(secret),
         "key file contents must not leak: {err}"
     );
-    assert!(
-        !dir.join(DB_FILE).exists(),
-        "no plaintext store should be created for a keyed default build"
-    );
+    if sqlcipher_available {
+        assert!(
+            out.status.success(),
+            "key-file status must succeed with sqlcipher: {err}"
+        );
+        assert_encrypted_store_opens(&dir, secret);
+    } else {
+        assert!(
+            !out.status.success(),
+            "key-file status must fail without sqlcipher"
+        );
+        assert!(err.contains("sqlcipher feature"), "{err}");
+        assert!(
+            !dir.join(DB_FILE).exists(),
+            "no plaintext store should be created for a keyed default build"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn assert_encrypted_store_opens(dir: &Path, key: &str) {
+    let database = std::fs::read(dir.join(DB_FILE)).expect("keyed store file exists");
+    assert!(
+        !database.starts_with(b"SQLite format 3\0"),
+        "a keyed SQLCipher store must not have a plaintext SQLite header"
+    );
+    Store::open_with_options(dir, StoreOpenOptions::new().with_encryption_key(key))
+        .expect("keyed store reopens with the configured key");
 }
 
 #[test]
