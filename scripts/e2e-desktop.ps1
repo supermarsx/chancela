@@ -629,12 +629,13 @@ try {
     $r = Invoke-Probe -Method GET -Url "$base/v1/session/roster"
     $j = ConvertFrom-JsonSafe $r.Body
     $onboardingRequired = ($null -ne $j) -and ($j.onboarding_required -eq $true)
-    $rosterEmpty = ($null -ne $j) -and (@($j.users).Count -eq 0)
+    $rosterKeys = if ($null -ne $j) { @($j.PSObject.Properties.Name) } else { @() }
+    $rosterIsMinimal = (($rosterKeys.Count -eq 1) -and ($rosterKeys -contains 'onboarding_required'))
     Add-Result 'GET /v1/session/roster -> onboarding required' `
-        (($r.Status -eq 200) -and $onboardingRequired -and $rosterEmpty) `
-        "status=$($r.Status) onboarding_required=$(if ($j) { $j.onboarding_required } else { '?' }) users=$(if ($j) { @($j.users).Count } else { '?' })"
-    if (-not ($onboardingRequired -and $rosterEmpty)) {
-        throw "fresh DataDir did not report onboarding_required=true with an empty roster; refusing to smoke against a non-hermetic or already-onboarded instance"
+        (($r.Status -eq 200) -and $onboardingRequired -and $rosterIsMinimal) `
+        "status=$($r.Status) onboarding_required=$(if ($j) { $j.onboarding_required } else { '?' }) properties=$($rosterKeys -join ',')"
+    if (-not ($onboardingRequired -and $rosterIsMinimal)) {
+        throw "fresh DataDir did not report the minimal onboarding_required=true roster; refusing to smoke against a non-hermetic, enumerable, or already-onboarded instance"
     }
 
     # 4. Password policy is public so onboarding can render before a session exists.
