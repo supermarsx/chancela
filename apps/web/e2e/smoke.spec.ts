@@ -7,33 +7,27 @@
 import { test, expect } from './fixtures';
 import { signInAt } from './auth';
 
-test('boots the SPA with the leather background and the eight-tab bar', async ({ page }) => {
+test('boots the SPA with the leather background and the four-tab work bar', async ({ page }) => {
   // The app is auth-gated (t44): onboard/sign in before the chrome renders.
   await signInAt(page, '/');
 
   // The fixed leather layer is rendered (settings default the texture on).
   await expect(page.getByTestId('leather-bg')).toBeAttached();
 
-  // The centered secondary tab bar carries exactly the eight pinned PT-PT tabs.
-  // Six text tabs — the places you work. Ferramentas and Configurações left this group in t103
-  // and are now icon controls at the right-hand end of the bar, asserted just below.
+  // The centered secondary tab bar carries exactly the four primary work areas.
+  // Archive and utility destinations are icon controls at the right-hand end of the bar.
   const tabs = page.getByTestId('tab-bar').getByRole('link');
-  await expect(tabs).toHaveCount(6);
-  await expect(tabs).toHaveText([
-    'Painel',
-    'Entidades',
-    'Livros',
-    'Minutas',
-    'Arquivo',
-    'Operações',
-  ]);
+  await expect(tabs).toHaveCount(4);
+  await expect(tabs).toHaveText(['Painel', 'Entidades', 'Livros', 'Minutas']);
 
-  // The two utility glyphs, in order, before the alerts bell. Addressed by ACCESSIBLE NAME:
+  // The four icon-bar destinations are addressed by ACCESSIBLE NAME:
   // they are icon-only, so if the `aria-label` were ever dropped in favour of a tooltip alone
   // this assertion fails — which is the regression worth catching, since a tooltip is not a name.
   const utilities = page.locator('.topbar__session');
+  await expect(utilities.getByRole('link', { name: 'Arquivo' })).toBeVisible();
   await expect(utilities.getByRole('link', { name: 'Ferramentas' })).toBeVisible();
   await expect(utilities.getByRole('link', { name: 'Configurações' })).toBeVisible();
+  await expect(utilities.getByRole('link', { name: 'Administração' })).toBeVisible();
 
   // The dashboard actually rendered (a real /v1/dashboard response parsed in-browser).
   await expect(page.getByRole('heading', { name: 'Vista geral' })).toBeVisible();

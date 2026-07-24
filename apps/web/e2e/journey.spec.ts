@@ -7,14 +7,14 @@
  *   compliance panel go clean, seal it → then confirm the Arquivo shows the hash chain
  *   intact with the signed-in username attributed as the actor on the sealed event.
  *
- * After sign-in every navigation is an in-app (client-side) route change, never a full
- * `page.goto` — the session token lives in the SPA's memory and a reload would drop it,
- * sending the ledger actor back to the sign-in surface. Keeping to SPA navigation is what
- * proves the `X-Chancela-Session` → actor attribution end to end.
+ * The operator UI deliberately creates a two-phase opening instrument which cannot be
+ * completed without a real signing credential. This broad composed-system journey uses
+ * the server's retained one-shot API compatibility path to reach an open book; focused
+ * termo suites own the cryptographic two-phase workflow.
  */
 import { test, expect } from './fixtures';
 import { OPERATOR, signInAt } from './auth';
-import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
+import { sealActForSigning } from './book-helpers';
 
 test('onboard → session → entity → book → ata → seal → Arquivo chain with actor', async ({
   page,
@@ -26,7 +26,7 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   const username = OPERATOR.username;
   await expect(page.getByTestId('session-trigger')).toContainText(OPERATOR.displayName);
 
-  // From here on: in-app navigation only, so the in-memory session token survives.
+  // From here on, the tab-scoped session token attributes both UI and direct API actions.
   const tab = (name: string) =>
     page.getByTestId('tab-bar').getByRole('link', { name, exact: true });
 
@@ -44,13 +44,31 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/);
 
   // --- Open a book -----------------------------------------------------------
-  await tab('Livros').click();
-  await page.getByRole('link', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/books\/new$/);
-  await page.getByLabel('Finalidade').fill('Atas da Assembleia Geral');
-  await page.getByLabel('Data de abertura').fill('2026-01-15');
-  await fillOpenBookTermSignatories(page);
-  await page.getByRole('button', { name: 'Abrir livro' }).click();
+  const entityId = page.url().match(/\/entities\/([0-9a-f-]{36})$/)?.[1];
+  expect(entityId).toBeTruthy();
+  const sessionToken = await page.evaluate(() =>
+    window.sessionStorage.getItem('chancela.session-token'),
+  );
+  expect(sessionToken).toBeTruthy();
+  const openBook = await page.request.post('/v1/books', {
+    headers: { 'X-Chancela-Session': sessionToken! },
+    data: {
+      entity_id: entityId,
+      kind: 'AssembleiaGeral',
+      purpose: 'Atas da Assembleia Geral',
+      opening_date: '2026-01-15',
+      required_signatories: [
+        { name: 'Amélia Marques', capacity: 'Chair' },
+        { name: 'Rui Secretário', capacity: 'Secretary' },
+      ],
+      one_shot: true,
+    },
+  });
+  if (!openBook.ok()) {
+    throw new Error(`one-shot book open failed: ${openBook.status()} ${await openBook.text()}`);
+  }
+  const book = (await openBook.json()) as { id: string };
+  await page.goto(`/books/${book.id}`);
   await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}$/);
 
   // --- Draft an ata ----------------------------------------------------------
@@ -120,10 +138,14 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   ).toBeVisible();
 
   // --- Arquivo: the chain is intact and the actor is the signed-in user ------
-  await tab('Arquivo').click();
+  await page.getByRole('link', { name: 'Arquivo', exact: true }).click();
   await expect(page).toHaveURL(/\/archive$/);
   await expect(page.getByText(/^Cadeia verificada/)).toBeVisible();
   // The sealed event is present and attributed to the signed-in username.
-  await expect(page.getByText('act.sealed', { exact: true }).first()).toBeVisible();
-  await expect(page.locator('td', { hasText: username }).first()).toBeVisible();
+  const sealedEvent = page
+    .getByRole('row')
+    .filter({ has: page.getByRole('cell', { name: 'Ata selada', exact: true }) })
+    .first();
+  await expect(sealedEvent).toBeVisible();
+  await expect(sealedEvent.getByRole('cell', { name: username, exact: true })).toBeVisible();
 });
