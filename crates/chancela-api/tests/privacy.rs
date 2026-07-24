@@ -1,7 +1,7 @@
 use crate::common;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
@@ -30,6 +30,23 @@ const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
 const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions.json";
 const RETENTION_CANDIDATE_RESOLUTIONS_FILE: &str = "privacy-retention-candidate-resolutions.json";
+
+/// Give the cross-platform privacy integration suite one deterministic operator credential key.
+///
+/// Linux and macOS do not currently have an OS credential-sealing provider, so the destructive
+/// erasure test must configure the same supported headless key source an operator would use. Keep
+/// it installed for the process lifetime so parallel tests cannot observe a transient environment.
+fn ensure_credential_key() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| unsafe {
+        std::env::set_var(
+            "CHANCELA_CREDENTIAL_KEY",
+            "wp26-privacy-integration-test-key-0001",
+        );
+        std::env::remove_var("CHANCELA_CREDENTIAL_KEY_FILE");
+        std::env::remove_var("CHANCELA_CREDENTIAL_STRICT");
+    });
+}
 
 struct TempDir {
     dir: PathBuf,
@@ -6904,6 +6921,7 @@ async fn erasure_execute_rejects_last_owner_removal() {
 /// THE MERGE-GATE (plan P5): a real destructive erasure must preserve ledger integrity.
 #[tokio::test]
 async fn merge_gate_erasure_preserves_ledger_integrity_and_destroys_dek() {
+    ensure_credential_key();
     let tmp = TempDir::new();
     let state = AppState::with_data_dir(tmp.dir.clone());
     let (_owner, owner_token) = bootstrap_owner(&state).await;
