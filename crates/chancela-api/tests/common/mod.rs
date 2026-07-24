@@ -12,6 +12,7 @@ pub const TEST_PASSWORD: &str = "Teste-Forte7!X";
 ///
 /// Keep the key configured for the process lifetime so parallel tests cannot observe a transient
 /// environment. Callers opt in explicitly from suites whose contract requires credential writes.
+#[allow(dead_code)]
 pub fn ensure_credential_key() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| unsafe {
