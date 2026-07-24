@@ -10498,8 +10498,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-cli/tests/cli.rs",
-    "db_key_env_fails_closed_without_sqlcipher_and_does_not_create_plaintext_db",
-    "CLI database key env fail-closed coverage",
+    "db_key_env_matches_runtime_sqlcipher_capability_without_leaking_key",
+    "CLI database key runtime capability coverage",
   );
   assertFileContains(
     "crates/chancela-cli/tests/cli.rs",
@@ -11003,12 +11003,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-24 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `0fbd246`",
+    "Updated 2026-07-24 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `baf9f41`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `0fbd246`",
+    "Focused Gate Snapshot Through `baf9f41`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11688,7 +11688,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `0fbd246`",
+    "Current checkpoint metadata/static checks through `baf9f41`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12278,12 +12278,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `0fbd246cb316448ca0d605ab3876f0bbb2074b02`",
+    "implementation snapshot `baf9f4142cbcb3b8bd94b7a9f7363745fff73b43`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `0fbd246` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
+    "Current `baf9f41` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
     "spec coverage erasure workflow current checkpoint marker",
   );
   assertFileContains(
@@ -12318,7 +12318,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `0fbd246` snapshot",
+    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `baf9f41` snapshot",
     "CI checkpoints signing validation snapshot marker",
   );
   assertFileContains(
@@ -12368,7 +12368,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `0fbd246`",
+    "Current checkpoint metadata/static checks through `baf9f41`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
