@@ -20,7 +20,7 @@
 //! A hardware-free, key-backed [`CryptoToken`] stands in for a citizen card (as in `cc_signing.rs`),
 //! so the underlying signed PDF genuinely validates. Fictional example data only.
 
-mod common;
+use crate::common;
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -447,7 +447,7 @@ async fn ltv_execute_403_for_role_without_signing_perm() {
             .as_array()
             .expect("roles")
             .iter()
-            .any(|r| r["id"] == serde_json::Value::from(default_role_id.as_str())),
+            .any(|r| r["id"] == default_role_id.as_str()),
         "the seeded default operator role is offered by the catalog"
     );
     let (status, _) = send(

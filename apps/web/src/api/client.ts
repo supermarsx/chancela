@@ -86,6 +86,8 @@ import type {
   TemplateBundleInput,
   PreviewTemplateBody,
   TemplateBodyPreviewResponse,
+  TemplateDocumentPreviewRequest,
+  TemplateDocumentPreviewResult,
   ImportFromRegistryBody,
   LawEntryView,
   LawCorpusView,
@@ -739,6 +741,33 @@ export async function postJsonBlob(
 }
 
 /**
+ * POST JSON and retain a successful binary response as raw bytes.
+ *
+ * Unlike a Blob round-trip, `Response.arrayBuffer()` also works in jsdom and can be handed directly
+ * to pdf.js. Failures still pass through the shared structured error parser, preserving template
+ * validation `{code, field?, offset?, message}` diagnostics instead of flattening them.
+ */
+export async function postJsonArrayBuffer(
+  path: string,
+  body: unknown,
+): Promise<{ data: ArrayBuffer; headers: Headers }> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(resolveApiUrl(path), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  handleUnauthorized(res, path);
+  if (!res.ok) {
+    await parseResponse<never>(res, path);
+    throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) });
+  }
+  return { data: await res.arrayBuffer(), headers: res.headers };
+}
+
+/**
  * The provider path segment for a credential record. Single-instance providers (CMD/SCAP)
  * are keyed by the empty provider id and use the literal `_` sentinel; CSC/PKCS#12 carry a
  * real, URL-encoded provider id.
@@ -1094,6 +1123,10 @@ export const api = {
   // signed") until real per-slot PAdES signing lands (t41) — surfaced to the caller, never hidden.
   openBookFromTermo: (bookId: string, body: OpenBookFromTermoBody = {}) =>
     post<BookView>(`/v1/books/${bookId}/termo/abertura/open`, body),
+  fetchBookTermoAberturaDocument: (bookId: string) =>
+    fetchBlob(`/v1/books/${bookId}/termo/abertura/document`),
+  fetchBookTermoAberturaSignatureDocument: (bookId: string, slotId: string) =>
+    fetchBlob(`/v1/books/${bookId}/termo/abertura/signatures/${encodeURIComponent(slotId)}`),
 
   // Termo de encerramento as its own signable ata (two-phase book CLOSE, t44 — the mirror of the
   // abertura above). `closeBook(id, { one_shot: false })` mints a `Draft` encerramento for an OPEN
@@ -1210,6 +1243,16 @@ export const api = {
   // message }` on the `ApiError`, never a silently-dropped construct.
   previewTemplateBody: (body: PreviewTemplateBody) =>
     post<TemplateBodyPreviewResponse>('/v1/templates/body/preview', body),
+  previewTemplateDocumentPdf: async (
+    body: TemplateDocumentPreviewRequest,
+  ): Promise<TemplateDocumentPreviewResult> => {
+    const response = await postJsonArrayBuffer('/v1/templates/document/preview', body);
+    return {
+      data: response.data,
+      content_type: response.headers.get('Content-Type') ?? 'application/pdf; profile=PDF/A-2u',
+      preview_kind: response.headers.get('X-Chancela-Template-Preview') ?? 'structural-unresolved',
+    };
+  },
   deleteTemplate: (id: string) => del<void>(`/v1/templates/${encodeURIComponent(id)}`),
   exportTemplate: (id: string) =>
     fetchTextDownload(`/v1/templates/${encodeURIComponent(id)}/export`),

@@ -36,6 +36,7 @@ import {
   type PaperBookOcrRunView,
   type RetentionDueCandidate,
   type RetentionDueCandidatesReport,
+  type TermoInstrumentView,
 } from '../../api/types';
 
 const ENTITY: Entity = {
@@ -2253,7 +2254,9 @@ describe('NewBookPage', () => {
     // The open-book form renders with no entity picker; the entity is fixed.
     expect(await screen.findByLabelText('Tipo de livro')).toBeTruthy();
     expect(screen.queryByLabelText('Entidade')).toBeNull();
-    expect(screen.getByRole('button', { name: /abrir livro/i })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Redigir um termo de abertura assinável' }),
+    ).toBeTruthy();
     // The manual audit-actor input is gone: attribution is the signed-in user
     // (topbar picker) via X-Chancela-Session, so the form sends no body actor (t22-web).
     expect(screen.queryByLabelText(/ator/i)).toBeNull();
@@ -2286,7 +2289,7 @@ describe('OpenBookForm — book-open guidance (t60)', () => {
 });
 
 describe('OpenBookForm — toast on success', () => {
-  it('fires a success toast after opening a book (survives navigate-away)', async () => {
+  it('fires a success toast after creating the draft opening instrument', async () => {
     const book = { id: 'book-9', entity_id: 'ent-1' };
     vi.stubGlobal(
       'fetch',
@@ -2299,7 +2302,7 @@ describe('OpenBookForm — toast on success', () => {
     renderWithProviders(
       <Routes>
         <Route path="/entities/ent-1" element={<OpenBookForm entityId="ent-1" />} />
-        <Route path="/books/:id" element={<div>DETALHE DO LIVRO</div>} />
+        <Route path="/books/:id/opening" element={<div>EDITOR DO TERMO</div>} />
       </Routes>,
       ['/entities/ent-1'],
     );
@@ -2310,11 +2313,13 @@ describe('OpenBookForm — toast on success', () => {
     fireEvent.change(screen.getByLabelText('Data de abertura'), {
       target: { value: '2026-01-01' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /abrir livro/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Redigir um termo de abertura assinável' }));
 
-    expect(await screen.findByText('DETALHE DO LIVRO')).toBeTruthy();
+    expect(await screen.findByText('EDITOR DO TERMO')).toBeTruthy();
     // R6: the toast fired in onSuccess renders even though we navigated to the book.
-    expect(await screen.findByText('Livro aberto.')).toBeTruthy();
+    expect(
+      await screen.findByText('Livro criado. Redija e assine o termo de abertura.'),
+    ).toBeTruthy();
   });
 });
 
@@ -2336,7 +2341,7 @@ describe('OpenBookForm — structured termo signatories', () => {
     renderWithProviders(
       <Routes>
         <Route path="/entities/ent-1" element={<OpenBookForm entityId="ent-1" />} />
-        <Route path="/books/:id" element={<div>DETALHE DO LIVRO</div>} />
+        <Route path="/books/:id/opening" element={<div>EDITOR DO TERMO</div>} />
       </Routes>,
       ['/entities/ent-1'],
     );
@@ -2354,9 +2359,9 @@ describe('OpenBookForm — structured termo signatories', () => {
     fireEvent.change(screen.getByLabelText('E-mail (opcional)'), {
       target: { value: 'amelia@example.pt' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /abrir livro/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Redigir um termo de abertura assinável' }));
 
-    await screen.findByText('DETALHE DO LIVRO');
+    await screen.findByText('EDITOR DO TERMO');
     const post = calls.find((call) => call.url === '/v1/books' && call.method === 'POST');
     expect(post?.body?.required_signatories).toEqual([
       { name: 'Amélia Marques', capacity: 'Chair', email: 'amelia@example.pt' },
@@ -2452,9 +2457,7 @@ describe('OpenBookForm — Cluster A field UX (t23)', () => {
     fireEvent.change(screen.getByLabelText('Data de abertura'), {
       target: { value: '2026-01-01' },
     });
-    fireEvent.change(screen.getByLabelText('Como abrir o livro'), {
-      target: { value: 'twoPhase' },
-    });
+    expect(screen.queryByLabelText('Como abrir o livro')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Redigir um termo de abertura assinável' }));
 
     expect(await screen.findByText('EDITOR DO TERMO')).toBeTruthy();
@@ -2535,7 +2538,7 @@ describe('BookDetailPage — sub-tabs', () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
     renderAtBook();
 
-    expect(await screen.findByText('Sem atas neste livro')).toBeTruthy();
+    expect(await screen.findByRole('link', { name: 'Abrir: Termo de abertura' })).toBeTruthy();
     const subnav = screen.getByRole('group', { name: 'Secções do livro' });
     expect(within(subnav).getByRole('button', { name: 'Atas' }).getAttribute('aria-pressed')).toBe(
       'true',
@@ -2545,6 +2548,90 @@ describe('BookDetailPage — sub-tabs', () => {
         .getByRole('button', { name: 'Termo de abertura' })
         .getAttribute('aria-pressed'),
     ).toBe('false');
+  });
+
+  it('shows non-404 opening-term failures instead of fabricating an opening row', async () => {
+    const { fn } = bookDetailFetch((url) =>
+      url === '/v1/books/book-1/termo/abertura'
+        ? jsonResponse({ error: 'term store unavailable' }, 500)
+        : null,
+    );
+    vi.stubGlobal('fetch', fn);
+    renderAtBook();
+
+    expect(await screen.findByText('term store unavailable')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Abrir: Termo de abertura' })).toBeNull();
+  });
+
+  it('does not turn a Created book term 404 into a legacy sealed record', async () => {
+    const createdBook = { ...BOOK, state: 'Created' as const };
+    const { fn } = bookDetailFetch((url) =>
+      url === '/v1/books/book-1' ? jsonResponse(createdBook) : null,
+    );
+    vi.stubGlobal('fetch', fn);
+    renderAtBook();
+
+    expect(await screen.findByText('no draft termo')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Abrir: Termo de abertura' })).toBeNull();
+  });
+
+  it('counts required stored PAdES artifacts, not provisional signed markers', async () => {
+    const termo: TermoInstrumentView = {
+      id: 'term-1',
+      book_id: 'book-1',
+      kind: 'Abertura',
+      state: 'Sealed',
+      title: 'Termo de abertura',
+      body: [],
+      fields: { instrument_date: '2026-01-01' },
+      signatories: [
+        {
+          id: 'slot-1',
+          name: 'Amélia',
+          capacity: 'Manager',
+          required: true,
+          order: 1,
+          signed: true,
+          pades_document_available: true,
+        },
+        {
+          id: 'slot-2',
+          name: 'Beatriz',
+          capacity: 'Manager',
+          required: true,
+          order: 2,
+          signed: true,
+          pades_document_available: false,
+        },
+        {
+          id: 'slot-3',
+          name: 'Carla',
+          capacity: 'Manager',
+          required: false,
+          order: 3,
+          signed: true,
+          pades_document_available: true,
+        },
+      ],
+      completion_policy: 'AllRequired',
+      completion: {
+        policy: 'AllRequired',
+        required_slot_count: 2,
+        signed_required_slot_count: 2,
+        threshold: 2,
+        blocking_required_slot_ids: [],
+        complete: true,
+      },
+      created_at: '2026-01-01T00:00:00Z',
+      declared_signatories: [],
+    };
+    const { fn } = bookDetailFetch((url) =>
+      url === '/v1/books/book-1/termo/abertura' ? jsonResponse(termo) : null,
+    );
+    vi.stubGlobal('fetch', fn);
+    renderAtBook();
+
+    expect(await screen.findByText(/1\/2 assinaturas PAdES exigidas disponíveis/)).toBeTruthy();
   });
 
   it('reflects the chosen tab in the URL as a path segment, matching the Configurações convention', async () => {
@@ -2641,7 +2728,7 @@ describe('BookDetailPage — sub-tabs', () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
     renderAtBook('/books/book-1/inventado');
 
-    expect(await screen.findByText('Sem atas neste livro')).toBeTruthy();
+    expect(await screen.findByRole('link', { name: 'Abrir: Termo de abertura' })).toBeTruthy();
   });
 
   it('lists only the retention candidates that name this book', async () => {

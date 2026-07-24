@@ -527,9 +527,17 @@ describe('RolesSection — editing and deleting a função', () => {
   });
 
   it('a protected função is read-only: no edit, no delete, but its authority is still shown', async () => {
-    stubRoles([], [
-      { id: 'owner', name: 'Proprietário', permissions: ['entity.read', 'role.manage'], protected: true },
-    ]);
+    stubRoles(
+      [],
+      [
+        {
+          id: 'owner',
+          name: 'Proprietário',
+          permissions: ['entity.read', 'role.manage'],
+          protected: true,
+        },
+      ],
+    );
     renderRbac(<RolesSection />);
 
     const row = (await screen.findByText('Proprietário')).closest('tr')!;
@@ -555,12 +563,15 @@ describe('RolesSection — editing and deleting a função', () => {
   });
 
   it('says a função is current when it has no seeded drift, and offers no review control', async () => {
-    stubRoles([], [
-      {
-        ...ROLE,
-        seeded_role_drift: { missing_default_permissions: [], requires_manual_review: false },
-      },
-    ]);
+    stubRoles(
+      [],
+      [
+        {
+          ...ROLE,
+          seeded_role_drift: { missing_default_permissions: [], requires_manual_review: false },
+        },
+      ],
+    );
     renderRbac(<RolesSection />);
 
     const row = (await screen.findByText('Secretário')).closest('tr')!;

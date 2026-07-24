@@ -1,8 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chancela_tsa::{TsaError, validate_tsa_certificate_path};
 use time::OffsetDateTime;
+
+static NEXT_TEST_DIR_ID: AtomicU64 = AtomicU64::new(0);
 
 struct TestDir {
     path: PathBuf,
@@ -11,9 +14,10 @@ struct TestDir {
 impl TestDir {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "chancela-tsa-path-{}-{}",
+            "chancela-tsa-path-{}-{}-{}",
             std::process::id(),
-            OffsetDateTime::now_utc().unix_timestamp_nanos()
+            OffsetDateTime::now_utc().unix_timestamp_nanos(),
+            NEXT_TEST_DIR_ID.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&path).expect("create temp cert dir");
         Self { path }

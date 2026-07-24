@@ -1649,14 +1649,19 @@ export const plPL: Catalog = {
   'users.edit.subnav.access': 'Dostęp i audyt',
   'users.edit.subnav.security': 'Bezpieczeństwo',
   'users.security.title': 'Bezpieczeństwo konta',
-  'users.security.intro.self': 'Zarządzaj tutaj bezpieczeństwem własnego konta. Te same poświadczenia pojawiają się w Dostęp i audyt, gdzie administrator je sprawdza i resetuje — tutaj widzisz je jako właściciel konta.',
-  'users.security.intro.other': 'Stan bezpieczeństwa tego konta. Tylko właściciel może zarządzać swoimi poświadczeniami; aby zresetować je jako administrator, użyj Dostęp i audyt.',
+  'users.security.intro.self':
+    'Zarządzaj tutaj bezpieczeństwem własnego konta. Te same poświadczenia pojawiają się w Dostęp i audyt, gdzie administrator je sprawdza i resetuje — tutaj widzisz je jako właściciel konta.',
+  'users.security.intro.other':
+    'Stan bezpieczeństwa tego konta. Tylko właściciel może zarządzać swoimi poświadczeniami; aby zresetować je jako administrator, użyj Dostęp i audyt.',
   'users.security.password.hint': 'Hasło logowania.',
-  'users.security.recovery.hint': 'Fraza odzyskiwania, alternatywa dla hasła w razie jego zapomnienia.',
-  'users.security.key.hint': 'Klucz atestacji audytu. Jego rotacja tworzy nowy klucz dla przyszłych atestacji; poprzednie pozostają weryfikowalne.',
+  'users.security.recovery.hint':
+    'Fraza odzyskiwania, alternatywa dla hasła w razie jego zapomnienia.',
+  'users.security.key.hint':
+    'Klucz atestacji audytu. Jego rotacja tworzy nowy klucz dla przyszłych atestacji; poprzednie pozostają weryfikowalne.',
   'users.security.manage': 'Zarządzaj w Dostęp i audyt',
   'users.totp.title': 'Uwierzytelnianie dwuskładnikowe',
-  'users.totp.intro': 'Drugi składnik potwierdza logowanie kodem z aplikacji uwierzytelniającej, oprócz hasła.',
+  'users.totp.intro':
+    'Drugi składnik potwierdza logowanie kodem z aplikacji uwierzytelniającej, oprócz hasła.',
   'users.totp.on': 'Włączone',
   'users.totp.off': 'Wyłączone',
   'users.totp.stateLabel': 'Stan',
@@ -1664,7 +1669,8 @@ export const plPL: Catalog = {
   'users.totp.enrolled': 'Dwuskładnikowe włączone.',
   'users.totp.confirm': 'Potwierdź',
   'users.totp.qr.alt': 'Kod QR do skonfigurowania uwierzytelniania dwuskładnikowego',
-  'users.totp.qr.hint': 'Zeskanuj ten kod aplikacją uwierzytelniającą (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Zeskanuj ten kod aplikacją uwierzytelniającą (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'Albo wprowadź ten klucz ręcznie:',
   'users.totp.code.label': 'Kod weryfikacyjny',
   'users.totp.code.hint': 'Wprowadź 6-cyfrowy kod wyświetlony przez aplikację.',
@@ -1672,21 +1678,25 @@ export const plPL: Catalog = {
   'users.totp.disable': 'Wyłącz dwuskładnikowe',
   'users.totp.disabled': 'Dwuskładnikowe wyłączone.',
   'users.totp.backup.title': 'Zapisz kody zapasowe',
-  'users.totp.backup.body': 'Zapisz je teraz w bezpiecznym miejscu. Każdy kod loguje raz bez drugiego składnika i nie są pokazywane ponownie.',
+  'users.totp.backup.body':
+    'Zapisz je teraz w bezpiecznym miejscu. Każdy kod loguje raz bez drugiego składnika i nie są pokazywane ponownie.',
   'users.totp.backup.copy': 'Kopiuj kody',
   'users.totp.backup.copied': 'Kody skopiowane.',
   'users.totp.backup.regenerate': 'Wygeneruj nowe kody',
   'users.totp.backup.regenerated': 'Wygenerowano nowe kody; poprzednie nie są już ważne.',
   'users.totp.backup.remainingLabel': 'Pozostałe kody zapasowe',
   'users.totp.required.label': 'Wymagaj dwuskładnikowego',
-  'users.totp.required.hint': 'Wymaga od tego konta drugiego składnika, stosowane przy następnym logowaniu. Nigdy nie blokuje dostępu natychmiast.',
+  'users.totp.required.hint':
+    'Wymaga od tego konta drugiego składnika, stosowane przy następnym logowaniu. Nigdy nie blokuje dostępu natychmiast.',
   'users.totp.required.add': 'Wymagaj',
   'users.totp.required.remove': 'Nie wymagaj',
   'users.totp.required.on': 'Dwuskładnikowe jest teraz wymagane.',
   'users.totp.required.off': 'Dwuskładnikowe nie jest już wymagane.',
-  'users.totp.required.locked': 'To konto musi zachować dwuskładnikowe, więc nie można go wyłączyć.',
+  'users.totp.required.locked':
+    'To konto musi zachować dwuskładnikowe, więc nie można go wyłączyć.',
   'users.sessions.title': 'Aktywne sesje',
-  'users.sessions.intro': 'Aktywne logowania na tym koncie. Zakończ sesję, której już nie rozpoznajesz; zostanie odrzucona przy następnym żądaniu.',
+  'users.sessions.intro':
+    'Aktywne logowania na tym koncie. Zakończ sesję, której już nie rozpoznajesz; zostanie odrzucona przy następnym żądaniu.',
   'users.sessions.caption': 'Aktywne sesje na tym koncie',
   'users.sessions.col.device': 'Urządzenie',
   'users.sessions.col.network': 'Sieć',

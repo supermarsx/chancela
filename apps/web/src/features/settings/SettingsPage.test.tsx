@@ -3010,8 +3010,12 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/cannot observe or spawn/)).toBeTruthy();
 
     // The MCP log level and the MCP service override, both moved off the generic logging grid.
-    expect((screen.getByLabelText('MCP') as HTMLSelectElement).value).toBe('info');
-    expect((screen.getByLabelText('MCP stdio') as HTMLSelectElement).value).toBe('');
+    const loggingTable = screen.getByRole('table', { name: 'Registos do MCP' });
+    expect(
+      within(loggingTable).getByRole('rowheader', { name: 'Servidor MCP stdio' }),
+    ).toBeTruthy();
+    expect((within(loggingTable).getByLabelText('MCP') as HTMLSelectElement).value).toBe('info');
+    expect((within(loggingTable).getByLabelText('MCP stdio') as HTMLSelectElement).value).toBe('');
 
     // The launch-time environment surface, read-only, with the API key named but never valued.
     expect(screen.getByText('CHANCELA_MCP_ENABLED_TOOLS')).toBeTruthy();
@@ -3057,8 +3061,12 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api']);
 
-    fireEvent.change(await screen.findByLabelText('API'), { target: { value: 'debug' } });
-    fireEvent.change(screen.getByLabelText('Servidor API'), { target: { value: 'trace' } });
+    const loggingTable = await screen.findByRole('table', { name: 'Registos da API' });
+    expect(within(loggingTable).getByRole('rowheader', { name: 'Servidor API' })).toBeTruthy();
+    fireEvent.change(within(loggingTable).getByLabelText('API'), { target: { value: 'debug' } });
+    fireEvent.change(within(loggingTable).getByLabelText('Servidor API'), {
+      target: { value: 'trace' },
+    });
 
     await waitFor(
       () => {
@@ -3205,13 +3213,29 @@ describe('SettingsPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
-    const summary = await screen.findByRole('group', { name: 'Log efetivo' });
-    expect(within(summary).getAllByText('Off')).toHaveLength(3);
-    expect(within(summary).getByText('Aplicação')).toBeTruthy();
-    expect(within(summary).getByText('Servidor API')).toBeTruthy();
-    expect(within(summary).getByText('Servidor MCP stdio')).toBeTruthy();
-    expect(within(summary).getAllByText('Global: Off')).toHaveLength(3);
-    expect(within(summary).queryByText(/Sobreposições/)).toBeNull();
+    const table = await screen.findByRole('table', { name: 'Níveis de log' });
+    const global = within(table).getByRole('rowheader', { name: 'Global' }).closest('tr');
+    const app = within(table).getByRole('rowheader', { name: 'Aplicação' }).closest('tr');
+    const api = within(table).getByRole('rowheader', { name: 'Servidor API' }).closest('tr');
+    const mcp = within(table).getByRole('rowheader', { name: 'Servidor MCP stdio' }).closest('tr');
+    if (!global || !app || !api || !mcp) throw new Error('logging matrix row missing');
+
+    expect((within(global).getByLabelText('Global') as HTMLSelectElement).value).toBe('off');
+    expect(within(app).getByLabelText('Aplicação')).toBeTruthy();
+    expect(within(app).getByLabelText('Overrides por serviço: Aplicação')).toBeTruthy();
+    for (const row of [global, app, api, mcp]) {
+      const cells = within(row).getAllByRole('cell');
+      expect(cells[2]?.textContent).toContain('Off');
+      expect(cells[3]?.textContent).toContain('Global: Off');
+    }
+    expect(within(table).queryByText(/Overrides por serviço: Trace/)).toBeNull();
+    expect(within(table).getByRole('link', { name: 'Servidor API' }).getAttribute('href')).toBe(
+      '/settings/operations/api',
+    );
+    expect(within(table).getByRole('link', { name: 'Servidor MCP' }).getAttribute('href')).toBe(
+      '/settings/operations/mcp',
+    );
+    expect(table.closest('.table-wrap')?.classList.contains('platform-logging-table')).toBe(true);
   });
 
   it('shows AI/MCP provenance assurance to settings managers without secret material', async () => {

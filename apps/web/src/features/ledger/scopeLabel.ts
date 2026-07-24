@@ -117,7 +117,9 @@ export function parseScope(raw: string, names: ScopeNameLookup = NO_NAMES): Scop
     // entity list confirms it. An unmatched UUID stays generically labelled rather than mislabelled.
     if (UUID_RE.test(part)) {
       const name = names.entity(part);
-      return name === null ? { token: null, id: part, name: null } : { token: 'entity', id: part, name };
+      return name === null
+        ? { token: null, id: part, name: null }
+        : { token: 'entity', id: part, name };
     }
     return { token: keywordToken(part), id: null, name: null };
   });

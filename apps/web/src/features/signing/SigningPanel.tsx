@@ -3524,9 +3524,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         )}
         {data?.evidence ? <SignatureEvidenceSummary evidence={data.evidence} /> : null}
         {signingOpen ? <ExternalSigningEnvelopesSection act={act} /> : null}
-        {signingOpen ? (
-          <ExternalSignerInvitesSection act={act} />
-        ) : null}
+        {signingOpen ? <ExternalSignerInvitesSection act={act} /> : null}
       </div>
     </Card>
   );

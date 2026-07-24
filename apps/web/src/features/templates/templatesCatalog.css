@@ -1,0 +1,222 @@
+/*
+ * Templates catalogue — feature-scoped list layout.
+ *
+ * Books and Entities establish the list-page contract: one results Card owns its states,
+ * compact primary filters, an advanced disclosure, the column picker and a fixed-layout table.
+ * These rules keep that contract local to Templates instead of borrowing another feature's class
+ * names or widening global table primitives.
+ */
+
+.templates-catalog-page .templates-catalog__body,
+.templates-catalog-page .templates-filters,
+.templates-catalog-page .templates-filterbar {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.templates-catalog-page .templates-filters,
+.templates-catalog-page .templates-filterbar {
+  overflow-x: clip;
+}
+
+.templates-catalog-page .templates-filters .field,
+.templates-catalog-page .templates-filters .control {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.templates-catalog-page .templates-filterbar {
+  padding-bottom: 0;
+}
+
+.templates-catalog-page .templates-filterbar__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.templates-catalog-page .templates-filterbar__primary .field {
+  flex: 1 1 10rem;
+  min-width: min(100%, 10rem);
+  max-width: 100%;
+}
+
+.templates-catalog-page .templates-filterbar__primary .field:first-child {
+  flex: 2 1 18rem;
+  min-width: min(100%, 18rem);
+}
+
+.templates-catalog-page .templates-filterbar__primary .tooltip {
+  flex: 0 0 auto;
+}
+
+.templates-catalog-page .templates-filterbar__clear {
+  align-self: flex-end;
+}
+
+.templates-catalog-page .templates-advanced-filters {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.templates-catalog-page .templates-advanced-filters > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.templates-catalog-page .templates-advanced-filters[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+.templates-catalog-page .templates-advanced-filters__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: end;
+  gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.templates-catalog-page .templates-table {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  --tc-family: 10rem;
+  --tc-stage: 8rem;
+  --tc-channels: 13rem;
+  --tc-signature: 14rem;
+  --tc-rule-pack: 11rem;
+  --tc-law-source: 18rem;
+  --tc-origin: 10rem;
+  --tc-actions: 12.5rem;
+}
+
+.templates-catalog-page .templates-table .table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.templates-catalog-page .templates-table .table {
+  width: 100%;
+  min-width: var(--templates-table-floor);
+  table-layout: fixed;
+}
+
+.templates-catalog-page .templates-table .table th,
+.templates-catalog-page .templates-table .table td {
+  min-width: 0;
+  overflow: hidden;
+  vertical-align: middle;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.templates-catalog-page .templates-table .table th[data-template-column='Family'] {
+  width: var(--tc-family);
+}
+
+.templates-catalog-page .templates-table .table th[data-template-column='Stage'] {
+  width: var(--tc-stage);
+}
+
+.templates-catalog-page .templates-table .table th[data-template-column='Channels'] {
+  width: var(--tc-channels);
+}
+
+.templates-catalog-page .templates-table .table th[data-template-column='Signature'] {
+  width: var(--tc-signature);
+}
+
+.templates-catalog-page .templates-table .table th[data-template-column='RulePack'] {
+  width: var(--tc-rule-pack);
+}
+
+.templates-catalog-page .templates-table .table th[data-template-column='LawSource'] {
+  width: var(--tc-law-source);
+}
+
+.templates-catalog-page .templates-table .table th[data-template-column='Origin'] {
+  width: var(--tc-origin);
+}
+
+.templates-catalog-page .templates-table .table th[data-template-column='Actions'] {
+  width: var(--tc-actions);
+  text-align: right;
+}
+
+.templates-catalog-page .templates-table__open,
+.templates-catalog-page .templates-table__name,
+.templates-catalog-page .templates-table__id,
+.templates-catalog-page .templates-table__code {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.templates-catalog-page .templates-table__id {
+  overflow-wrap: normal;
+}
+
+.templates-catalog-page .templates-table .table td[data-template-column='LawSource'] {
+  min-width: 0;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.templates-catalog-page .templates-table .table td[data-template-column='Actions'] {
+  overflow: visible;
+  text-align: right;
+}
+
+.templates-catalog-page .templates-table__actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.templates-catalog-page .templates-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+}
+
+.templates-catalog-page .templates-pagination__actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+}
+
+@media (max-width: 720px) {
+  .templates-catalog-page .templates-filterbar__primary .field,
+  .templates-catalog-page .templates-filterbar__primary .field:first-child {
+    flex-basis: min(100%, 13rem);
+    min-width: 0;
+  }
+
+  .templates-catalog-page .templates-pagination {
+    align-items: stretch;
+  }
+}

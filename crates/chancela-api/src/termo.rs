@@ -52,8 +52,13 @@
 //! helpers, `resolve_cmd_config_for_entry`) promoted out of `signature.rs`, outside this module's
 //! reach today. They face the same one-signature-per-PDF constraint (also parallel co-signature).
 
+use std::collections::HashSet;
+
 use axum::Json;
+use axum::body::Body;
 use axum::extract::{Path, State};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use serde::Deserialize;
@@ -66,7 +71,7 @@ use chancela_core::error::TermoError;
 use chancela_core::termo::{
     TermoClause, TermoInstrument, TermoKind, TermoSignatorySlot, TermoState,
 };
-use chancela_core::{ActId, BookState, open_and_seal_book};
+use chancela_core::{ActId, BookState, LifecycleStage, open_and_seal_book};
 use chancela_pades::{SignOptions, prepare_signature_with_appearance};
 use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource};
 use chancela_store::{StoredDocument, StoredInstrumentSignature, StoredSignedDocument};
@@ -208,6 +213,35 @@ async fn persist_termo(state: &AppState, termo: &TermoInstrument) -> Result<(), 
         .await
 }
 
+/// Build a termo view whose per-slot PAdES availability comes from durable artifact history.
+///
+/// `slot.signed` remains provisional workflow state (the reference-only endpoint sets it too);
+/// only an `instrument_signatures` row for this exact subject + slot makes a downloadable signed
+/// revision available.
+async fn termo_view_with_pades_availability(
+    state: &AppState,
+    subject: ActId,
+    termo: &TermoInstrument,
+) -> Result<TermoInstrumentView, ApiError> {
+    let available: HashSet<String> = match &state.store {
+        Some(store) => store
+            .read_blocking_async(move |s| s.instrument_signatures_for_subject(subject))
+            .await
+            .map_err(|e| {
+                ApiError::Internal(format!("instrument signature store read failed: {e}"))
+            })?
+            .into_iter()
+            .filter_map(|signature| signature.slot_id)
+            .collect(),
+        None => HashSet::new(),
+    };
+    let mut view = TermoInstrumentView::from(termo);
+    for slot in &mut view.signatories {
+        slot.pades_document_available = available.contains(&slot.id);
+    }
+    Ok(view)
+}
+
 /// `GET /v1/books/{id}/termo/abertura` — read the book's termo de abertura instrument.
 pub async fn get_abertura(
     State(state): State<AppState>,
@@ -217,7 +251,9 @@ pub async fn get_abertura(
     let book_id = BookId(id);
     require_permission(&state, &actor, Permission::BookRead, scope_of_book(book_id)).await?;
     let termo = load_book_abertura(&state, book_id).await?;
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    Ok(Json(
+        termo_view_with_pades_availability(&state, ActId(book_id.0), &termo).await?,
+    ))
 }
 
 /// `PATCH /v1/books/{id}/termo/abertura` — edit the draft (title, body, fields, signatory slots,
@@ -238,7 +274,9 @@ pub async fn patch_abertura(
     }
     apply_patch(&mut termo, patch)?;
     persist_termo(&state, &termo).await?;
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    Ok(Json(
+        termo_view_with_pades_availability(&state, ActId(book_id.0), &termo).await?,
+    ))
 }
 
 /// Apply a PATCH to a `Draft` termo. Mutability is confirmed by the caller; the core setters
@@ -352,16 +390,13 @@ pub async fn advance_abertura(
     // signing subject `ActId(book.id.0)` (R1). A family without a termo template renders nothing; the
     // book then opens on the genesis event alone (one-shot parity).
     //
-    // ⚠️ numbering_scheme is not a `TermoInstrument` field yet, so the snapshot is rendered with the
-    // codebase-wide default (`Sequential`). The open path (t41-e3) must preserve the signed bytes with
-    // the SAME scheme — or the choice must move ahead of `advance` — so the signed snapshot and the
-    // genesis-digested projection cannot disagree. See `documents::generate_termo_snapshot`.
-    let snapshot = crate::documents::generate_termo_snapshot(
-        &termo,
-        &book,
-        &entity,
-        chancela_core::book::NumberingScheme::Sequential,
-    )?;
+    // The scheme was pinned on the Draft at book creation, before any signature bytes existed.
+    // Legacy stored drafts predate that field and retain their historical Sequential default.
+    let numbering_scheme = termo
+        .numbering_scheme
+        .unwrap_or(NumberingScheme::Sequential);
+    let snapshot =
+        crate::documents::generate_termo_snapshot(&termo, &book, &entity, numbering_scheme)?;
 
     // Persist the frozen termo + (if the family has a template) its unsigned snapshot in one durable
     // commit. NO ledger append — a Signing termo is not yet on the hash chain (t23 invariant); its
@@ -390,7 +425,9 @@ pub async fn advance_abertura(
             .insert(g.stored.act_id, g.stored.clone());
     }
 
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    Ok(Json(
+        termo_view_with_pades_availability(&state, ActId(book_id.0), &termo).await?,
+    ))
 }
 
 /// `POST /v1/books/{id}/termo/abertura/sign` — record that a signatory slot signed by *reference*
@@ -413,7 +450,9 @@ pub async fn sign_abertura(
         .mark_slot_signed(req.slot_id, req.signature_id, OffsetDateTime::now_utc())
         .map_err(map_termo_error)?;
     persist_termo(&state, &termo).await?;
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    Ok(Json(
+        termo_view_with_pades_availability(&state, ActId(book_id.0), &termo).await?,
+    ))
 }
 
 /// The signing family + evidentiary level a termo PKCS#12 software-certificate PAdES signature
@@ -518,6 +557,16 @@ pub async fn sign_abertura_pkcs12(
 ) -> Result<Json<TermoInstrumentView>, ApiError> {
     let book_id = BookId(id);
     require_permission(&state, &actor, Permission::BookOpen, scope_of_book(book_id)).await?;
+    // A real cryptographic signature is authority-distinct from managing the book lifecycle.
+    // Match every act-signing path: an operator may prepare/open books without thereby acquiring
+    // the power to sign an evidentiary PDF on somebody's behalf.
+    require_permission(
+        &state,
+        &actor,
+        Permission::SigningPerform,
+        scope_of_book(book_id),
+    )
+    .await?;
 
     // PKCS#12 local signing is the desk-application flow (mirrors the act pipeline's gate).
     if !state.local_signing {
@@ -531,6 +580,88 @@ pub async fn sign_abertura_pkcs12(
     // preserved PDF/A are all keyed on `ActId(book.id.0)`.
     let termo = load_book_abertura(&state, book_id).await?;
     sign_termo_slot_pkcs12(&state, ActId(book_id.0), termo, req, "termo de abertura").await
+}
+
+/// `GET /v1/books/{id}/termo/abertura/document` — stream the preserved unsigned PDF/A snapshot.
+///
+/// The snapshot is created when a draft advances to `Signing` and remains the canonical base
+/// document after the termo is sealed. Legacy one-shot books use the same `ActId(book.id)` document
+/// key, so this additive route also gives them an honest read-only document action without
+/// pretending the book id is an act id at `/v1/acts/{id}/document`.
+pub async fn get_abertura_document(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Response, ApiError> {
+    let book_id = BookId(id);
+    require_permission(&state, &actor, Permission::BookRead, scope_of_book(book_id)).await?;
+    if !state.books.read().await.contains_key(&book_id) {
+        return Err(ApiError::NotFound);
+    }
+    let document = crate::documents::load_document_for_stage(
+        &state,
+        ActId(book_id.0),
+        LifecycleStage::TermoAbertura,
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/pdf"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"termo-de-abertura-base-sem-assinaturas.pdf\"",
+            ),
+            (header::CACHE_CONTROL, "private, no-store"),
+        ],
+        document.pdf_bytes,
+    )
+        .into_response())
+}
+
+/// `GET /v1/books/{book_id}/termo/abertura/signatures/{slot_id}` — stream one real, per-slot
+/// PAdES co-signature revision. The termo signing model deliberately preserves one independently
+/// verifiable signed PDF per slot; this endpoint never merges revisions or labels an unsigned
+/// reconstruction as the final signed document.
+pub async fn get_abertura_signature_document(
+    State(state): State<AppState>,
+    Path((id, slot_id)): Path<(Uuid, Uuid)>,
+    actor: CurrentActor,
+) -> Result<Response, ApiError> {
+    let book_id = BookId(id);
+    require_permission(&state, &actor, Permission::BookRead, scope_of_book(book_id)).await?;
+    if !state.books.read().await.contains_key(&book_id) {
+        return Err(ApiError::NotFound);
+    }
+    let subject = ActId(book_id.0);
+    let signatures = match &state.store {
+        Some(store) => store
+            .read_blocking_async(move |s| s.instrument_signatures_for_subject(subject))
+            .await
+            .map_err(|e| {
+                ApiError::Internal(format!("instrument signature store read failed: {e}"))
+            })?,
+        None => Vec::new(),
+    };
+    let slot_id = slot_id.to_string();
+    let signature = signatures
+        .into_iter()
+        .find(|signature| signature.slot_id.as_deref() == Some(slot_id.as_str()))
+        .ok_or(ApiError::NotFound)?;
+    Response::builder()
+        .header(header::CONTENT_TYPE, "application/pdf")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"termo-de-abertura-assinado-{slot_id}.pdf\""),
+        )
+        .header(header::CACHE_CONTROL, "private, no-store")
+        .header("x-chancela-signature-slot-id", slot_id)
+        .header(
+            "x-chancela-signed-pdf-digest",
+            &signature.document.signed_pdf_digest,
+        )
+        .body(Body::from(signature.document.signed_pdf_bytes))
+        .map_err(|e| ApiError::Internal(format!("failed to build termo signature response: {e}")))
 }
 
 /// Shared PKCS#12 per-slot **real-PAdES** signing over a frozen termo snapshot, driving both the
@@ -722,7 +853,9 @@ async fn sign_termo_slot_pkcs12(
     // signing handlers apply.
     state.signed_documents.write().await.insert(subject, stored);
 
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    Ok(Json(
+        termo_view_with_pades_availability(state, subject, &termo).await?,
+    ))
 }
 
 /// Build the **co-signature manifest** binding the frozen termo snapshot to the SET of canonical
@@ -796,20 +929,20 @@ pub async fn open_from_termo(
     // real per-slot signatures.
     require_real_signatures(&state, ActId(book_id.0), &termo).await?;
 
-    // numbering_scheme reconciliation (e1 flag): the snapshot every signatory signed was frozen at
-    // advance under the codebase-default `Sequential` scheme (numbering_scheme is not yet a
-    // `TermoInstrument` field, so it cannot be chosen before signing). The genesis projection MUST use
-    // the SAME scheme, or the signed snapshot and the genesis-digested projection would disagree.
-    // Reject a contradicting request rather than silently coercing (reject-never-silently-transform).
-    // When the scheme becomes a draft field pinned at advance, this compares against the pinned value.
-    if req.numbering_scheme != NumberingScheme::Sequential {
-        return Err(ApiError::Unprocessable(
-            "the termo snapshot was frozen for signing under sequential numbering; opening the book \
-             under a different numbering scheme would contradict the signed document. Sequential is \
-             the only scheme available for the two-phase termo until the scheme can be chosen before \
-             signing."
-                .to_owned(),
-        ));
+    // The genesis projection MUST use the scheme pinned before the signing snapshot was rendered.
+    // An explicit request value is a compatibility assertion only; reject contradictions rather
+    // than silently transforming the signed instrument.
+    let numbering_scheme = termo
+        .numbering_scheme
+        .unwrap_or(NumberingScheme::Sequential);
+    if req
+        .numbering_scheme
+        .is_some_and(|requested| requested != numbering_scheme)
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "the termo snapshot was frozen for signing under {numbering_scheme:?} numbering; \
+             opening it under a different scheme would contradict the signed document"
+        )));
     }
 
     // Load the SET of co-signature PDF/As recorded at sign time (parallel co-signature: one genuine
@@ -852,7 +985,7 @@ pub async fn open_from_termo(
             entity.name.clone(),
             entity.nipc.to_string(),
             entity.seat.clone(),
-            req.numbering_scheme,
+            numbering_scheme,
         )
         .map_err(map_termo_error)?;
 
@@ -992,7 +1125,10 @@ pub async fn get_encerramento(
     let book_id = BookId(id);
     require_permission(&state, &actor, Permission::BookRead, scope_of_book(book_id)).await?;
     let termo = load_book_encerramento(&state, book_id).await?;
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    let subject = encerramento_subject(&termo);
+    Ok(Json(
+        termo_view_with_pades_availability(&state, subject, &termo).await?,
+    ))
 }
 
 /// `PATCH /v1/books/{id}/termo/encerramento` — edit the draft (title, body, fields, signatory slots,
@@ -1019,7 +1155,10 @@ pub async fn patch_encerramento(
     }
     apply_patch_encerramento(&mut termo, patch)?;
     persist_termo(&state, &termo).await?;
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    let subject = encerramento_subject(&termo);
+    Ok(Json(
+        termo_view_with_pades_availability(&state, subject, &termo).await?,
+    ))
 }
 
 /// Apply a PATCH to a `Draft` termo de encerramento. Mirrors [`apply_patch`], but the fillable
@@ -1148,7 +1287,10 @@ pub async fn advance_encerramento(
             .insert(g.stored.act_id, g.stored.clone());
     }
 
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    let subject = encerramento_subject(&termo);
+    Ok(Json(
+        termo_view_with_pades_availability(&state, subject, &termo).await?,
+    ))
 }
 
 /// `POST /v1/books/{id}/termo/encerramento/sign` — record that a signatory slot signed by *reference*
@@ -1175,7 +1317,10 @@ pub async fn sign_encerramento(
         .mark_slot_signed(req.slot_id, req.signature_id, OffsetDateTime::now_utc())
         .map_err(map_termo_error)?;
     persist_termo(&state, &termo).await?;
-    Ok(Json(TermoInstrumentView::from(&termo)))
+    let subject = encerramento_subject(&termo);
+    Ok(Json(
+        termo_view_with_pades_availability(&state, subject, &termo).await?,
+    ))
 }
 
 /// `POST /v1/books/{id}/termo/encerramento/sign/pkcs12` — produce a **real cryptographic** per-slot
@@ -1193,6 +1338,13 @@ pub async fn sign_encerramento_pkcs12(
         &state,
         &actor,
         Permission::BookClose,
+        scope_of_book(book_id),
+    )
+    .await?;
+    require_permission(
+        &state,
+        &actor,
+        Permission::SigningPerform,
         scope_of_book(book_id),
     )
     .await?;

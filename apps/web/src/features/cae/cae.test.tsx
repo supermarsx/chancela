@@ -176,6 +176,8 @@ describe('CaePage redirect', () => {
     // The Ferramentas explorer mounts and the deep-linked code resolves in the detail pane.
     expect(await screen.findByText('Explorador do catálogo CAE')).toBeTruthy();
     // getAllBy: the breadcrumb's themed tooltip reveals the designation too (t31).
-    expect((await screen.findAllByText('Compra e venda de bens imobiliários.')).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByText('Compra e venda de bens imobiliários.')).length,
+    ).toBeGreaterThan(0);
   });
 });

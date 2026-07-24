@@ -202,8 +202,7 @@ export function NewUserPage() {
       <PageHeader
         crumbs={
           <>
-            <Link to="/settings/users">{t('users.breadcrumb.self')}</Link> ·{' '}
-            {t('users.new.crumb')}
+            <Link to="/settings/users">{t('users.breadcrumb.self')}</Link> · {t('users.new.crumb')}
           </>
         }
         title={t('users.new.title')}

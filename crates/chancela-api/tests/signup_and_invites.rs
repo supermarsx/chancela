@@ -5,7 +5,7 @@
 //! deliberately violated (§2.5). A form that hides a field is a convenience; the refusal that
 //! matters is the one the handler makes.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

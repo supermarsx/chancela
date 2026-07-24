@@ -64,7 +64,11 @@ const DATABASE_ENV_ROWS: readonly {
     fallback: '—',
     secret: true,
   },
-  { name: 'CHANCELA_DB_KEY_SOURCE', meaning: 'settings.database.env.keySource', fallback: 'operator' },
+  {
+    name: 'CHANCELA_DB_KEY_SOURCE',
+    meaning: 'settings.database.env.keySource',
+    fallback: 'operator',
+  },
   { name: 'CHANCELA_PG_SSLMODE', meaning: 'settings.database.env.sslMode', fallback: '—' },
 ];
 

@@ -210,6 +210,18 @@ moka = { version = "0.12", default-features = false, features = ["sync"] }
 # compiled at all.
 redis = { version = "1.4", default-features = false }
 
+# Full DWARF/PDB records multiply badly across this workspace's many large
+# integration-test binaries (the API tests alone each link the full service
+# graph). Keep source locations and backtraces while avoiding duplicate
+# variable/type debug records in every development executable. A debugging
+# session that needs full locals can opt back in without a manifest edit:
+# `CARGO_PROFILE_DEV_DEBUG=full` or `CARGO_PROFILE_TEST_DEBUG=full`.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
 [profile.release]
 lto = "thin"
 strip = true

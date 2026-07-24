@@ -20,9 +20,9 @@
  * There is no `GET /v1/templates/{id}`: metadata comes from the catalog list and the body from
  * the export endpoint, so this page joins two reads that the API does not join for it.
  */
-import { useEffect, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useTemplateBodyPreview, useTemplateBundle, useTemplates } from '../../api/hooks';
+import { useTemplateBundle, useTemplates } from '../../api/hooks';
 import {
   entityFamilyLabels,
   lifecycleStageLabels,
@@ -50,13 +50,12 @@ import { useSectionNav } from '../../app/navPath';
 import { GateButton } from '../session/permissions';
 import { TemplateEditPage } from './TemplateEditPage';
 import { templateIdBase, templateIdVersion } from './templateFork';
-import {
-  TemplateAuthoredPreview,
-  type TemplateNarrativePreviewState,
-} from './TemplateAuthoredPreview';
 import { hasTemplateName, templateDisplayName } from './templateNames';
 import { templatePlaceholders } from './templatePlaceholders';
+import { TemplatePdfPreview } from './TemplatePdfPreview';
 import { useTemplateEditor } from './useTemplateEditor';
+import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
+import './templateEditor.css';
 
 /**
  * `edit` is a SECTION of the template route, not a segment reserved beside `:sec?` (t109, on the
@@ -123,49 +122,92 @@ function blockSummary(block: TemplateBlockSpec): string {
   }
 }
 
-/**
- * Compile the bundle's real narrative seed once and pass it to the shared authored renderer.
- *
- * A template can contain more than one `NarrativeBody` marker; compilation still happens once and
- * the same authoritative result is inserted at every authored marker in document order.
- */
-function TemplateDetailAuthoredPreview({
+/** One read-only representation at a time: the real server PDF/A proof or exact Markdown source. */
+function TemplateDetailPreview({
   template,
-  blocks,
   bodyMarkdown,
+  markdownLoading,
+  markdownError,
 }: {
   template: TemplateSummary;
-  blocks: TemplateBlockSpec[];
-  bodyMarkdown: string;
+  bodyMarkdown: string | undefined;
+  markdownLoading: boolean;
+  markdownError: unknown;
 }) {
-  const preview = useTemplateBodyPreview();
-  const mutate = preview.mutate;
-
-  useEffect(() => {
-    if (bodyMarkdown.trim()) mutate({ source: bodyMarkdown });
-  }, [bodyMarkdown, mutate]);
-
-  const title = hasTemplateName(template.id) ? templateDisplayName(template.id) : template.id;
-  const narrative: TemplateNarrativePreviewState = !bodyMarkdown.trim()
-    ? { status: 'empty' }
-    : preview.isIdle || preview.isPending
-      ? { status: 'loading' }
-      : preview.error
-        ? {
-            status: 'error',
-            diagnostic:
-              preview.error instanceof Error ? preview.error.message : String(preview.error),
-          }
-        : { status: 'ready', blocks: preview.data?.blocks ?? [] };
+  const bt = useTemplatesEditorT();
+  const [mode, setMode] = useState<'pdf' | 'markdown'>('pdf');
+  const previewId = useId();
 
   return (
-    <TemplateAuthoredPreview
-      title={title}
-      templateId={template.id}
-      locale={template.locale}
-      blocks={blocks}
-      narrative={narrative}
-    />
+    <section className="stack--tight template-detail-preview">
+      <div
+        className="template-preview__tabs"
+        role="tablist"
+        aria-label={bt('templates.editor.preview.tabs.aria')}
+      >
+        {(['pdf', 'markdown'] as const).map((candidate) => (
+          <button
+            key={candidate}
+            id={`${previewId}-${candidate}-tab`}
+            type="button"
+            role="tab"
+            className={mode === candidate ? 'is-active' : undefined}
+            aria-selected={mode === candidate}
+            aria-controls={`${previewId}-${candidate}-panel`}
+            tabIndex={mode === candidate ? 0 : -1}
+            onClick={() => setMode(candidate)}
+          >
+            {bt(
+              candidate === 'pdf'
+                ? 'templates.editor.preview.tabs.pdf'
+                : 'templates.editor.preview.tabs.markdown',
+            )}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'pdf' ? (
+        <div
+          id={`${previewId}-pdf-panel`}
+          className="template-preview__panel"
+          role="tabpanel"
+          aria-labelledby={`${previewId}-pdf-tab`}
+        >
+          <TemplatePdfPreview
+            request={{ source: 'catalog', template_id: template.id }}
+            debounceMs={0}
+            idPrefix={`${previewId}-catalog-pdf`}
+            downloadFilename={`${template.id}-structural-preview.pdf`}
+          />
+        </div>
+      ) : (
+        <div
+          id={`${previewId}-markdown-panel`}
+          className="template-preview__panel stack--tight"
+          role="tabpanel"
+          aria-labelledby={`${previewId}-markdown-tab`}
+        >
+          <div className="template-preview__markdown-head">
+            <p className="field__hint">{bt('templates.editor.preview.markdown.note')}</p>
+          </div>
+          {markdownLoading ? (
+            <Skeleton height="14rem" />
+          ) : markdownError ? (
+            <p className="muted">{String(markdownError)}</p>
+          ) : bodyMarkdown ? (
+            <pre
+              className="template-preview__markdown-source"
+              aria-label={bt('templates.editor.preview.markdown.sourceLabel')}
+              tabIndex={0}
+            >
+              <code>{bodyMarkdown}</code>
+            </pre>
+          ) : (
+            <p className="muted">{bt('templates.editor.preview.empty')}</p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -355,19 +397,12 @@ export function TemplateDetailPage() {
         {section === 'preview' ? (
           <Card title={ct('templates.catalog.preview.title')}>
             <p className="field__hint">{ct('templates.catalog.preview.hint')}</p>
-            {spec.isLoading ? (
-              <SkeletonDeflist />
-            ) : spec.error ? (
-              <p className="muted">{t('templates.detail.spec.error')}</p>
-            ) : (spec.data?.blocks ?? []).length === 0 ? (
-              <p className="muted">{t('templates.detail.blocks.empty')}</p>
-            ) : (
-              <TemplateDetailAuthoredPreview
-                template={template}
-                blocks={spec.data?.blocks ?? []}
-                bodyMarkdown={bundle.data?.body_markdown ?? ''}
-              />
-            )}
+            <TemplateDetailPreview
+              template={template}
+              bodyMarkdown={bundle.data?.body_markdown}
+              markdownLoading={bundle.isLoading}
+              markdownError={bundle.error}
+            />
           </Card>
         ) : null}
 

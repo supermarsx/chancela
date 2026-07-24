@@ -109,10 +109,7 @@ export function WindowControls() {
         </button>
       </Tooltip>
 
-      <Tooltip
-        label={maximized ? t('window.restore') : t('window.maximize')}
-        placement="bottom"
-      >
+      <Tooltip label={maximized ? t('window.restore') : t('window.maximize')} placement="bottom">
         <button
           type="button"
           className="titlebar__btn"

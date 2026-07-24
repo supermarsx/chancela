@@ -4,7 +4,7 @@
 //! directly. The signed case seeds the already-existing `signed_documents` row shape so this stays
 //! focused on archive packaging rather than signing routes.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};

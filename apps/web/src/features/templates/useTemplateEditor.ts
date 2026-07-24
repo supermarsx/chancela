@@ -37,9 +37,7 @@ export function useTemplateEditor(): TemplateEditorController {
       // A user template is edited in place on its OWN full-width page; a built-in can only be
       // changed by forking it, so "Editar" on one leads to the seeded create page.
       void navigate(
-        template.source === 'user'
-          ? templateEditPath(template.id)
-          : templateForkPath(template.id),
+        template.source === 'user' ? templateEditPath(template.id) : templateForkPath(template.id),
       );
     },
     clone: (template) => void navigate(templateForkPath(template.id)),

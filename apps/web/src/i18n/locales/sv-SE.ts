@@ -1650,14 +1650,19 @@ export const svSE: Catalog = {
   'users.edit.subnav.access': 'Åtkomst och granskning',
   'users.edit.subnav.security': 'Säkerhet',
   'users.security.title': 'Kontosäkerhet',
-  'users.security.intro.self': 'Hantera säkerheten för ditt eget konto här. Samma inloggningsuppgifter visas under Åtkomst och granskning, där en administratör inspekterar och återställer dem — här ser du dem som kontoinnehavare.',
-  'users.security.intro.other': 'Säkerhetsstatus för detta konto. Endast innehavaren kan hantera sina inloggningsuppgifter; använd Åtkomst och granskning för att återställa dem som administratör.',
+  'users.security.intro.self':
+    'Hantera säkerheten för ditt eget konto här. Samma inloggningsuppgifter visas under Åtkomst och granskning, där en administratör inspekterar och återställer dem — här ser du dem som kontoinnehavare.',
+  'users.security.intro.other':
+    'Säkerhetsstatus för detta konto. Endast innehavaren kan hantera sina inloggningsuppgifter; använd Åtkomst och granskning för att återställa dem som administratör.',
   'users.security.password.hint': 'Inloggningslösenord.',
-  'users.security.recovery.hint': 'Återställningsfras, ett alternativ till lösenordet om det glöms bort.',
-  'users.security.key.hint': 'Attesteringsnyckel för granskning. Att rotera den skapar en ny nyckel för framtida attesteringar; tidigare förblir verifierbara.',
+  'users.security.recovery.hint':
+    'Återställningsfras, ett alternativ till lösenordet om det glöms bort.',
+  'users.security.key.hint':
+    'Attesteringsnyckel för granskning. Att rotera den skapar en ny nyckel för framtida attesteringar; tidigare förblir verifierbara.',
   'users.security.manage': 'Hantera i Åtkomst och granskning',
   'users.totp.title': 'Tvåfaktorsautentisering',
-  'users.totp.intro': 'En andra faktor bekräftar inloggningen med en kod från din autentiseringsapp, utöver lösenordet.',
+  'users.totp.intro':
+    'En andra faktor bekräftar inloggningen med en kod från din autentiseringsapp, utöver lösenordet.',
   'users.totp.on': 'På',
   'users.totp.off': 'Av',
   'users.totp.stateLabel': 'Tillstånd',
@@ -1665,7 +1670,8 @@ export const svSE: Catalog = {
   'users.totp.enrolled': 'Tvåfaktor aktiverad.',
   'users.totp.confirm': 'Bekräfta',
   'users.totp.qr.alt': 'QR-kod för att konfigurera tvåfaktorsautentisering',
-  'users.totp.qr.hint': 'Skanna den här koden med din autentiseringsapp (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Skanna den här koden med din autentiseringsapp (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'Eller ange den här nyckeln manuellt:',
   'users.totp.code.label': 'Verifieringskod',
   'users.totp.code.hint': 'Ange den 6-siffriga koden som appen visar.',
@@ -1673,21 +1679,25 @@ export const svSE: Catalog = {
   'users.totp.disable': 'Inaktivera tvåfaktor',
   'users.totp.disabled': 'Tvåfaktor inaktiverad.',
   'users.totp.backup.title': 'Spara dina reservkoder',
-  'users.totp.backup.body': 'Spara dem nu, på ett säkert ställe. Varje kod loggar in dig en gång utan den andra faktorn och de visas inte igen.',
+  'users.totp.backup.body':
+    'Spara dem nu, på ett säkert ställe. Varje kod loggar in dig en gång utan den andra faktorn och de visas inte igen.',
   'users.totp.backup.copy': 'Kopiera koder',
   'users.totp.backup.copied': 'Koder kopierade.',
   'users.totp.backup.regenerate': 'Generera nya koder',
   'users.totp.backup.regenerated': 'Nya koder genererade; de tidigare är inte längre giltiga.',
   'users.totp.backup.remainingLabel': 'Återstående reservkoder',
   'users.totp.required.label': 'Kräv tvåfaktor',
-  'users.totp.required.hint': 'Kräver att detta konto har en andra faktor, tillämpas vid nästa inloggning. Spärrar aldrig åtkomsten omedelbart.',
+  'users.totp.required.hint':
+    'Kräver att detta konto har en andra faktor, tillämpas vid nästa inloggning. Spärrar aldrig åtkomsten omedelbart.',
   'users.totp.required.add': 'Kräv',
   'users.totp.required.remove': 'Kräv inte',
   'users.totp.required.on': 'Tvåfaktor krävs nu.',
   'users.totp.required.off': 'Tvåfaktor krävs inte längre.',
-  'users.totp.required.locked': 'Detta konto måste behålla tvåfaktor och kan därför inte inaktivera den.',
+  'users.totp.required.locked':
+    'Detta konto måste behålla tvåfaktor och kan därför inte inaktivera den.',
   'users.sessions.title': 'Aktiva sessioner',
-  'users.sessions.intro': 'De aktiva inloggningarna på detta konto. Avsluta en session du inte längre känner igen; den avvisas vid nästa begäran.',
+  'users.sessions.intro':
+    'De aktiva inloggningarna på detta konto. Avsluta en session du inte längre känner igen; den avvisas vid nästa begäran.',
   'users.sessions.caption': 'Aktiva sessioner på detta konto',
   'users.sessions.col.device': 'Enhet',
   'users.sessions.col.network': 'Nätverk',

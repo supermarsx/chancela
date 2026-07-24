@@ -20,6 +20,17 @@ fn sample_settings() -> Value {
             "cae_official_source": false,
             "preferred_official_source": "Ine"
         },
+        "email": {
+            "enabled": false,
+            "host": null,
+            "port": 587,
+            "encryption": "starttls",
+            "username": null,
+            "from_address": null,
+            "from_name": null,
+            "helo_name": null,
+            "allow_insecure": false
+        },
         "signing": {
             "preferred_family": "ChaveMovelDigital",
             "tsa_url": "https://tsa.example.pt/tsr",
@@ -150,6 +161,7 @@ fn sample_settings() -> Value {
         },
         "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
         "platform": {
+            "public_base_url": null,
             "logging": {
                 "global": "info",
                 "app": "info",

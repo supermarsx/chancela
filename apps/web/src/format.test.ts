@@ -176,9 +176,7 @@ describe('date and timestamp formatting', () => {
 
     it('derives an ISO string for Date and epoch-millis inputs', () => {
       expect(isoAttribute(new Date('2026-07-20T22:41:06.589Z'))).toBe('2026-07-20T22:41:06.589Z');
-      expect(isoAttribute(Date.parse('2026-07-20T22:41:06.589Z'))).toBe(
-        '2026-07-20T22:41:06.589Z',
-      );
+      expect(isoAttribute(Date.parse('2026-07-20T22:41:06.589Z'))).toBe('2026-07-20T22:41:06.589Z');
     });
   });
 });

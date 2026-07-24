@@ -1654,14 +1654,19 @@ export const nlNL: Catalog = {
   'users.edit.subnav.access': 'Toegang en audit',
   'users.edit.subnav.security': 'Beveiliging',
   'users.security.title': 'Accountbeveiliging',
-  'users.security.intro.self': 'Beheer hier de beveiliging van uw eigen account. Dezelfde inloggegevens verschijnen onder Toegang en audit, waar een beheerder ze inspecteert en opnieuw instelt — hier ziet u ze als accounthouder.',
-  'users.security.intro.other': 'Beveiligingsstatus van dit account. Alleen de houder kan zijn inloggegevens beheren; gebruik Toegang en audit om ze als beheerder opnieuw in te stellen.',
+  'users.security.intro.self':
+    'Beheer hier de beveiliging van uw eigen account. Dezelfde inloggegevens verschijnen onder Toegang en audit, waar een beheerder ze inspecteert en opnieuw instelt — hier ziet u ze als accounthouder.',
+  'users.security.intro.other':
+    'Beveiligingsstatus van dit account. Alleen de houder kan zijn inloggegevens beheren; gebruik Toegang en audit om ze als beheerder opnieuw in te stellen.',
   'users.security.password.hint': 'Aanmeldwachtwoord.',
-  'users.security.recovery.hint': 'Herstelzin, een alternatief voor het wachtwoord als het wordt vergeten.',
-  'users.security.key.hint': 'Audit-attestatiesleutel. Roteren maakt een nieuwe sleutel voor toekomstige attestaties; eerdere blijven verifieerbaar.',
+  'users.security.recovery.hint':
+    'Herstelzin, een alternatief voor het wachtwoord als het wordt vergeten.',
+  'users.security.key.hint':
+    'Audit-attestatiesleutel. Roteren maakt een nieuwe sleutel voor toekomstige attestaties; eerdere blijven verifieerbaar.',
   'users.security.manage': 'Beheren in Toegang en audit',
   'users.totp.title': 'Tweefactorauthenticatie',
-  'users.totp.intro': 'Een tweede factor bevestigt het aanmelden met een code uit uw authenticator-app, naast het wachtwoord.',
+  'users.totp.intro':
+    'Een tweede factor bevestigt het aanmelden met een code uit uw authenticator-app, naast het wachtwoord.',
   'users.totp.on': 'Aan',
   'users.totp.off': 'Uit',
   'users.totp.stateLabel': 'Status',
@@ -1669,7 +1674,8 @@ export const nlNL: Catalog = {
   'users.totp.enrolled': 'Tweefactor ingeschakeld.',
   'users.totp.confirm': 'Bevestigen',
   'users.totp.qr.alt': 'QR-code om tweefactorauthenticatie in te stellen',
-  'users.totp.qr.hint': 'Scan deze code met uw authenticator-app (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Scan deze code met uw authenticator-app (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'Of voer deze sleutel handmatig in:',
   'users.totp.code.label': 'Verificatiecode',
   'users.totp.code.hint': 'Voer de 6-cijferige code in die de app toont.',
@@ -1677,21 +1683,25 @@ export const nlNL: Catalog = {
   'users.totp.disable': 'Tweefactor uitschakelen',
   'users.totp.disabled': 'Tweefactor uitgeschakeld.',
   'users.totp.backup.title': 'Bewaar uw back-upcodes',
-  'users.totp.backup.body': 'Bewaar ze nu op een veilige plek. Elke code meldt u eenmaal aan zonder de tweede factor en ze worden niet opnieuw getoond.',
+  'users.totp.backup.body':
+    'Bewaar ze nu op een veilige plek. Elke code meldt u eenmaal aan zonder de tweede factor en ze worden niet opnieuw getoond.',
   'users.totp.backup.copy': 'Codes kopiëren',
   'users.totp.backup.copied': 'Codes gekopieerd.',
   'users.totp.backup.regenerate': 'Nieuwe codes genereren',
   'users.totp.backup.regenerated': 'Nieuwe codes gegenereerd; de vorige zijn niet meer geldig.',
   'users.totp.backup.remainingLabel': 'Resterende back-upcodes',
   'users.totp.required.label': 'Tweefactor vereisen',
-  'users.totp.required.hint': 'Vereist dat dit account een tweede factor heeft, toegepast bij de volgende aanmelding. Blokkeert de toegang nooit onmiddellijk.',
+  'users.totp.required.hint':
+    'Vereist dat dit account een tweede factor heeft, toegepast bij de volgende aanmelding. Blokkeert de toegang nooit onmiddellijk.',
   'users.totp.required.add': 'Vereisen',
   'users.totp.required.remove': 'Niet vereisen',
   'users.totp.required.on': 'Tweefactor is nu vereist.',
   'users.totp.required.off': 'Tweefactor is niet meer vereist.',
-  'users.totp.required.locked': 'Dit account moet tweefactor behouden en kan het daarom niet uitschakelen.',
+  'users.totp.required.locked':
+    'Dit account moet tweefactor behouden en kan het daarom niet uitschakelen.',
   'users.sessions.title': 'Actieve sessies',
-  'users.sessions.intro': 'De actieve aanmeldingen op dit account. Beëindig een sessie die u niet meer herkent; deze wordt bij het volgende verzoek geweigerd.',
+  'users.sessions.intro':
+    'De actieve aanmeldingen op dit account. Beëindig een sessie die u niet meer herkent; deze wordt bij het volgende verzoek geweigerd.',
   'users.sessions.caption': 'Actieve sessies op dit account',
   'users.sessions.col.device': 'Apparaat',
   'users.sessions.col.network': 'Netwerk',

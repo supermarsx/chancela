@@ -8,9 +8,9 @@
 //!    (a CSC ata would block on the missing chair). After a restart the sealed ata keeps its number
 //!    and payload digest, and compliance still dispatches to the condominium pack.
 //! 2. **A CSC ata is blocked for a missing mesa, then passes once it is filled.** A
-//!    `SociedadePorQuotas` ata complete in everything but the mesa is refused at the seal (422,
-//!    `CSC-63/mesa-presidente` Error); a `PATCH` supplying the mesa clears the block and the seal
-//!    succeeds; the sealed ata (mesa + number) survives a restart.
+//!    `SociedadePorQuotas` ata complete in everything but the mesa is refused when entering Signing
+//!    (422, `CSC-63/mesa-presidente` Error); a `PATCH` supplying the mesa clears the block and the
+//!    seal succeeds; the sealed ata (mesa + number) survives a restart.
 //! 3. **A statute overlay tightens the majority and drives the gate.** `PATCH`ing a 2/3 statutory
 //!    majority onto the entity makes a 60%-in-favour vote fire `STATUTE/majority`; raising the vote
 //!    to 70% clears it and the ata seals.
@@ -141,14 +141,15 @@ async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
     assert_eq!(verify["valid"], true);
 }
 
-/// Headline proof #2 — a CSC ata is refused for a missing mesa (422, `CSC-63/mesa-presidente`),
-/// passes once the mesa is filled through the wire, and the sealed ata survives a restart.
+/// Headline proof #2 — a CSC ata cannot enter Signing with a missing mesa (422,
+/// `CSC-63/mesa-presidente`), passes once the mesa is filled through the wire, and the sealed ata
+/// survives a restart.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg_attr(
     not(feature = "e2e"),
     ignore = "composed-system e2e: spawns the real server binary (run with --features e2e)"
 )]
-async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
+async fn csc_signing_blocked_without_mesa_then_passes_and_survives_restart() {
     let mut h = ServerHarness::start().await;
     let token = bootstrap_session(&h).await;
 
@@ -175,18 +176,41 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
         })
     };
 
-    // --- Leg 1: an ata complete in everything EXCEPT the mesa is refused at seal ----------------
-    let no_mesa_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
+    // An ata complete in everything EXCEPT the mesa is refused before Signing closes mutation.
+    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
     let (status, _) = h
-        .patch_json_auth(&format!("/v1/acts/{no_mesa_id}"), contents(), &token)
+        .patch_json_auth(&format!("/v1/acts/{act_id}"), contents(), &token)
         .await;
     assert_eq!(status, 200, "patch csc ata contents (no mesa)");
-    advance_to_signing(&h, &no_mesa_id, Some(&token)).await;
+    for to in ["Review", "Convened", "Deliberated", "TextApproved"] {
+        let (status, advanced) = h
+            .post_json_auth(
+                &format!("/v1/acts/{act_id}/advance"),
+                json!({ "to": to }),
+                &token,
+            )
+            .await;
+        assert_eq!(status, 200, "advance to {to}: {advanced}");
+    }
+    let (status, body) = h
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/advance"),
+            json!({ "to": "Signing" }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 422, "Signing refused without a mesa: {body}");
+    assert!(
+        body["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .any(|issue| issue["rule_id"] == "CSC-63/mesa-presidente"),
+        "the Signing refusal explains the missing mesa: {body}"
+    );
 
     // Compliance reports the blocking mesa Error and forbids the seal.
-    let (status, comp) = h
-        .get_json(&format!("/v1/acts/{no_mesa_id}/compliance"))
-        .await;
+    let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
     assert_eq!(status, 200);
     assert_eq!(comp["rule_pack"], "csc-art63/v2");
     assert!(comp["errors"].as_u64().expect("errors") >= 1);
@@ -200,44 +224,28 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
         "the blocking mesa Error is reported: {comp}"
     );
 
-    // Sealing is refused with 422 and the refusal carries the mesa Error.
-    let (status, body) = h
-        .post_json_auth(
-            &format!("/v1/acts/{no_mesa_id}/seal"),
-            manual_signature_seal_body("Arquivo E2E / CSC missing mesa ata"),
+    // The failed transition leaves the act editable, so supplying the mesa repairs this same act.
+    let (status, _) = h
+        .patch_json_auth(
+            &format!("/v1/acts/{act_id}"),
+            json!({
+                "mesa": {
+                    "presidente": "Ana Presidente",
+                    "secretarios": ["Rui Secretário"]
+                }
+            }),
             &token,
         )
         .await;
-    assert_eq!(status, 422, "seal refused without a mesa: {body}");
-    assert!(
-        body["issues"]
-            .as_array()
-            .expect("issues")
-            .iter()
-            .any(|i| i["rule_id"] == "CSC-63/mesa-presidente"),
-        "the seal refusal explains the missing mesa: {body}"
-    );
-
-    // This act is now stuck, and that is a known product gap rather than a quirk of the test.
-    // `Signing` closes mutation (`Act::is_mutable`), `advance_to` has no reverse edge, and seal
-    // demands `Signing` — so an act that reaches Signing without a mesa can neither be repaired
-    // nor sealed. Gating the advance on the same blocking compliance errors, plus a supported way
-    // back for acts already in that state, is tracked as its own change; it touches the canonical
-    // signing snapshot persisted on entry to `Signing`, so it is not a test-side fix.
-    //
-    // Until then the successful-seal leg below uses a SECOND act, arranged the way an operator
-    // actually would: the mesa is filled while the ata is still a draft.
-
-    // --- Leg 2: the same ata WITH a mesa seals -------------------------------------------------
-    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
-    let mut with_mesa = contents();
-    with_mesa["mesa"] =
-        json!({ "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] });
-    let (status, _) = h
-        .patch_json_auth(&format!("/v1/acts/{act_id}"), with_mesa, &token)
-        .await;
     assert_eq!(status, 200, "patch csc ata contents (with mesa)");
-    advance_to_signing(&h, &act_id, Some(&token)).await;
+    let (status, advanced) = h
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/advance"),
+            json!({ "to": "Signing" }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 200, "advance repaired act to Signing: {advanced}");
 
     // Compliance is clean(er): no more blocking Errors.
     let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;

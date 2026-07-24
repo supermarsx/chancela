@@ -6,7 +6,7 @@
 //! session, so a 2FA sign-in attests exactly as a one-step sign-in does. `an_attested_act_after_a_two_step_sign_in`
 //! proves that end to end.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 
@@ -28,6 +28,7 @@ const NEW_PASSWORD: &str = "Trocada-Forte8!Q";
 struct TempDir(PathBuf);
 impl TempDir {
     fn new() -> Self {
+        common::ensure_credential_key();
         let dir = std::env::temp_dir().join(format!("chancela-p2-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         Self(dir)

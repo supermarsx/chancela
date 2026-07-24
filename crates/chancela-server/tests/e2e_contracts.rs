@@ -312,8 +312,8 @@ async fn live_responses_match_the_canonical_contracts() {
     // template.export.json). One authored spec drives all three wire shapes: creating it returns
     // the `TemplateSummary`; re-importing the same id as a dry-run hits the uniqueness preflight and
     // returns the populated `{ok:false, error:{code,field,message}}` conflict verdict (no persist);
-    // exporting it returns the canonical spec JSON (lossless re-import). The id carries a `/`, so the
-    // export path percent-encodes it.
+    // exporting it returns the canonical bundle envelope (lossless re-import). The id carries a
+    // `/`, so the export path percent-encodes it.
     let authored_template = json!({
         "id": "user-encosto-ata/v1",
         "family": "CommercialCompany",
@@ -361,7 +361,7 @@ async fn live_responses_match_the_canonical_contracts() {
         &contract("template.import-verdict.json"),
     );
 
-    // Exporting the authored template returns its canonical spec JSON.
+    // Exporting the authored template returns its canonical bundle envelope.
     let (status, template_export) = h
         .get_json_auth("/v1/templates/user-encosto-ata%2Fv1/export", &token)
         .await;

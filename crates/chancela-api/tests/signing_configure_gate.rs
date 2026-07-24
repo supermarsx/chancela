@@ -10,7 +10,7 @@
 //!   is refused (403) the moment the signing slice changes;
 //! - a holder of both (Owner) may change the signing slice.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -18,9 +18,7 @@ use std::path::PathBuf;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use chancela_api::{AppState, User, UserId, router};
-use chancela_authz::{
-    OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleCatalog, RoleId, Scope,
-};
+use chancela_authz::{OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleCatalog, RoleId, Scope};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -35,7 +33,8 @@ struct TempDir {
 
 impl TempDir {
     fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!("chancela-api-signing-gate-{}", Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("chancela-api-signing-gate-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         Self { dir }
     }
@@ -201,6 +200,10 @@ async fn put_settings_gates_the_signing_slice_on_signing_configure() {
         with_session(json_request("PUT", "/v1/settings", changed), &owner),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "owner may change signing policy: {body}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "owner may change signing policy: {body}"
+    );
     assert_eq!(body["signing"]["require_qualified_for_seal"], json!(!prior));
 }

@@ -224,9 +224,9 @@ describe('PDF validation result table', () => {
       'Verificações técnicas de validação PDF/PAdES',
     );
 
-    const columnHeaders = Array.from(
-      table?.querySelectorAll('thead th') ?? [],
-    ).map((th) => th.textContent);
+    const columnHeaders = Array.from(table?.querySelectorAll('thead th') ?? []).map(
+      (th) => th.textContent,
+    );
     expect(columnHeaders).toEqual(['Verificação', 'Resultado', 'Evidência']);
     for (const th of table?.querySelectorAll('thead th') ?? []) {
       expect(th.getAttribute('scope')).toBe('col');
@@ -344,10 +344,7 @@ describe('PDF validation result table', () => {
   it('renders the shared table skeleton while a validation is in flight', async () => {
     // A request that never settles keeps the mutation pending, which is the branch under
     // test. The skeleton is the shared `SkeletonTable`, not a bespoke placeholder.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch,
-    );
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch);
     renderWithProviders(<PdfSignatureValidatorPanel />);
     expect(document.querySelector('.skeleton-table')).toBeNull();
 

@@ -6,7 +6,8 @@
   "description": "Chancela web app — Livro de Atas Digital with the offline editorial theme package.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,json,html}\"",

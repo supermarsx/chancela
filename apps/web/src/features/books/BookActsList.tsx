@@ -14,6 +14,7 @@
  */
 import { useDeferredValue, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useDownloadBookTermoAberturaDocument } from '../../api/hooks';
 import { actStateLabels, meetingChannelLabels } from '../../api/labels';
 import {
   ACT_STATES,
@@ -21,11 +22,15 @@ import {
   type ActState,
   type ActView,
   type MeetingChannel,
+  type TermoState,
 } from '../../api/types';
+import { saveBlobAs } from '../../desktop/saveFile';
+import { formatDate } from '../../format';
 import { useT } from '../../i18n';
 import { useAtasFilterT } from '../../i18n/atasFilterFallback';
 import {
   Badge,
+  DateOnly,
   EmptyState,
   Field,
   Icon,
@@ -35,12 +40,26 @@ import {
   Table,
   Tooltip,
   Truncate,
+  useToast,
 } from '../../ui';
+import { useTermoT } from './termoStrings';
 
-type ActStateFilter = 'all' | ActState;
+type ActStateFilter = 'all' | ActState | TermoState;
 type ActChannelFilter = 'all' | MeetingChannel;
 
-function stateTone(state: ActState): 'accent' | 'neutral' {
+export interface OpeningTermRecord {
+  bookId: string;
+  title: string;
+  state: TermoState;
+  instrumentDate: string | null;
+  legacy: boolean;
+  documentAvailable: boolean;
+  /** Required slots with a stored PAdES document, not provisional `slot.signed` markers. */
+  availableSignatures: number;
+  requiredSignatures: number;
+}
+
+function stateTone(state: ActState | TermoState): 'accent' | 'neutral' {
   return state === 'Sealed' || state === 'Archived' ? 'accent' : 'neutral';
 }
 
@@ -84,9 +103,12 @@ function compareActs(a: ActView, b: ActView): number {
   return a.title.localeCompare(b.title, 'pt') || a.id.localeCompare(b.id);
 }
 
-export function BookActsList({ acts }: { acts: ActView[] }) {
+export function BookActsList({ acts, opening }: { acts: ActView[]; opening: OpeningTermRecord }) {
   const t = useT();
   const at = useAtasFilterT();
+  const tt = useTermoT();
+  const toast = useToast();
+  const downloadOpening = useDownloadBookTermoAberturaDocument(opening.bookId);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [stateFilter, setStateFilter] = useState<ActStateFilter>('all');
@@ -108,6 +130,26 @@ export function BookActsList({ acts }: { acts: ActView[] }) {
     });
   }, [channelFilter, deferredSearch, ordered, stateFilter]);
 
+  const normalizedQuery = normalizeSearch(deferredSearch.trim());
+  const openingVisible =
+    (stateFilter === 'all' || opening.state === stateFilter) &&
+    channelFilter === 'all' &&
+    (normalizedQuery === '' ||
+      normalizeSearch(
+        [
+          opening.title,
+          opening.instrumentDate ?? '',
+          formatDate(opening.instrumentDate),
+          tt(`books.termo.state.${opening.state}`),
+          opening.legacy ? 'legado legacy' : '',
+        ].join(' '),
+      ).includes(normalizedQuery));
+  const totalRecords = acts.length + 1;
+  const visibleRecordCount = visibleActs.length + (openingVisible ? 1 : 0);
+  // Draft/signing work is active and stays at the top. Once sealed (including legacy records), the
+  // opening instrument is the book's genesis record and follows the newest-first ata chronology.
+  const openingFirst = opening.state === 'Draft' || opening.state === 'Signing';
+
   const hasFilters = search.trim() !== '' || stateFilter !== 'all' || channelFilter !== 'all';
 
   function clearFilters() {
@@ -125,6 +167,84 @@ export function BookActsList({ acts }: { acts: ActView[] }) {
     { value: 'all', label: at('acts.filters.channel.all') },
     ...channels.map((channel) => ({ value: channel, label: meetingChannelLabels[channel] })),
   ];
+
+  function saveOpeningDocument() {
+    downloadOpening.mutate(undefined, {
+      onSuccess: async (blob) => {
+        try {
+          await saveBlobAs({
+            blob,
+            filename: `termo-de-abertura-${opening.bookId}-base-sem-assinaturas.pdf`,
+            contentType: 'application/pdf',
+          });
+          toast.success(t('toast.document.downloaded'));
+        } catch (error) {
+          toast.error(error);
+        }
+      },
+      onError: (error) => toast.error(error),
+    });
+  }
+
+  const openingRow = openingVisible ? (
+    <tr key={`termo-abertura-${opening.bookId}`} data-record-type="TermoAbertura">
+      <td className="acts-table__cell--truncate" data-act-column="Number">
+        <Truncate text="—" mono />
+      </td>
+      <td className="acts-table__cell--truncate" data-act-column="Title">
+        <div className="stack--tight">
+          <Truncate text={opening.title} />
+          <span className="field__hint">
+            <DateOnly value={opening.instrumentDate} />
+            {' · '}
+            {opening.legacy
+              ? tt('books.termo.atas.legacyRecord')
+              : `${opening.availableSignatures}/${opening.requiredSignatures} ${tt(
+                  'books.termo.atas.padesAvailable',
+                )}`}
+          </span>
+        </div>
+      </td>
+      <td className="acts-table__cell--truncate" data-act-column="Channel">
+        <Truncate text="—" />
+      </td>
+      <td data-act-column="State">
+        <span className="acts-table__state">
+          <Badge tone={stateTone(opening.state)}>{tt(`books.termo.state.${opening.state}`)}</Badge>
+        </span>
+      </td>
+      <td className="acts-table__cell--actions" data-act-column="Actions">
+        <span className="acts-table__actions">
+          {opening.documentAvailable ? (
+            <Tooltip label={tt('books.termo.document.downloadUnsignedBase')} placement="left">
+              <button
+                className="btn btn--ghost btn--icon btn--iconOnly"
+                type="button"
+                aria-label={tt('books.termo.document.downloadUnsignedBase')}
+                disabled={downloadOpening.isPending}
+                onClick={saveOpeningDocument}
+              >
+                <span className="btn__icon" aria-hidden="true">
+                  <Icon.Tray />
+                </span>
+              </button>
+            </Tooltip>
+          ) : null}
+          <Tooltip label={openLabel} placement="left">
+            <Link
+              className="btn btn--ghost btn--icon btn--iconOnly acts-table__open"
+              to={`/books/${opening.bookId}/opening`}
+              aria-label={`${openLabel}: ${opening.title}`}
+            >
+              <span className="btn__icon" aria-hidden="true">
+                <Icon.ArrowRight />
+              </span>
+            </Link>
+          </Tooltip>
+        </span>
+      </td>
+    </tr>
+  ) : null;
 
   return (
     <div className="stack">
@@ -159,12 +279,15 @@ export function BookActsList({ acts }: { acts: ActView[] }) {
             <span
               className="acts-filterbar__count"
               aria-label={at('acts.filters.count.aria', {
-                shown: visibleActs.length,
-                total: acts.length,
+                shown: visibleRecordCount,
+                total: totalRecords,
               })}
             >
               <Badge>
-                {t('books.filters.count', { shown: visibleActs.length, total: acts.length })}
+                {t('books.filters.count', {
+                  shown: visibleRecordCount,
+                  total: totalRecords,
+                })}
               </Badge>
             </span>
             <IconButton
@@ -178,7 +301,7 @@ export function BookActsList({ acts }: { acts: ActView[] }) {
         </div>
       </div>
 
-      {visibleActs.length === 0 ? (
+      {visibleRecordCount === 0 ? (
         <EmptyState title={t('books.filters.empty.title')}>
           <p>{at('acts.filters.empty.body')}</p>
         </EmptyState>
@@ -195,6 +318,7 @@ export function BookActsList({ acts }: { acts: ActView[] }) {
               </tr>
             }
           >
+            {openingFirst ? openingRow : null}
             {visibleActs.map((act) => (
               <tr key={act.id}>
                 <td className="acts-table__cell--truncate" data-act-column="Number">
@@ -228,6 +352,7 @@ export function BookActsList({ acts }: { acts: ActView[] }) {
                 </td>
               </tr>
             ))}
+            {openingFirst ? null : openingRow}
           </Table>
         </div>
       )}

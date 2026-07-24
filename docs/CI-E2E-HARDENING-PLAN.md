@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `c9cf2cb`,
+Updated 2026-07-24 from the current CI configuration, clean base `d2a4df1`,
+and implementation snapshot `65c3aa7`,
 including coverage notes for the mobile companion foundation docs/scripts,
 destructive erasure preflight/approve/execute route wiring plus local gate
 evidence, append-only rectification/restriction ledger annotation routes and
@@ -997,11 +997,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `c9cf2cb`
+## Focused Gate Snapshot Through `65c3aa7`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `c9cf2cb`. This is not an exhaustive current
+current implementation head `65c3aa7`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1055,11 +1055,11 @@ apps/web`: passed after dashboard formatting and the CompliancePanel
 - Additional 2026-07-09 director-loop focused checks after the next fan-out:
   `cargo test -p chancela-tsl --locked` passed after the TSL/TSA record-search
   module landed; `cargo test -p chancela-api redaction --lib --locked`,
-  `cargo test -p chancela-api --test privacy retention --locked`,
-  `cargo test -p chancela-api --test paper_import --locked`,
+  `cargo test -p chancela-api --test api-archive-privacy --locked -- privacy::retention`,
+  `cargo test -p chancela-api --test api-records --locked -- paper_import`,
   `cargo test -p chancela-api --locked books_import_preflight`,
   `cargo test -p chancela-api router_walk_every_route_is_classified --locked`,
-  and `cargo test -p chancela-api --test external_signing_envelopes --locked`
+  and `cargo test -p chancela-api --test api-signatures --locked -- external_signing_envelopes`
   passed after route classification and parser-detail assertion repair.
   `cargo test -p chancela-core --locked` and
   `cargo clippy -p chancela-core --locked --all-targets -- -D warnings`
@@ -1076,7 +1076,7 @@ apps/web`: passed after dashboard formatting and the CompliancePanel
 e2e_static_serving`, `cargo test -p chancela-api
 router_walk_every_route_is_classified --locked`, `cargo test -p chancela-api
 settings --locked`, `cargo test -p chancela-api document_import --lib
---locked`, `cargo test -p chancela-api --test apikey_auth --locked`, and
+--locked`, `cargo test -p chancela-api --test api-auth --locked -- apikey_auth`, and
   `npm run test --workspace apps/web -- SettingsPage.test.tsx
 settingsDefaults.test.ts contracts.test.ts`.
 - Additional edge-case E2E checks landed after that: external-signer public URL
@@ -1387,7 +1387,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   verified thresholds, channel permissibility, registry/provider integration,
   signing correctness, or legal-effect claims are implemented.
 - Current local legal-reference corpus audit checks: focused
-  `cargo test -p chancela-api --test law_reference_coverage --locked` coverage
+  `cargo test -p chancela-api --test api-records --locked -- law_reference_coverage` coverage
   builds a deterministic local audit report from the embedded template registry
   and embedded law corpus. It pins template `law_references` source IDs against
   local corpus diplomas, single-article references resolving to corpus articles
@@ -1567,7 +1567,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   anonymization, no erasure, no legal-hold or retention-policy mutation, no
   provider/legal-service assurance, and no AI or MCP completion claim.
 - Current working-tree DPIA template/guidance checks: focused
-  `cargo test -p chancela-api --test privacy --locked dpia` coverage pins
+  `cargo test -p chancela-api --test api-archive-privacy --locked -- privacy::dpia` coverage pins
   `GET /v1/privacy/dpia-template` as a static local/offline guidance artifact
   with structured processing-description, necessity/proportionality, risk,
   safeguards, consultation/escalation, evidence-boundary, no-claim, and
@@ -1808,8 +1808,8 @@ settingsDefaults.test.ts contracts.test.ts`.
 - Current working-tree paper-book OCR conversion-dossier and execution-artifact
   checks, plus local OCR/canonical rehearsal report checks: focused
   `cargo test -p chancela-store --test store --locked
-  paper_book_ocr_conversion`, `cargo test -p chancela-api --test paper_import
-  --locked paper_book_ocr_conversion`,
+  paper_book_ocr_conversion`, `cargo test -p chancela-api --test api-records
+  --locked -- paper_import::paper_book_ocr_conversion`,
   `npm run test --workspace apps/web -- src/contracts/contracts.test.ts`, and
   `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
   coverage pins accepted matching draft requirements, metadata-only response
@@ -1903,7 +1903,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   trust-list/provider validation, qualified-signature status, legal
   validity/effect/sufficiency, act finalization, or legal signing acceptance.
 - Current working-tree ASiC inspection/decompression checks: focused `cargo
-  test -p chancela-api --test asic_signature_validation --locked` coverage pins
+  test -p chancela-api --test api-signatures --locked -- asic_signature_validation` coverage pins
   `POST /v1/signature/asic/inspect`, base64 ASiC ZIP envelopes with optional
   filename/declared size/declared SHA-256, fixity/base64/malformed-ZIP/
   unsafe-path refusals, profile shape, bounded profile, blockers, member paths,
@@ -2375,7 +2375,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   RBAC/delegation completion, broad dashboard/business completeness, or spec
   completion.
 - Current working-tree RBAC ledger verification regression checks: focused
-  `cargo test -p chancela-api --test rbac_ledger_verify --locked` coverage
+  `cargo test -p chancela-api --test api-records --locked -- rbac_ledger_verify` coverage
   drives user-role assignment/unassignment, delegation grant/revoke, and role
   catalog create/update/delete paths through the real API router, then verifies
   `/v1/ledger/verify`, `/v1/ledger/integrity`, direct `Ledger::verify()`, shared
@@ -2446,7 +2446,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `c9cf2cb`
+- Current checkpoint metadata/static checks through `65c3aa7`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

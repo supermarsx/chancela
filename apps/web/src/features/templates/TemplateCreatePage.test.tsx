@@ -42,6 +42,25 @@ vi.mock('../acts/MarkdownBodyEditor', () => ({
   ),
 }));
 
+// The real PDF component's debounce, stale-response handling and pdf.js canvas are covered in its
+// focused test. This page test pins only the editor seam and the exclusive PDF/Markdown mounting.
+vi.mock('./TemplatePdfPreview', () => ({
+  TemplatePdfPreview: ({
+    request,
+  }: {
+    request: { source: string; spec: { id: string }; body_markdown: string };
+  }) => (
+    <div
+      role="status"
+      data-testid="real-template-pdf-preview"
+      data-template-id={request.spec.id}
+      data-body-markdown={request.body_markdown}
+    >
+      Pré-visualização PDF/A estrutural
+    </div>
+  ),
+}));
+
 const BUILTIN: TemplateSummary = {
   id: 'csc-ata-ag/v1',
   family: 'CommercialCompany',
@@ -78,6 +97,20 @@ interface RecordedRequest {
   url: string;
   method: string;
   body?: BodyInit | null;
+}
+
+async function editorCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/features/templates/templateEditor.css', 'utf8');
+}
+
+function expectCssRule(css: string, selector: RegExp, declarations: string[]) {
+  const body = css.match(selector)?.[1] ?? '';
+  expect(body).not.toBe('');
+  for (const declaration of declarations) expect(body).toContain(declaration);
 }
 
 function stubFetch(
@@ -129,6 +162,21 @@ function renderCreate(search = '', permissions?: PermissionsContextValue) {
   );
 }
 
+async function openPropertiesStructure(): Promise<HTMLDetailsElement> {
+  const properties = await screen.findByRole('button', { name: 'Propriedades' });
+  if (properties.getAttribute('aria-pressed') !== 'true') fireEvent.click(properties);
+  const summary = await screen.findByText('Estrutura avançada do documento');
+  const details = summary.closest('details') as HTMLDetailsElement | null;
+  if (!details) throw new Error('advanced document structure disclosure missing');
+  if (!details.open) fireEvent.click(summary);
+  return details;
+}
+
+function openContent() {
+  const content = screen.getByRole('button', { name: 'Editor e pré-visualização' });
+  if (content.getAttribute('aria-pressed') !== 'true') fireEvent.click(content);
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -172,11 +220,47 @@ describe('TemplateCreatePage', () => {
     expect(screen.queryByRole('button', { name: 'Histórico de versões' })).toBeNull();
     expect(container.querySelector('.wide-page')).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
+    expect(container.querySelector('.template-editor-tabs')).toBeTruthy();
+    expect(container.querySelector('.template-body-composer__editor')).toBeTruthy();
+    expect(container.querySelector('.template-preview')).toBeTruthy();
+    expect(container.querySelector('.delib')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
     await screen.findByLabelText('Identificador');
     expect(container.querySelector('.field-table')).toBeTruthy();
     expect(screen.queryByLabelText('corpo-markdown')).toBeNull();
+    const structure = screen
+      .getByText('Estrutura avançada do documento')
+      .closest('details') as HTMLDetailsElement;
+    expect(structure.open).toBe(false);
+    fireEvent.click(within(structure).getByText('Estrutura avançada do documento'));
+    fireEvent.click(within(structure).getByText('JSON avançado'));
+    expect(
+      JSON.parse((screen.getByLabelText('JSON avançado') as HTMLTextAreaElement).value),
+    ).toEqual([{ kind: 'NarrativeBody' }]);
+  });
+
+  it('keeps editor tabs left-aligned and the paper and preview full-width in scoped CSS', async () => {
+    const css = await editorCss();
+
+    expectCssRule(
+      css,
+      /\.template-editor-page \.template-editor-tabs \.subnav-rail\s*\{([^}]*)\}/,
+      ['width: 100%;', 'max-width: 100%;', 'margin-inline: 0;'],
+    );
+    expectCssRule(
+      css,
+      /\.template-body-composer \.markdown-body-editor__surface\.ProseMirror\s*\{([^}]*)\}/,
+      ['width: 100%;', 'min-height: 28rem;', 'font: 1rem/1.72 var(--font-body);'],
+    );
+    expectCssRule(css, /\.template-preview__heading\s*\{([^}]*)\}/, [
+      'display: grid;',
+      'justify-items: start;',
+    ]);
+    expectCssRule(css, /\.template-preview__panel\s*\{([^}]*)\}/, [
+      'width: 100%;',
+      'min-height: 18rem;',
+    ]);
   });
 
   it('offers only the locale accepted by the template authoring API', async () => {
@@ -266,6 +350,15 @@ describe('TemplateCreatePage', () => {
     // SOURCE_BUNDLE's spec has no `NarrativeBody` block.
     const withoutAnchor = renderCreate('?fork=csc-ata-ag%2Fv1');
     expect(await screen.findByText('O corpo não será incluído no documento')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar posição do corpo' }));
+    await waitFor(() =>
+      expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull(),
+    );
+    const structure = await openPropertiesStructure();
+    fireEvent.click(within(structure).getByText('JSON avançado'));
+    expect(
+      JSON.parse((screen.getByLabelText('JSON avançado') as HTMLTextAreaElement).value),
+    ).toContainEqual({ kind: 'NarrativeBody' });
     withoutAnchor.unmount();
     cleanup();
 
@@ -284,7 +377,7 @@ describe('TemplateCreatePage', () => {
     expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull();
   });
 
-  it('renders the server-compiled preview beside the editor', async () => {
+  it('mounts one honest preview at a time and exposes the exact markdown source with Copy', async () => {
     const { fn } = stubFetch([], {
       previewBlocks: [{ type: 'Heading', level: 2, text: 'Ata n.º {{ ata_number }}' }],
     });
@@ -292,19 +385,37 @@ describe('TemplateCreatePage', () => {
 
     renderCreate();
 
-    // The compiled body appears at its authored placement marker, after the debounced server call.
     expect(await screen.findByText('Pré-visualização do modelo')).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Tipo do novo bloco'), {
-      target: { value: 'NarrativeBody' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar bloco' }));
     fireEvent.change(await screen.findByLabelText('corpo-markdown'), {
-      target: { value: '## Ata' },
+      target: { value: '## Ata\n\nTexto {{ literal }}.' },
     });
-    expect(await screen.findByText('Ata n.º {{ ata_number }}')).toBeTruthy();
+
+    const tabs = screen.getByRole('tablist', { name: 'Formato da pré-visualização' });
+    expect(within(tabs).getByRole('tab', { name: 'PDF' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+    const pdf = screen.getByTestId('real-template-pdf-preview');
+    expect(pdf.textContent).toBe('Pré-visualização PDF/A estrutural');
+    expect(pdf.getAttribute('data-body-markdown')).toBe('## Ata\n\nTexto {{ literal }}.');
+    expect(screen.queryByRole('article')).toBeNull();
+    expect(screen.queryByText('Ata n.º {{ ata_number }}')).toBeNull();
+
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Markdown' }));
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+    expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
+    const source = screen.getByLabelText('Origem body_markdown');
+    expect(source.textContent).toBe('## Ata\n\nTexto {{ literal }}.');
+    expect(screen.getByText(/exatamente a origem body_markdown guardada/)).toBeTruthy();
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar Markdown' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('## Ata\n\nTexto {{ literal }}.'));
+    expect(screen.getByRole('button', { name: 'Markdown copiado' })).toBeTruthy();
   });
 
-  it('previews all eight currently authored block variants and keeps NarrativeBody in order', async () => {
+  it('keeps all structured variants under Properties while Content remains body-only', async () => {
     const blocks: TemplateBlockSpec[] = [
       { kind: 'Heading', level: 1, template: 'Título inicial' },
       { kind: 'Paragraph', items: 'agenda_items', template: 'Ponto {{ item.text }}' },
@@ -343,7 +454,11 @@ describe('TemplateCreatePage', () => {
 
     renderCreate();
 
-    const rawDisclosure = (await screen.findByText('JSON avançado')).closest('details');
+    expect(await screen.findByLabelText('corpo-markdown')).toBeTruthy();
+    expect(screen.queryByText('Bloco 1')).toBeNull();
+
+    const structure = await openPropertiesStructure();
+    const rawDisclosure = within(structure).getByText('JSON avançado').closest('details');
     if (!rawDisclosure) throw new Error('advanced JSON disclosure missing');
     fireEvent.click(within(rawDisclosure).getByText('JSON avançado'));
     fireEvent.change(screen.getByLabelText('JSON avançado'), {
@@ -360,28 +475,11 @@ describe('TemplateCreatePage', () => {
     fireEvent.change(within(thirdBlock).getByLabelText('Rótulo 1'), {
       target: { value: 'Entidade atualizada' },
     });
-    fireEvent.change(screen.getByLabelText('corpo-markdown'), {
-      target: { value: '## Corpo compilado' },
-    });
 
-    const preview = await screen.findByRole('article', {
-      name: 'Pré-visualização do modelo',
-    });
-    expect(within(preview).getByText('Título editado')).toBeTruthy();
-    expect(within(preview).getByText('Entidade atualizada')).toBeTruthy();
-    expect(within(preview).getByText('{{ entity.name }}')).toBeTruthy();
-    expect(within(preview).getByText('agenda_items')).toBeTruthy();
-    expect(within(preview).getByText('deliberation_items')).toBeTruthy();
-    expect(within(preview).getByText('{{ members_present }}')).toBeTruthy();
-    expect(within(preview).getByText('signatories')).toBeTruthy();
-    expect(within(preview).getByText('{{ capacity }}')).toBeTruthy();
-    expect(within(preview).getByText('{{ name }}')).toBeTruthy();
-
-    const authoredOrder = Array.from(
-      preview.querySelectorAll<HTMLElement>('[data-template-block-kind]'),
-      (node) => node.dataset.templateBlockKind,
-    );
-    expect(authoredOrder).toEqual([
+    const persisted = JSON.parse(
+      (screen.getByLabelText('JSON avançado') as HTMLTextAreaElement).value,
+    ) as TemplateBlockSpec[];
+    expect(persisted.map((block) => block.kind)).toEqual([
       'Heading',
       'Paragraph',
       'KeyValue',
@@ -391,11 +489,17 @@ describe('TemplateCreatePage', () => {
       'PageBreak',
       'SignatureBlock',
     ]);
-    const narrative = preview.querySelector('[data-template-narrative]');
-    if (!narrative) throw new Error('narrative placement marker missing');
-    expect(
-      await within(narrative as HTMLElement).findByText('Corpo compilado {{ meeting_date }}'),
-    ).toBeTruthy();
-    expect(document.querySelectorAll('h1')).toHaveLength(1);
+    expect(persisted[0]).toMatchObject({ template: 'Título editado' });
+    expect(persisted[2]).toMatchObject({
+      rows: [{ key: 'Entidade atualizada', value: '{{ entity.name }}' }],
+    });
+
+    openContent();
+    fireEvent.change(screen.getByLabelText('corpo-markdown'), {
+      target: { value: '## Corpo compilado' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
+    expect(screen.getByLabelText('Origem body_markdown').textContent).toBe('## Corpo compilado');
+    expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
   });
 });

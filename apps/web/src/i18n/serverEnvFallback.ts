@@ -60,7 +60,8 @@ export const serverEnvPtPT = {
   'settings.serverEnv.source.default': 'Predefinição',
   'settings.serverEnv.source.override.hint': 'O valor vem da substituição guardada neste painel.',
   'settings.serverEnv.source.env.hint': 'O valor vem do ambiente onde o serviço foi lançado.',
-  'settings.serverEnv.source.default.hint': 'Nenhuma substituição nem variável de ambiente — usa a predefinição do código.',
+  'settings.serverEnv.source.default.hint':
+    'Nenhuma substituição nem variável de ambiente — usa a predefinição do código.',
 
   // — Grupos —————————————————————————————————————————————————————————————
   'settings.serverEnv.group.logging': 'Registo',
@@ -121,7 +122,8 @@ export const serverEnvPtPT = {
   // — Ações ————————————————————————————————————————————————————————————————
   'settings.serverEnv.save': 'Guardar substituições',
   'settings.serverEnv.saving': 'A guardar…',
-  'settings.serverEnv.saved': 'Substituições guardadas. Aplicam-se no próximo arranque do servidor.',
+  'settings.serverEnv.saved':
+    'Substituições guardadas. Aplicam-se no próximo arranque do servidor.',
   'settings.serverEnv.saveError': 'Não foi possível guardar as substituições.',
   'settings.serverEnv.discard': 'Descartar alterações',
   'settings.serverEnv.clearOverride': 'Limpar substituição',
@@ -160,9 +162,12 @@ export const serverEnvEnglish = {
   'settings.serverEnv.source.override': 'Override',
   'settings.serverEnv.source.env': 'Environment',
   'settings.serverEnv.source.default': 'Default',
-  'settings.serverEnv.source.override.hint': 'The value comes from the override saved in this panel.',
-  'settings.serverEnv.source.env.hint': 'The value comes from the environment where the service was launched.',
-  'settings.serverEnv.source.default.hint': 'No override and no environment variable — uses the code default.',
+  'settings.serverEnv.source.override.hint':
+    'The value comes from the override saved in this panel.',
+  'settings.serverEnv.source.env.hint':
+    'The value comes from the environment where the service was launched.',
+  'settings.serverEnv.source.default.hint':
+    'No override and no environment variable — uses the code default.',
 
   'settings.serverEnv.group.logging': 'Logging',
   'settings.serverEnv.group.network': 'Network',
@@ -221,8 +226,7 @@ export const serverEnvEnglish = {
   'settings.serverEnv.saveError': 'Could not save the overrides.',
   'settings.serverEnv.discard': 'Discard changes',
   'settings.serverEnv.clearOverride': 'Clear override',
-  'settings.serverEnv.ackRequiredError':
-    'Acknowledge each security-boundary change before saving.',
+  'settings.serverEnv.ackRequiredError': 'Acknowledge each security-boundary change before saving.',
 
   'settings.serverEnv.value.unset': 'Not set',
   'settings.serverEnv.value.masked': '••••••••',

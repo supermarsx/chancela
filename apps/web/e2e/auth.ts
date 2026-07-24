@@ -27,9 +27,9 @@ export async function signInAt(page: Page, route = '/'): Promise<void> {
   if (await settledOnWizard(page)) {
     await completeOnboarding(page);
     if (route !== '/') {
-      // Land on the originally requested route; a fresh load is signed out again.
+      // Land on the originally requested route. The tab-scoped session survives navigation.
       await page.goto(route);
-      await pickOperator(page);
+      await expect(page.getByTestId('tab-bar')).toBeVisible();
     }
   } else {
     await pickOperator(page);
@@ -73,9 +73,14 @@ async function completeOnboarding(page: Page): Promise<void> {
   await expect(page.getByTestId('tab-bar')).toBeVisible();
 }
 
-/** On the sign-in surface, pick the operator and enter the shared password when prompted. */
+/** On the sign-in surface, enter the operator identifier and shared password. */
 async function pickOperator(page: Page): Promise<void> {
-  await page.getByRole('listitem').filter({ hasText: OPERATOR.displayName }).first().click();
+  const username = page.getByLabel('Utilizador', { exact: true });
+  if (await username.isVisible()) {
+    await username.fill(OPERATOR.username);
+  } else {
+    await page.getByRole('listitem').filter({ hasText: OPERATOR.displayName }).first().click();
+  }
   const password = page.getByLabel('Palavra-passe', { exact: true });
   await expect(password).toBeVisible();
   await password.fill(OPERATOR_PASSWORD);

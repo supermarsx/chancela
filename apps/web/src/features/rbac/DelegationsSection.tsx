@@ -525,8 +525,7 @@ export function DelegationsSection() {
   const roleOptions = useMemo(() => {
     const named = new Map<string, string>();
     for (const d of list) {
-      for (const r of rolesOf(d))
-        named.set(r.id, delegatedRoleName(r, t));
+      for (const r of rolesOf(d)) named.set(r.id, delegatedRoleName(r, t));
     }
     return [...named].map(([value, label]) => ({ value, label }));
   }, [list, t]);

@@ -15,7 +15,7 @@
  * are structural and always render. A sort on a column that is then hidden is released rather
  * than left applied invisibly.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import {
   entityFamilyLabels,
@@ -26,7 +26,7 @@ import {
 import type { TemplateLawReference, TemplateSummary } from '../../api/types';
 import { useT, type TFunction } from '../../i18n';
 import { useTemplatesCatalogT } from '../../i18n/templatesCatalogFallback';
-import { Badge, EmptyState, Icon, Table, Tooltip } from '../../ui';
+import { Badge, EmptyState, Icon, IconButton, Table, Tooltip, Truncate } from '../../ui';
 import { GateIconButton } from '../session/permissions';
 import type { TemplateColumn } from './templateColumns';
 import { hasTemplateName, templateDisplayName } from './templateNames';
@@ -37,6 +37,23 @@ type SortDirection = 'asc' | 'desc';
 interface SortState {
   column: SortColumn;
   direction: SortDirection;
+}
+
+/** Fixed-shape column widths; Name remains the one fluid, text-bearing column. */
+const COLUMN_WIDTH_REM: Record<TemplateColumn, number> = {
+  Family: 10,
+  Stage: 8,
+  Channels: 13,
+  Signature: 14,
+  RulePack: 11,
+  LawSource: 18,
+  Origin: 10,
+};
+
+/** Name + the maximum user-template action set, plus the currently visible metadata columns. */
+function tableFloor(columns: readonly TemplateColumn[]): string {
+  const fixed = columns.reduce((total, column) => total + COLUMN_WIDTH_REM[column], 0);
+  return `${15 + 12.5 + fixed}rem`;
 }
 
 function lawReferenceKey(reference: TemplateLawReference, index: number): string {
@@ -134,6 +151,9 @@ export function TemplatesTable({
   onClone,
   onExport,
   onDelete,
+  page = 1,
+  pageSize = 25,
+  onPageChange,
   editPending = false,
   exportPending = false,
 }: {
@@ -144,6 +164,10 @@ export function TemplatesTable({
   onClone: (template: TemplateSummary) => void;
   onExport: (template: TemplateSummary) => void;
   onDelete: (template: TemplateSummary) => void;
+  /** One-based page over the fully filtered and sorted result set. */
+  page?: number;
+  pageSize?: number;
+  onPageChange?: (page: number) => void;
   /** The spec download backing "editar" / "duplicar" is in flight. */
   editPending?: boolean;
   exportPending?: boolean;
@@ -157,11 +181,15 @@ export function TemplatesTable({
   const activeSort =
     sort && (sort.column === 'Name' || shows(sort.column as TemplateColumn)) ? sort : null;
   const rows = useMemo(() => sortRows(templates, activeSort, t), [templates, activeSort, t]);
-  const openLabel = t('templates.openAct');
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(Math.max(1, page), pageCount);
+  const pageStart = (safePage - 1) * pageSize;
+  const visibleRows = rows.slice(pageStart, pageStart + pageSize);
   const detailLabel = t('templates.detail.open');
   const previewLabel = ct('templates.catalog.preview.action');
 
   function toggleSort(column: SortColumn) {
+    onPageChange?.(1);
     setSort((current) =>
       current?.column === column && current.direction === 'asc'
         ? { column, direction: 'desc' }
@@ -178,7 +206,10 @@ export function TemplatesTable({
   }
 
   return (
-    <div className="templates-table">
+    <div
+      className="templates-table"
+      style={{ '--templates-table-floor': tableFloor(visibleColumns) } as CSSProperties}
+    >
       <Table
         caption={t('templates.catalog.title')}
         head={
@@ -239,7 +270,7 @@ export function TemplatesTable({
           </tr>
         }
       >
-        {rows.map((template) => {
+        {visibleRows.map((template) => {
           const lawReferences = template.law_references ?? [];
           const isUser = template.source === 'user';
           return (
@@ -261,19 +292,23 @@ export function TemplatesTable({
                 </Link>
               </td>
               {shows('Family') ? (
-                <td data-template-column="Family">{entityFamilyLabels[template.family]}</td>
+                <td data-template-column="Family">
+                  <Truncate text={entityFamilyLabels[template.family]} />
+                </td>
               ) : null}
               {shows('Stage') ? (
-                <td data-template-column="Stage">{lifecycleStageLabels[template.stage]}</td>
+                <td data-template-column="Stage">
+                  <Truncate text={lifecycleStageLabels[template.stage]} />
+                </td>
               ) : null}
               {shows('Channels') ? (
                 <td data-template-column="Channels">
                   {template.channels.length > 0 ? (
-                    <span className="templates-table__badges">
-                      {template.channels.map((value) => (
-                        <Badge key={value}>{meetingChannelLabels[value]}</Badge>
-                      ))}
-                    </span>
+                    <Truncate
+                      text={template.channels
+                        .map((value) => meetingChannelLabels[value])
+                        .join(', ')}
+                    />
                   ) : (
                     <span className="muted">{t('templates.channels.none')}</span>
                   )}
@@ -281,7 +316,7 @@ export function TemplatesTable({
               ) : null}
               {shows('Signature') ? (
                 <td data-template-column="Signature">
-                  {signaturePolicyLabels[template.signature_policy]}
+                  <Truncate text={signaturePolicyLabels[template.signature_policy]} />
                 </td>
               ) : null}
               {shows('RulePack') ? (
@@ -371,23 +406,42 @@ export function TemplatesTable({
                       />
                     </>
                   ) : null}
-                  <Tooltip label={openLabel} placement="left">
-                    <Link
-                      className="btn btn--ghost btn--icon btn--iconOnly"
-                      to="/books"
-                      aria-label={openLabel}
-                    >
-                      <span className="btn__icon" aria-hidden="true">
-                        <Icon.ArrowRight />
-                      </span>
-                    </Link>
-                  </Tooltip>
                 </span>
               </td>
             </tr>
           );
         })}
       </Table>
+      {pageCount > 1 ? (
+        <nav className="templates-pagination" aria-label={ct('templates.catalog.pagination.aria')}>
+          <span className="muted" aria-live="polite">
+            {ct('templates.catalog.pagination.range', {
+              from: pageStart + 1,
+              to: Math.min(pageStart + pageSize, rows.length),
+              total: rows.length,
+            })}
+            {' · '}
+            {ct('templates.catalog.pagination.page', {
+              current: safePage,
+              total: pageCount,
+            })}
+          </span>
+          <span className="templates-pagination__actions">
+            <IconButton
+              icon={<Icon.ArrowLeft />}
+              label={ct('templates.catalog.pagination.previous')}
+              disabled={safePage === 1}
+              onClick={() => onPageChange?.(safePage - 1)}
+            />
+            <IconButton
+              icon={<Icon.ArrowRight />}
+              label={ct('templates.catalog.pagination.next')}
+              disabled={safePage === pageCount}
+              onClick={() => onPageChange?.(safePage + 1)}
+            />
+          </span>
+        </nav>
+      ) : null}
     </div>
   );
 }

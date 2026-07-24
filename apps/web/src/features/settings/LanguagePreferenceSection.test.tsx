@@ -141,7 +141,9 @@ describe('LanguagePreferenceSection', () => {
       expect(JSON.parse(patch?.body ?? '{}').language).toBe('en-GB');
     });
     // Nothing was written to the settings document.
-    expect(stub.calls.some((c) => c.method === 'PUT' && c.url.includes('/v1/settings'))).toBe(false);
+    expect(stub.calls.some((c) => c.method === 'PUT' && c.url.includes('/v1/settings'))).toBe(
+      false,
+    );
   });
 
   it('offers no “what automatic resolves to” line once a locale is pinned', async () => {

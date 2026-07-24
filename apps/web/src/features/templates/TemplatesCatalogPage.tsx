@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useDeleteTemplate, useExportTemplate, useTemplates } from '../../api/hooks';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
 import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
@@ -21,8 +21,10 @@ import { useT, type MessageKey } from '../../i18n';
 import { useTemplatesCatalogT } from '../../i18n/templatesCatalogFallback';
 import {
   ButtonLink,
+  Badge,
   Card,
   ConfirmActionModal,
+  EmptyState,
   ErrorNote,
   Field,
   Icon,
@@ -47,6 +49,7 @@ import { templateDisplayName } from './templateNames';
 import { TemplateImportDialog } from './TemplateImportDialog';
 import { TemplatesTable } from './TemplatesTable';
 import { useTemplateEditor } from './useTemplateEditor';
+import './templatesCatalog.css';
 
 /** The header each optional column answers to — the same label the table renders. */
 const TEMPLATE_COLUMN_LABEL_KEYS: Record<TemplateColumn, MessageKey> = {
@@ -88,6 +91,9 @@ const ENTITY_FAMILIES: readonly EntityFamily[] = [
   'Foundation',
   'Cooperative',
 ];
+
+/** Keep the hundred-plus shipped templates scannable without rendering one enormous table body. */
+const TEMPLATES_PAGE_SIZE = 25;
 
 function searchText(value: string): string {
   return value
@@ -164,6 +170,7 @@ export function TemplatesCatalogPage() {
   const [importing, setImporting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TemplateSummary | null>(null);
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const [family, setFamily] = useState<EntityFamily | ''>('');
   const [stage, setStage] = useState<LifecycleStage | ''>('');
   const [locale, setLocale] = useState('');
@@ -171,6 +178,7 @@ export function TemplatesCatalogPage() {
   const [signaturePolicy, setSignaturePolicy] = useState<SignaturePolicyHint | ''>('');
   const [rulePack, setRulePack] = useState('');
   const [origin, setOrigin] = useState<TemplateOriginFilter>('');
+  const [page, setPage] = useState(1);
   // The visible columns are now a per-user server preference (t37), resolved through the shared
   // mechanism; the legacy device-local `localStorage` value is migrated once on first load below.
   const columns = useTableColumns(TEMPLATES_COLUMN_SPEC);
@@ -211,7 +219,7 @@ export function TemplatesCatalogPage() {
     () => Array.from(new Set(allTemplates.map((template) => template.rule_pack_id))).sort(),
     [allTemplates],
   );
-  const normalizedQuery = searchText(query.trim());
+  const normalizedQuery = searchText(deferredQuery.trim());
   const filtered = allTemplates.filter(
     (template) =>
       (!family || template.family === family) &&
@@ -236,6 +244,14 @@ export function TemplatesCatalogPage() {
     signaturePolicy !== '' ||
     rulePack !== '' ||
     origin !== '';
+  const pageCount = Math.max(1, Math.ceil(filtered.length / TEMPLATES_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+
+  // Every filter change starts at the first matching row. Without this, a search made while on a
+  // later page can truthfully have matches but momentarily show an empty page.
+  useEffect(() => {
+    setPage(1);
+  }, [channel, deferredQuery, family, locale, origin, rulePack, signaturePolicy, stage]);
 
   function clearFilters() {
     setQuery('');
@@ -280,7 +296,7 @@ export function TemplatesCatalogPage() {
 
   return (
     // `wide-page` widens the shell measure: the full column set does not fit the prose measure.
-    <div className="stack wide-page">
+    <div className="stack wide-page templates-catalog-page">
       <PageHeader
         title={t('templates.title')}
         lede={t('templates.lede')}
@@ -315,74 +331,95 @@ export function TemplatesCatalogPage() {
         {t('templates.noteBody')}
       </InlineWarning>
 
-      <Card title={t('templates.filters.title')}>
-        <div
-          className="stack--tight templates-filters"
-          role="search"
-          aria-label={t('templates.filters.title')}
-        >
-          <fieldset className="templates-controls">
-            <legend className="sr-only">{t('templates.filters.title')}</legend>
-            <div className="templates-filterbar filter">
-              <div className="templates-controls__primary templates-filterbar__primary">
-                <div className="templates-controls__search templates-filterbar__search">
+      <Card
+        title={t('templates.catalog.title')}
+        actions={
+          allTemplates.length > 0 ? (
+            <span aria-live="polite">
+              <Badge>
+                {t('templates.count', {
+                  shown: filtered.length,
+                  total: allTemplates.length,
+                })}
+              </Badge>
+            </span>
+          ) : null
+        }
+      >
+        {templates.isLoading ? (
+          <SkeletonRegion>
+            <SkeletonTable cols={columns.visible.length + 2} />
+          </SkeletonRegion>
+        ) : templates.error ? (
+          <ErrorNote error={templates.error} />
+        ) : !templates.data || allTemplates.length === 0 ? (
+          <EmptyState title={ct('templates.catalog.empty.title')}>
+            <p>{ct('templates.catalog.empty.body')}</p>
+          </EmptyState>
+        ) : (
+          <div
+            className="stack templates-catalog__body"
+            role="region"
+            aria-label={t('templates.catalog.title')}
+          >
+            <div
+              className="stack--tight templates-filters"
+              role="search"
+              aria-label={t('templates.filters.title')}
+            >
+              <div className="templates-filterbar filter">
+                <div className="templates-filterbar__primary">
                   <Field label={t('templates.search.label')} htmlFor="templates-search">
-                    <div className="templates-search-control">
-                      <span className="templates-search-control__icon" aria-hidden="true">
-                        <Icon.Search />
-                      </span>
-                      <Input
-                        id="templates-search"
-                        value={query}
-                        type="search"
-                        placeholder={t('templates.search.placeholder')}
-                        onChange={(event) => setQuery(event.target.value)}
-                      />
-                    </div>
+                    <Input
+                      id="templates-search"
+                      value={query}
+                      type="search"
+                      placeholder={t('templates.search.placeholder')}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
                   </Field>
-                </div>
-                <Field label={t('templates.family.label')} htmlFor="templates-family">
-                  <Select
-                    id="templates-family"
-                    value={family}
-                    options={[
-                      { value: '', label: t('templates.family.all') },
-                      ...ENTITY_FAMILIES.map((value) => ({
-                        value,
-                        label: entityFamilyLabels[value],
-                      })),
-                    ]}
-                    onChange={(event) => setFamily(event.target.value as EntityFamily | '')}
-                  />
-                </Field>
-                <Field label={t('templates.stage.label')} htmlFor="templates-stage">
-                  <Select
-                    id="templates-stage"
-                    value={stage}
-                    options={[
-                      { value: '', label: t('templates.stage.all') },
-                      ...LIFECYCLE_STAGES.map((value) => ({
-                        value,
-                        label: lifecycleStageLabels[value],
-                      })),
-                    ]}
-                    onChange={(event) => setStage(event.target.value as LifecycleStage | '')}
-                  />
-                </Field>
-                <Field label={t('templates.table.source')} htmlFor="templates-origin">
-                  <Select
-                    id="templates-origin"
-                    value={origin}
-                    options={[
-                      { value: '', label: ct('templates.catalog.source.all') },
-                      { value: 'builtin', label: t('templates.source.builtin') },
-                      { value: 'user', label: t('templates.source.user') },
-                    ]}
-                    onChange={(event) => setOrigin(event.target.value as TemplateOriginFilter)}
-                  />
-                </Field>
-                <div className="templates-controls__actions templates-filterbar__clear">
+                  <Field label={t('templates.family.label')} htmlFor="templates-family">
+                    <Select
+                      id="templates-family"
+                      value={family}
+                      options={[
+                        { value: '', label: t('templates.family.all') },
+                        ...ENTITY_FAMILIES.map((value) => ({
+                          value,
+                          label: entityFamilyLabels[value],
+                        })),
+                      ]}
+                      onChange={(event) => setFamily(event.target.value as EntityFamily | '')}
+                    />
+                  </Field>
+                  <Field label={t('templates.stage.label')} htmlFor="templates-stage">
+                    <Select
+                      id="templates-stage"
+                      value={stage}
+                      options={[
+                        { value: '', label: t('templates.stage.all') },
+                        ...LIFECYCLE_STAGES.map((value) => ({
+                          value,
+                          label: lifecycleStageLabels[value],
+                        })),
+                      ]}
+                      onChange={(event) => setStage(event.target.value as LifecycleStage | '')}
+                    />
+                  </Field>
+                  <Field label={t('templates.table.source')} htmlFor="templates-origin">
+                    <Select
+                      id="templates-origin"
+                      value={origin}
+                      options={[
+                        { value: '', label: ct('templates.catalog.source.all') },
+                        { value: 'builtin', label: t('templates.source.builtin') },
+                        { value: 'user', label: t('templates.source.user') },
+                      ]}
+                      onChange={(event) => setOrigin(event.target.value as TemplateOriginFilter)}
+                    />
+                  </Field>
                   <IconButton
+                    className="templates-filterbar__clear"
                     icon={<Icon.Close />}
                     label={t('templates.clearFilters')}
                     disabled={!hasFilters}
@@ -390,114 +427,97 @@ export function TemplatesCatalogPage() {
                   />
                 </div>
               </div>
+
+              <details className="templates-advanced-filters filter-advanced">
+                <summary>{t('templates.filters.advanced')}</summary>
+                <div className="templates-advanced-filters__body filter filter-advanced__body">
+                  <Field label={t('templates.locale.label')} htmlFor="templates-locale">
+                    <Select
+                      id="templates-locale"
+                      value={locale}
+                      options={[
+                        { value: '', label: t('templates.locale.all') },
+                        ...locales.map((value) => ({ value, label: value })),
+                      ]}
+                      onChange={(event) => setLocale(event.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('templates.channel.label')} htmlFor="templates-channel">
+                    <Select
+                      id="templates-channel"
+                      value={channel}
+                      options={[
+                        { value: '', label: t('templates.channel.all') },
+                        ...channels.map((value) => ({
+                          value,
+                          label: meetingChannelLabels[value],
+                        })),
+                      ]}
+                      onChange={(event) => setChannel(event.target.value as MeetingChannel | '')}
+                    />
+                  </Field>
+                  <Field label={t('templates.signature.label')} htmlFor="templates-signature">
+                    <Select
+                      id="templates-signature"
+                      value={signaturePolicy}
+                      options={[
+                        { value: '', label: t('templates.signature.all') },
+                        ...signaturePolicies.map((value) => ({
+                          value,
+                          label: signaturePolicyLabels[value],
+                        })),
+                      ]}
+                      onChange={(event) =>
+                        setSignaturePolicy(event.target.value as SignaturePolicyHint | '')
+                      }
+                    />
+                  </Field>
+                  <Field label={t('templates.rulePack.label')} htmlFor="templates-rule-pack">
+                    <Select
+                      id="templates-rule-pack"
+                      value={rulePack}
+                      options={[
+                        { value: '', label: t('templates.rulePack.all') },
+                        ...rulePacks.map((value) => ({ value, label: value })),
+                      ]}
+                      onChange={(event) => setRulePack(event.target.value)}
+                    />
+                  </Field>
+                </div>
+              </details>
             </div>
 
-            <details className="templates-controls__advanced templates-advanced-filters filter-advanced">
-              <summary>{t('templates.filters.advanced')}</summary>
-              <div className="templates-controls__filters templates-advanced-filters__body filter filter-advanced__body">
-                <Field label={t('templates.locale.label')} htmlFor="templates-locale">
-                  <Select
-                    id="templates-locale"
-                    value={locale}
-                    options={[
-                      { value: '', label: t('templates.locale.all') },
-                      ...locales.map((value) => ({ value, label: value })),
-                    ]}
-                    onChange={(event) => setLocale(event.target.value)}
-                  />
-                </Field>
-                <Field label={t('templates.channel.label')} htmlFor="templates-channel">
-                  <Select
-                    id="templates-channel"
-                    value={channel}
-                    options={[
-                      { value: '', label: t('templates.channel.all') },
-                      ...channels.map((value) => ({
-                        value,
-                        label: meetingChannelLabels[value],
-                      })),
-                    ]}
-                    onChange={(event) => setChannel(event.target.value as MeetingChannel | '')}
-                  />
-                </Field>
-                <Field label={t('templates.signature.label')} htmlFor="templates-signature">
-                  <Select
-                    id="templates-signature"
-                    value={signaturePolicy}
-                    options={[
-                      { value: '', label: t('templates.signature.all') },
-                      ...signaturePolicies.map((value) => ({
-                        value,
-                        label: signaturePolicyLabels[value],
-                      })),
-                    ]}
-                    onChange={(event) =>
-                      setSignaturePolicy(event.target.value as SignaturePolicyHint | '')
-                    }
-                  />
-                </Field>
-                <Field label={t('templates.rulePack.label')} htmlFor="templates-rule-pack">
-                  <Select
-                    id="templates-rule-pack"
-                    value={rulePack}
-                    options={[
-                      { value: '', label: t('templates.rulePack.all') },
-                      ...rulePacks.map((value) => ({ value, label: value })),
-                    ]}
-                    onChange={(event) => setRulePack(event.target.value)}
-                  />
-                </Field>
-              </div>
-            </details>
-          </fieldset>
-        </div>
-      </Card>
+            {/* Column visibility sits with the results, as it does on Books and Entities. */}
+            <ColumnPicker
+              columns={TEMPLATE_COLUMNS}
+              label={t('templates.columns.label')}
+              hint={t('templates.columns.hint')}
+              isVisible={columns.isVisible}
+              onToggle={columns.toggle}
+              columnLabel={(column) => t(TEMPLATE_COLUMN_LABEL_KEYS[column])}
+            />
 
-      <section className="stack--tight" aria-labelledby="templates-catalog-title">
-        <div className="templates-results-head">
-          <h3 id="templates-catalog-title" className="panel__title">
-            {t('templates.catalog.title')}
-          </h3>
-          <span className="muted">
-            {t('templates.count', {
-              shown: filtered.length,
-              total: allTemplates.length,
-            })}
-          </span>
-        </div>
-
-        {/* Column visibility sits with the RESULTS, not with the search: it decides what the
-            table shows, not which rows it holds. "Fonte legal" is off by default — a badge, a
-            citation, a source line and sometimes a pending note per reference, which squeezed
-            the other columns to slivers — and the template's own page always carries it in
-            full, so nothing is out of reach. */}
-        <ColumnPicker
-          columns={TEMPLATE_COLUMNS}
-          label={t('templates.columns.label')}
-          hint={t('templates.columns.hint')}
-          isVisible={columns.isVisible}
-          onToggle={columns.toggle}
-          columnLabel={(column) => t(TEMPLATE_COLUMN_LABEL_KEYS[column])}
-        />
-
-        {templates.isLoading ? (
-          <SkeletonRegion>
-            <SkeletonTable cols={columns.visible.length + 2} />
-          </SkeletonRegion>
-        ) : templates.error ? (
-          <ErrorNote error={templates.error} />
-        ) : (
-          <TemplatesTable
-            templates={filtered}
-            visibleColumns={columns.visible}
-            onEdit={editor.edit}
-            onClone={editor.clone}
-            onExport={(template) => void onExport(template)}
-            onDelete={setDeleteTarget}
-            exportPending={exportTemplate.isPending}
-          />
+            {filtered.length === 0 ? (
+              <EmptyState title={t('templates.empty.title')}>
+                <p>{t('templates.empty.body')}</p>
+              </EmptyState>
+            ) : (
+              <TemplatesTable
+                templates={filtered}
+                visibleColumns={columns.visible}
+                page={currentPage}
+                pageSize={TEMPLATES_PAGE_SIZE}
+                onPageChange={setPage}
+                onEdit={editor.edit}
+                onClone={editor.clone}
+                onExport={(template) => void onExport(template)}
+                onDelete={setDeleteTarget}
+                exportPending={exportTemplate.isPending}
+              />
+            )}
+          </div>
         )}
-      </section>
+      </Card>
 
       {importing ? <TemplateImportDialog onClose={() => setImporting(false)} /> : null}
 

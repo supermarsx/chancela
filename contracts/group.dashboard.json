@@ -32,7 +32,17 @@
         ],
         "signature_policy": "QualifiedPreferred",
         "template_family": "csc-commercial",
-        "calendar_presets": []
+        "calendar_presets": [],
+        "attendee_qualities": [
+          "Shareholder",
+          "Chair",
+          "Secretary",
+          "Administrator",
+          "Attorney",
+          "StatutoryAuditor",
+          "Guest",
+          "Other"
+        ]
       },
       "statute": null
     }

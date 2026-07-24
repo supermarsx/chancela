@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -6904,6 +6904,7 @@ async fn erasure_execute_rejects_last_owner_removal() {
 /// THE MERGE-GATE (plan P5): a real destructive erasure must preserve ledger integrity.
 #[tokio::test]
 async fn merge_gate_erasure_preserves_ledger_integrity_and_destroys_dek() {
+    common::ensure_credential_key();
     let tmp = TempDir::new();
     let state = AppState::with_data_dir(tmp.dir.clone());
     let (_owner, owner_token) = bootstrap_owner(&state).await;

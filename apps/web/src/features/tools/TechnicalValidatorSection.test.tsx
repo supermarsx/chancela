@@ -71,7 +71,9 @@ describe('Ferramentas — validador técnico sub-tabs', () => {
 
     expect(screen.getByText('Validador técnico de assinaturas PDF')).toBeTruthy();
     expect(
-      within(subnav()).getByRole('button', { name: 'Assinaturas PDF' }).getAttribute('aria-pressed'),
+      within(subnav())
+        .getByRole('button', { name: 'Assinaturas PDF' })
+        .getAttribute('aria-pressed'),
     ).toBe('true');
     expect(
       within(subnav())

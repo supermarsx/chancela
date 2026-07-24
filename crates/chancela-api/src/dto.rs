@@ -669,6 +669,10 @@ pub struct TermoSlotView {
     pub signed_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature_id: Option<String>,
+    /// Whether durable `instrument_signatures` contains a downloadable PAdES revision for this
+    /// exact slot. Unlike `signed`, this is derived from the artifact store, not provisional state.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub pades_document_available: bool,
 }
 
 impl From<&TermoSignatorySlot> for TermoSlotView {
@@ -684,6 +688,7 @@ impl From<&TermoSignatorySlot> for TermoSlotView {
             signed: s.signed,
             signed_at: s.signed_at.and_then(|t| t.format(&Rfc3339).ok()),
             signature_id: s.signature_id.map(|id| id.to_string()),
+            pades_document_available: false,
         }
     }
 }
@@ -741,6 +746,8 @@ pub struct TermoInstrumentView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sealed_at: Option<String>,
     pub declared_signatories: Vec<TermoSignatoryView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub numbering_scheme: Option<NumberingScheme>,
 }
 
 impl From<&TermoInstrument> for TermoInstrumentView {
@@ -765,6 +772,7 @@ impl From<&TermoInstrument> for TermoInstrumentView {
                 .iter()
                 .map(TermoSignatoryView::from)
                 .collect(),
+            numbering_scheme: t.numbering_scheme,
         }
     }
 }
@@ -863,8 +871,10 @@ pub struct SignTermoSlot {
 /// Body of `POST /v1/books/{id}/termo/abertura/open`: seal the signed termo and open the book.
 #[derive(Debug, Clone, Deserialize)]
 pub struct OpenBookFromTermo {
-    #[serde(default = "default_numbering")]
-    pub numbering_scheme: NumberingScheme,
+    /// Optional compatibility assertion. The authoritative scheme is pinned on the draft before
+    /// its signing snapshot is rendered; an explicit contradictory value is rejected.
+    #[serde(default)]
+    pub numbering_scheme: Option<NumberingScheme>,
     #[serde(default = "default_actor")]
     pub actor: String,
 }

@@ -332,9 +332,7 @@ describe('Legislação — search', () => {
 
   it('is deep-linkable via ?q= — seeds the field and pre-filters the shelf', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislationPage />, [
-      '/tools/legislation/shelf?q=eIDAS',
-    ]);
+    renderWithProviders(<LegislationPage />, ['/tools/legislation/shelf?q=eIDAS']);
     const box = screen.getByLabelText('Procurar na legislação') as HTMLInputElement;
     expect(box.value).toBe('eIDAS');
     // Pre-filtered to eIDAS diplomas; unrelated themes are hidden.

@@ -6,7 +6,7 @@
 //! exercised here; this suite covers the enrolment mechanism, the policy fields, and the account
 //! state each transition leaves behind.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 
@@ -28,6 +28,7 @@ const NEW_PASSWORD: &str = "Trocada-Forte8!Q";
 struct TempDir(PathBuf);
 impl TempDir {
     fn new() -> Self {
+        common::ensure_credential_key();
         let dir = std::env::temp_dir().join(format!("chancela-totp-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         Self(dir)
@@ -489,15 +490,14 @@ async fn requiring_two_factor_needs_totp_enabled_instance_wide() {
             .contains("totp_enabled"),
         "{body}"
     );
-    assert_eq!(
-        state
+    assert!(
+        !state
             .users
             .read()
             .await
             .get(&target)
             .unwrap()
-            .two_factor_required,
-        false
+            .two_factor_required
     );
 
     // Enable TOTP instance-wide, then the toggle lands.

@@ -59,10 +59,7 @@ function stripCspMetaInDev() {
     name: 'chancela:strip-csp-meta-in-dev',
     apply: 'serve' as const,
     transformIndexHtml(html: string): string {
-      return html.replace(
-        /\s*<meta\s+http-equiv="Content-Security-Policy"[\s\S]*?\/>/i,
-        '',
-      );
+      return html.replace(/\s*<meta\s+http-equiv="Content-Security-Policy"[\s\S]*?\/>/i, '');
     },
   };
 }

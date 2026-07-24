@@ -3,7 +3,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { TemplateBlockSpec } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
-import { parseTemplateBlocksText, TemplateBlocksEditor } from './TemplateBlocksEditor';
+import {
+  parseTemplateBlocksText,
+  TemplateBlocksEditor,
+  withNarrativeBodyPlacement,
+} from './TemplateBlocksEditor';
 
 const ALL_BLOCKS: TemplateBlockSpec[] = [
   { kind: 'Heading', level: 2, template: 'Ata n.º {{ ata_number }}' },
@@ -73,6 +77,18 @@ describe('TemplateBlocksEditor', () => {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(currentBlocks()).toEqual(ALL_BLOCKS);
+  });
+
+  it('adds one narrative placement without overwriting blocks or invalid advanced JSON', () => {
+    const source = JSON.stringify(ALL_BLOCKS.filter((block) => block.kind !== 'NarrativeBody'));
+    const next = withNarrativeBodyPlacement(source);
+    expect(next).not.toBeNull();
+    expect(JSON.parse(next ?? '[]')).toEqual([
+      ...ALL_BLOCKS.filter((block) => block.kind !== 'NarrativeBody'),
+      { kind: 'NarrativeBody' },
+    ]);
+    expect(withNarrativeBodyPlacement(next ?? '')).toBe(next);
+    expect(withNarrativeBodyPlacement('{')).toBeNull();
   });
 
   it('edits the fields of all value-carrying block variants through friendly controls', () => {

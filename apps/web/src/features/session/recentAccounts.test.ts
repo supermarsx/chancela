@@ -49,10 +49,7 @@ describe('recentAccounts', () => {
     rememberAccount({ username: 'amelia.marques' }, 1000);
     rememberAccount({ username: 'bruno.dias' }, 2000);
     rememberAccount({ username: 'Amelia.Marques' }, 3000);
-    expect(readRecentAccounts().map((r) => r.username)).toEqual([
-      'Amelia.Marques',
-      'bruno.dias',
-    ]);
+    expect(readRecentAccounts().map((r) => r.username)).toEqual(['Amelia.Marques', 'bruno.dias']);
 
     for (let i = 0; i < MAX_RECENT_ACCOUNTS + 3; i += 1) {
       rememberAccount({ username: `user${i}` }, 4000 + i);

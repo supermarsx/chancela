@@ -7,7 +7,7 @@
  * complete value is always one hover, one Tab, or one copy away, so none of the evidence
  * is hidden.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from './icons';
 import { Tooltip, TooltipText } from './Tooltip';
 import { useT } from '../i18n';
@@ -33,12 +33,28 @@ export function abbreviateDigest(value: string, edge = 8): string {
 export function Digest({ value, edge = 8, copyable = true }: DigestProps) {
   const t = useT();
   const [copied, setCopied] = useState(false);
+  const copiedResetTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedResetTimer.current !== null) {
+        window.clearTimeout(copiedResetTimer.current);
+      }
+    },
+    [],
+  );
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(value);
+      if (copiedResetTimer.current !== null) {
+        window.clearTimeout(copiedResetTimer.current);
+      }
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      copiedResetTimer.current = window.setTimeout(() => {
+        copiedResetTimer.current = null;
+        setCopied(false);
+      }, 1500);
     } catch {
       // Clipboard access can be unavailable or denied; the full value is still on the
       // title tooltip, so copy is a convenience rather than the only path to it.

@@ -284,6 +284,9 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   use: {
     baseURL,
+    // The core specs assert the source-locale accessible names. Pin the browser locale so
+    // environment language differences do not turn those assertions into runner-specific flakes.
+    locale: 'pt-PT',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

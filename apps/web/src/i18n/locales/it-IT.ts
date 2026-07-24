@@ -1655,14 +1655,18 @@ export const itIT: Catalog = {
   'users.edit.subnav.access': 'Accesso e audit',
   'users.edit.subnav.security': 'Sicurezza',
   'users.security.title': 'Sicurezza dell’account',
-  'users.security.intro.self': 'Gestisci qui la sicurezza del tuo account. Le stesse credenziali compaiono in Accesso e audit, dove un amministratore le ispeziona e le reimposta — qui le vedi come titolare.',
-  'users.security.intro.other': 'Stato di sicurezza di questo account. Solo il titolare può gestire le proprie credenziali; per reimpostarle come amministratore, usa Accesso e audit.',
+  'users.security.intro.self':
+    'Gestisci qui la sicurezza del tuo account. Le stesse credenziali compaiono in Accesso e audit, dove un amministratore le ispeziona e le reimposta — qui le vedi come titolare.',
+  'users.security.intro.other':
+    'Stato di sicurezza di questo account. Solo il titolare può gestire le proprie credenziali; per reimpostarle come amministratore, usa Accesso e audit.',
   'users.security.password.hint': 'Password di accesso.',
   'users.security.recovery.hint': 'Frase di recupero, un’alternativa alla password se dimenticata.',
-  'users.security.key.hint': 'Chiave di attestazione di audit. Ruotarla crea una nuova chiave per le attestazioni future; quelle precedenti restano verificabili.',
+  'users.security.key.hint':
+    'Chiave di attestazione di audit. Ruotarla crea una nuova chiave per le attestazioni future; quelle precedenti restano verificabili.',
   'users.security.manage': 'Gestisci in Accesso e audit',
   'users.totp.title': 'Autenticazione a due fattori',
-  'users.totp.intro': 'Un secondo fattore conferma l’accesso con un codice dalla tua app di autenticazione, oltre alla password.',
+  'users.totp.intro':
+    'Un secondo fattore conferma l’accesso con un codice dalla tua app di autenticazione, oltre alla password.',
   'users.totp.on': 'Attiva',
   'users.totp.off': 'Disattivata',
   'users.totp.stateLabel': 'Stato',
@@ -1670,7 +1674,8 @@ export const itIT: Catalog = {
   'users.totp.enrolled': 'Due fattori attivati.',
   'users.totp.confirm': 'Conferma',
   'users.totp.qr.alt': 'Codice QR per configurare l’autenticazione a due fattori',
-  'users.totp.qr.hint': 'Scansiona questo codice con la tua app di autenticazione (Google Authenticator, Aegis, 1Password…).',
+  'users.totp.qr.hint':
+    'Scansiona questo codice con la tua app di autenticazione (Google Authenticator, Aegis, 1Password…).',
   'users.totp.secret.label': 'Oppure inserisci questa chiave manualmente:',
   'users.totp.code.label': 'Codice di verifica',
   'users.totp.code.hint': 'Inserisci il codice a 6 cifre mostrato dall’app.',
@@ -1678,21 +1683,25 @@ export const itIT: Catalog = {
   'users.totp.disable': 'Disattiva i due fattori',
   'users.totp.disabled': 'Due fattori disattivati.',
   'users.totp.backup.title': 'Salva i codici di backup',
-  'users.totp.backup.body': 'Salvali ora, in un luogo sicuro. Ogni codice ti fa accedere una volta senza il secondo fattore e non vengono più mostrati.',
+  'users.totp.backup.body':
+    'Salvali ora, in un luogo sicuro. Ogni codice ti fa accedere una volta senza il secondo fattore e non vengono più mostrati.',
   'users.totp.backup.copy': 'Copia i codici',
   'users.totp.backup.copied': 'Codici copiati.',
   'users.totp.backup.regenerate': 'Genera nuovi codici',
   'users.totp.backup.regenerated': 'Nuovi codici generati; i precedenti non sono più validi.',
   'users.totp.backup.remainingLabel': 'Codici di backup rimanenti',
   'users.totp.required.label': 'Richiedi i due fattori',
-  'users.totp.required.hint': 'Obbliga questo account ad avere un secondo fattore, applicato al prossimo accesso. Non blocca mai l’accesso immediatamente.',
+  'users.totp.required.hint':
+    'Obbliga questo account ad avere un secondo fattore, applicato al prossimo accesso. Non blocca mai l’accesso immediatamente.',
   'users.totp.required.add': 'Richiedi',
   'users.totp.required.remove': 'Non richiedere',
   'users.totp.required.on': 'I due fattori sono ora obbligatori.',
   'users.totp.required.off': 'I due fattori non sono più obbligatori.',
-  'users.totp.required.locked': 'Questo account deve mantenere i due fattori, quindi non possono essere disattivati.',
+  'users.totp.required.locked':
+    'Questo account deve mantenere i due fattori, quindi non possono essere disattivati.',
   'users.sessions.title': 'Sessioni attive',
-  'users.sessions.intro': 'Gli accessi attivi su questo account. Termina una sessione che non riconosci più; viene rifiutata alla richiesta successiva.',
+  'users.sessions.intro':
+    'Gli accessi attivi su questo account. Termina una sessione che non riconosci più; viene rifiutata alla richiesta successiva.',
   'users.sessions.caption': 'Sessioni attive su questo account',
   'users.sessions.col.device': 'Dispositivo',
   'users.sessions.col.network': 'Rete',

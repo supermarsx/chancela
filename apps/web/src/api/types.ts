@@ -1322,6 +1322,31 @@ export interface TemplateBundleInput {
 }
 
 /**
+ * Input to the stateless structural PDF/A proof (`POST /v1/templates/document/preview`).
+ *
+ * `draft` previews the editor's unsaved authored halves. `catalog` resolves a shipped or durable
+ * user template by id. Neither form carries an act context: placeholders and collection bindings
+ * therefore remain visibly unresolved, and the returned PDF must not be described as a final ata.
+ */
+export type TemplateDocumentPreviewRequest =
+  | {
+      source: 'draft';
+      spec: TemplateSpec;
+      body_markdown: string;
+    }
+  | {
+      source: 'catalog';
+      template_id: string;
+    };
+
+/** Real PDF/A bytes plus the server's explicit context-free proof classification. */
+export interface TemplateDocumentPreviewResult {
+  data: ArrayBuffer;
+  content_type: string;
+  preview_kind: 'structural-unresolved' | string;
+}
+
+/**
  * The read model `useTemplateBundle` yields for the editor: the authored {@link TemplateSpec} (read
  * via `templateSpecFromExport`, which preserves the t48 fork crash-fix) plus the seed narrative
  * markdown read back from the export bundle. A legacy bare-spec export that carries no seed reads
@@ -5516,11 +5541,10 @@ export interface OpenBookBody {
    */
   kind_label?: string;
   /**
-   * D2 — when `true` (the server default, preserving today's behaviour byte-for-byte) the book is
-   * created AND opened in one commit with a static termo. When `false`, only a `Created` book plus a
-   * `Draft` termo de abertura are minted; nothing enters the hash chain until the termo is filled,
-   * signed and the book is explicitly opened via {@link OpenBookFromTermoBody}. Omit to keep the
-   * one-shot default.
+   * D2 — `false` is the only value emitted by the operator UI: it mints a `Created` book plus a
+   * `Draft` termo de abertura, and nothing enters the hash chain until that formal instrument is
+   * filled, signed and explicitly sealed via {@link OpenBookFromTermoBody}. The v1 server continues
+   * to accept `true`/omitted only as a backwards-compatibility path for historical API clients.
    */
   one_shot?: boolean;
 }
@@ -5602,6 +5626,8 @@ export interface TermoSlotView {
   /** ISO-8601 instant the slot was marked signed. */
   signed_at?: string;
   signature_id?: string;
+  /** True only when the server found this slot's downloadable PAdES revision in durable storage. */
+  pades_document_available?: boolean;
 }
 
 /**
@@ -5653,6 +5679,8 @@ export interface TermoInstrumentView {
   /** ISO-8601 instant the termo was sealed, once opened. */
   sealed_at?: string;
   declared_signatories: BookTermoSignatory[];
+  /** Scheme pinned before the abertura snapshot was frozen; absent on legacy drafts/encerramentos. */
+  numbering_scheme?: NumberingScheme;
 }
 
 /** A clause set on the body by a PATCH (`TermoClauseInput`). A new clause mints its own id. */
@@ -5704,13 +5732,9 @@ export interface SignTermoSlotBody {
 
 /**
  * Body of `POST /v1/books/{id}/termo/abertura/open` (`OpenBookFromTermo`): seal the signed termo and
- * open the book. Both fields default server-side (`numbering_scheme` → `Sequential`, `actor` → the
- * session/system actor), so an empty body is valid.
- *
- * NOTE (t23/t41): real per-slot PAdES signing is not yet wired, so this endpoint currently FAILS
- * CLOSED with `409` ("the termo de abertura is not cryptographically signed") for every book — the
- * book stays `Created` and no `book.opened` event is appended. Callers must surface that 409
- * honestly, not hide it.
+ * open the book. The numbering scheme is pinned on the draft before signing; this optional field is
+ * only a compatibility assertion and a contradictory value is rejected. `actor` defaults to the
+ * session/system actor, so an empty body is valid.
  */
 export interface OpenBookFromTermoBody {
   numbering_scheme?: NumberingScheme;

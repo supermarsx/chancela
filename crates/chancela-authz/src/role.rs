@@ -136,9 +136,9 @@ pub enum SignupDefaultRefusal {
 impl std::fmt::Display for SignupDefaultRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SignupDefaultRefusal::Protected => f.write_str(
-                "it is the protected Owner role, which self-signup may never grant",
-            ),
+            SignupDefaultRefusal::Protected => {
+                f.write_str("it is the protected Owner role, which self-signup may never grant")
+            }
             SignupDefaultRefusal::HoldsPrivilegedPermission(p) => write!(
                 f,
                 "it holds {p}, which a self-signed-up account may never receive"
@@ -1025,18 +1025,17 @@ mod tests {
         }
 
         // Likewise `cae.refresh` no longer carries a TSL import with it.
-        for role in [Role::company_owner()] {
-            assert!(
-                role.permission_set.contains(&Permission::CaeRefresh),
-                "{} unexpectedly lost cae.refresh",
-                role.name
-            );
-            assert!(
-                !role.permission_set.contains(&Permission::TrustManage),
-                "{} still reaches the TSL import through cae.refresh",
-                role.name
-            );
-        }
+        let role = Role::company_owner();
+        assert!(
+            role.permission_set.contains(&Permission::CaeRefresh),
+            "{} unexpectedly lost cae.refresh",
+            role.name
+        );
+        assert!(
+            !role.permission_set.contains(&Permission::TrustManage),
+            "{} still reaches the TSL import through cae.refresh",
+            role.name
+        );
     }
 
     /// t22, stated as the population rather than a hand-picked sample. Before the split, *every*
@@ -1930,14 +1929,20 @@ mod tests {
             ..base(&[Permission::SettingsManage])
         };
         assert!(!grandfather_signing_configure(&mut protected));
-        assert!(!protected.permission_set.contains(&Permission::SigningConfigure));
+        assert!(
+            !protected
+                .permission_set
+                .contains(&Permission::SigningConfigure)
+        );
 
         // The grandfather generations are independent: neither t27 nor t30 grants signing.configure.
         let mut sm_only = base(&[Permission::SettingsManage]);
         assert!(grandfather_split_verbs(&mut sm_only)); // t27 grants privacy/retention…
         assert!(!grandfather_act_revert(&mut sm_only)); // …t30 grants nothing…
         assert!(
-            !sm_only.permission_set.contains(&Permission::SigningConfigure),
+            !sm_only
+                .permission_set
+                .contains(&Permission::SigningConfigure),
             "only the t50 pass may grant signing.configure"
         );
     }

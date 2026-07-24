@@ -11,7 +11,7 @@
  * Drift breaks a test on **whichever side moved**:
  *  - if a fixture gains/loses/renames a field, the runtime key-set assertion fails;
  *  - if `api/types.ts` gains/loses/renames a field, the `Record<keyof T, true>` key
- *    map below fails to compile (a missing/excess key), so `tsc -b`/vitest fails.
+ *    map below fails to compile (a missing/excess key), so `npm run typecheck`/vitest fails.
  *
  * Together they pin the shape; the Rust harness (`e2e_contracts.rs`) pins the same
  * fixtures against live server bytes, so a server/DTO change is caught on both ends.
@@ -299,8 +299,8 @@ import {
 // Load each contract fixture as raw text (via Vite's `?raw`) so the mocked `fetch`
 // returns the exact fixture BYTES, not a re-serialised object — the client's real
 // JSON/text path runs on the wire representation. `import.meta.glob` (typed by
-// `vite/client`) keeps the files out of the TS program, so `tsc -b`'s composite
-// rootDir stays confined to `src/` while the fixtures live at the repo root.
+// `vite/client`) keeps the files out of the TS program, so the typecheck input
+// stays confined to `src/` while the fixtures live at the repo root.
 const rawFixtures = import.meta.glob('../../../../contracts/*.json', {
   eager: true,
   query: '?raw',
@@ -3894,13 +3894,24 @@ describe('contract fixtures parse through the real client', () => {
         required_signatories_encerramento: true,
       },
       'BookView',
-      ['required_signatory_records_abertura', 'required_signatory_records_encerramento'],
+      [
+        'required_signatory_records_abertura',
+        'required_signatory_records_encerramento',
+        'page_capacity',
+        'pages_used',
+        'pages_reserved',
+        'remaining_pages',
+        'capacity_exhausted',
+      ],
     );
     inEnum(BOOK_KINDS, book.kind, 'BookView.kind');
     inEnum(['Created', 'Open', 'Closed'], book.state, 'BookView.state');
     if (book.numbering_scheme) inEnum(NUMBERING_SCHEMES, book.numbering_scheme, 'numbering_scheme');
     if (book.opening_date) assertIsoDate(book.opening_date, 'BookView.opening_date');
     expect(typeof book.last_ata_number).toBe('number');
+    expect(typeof book.pages_used).toBe('number');
+    expect(typeof book.pages_reserved).toBe('number');
+    expect(typeof book.capacity_exhausted).toBe('boolean');
     expect(Array.isArray(book.required_signatories_abertura)).toBe(true);
     expect(Array.isArray(book.required_signatory_records_abertura)).toBe(true);
     expect(book.required_signatory_records_abertura?.[0]).toMatchObject({
@@ -4147,9 +4158,13 @@ describe('contract fixtures parse through the real client', () => {
     expect(exported.text).toBe(body);
     expect(exported.contentType).toBe('application/json');
     expect(exported.headers.get('Content-Disposition')).toContain('user-encosto-ata-v1.json');
-    const json = JSON.parse(exported.text) as { id?: string; blocks?: unknown[] };
-    expect(json.id).toBe('user-encosto-ata/v1');
-    expect(Array.isArray(json.blocks), 'export carries authored blocks').toBe(true);
+    const json = JSON.parse(exported.text) as {
+      format?: string;
+      spec?: { id?: string; blocks?: unknown[] };
+    };
+    expect(json.format).toBe('chancela.template-bundle');
+    expect(json.spec?.id).toBe('user-encosto-ata/v1');
+    expect(Array.isArray(json.spec?.blocks), 'export carries authored blocks').toBe(true);
   });
 
   it('paper-book.import.json → PaperBookImportReport (POST /v1/books/paper-import/validate)', async () => {
@@ -5122,7 +5137,13 @@ describe('contract fixtures parse through the real client', () => {
     expect(Object.keys(settings.email)).not.toContain('password');
     const platform = assertExactKeys<PlatformSettings>(
       settings.platform,
-      { logging: true, api_server: true, mcp_stdio_server: true, audit: true, public_base_url: true },
+      {
+        logging: true,
+        api_server: true,
+        mcp_stdio_server: true,
+        audit: true,
+        public_base_url: true,
+      },
       'Settings.platform',
     );
     assertPlatformLogging(platform.logging, 'Settings.platform.logging');

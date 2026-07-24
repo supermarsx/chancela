@@ -158,6 +158,7 @@ import type {
   TemplateSpec,
   TemplateBundleInput,
   TemplateBundleView,
+  TemplateDocumentPreviewRequest,
   PreviewTemplateBody,
   TemplateImportVerdict,
   AppendGroupTemplateLibraryRevisionBody,
@@ -606,6 +607,21 @@ export function useOpenBookFromTermo(id: string) {
       void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
+  });
+}
+
+/** Download the preserved PDF/A snapshot behind the termo de abertura record. */
+export function useDownloadBookTermoAberturaDocument(id: string) {
+  return useMutation({ mutationFn: () => api.fetchBookTermoAberturaDocument(id) });
+}
+
+/**
+ * Download one independently-verifiable per-slot PAdES revision. A termo with several signatories
+ * intentionally has several signed PDFs; the client never merges them or invents one "final" file.
+ */
+export function useDownloadBookTermoAberturaSignatureDocument(id: string) {
+  return useMutation({
+    mutationFn: (slotId: string) => api.fetchBookTermoAberturaSignatureDocument(id, slotId),
   });
 }
 
@@ -1606,6 +1622,20 @@ export function useTemplateBundle(id: string, enabled = true) {
 export function useTemplateBodyPreview() {
   return useMutation({
     mutationFn: (body: PreviewTemplateBody) => api.previewTemplateBody(body),
+  });
+}
+
+/**
+ * Produce an ephemeral, context-free PDF/A proof from an unsaved draft or catalog template.
+ *
+ * This is a mutation only because the request carries the current draft in its POST body. The
+ * server is stateless/read-only; callers own debounce and stale-response suppression so typing can
+ * never replace a newer proof with an older response.
+ */
+export function useTemplateDocumentPdfPreview() {
+  return useMutation({
+    mutationFn: (request: TemplateDocumentPreviewRequest) =>
+      api.previewTemplateDocumentPdf(request),
   });
 }
 

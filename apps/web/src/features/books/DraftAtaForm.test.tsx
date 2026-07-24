@@ -107,7 +107,8 @@ describe('DraftAtaForm', () => {
     // choice rides `POST /v1/acts` as `template_id` for the server to seed the narrative from.
     const responder = (call: RecordedCall): Response => {
       if (call.method === 'POST' && call.url === '/v1/acts') return jsonResponse(NEW_ACT, 201);
-      if (call.url.startsWith('/v1/books/')) return jsonResponse({ id: 'book-1', entity_id: 'ent-1' });
+      if (call.url.startsWith('/v1/books/'))
+        return jsonResponse({ id: 'book-1', entity_id: 'ent-1' });
       if (call.url.startsWith('/v1/entities/'))
         return jsonResponse({ id: 'ent-1', family: 'CommercialCompany' });
       if (call.url.startsWith('/v1/templates'))
@@ -142,7 +143,8 @@ describe('DraftAtaForm', () => {
     // byte-identical to a pre-t59 draft (no `template_id`), and the server resolves the family default.
     const responder = (call: RecordedCall): Response => {
       if (call.method === 'POST' && call.url === '/v1/acts') return jsonResponse(NEW_ACT, 201);
-      if (call.url.startsWith('/v1/books/')) return jsonResponse({ id: 'book-1', entity_id: 'ent-1' });
+      if (call.url.startsWith('/v1/books/'))
+        return jsonResponse({ id: 'book-1', entity_id: 'ent-1' });
       if (call.url.startsWith('/v1/entities/'))
         return jsonResponse({ id: 'ent-1', family: 'CommercialCompany' });
       if (call.url.startsWith('/v1/templates'))

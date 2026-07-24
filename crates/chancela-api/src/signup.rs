@@ -978,7 +978,7 @@ mod tests {
     /// *subdomain* never matches its parent. `evil.example.pt` is not `example.pt`.
     #[test]
     fn the_domain_allow_list_matches_exactly_and_never_by_suffix() {
-        let allowed = vec!["example.pt".to_owned()];
+        let allowed = ["example.pt".to_owned()];
         let permits = |email: &str| allowed.iter().any(|d| d == domain_of(email));
         assert!(permits("amelia.marques@example.pt"));
         assert!(!permits("amelia.marques@evil.example.pt"));

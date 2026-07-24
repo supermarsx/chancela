@@ -7,6 +7,11 @@ license-file.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "Axum HTTP layer for Chancela: in-memory entity CRUD and ledger verification over the domain core (ARC-02, thin API)."
+# The API integration tests share the same large dependency graph. Letting Cargo
+# auto-discover every file under `tests/` linked that graph into 42 separate
+# executables. The explicit domain suites below keep focused test commands while
+# avoiding that repeated link cost.
+autotests = false
 
 [features]
 default = []
@@ -115,3 +120,55 @@ p12 = "0.6.3"
 # the H1 wrong-identity fail-safe. Keep the fixture encoder on current yasna; p12 still uses 0.5
 # internally, so fixture code exchanges complete DER blobs rather than p12's version-specific writer.
 yasna = "0.6"
+
+[[test]]
+name = "api-auth"
+path = "tests/suite_auth.rs"
+
+[[test]]
+name = "api-records"
+path = "tests/suite_records.rs"
+
+[[test]]
+name = "api-archive-privacy"
+path = "tests/suite_archive_privacy.rs"
+
+[[test]]
+name = "api-signatures"
+path = "tests/suite_signatures.rs"
+
+[[test]]
+name = "cmd_signing"
+path = "tests/cmd_signing.rs"
+
+[[test]]
+name = "local_pkcs12_signing"
+path = "tests/local_pkcs12_signing.rs"
+
+[[test]]
+name = "cmd_csc_failover"
+path = "tests/cmd_csc_failover.rs"
+
+[[test]]
+name = "remote_signing"
+path = "tests/remote_signing.rs"
+
+[[test]]
+name = "connector_allowlist"
+path = "tests/connector_allowlist.rs"
+
+[[test]]
+name = "data_key_ops"
+path = "tests/data_key_ops.rs"
+
+[[test]]
+name = "scap"
+path = "tests/scap.rs"
+
+[[test]]
+name = "seed_dataset"
+path = "tests/seed_dataset.rs"
+
+[[test]]
+name = "termo_pkcs12_signing"
+path = "tests/termo_pkcs12_signing.rs"

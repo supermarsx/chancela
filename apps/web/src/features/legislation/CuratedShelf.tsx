@@ -40,15 +40,7 @@ import { ApiError, lawPdfPath } from '../../api/client';
 import { useFetchLawPdf, useLawArchive, type LawArchiveState } from '../../api/hooks';
 import { useT } from '../../i18n';
 import { formatDate } from '../../format';
-import {
-  Badge,
-  Button,
-  DateTime,
-  EmptyState,
-  Input,
-  abbreviateDigest,
-  useToast,
-} from '../../ui';
+import { Badge, Button, DateTime, EmptyState, Input, abbreviateDigest, useToast } from '../../ui';
 import { ExternalLink } from './links';
 import {
   DIPLOMAS,

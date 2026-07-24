@@ -1,7 +1,7 @@
 //! Official Autenticacao.gov handoff import: the operator signs the immutable canonical signing PDF
 //! outside Chancela and imports the resulting signed PDF back as technical evidence only.
 
-mod common;
+use crate::common;
 
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
@@ -1310,7 +1310,7 @@ async fn official_import_requires_signing_permission() {
             .as_array()
             .expect("roles")
             .iter()
-            .any(|r| r["id"] == serde_json::Value::from(default_role_id.as_str())),
+            .any(|r| r["id"] == default_role_id.as_str()),
         "the seeded default operator role is offered by the catalog"
     );
     let (status, _) = send(

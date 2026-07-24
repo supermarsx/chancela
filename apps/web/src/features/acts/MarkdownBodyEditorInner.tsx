@@ -44,10 +44,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Schema } from 'prosemirror-model';
 import type { Node as PmNode } from 'prosemirror-model';
-import { EditorState, Plugin } from 'prosemirror-state';
+import { EditorState, Plugin, type Command } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { MarkdownParser, MarkdownSerializer } from 'prosemirror-markdown';
-import { baseKeymap, toggleMark } from 'prosemirror-commands';
+import { baseKeymap, setBlockType, toggleMark } from 'prosemirror-commands';
 import { keymap } from 'prosemirror-keymap';
 import { history, redo, undo } from 'prosemirror-history';
 import MarkdownIt from 'markdown-it';
@@ -212,6 +212,42 @@ export function serializeMarkdown(doc: PmNode): string {
   return escapeLeadingOrderedParen(markdownSerializer.serialize(doc));
 }
 
+// --- Visible toolbar commands ------------------------------------------------------
+
+const paragraphCommand = setBlockType(ataBodySchema.nodes.paragraph);
+const headingCommands = [1, 2, 3, 4, 5, 6].map((level) =>
+  setBlockType(ataBodySchema.nodes.heading, { level }),
+);
+const boldCommand = toggleMark(ataBodySchema.marks.strong);
+const italicCommand = toggleMark(ataBodySchema.marks.em);
+
+/** Insert the one non-text block admitted by the prose schema. */
+const horizontalRuleCommand: Command = (state, dispatch) => {
+  if (dispatch) {
+    dispatch(
+      state.tr.replaceSelectionWith(ataBodySchema.nodes.horizontal_rule.create()).scrollIntoView(),
+    );
+  }
+  return true;
+};
+
+function blockIsActive(view: EditorView | null, type: 'paragraph' | 'heading', level?: number) {
+  if (!view) return false;
+  const parent = view.state.selection.$from.parent;
+  if (parent.type !== ataBodySchema.nodes[type]) return false;
+  return level === undefined || parent.attrs.level === level;
+}
+
+function markIsActive(view: EditorView | null, type: 'strong' | 'em') {
+  if (!view) return false;
+  const { from, to, empty, $from } = view.state.selection;
+  const mark = ataBodySchema.marks[type];
+  if (empty) {
+    return mark.isInSet(view.state.storedMarks ?? $from.marks()) !== undefined;
+  }
+  return view.state.doc.rangeHasMark(from, to, mark);
+}
+
 // --- Paste: downgrade loudly, never strip silently ---------------------------------
 
 /**
@@ -356,11 +392,16 @@ export default function MarkdownBodyEditorInner({
   diagnostic = null,
   maxBytes,
   id = 'ata-body-editor',
+  ariaLabel,
+  toolbarLabels,
 }: MarkdownBodyEditorProps) {
   const t = useT();
   const host = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [paste, setPaste] = useState<PasteChange[]>([]);
+  // Selection-only transactions do not change the markdown value, but they do change which
+  // toolbar controls are active. This revision makes that state visible to React.
+  const [, setEditorRevision] = useState(0);
 
   const onChangeRef = useRef(onChange);
   useEffect(() => {
@@ -387,7 +428,15 @@ export default function MarkdownBodyEditorInner({
         ],
       }),
       editable: () => !disabled,
-      attributes: { id, class: 'markdown-body-editor__surface' },
+      attributes: {
+        id,
+        class: 'markdown-body-editor__surface',
+        role: 'textbox',
+        'aria-multiline': 'true',
+        ...(ariaLabel || toolbarLabels?.editor
+          ? { 'aria-label': ariaLabel ?? toolbarLabels?.editor ?? '' }
+          : {}),
+      },
       transformPastedHTML: (html) => {
         const { html: clean, changes } = sanitizePastedHtml(html);
         if (changes.length > 0) setPaste(changes);
@@ -396,10 +445,12 @@ export default function MarkdownBodyEditorInner({
       dispatchTransaction(transaction) {
         const next = view.state.apply(transaction);
         view.updateState(next);
+        setEditorRevision((current) => current + 1);
         if (transaction.docChanged) onChangeRef.current(serializeMarkdown(next.doc));
       },
     });
     viewRef.current = view;
+    setEditorRevision((current) => current + 1);
 
     return () => {
       view.destroy();
@@ -421,11 +472,46 @@ export default function MarkdownBodyEditorInner({
     view.updateState(
       EditorState.create({ doc: parseMarkdown(value), plugins: view.state.plugins }),
     );
+    setEditorRevision((current) => current + 1);
   }, [value]);
 
   useEffect(() => {
     viewRef.current?.setProps({ editable: () => !disabled });
+    setEditorRevision((current) => current + 1);
   }, [disabled]);
+
+  const commandEnabled = (command: Command) => {
+    const view = viewRef.current;
+    return !disabled && view !== null && command(view.state);
+  };
+  const runCommand = (command: Command) => {
+    const view = viewRef.current;
+    if (!view || disabled) return;
+    view.focus();
+    command(view.state, view.dispatch, view);
+    setEditorRevision((current) => current + 1);
+  };
+
+  const toolbarButton = (
+    label: string,
+    visibleLabel: string,
+    command: Command,
+    pressed?: boolean,
+  ) => (
+    <button
+      key={label}
+      type="button"
+      className="markdown-body-editor__tool"
+      aria-label={label}
+      aria-pressed={pressed}
+      title={label}
+      disabled={!commandEnabled(command)}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => runCommand(command)}
+    >
+      {visibleLabel}
+    </button>
+  );
 
   const used = useMemo(() => byteLength(value), [value]);
   const over = maxBytes !== undefined && used > maxBytes;
@@ -474,6 +560,51 @@ export default function MarkdownBodyEditorInner({
             {t('acts.body.paste.dismiss')}
           </button>
         </InlineWarning>
+      ) : null}
+
+      {toolbarLabels ? (
+        <div
+          className="markdown-body-editor__toolbar"
+          role="toolbar"
+          aria-label={toolbarLabels.ariaLabel}
+          aria-controls={id}
+        >
+          <span className="markdown-body-editor__tool-group">
+            {toolbarButton(
+              toolbarLabels.paragraph,
+              'P',
+              paragraphCommand,
+              blockIsActive(viewRef.current, 'paragraph'),
+            )}
+            {toolbarLabels.headings.map((label, index) =>
+              toolbarButton(
+                label,
+                `H${index + 1}`,
+                headingCommands[index],
+                blockIsActive(viewRef.current, 'heading', index + 1),
+              ),
+            )}
+          </span>
+          <span className="markdown-body-editor__tool-group">
+            {toolbarButton(
+              toolbarLabels.bold,
+              toolbarLabels.bold,
+              boldCommand,
+              markIsActive(viewRef.current, 'strong'),
+            )}
+            {toolbarButton(
+              toolbarLabels.italic,
+              toolbarLabels.italic,
+              italicCommand,
+              markIsActive(viewRef.current, 'em'),
+            )}
+            {toolbarButton(toolbarLabels.horizontalRule, '—', horizontalRuleCommand)}
+          </span>
+          <span className="markdown-body-editor__tool-group">
+            {toolbarButton(toolbarLabels.undo, toolbarLabels.undo, undo)}
+            {toolbarButton(toolbarLabels.redo, toolbarLabels.redo, redo)}
+          </span>
+        </div>
       ) : null}
 
       <div ref={host} className="markdown-body-editor__host" data-testid="markdown-editor-host" />

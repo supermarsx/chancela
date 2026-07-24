@@ -78,7 +78,11 @@ export function DraftAtaForm({ bookId }: { bookId: string }) {
         />
       </Field>
       {ataTemplates.length > 0 ? (
-        <Field label={dt('acts.template.label')} htmlFor="ata-template" hint={dt('acts.template.hint')}>
+        <Field
+          label={dt('acts.template.label')}
+          htmlFor="ata-template"
+          hint={dt('acts.template.hint')}
+        >
           <Select
             id="ata-template"
             value={templateId}

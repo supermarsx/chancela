@@ -621,7 +621,12 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     (
         "/v1/books/{id}/termo/abertura/sign/pkcs12",
         RouteClass::Gated,
-    ), // POST book.open@Book (real PKCS#12 PAdES)
+    ), // POST book.open@Book + signing.perform@Book (real PKCS#12 PAdES)
+    ("/v1/books/{id}/termo/abertura/document", RouteClass::Gated), // GET book.read@Book (unsigned frozen base PDF/A)
+    (
+        "/v1/books/{id}/termo/abertura/signatures/{slot_id}",
+        RouteClass::Gated,
+    ), // GET book.read@Book (real per-slot PAdES)
     ("/v1/books/{id}/termo/abertura/open", RouteClass::Gated), // POST book.open@Book (seal + open)
     ("/v1/books/{id}/termo/encerramento", RouteClass::Gated), // GET book.read@Book · PATCH book.close@Book
     (
@@ -632,7 +637,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     (
         "/v1/books/{id}/termo/encerramento/sign/pkcs12",
         RouteClass::Gated,
-    ), // POST book.close@Book (real PKCS#12 PAdES)
+    ), // POST book.close@Book + signing.perform@Book (real PKCS#12 PAdES)
     ("/v1/books/{id}/termo/encerramento/close", RouteClass::Gated), // POST book.close@Book (seal + close)
     ("/v1/books/paper-import/validate", RouteClass::Gated), // POST book.import@Global (read-only)
     ("/v1/books/paper-import", RouteClass::Gated), // GET/POST book.import@Global (list/preserve package)
@@ -808,6 +813,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/templates/{id}/export", RouteClass::Gated), // GET act.read@Global
     ("/v1/templates/import", RouteClass::Gated), // POST template.manage@Global (dry_run preflight = read-only)
     ("/v1/templates/body/preview", RouteClass::Gated), // POST act.read@Global (stateless md-block compile, never writes)
+    ("/v1/templates/document/preview", RouteClass::Gated), // POST act.read@Global (stateless PDF/A proof, never writes)
     // --- Ledger ---------------------------------------------------------------------------------
     ("/v1/ledger/events", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/events/page", RouteClass::Gated), // GET ledger.read@Global

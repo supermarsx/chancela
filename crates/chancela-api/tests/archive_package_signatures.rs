@@ -13,7 +13,7 @@
 //!   SCAP), and its verification status. This is product-recorded evidence; the signature says
 //!   nothing about it.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};

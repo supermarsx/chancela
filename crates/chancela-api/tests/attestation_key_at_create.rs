@@ -16,7 +16,7 @@
 //! preimage should describe the audited fact, and because the handler is the one user endpoint
 //! that fed the whole struct in; a refactor is more likely to restore that than to invent it.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 
@@ -313,8 +313,7 @@ async fn the_creation_event_records_that_a_key_exists_and_no_material_that_wraps
     let created = ledger
         .events()
         .iter()
-        .filter(|e| e.kind == "user.created")
-        .next_back()
+        .rfind(|e| e.kind == "user.created")
         .expect("a user.created event")
         .clone();
     drop(ledger);
@@ -492,8 +491,7 @@ async fn every_key_in_a_rotation_chain_still_verifies_what_it_signed() {
             .as_array()
             .expect("events")
             .iter()
-            .filter(|e| e["kind"] == "entity.created")
-            .next_back()
+            .rfind(|e| e["kind"] == "entity.created")
             .expect("entity.created present")
             .clone();
         signed.push((
@@ -696,8 +694,7 @@ async fn a_live_session_keeps_signing_with_a_retired_key() {
         .as_array()
         .expect("events")
         .iter()
-        .filter(|e| e["kind"] == "entity.created")
-        .next_back()
+        .rfind(|e| e["kind"] == "entity.created")
         .expect("entity.created present")
         .clone();
 

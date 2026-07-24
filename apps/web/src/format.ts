@@ -53,8 +53,7 @@ function parseInstant(value: DateInput): Date | null {
   // date a day early. Appending a bare time forces local-midnight parsing, so a calendar day
   // names the same day in every zone. Values carrying a time or an offset are true instants
   // and are left alone, so they still render in the viewer's zone.
-  const source =
-    typeof value === 'string' && DATE_ONLY.test(value) ? `${value}T00:00:00` : value;
+  const source = typeof value === 'string' && DATE_ONLY.test(value) ? `${value}T00:00:00` : value;
   const date = value instanceof Date ? value : new Date(source);
   return Number.isNaN(date.getTime()) ? null : date;
 }

@@ -42,11 +42,19 @@ describe('Digest', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 
-    render(<Digest value={FULL} />);
+    const setTimeout = vi.spyOn(window, 'setTimeout');
+    const clearTimeout = vi.spyOn(window, 'clearTimeout');
+    const { unmount } = render(<Digest value={FULL} />);
     fireEvent.click(screen.getByRole('button', { name: /copiar/i }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(FULL));
     expect(await screen.findByLabelText('Copiado')).toBeTruthy();
+    const copiedResetTimer = setTimeout.mock.results.find(
+      (_, index) => setTimeout.mock.calls[index]?.[1] === 1500,
+    )?.value;
+    expect(copiedResetTimer).toBeDefined();
+    unmount();
+    expect(clearTimeout).toHaveBeenCalledWith(copiedResetTimer);
   });
 
   it('omits the copy control when copyable is false', () => {

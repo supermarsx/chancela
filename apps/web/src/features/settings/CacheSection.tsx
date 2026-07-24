@@ -40,7 +40,11 @@ const CACHE_ENV_ROWS: readonly {
  *  `env_duration_secs` so a misconfigured value can never busy-spin a poll loop. */
 const CLUSTER_ENV_ROWS: readonly { name: string; meaning: MessageKey; fallback: string }[] = [
   { name: 'CHANCELA_NODE_ROLE', meaning: 'settings.cache.env.nodeRole', fallback: '—' },
-  { name: 'CHANCELA_PROMOTE_POLL_INTERVAL', meaning: 'settings.cache.env.promotePoll', fallback: '1' },
+  {
+    name: 'CHANCELA_PROMOTE_POLL_INTERVAL',
+    meaning: 'settings.cache.env.promotePoll',
+    fallback: '1',
+  },
   { name: 'CHANCELA_HEARTBEAT_INTERVAL', meaning: 'settings.cache.env.heartbeat', fallback: '2' },
   {
     name: 'CHANCELA_CHANGEFEED_POLL_INTERVAL',

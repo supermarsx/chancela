@@ -1558,8 +1558,9 @@ fn schema_version_is_current() {
     // of the only real mail the product sends is queryable rather than a discarded `Result`) landed
     // as schema v25; the draft persistence for the termo de abertura/encerramento as a first-class
     // signable instrument (termo_instruments — t23, finishing t8-A's undelivered store leg) landed as
-    // schema v26. A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 26);
+    // schema v26; bounded user-template save history (user_template_versions) landed as schema v27.
+    // A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 27);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();

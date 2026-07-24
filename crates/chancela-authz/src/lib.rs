@@ -47,8 +47,8 @@ pub use role::{
     SignupDefaultRefusal, T27_VERB_SPLIT_GRANDFATHER, T30_ACT_REVERT_GRANDFATHER,
     T50_SIGNING_CONFIGURE_GRANDFATHER, TENANT_ADMIN_ROLE_ID, default_roles, grandfather_act_revert,
     grandfather_act_revert_catalog, grandfather_signing_configure,
-    grandfather_signing_configure_catalog, grandfather_split_verbs, grandfather_split_verbs_catalog,
-    is_seeded_role, retired_role_successor,
+    grandfather_signing_configure_catalog, grandfather_split_verbs,
+    grandfather_split_verbs_catalog, is_seeded_role, retired_role_successor,
 };
 pub use scope::{
     ActId, ArchiveId, BookId, BookScope, CompanyId, EntityId, FolderId, IntegrationId, NoBooks,

@@ -513,7 +513,12 @@ export function buildValidationGroups(
         evidence: pdfValidatorBoolText(dss.present, t),
         note: dss.status_scope,
       },
-      { key: 'dss-vri', label: t('pdfValidator.field.vri'), verdict: 'info', evidence: dss.vri_count },
+      {
+        key: 'dss-vri',
+        label: t('pdfValidator.field.vri'),
+        verdict: 'info',
+        evidence: dss.vri_count,
+      },
       {
         key: 'dss-vri-tu',
         label: t('pdfValidator.field.vriTu'),
@@ -538,7 +543,12 @@ export function buildValidationGroups(
         verdict: 'info',
         evidence: dss.ocsp_count,
       },
-      { key: 'dss-crl', label: t('pdfValidator.field.crl'), verdict: 'info', evidence: dss.crl_count },
+      {
+        key: 'dss-crl',
+        label: t('pdfValidator.field.crl'),
+        verdict: 'info',
+        evidence: dss.crl_count,
+      },
       {
         key: 'dss-revocation',
         label: t('pdfValidator.field.revocationEvidence'),
@@ -612,7 +622,9 @@ export function buildValidationGroups(
         key: 'doc-timestamp-hashes',
         label: t('pdfValidator.field.tokenHashes'),
         verdict: 'info',
-        evidence: <DigestList values={docTs.token_sha256} emptyLabel={t('pdfValidator.value.none')} />,
+        evidence: (
+          <DigestList values={docTs.token_sha256} emptyLabel={t('pdfValidator.value.none')} />
+        ),
       },
     ],
   });
@@ -902,9 +914,7 @@ function VerdictCell({ verdict }: { verdict: ValidationVerdict }) {
         )}
         {/* The label is the verdict: colour and icon only reinforce it, so the table
             still reads correctly in greyscale and for colour-blind operators. */}
-        <span className="pdf-validator-verdict__label">
-          {validationVerdictLabel(verdict, t)}
-        </span>
+        <span className="pdf-validator-verdict__label">{validationVerdictLabel(verdict, t)}</span>
       </span>
     </td>
   );
