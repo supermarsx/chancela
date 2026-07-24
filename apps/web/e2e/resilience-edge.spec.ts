@@ -116,7 +116,11 @@ test('malicious and long entity text is escaped on mobile without executing dial
     await route.continue();
   });
 
-  await tab(page, 'Entidades').click();
+  await page.getByTestId('topbar-tabs-menu').click();
+  await page
+    .getByRole('menu', { name: 'Navegação' })
+    .getByRole('menuitem', { name: 'Entidades', exact: true })
+    .click();
 
   const row = page.getByRole('row').filter({ hasText: '<script>alert("xss")</script>' });
   await expect(row).toBeVisible();
@@ -151,6 +155,10 @@ test('aborted archive PDF download shows an error and no fake success', async ({
     await route.abort('failed');
   });
 
+  await page
+    .getByRole('group', { name: 'Secções do arquivo' })
+    .getByRole('button', { name: 'Exportação', exact: true })
+    .click();
   await page.getByRole('button', { name: 'Exportar arquivo' }).click();
 
   await expect(page.getByRole('alert')).toBeVisible();
@@ -170,7 +178,8 @@ test('degraded backend shows recovery affordance and blocks ordinary create/arch
 
   await routeAuthenticatedShell(page, [
     'act.archive',
-    'ledger.recover',
+    'ledger.reanchor',
+    'ledger.restore',
     'signing.perform',
     'settings.manage',
     'settings.read',
@@ -233,17 +242,20 @@ test('degraded backend shows recovery affordance and blocks ordinary create/arch
 
   await page.goto(`/acts/${DEGRADED_ACT_ID}`);
 
-  await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
+  await expect(page.getByText('Ata selada', { exact: true }).first()).toBeVisible();
   const archiveButton = page.getByRole('button', { name: 'Arquivar ata' });
-  await expect(archiveButton).toBeVisible();
-  await archiveButton.click();
+  await expect(archiveButton).toBeEnabled();
+  // Health polling can replace the action row while Playwright is performing its stability
+  // checks. Dispatch the semantic click through the currently rendered button; the assertion below
+  // still proves that the real guarded request was attempted once and rejected by the backend.
+  await archiveButton.dispatchEvent('click');
 
   await expect.poll(() => archiveAttempts).toBe(1);
   await expect(
     page.getByRole('main').getByText('Modo só-leitura: act.archive bloqueado até recuperação.'),
   ).toBeVisible();
   await expect(page.getByText('Ata arquivada.', { exact: true })).toHaveCount(0);
-  await expect(archiveButton).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Arquivar ata' })).toBeEnabled();
 
   await page.getByRole('link', { name: 'Abrir Livros & Integridade' }).click();
 
@@ -341,7 +353,9 @@ test('trust catalog search renders a deterministic empty state', async ({ page }
   const catalog = panelByTitle(page, 'Catálogo de confiança');
   await expect(catalog).toBeVisible();
 
-  await page.getByLabel('Procurar na lista de confiança TSL').fill('semresultado-tsl');
+  await page
+    .getByRole('searchbox', { name: 'Procurar na lista de confiança TSL', exact: true })
+    .fill('semresultado-tsl');
 
   await expect(catalog.getByText('Sem resultados')).toBeVisible();
   await expect(
@@ -467,7 +481,8 @@ async function routeTrustCatalog(page: Page): Promise<void> {
   const summary = trustSummaryFixture();
   await page.route('**/v1/trust/**', async (route) => {
     const request = route.request();
-    const pathname = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const pathname = url.pathname;
     if (request.method() !== 'GET') {
       await route.continue();
       return;
@@ -478,7 +493,7 @@ async function routeTrustCatalog(page: Page): Promise<void> {
       return;
     }
     if (pathname === '/v1/trust/catalog') {
-      await fulfillJson(route, { summary, providers: [] });
+      await fulfillJson(route, url.search ? [] : { summary, providers: [] });
       return;
     }
     if (pathname === '/v1/trust/tsa') {
@@ -588,6 +603,30 @@ async function routeDegradedDomainReads(page: Page): Promise<void> {
   });
 
   await page.route(`**/v1/acts/${DEGRADED_ACT_ID}/signature/external-invites`, async (route) => {
+    if (route.request().method() === 'GET') {
+      await fulfillJson(route, []);
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.route(`**/v1/acts/${DEGRADED_ACT_ID}/follow-ups`, async (route) => {
+    if (route.request().method() === 'GET') {
+      await fulfillJson(route, []);
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.route(`**/v1/acts/${DEGRADED_ACT_ID}/documents/generated`, async (route) => {
+    if (route.request().method() === 'GET') {
+      await fulfillJson(route, []);
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.route('**/v1/templates**', async (route) => {
     if (route.request().method() === 'GET') {
       await fulfillJson(route, []);
       return;

@@ -63,7 +63,7 @@ test('arquivo filters and archive export use the current bounded newest-first qu
     '/v1/ledger/events/page?q=approved+digest&chain=book%3Abook-123456789&scope=act%3A88&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=50&order=desc';
 
   await page.goto('/archive');
-  await expect(page.getByText('act.sealed')).toBeVisible();
+  await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
 
   await page.getByRole('searchbox', { name: 'Pesquisar' }).fill('approved digest');
   await page.getByLabel('Filtrar por cadeia').selectOption('book:book-123456789');
@@ -77,6 +77,10 @@ test('arquivo filters and archive export use the current bounded newest-first qu
 
   await expect.poll(() => ledgerRequests.page.includes(expectedFilterPath)).toBe(true);
 
+  await page
+    .getByRole('group', { name: 'Secções do arquivo' })
+    .getByRole('button', { name: 'Exportação', exact: true })
+    .click();
   await page.getByLabel('Formato de exportação').selectOption('json');
   await page.getByRole('button', { name: 'Exportar arquivo' }).click();
 

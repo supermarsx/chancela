@@ -46,25 +46,31 @@ test('local CC batch panel submits transient PIN and renders route-stubbed per-d
 
   await batchPanel.getByLabel('Qualidade/capacidade declarada').fill(' Presidente da Mesa ');
   await batchPanel.getByLabel('Ator').fill(' operador-local ');
-  await batchPanel
-    .getByLabel('PIN de assinatura do Cartão de Cidadão (opcional)')
-    .fill(' 1234 ');
+  await batchPanel.getByLabel('PIN de assinatura do Cartão de Cidadão (opcional)').fill(' 1234 ');
   await batchPanel.getByRole('button', { name: 'Assinar lote com CC local' }).click();
 
-  await expect.poll(() => audit.batchBodies).toEqual([
-    {
-      act_ids: [ACT_ID, MANUAL_ACT_ID],
-      capacity: 'Presidente da Mesa',
-      actor: 'operador-local',
-      pin: '1234',
-    },
-  ]);
-  await expect(page.getByLabel('PIN de assinatura do Cartão de Cidadão (opcional)')).toHaveValue('');
+  await expect
+    .poll(() => audit.batchBodies)
+    .toEqual([
+      {
+        act_ids: [ACT_ID, MANUAL_ACT_ID],
+        capacity: 'Presidente da Mesa',
+        actor: 'operador-local',
+        pin: '1234',
+      },
+    ]);
+  await expect(page.getByLabel('PIN de assinatura do Cartão de Cidadão (opcional)')).toHaveValue(
+    '',
+  );
 
   await expect(page.getByText('Autenticação única')).toBeVisible();
   await expect(page.getByText('1').first()).toBeVisible();
   await expect(page.getByText('doc-local-cc-batch-current')).toBeVisible();
-  await expect(page.getByTitle(SIGNED_DIGEST)).toBeVisible();
+  await expect(
+    page
+      .locator('code.digest__value')
+      .filter({ hasText: `${SIGNED_DIGEST.slice(0, 8)}…${SIGNED_DIGEST.slice(-8)}` }),
+  ).toBeVisible();
   await expect(page.getByText('erro técnico route-stubbed sem PIN')).toBeVisible();
   await expect(page.getByText(/Presidente da Mesa/)).toBeVisible();
   await expect(
@@ -125,7 +131,11 @@ async function routeLocalCcBatchFixtures(
 
     if (isForbiddenLiveProviderPath(pathname, method)) {
       audit.forbiddenCalls.push(`${method} ${pathname}`);
-      await fulfillJson(route, { error: `unexpected live provider route: ${method} ${pathname}` }, 500);
+      await fulfillJson(
+        route,
+        { error: `unexpected live provider route: ${method} ${pathname}` },
+        500,
+      );
       return;
     }
 
@@ -249,7 +259,11 @@ function isForbiddenLiveProviderPath(pathname: string, method: string): boolean 
   if (pathname.includes('/signature/dss/')) return true;
   if (pathname.includes('/signature/official/import')) return true;
   if (pathname.includes('/document/signed')) return true;
-  return method === 'POST' && pathname.includes('/signature/cc/') && pathname !== '/v1/signature/cc/batch-sign';
+  return (
+    method === 'POST' &&
+    pathname.includes('/signature/cc/') &&
+    pathname !== '/v1/signature/cc/batch-sign'
+  );
 }
 
 async function expectNoStoredPin(page: Page, pin: string): Promise<void> {

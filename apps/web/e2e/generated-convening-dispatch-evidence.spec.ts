@@ -51,8 +51,7 @@ test('dashboard reminder opens generated convening notice evidence and records m
 
   const queue = page.getByRole('list', { name: 'Fila de trabalho do painel' });
   await expect(queue).toBeVisible();
-  await expect(queue).toContainText('generated-convening-dispatch-evidence');
-  await expect(queue).toContainText('generated-convening-notice');
+  await expect(queue).toContainText('Fonte Evidência de expedição da convocatória');
   await expect(queue).toContainText('no sending, delivery, legal notice completion');
 
   const action = queue.getByRole('link', { name: ENTITY_NAME });

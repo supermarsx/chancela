@@ -39,10 +39,7 @@ test('official signed-PDF handoff import is technical evidence only in the brows
   // The act is «Em assinatura»: the banner asserting the document is frozen is the signing
   // snapshot note (it becomes «Ata selada» only after sealing, which closes signing).
   await expect(
-    page
-      .getByRole('note')
-      .filter({ hasText: 'Cópia canónica congelada para assinatura' })
-      .first(),
+    page.getByRole('note').filter({ hasText: 'Cópia canónica congelada para assinatura' }).first(),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
   await expect(page.getByText('PDF já assinado na Autenticação.gov')).toBeVisible();
@@ -115,12 +112,15 @@ test('official signed-PDF handoff import is technical evidence only in the brows
   await expect(page.getByText('Handoff oficial Autenticação.gov', { exact: true })).toBeVisible();
   // The signed digest can render in two panels (signer evidence list and the canonical-vs-signed
   // technical comparison, which appears once the document bundle resolves); assert the first.
-  await expect(page.getByTitle(SIGNED_DIGEST).first()).toBeVisible();
+  await expect(
+    page
+      .locator('code.digest__value')
+      .filter({ hasText: `${SIGNED_DIGEST.slice(0, 8)}…${SIGNED_DIGEST.slice(-8)}` })
+      .first(),
+  ).toBeVisible();
   // The technical-comparison panel does render a Trust List row, but only to report that no
   // status was provided. A *claimed* status is what this assertion guards against.
-  await expect(
-    page.getByText(/Estado na Lista de Confiança(?!:? não fornecido)/u),
-  ).toHaveCount(0);
+  await expect(page.getByText(/Estado na Lista de Confiança(?!:? não fornecido)/u)).toHaveCount(0);
 
   expect(importBodies).toHaveLength(1);
   expect(importBodies[0]).toEqual({

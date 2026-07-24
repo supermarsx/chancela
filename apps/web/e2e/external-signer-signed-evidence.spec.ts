@@ -30,13 +30,15 @@ test('signed act external signer invite remains tracking-only and never exposes 
 
   await page.goto(`/acts/${ACT_ID}`);
 
-  await expect(page.getByRole('note').filter({ hasText: 'Ata selada' }).first()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
   await expect(page.getByText('Ata assinada com assinatura eletrónica qualificada')).toBeVisible();
   // The signed-record summary and the draft/signed technical comparison both show this
   // digest by design, so scope the assertion to the summary deflist.
   await expect(
-    page.locator('.signing-deflist').getByText(abbreviatedDigest(SIGNED_DIGEST)),
+    page
+      .locator('.signing-deflist code.digest__value')
+      .filter({ hasText: abbreviatedDigest(SIGNED_DIGEST) })
+      .first(),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Descarregar PDF assinado' })).toBeVisible();
 
@@ -99,7 +101,7 @@ test('signed act external signer invite remains tracking-only and never exposes 
   await expect(page.getByText('Acompanhamento apenas')).toBeVisible();
   await expect(
     page.getByText(
-      'Este ecrã regista só a resposta ao convite externo. A aceitação é um reconhecimento de acompanhamento, não assina o PDF e não conclui assinatura qualificada.',
+      'Este ecrã regista a resposta ao convite externo e, quando aplicável, preserva um PDF já assinado fora da Chancela como evidência técnica. Não reclama validação de prestador, qualificação, validade legal, conclusão da ata ou validação em lista de confiança.',
     ),
   ).toBeVisible();
   await expect(
@@ -438,8 +440,10 @@ function actFixture() {
     id: ACT_ID,
     book_id: BOOK_ID,
     title: ACT_TITLE,
-    state: 'Sealed',
-    seal_event_seq: 5,
+    // Invites can be issued while signing remains open. The signed PDF evidence may already exist
+    // before the operator advances the act to its immutable sealed state.
+    state: 'Signing',
+    seal_event_seq: null,
     retifies: null,
     channel: 'Physical',
     meeting_date: '2026-04-15',

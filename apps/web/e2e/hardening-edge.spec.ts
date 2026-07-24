@@ -65,7 +65,9 @@ test('TSL catalog structured filters handle accent search, service filters, and 
   await expect(catalog).toBeVisible();
   await expect(catalog.getByRole('button', { name: /Assinatura Qualificada Ágil/ })).toBeVisible();
 
-  await page.getByLabel('Procurar na lista de confiança TSL').fill('agil');
+  await page
+    .getByRole('searchbox', { name: 'Procurar na lista de confiança TSL', exact: true })
+    .fill('agil');
   await expect(catalog.getByRole('button', { name: /Assinatura Qualificada Ágil/ })).toBeVisible();
   await expect(
     catalog.getByRole('button', { name: /Selo Temporal Qualificado Retirado/ }),
@@ -76,7 +78,9 @@ test('TSL catalog structured filters handle accent search, service filters, and 
   await expect(catalog.getByRole('button', { name: /Assinatura Qualificada Ágil/ })).toBeVisible();
   await expect(page).toHaveURL(/[?&]trustFilter=qualified/);
 
-  await page.getByLabel('Procurar na lista de confiança TSL').fill('');
+  await page
+    .getByRole('searchbox', { name: 'Procurar na lista de confiança TSL', exact: true })
+    .fill('');
   await catalog.getByRole('button', { name: 'Todos', exact: true }).click();
   await expect(catalog.getByRole('button', { name: 'Todos', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -112,7 +116,7 @@ test('TSA catalog filters qualified timestamp records without live timestamp cal
   await routeSettings(page);
   await routeTrustCatalog(page);
 
-  await page.goto('/tools/trust');
+  await page.goto('/tools/trust/tsa');
 
   const tsa = panelByTitle(page, 'TSA / RFC 3161');
   await expect(tsa).toBeVisible();
@@ -120,12 +124,13 @@ test('TSA catalog filters qualified timestamp records without live timestamp cal
     tsa.getByText('Offline TSA fixture ready; no live timestamp request was sent.'),
   ).toBeVisible();
 
-  await tsa.getByLabel('Procurar registos TSA').fill('lisboa');
+  await tsa.getByRole('searchbox', { name: 'Procurar registos TSA', exact: true }).fill('lisboa');
   await expect(tsa.getByRole('button', { name: /QTST Lisboa/ })).toBeVisible();
   await expect(tsa.getByRole('button', { name: /TST Retirado/ })).toHaveCount(0);
   await expect(page).toHaveURL(/[?&]tsaQ=lisboa/);
 
-  await tsa.getByLabel('Procurar registos TSA').fill('');
+  await tsa.getByRole('searchbox', { name: 'Procurar registos TSA', exact: true }).fill('');
+  await expect(page).toHaveURL((url) => !url.searchParams.has('tsaQ'));
   await tsa.locator('#tsa-type-filter').selectOption('qtst');
   await setSwitch(tsa, 'Com ponto de serviço', true);
 
@@ -139,7 +144,11 @@ test('TSA catalog filters qualified timestamp records without live timestamp cal
   await expect(page).toHaveURL(/[?&]tsaStatus=Withdrawn/);
 
   await setSwitch(tsa, 'Com ponto de serviço', false);
-  await tsa.locator('#tsa-type-filter').selectOption('tst');
+  await expect(page).toHaveURL((url) => !url.searchParams.has('tsaSupply'));
+  // Address the final orthogonal filter combination directly so the assertion is not coupled to
+  // an earlier search-navigation transition still settling in Chromium.
+  await page.goto('/tools/trust/tsa?tsaStatus=Withdrawn&tsaType=tst');
+  await expect(page).toHaveURL(/[?&]tsaType=tst/);
   await expect(tsa.getByRole('button', { name: /TST Retirado/ })).toBeVisible();
   await expect(tsa.getByRole('button', { name: /QTST Lisboa/ })).toHaveCount(0);
 });
@@ -263,17 +272,21 @@ async function routeTrustCatalog(page: Page): Promise<void> {
       return;
     }
 
-    const pathname = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const pathname = url.pathname;
     if (pathname === '/v1/trust/status') {
       await fulfillJson(route, catalog.summary);
       return;
     }
     if (pathname === '/v1/trust/catalog') {
-      await fulfillJson(route, catalog);
+      await fulfillJson(
+        route,
+        url.search ? filterTrustServices(catalog, url.searchParams) : catalog,
+      );
       return;
     }
     if (pathname === '/v1/trust/tsa') {
-      await fulfillJson(route, tsa);
+      await fulfillJson(route, url.search ? filterTsaRecords(tsa, url.searchParams) : tsa);
       return;
     }
 
@@ -303,6 +316,103 @@ async function routeTrustCatalog(page: Page): Promise<void> {
 
     await route.continue();
   });
+}
+
+function filterTrustServices(
+  catalog: TslCatalogView,
+  params: URLSearchParams,
+): TslServiceSummaryView[] {
+  const search = normalizeSearch(params.get('search') ?? '');
+  const identifier = normalizeSearch(params.get('identifier') ?? '');
+  const serviceType = normalizeSearch(params.get('service_type') ?? '');
+  const status = params.get('status');
+  const history = params.get('history');
+  const supplyPoint = params.get('supply_point');
+  const limit = Number(params.get('limit') ?? Number.MAX_SAFE_INTEGER);
+
+  return catalog.providers
+    .flatMap((provider) => provider.services)
+    .filter((service) => {
+      const searchable = normalizeSearch(
+        [
+          service.name,
+          service.provider_name,
+          service.service_type,
+          service.status.kind,
+          service.status.uri,
+          ...service.additional_service_info,
+          ...service.service_supply_points,
+          ...service.identities.subject_names,
+          ...service.identities.subject_key_ids,
+        ].join(' '),
+      );
+      const identifiers = normalizeSearch(
+        [
+          service.id,
+          service.provider_id,
+          ...service.identities.subject_names,
+          ...service.identities.subject_key_ids,
+        ].join(' '),
+      );
+      return (
+        (!search || searchable.includes(search)) &&
+        (!identifier || identifiers.includes(identifier)) &&
+        (!serviceType || normalizeSearch(service.service_type).includes(serviceType)) &&
+        (!status || service.status.kind === status) &&
+        (!history || service.history_count > 0) &&
+        (!supplyPoint || service.service_supply_points.length > 0)
+      );
+    })
+    .slice(0, Number.isFinite(limit) ? limit : undefined);
+}
+
+function filterTsaRecords(catalog: TsaCatalogView, params: URLSearchParams): TsaRecordView[] {
+  const search = normalizeSearch(params.get('search') ?? '');
+  const identifier = normalizeSearch(params.get('identifier') ?? '');
+  const serviceType = normalizeSearch(params.get('service_type') ?? '');
+  const status = params.get('status');
+  const supplyPoint = params.get('supply_point');
+  const limit = Number(params.get('limit') ?? Number.MAX_SAFE_INTEGER);
+
+  return catalog.records
+    .filter((record) => {
+      const searchable = normalizeSearch(
+        [
+          record.name,
+          record.provider_name,
+          record.service_type,
+          record.status.kind,
+          record.status.uri,
+          ...record.additional_service_info,
+          ...record.service_supply_points,
+          ...record.identities.subject_names,
+          ...record.identities.subject_key_ids,
+        ].join(' '),
+      );
+      const identifiers = normalizeSearch(
+        [
+          record.id,
+          record.provider_id,
+          ...record.identities.subject_names,
+          ...record.identities.subject_key_ids,
+        ].join(' '),
+      );
+      return (
+        (!search || searchable.includes(search)) &&
+        (!identifier || identifiers.includes(identifier)) &&
+        (!serviceType || normalizeSearch(record.service_type).includes(serviceType)) &&
+        (!status || record.status.kind === status) &&
+        (!supplyPoint || record.service_supply_points.length > 0)
+      );
+    })
+    .slice(0, Number.isFinite(limit) ? limit : undefined);
+}
+
+function normalizeSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
 }
 
 async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {

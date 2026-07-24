@@ -16,7 +16,8 @@ test('entity detail loads route-stubbed chronology rows, visualization paths, an
   await page.goto(`/entities/${ENTITY_ID}`);
 
   await expect(page.getByRole('heading', { name: ENTITY_NAME })).toBeVisible();
-  await expect(page.getByText('Cronologia e grafo')).toBeVisible();
+  await page.getByRole('button', { name: 'Cronologia e grafo' }).click();
+  await expect(page).toHaveURL(new RegExp(`/entities/${ENTITY_ID}/chronology$`));
   await expect(page.getByText('Constituição por pacto social').first()).toBeVisible();
   await expect(page.getByText('Aumento de capital registado').first()).toBeVisible();
   await expect(page.getByText('Maria Silva, João Costa').first()).toBeVisible();
@@ -90,7 +91,9 @@ test('PDF validator shows technical JSON actions after a report body and downloa
   expect(state.pdfValidationBodies[0]?.declared_sha256).toMatch(/^[a-f0-9]{64}$/);
 });
 
-test('PDF validator fail-closed refusals do not expose technical JSON actions', async ({ page }) => {
+test('PDF validator fail-closed refusals do not expose technical JSON actions', async ({
+  page,
+}) => {
   await installClipboardStub(page);
   const state = await routeAppFixtures(page, { pdfValidation: 'fail-closed' });
 
@@ -217,7 +220,11 @@ async function routeAppFixtures(
       return;
     }
 
-    await fulfillJson(route, { error: `Unhandled browser fixture route: ${method} ${pathname}` }, 500);
+    await fulfillJson(
+      route,
+      { error: `Unhandled browser fixture route: ${method} ${pathname}` },
+      500,
+    );
   });
 
   return state;
@@ -260,9 +267,7 @@ async function copiedText(page: Page): Promise<string> {
 }
 
 async function expectCopiedText(page: Page, expectedSubstring: string): Promise<void> {
-  await expect
-    .poll(() => copiedText(page))
-    .toContain(expectedSubstring);
+  await expect.poll(() => copiedText(page)).toContain(expectedSubstring);
 }
 
 async function expectChronologyPath(page: Page, expectedPath: string): Promise<void> {
@@ -426,7 +431,8 @@ function chronologyFixture() {
       shareholders:
         'graph LR\n  entity["Cronologia Browser E2E"]\n  s0["Maria Silva"]\n  entity -->|"Quota EUR 5000"| s0\n  s1["João Costa"]\n  entity -->|"Quota EUR 2500"| s1',
       organs: 'timeline\n  2020 : Gerência nomeada\n  2024 : Reforço de capital',
-      relationships: 'graph LR\n  Entidade[Cronologia Browser E2E] --> Registo[Certidão permanente]',
+      relationships:
+        'graph LR\n  Entidade[Cronologia Browser E2E] --> Registo[Certidão permanente]',
     },
   };
 }
@@ -479,14 +485,14 @@ function pdfValidationReportFixture() {
         signing_time: '2026-07-10T10:00:00Z',
       },
       timestamp: { signature_timestamp_present: true, status_scope: 'technical_evidence_only' },
-    dss: {
-      present: true,
-      vri_count: 1,
-      vri_tu_count: 1,
-      vri_tu_keys: ['DSS-VRI-TU-1'],
-      vri_has_tu: true,
-      certificate_count: 2,
-      ocsp_count: 1,
+      dss: {
+        present: true,
+        vri_count: 1,
+        vri_tu_count: 1,
+        vri_tu_keys: ['DSS-VRI-TU-1'],
+        vri_has_tu: true,
+        certificate_count: 2,
+        ocsp_count: 1,
         crl_count: 0,
         revocation_evidence_present: true,
         certificate_sha256: ['4'.repeat(64)],
@@ -511,64 +517,64 @@ function pdfValidationReportFixture() {
             status: 'valid',
             failure_reason: null,
           },
-      ],
-      status_scope: 'technical_evidence_only',
-    },
-    local_technical_renewal_plan: {
-      status: 'available',
-      scope: 'local_technical_evidence_only',
-      notice: 'Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.',
-      signature_timestamp_present: true,
-      dss_revocation_evidence_present: true,
-      dss_validation_time_present: false,
-      doc_timestamp_present: true,
-      doc_timestamp_imprints_valid: true,
-      missing_inputs: ['dss_validation_time'],
-      next_action: 'record_dss_validation_time',
-      has_local_evidence_gap: true,
-      all_local_planning_inputs_present: false,
-      production_long_term_profile_claimed: false,
-      legal_ltv_claimed: false,
-    },
-    multi_signature_local_renewal_plan: {
-      status: 'available',
-      scope: 'local_technical_evidence_only',
-      notice: 'Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.',
-      signature_count: 1,
-      signatures: [
-        {
-          index: 0,
-          object_id: '8 0 R',
-          signed_revision_len: 42,
-          vri_key_sha256: '8'.repeat(64),
-          dss_vri_present: true,
-          dss_vri_validation_time_present: false,
-          local_technical_renewal_plan: {
-            status: 'available',
-            scope: 'local_technical_evidence_only',
-            notice: 'Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.',
-            signature_timestamp_present: true,
-            dss_revocation_evidence_present: true,
-            dss_validation_time_present: false,
-            doc_timestamp_present: true,
-            doc_timestamp_imprints_valid: true,
-            missing_inputs: ['signature_dss_validation_time'],
-            next_action: 'record_signature_dss_validation_time',
-            has_local_evidence_gap: true,
-            all_local_planning_inputs_present: false,
-            production_long_term_profile_claimed: false,
-            legal_ltv_claimed: false,
+        ],
+        status_scope: 'technical_evidence_only',
+      },
+      local_technical_renewal_plan: {
+        status: 'available',
+        scope: 'local_technical_evidence_only',
+        notice: 'Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.',
+        signature_timestamp_present: true,
+        dss_revocation_evidence_present: true,
+        dss_validation_time_present: false,
+        doc_timestamp_present: true,
+        doc_timestamp_imprints_valid: true,
+        missing_inputs: ['dss_validation_time'],
+        next_action: 'record_dss_validation_time',
+        has_local_evidence_gap: true,
+        all_local_planning_inputs_present: false,
+        production_long_term_profile_claimed: false,
+        legal_ltv_claimed: false,
+      },
+      multi_signature_local_renewal_plan: {
+        status: 'available',
+        scope: 'local_technical_evidence_only',
+        notice: 'Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.',
+        signature_count: 1,
+        signatures: [
+          {
+            index: 0,
+            object_id: '8 0 R',
+            signed_revision_len: 42,
+            vri_key_sha256: '8'.repeat(64),
+            dss_vri_present: true,
+            dss_vri_validation_time_present: false,
+            local_technical_renewal_plan: {
+              status: 'available',
+              scope: 'local_technical_evidence_only',
+              notice: 'Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.',
+              signature_timestamp_present: true,
+              dss_revocation_evidence_present: true,
+              dss_validation_time_present: false,
+              doc_timestamp_present: true,
+              doc_timestamp_imprints_valid: true,
+              missing_inputs: ['signature_dss_validation_time'],
+              next_action: 'record_signature_dss_validation_time',
+              has_local_evidence_gap: true,
+              all_local_planning_inputs_present: false,
+              production_long_term_profile_claimed: false,
+              legal_ltv_claimed: false,
+            },
           },
-        },
-      ],
-      signatures_with_local_evidence_gaps: [0],
-      next_action: 'record_signature_dss_validation_time',
-      has_local_evidence_gap: true,
-      all_local_planning_inputs_present: false,
-      production_long_term_profile_claimed: false,
-      legal_ltv_claimed: false,
+        ],
+        signatures_with_local_evidence_gaps: [0],
+        next_action: 'record_signature_dss_validation_time',
+        has_local_evidence_gap: true,
+        all_local_planning_inputs_present: false,
+        production_long_term_profile_claimed: false,
+        legal_ltv_claimed: false,
+      },
     },
-  },
     trust: {
       status: 'not_performed',
       performed: false,

@@ -97,7 +97,7 @@ test('book preservation package export starts a zip browser download', async ({ 
   const mutations = await routeExportFixtures(page);
 
   await page.goto(`/books/${BOOK_ID}`);
-  await expect(page.getByText('Livro export/save E2E')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Assembleia Geral/ })).toBeVisible();
 
   const downloadButton = page.getByRole('button', { name: 'Pacote de preservação Chancela' });
   await expect(downloadButton).toBeEnabled();

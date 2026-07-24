@@ -70,13 +70,13 @@ test('privacy control review reminders stay local and follow the settings source
   await expect(initialQueue).toContainText('Supplier token breach playbook');
   await expect(initialQueue).toContainText('UK support access transfer review');
   await expect(initialQueue).toContainText(
-    `Fonte ${PRIVACY_DPIA_REVIEW_RULE} / privacy-dpia`,
+    'Fonte Revisão da avaliação de impacto sobre a proteção de dados',
   );
   await expect(initialQueue).toContainText(
-    `Fonte ${PRIVACY_BREACH_REVIEW_RULE} / breach:breach-review-e2e`,
+    'Fonte Revisão do plano de resposta a violações de dados',
   );
   await expect(initialQueue).toContainText(
-    `Fonte ${PRIVACY_TRANSFER_REVIEW_RULE} / transfer:transfer-review-e2e`,
+    'Fonte Revisão do controlo de transferências internacionais',
   );
   await expect(initialQueue.getByRole('link', { name: 'Biometric access DPIA' })).toHaveAttribute(
     'href',
@@ -301,9 +301,13 @@ function rosterUserFixture() {
 function sessionFixture() {
   return {
     user: userFixture(),
-    permissions: ['ledger.read', 'settings.read', 'settings.manage', 'user.manage'].map(
-      permissionGrant,
-    ),
+    permissions: [
+      'ledger.read',
+      'privacy.manage',
+      'settings.read',
+      'settings.manage',
+      'user.manage',
+    ].map(permissionGrant),
   };
 }
 

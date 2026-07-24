@@ -38,10 +38,7 @@ test('signed-in operator records external signer slot evidence as technical evid
   // The act is «Em assinatura»: the banner asserting the document is frozen is the signing
   // snapshot note (it becomes «Ata selada» only after sealing, which closes signing).
   await expect(
-    page
-      .getByRole('note')
-      .filter({ hasText: 'Cópia canónica congelada para assinatura' })
-      .first(),
+    page.getByRole('note').filter({ hasText: 'Cópia canónica congelada para assinatura' }).first(),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
 
@@ -135,8 +132,14 @@ test('signed-in operator records external signer slot evidence as technical evid
   await expect(envelopeSection).toContainText('Assinado');
   await expect(envelopeSection).toContainText('Evidência técnica do operador');
   await expect(envelopeSection).toContainText('operator-log:slot-1');
-  await expect(envelopeSection.getByTitle(SLOT_DIGEST)).toBeVisible();
-  await expect(envelopeSection).toContainText('Evidência técnica: Verificação de documento oficial');
+  await expect(
+    envelopeSection
+      .locator('code.digest__value')
+      .filter({ hasText: `${SLOT_DIGEST.slice(0, 8)}…${SLOT_DIGEST.slice(-8)}` }),
+  ).toBeVisible();
+  await expect(envelopeSection).toContainText(
+    'Evidência técnica: Verificação de documento oficial',
+  );
   await expect(envelopeSection).toContainText('id-check:passport-4451');
   await expect(envelopeSection).toContainText('Evidência técnica: Capacidade de representação');
   await expect(envelopeSection).toContainText('registry-proxy:2026-07-12');
@@ -355,7 +358,9 @@ async function expectNoPositiveClaimText(page: Page): Promise<void> {
 
 function assertNoProviderCredentialOrClaimFields(value: unknown, path = 'body'): void {
   if (Array.isArray(value)) {
-    value.forEach((entry, index) => assertNoProviderCredentialOrClaimFields(entry, `${path}[${index}]`));
+    value.forEach((entry, index) =>
+      assertNoProviderCredentialOrClaimFields(entry, `${path}[${index}]`),
+    );
     return;
   }
   if (!value || typeof value !== 'object') return;

@@ -76,9 +76,7 @@ test('storage cleanup is settings.manage-gated and only deletes retained exports
   await expect(page.getByText('Durável aberto')).toBeVisible();
   await expect(page.getByText('Apagar ficheiro de teste')).toBeVisible();
 
-  const exportsCleanup = page.locator('.data-status-cleanup', {
-    hasText: 'Exportações retidas',
-  });
+  const exportsCleanup = page.getByRole('row', { name: /Exportações retidas/ });
   await expect(exportsCleanup).toContainText('Exportações retidas');
 
   // The destructive action is preview-gated: it stays disabled until a dry run has listed the

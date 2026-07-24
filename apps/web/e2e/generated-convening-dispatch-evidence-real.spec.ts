@@ -71,9 +71,9 @@ test('records generated Convocatoria dispatch evidence against the real backend'
   await expect(queue).toBeVisible();
   const reminder = queue
     .getByRole('listitem')
-    .filter({ hasText: 'generated-convening-dispatch-evidence' })
-    .filter({ hasText: generated.id });
-  await expect(reminder).toContainText('generated-convening-notice');
+    .filter({ hasText: seeded.entity.name })
+    .filter({ hasText: 'Fonte Evidência de expedição da convocatória' });
+  await expect(reminder).toContainText('Fonte Evidência de expedição da convocatória');
   await expect(reminder).toContainText('required_pending');
   await expect(reminder).toContainText(
     'does not claim sending, delivery, legal notice completion, or legal sufficiency',

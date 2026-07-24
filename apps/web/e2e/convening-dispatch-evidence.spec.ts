@@ -43,7 +43,7 @@ test('dashboard convocation reminder routes to convening guidance and records lo
   const queue = page.getByRole('list', { name: 'Fila de trabalho do painel' });
   await expect(queue).toBeVisible();
   await expect(queue).toContainText(`Rever convocatória: ${ACT_TITLE}`);
-  await expect(queue).toContainText('Fonte act-convening-notice / csc-commercial');
+  await expect(queue).toContainText('Fonte Convocatória da reunião');
   await expect(queue).toContainText('Aviso consultivo local; não afirma suficiência legal');
 
   const action = queue.getByRole('link', { name: 'Rever convocatória' });
