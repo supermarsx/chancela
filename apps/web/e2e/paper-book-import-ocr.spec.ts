@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import { expect, test, type Download, type Locator, type Page } from './fixtures';
 import { readFile, stat } from 'node:fs/promises';
 import { OPERATOR, signInAt } from './auth';
-import { fillOpenBookTermSignatories } from './book-helpers';
+import { createOpenBookFixture } from './book-helpers';
 
 test('paper-book import preserves non-canonical package, OCR review, and dossier evidence', async ({
   page,
@@ -148,7 +148,9 @@ test('paper-book import preserves non-canonical package, OCR review, and dossier
       `/v1/books/paper-import/${reviewedImport.importId}/ocr-drafts/${reviewedDraftId}/conversion-dossier`,
       'POST',
     );
-    await section.getByRole('button', { name: 'Criar dossier de conversão só de metadados' }).click();
+    await section
+      .getByRole('button', { name: 'Criar dossier de conversão só de metadados' })
+      .click();
     const dossier = await dossierResponse;
     expect(dossier.status()).toBe(201);
     const dossierBody = (await dossier.json()) as { dossier_id: string };
@@ -220,6 +222,10 @@ test('paper-book import preserves non-canonical package, OCR review, and dossier
   await test.step('reload keeps reviewed OCR auxiliary and package download separate', async () => {
     await page.goto(`/books/${bookId}`);
     await signInAt(page, `/books/${bookId}`);
+    await page
+      .getByRole('group', { name: 'Secções do livro' })
+      .getByRole('button', { name: 'Importações', exact: true })
+      .click();
 
     const section = ocrSection(page, reviewedImport.importId);
     await expect(page.getByText(reviewedImport.filename)).toBeVisible();
@@ -264,14 +270,13 @@ async function createEntityAndBook(
   await page.getByRole('button', { name: 'Criar entidade' }).click();
   await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/);
 
-  await page.getByRole('link', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/books\/new\?entidade=[0-9a-f-]{36}$/);
-  await page.getByLabel('Finalidade').fill(`Atas em papel importadas ${suffix}`);
-  await page.getByLabel('Data de abertura').fill('2026-01-15');
-  await fillOpenBookTermSignatories(page);
-  await page.getByRole('button', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}$/);
-  return idFromUrl(page);
+  const bookId = await createOpenBookFixture(page, {
+    entityId: idFromUrl(page),
+    purpose: `Atas em papel importadas ${suffix}`,
+    openingDate: '2026-01-15',
+  });
+  await page.goto(`/books/${bookId}`);
+  return bookId;
 }
 
 async function preservePaperBookPackage(
@@ -290,6 +295,11 @@ async function preservePaperBookPackage(
     notes: string;
   },
 ): Promise<{ filename: string; importId: string; bytes: Buffer }> {
+  await page
+    .getByRole('group', { name: 'Secções do livro' })
+    .getByRole('button', { name: 'Importações', exact: true })
+    .click();
+
   const bytes = Buffer.from(
     `%PDF-1.7\n% paper-book preserved import ${filename}\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n`,
     'utf8',

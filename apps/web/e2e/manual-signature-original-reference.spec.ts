@@ -8,7 +8,7 @@
  */
 import { expect, test, type Locator, type Page } from './fixtures';
 import { OPERATOR, signInAt } from './auth';
-import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
+import { createOpenBookFixture, sealActForSigning } from './book-helpers';
 
 test('manual sealing requires, captures, and preserves the signed-original reference', async ({
   page,
@@ -81,13 +81,12 @@ async function createSigningReadyAct(
   await page.getByRole('button', { name: 'Criar entidade' }).click();
   await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/);
 
-  await page.getByRole('link', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/books\/new\?entidade=[0-9a-f-]{36}$/);
-  await page.getByLabel('Finalidade').fill(`Atas com original manual ${suffix}`);
-  await page.getByLabel('Data de abertura').fill('2026-04-02');
-  await fillOpenBookTermSignatories(page);
-  await page.getByRole('button', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}$/);
+  const bookId = await createOpenBookFixture(page, {
+    entityId: new URL(page.url()).pathname.split('/').at(-1) ?? '',
+    purpose: `Atas com original manual ${suffix}`,
+    openingDate: '2026-04-02',
+  });
+  await page.goto(`/books/${bookId}`);
 
   await page.getByRole('link', { name: 'Nova ata' }).click();
   await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}\/new-act$/);

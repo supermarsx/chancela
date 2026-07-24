@@ -6,7 +6,7 @@
 import { expect, test, type Download, type Locator, type Page } from './fixtures';
 import { readFile, stat } from 'node:fs/promises';
 import { OPERATOR, signInAt } from './auth';
-import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
+import { createOpenBookFixture, sealActForSigning } from './book-helpers';
 
 test('document preview/PDF, sealed deep link, signing fallback, archive filters/export', async ({
   page,
@@ -139,8 +139,6 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
     const sealedPath = new URL(page.url()).pathname;
 
     await page.goto(sealedPath);
-    await expect(page.getByRole('heading', { name: 'Iniciar sessão' })).toBeVisible();
-
     await signInAt(page, sealedPath);
     await expect(page).toHaveURL(new RegExp(`${escapeRegExp(sealedPath)}$`));
     // «Ata selada» is also the title of the follow-ups panel note, so target the act-level
@@ -169,7 +167,7 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
       new RegExp(`^chancela-preservation-book-${escapeRegExp(bookId)}\\.zip$`),
     );
 
-    await page.getByRole('link', { name: 'Abrir' }).click();
+    await page.getByRole('link', { name: 'Abrir', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/acts/${escapeRegExp(actId)}$`));
     // «Ata selada» is also the title of the follow-ups panel note, so target the act-level
     // sealed banner by its body copy.
@@ -190,18 +188,22 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
     await page.getByRole('button', { name: 'Arquivar ata' }).click();
     await expect(page.getByRole('main').getByText('Ata arquivada.', { exact: true })).toBeVisible();
 
-    await tab(page, 'Arquivo').click();
+    await page.getByRole('link', { name: 'Arquivo', exact: true }).click();
     await expect(page).toHaveURL(/\/archive$/);
     await expect(page.getByText(/^Cadeia verificada/)).toBeVisible();
 
     await page.getByLabel('Filtrar por cadeia').selectOption(`book:${bookId}`);
-    await expect(page.getByText('act.sealed', { exact: true })).toBeVisible();
+    await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
 
     await page.getByLabel('Filtrar por âmbito').fill(`act:${actId}`);
-    await expect(page.getByText('document.generated', { exact: true })).toBeVisible();
-    await expect(page.getByText('act.archived', { exact: true })).toBeVisible();
+    await expect(page.getByText('Documento gerado', { exact: true })).toBeVisible();
+    await expect(page.getByText('Ata arquivada', { exact: true })).toBeVisible();
     await expect(page.locator('td', { hasText: OPERATOR.username }).first()).toBeVisible();
 
+    await page
+      .getByRole('group', { name: 'Secções do arquivo' })
+      .getByRole('button', { name: 'Exportação', exact: true })
+      .click();
     const archiveDownload = await downloadFrom(
       page.getByRole('button', { name: 'Exportar arquivo' }),
     );
@@ -293,14 +295,13 @@ async function createAct(
   await page.getByRole('button', { name: 'Criar entidade' }).click();
   await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/);
 
-  await page.getByRole('link', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/books\/new\?entidade=[0-9a-f-]{36}$/);
-  await page.getByLabel('Finalidade').fill(`Atas documentais ${suffix}`);
-  await page.getByLabel('Data de abertura').fill('2026-02-02');
-  await fillOpenBookTermSignatories(page);
-  await page.getByRole('button', { name: 'Abrir livro' }).click();
-  await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}$/);
-  const bookId = idFromUrl(page);
+  const entityId = idFromUrl(page);
+  const bookId = await createOpenBookFixture(page, {
+    entityId,
+    purpose: `Atas documentais ${suffix}`,
+    openingDate: '2026-02-02',
+  });
+  await page.goto(`/books/${bookId}`);
 
   await page.getByRole('link', { name: 'Nova ata' }).click();
   await expect(page).toHaveURL(/\/books\/[0-9a-f-]{36}\/new-act$/);

@@ -1,5 +1,11 @@
 import { expect, type Page } from './fixtures';
 
+type OpenBookFixtureOptions = {
+  entityId: string;
+  purpose: string;
+  openingDate: string;
+};
+
 type ManualSignatureSealOptions = {
   storageReference?: string;
   custodian?: string;
@@ -12,6 +18,54 @@ type ManualSignatureSealResult = {
   custodian?: string;
   note?: string;
 };
+
+/**
+ * Create an already-open book for downstream browser journeys.
+ *
+ * The operator UI correctly uses the formal two-phase opening-term flow. These focused
+ * document/signing tests are not opening-term tests, and the local E2E server has no
+ * cryptographic term signer, so use the server's documented legacy one-shot compatibility
+ * path to seed their prerequisite without waiting on a UI action that no longer exists.
+ */
+export async function createOpenBookFixture(
+  page: Page,
+  { entityId, purpose, openingDate }: OpenBookFixtureOptions,
+): Promise<string> {
+  const result = await page.evaluate(
+    async ({ entityId: entity_id, purpose: bookPurpose, openingDate: opening_date }) => {
+      const token = window.sessionStorage.getItem('chancela.session-token');
+      const response = await window.fetch('/v1/books', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'X-Chancela-Session': token } : {}),
+        },
+        body: JSON.stringify({
+          entity_id,
+          kind: 'AssembleiaGeral',
+          purpose: bookPurpose,
+          numbering_scheme: 'Sequential',
+          opening_date,
+          required_signatories: [
+            { name: 'Amélia Marques', capacity: 'Chair' },
+            { name: 'Rui Secretário', capacity: 'Secretary' },
+          ],
+          one_shot: true,
+        }),
+      });
+      return {
+        status: response.status,
+        body: await response.text(),
+      };
+    },
+    { entityId, purpose, openingDate },
+  );
+
+  expect(result.status, result.body).toBe(201);
+  const book = JSON.parse(result.body) as { id?: unknown };
+  expect(book.id).toEqual(expect.any(String));
+  return book.id as string;
+}
 
 export async function fillOpenBookTermSignatories(page: Page): Promise<void> {
   await page.getByLabel('Nome do signatário').first().fill('Amélia Marques');
@@ -36,20 +90,14 @@ export async function sealActForSigning(
 
   const dialog = page.getByRole('dialog', { name: 'Confirmar selagem manual' });
   await expect(dialog).toBeVisible();
-  await expect(
-    dialog.getByText('não validam a assinatura nem certificam o arquivo'),
-  ).toBeVisible();
+  await expect(dialog.getByText('não validam a assinatura nem certificam o arquivo')).toBeVisible();
 
   const confirm = dialog.getByRole('button', { name: 'Confirmar e selar ata' });
   await expect(confirm).toBeDisabled();
-  await dialog
-    .getByLabel(/referência do original assinado manualmente foi registada/i)
-    .check();
+  await dialog.getByLabel(/referência do original assinado manualmente foi registada/i).check();
   await expect(confirm).toBeDisabled();
 
-  await dialog
-    .getByRole('textbox', { name: /^Referência do original/u })
-    .fill(storageReference);
+  await dialog.getByRole('textbox', { name: /^Referência do original/u }).fill(storageReference);
   if (custodian) {
     await dialog.getByLabel('Custodiante').fill(custodian);
   }
