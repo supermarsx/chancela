@@ -6,6 +6,7 @@
   "active": true,
   "has_secret": true,
   "has_attestation_key": false,
+  "attestation_key_fingerprint": null,
   "has_recovery_phrase": false,
   "has_totp": false,
   "two_factor_required": false,

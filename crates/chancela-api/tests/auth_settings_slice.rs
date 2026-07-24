@@ -155,10 +155,9 @@ fn assert_same_keys(path: &str, actual: &Value, expected: &Value) {
 /// The committed `contracts/settings.json` must still describe the live `GET /v1/settings` after
 /// t95 adds a slice to the document.
 ///
-/// `chancela-server`'s `e2e_contracts` journey is the canonical guard, but it asserts the `user`
-/// contract first and so cannot currently reach `settings` — an unrelated in-flight change added
-/// `attestation_key_fingerprint` to the user response without updating `contracts/user.json`. This
-/// test covers the settings half directly so the P0 change is verified rather than assumed.
+/// `chancela-server`'s `e2e_contracts` journey is the canonical guard. This focused test covers the
+/// settings half directly as well so the P0 change is verified rather than assumed if an unrelated
+/// earlier contract assertion fails.
 #[tokio::test]
 async fn the_settings_contract_fixture_still_describes_the_live_document() {
     let temp = TempDir::new();

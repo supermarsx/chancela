@@ -1,22 +1,27 @@
 {
-  "id": "user-encosto-ata/v1",
-  "family": "CommercialCompany",
-  "stage": "Ata",
-  "channels": [
-    "Physical"
-  ],
-  "signature_policy": "QualifiedPreferred",
-  "rule_pack_id": "csc-art63/v2",
-  "locale": "pt-PT",
-  "blocks": [
-    {
-      "kind": "Heading",
-      "level": 1,
-      "template": "Ata n.º {{ ata_number }}"
-    },
-    {
-      "kind": "Paragraph",
-      "template": "Reunida a assembleia em {{ meeting_date | long_date }}."
-    }
-  ]
+  "format": "chancela.template-bundle",
+  "format_version": 1,
+  "spec": {
+    "id": "user-encosto-ata/v1",
+    "family": "CommercialCompany",
+    "stage": "Ata",
+    "channels": [
+      "Physical"
+    ],
+    "signature_policy": "QualifiedPreferred",
+    "rule_pack_id": "csc-art63/v2",
+    "locale": "pt-PT",
+    "blocks": [
+      {
+        "kind": "Heading",
+        "level": 1,
+        "template": "Ata n.º {{ ata_number }}"
+      },
+      {
+        "kind": "Paragraph",
+        "template": "Reunida a assembleia em {{ meeting_date | long_date }}."
+      }
+    ]
+  },
+  "body_markdown": ""
 }
