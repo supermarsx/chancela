@@ -300,7 +300,10 @@ async fn invalid_restore_archive_is_rejected_without_partial_apply() {
     let (status, body) = h
         .post_json_auth(
             "/v1/ledger/recovery/restore",
-            json!({ "archive": "not-a-backup.zip" }),
+            json!({
+                "archive": "not-a-backup.zip",
+                "reauth": { "password": E2E_TEST_PASSWORD }
+            }),
             &token,
         )
         .await;
