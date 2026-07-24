@@ -127,7 +127,7 @@ test('non-canonical imported document can be reviewed without losing conservativ
   ]);
 
   await expect(metadata).toContainText('Rejeitado como evidência não canónica');
-  await expect(metadata).toContainText('2026-07-10T09:30:00.000Z');
+  await expect(metadata.locator('time[datetime="2026-07-10T09:30:00.000Z"]')).toBeVisible();
   await expect(metadata).toContainText('operator.review');
   await expect(metadata).toContainText(REVIEW_NOTE);
   await expect(metadata).toContainText(REVIEW_NOTICE);
@@ -139,9 +139,9 @@ test('non-canonical imported document can be reviewed without losing conservativ
   const decisions = history.locator('ol > li');
   await expect(decisions).toHaveCount(2);
   await expect(decisions.nth(0)).toContainText(INITIAL_HISTORY_NOTE);
-  await expect(decisions.nth(0)).toContainText('2026-07-09T11:00:00.000Z');
+  await expect(decisions.nth(0).locator('time[datetime="2026-07-09T11:00:00.000Z"]')).toBeVisible();
   await expect(decisions.nth(1)).toContainText(REVIEW_NOTE);
-  await expect(decisions.nth(1)).toContainText(REVIEWED_AT);
+  await expect(decisions.nth(1).locator(`time[datetime="${REVIEWED_AT}"]`)).toBeVisible();
   await expect(decisions.nth(1)).toContainText(REVIEWED_BY);
   await expect(history).toContainText('Histórico de revisão metadata-only');
   await expect(history).toContainText('sem OCR, conversão, substituição de PDF/A');
@@ -172,7 +172,7 @@ test('dashboard import-review notification routes to review, can be dismissed, a
   await expect(page.getByRole('heading', { name: 'Vista geral' })).toBeVisible();
 
   await page.getByRole('button', { name: '1 notificações pendentes' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Notificações' });
+  const dialog = page.getByRole('dialog', { name: 'Centro de Ações' });
   await expect(dialog.getByText(`Alerta do painel (${IMPORT_REVIEW_ALERT_CODE})`)).toBeVisible();
   await expect(
     dialog.getByText('legacy-minutes.doc precisa de revisão operacional.'),
@@ -221,7 +221,7 @@ test('dashboard import-review notification routes to review, can be dismissed, a
   await expect(metadata).toContainText(LEGAL_NOTICE);
 
   await page.getByRole('button', { name: '1 notificações pendentes' }).click();
-  const reopenedDialog = page.getByRole('dialog', { name: 'Notificações' });
+  const reopenedDialog = page.getByRole('dialog', { name: 'Centro de Ações' });
   const triageResponse = waitForApiResponse(
     page,
     `/v1/notifications/triage/${encodeURIComponent(IMPORT_REVIEW_ALERT_ID)}`,
@@ -229,7 +229,7 @@ test('dashboard import-review notification routes to review, can be dismissed, a
   );
   await reopenedDialog.getByRole('button', { name: 'Dispensar' }).click();
   expect((await triageResponse).status()).toBe(200);
-  await expect(page.locator('.notification-bell')).toHaveAccessibleName('Notificações');
+  await expect(page.locator('.notification-bell')).toHaveAccessibleName('Centro de Ações');
   expect(triageUpdates).toEqual([{ notificationId: IMPORT_REVIEW_ALERT_ID, status: 'dismissed' }]);
   await page.keyboard.press('Escape');
   await expect(reopenedDialog).toHaveCount(0);
@@ -375,7 +375,11 @@ async function routeImportedReviewFixtures(
     }
     if (method === 'GET' && pathname === IMPORT_BYTES_PATH) {
       options.downloadedPaths?.push(pathname);
-      await fulfillBytes(route, Buffer.from('original imported bytes', 'utf8'), 'application/msword');
+      await fulfillBytes(
+        route,
+        Buffer.from('original imported bytes', 'utf8'),
+        'application/msword',
+      );
       return;
     }
     if (method === 'GET' && pathname === `/v1/acts/${ACT_ID}/signature`) {
@@ -834,7 +838,9 @@ function reviewedImportedDocumentFixture(
         body.acknowledged_guardrail_ids,
       ),
     ],
-    canonical_conversion_preflight: importedDocumentCanonicalConversionPreflight(body.review_status),
+    canonical_conversion_preflight: importedDocumentCanonicalConversionPreflight(
+      body.review_status,
+    ),
     preservation_policy: importedDocumentPreservationPolicy(body.review_status, false),
   };
 }

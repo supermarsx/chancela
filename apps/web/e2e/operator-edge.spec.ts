@@ -48,7 +48,9 @@ const OPERATOR_PERMISSIONS = [
 const CREDENTIAL_MARKER_PATTERN =
   /password_hash|api_secret|sk_live_e2e_secret|argon2id|credential_material|plain-secret-e2e|recovery_phrase/i;
 
-test('legacy user-management URLs canonicalize into Configurações users only', async ({ page }) => {
+test('user-management URLs keep the roster in settings and open dedicated create/edit screens', async ({
+  page,
+}) => {
   await routeAuthenticatedShell(page);
   await routeSettings(page);
   await routeHealth(page);
@@ -64,18 +66,18 @@ test('legacy user-management URLs canonicalize into Configurações users only',
   await expect(page.locator('main[data-route-key="/settings"]')).toBeVisible();
 
   await page.goto('/users/new');
-  await expect(page).toHaveURL(/\/settings\/users\?user=novo$/);
-  await expect(settingsSectionButton(page, 'Utilizadores')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/\/users\/new$/);
+  await expect(page.getByRole('heading', { name: 'Novo utilizador' })).toBeVisible();
   await expect(page.getByLabel('Nome de utilizador')).toBeVisible();
-  await expect(page.locator('main[data-route-key="/settings"]')).toBeVisible();
+  await expect(page.locator('main[data-route-key="/users/new"]')).toBeVisible();
 
   await page.goto(`/users/${TARGET_USER.id}#acesso`);
-  await expect(page).toHaveURL(
-    new RegExp(`/settings/users\\?user=${TARGET_USER.id}#acesso$`),
-  );
-  await expect(page.getByRole('heading', { name: 'Identidade' })).toBeVisible();
-  await expect(page.locator('section#acesso')).toBeVisible();
-  await expect(page.locator('main[data-route-key="/settings"]')).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/users/${TARGET_USER.id}/access$`));
+  await expect(
+    page.getByRole('button', { name: 'Acesso e auditoria', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: 'Palavra-passe' })).toBeVisible();
+  await expect(page.locator(`main[data-route-key="/users/${TARGET_USER.id}"]`)).toBeVisible();
 });
 
 test('DSR export and empty request list do not render secret-bearing JSON', async ({ page }) => {
@@ -89,16 +91,22 @@ test('DSR export and empty request list do not render secret-bearing JSON', asyn
     exportBody: dsrExportWithCredentialMarkers(),
   });
 
-  await page.goto(`/settings/users?user=${TARGET_USER.id}`);
+  await page.goto(`/users/${TARGET_USER.id}/dsr`);
 
   const dsr = panelByTitle(page, 'Pedidos DSR / privacidade');
   await expect(dsr).toBeVisible();
   await expect(dsr.getByText('Sem pedidos DSR')).toBeVisible();
   await expectNoCredentialMarkers(page);
 
+  const exportResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === `/v1/privacy/users/${TARGET_USER.id}/export`,
+  );
   await dsr.getByRole('button', { name: 'Descarregar exportação DSR' }).click();
+  expect((await exportResponse).ok()).toBe(true);
 
-  await expect(page.getByText('Exportação DSR/privacy descarregada.')).toBeVisible();
+  await expect(dsr.getByRole('button', { name: 'Descarregar exportação DSR' })).toBeEnabled();
   await expectNoCredentialMarkers(page);
 });
 
@@ -121,7 +129,7 @@ test('DSR request-list error response does not leak diagnostic credential fields
     },
   });
 
-  await page.goto(`/settings/users?user=${TARGET_USER.id}`);
+  await page.goto(`/users/${TARGET_USER.id}/dsr`);
 
   const dsr = panelByTitle(page, 'Pedidos DSR / privacidade');
   await expect(dsr).toBeVisible();
@@ -154,7 +162,7 @@ test('DSR request success list renders lifecycle fields without hidden credentia
   await routeRolesAndScopeLookups(page);
   await routeDsr(page, TARGET_USER.id, { requests: [pending, completed] });
 
-  await page.goto(`/settings/users?user=${TARGET_USER.id}`);
+  await page.goto(`/users/${TARGET_USER.id}/dsr`);
 
   const dsr = panelByTitle(page, 'Pedidos DSR / privacidade');
   await expect(dsr).toBeVisible();
@@ -214,11 +222,11 @@ test('trust catalog keeps unsafe metadata inert and TSL/TSA searches accent-inse
   await page.goto('/tools/trust');
 
   const catalog = panelByTitle(page, 'Catálogo de confiança');
-  const tsa = panelByTitle(page, 'TSA / RFC 3161');
   await expect(catalog).toBeVisible();
-  await expect(tsa).toBeVisible();
 
-  await page.getByLabel('Procurar na lista de confiança TSL').fill('qualificada agil');
+  await page
+    .getByRole('searchbox', { name: 'Procurar na lista de confiança TSL', exact: true })
+    .fill('qualificada agil');
   await expect(
     catalog.locator('.trust-pick--service', { hasText: 'Assinatura Qualificada Ágil' }),
   ).toBeVisible();
@@ -231,7 +239,9 @@ test('trust catalog keeps unsafe metadata inert and TSL/TSA searches accent-inse
   await expect(catalog.getByText('data:text/html,<b>x</b>')).toBeVisible();
   await expectNoUnsafeAnchors(page);
 
-  await page.getByLabel('Procurar na lista de confiança TSL').fill('');
+  await page
+    .getByRole('searchbox', { name: 'Procurar na lista de confiança TSL', exact: true })
+    .fill('');
   await catalog.locator('.trust-pick--provider', { hasText: 'Certificação Ágil' }).click();
   await expect(catalog.getByText('javascript:alert("provider")')).toBeVisible();
   await expect(catalog.getByText('data:text/html,<svg onload=alert(1)>')).toBeVisible();
@@ -244,7 +254,10 @@ test('trust catalog keeps unsafe metadata inert and TSL/TSA searches accent-inse
   await expect(catalog.getByText('Sem dados publicados.')).toHaveCount(3);
   await expectNoUnsafeAnchors(page);
 
-  await tsa.getByLabel('Procurar registos TSA').fill('evora');
+  await page.getByRole('button', { name: 'Selos temporais (TSA)', exact: true }).click();
+  const tsa = panelByTitle(page, 'TSA / RFC 3161');
+  await expect(tsa).toBeVisible();
+  await tsa.getByRole('searchbox', { name: 'Procurar registos TSA', exact: true }).fill('evora');
   await expect(tsa.getByRole('button', { name: /QTST Évora/ })).toBeVisible();
   await expect(tsa.getByRole('button', { name: /TST Lisboa/ })).toHaveCount(0);
   await expect(tsa.getByText('javascript:alert("tsa")').first()).toBeVisible();
@@ -477,7 +490,8 @@ async function routeTrustCatalog(page: Page): Promise<void> {
 
   await page.route('**/v1/trust/**', async (route) => {
     const request = route.request();
-    const pathname = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const pathname = url.pathname;
     if (request.method() !== 'GET') {
       await route.continue();
       return;
@@ -488,11 +502,14 @@ async function routeTrustCatalog(page: Page): Promise<void> {
       return;
     }
     if (pathname === '/v1/trust/catalog') {
-      await fulfillJson(route, catalog);
+      await fulfillJson(
+        route,
+        url.search ? filterTrustServices(catalog, url.searchParams) : catalog,
+      );
       return;
     }
     if (pathname === '/v1/trust/tsa') {
-      await fulfillJson(route, tsa);
+      await fulfillJson(route, url.search ? filterTsaRecords(tsa, url.searchParams) : tsa);
       return;
     }
 
@@ -522,6 +539,103 @@ async function routeTrustCatalog(page: Page): Promise<void> {
 
     await route.continue();
   });
+}
+
+function filterTrustServices(
+  catalog: TslCatalogView,
+  params: URLSearchParams,
+): TslServiceSummaryView[] {
+  const search = normalizeTrustSearch(params.get('search') ?? '');
+  const identifier = normalizeTrustSearch(params.get('identifier') ?? '');
+  const serviceType = normalizeTrustSearch(params.get('service_type') ?? '');
+  const status = params.get('status');
+  const history = params.get('history');
+  const supplyPoint = params.get('supply_point');
+  const limit = Number(params.get('limit') ?? Number.MAX_SAFE_INTEGER);
+
+  return catalog.providers
+    .flatMap((provider) => provider.services)
+    .filter((service) => {
+      const searchable = normalizeTrustSearch(
+        [
+          service.name,
+          service.provider_name,
+          service.service_type,
+          service.status.kind,
+          service.status.uri,
+          ...service.additional_service_info,
+          ...service.service_supply_points,
+          ...service.identities.subject_names,
+          ...service.identities.subject_key_ids,
+        ].join(' '),
+      );
+      const identifiers = normalizeTrustSearch(
+        [
+          service.id,
+          service.provider_id,
+          ...service.identities.subject_names,
+          ...service.identities.subject_key_ids,
+        ].join(' '),
+      );
+      return (
+        (!search || searchable.includes(search)) &&
+        (!identifier || identifiers.includes(identifier)) &&
+        (!serviceType || normalizeTrustSearch(service.service_type).includes(serviceType)) &&
+        (!status || service.status.kind === status) &&
+        (!history || service.history_count > 0) &&
+        (!supplyPoint || service.service_supply_points.length > 0)
+      );
+    })
+    .slice(0, Number.isFinite(limit) ? limit : undefined);
+}
+
+function filterTsaRecords(catalog: TsaCatalogView, params: URLSearchParams): TsaRecordView[] {
+  const search = normalizeTrustSearch(params.get('search') ?? '');
+  const identifier = normalizeTrustSearch(params.get('identifier') ?? '');
+  const serviceType = normalizeTrustSearch(params.get('service_type') ?? '');
+  const status = params.get('status');
+  const supplyPoint = params.get('supply_point');
+  const limit = Number(params.get('limit') ?? Number.MAX_SAFE_INTEGER);
+
+  return catalog.records
+    .filter((record) => {
+      const searchable = normalizeTrustSearch(
+        [
+          record.name,
+          record.provider_name,
+          record.service_type,
+          record.status.kind,
+          record.status.uri,
+          ...record.additional_service_info,
+          ...record.service_supply_points,
+          ...record.identities.subject_names,
+          ...record.identities.subject_key_ids,
+        ].join(' '),
+      );
+      const identifiers = normalizeTrustSearch(
+        [
+          record.id,
+          record.provider_id,
+          ...record.identities.subject_names,
+          ...record.identities.subject_key_ids,
+        ].join(' '),
+      );
+      return (
+        (!search || searchable.includes(search)) &&
+        (!identifier || identifiers.includes(identifier)) &&
+        (!serviceType || normalizeTrustSearch(record.service_type).includes(serviceType)) &&
+        (!status || record.status.kind === status) &&
+        (!supplyPoint || record.service_supply_points.length > 0)
+      );
+    })
+    .slice(0, Number.isFinite(limit) ? limit : undefined);
+}
+
+function normalizeTrustSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
 }
 
 async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {

@@ -29,9 +29,9 @@ test('data key rotation preflight reveals guarded execution and submits only the
   const executionBodies: DataKeyRotationExecuteBody[] = [];
   await routeDataKeyRotationFixtures(page, preflightBodies, executionBodies);
 
-  // Data-key rotation lives on the «Chaves e reposição» subtab since t28 split Gestão de dados into
-  // three Operações subtabs; its own address opens straight onto it.
-  await page.goto('/settings/operations/keys');
+  // Data-key rotation lives on Administração's «Chaves e reposição» subtab; its own address opens
+  // straight onto it.
+  await page.goto('/admin/keys');
 
   await expect(
     page.getByRole('heading', { name: 'Verificação prévia da rotação da chave de dados' }),
@@ -51,7 +51,9 @@ test('data key rotation preflight reveals guarded execution and submits only the
     },
   ]);
 
-  await expect(page.getByText('Resultado da verificação')).toBeVisible();
+  await expect(
+    page.locator('.inline-warning__title', { hasText: 'Resultado da verificação' }),
+  ).toBeVisible();
   await expect(page.locator('.badge').filter({ hasText: 'ready' })).toBeVisible();
   await expect(page.getByText('Sem bloqueios indicados.')).toBeVisible();
   await expect(page.getByLabel('Chave atual')).toHaveValue('');
@@ -72,7 +74,9 @@ test('data key rotation preflight reveals guarded execution and submits only the
   ]);
   expect(executionBodies[0]).not.toHaveProperty('current_key');
 
-  await expect(page.getByText('Resultado da execução SQLCipher')).toBeVisible();
+  await expect(
+    page.locator('.inline-warning__title', { hasText: 'Resultado da execução SQLCipher' }),
+  ).toBeVisible();
   await expect(page.locator('.badge').filter({ hasText: 'rekey_applied' })).toBeVisible();
   await expect(page.getByText('sqlcipher_rekey')).toBeVisible();
   await expect(page.getByText('Integridade pós-rekey')).toBeVisible();
@@ -268,7 +272,46 @@ function dataStatusFixture(): DataStatusResponse {
       mode: 'durable',
       data_dir_configured: true,
       durable_store_open: true,
+      active_backend_family: 'sqlite',
+      sidecar_storage_mode: 'file',
       database_encryption_configured: true,
+      database_encryption: {
+        configured: true,
+        sqlcipher_available: true,
+        sqlcipher_backed: true,
+        key_source: 'operator_env',
+        hardware_derived_fallback: {
+          available: false,
+          selected: false,
+          fail_closed_if_requested: true,
+          status: 'unavailable',
+          message: 'No hardware-bound database key derivation provider is wired.',
+        },
+        database_format: 'non_plaintext_or_encrypted',
+        key_ops_plan: 'open_encrypted_store',
+        plaintext_migration_pending: false,
+        plaintext_migration_blocked: false,
+        key_ops: {
+          sqlcipher_available: true,
+          key_config: 'configured',
+          database_file: 'F:\\Chancela\\Data\\chancela.sqlite',
+          database_format: 'non_plaintext_or_encrypted',
+          plan: 'open_encrypted_store',
+          migration_plan: {
+            required: false,
+            status: 'not_required',
+            summary: 'No plaintext-to-encrypted migration is required.',
+            steps: [],
+            evidence: {
+              plan: 'open_encrypted_store',
+              database_format: 'non_plaintext_or_encrypted',
+              key_config: 'configured',
+              sqlcipher_available: true,
+              database_file: 'F:\\Chancela\\Data\\chancela.sqlite',
+            },
+          },
+        },
+      },
       store_schema_version: 7,
       ledger_length: 12,
       ledger_verified: true,
@@ -284,13 +327,22 @@ function dataStatusFixture(): DataStatusResponse {
       create_file: { ok: true, checked: true, message: 'ok' },
       write_file: { ok: true, checked: true, message: 'ok' },
       delete_probe_file: { ok: true, checked: true, message: 'ok' },
+      durable_store_open: { ok: true, checked: true, message: 'ok' },
       sqlite_store_open: { ok: true, checked: true, message: 'ok' },
     },
     usage: {
       total_bytes: 8192,
       filesystem: [],
+      logical_payload: [],
+      sidecars: [],
       sqlite_logical: [],
       scan_errors: [],
+    },
+    key_rotation: {
+      latest_receipt: null,
+      history: [],
+      history_count: 0,
+      history_limit: 10,
     },
   };
 }

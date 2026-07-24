@@ -72,9 +72,7 @@ test('dashboard reminder opens generated absent-owner dispatch evidence and reco
     'href',
     `/acts/${ACT_ID}?generated_document_id=${GENERATED_DOCUMENT_ID}&focus=dispatch-evidence#generated-dispatch-evidence`,
   );
-  await expect(queue).toContainText(
-    'Fonte absent-owner-dispatch-evidence / condominium-generated-communication',
-  );
+  await expect(queue).toContainText('Fonte Evidência de expedição a condómino ausente');
   await expect(queue).toContainText('O lembrete é apenas consultivo.');
 
   await Promise.all([
@@ -131,7 +129,7 @@ test('dashboard reminder opens generated absent-owner dispatch evidence and reco
 
   const evidenceRows = page.getByRole('list', { name: 'Linhas de evidência registadas' });
   await expect(evidenceRows).toContainText('operator.dispatch');
-  await expect(evidenceRows).toContainText('2026-07-11T10:05:00.000Z');
+  await expect(evidenceRows.locator('time[datetime="2026-07-11T10:05:00.000Z"]')).toBeVisible();
   await expect(evidenceRows).toContainText('Carta registada');
   await expect(evidenceRows).toContainText('RL-123');
   await expect(evidenceRows).toContainText('scan-page-4');
@@ -168,7 +166,7 @@ test('dashboard reminder opens generated absent-owner dispatch evidence and reco
   ]);
 
   await expect(evidenceRows).toContainText('web-operator');
-  await expect(evidenceRows).toContainText('2026-07-12T09:46:00.000Z');
+  await expect(evidenceRows.locator('time[datetime="2026-07-12T09:46:00.000Z"]')).toBeVisible();
   await expect(evidenceRows).toContainText('Carta registada com aviso de receção');
   await expect(evidenceRows).toContainText('AR-789');
   await expect(evidenceRows).toContainText('scan-ar-789');

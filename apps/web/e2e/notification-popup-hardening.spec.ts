@@ -30,7 +30,7 @@ test('notification popup is portaled above shell chrome and closes on outside cl
 
   await bell.click();
 
-  const dialog = page.getByRole('dialog', { name: 'Notificações' });
+  const dialog = page.getByRole('dialog', { name: 'Centro de Ações' });
   await expect(dialog).toBeVisible();
   await expect(bell).toHaveAttribute('aria-expanded', 'true');
   await expect(dialog.getByText('Verificar cadeia do registo')).toBeVisible();
@@ -58,7 +58,7 @@ test('notification action closes the popup before routing to the archive page', 
   await page.goto('/');
   await page.getByRole('button', { name: '1 notificações pendentes' }).click();
 
-  const dialog = page.getByRole('dialog', { name: 'Notificações' });
+  const dialog = page.getByRole('dialog', { name: 'Centro de Ações' });
   await expect(dialog.getByRole('link', { name: 'Abrir arquivo' })).toBeVisible();
 
   await Promise.all([
@@ -79,7 +79,7 @@ test('marking a notification read encodes the id and removes it from the popup c
   await page.goto('/');
   await page.getByRole('button', { name: '1 notificações pendentes' }).click();
 
-  const dialog = page.getByRole('dialog', { name: 'Notificações' });
+  const dialog = page.getByRole('dialog', { name: 'Centro de Ações' });
   const patchResponse = page.waitForResponse((response) => {
     const request = response.request();
     const url = new URL(response.url());
@@ -92,10 +92,10 @@ test('marking a notification read encodes the id and removes it from the popup c
   await dialog.getByRole('button', { name: 'Marcar como lida' }).click();
   expect((await patchResponse).status()).toBe(200);
 
-  await expect(page.locator('.notification-bell')).toHaveAccessibleName('Notificações');
+  await expect(page.locator('.notification-bell')).toHaveAccessibleName('Centro de Ações');
   await expect(page.getByRole('button', { name: '1 notificações pendentes' })).toHaveCount(0);
   await expect(dialog.getByText('Verificar cadeia do registo')).toHaveCount(0);
-  await expect(dialog.getByText('Evento notification.fixture')).toBeVisible();
+  await expect(dialog.getByText('notification.fixture', { exact: true })).toBeVisible();
   expect(triageUpdates).toEqual([{ notificationId: LEDGER_ALERT_ID, status: 'read' }]);
 });
 

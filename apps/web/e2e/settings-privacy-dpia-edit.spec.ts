@@ -72,9 +72,9 @@ test('Settings Privacidade edits a DPIA in its own window and shows the guidance
 
   // A successful save closes the window and the row reflects the new value.
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(dpiaPanel.locator('tbody tr').filter({ hasText: 'High-risk profiling (revisto)' })).toHaveCount(
-    1,
-  );
+  await expect(
+    dpiaPanel.locator('tbody tr').filter({ hasText: 'High-risk profiling (revisto)' }),
+  ).toHaveCount(1);
 
   // --- 2. Guidance template renders translated ------------------------------------------------
   await privacySubTab(page, 'Orientação').click();
@@ -95,7 +95,9 @@ test('Settings Privacidade edits a DPIA in its own window and shows the guidance
       'Preencha os marcadores localmente com notas redigidas por pessoas, fora da resposta deste modelo.',
     ),
   ).toBeVisible();
-  await expect(guidancePanel).not.toContainText('Fill placeholders locally with human-written notes.');
+  await expect(guidancePanel).not.toContainText(
+    'Fill placeholders locally with human-written notes.',
+  );
 
   // The `field_type` wire identifier stays verbatim (shown in mono, never translated).
   await expect(guidancePanel.getByText('review_note')).toBeVisible();
@@ -152,7 +154,11 @@ async function routePrivacyDpiaFixtures(page: Page): Promise<RouteState> {
     }
 
     if (method !== 'GET') {
-      await fulfillJson(route, { error: `Unexpected write in DPIA e2e: ${method} ${pathname}` }, 500);
+      await fulfillJson(
+        route,
+        { error: `Unexpected write in DPIA e2e: ${method} ${pathname}` },
+        500,
+      );
       return;
     }
 
@@ -293,9 +299,13 @@ function rosterUserFixture() {
 function sessionFixture() {
   return {
     user: userFixture(),
-    permissions: ['ledger.read', 'settings.read', 'settings.manage', 'user.manage'].map(
-      permissionGrant,
-    ),
+    permissions: [
+      'ledger.read',
+      'privacy.manage',
+      'settings.read',
+      'settings.manage',
+      'user.manage',
+    ].map(permissionGrant),
   };
 }
 

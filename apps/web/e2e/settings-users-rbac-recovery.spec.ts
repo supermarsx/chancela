@@ -4,7 +4,7 @@
  * recovery/data-management confirmation gates render before any destructive submit.
  */
 import { test, expect, type Locator, type Page } from './fixtures';
-import { OPERATOR, signInAt } from './auth';
+import { OPERATOR, OPERATOR_PASSWORD, signInAt } from './auth';
 
 test('settings users, RBAC owner guard, and recovery/data confirmation gates', async ({ page }) => {
   test.setTimeout(120_000);
@@ -30,7 +30,7 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
 
   await test.step('create and edit a user from the settings-hosted roster', async () => {
     await page.getByRole('link', { name: 'Novo utilizador' }).click();
-    await expect(page).toHaveURL(/\/settings\/users\?user=novo$/);
+    await expect(page).toHaveURL(/\/users\/new$/);
 
     await page.getByLabel('Nome de utilizador').fill(username);
     await page.getByLabel('Nome a apresentar (opcional)').fill(displayName);
@@ -38,23 +38,26 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await page.getByLabel('Confirmar palavra-passe').fill(password);
     await page.getByRole('button', { name: 'Criar utilizador' }).click();
 
-    await expect(page).toHaveURL(/\/settings\/users\?user=[0-9a-f-]{36}$/);
+    await expect(page).toHaveURL(/\/users\/[0-9a-f-]{36}$/);
+    const createdId = new URL(page.url()).pathname.split('/').at(-1);
+    expect(createdId).toMatch(/^[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name: 'Identidade' })).toBeVisible();
     await expect(page.getByLabel('Nome a apresentar')).toHaveValue(displayName);
-    await expect(userRow(page, username)).toContainText(displayName);
 
     await page.getByLabel('Nome a apresentar').fill(renamed);
     await page.getByRole('button', { name: 'Guardar nome' }).click();
     await expect(page.getByLabel('Nome a apresentar')).toHaveValue(renamed);
-    await expect(userRow(page, username)).toContainText(renamed);
   });
 
   await test.step('self-service password change and recovery phrase work for the new user', async () => {
-    await switchCurrentUser(page, renamed, password);
+    await switchCurrentUser(page, username, password);
     await expect(page.getByTestId('session-trigger')).toContainText(renamed);
 
-    const access = page.locator('section#acesso');
-    await expect(access.getByRole('heading', { name: 'Acesso e auditoria' })).toBeVisible();
+    const accessTab = page.getByRole('button', { name: 'Acesso e auditoria', exact: true });
+    await accessTab.click();
+    const access = page.getByRole('main');
+    await expect(accessTab).toHaveAttribute('aria-pressed', 'true');
+    await expect(access.getByRole('heading', { name: 'Palavra-passe' })).toBeVisible();
 
     const recoveryBlock = access.locator('.access-manager__block').nth(1);
     await recoveryBlock.getByRole('button', { name: 'Gerar frase de recuperação' }).click();
@@ -81,7 +84,8 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
   });
 
   await test.step('operator can see access badges and deactivate the user from settings', async () => {
-    await signInAt(page, '/settings/users');
+    await switchCurrentUser(page, OPERATOR.username, OPERATOR_PASSWORD);
+    await page.goto('/settings/users');
 
     const row = userRow(page, username);
     await expect(row).toContainText(renamed);
@@ -99,6 +103,7 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await expect(page.getByRole('heading', { name: 'Identidade' })).toBeVisible();
     await expect(page.getByLabel('Nome a apresentar')).toHaveValue(OPERATOR.displayName);
 
+    await page.getByRole('button', { name: 'Funções', exact: true }).click();
     const assignments = cardByTitle(page, 'Funções atribuídas');
     const ownerRow = assignments.getByRole('row').filter({ hasText: 'Proprietário' });
     await expect(ownerRow).toContainText('Global');
@@ -114,7 +119,7 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await page.locator('.topbar__session').getByRole('link', { name: 'Configurações' }).click();
     await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
 
-    await selectSettingsSection(page, 'Livros & Integridade', 'integridade');
+    await selectSettingsSection(page, 'Livros & Integridade', 'integrity');
     await page.getByRole('button', { name: 'Restaurar de cópia de segurança' }).click();
     const restore = page.getByRole('dialog', { name: 'Restaurar de cópia de segurança' });
     await expect(restore).toBeVisible();
@@ -124,17 +129,15 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await restore.getByRole('button', { name: 'Cancelar' }).click();
     await expect(restore).toHaveCount(0);
 
-    await selectSettingsSection(page, 'Operações', 'operations');
-    // The destructive reset controls sit under the «Chaves e reposição» subtab (t28), deliberately
-    // separated from the everyday storage view.
-    await operationsSubTab(page, 'Chaves e reposição').click();
-    await expect(page).toHaveURL(/\/settings\/operations\/keys/);
+    // The destructive reset controls sit under Administração → Chaves e reposição.
+    await page.goto('/admin/keys');
+    await expect(page).toHaveURL(/\/admin\/keys/);
     await page.getByRole('button', { name: 'Limpar dados' }).click();
     const wipe = page.getByRole('dialog', { name: 'Limpar dados' });
     await expect(wipe).toBeVisible();
     await expect(wipe.getByLabel('Escreva LIMPAR DADOS para confirmar')).toBeVisible();
     await expect(wipe.getByLabel('Palavra-passe')).toBeVisible();
-    await expect(wipe.getByText(/archive de exportação/)).toBeVisible();
+    await expect(wipe.getByText(/exporte primeiro/i)).toBeVisible();
     await expect(wipe.getByRole('button', { name: 'Limpar dados' })).toBeDisabled();
     await wipe.getByLabel('Escreva LIMPAR DADOS para confirmar').fill('LIMPAR');
     await expect(wipe.getByText('O texto não corresponde.')).toBeVisible();
@@ -185,14 +188,8 @@ test('data management recovery drill records isolated restore evidence without l
     }
   });
 
-  await signInAt(page, '/settings/data');
-  // `/settings/data` lands on Operações › Armazenamento (t28); backup and recovery drills are the
-  // sibling «Cópias e recuperação» subtab.
-  await operationsSubTab(page, 'Cópias e recuperação').click();
-  await expect(operationsSubTab(page, 'Cópias e recuperação')).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await signInAt(page, '/admin/backups');
+  await expect(adminSubTab(page, 'Cópias e recuperação')).toHaveAttribute('aria-pressed', 'true');
 
   const backupResponsePromise = page.waitForResponse(
     (response) =>
@@ -240,8 +237,8 @@ test('data management recovery drill records isolated restore evidence without l
   // The receipt now shows a verdict summary; the evidence and its limits are behind the
   // «Evidência técnica» disclosure, so open it before asserting them.
   await receipt.locator('details.recovery-evidence > summary').click();
-  await expect(receipt.getByText('Verificação isolada')).toBeVisible();
-  await expect(receipt.getByText('Limites do recibo')).toBeVisible();
+  await expect(receipt.getByRole('heading', { name: 'Verificação isolada' })).toBeVisible();
+  await expect(receipt.getByRole('heading', { name: 'Limites do recibo' })).toBeVisible();
   await expect(receipt.getByText('Sem restauro ao vivo')).toBeVisible();
   await expect(receipt.getByText('Sem evento ledger.restored')).toBeVisible();
   await expect(receipt.getByText('Sem certificação legal ou de arquivo')).toBeVisible();
@@ -275,11 +272,9 @@ async function selectSettingsSection(page: Page, name: string, section: string):
   await expect(page).toHaveURL(new RegExp(`/settings/${section}`));
 }
 
-// Gestão de dados was split into three Operações subtabs (t28): Armazenamento, Cópias e
-// recuperação and Chaves e reposição. They live in the second-level "Áreas de operações" strip.
-function operationsSubTab(page: Page, name: string): Locator {
+function adminSubTab(page: Page, name: string): Locator {
   return page
-    .getByRole('group', { name: 'Áreas de operações' })
+    .getByRole('group', { name: 'Áreas de administração' })
     .getByRole('button', { name, exact: true });
 }
 
@@ -291,13 +286,11 @@ function userRow(page: Page, username: string): Locator {
   return page.getByRole('row').filter({ hasText: username });
 }
 
-async function switchCurrentUser(page: Page, displayName: string, password: string): Promise<void> {
+async function switchCurrentUser(page: Page, username: string, password: string): Promise<void> {
   await page.getByTestId('session-trigger').click();
-  await page.getByRole('menuitemradio', { name: new RegExp(escapeRegExp(displayName)) }).click();
-  await page.locator('#picker-pw').fill(password);
+  await page.getByRole('button', { name: 'Terminar sessão' }).click();
+  await expect(page.getByRole('heading', { name: 'Iniciar sessão' })).toBeVisible();
+  await page.getByLabel('Utilizador', { exact: true }).fill(username);
+  await page.getByLabel('Palavra-passe', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Entrar' }).click();
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

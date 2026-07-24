@@ -35,16 +35,16 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   const settingsPuts: Settings[] = [];
   await routePlatformOperationsFixtures(page, controlRequests, settingsPuts);
 
-  await page.goto('/settings/operations');
+  await page.goto('/admin');
 
-  await expect(page.getByRole('heading', { name: 'Operações', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Administração', exact: true })).toBeVisible();
   await expect(page.getByText(/não prometem controlo direto de processos/i)).toBeVisible();
 
   // Both service rows moved to their own sub-tabs (t82, t82b); Plataforma routes to them.
   await expect(page.getByText('Chancela API server')).toHaveCount(0);
   await expect(page.getByText('Chancela MCP stdio server')).toHaveCount(0);
 
-  const operations = page.getByRole('group', { name: 'Áreas de operações' });
+  const operations = page.getByRole('group', { name: 'Áreas de administração' });
   await operations.getByRole('button', { name: 'API' }).click();
   await expect(page.getByRole('heading', { name: 'Servidor API', exact: true })).toBeVisible();
 
@@ -63,7 +63,7 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   const apiPanes = page.getByRole('group', { name: 'Áreas da API' });
   await expect(apiPanes.getByRole('button', { name: 'Chaves API' })).toBeVisible();
 
-  await operations.getByRole('button', { name: 'MCP' }).click();
+  await operations.getByRole('button', { name: 'IA e MCP' }).click();
   await expect(page.getByRole('heading', { name: 'Servidor MCP', exact: true })).toBeVisible();
   await expect(page.getByText('Garantia IA/MCP')).toBeVisible();
 

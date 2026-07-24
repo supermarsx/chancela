@@ -73,7 +73,9 @@ test('written-resolution evidence receipt patches metadata only and renders no-c
   await expect(history).toContainText('existing.operator@example.pt');
   await expect(history).toContainText('Existing receipt remains in browser history.');
 
-  const form = page.getByRole('form', { name: 'Adicionar comprovativo de deliberação por escrito' });
+  const form = page.getByRole('form', {
+    name: 'Adicionar comprovativo de deliberação por escrito',
+  });
   await expect(form).toBeVisible();
   await expect(form).toContainText(
     'Apenas metadados locais; as afirmações de prova, suficiência jurídica, prestador, autoridade, conclusão, assinatura, selo e arquivo permanecem falsas.',
@@ -130,7 +132,7 @@ test('written-resolution evidence receipt patches metadata only and renders no-c
   expectNoForbiddenClaimKeys(body);
 
   await expect(history).toContainText('operator@example.pt');
-  await expect(history).toContainText('2026-07-13T10:15:00Z');
+  await expect(history.locator('time[datetime="2026-07-13T10:15:00Z"]')).toBeVisible();
   await expect(history).toContainText('Approval pack review receipt');
   await expect(history).toContainText(`digest:${RECEIPT_DIGEST}`);
   await expect(history).toContainText(RECEIPT_NOTE);

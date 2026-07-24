@@ -24,28 +24,37 @@ export const OPERATOR_PASSWORD = 'Str0ng!Vault9';
  */
 export async function signInAt(page: Page, route = '/'): Promise<void> {
   await page.goto(route);
-  if (await settledOnWizard(page)) {
+  const state = await settledAuthState(page);
+  if (state === 'wizard') {
     await completeOnboarding(page);
     if (route !== '/') {
       // Land on the originally requested route. The tab-scoped session survives navigation.
       await page.goto(route);
       await expect(page.getByTestId('tab-bar')).toBeVisible();
     }
-  } else {
+  } else if (state === 'sign-in') {
     await pickOperator(page);
   }
 }
 
 /**
- * Wait for the auth guard to settle into EITHER the wizard (fresh server → redirected to
- * `/welcome`) or the sign-in surface, then report which. Racing the two locators avoids a
- * flake where the client-side redirect has not yet fired right after `page.goto`.
+ * Wait for the auth guard to settle into the wizard, sign-in, or an already-authenticated
+ * shell. The session is tab-scoped, so a second navigation in the same test can legitimately
+ * keep the shell mounted; treating that as an auth failure made multi-route journeys wait for
+ * controls that intentionally are not rendered.
  */
-async function settledOnWizard(page: Page): Promise<boolean> {
+async function settledAuthState(page: Page): Promise<'wizard' | 'sign-in' | 'shell'> {
   const welcome = page.getByRole('button', { name: 'Começar' });
   const signIn = page.getByRole('heading', { name: 'Iniciar sessão' });
-  await expect(welcome.or(signIn)).toBeVisible();
-  return welcome.isVisible();
+  const shell = page.getByTestId('tab-bar');
+  await expect(welcome.or(signIn).or(shell)).toBeVisible();
+  if (await welcome.isVisible()) {
+    return 'wizard';
+  }
+  if (await signIn.isVisible()) {
+    return 'sign-in';
+  }
+  return 'shell';
 }
 
 /** Complete the first-run wizard: organization → operator → password → recovery phrase. */

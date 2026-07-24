@@ -1,7 +1,9 @@
 import { expect, test } from './fixtures';
 import { signInAt } from './auth';
 
-test('operator can reach every operations area and manage a real tenant group', async ({ page }) => {
+test('operator can reach every operations area and manage a real tenant group', async ({
+  page,
+}) => {
   await signInAt(page, '/');
 
   await page.getByRole('link', { name: 'Entidades' }).click();
@@ -13,9 +15,14 @@ test('operator can reach every operations area and manage a real tenant group', 
   await page.getByRole('button', { name: 'Criar entidade' }).click();
   await expect(page).toHaveURL(/\/entities\/[0-9a-f-]{36}$/u);
 
-  await page.getByRole('link', { name: 'Operações' }).click();
-  await expect(page).toHaveURL(/\/operations/u);
-  await expect(page.getByRole('heading', { name: 'Operações', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Administração' }).click();
+  await expect(page).toHaveURL(/\/admin/u);
+  await expect(page.getByRole('heading', { name: 'Administração', exact: true })).toBeVisible();
+  await page
+    .getByRole('group', { name: 'Áreas de administração' })
+    .getByRole('button', { name: 'Grupos e bibliotecas', exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/admin\/groups/u);
   await expect(page.getByLabel('Organização')).toContainText('Operações E2E, S.A.');
 
   await page.getByLabel('Nome', { exact: true }).fill('Grupo operacional E2E');
@@ -38,12 +45,12 @@ test('operator can reach every operations area and manage a real tenant group', 
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Conectores e trabalhos' }).click();
-  await expect(page).toHaveURL(/\/operations\/connectors/u);
+  await expect(page).toHaveURL(/\/admin\/connectors/u);
   await expect(page.getByText('Apenas referências de credenciais')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Trabalhos duráveis' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Repositórios ZK' }).click();
-  await expect(page).toHaveURL(/\/operations\/repositories/u);
+  await expect(page).toHaveURL(/\/admin\/repositories/u);
   await expect(page.getByText('Zero knowledge é uma opção explícita')).toBeVisible();
   await page.getByLabel('Modo de cifragem').first().selectOption('zero_knowledge');
   await expect(page.getByText(/Não cria, recebe nem reconstrói partes secretas/u)).toBeVisible();

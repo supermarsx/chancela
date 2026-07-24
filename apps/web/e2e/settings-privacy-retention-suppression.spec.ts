@@ -131,7 +131,9 @@ test('Settings Privacidade suppresses retention candidates already covered by bo
   await expect(
     doc456Execution.getByRole('button', { name: 'Registar revisão operacional' }),
   ).toHaveCount(0);
-  await expect(doc789Execution).not.toContainText('Revisão operacional registada por retention.e2e');
+  await expect(doc789Execution).not.toContainText(
+    'Revisão operacional registada por retention.e2e',
+  );
   await expect(
     doc789Execution.getByRole('button', { name: 'Registar revisão operacional' }),
   ).toBeVisible();
@@ -326,10 +328,7 @@ function isRetentionLifecycleMutationPath(pathname: string): boolean {
 function expectClosureBodyStaysNonLegal(body: CloseRetentionExecutionReviewBody): void {
   const closureText = [
     body.review_closure_note ?? '',
-    ...(body.review_closure_evidence ?? []).flatMap((evidence) => [
-      evidence.label,
-      evidence.value,
-    ]),
+    ...(body.review_closure_evidence ?? []).flatMap((evidence) => [evidence.label, evidence.value]),
   ]
     .join(' ')
     .toLowerCase();
@@ -373,9 +372,13 @@ function rosterUserFixture() {
 function sessionFixture() {
   return {
     user: userFixture(),
-    permissions: ['ledger.read', 'settings.read', 'settings.manage', 'user.manage'].map(
-      permissionGrant,
-    ),
+    permissions: [
+      'ledger.read',
+      'retention.manage',
+      'settings.read',
+      'settings.manage',
+      'user.manage',
+    ].map(permissionGrant),
   };
 }
 
