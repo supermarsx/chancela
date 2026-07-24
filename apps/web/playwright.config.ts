@@ -17,6 +17,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -220,6 +221,7 @@ const dataDir =
   process.env.CHANCELA_E2E_DATA_DIR ??
   path.join(os.tmpdir(), `chancela-e2e-${Date.now()}-${process.pid}`);
 process.env.CHANCELA_E2E_DATA_DIR = dataDir;
+const credentialKey = randomBytes(48).toString('base64');
 
 // Playwright merges webServer.env over process.env, so scrub the runner environment before
 // the real server is spawned. Keep CHANCELA_E2E_* controls intact for Playwright and pass
@@ -308,6 +310,12 @@ export default defineConfig({
       CHANCELA_ADDR: `${loopbackHost}:${port}`,
       CHANCELA_WEB_DIST: webDist,
       CHANCELA_DATA_DIR: dataDir,
+      // The Linux CI host has no OS credential-sealing provider, while Windows can fall back to
+      // DPAPI. Give this throwaway, hermetic server fresh test-only key material so TOTP and the
+      // other encrypted-credential flows exercise the same fail-closed store on every platform.
+      // The key exists only in this child environment; its data directory is unique to this run
+      // and removed by globalTeardown.
+      CHANCELA_CREDENTIAL_KEY: credentialKey,
     },
   },
 });
