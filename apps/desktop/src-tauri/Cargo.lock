@@ -1211,6 +1211,7 @@ dependencies = [
  "p256 0.13.2",
  "rand_core 0.6.4",
  "reqwest",
+ "rsa",
  "rustls-native-certs",
  "serde",
  "serde_json",
