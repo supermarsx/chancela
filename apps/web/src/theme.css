@@ -6469,17 +6469,14 @@ a.btn--primary {
 
 .trust-diagnostics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17.5rem), 1fr));
+  grid-template-columns: 1fr;
   gap: 1.15rem;
   align-items: start;
 }
 
-/* t52 — the TSA diagnostics read full-width instead of being auto-fit tiled into cramped
-   side-by-side columns. Scoped to `.trust-tsa` so only the TSA sub-tab stacks; the TSL status
-   panel's own `.trust-diagnostics-grid` (outside `.trust-tsa`) is deliberately untouched. */
-.trust-tsa .trust-diagnostics-grid {
-  grid-template-columns: 1fr;
-}
+/* Trust diagnostics are one continuous reading column in both the TSL and TSA tabs. The
+   sections contain long identifiers and status explanations, so viewport-driven tiling makes
+   them narrower precisely when more horizontal space becomes available. */
 
 .trust-notes {
   display: flex;
@@ -6523,15 +6520,10 @@ a.btn--primary {
 
 .trust-explorer {
   display: grid;
-  grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+  /* Search/results lead into the selected record in document order at every viewport. */
+  grid-template-columns: 1fr;
   gap: 1.9rem;
   align-items: start;
-}
-
-@media (max-width: 860px) {
-  .trust-explorer {
-    grid-template-columns: 1fr;
-  }
 }
 
 .trust-explorer__nav {
@@ -11823,14 +11815,12 @@ input[type='radio']:disabled {
 
 /* --- Trust multi-column data tables → stacked labelled sections (t22) ---------
  *
- * StatusHistoryTable / DigitalIdentitiesTable / ProviderServicesTable live in the
- * constrained `.trust-explorer__detail` pane, which is narrow even on a wide viewport.
- * Their ETSI service-type URIs and 64-char digests wrap into thin, cramped columns
- * (`.trust-opaque` prevents overflow but not the cramping — the "columns don't fit"
- * complaint). Each already emits `data-label` on every `<td>`, so — mirroring
- * `.platform-log-table` above — we consume it here to stack every row into labelled
- * field groups that take the full pane width. Unlike `.platform-log-table` this is
- * unconditional, not viewport-gated, because the pane is narrow at every viewport. */
+ * StatusHistoryTable / DigitalIdentitiesTable / ProviderServicesTable carry ETSI
+ * service-type URIs and 64-char digests that become hard to scan as conventional columns.
+ * Each already emits `data-label` on every `<td>`, so — mirroring `.platform-log-table`
+ * above — we consume it here to stack every row into labelled field groups that take the
+ * full detail width. This remains unconditional because the labelled reading order is
+ * clearer at every viewport, including the explorer's full-width stacked detail. */
 .trust-history-table .table,
 .trust-history-table .table thead,
 .trust-history-table .table tbody,

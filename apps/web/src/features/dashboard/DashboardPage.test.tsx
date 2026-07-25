@@ -282,6 +282,37 @@ describe('DashboardPage', () => {
     expect(region.querySelector('.cards')).toBeNull();
   });
 
+  it('widens only the Last Events tab, including its loading skeleton', async () => {
+    const dashboardPage = () =>
+      screen.getByRole('group', { name: 'Secções do painel' }).closest('.stack');
+
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch);
+    renderWithProviders(<DashboardPage />, ['/dashboard/events']);
+
+    const loadingRegion = await screen.findByRole('status');
+    const loadingPage = loadingRegion.closest('.stack');
+    expect(loadingPage?.classList.contains('wide-page')).toBe(true);
+    expect(
+      within(loadingRegion).getByRole('heading', { name: 'Últimos eventos do registo' }),
+    ).toBeTruthy();
+
+    await openDashboardTab('Atividades atuais');
+    expect(dashboardPage()?.classList.contains('wide-page')).toBe(false);
+
+    cleanup();
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
+    renderDashboard();
+
+    await screen.findByRole('group', { name: 'Secções do painel' });
+    expect(dashboardPage()?.classList.contains('wide-page')).toBe(false);
+
+    await openDashboardTab('Últimos eventos');
+    expect(dashboardPage()?.classList.contains('wide-page')).toBe(true);
+
+    await openDashboardTab('Estatísticas');
+    expect(dashboardPage()?.classList.contains('wide-page')).toBe(false);
+  });
+
   it('marks the six main stats cards as a compact desktop metrics row', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
     renderDashboard();

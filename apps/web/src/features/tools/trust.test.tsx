@@ -14,6 +14,14 @@ import type {
   TrustIdentifierMatchField,
 } from '../../api/types';
 
+async function themeSource(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -573,6 +581,18 @@ afterEach(() => {
 });
 
 describe('Ferramentas — TSL trust catalog', () => {
+  it('keeps trust diagnostics and both catalog explorers in one stacked column at every width', async () => {
+    const css = await themeSource();
+    const diagnosticsRule = css.match(/\.trust-diagnostics-grid\s*\{([^}]*)\}/)?.[1] ?? '';
+    const explorerRule = css.match(/\.trust-explorer\s*\{([^}]*)\}/)?.[1] ?? '';
+
+    expect(diagnosticsRule).toMatch(/grid-template-columns:\s*1fr;/);
+    expect(diagnosticsRule).not.toContain('auto-fit');
+    expect(css.match(/\.trust-diagnostics-grid\s*\{/g)).toHaveLength(1);
+    expect(explorerRule).toMatch(/grid-template-columns:\s*1fr;/);
+    expect(css.match(/\.trust-explorer\s*\{/g)).toHaveLength(1);
+  });
+
   it('splits the trust surface into TSL and TSA sub-tabs', async () => {
     vi.stubGlobal('fetch', trustFetch());
     renderWithProviders(<ToolsPage />, ['/tools/trust']);

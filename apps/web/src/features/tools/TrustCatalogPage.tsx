@@ -3,8 +3,8 @@
  *
  * Read-only by design: the backend exposes the parsed Trusted List state and catalog, but
  * no live refresh operation. The UI therefore mirrors the CAE/law consultation style:
- * a compact status card for scheme/source/signature validity, plus a two-pane catalog
- * explorer with URL-backed search/filter/selection and provider/service detail panes.
+ * a compact status card for scheme/source/signature validity, plus a stacked catalog
+ * explorer with URL-backed search/filter/selection followed by provider/service detail.
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';

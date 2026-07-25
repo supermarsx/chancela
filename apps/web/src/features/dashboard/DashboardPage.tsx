@@ -1323,7 +1323,7 @@ export function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="stack">
+      <div className={tab === 'events' ? 'stack wide-page' : 'stack'}>
         <DashboardHeader active={tab} onSelect={selectTab} />
         {/* Each tab gets the skeleton shaped like the panel it is about to become, and
             keeps that panel's real Card heading, so the content lands where the
@@ -1386,7 +1386,7 @@ export function DashboardPage() {
   });
 
   return (
-    <div className="stack">
+    <div className={tab === 'events' ? 'stack wide-page' : 'stack'}>
       <DashboardHeader active={tab} onSelect={selectTab} />
 
       <div className="route-transition" key={tab}>
