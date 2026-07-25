@@ -210,6 +210,7 @@ fn old_shape_entity_json_deserializes_with_statute_none() {
     let entity: Entity =
         serde_json::from_str(OLD_SHAPE_ENTITY_JSON).expect("old-shape entity deserializes");
     assert!(entity.statute.is_none());
+    assert!(entity.document_layout_override.is_none());
     assert!(
         entity.nipc.is_validated(),
         "a bare-string NIPC is validated"
@@ -222,6 +223,7 @@ fn old_shape_book_json_deserializes_with_no_legal_hold() {
     let book: Book =
         serde_json::from_str(OLD_SHAPE_BOOK_JSON).expect("old-shape book deserializes");
     assert!(book.legal_hold.is_none());
+    assert!(book.document_layout_override.is_none());
     // t8/F14: no capacity was ever declared, so the book is unlimited and its counters start
     // at zero rather than being invented from historical content.
     assert_eq!(book.book_number, None);

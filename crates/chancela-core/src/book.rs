@@ -426,6 +426,10 @@ pub struct Book {
     /// F14 — pages reserved by atas whose content is frozen in `Signing` but not yet sealed.
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub pages_reserved: u32,
+    /// Optional per-book document-layout overrides, the highest-precedence authoring layer.
+    /// Missing on historical books and on new books by default, meaning full inheritance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_layout_override: Option<crate::document_layout::DocumentLayoutOverrides>,
 }
 
 fn is_zero_u32(value: &u32) -> bool {
@@ -454,6 +458,7 @@ impl Book {
             page_capacity: None,
             pages_used: 0,
             pages_reserved: 0,
+            document_layout_override: None,
         }
     }
 

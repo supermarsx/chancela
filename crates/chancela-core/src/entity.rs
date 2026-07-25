@@ -330,6 +330,10 @@ pub struct Entity {
     /// entity JSON (no `statute` key) deserializes with this as `None`.
     #[serde(default)]
     pub statute: Option<StatuteOverrides>,
+    /// Optional per-entity document-layout overrides. Every absent leaf inherits from the
+    /// template/instance policy; old entity JSON therefore remains fully backward compatible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_layout_override: Option<crate::document_layout::DocumentLayoutOverrides>,
 }
 
 impl Entity {
@@ -356,6 +360,7 @@ impl Entity {
             kind,
             fiscal_year_end: None,
             statute: None,
+            document_layout_override: None,
         }
     }
 

@@ -164,6 +164,14 @@ pub struct DocumentModel {
     pub created_at: Option<String>,
     /// The document body, in reading order.
     pub blocks: Vec<Block>,
+    /// Fully resolved layout used to render this model. Older serialized models omit this field
+    /// and recover the product policy; the product policy is omitted on serialization to preserve
+    /// the historical default wire shape.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::document_layout::DocumentLayoutPolicy::is_product_default"
+    )]
+    pub document_layout: crate::document_layout::DocumentLayoutPolicy,
 }
 
 impl DocumentModel {
@@ -183,6 +191,7 @@ impl DocumentModel {
             language: "pt-PT".to_string(),
             created_at: None,
             blocks: Vec::new(),
+            document_layout: crate::document_layout::DocumentLayoutPolicy::default(),
         }
     }
 }
@@ -242,6 +251,7 @@ mod tests {
                 Block::PageBreak,
                 Block::Rule,
             ],
+            document_layout: crate::document_layout::DocumentLayoutPolicy::default(),
         }
     }
 
@@ -310,6 +320,51 @@ mod tests {
         assert_eq!(m.language, "pt-PT");
         assert_eq!(m.created_at, None);
         assert!(m.blocks.is_empty());
+        assert!(m.document_layout.is_product_default());
+    }
+
+    #[test]
+    fn old_document_json_inherits_the_concrete_product_layout_without_moving_its_wire_shape() {
+        let old_json = r#"{
+            "title":"Ata",
+            "entity_name":"Encosto Estratégico Lda",
+            "entity_nipc":null,
+            "subject":"Assembleia",
+            "language":"pt-PT",
+            "created_at":null,
+            "blocks":[]
+        }"#;
+        let model: DocumentModel =
+            serde_json::from_str(old_json).expect("old document model deserializes");
+        assert_eq!(
+            model.document_layout,
+            crate::document_layout::DocumentLayoutPolicy::default()
+        );
+        let encoded = serde_json::to_value(&model).expect("serializes");
+        assert!(
+            encoded.get("document_layout").is_none(),
+            "the concrete product default stays omitted for old-wire compatibility"
+        );
+    }
+
+    #[test]
+    fn a_non_default_concrete_layout_round_trips_on_the_document_model() {
+        let mut model = DocumentModel::new("T", "E", "S");
+        model.document_layout.typography.body_font_family =
+            crate::document_layout::DocumentFontFamily::NotoSans;
+        model.document_layout.page.orientation =
+            crate::document_layout::DocumentOrientation::Landscape;
+        let encoded = serde_json::to_value(&model).expect("serializes");
+        assert_eq!(
+            encoded["document_layout"]["typography"]["body_font_family"],
+            "NotoSans"
+        );
+        assert_eq!(
+            encoded["document_layout"]["page"]["orientation"],
+            "Landscape"
+        );
+        let back: DocumentModel = serde_json::from_value(encoded).expect("deserializes");
+        assert_eq!(back, model);
     }
 
     #[test]

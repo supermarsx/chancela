@@ -30,6 +30,7 @@
 
 pub mod act;
 pub mod book;
+pub mod document_layout;
 pub mod document_model;
 pub mod entity;
 pub mod error;
@@ -54,6 +55,14 @@ pub use book::{
     Book, BookId, BookKind, BookState, ClosingReason, LegalHold, NumberingScheme,
     TermoClauseRecord, TermoCollectedSignature, TermoDeAbertura, TermoDeEncerramento,
     TermoSignatory,
+};
+pub use document_layout::{
+    DocumentFontFamily, DocumentLayoutField, DocumentLayoutOverrides, DocumentLayoutPolicy,
+    DocumentLayoutSource, DocumentLayoutValidationError, DocumentOrientation, DocumentPageLayout,
+    DocumentPageLayoutOverrides, DocumentPageMargins, DocumentPageMarginsOverrides,
+    DocumentPageSize, DocumentRegions, DocumentRegionsOverrides, DocumentTypography,
+    DocumentTypographyOverrides, MIN_USABLE_PAGE_HEIGHT_MM, MIN_USABLE_PAGE_WIDTH_MM,
+    ResolvedDocumentLayout, resolve_document_layout,
 };
 pub use document_model::{
     Block, DocumentModel, KvRow, LifecycleStage, Run, SignatureSlot, VoteRow,
