@@ -98,6 +98,11 @@ import { LanguagePreferenceSection } from './LanguagePreferenceSection';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
 import { providerCredentialCreatePath } from './providerCredentialRoutes';
 import { PairingPanel } from '../pairing/PairingPanel';
+import {
+  MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS,
+  MIN_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS,
+  PairingShareSettingsCard,
+} from '../pairing/PairingShareSettingsCard';
 import { ApiServerSection } from './ApiServerSection';
 import { ServerEnvSection } from './ServerEnvSection';
 import { CacheSection } from './CacheSection';
@@ -2776,7 +2781,33 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                       and `settings.manage` at Global — the highest privilege this document is
                       gated by — is what may move it. */}
                   {sub === 'services' ? (
-                    <ConnectorEgressSection value={draft.connectors} onChange={setConnectors} />
+                    <>
+                      <ConnectorEgressSection value={draft.connectors} onChange={setConnectors} />
+                      <PairingShareSettingsCard
+                        emailEnabled={draft.ui.phone_pairing_share_email_enabled}
+                        whatsappEnabled={draft.ui.phone_pairing_share_whatsapp_enabled}
+                        externalSignatureNoticeSnoozeDays={
+                          draft.ui.external_signature_notice_snooze_days
+                        }
+                        onEmailEnabledChange={(enabled) =>
+                          setUi('phone_pairing_share_email_enabled', enabled)
+                        }
+                        onWhatsappEnabledChange={(enabled) =>
+                          setUi('phone_pairing_share_whatsapp_enabled', enabled)
+                        }
+                        onExternalSignatureNoticeSnoozeDaysChange={(days) =>
+                          setUi(
+                            'external_signature_notice_snooze_days',
+                            boundedNumberValue(
+                              String(days),
+                              DEFAULT_SETTINGS.ui.external_signature_notice_snooze_days,
+                              MIN_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS,
+                              MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS,
+                            ),
+                          )
+                        }
+                      />
+                    </>
                   ) : null}
                 </div>
               ) : null}
@@ -3038,7 +3069,12 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
               addresses resolve there via RETIRED_SECTIONS. */}
 
           {/* Dispositivos — companion phone pairing (wp27) -------------------------- */}
-          {section === 'devices' ? <PairingPanel /> : null}
+          {section === 'devices' ? (
+            <PairingPanel
+              shareEmailEnabled={draft.ui.phone_pairing_share_email_enabled}
+              shareWhatsappEnabled={draft.ui.phone_pairing_share_whatsapp_enabled}
+            />
+          ) : null}
 
           {/* Privacidade e conformidade ------------------------------------------- */}
           {section === 'privacy' ? <PrivacyComplianceSection /> : null}

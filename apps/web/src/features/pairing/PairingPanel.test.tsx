@@ -14,6 +14,13 @@ import { ToastProvider } from '../../ui/toast';
 import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
 import { renderWithProviders } from '../../test/utils';
 
+const openExternalMock = vi.hoisted(() =>
+  vi.fn<(url: string) => Promise<void>>(() => Promise.resolve()),
+);
+vi.mock('../../desktop/openExternal', () => ({
+  openExternal: (url: string) => openExternalMock(url),
+}));
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -48,6 +55,8 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.useRealTimers();
+  openExternalMock.mockReset();
+  openExternalMock.mockResolvedValue(undefined);
 });
 
 describe('PairingPanel', () => {
@@ -83,6 +92,91 @@ describe('PairingPanel', () => {
     expect(screen.getByText(/companion_pair=9b1f6c0000004000800000000000a1de/)).toBeTruthy();
     expect(screen.getByText('Expira em 5:00')).toBeTruthy();
     expect(screen.getByText('Copiar ligação')).toBeTruthy();
+  });
+
+  it('opens user-mediated email and WhatsApp drafts containing only the existing pairing link', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/v1/pairing/codes')) return Promise.resolve(json(MINTED));
+      return Promise.resolve(json({ devices: [] }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<PairingPanel />);
+
+    fireEvent.click(await screen.findByText('Gerar código de emparelhamento'));
+
+    const emailButton = await screen.findByRole('button', { name: 'Enviar por email' });
+    expect(
+      screen.getByText(
+        /Nada é enviado até escolher o destinatário e confirmar o envio.*Copiar ligação/,
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(emailButton);
+    await waitFor(() => expect(openExternalMock).toHaveBeenCalledTimes(1));
+    const emailUrl = new URL(openExternalMock.mock.calls[0][0] as string);
+    expect(emailUrl.protocol).toBe('mailto:');
+    expect(emailUrl.searchParams.get('subject')).toBe(
+      'Convite para emparelhar um telemóvel com o Chancela',
+    );
+    expect(emailUrl.searchParams.get('body')).toContain(
+      '/?companion_pair=9b1f6c0000004000800000000000a1de',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar por WhatsApp' }));
+    await waitFor(() => expect(openExternalMock).toHaveBeenCalledTimes(2));
+    const whatsappUrl = new URL(openExternalMock.mock.calls[1][0] as string);
+    expect(whatsappUrl.origin).toBe('https://wa.me');
+    expect(whatsappUrl.searchParams.get('text')).toContain(
+      '/?companion_pair=9b1f6c0000004000800000000000a1de',
+    );
+
+    // Both actions only hand a draft to another app; no notification/send endpoint is called.
+    expect(
+      fetchMock.mock.calls.filter(([input]) => input.toString().includes('/v1/pairing/codes')),
+    ).toHaveLength(1);
+  });
+
+  it('honours disabled admin share channels and keeps the copy-link fallback available', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (input.toString().includes('/v1/pairing/codes')) return Promise.resolve(json(MINTED));
+        return Promise.resolve(json({ devices: [] }));
+      }),
+    );
+    renderWithProviders(<PairingPanel shareEmailEnabled={false} shareWhatsappEnabled={false} />);
+
+    fireEvent.click(await screen.findByText('Gerar código de emparelhamento'));
+
+    expect(
+      await screen.findByText(/partilha de convites foi desativada pelo administrador/i),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Enviar por email' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enviar por WhatsApp' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copiar ligação' })).toBeTruthy();
+  });
+
+  it('handles a rejected share hand-off with copy-link fallback guidance', async () => {
+    openExternalMock.mockRejectedValueOnce(new Error('No protocol handler'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (input.toString().includes('/v1/pairing/codes')) return Promise.resolve(json(MINTED));
+        return Promise.resolve(json({ devices: [] }));
+      }),
+    );
+    renderWithProviders(<PairingPanel />);
+
+    fireEvent.click(await screen.findByText('Gerar código de emparelhamento'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Enviar por email' }));
+
+    expect(
+      await screen.findByText(
+        'Não foi possível abrir a aplicação de partilha. Copie a ligação de emparelhamento e envie-a manualmente.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copiar ligação' })).toBeTruthy();
   });
 
   it('auto re-mints a fresh code when the outstanding one expires', async () => {

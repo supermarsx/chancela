@@ -60,8 +60,21 @@
   flex-wrap: wrap;
 }
 
+.pairing-code__share {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
 @media (max-width: 640px) {
   .pairing-code__details dd {
     align-items: flex-start;
+  }
+
+  .pairing-code__share .row-wrap,
+  .pairing-code__share .btn {
+    width: 100%;
   }
 }

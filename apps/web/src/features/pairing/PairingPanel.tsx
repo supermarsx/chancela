@@ -14,7 +14,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PairingCodeMinted, PairingDeviceView } from '../../api/types';
 import { useCreatePairingCode, usePairingDevices, useRevokePairingDevice } from '../../api/hooks';
 import { resolveApiBaseUrl } from '../../api/baseUrl';
+import { openExternal } from '../../desktop/openExternal';
 import { useT } from '../../i18n';
+import { usePairingShareT } from '../../i18n/pairingShareFallback';
 import {
   Badge,
   Button,
@@ -75,16 +77,22 @@ function ActiveCodePanel({
   minted,
   remaining,
   expired,
+  shareEmailEnabled,
+  shareWhatsappEnabled,
   onCancel,
 }: {
   minted: PairingCodeMinted;
   remaining: number;
   expired: boolean;
+  shareEmailEnabled: boolean;
+  shareWhatsappEnabled: boolean;
   onCancel: () => void;
 }) {
   const t = useT();
+  const pt = usePairingShareT();
   const toast = useToast();
   const deepLink = useMemo(() => buildDeepLink(minted.code), [minted.code]);
+  const shareMessage = pt('pairing.share.message', { link: deepLink });
 
   async function copy(value: string, message: string) {
     try {
@@ -92,6 +100,15 @@ function ActiveCodePanel({
       toast.success(message);
     } catch (e) {
       toast.error(e);
+    }
+  }
+
+  async function openShare(url: string, message: string) {
+    try {
+      await openExternal(url);
+      toast.info(message);
+    } catch {
+      toast.error(pt('pairing.share.failed'));
     }
   }
 
@@ -133,6 +150,56 @@ function ActiveCodePanel({
             </dd>
           </div>
         </dl>
+
+        {shareEmailEnabled || shareWhatsappEnabled ? (
+          <div
+            className="pairing-code__share"
+            role="group"
+            aria-label={pt('pairing.share.actions')}
+          >
+            <div className="row-wrap">
+              {shareEmailEnabled ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  // The shared icon set has no mail/envelope glyph. Tray is already the
+                  // established email-settings glyph in the admin navigation.
+                  icon={<Icon.Tray />}
+                  disabled={expired}
+                  onClick={() =>
+                    void openShare(
+                      `mailto:?subject=${encodeURIComponent(
+                        pt('pairing.share.subject'),
+                      )}&body=${encodeURIComponent(shareMessage)}`,
+                      pt('pairing.share.openingEmail'),
+                    )
+                  }
+                >
+                  {pt('pairing.share.email')}
+                </Button>
+              ) : null}
+              {shareWhatsappEnabled ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.ExternalLink />}
+                  disabled={expired}
+                  onClick={() =>
+                    void openShare(
+                      `https://wa.me/?text=${encodeURIComponent(shareMessage)}`,
+                      pt('pairing.share.openingWhatsapp'),
+                    )
+                  }
+                >
+                  {pt('pairing.share.whatsapp')}
+                </Button>
+              ) : null}
+            </div>
+            <p className="field__hint">{pt('pairing.share.help')}</p>
+          </div>
+        ) : (
+          <p className="field__hint">{pt('pairing.share.disabled')}</p>
+        )}
 
         {expired ? (
           <InlineWarning tone="warn" title={t('pairing.expired.title')}>
@@ -231,7 +298,15 @@ function DeviceRow({ device }: { device: PairingDeviceView }) {
   );
 }
 
-export function PairingPanel() {
+export function PairingPanel({
+  shareEmailEnabled = true,
+  shareWhatsappEnabled = true,
+}: {
+  /** Instance-wide admin policy. Defaults preserve sharing against older settings payloads. */
+  shareEmailEnabled?: boolean;
+  /** Instance-wide admin policy. Defaults preserve sharing against older settings payloads. */
+  shareWhatsappEnabled?: boolean;
+} = {}) {
   const t = useT();
   const toast = useToast();
 
@@ -342,6 +417,8 @@ export function PairingPanel() {
           minted={minted}
           remaining={remaining}
           expired={expired}
+          shareEmailEnabled={shareEmailEnabled}
+          shareWhatsappEnabled={shareWhatsappEnabled}
           onCancel={endSession}
         />
       ) : session && mint.isPending ? (

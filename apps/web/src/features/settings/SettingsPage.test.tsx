@@ -3595,6 +3595,52 @@ describe('SettingsPage', () => {
     expect(sent.catalog.cae_update_url).toBe('https://catalog.example.pt/cae_dataset.json');
   });
 
+  it('defaults and persists the admin pairing-share and notice-snooze UI policy', async () => {
+    const legacy = cloneJson(DEFAULT_SETTINGS);
+    legacy.ui = {
+      registered_entity_columns: legacy.ui.registered_entity_columns,
+    } as typeof legacy.ui;
+    const { fn, calls } = settingsFetch(legacy);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
+
+    const email = (await screen.findByRole('switch', {
+      name: 'Partilha de emparelhamento por email',
+    })) as HTMLInputElement;
+    const whatsapp = screen.getByRole('switch', {
+      name: 'Partilha de emparelhamento por WhatsApp',
+    }) as HTMLInputElement;
+    const snooze = screen.getByLabelText(
+      'Ocultar temporariamente avisos de assinatura externa',
+    ) as HTMLInputElement;
+
+    // An older settings document omitting the additive fields preserves the available actions.
+    expect(email.checked).toBe(true);
+    expect(whatsapp.checked).toBe(true);
+    expect(snooze.value).toBe('90');
+
+    fireEvent.click(email);
+    fireEvent.click(whatsapp);
+    fireEvent.change(snooze, { target: { value: '120' } });
+
+    await waitFor(
+      () =>
+        expect(
+          calls.some((call) => {
+            if (call.method !== 'PUT' || !call.body) return false;
+            const sent = JSON.parse(call.body) as typeof DEFAULT_SETTINGS;
+            return (
+              sent.ui.phone_pairing_share_email_enabled === false &&
+              sent.ui.phone_pairing_share_whatsapp_enabled === false &&
+              sent.ui.external_signature_notice_snooze_days === 120
+            );
+          }),
+        ).toBe(true),
+      { timeout: 3000 },
+    );
+  });
+
   it('autosaves an edit after the debounce (no explicit save) and confirms with a success toast', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
