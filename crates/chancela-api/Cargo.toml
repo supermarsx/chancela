@@ -71,6 +71,7 @@ futures-core = { workspace = true }
 p256 = { workspace = true }
 rand_core = { workspace = true }
 reqwest = { workspace = true }
+rsa = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

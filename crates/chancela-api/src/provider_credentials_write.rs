@@ -25,21 +25,46 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::io::Read;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::{Duration, Instant};
 
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
+use chancela_csc::rest::Authorization as CscAuthorizationHeader;
+use chancela_csc::{CscAuthorization, CscClient, CscConfig, CscError, CscSecrets, CscTransport};
+use chancela_scap::{
+    AmaScapConfig, AttributeProvider, CitizenRef, ProfessionalAttribute, ScapClient,
+    ScapCredentials, ScapEnvironment, ScapError, ScapTransport, VerificationDecision,
+};
+use chancela_signing::{Pkcs12SigningSource, SignerProvider};
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize};
+use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
+use x509_cert::Certificate;
+use x509_cert::der::{Decode, Encode};
 use zeroize::Zeroizing;
 
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::require_permission;
+use crate::credential_resolve::assemble_pkcs12_input;
 use crate::error::ApiError;
 use crate::secretstore::SecretStoreError;
-use crate::secretstore_persist::CredentialEntryMetadataView;
+use crate::secretstore_persist::{
+    CredentialEntryMetadataView, DecryptedCredentialEntry, FIELD_ACCESS_TOKEN,
+    FIELD_APPLICATION_ID, FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_SECRET,
+};
 use crate::{AppState, CredentialMode, EntryMetadata, EntrySelectors, ProviderCredentialError};
 
 /// The ledger scope every provider-credential mutation is recorded under.
@@ -135,6 +160,16 @@ struct UpdateEntryRequest {
 #[serde(deny_unknown_fields)]
 struct ReorderRequest {
     order: Vec<String>,
+}
+
+/// `POST …/entries/{entry_id}/probe` deliberately accepts only an empty JSON object. Keeping an
+/// explicit DTO (plus the route-local body limit) prevents this privileged diagnostic endpoint
+/// from becoming an accidental upload sink.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderCredentialProbeRequest {
+    #[serde(default)]
+    confirm_private_key_operation: bool,
 }
 
 // --- Response DTOs (metadata only — no secret-typed field anywhere) ------------------------------
@@ -234,6 +269,65 @@ pub struct ProviderCredentialsListResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_failure: Option<&'static str>,
     pub providers: Vec<ProviderEntriesView>,
+}
+
+/// One sanitized assertion made by a provider-credential probe.
+#[derive(Debug, Serialize)]
+pub struct ProviderProbeCheck {
+    pub name: &'static str,
+    /// `passed`, `failed`, or `skipped`.
+    pub status: &'static str,
+    pub detail: String,
+}
+
+/// Honest result of testing one exact stored credential entry.
+///
+/// A probe never signs a document and never asks a signer to authorize a legally meaningful
+/// signature. The fixed false markers are values (rather than omitted disclaimers) so clients cannot
+/// accidentally interpret connectivity or a private-key challenge as a legal/qualified verdict.
+#[derive(Debug, Serialize)]
+pub struct ProviderCredentialProbeResponse {
+    pub mode: &'static str,
+    pub provider_id: String,
+    pub entry_id: String,
+    /// `ok`, `failed`, or `interactive_required`.
+    pub status: &'static str,
+    pub provider_contacted: bool,
+    pub private_key_operation_performed: bool,
+    pub signer_authorization_requested: bool,
+    pub document_signed: bool,
+    pub legal_validity_claimed: bool,
+    pub qualified_status_determined: bool,
+    pub checks: Vec<ProviderProbeCheck>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<&'static str>,
+    pub tested_at: String,
+    pub duration_ms: u64,
+}
+
+struct ProbeOutcome {
+    status: &'static str,
+    provider_contacted: bool,
+    private_key_operation_performed: bool,
+    checks: Vec<ProviderProbeCheck>,
+    error: Option<&'static str>,
+}
+
+impl ProbeOutcome {
+    fn failed(
+        provider_contacted: bool,
+        private_key_operation_performed: bool,
+        checks: Vec<ProviderProbeCheck>,
+        error: &'static str,
+    ) -> Self {
+        Self {
+            status: "failed",
+            provider_contacted,
+            private_key_operation_performed,
+            checks,
+            error: Some(error),
+        }
+    }
 }
 
 /// Resolve the honest storage triple from a read-only key-status probe.
@@ -371,6 +465,22 @@ pub async fn update_entry(
     // Merge over the current (non-decrypting) metadata so an absent field is left unchanged.
     let current =
         fetch_entry_metadata(&state, mode, &provider_id, &entry_id)?.ok_or(ApiError::NotFound)?;
+
+    let endpoint = req.endpoint.as_deref().map(str::trim);
+    if matches!(mode, CredentialMode::CscQtsp | CredentialMode::Scap)
+        && endpoint_origin_changed(current.endpoint.as_deref(), endpoint)?
+    {
+        let required = configured_endpoint_bound_fields(&current);
+        let replaced: std::collections::BTreeSet<&str> =
+            req.set.keys().map(String::as_str).collect();
+        if required.iter().any(|field| !replaced.contains(field)) {
+            return Err(ApiError::Unprocessable(
+                "changing a credential-bearing provider endpoint requires re-entering every \
+                 configured authorization secret in the same request"
+                    .to_owned(),
+            ));
+        }
+    }
 
     let set_names: Vec<String> = req.set.keys().cloned().collect();
     let set = build_set(mode, req.set)?;
@@ -543,6 +653,101 @@ pub async fn reorder_entries(
     }))
 }
 
+/// `POST …/entries/{entry_id}/probe` — test one exact stored credential entry without signing a
+/// document or requesting signer authorization.
+pub async fn probe_entry(
+    State(state): State<AppState>,
+    Path((mode_raw, provider_raw, entry_id)): Path<(String, String, String)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    body: Bytes,
+) -> Result<Json<ProviderCredentialProbeResponse>, ApiError> {
+    require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
+    let mode = parse_mode(&mode_raw)?;
+    let request: ProviderCredentialProbeRequest = parse_body(&body)?;
+    // A PKCS#12 probe performs a real private-key operation over a random, domain-separated
+    // non-document challenge. Configuration authority alone must never authorize key use.
+    if mode == CredentialMode::LocalPkcs12 {
+        require_permission(&state, &actor, Permission::SigningPerform, Scope::Global).await?;
+        if !request.confirm_private_key_operation {
+            return Err(ApiError::Unprocessable(
+                "confirm_private_key_operation must be true for a PKCS#12 probe".to_owned(),
+            ));
+        }
+    }
+    let provider_id = resolve_provider(mode, &provider_raw)?;
+
+    // Persist intent before decrypting a field, contacting a provider, or touching a private key.
+    // If the durable ledger is unavailable, the probe does not happen.
+    audit(
+        &state,
+        &actor,
+        &attestor,
+        "provider.credentials.entry.probe_requested",
+        serde_json::json!({
+            "mode": mode.as_str(),
+            "provider_id": provider_id.clone(),
+            "entry_id": entry_id.clone(),
+            "private_key_operation_requested": mode == CredentialMode::LocalPkcs12,
+        }),
+    )
+    .await?;
+
+    let read_provider = provider_id.clone();
+    let read_entry = entry_id.clone();
+    let entry = offload_credentials(&state, move |creds| {
+        creds.read_entry_runtime(mode, &read_provider, &read_entry)
+    })
+    .await
+    .map_err(map_store_err)?
+    .ok_or(ApiError::NotFound)?;
+
+    let started = Instant::now();
+    let probe_provider = provider_id.clone();
+    let outcome =
+        tokio::task::spawn_blocking(move || probe_stored_entry(mode, &probe_provider, entry))
+            .await
+            .map_err(|_| ApiError::Internal("provider credential probe task failed".to_owned()))?;
+    let tested_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default();
+    let response = ProviderCredentialProbeResponse {
+        mode: mode.as_str(),
+        provider_id: provider_id.clone(),
+        entry_id: entry_id.clone(),
+        status: outcome.status,
+        provider_contacted: outcome.provider_contacted,
+        private_key_operation_performed: outcome.private_key_operation_performed,
+        // No implemented probe invokes credentials/sendOTP, credentials/authorize, CMD initiation,
+        // or any equivalent signer-consent step.
+        signer_authorization_requested: false,
+        document_signed: false,
+        legal_validity_claimed: false,
+        qualified_status_determined: false,
+        checks: outcome.checks,
+        error: outcome.error,
+        tested_at,
+        duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+    };
+    audit(
+        &state,
+        &actor,
+        &attestor,
+        "provider.credentials.entry.probed",
+        serde_json::json!({
+            "mode": mode.as_str(),
+            "provider_id": provider_id,
+            "entry_id": entry_id,
+            "status": response.status,
+            "provider_contacted": response.provider_contacted,
+            "private_key_operation_performed": response.private_key_operation_performed,
+            "error": response.error,
+        }),
+    )
+    .await?;
+    Ok(Json(response))
+}
+
 /// `GET /v1/signature/provider-credentials` — management list of every provider's entries (metadata
 /// only). Gated `settings.read`.
 pub async fn list_provider_credentials(
@@ -592,6 +797,893 @@ pub async fn list_provider_credentials(
 }
 
 // --- Helpers -------------------------------------------------------------------------------------
+
+const PROBE_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const PROBE_RESPONSE_LIMIT: u64 = 1024 * 1024;
+const PKCS12_PROBE_DOMAIN: &[u8] = b"chancela-provider-credential-probe-v1\0";
+
+fn check(name: &'static str, passed: bool, detail: impl Into<String>) -> ProviderProbeCheck {
+    ProviderProbeCheck {
+        name,
+        status: if passed { "passed" } else { "failed" },
+        detail: detail.into(),
+    }
+}
+
+fn skipped(name: &'static str, detail: impl Into<String>) -> ProviderProbeCheck {
+    ProviderProbeCheck {
+        name,
+        status: "skipped",
+        detail: detail.into(),
+    }
+}
+
+fn probe_stored_entry(
+    mode: CredentialMode,
+    provider_id: &str,
+    entry: DecryptedCredentialEntry,
+) -> ProbeOutcome {
+    if !entry.enabled {
+        return ProbeOutcome::failed(
+            false,
+            false,
+            vec![check(
+                "entry_enabled",
+                false,
+                "The stored credential entry is disabled.",
+            )],
+            "entry_disabled",
+        );
+    }
+    match mode {
+        CredentialMode::Cmd => probe_cmd(entry),
+        CredentialMode::CscQtsp => probe_csc(provider_id, entry),
+        CredentialMode::Scap => probe_scap(entry),
+        CredentialMode::LocalPkcs12 => probe_pkcs12(entry),
+        CredentialMode::Smtp | CredentialMode::TwoFactorTotp => ProbeOutcome::failed(
+            false,
+            false,
+            vec![check(
+                "mode_supported",
+                false,
+                "This is not a signing-provider credential mode.",
+            )],
+            "unsupported_mode",
+        ),
+    }
+}
+
+fn probe_cmd(entry: DecryptedCredentialEntry) -> ProbeOutcome {
+    let configured = entry
+        .fields
+        .get(FIELD_APPLICATION_ID)
+        .is_some_and(|value| !value.trim().is_empty());
+    let checks = vec![
+        check(
+            "entry_enabled",
+            true,
+            "The stored credential entry is enabled.",
+        ),
+        check(
+            "application_id_configured",
+            configured,
+            if configured {
+                "The CMD application identifier is configured."
+            } else {
+                "The CMD application identifier is missing."
+            },
+        ),
+        skipped(
+            "live_provider_operation",
+            "CMD has no safe non-signing health operation in this integration. A live attempt \
+             would initiate the interactive signature flow, so it was not performed.",
+        ),
+    ];
+    if configured {
+        ProbeOutcome {
+            status: "interactive_required",
+            provider_contacted: false,
+            private_key_operation_performed: false,
+            checks,
+            error: Some("interactive_required"),
+        }
+    } else {
+        ProbeOutcome::failed(false, false, checks, "configuration_incomplete")
+    }
+}
+
+fn take_nonblank(
+    fields: &mut BTreeMap<String, Zeroizing<String>>,
+    name: &str,
+) -> Option<Zeroizing<String>> {
+    fields.remove(name).filter(|value| !value.trim().is_empty())
+}
+
+fn selector_bool(entry: &DecryptedCredentialEntry, name: &str, default: bool) -> bool {
+    match entry.selectors.get(name).map(|value| value.trim()) {
+        Some("true" | "1" | "yes" | "on") => true,
+        Some("false" | "0" | "no" | "off") => false,
+        _ => default,
+    }
+}
+
+fn endpoint_origin_changed(
+    current: Option<&str>,
+    replacement: Option<&str>,
+) -> Result<bool, ApiError> {
+    let Some(replacement) = replacement else {
+        return Ok(false);
+    };
+    let replacement = reqwest::Url::parse(replacement).map_err(|_| {
+        ApiError::Unprocessable("provider endpoint must be an absolute HTTP(S) URL".to_owned())
+    })?;
+    let Some(current) = current.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(true);
+    };
+    let Ok(current) = reqwest::Url::parse(current) else {
+        return Ok(true);
+    };
+    Ok(current.origin() != replacement.origin())
+}
+
+fn configured_endpoint_bound_fields(current: &CredentialEntryMetadataView) -> Vec<&str> {
+    current
+        .fields
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect()
+}
+
+fn require_https_probe_endpoint(
+    vetted: &crate::trust::VettedHttpUrl,
+    provider: &'static str,
+) -> Result<(), &'static str> {
+    if reqwest::Url::parse(vetted.as_str()).is_ok_and(|url| url.scheme() == "https") {
+        Ok(())
+    } else {
+        Err(match provider {
+            "CSC" => "The CSC base URL must use HTTPS before stored credentials can be sent.",
+            _ => "The SCAP base URL must use HTTPS before stored credentials can be sent.",
+        })
+    }
+}
+
+fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
+    let mut checks = vec![check(
+        "entry_enabled",
+        true,
+        "The stored credential entry is enabled.",
+    )];
+    let Some(base_url) = entry
+        .endpoint
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        checks.push(check(
+            "endpoint_safe",
+            false,
+            "A CSC base URL is required for this entry.",
+        ));
+        return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
+    };
+    let vetted = match crate::trust::validate_outbound_http_url(base_url) {
+        Ok(vetted) => vetted,
+        Err(_) => {
+            checks.push(check(
+                "endpoint_safe",
+                false,
+                "The CSC base URL failed the outbound-network safety policy.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "unsafe_endpoint");
+        }
+    };
+    if let Err(detail) = require_https_probe_endpoint(&vetted, "CSC") {
+        checks.push(check("endpoint_https", false, detail));
+        return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
+    }
+    checks.push(check(
+        "endpoint_https",
+        true,
+        "The CSC base URL passed the outbound-network safety policy and uses HTTPS.",
+    ));
+
+    let authorization = match entry
+        .selectors
+        .get("authorization")
+        .map(|value| value.trim())
+        .unwrap_or("service")
+    {
+        "service" => CscAuthorization::Service,
+        "user" => CscAuthorization::User,
+        _ => {
+            checks.push(check(
+                "authorization_configuration",
+                false,
+                "The CSC authorization selector must be service or user.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "configuration_invalid");
+        }
+    };
+    let secrets = match authorization {
+        CscAuthorization::Service => {
+            let client_id = take_nonblank(&mut entry.fields, FIELD_CLIENT_ID);
+            let client_secret = take_nonblank(&mut entry.fields, FIELD_CLIENT_SECRET);
+            match (client_id, client_secret) {
+                (Some(client_id), Some(client_secret)) => CscSecrets::new(
+                    client_id.as_str().to_owned(),
+                    client_secret.as_str().to_owned(),
+                ),
+                _ => {
+                    checks.push(check(
+                        "authorization_configuration",
+                        false,
+                        "Service authorization requires client_id and client_secret.",
+                    ));
+                    return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
+                }
+            }
+        }
+        CscAuthorization::User => {
+            let Some(token) = take_nonblank(&mut entry.fields, FIELD_ACCESS_TOKEN) else {
+                checks.push(check(
+                    "authorization_configuration",
+                    false,
+                    "User authorization requires an access_token.",
+                ));
+                return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
+            };
+            CscSecrets::with_access_token(token.as_str().to_owned())
+        }
+        _ => {
+            return ProbeOutcome::failed(false, false, checks, "configuration_invalid");
+        }
+    };
+    checks.push(check(
+        "authorization_configuration",
+        true,
+        "The stored fields satisfy the selected CSC authorization model.",
+    ));
+
+    let config = CscConfig {
+        provider_id: provider_id.to_owned(),
+        display_name: entry.label.clone(),
+        base_url: vetted.as_str().to_owned(),
+        authorization,
+        sandbox: selector_bool(&entry, "sandbox", true),
+        credential_id: entry
+            .selectors
+            .get("credential_id")
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        scope: entry
+            .selectors
+            .get("scope")
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .unwrap_or(chancela_csc::DEFAULT_SCOPE)
+            .to_owned(),
+    };
+    if config.validate().is_err() {
+        checks.push(check(
+            "provider_configuration",
+            false,
+            "The CSC provider configuration is invalid.",
+        ));
+        return ProbeOutcome::failed(false, false, checks, "configuration_invalid");
+    }
+
+    let contacted = Arc::new(AtomicBool::new(false));
+    let transport = match ProbeCscTransport::new(vetted, contacted.clone()) {
+        Ok(transport) => transport,
+        Err(_) => {
+            checks.push(check(
+                "outbound_client",
+                false,
+                "The bounded outbound client could not be created.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "outbound_client_unavailable");
+        }
+    };
+    let client = CscClient::new(transport, config, secrets);
+    let token = match client.authenticate() {
+        Ok(token) => {
+            checks.push(check(
+                "authentication",
+                true,
+                "CSC authentication completed without requesting signer authorization.",
+            ));
+            token
+        }
+        Err(error) => {
+            checks.push(check("authentication", false, csc_error_detail(&error)));
+            return ProbeOutcome::failed(
+                contacted.load(Ordering::Relaxed),
+                false,
+                checks,
+                "provider_authentication_failed",
+            );
+        }
+    };
+    let credential_ids = match client.list_credentials(token.as_str()) {
+        Ok(ids) => {
+            checks.push(check(
+                "credentials_list",
+                !ids.is_empty(),
+                format!("CSC returned {} signing credential(s).", ids.len()),
+            ));
+            ids
+        }
+        Err(error) => {
+            checks.push(check("credentials_list", false, csc_error_detail(&error)));
+            return ProbeOutcome::failed(
+                contacted.load(Ordering::Relaxed),
+                false,
+                checks,
+                "provider_credential_list_failed",
+            );
+        }
+    };
+    if credential_ids.is_empty() {
+        return ProbeOutcome::failed(
+            contacted.load(Ordering::Relaxed),
+            false,
+            checks,
+            "no_signing_credentials",
+        );
+    }
+    let credential_id = match client.config().credential_id.as_deref() {
+        Some(configured) if credential_ids.iter().any(|id| id == configured) => {
+            configured.to_owned()
+        }
+        Some(_) => {
+            checks.push(check(
+                "credential_selection",
+                false,
+                "The configured credential_id was not returned by credentials/list.",
+            ));
+            return ProbeOutcome::failed(
+                contacted.load(Ordering::Relaxed),
+                false,
+                checks,
+                "configured_credential_not_found",
+            );
+        }
+        None if credential_ids.len() == 1 => credential_ids[0].clone(),
+        None => {
+            checks.push(check(
+                "credential_selection",
+                false,
+                "More than one credential is available; configure credential_id.",
+            ));
+            return ProbeOutcome::failed(
+                contacted.load(Ordering::Relaxed),
+                false,
+                checks,
+                "credential_selection_required",
+            );
+        }
+    };
+    checks.push(check(
+        "credential_selection",
+        true,
+        "A single configured signing credential was selected.",
+    ));
+    match client.credential_info(token.as_str(), &credential_id) {
+        Ok(info) => {
+            checks.push(check(
+                "credentials_info",
+                true,
+                format!(
+                    "CSC returned a parseable signing certificate and {} issuer certificate(s); \
+                     activation requirements were inspected but not invoked.",
+                    info.chain_der.len()
+                ),
+            ));
+            ProbeOutcome {
+                status: "ok",
+                provider_contacted: contacted.load(Ordering::Relaxed),
+                private_key_operation_performed: false,
+                checks,
+                error: None,
+            }
+        }
+        Err(error) => {
+            checks.push(check("credentials_info", false, csc_error_detail(&error)));
+            ProbeOutcome::failed(
+                contacted.load(Ordering::Relaxed),
+                false,
+                checks,
+                "provider_credential_info_failed",
+            )
+        }
+    }
+}
+
+fn csc_error_detail(error: &CscError) -> &'static str {
+    match error {
+        CscError::Transport(_) => {
+            "The CSC endpoint could not be reached within the bounded request."
+        }
+        CscError::ResponseTooLarge { .. } => "The CSC response exceeded the safety limit.",
+        CscError::HttpStatus { .. } => "The CSC endpoint returned an unsuccessful HTTP status.",
+        CscError::Service { .. } => "The CSC service rejected the safe probe operation.",
+        CscError::ResponseParse(_) => "The CSC response did not match the expected protocol shape.",
+        CscError::Config(_) => "The CSC probe configuration is incomplete or invalid.",
+        CscError::NoCredential { .. } => "The CSC account exposes no signing credential.",
+        CscError::NoSignature => "The CSC service returned no signature.",
+        CscError::Certificate(_) => "The CSC credential certificate could not be parsed.",
+        CscError::Base64(_) => "The CSC response contained malformed base64 data.",
+        _ => "The CSC probe failed.",
+    }
+}
+
+struct ProbeCscTransport {
+    base_url: String,
+    client: reqwest::blocking::Client,
+    contacted: Arc<AtomicBool>,
+    deadline: Instant,
+}
+
+impl ProbeCscTransport {
+    fn new(
+        vetted: crate::trust::VettedHttpUrl,
+        contacted: Arc<AtomicBool>,
+    ) -> Result<Self, reqwest::Error> {
+        let base_url = vetted.as_str().to_owned();
+        let client = vetted.client(PROBE_HTTP_TIMEOUT)?;
+        Ok(Self {
+            base_url,
+            client,
+            contacted,
+            deadline: Instant::now() + PROBE_HTTP_TIMEOUT,
+        })
+    }
+
+    fn url_for(&self, path: &str) -> String {
+        format!(
+            "{}/{}",
+            self.base_url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
+    }
+}
+
+fn remaining_csc_probe_timeout(deadline: Instant) -> Result<Duration, CscError> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        Err(CscError::Transport(
+            "cumulative probe deadline elapsed".to_owned(),
+        ))
+    } else {
+        Ok(remaining)
+    }
+}
+
+impl CscTransport for ProbeCscTransport {
+    fn post_json(
+        &self,
+        path: &str,
+        auth: CscAuthorizationHeader<'_>,
+        body: &str,
+    ) -> Result<String, CscError> {
+        let remaining = remaining_csc_probe_timeout(self.deadline)?;
+        let mut request = self
+            .client
+            .post(self.url_for(path))
+            .timeout(remaining)
+            .header("User-Agent", "chancela-provider-probe")
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .body(body.to_owned());
+        request = match auth {
+            CscAuthorizationHeader::None => request,
+            CscAuthorizationHeader::Basic {
+                client_id,
+                client_secret,
+            } => request.basic_auth(client_id, Some(client_secret)),
+            CscAuthorizationHeader::Bearer(token) => request.bearer_auth(token),
+        };
+        // Mark the external attempt before DNS/TCP/TLS so a timeout or connection refusal is not
+        // misreported as "no provider contact attempted".
+        self.contacted.store(true, Ordering::Relaxed);
+        let response = request
+            .send()
+            .map_err(|_| CscError::Transport("bounded request failed".to_owned()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(CscError::HttpStatus {
+                status: status.as_u16(),
+            });
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > PROBE_RESPONSE_LIMIT)
+        {
+            return Err(CscError::ResponseTooLarge {
+                content_length: response.content_length().unwrap_or_default(),
+                limit: PROBE_RESPONSE_LIMIT,
+            });
+        }
+        let mut bytes = Vec::new();
+        response
+            .take(PROBE_RESPONSE_LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| CscError::Transport("failed to read response".to_owned()))?;
+        if bytes.len() as u64 > PROBE_RESPONSE_LIMIT {
+            return Err(CscError::ResponseTooLarge {
+                content_length: bytes.len() as u64,
+                limit: PROBE_RESPONSE_LIMIT,
+            });
+        }
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+}
+
+fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
+    let mut checks = vec![check(
+        "entry_enabled",
+        true,
+        "The stored credential entry is enabled.",
+    )];
+    let application_id = take_nonblank(&mut entry.fields, FIELD_APPLICATION_ID);
+    let secret = take_nonblank(&mut entry.fields, FIELD_SECRET);
+    let (Some(application_id), Some(secret)) = (application_id, secret) else {
+        checks.push(check(
+            "authorization_configuration",
+            false,
+            "SCAP provider listing requires application_id and secret.",
+        ));
+        return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
+    };
+    checks.push(check(
+        "authorization_configuration",
+        true,
+        "The stored SCAP application credentials are configured.",
+    ));
+    let environment = match entry
+        .selectors
+        .get("environment")
+        .map(|value| value.trim())
+        .unwrap_or("prod")
+    {
+        "prod" => ScapEnvironment::Prod,
+        "preprod" => ScapEnvironment::Preprod,
+        _ => {
+            checks.push(check(
+                "environment_configuration",
+                false,
+                "The SCAP environment selector must be prod or preprod.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "configuration_invalid");
+        }
+    };
+    let base_url = entry
+        .endpoint
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| environment.default_base_url());
+    let vetted = match crate::trust::validate_outbound_http_url(base_url) {
+        Ok(vetted) => vetted,
+        Err(_) => {
+            checks.push(check(
+                "endpoint_safe",
+                false,
+                "The SCAP base URL failed the outbound-network safety policy.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "unsafe_endpoint");
+        }
+    };
+    if let Err(detail) = require_https_probe_endpoint(&vetted, "SCAP") {
+        checks.push(check("endpoint_https", false, detail));
+        return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
+    }
+    checks.push(check(
+        "endpoint_https",
+        true,
+        "The SCAP base URL passed the outbound-network safety policy and uses HTTPS.",
+    ));
+    let config = AmaScapConfig {
+        environment,
+        base_url: vetted.as_str().to_owned(),
+        credentials: Some(ScapCredentials::new(
+            application_id.as_str().to_owned(),
+            secret.as_str().to_owned(),
+        )),
+        provider_filter: None,
+    };
+    let contacted = Arc::new(AtomicBool::new(false));
+    let transport = match ProbeScapTransport::new(&config, vetted, contacted.clone()) {
+        Ok(transport) => transport,
+        Err(_) => {
+            checks.push(check(
+                "outbound_client",
+                false,
+                "The bounded outbound client could not be created.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "outbound_client_unavailable");
+        }
+    };
+    let client = match ScapClient::new(config, transport) {
+        Ok(client) => client,
+        Err(_) => {
+            checks.push(check(
+                "provider_configuration",
+                false,
+                "The SCAP provider configuration is invalid.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "configuration_invalid");
+        }
+    };
+    match client.list_providers() {
+        Ok(providers) => {
+            checks.push(check(
+                "providers_list",
+                true,
+                format!(
+                    "SCAP returned {} attribute provider(s); no citizen data or signature was requested.",
+                    providers.len()
+                ),
+            ));
+            ProbeOutcome {
+                status: "ok",
+                provider_contacted: contacted.load(Ordering::Relaxed),
+                private_key_operation_performed: false,
+                checks,
+                error: None,
+            }
+        }
+        Err(_) => {
+            checks.push(check(
+                "providers_list",
+                false,
+                "The SCAP provider-list operation failed or returned an invalid response.",
+            ));
+            ProbeOutcome::failed(
+                contacted.load(Ordering::Relaxed),
+                false,
+                checks,
+                "provider_list_failed",
+            )
+        }
+    }
+}
+
+struct ProbeScapTransport {
+    base_url: String,
+    authorization: Zeroizing<String>,
+    client: reqwest::blocking::Client,
+    contacted: Arc<AtomicBool>,
+}
+
+impl ProbeScapTransport {
+    fn new(
+        config: &AmaScapConfig,
+        vetted: crate::trust::VettedHttpUrl,
+        contacted: Arc<AtomicBool>,
+    ) -> Result<Self, ScapError> {
+        config.validate_http_transport()?;
+        let credentials = config
+            .credentials
+            .as_ref()
+            .ok_or_else(|| ScapError::Config("SCAP credentials are required".to_owned()))?;
+        let raw_authorization = Zeroizing::new(format!(
+            "{}:{}",
+            credentials.application_id,
+            credentials.secret.as_str()
+        ));
+        let authorization = Zeroizing::new(B64.encode(raw_authorization.as_bytes()));
+        let base_url = vetted.as_str().to_owned();
+        let client = vetted
+            .client(PROBE_HTTP_TIMEOUT)
+            .map_err(|_| ScapError::Transport("failed to build bounded client".to_owned()))?;
+        Ok(Self {
+            base_url,
+            authorization,
+            client,
+            contacted,
+        })
+    }
+
+    fn unsupported<T>() -> Result<T, ScapError> {
+        Err(ScapError::Config(
+            "the provider probe transport only permits provider listing".to_owned(),
+        ))
+    }
+}
+
+impl ScapTransport for ProbeScapTransport {
+    fn list_providers(&self) -> Result<Vec<AttributeProvider>, ScapError> {
+        // See the CSC transport: this marker means an outbound provider contact was attempted,
+        // including attempts that fail during DNS/TCP/TLS setup.
+        self.contacted.store(true, Ordering::Relaxed);
+        let response = self
+            .client
+            .get(format!("{}/providers", self.base_url.trim_end_matches('/')))
+            .header("User-Agent", "chancela-provider-probe")
+            .header("Accept", "application/json")
+            .header(
+                "Authorization",
+                Zeroizing::new(format!("Basic {}", self.authorization.as_str())).as_str(),
+            )
+            .send()
+            .map_err(|_| ScapError::Transport("bounded request failed".to_owned()))?;
+        if !response.status().is_success() {
+            return Err(ScapError::Transport(format!(
+                "SCAP endpoint returned HTTP {}",
+                response.status().as_u16()
+            )));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > PROBE_RESPONSE_LIMIT)
+        {
+            return Err(ScapError::Transport(
+                "SCAP response exceeded the safety limit".to_owned(),
+            ));
+        }
+        let mut bytes = Vec::new();
+        response
+            .take(PROBE_RESPONSE_LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| ScapError::Transport("failed to read response".to_owned()))?;
+        if bytes.len() as u64 > PROBE_RESPONSE_LIMIT {
+            return Err(ScapError::Transport(
+                "SCAP response exceeded the safety limit".to_owned(),
+            ));
+        }
+        serde_json::from_slice(&bytes)
+            .map_err(|_| ScapError::Transport("invalid SCAP provider-list response".to_owned()))
+    }
+
+    fn fetch_attributes(
+        &self,
+        _citizen: &CitizenRef,
+    ) -> Result<Vec<ProfessionalAttribute>, ScapError> {
+        Self::unsupported()
+    }
+
+    fn verify_attribute(
+        &self,
+        _attribute: &ProfessionalAttribute,
+        _citizen: &CitizenRef,
+    ) -> Result<VerificationDecision, ScapError> {
+        Self::unsupported()
+    }
+}
+
+fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
+    let mut checks = vec![check(
+        "entry_enabled",
+        true,
+        "The stored credential entry is enabled.",
+    )];
+    let input = match assemble_pkcs12_input(&entry) {
+        Ok(input) => input,
+        Err(_) => {
+            checks.push(check(
+                "pkcs12_loaded",
+                false,
+                "The stored PKCS#12 material or identity selector is incomplete or malformed.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "pkcs12_load_failed");
+        }
+    };
+    let source = match Pkcs12SigningSource::from_der_with_selector(
+        &input.pfx_der,
+        &input.passphrase,
+        &input.selector,
+    ) {
+        Ok(source) => source,
+        Err(_) => {
+            checks.push(check(
+                "pkcs12_loaded",
+                false,
+                "The stored PKCS#12 identity could not be decrypted and selected.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "pkcs12_load_failed");
+        }
+    };
+    checks.push(check(
+        "pkcs12_loaded",
+        true,
+        "The stored PKCS#12 identity was decrypted and selected.",
+    ));
+
+    let mut nonce = [0u8; 32];
+    OsRng.fill_bytes(&mut nonce);
+    let mut hasher = Sha256::new();
+    hasher.update(PKCS12_PROBE_DOMAIN);
+    hasher.update(nonce);
+    hasher.update(entry.entry_id.as_bytes());
+    let challenge: [u8; 32] = hasher.finalize().into();
+    let raw = match source.sign_signed_attributes(&challenge) {
+        Ok(raw) => raw,
+        Err(_) => {
+            checks.push(check(
+                "challenge_signed",
+                false,
+                "The private key could not sign the non-document probe challenge.",
+            ));
+            return ProbeOutcome::failed(false, false, checks, "private_key_operation_failed");
+        }
+    };
+    checks.push(check(
+        "challenge_signed",
+        true,
+        "The private key signed a random domain-separated non-document challenge.",
+    ));
+    match verify_pkcs12_probe_signature(&challenge, &raw) {
+        Ok(()) => {
+            checks.push(check(
+                "challenge_verified",
+                true,
+                "The challenge signature verified locally against the selected certificate.",
+            ));
+            ProbeOutcome {
+                status: "ok",
+                provider_contacted: false,
+                private_key_operation_performed: true,
+                checks,
+                error: None,
+            }
+        }
+        Err(()) => {
+            checks.push(check(
+                "challenge_verified",
+                false,
+                "The challenge signature did not verify against the selected certificate.",
+            ));
+            ProbeOutcome::failed(false, true, checks, "local_verification_failed")
+        }
+    }
+}
+
+fn verify_pkcs12_probe_signature(
+    digest: &[u8; 32],
+    raw: &chancela_csc::RawSignature,
+) -> Result<(), ()> {
+    let certificate = Certificate::from_der(&raw.signing_cert_der).map_err(|_| ())?;
+    match raw.algorithm {
+        chancela_csc::SignatureAlgorithm::RsaPkcs1Sha256 => {
+            use rsa::{Pkcs1v15Sign, RsaPublicKey};
+            use x509_cert::der::referenced::OwnedToRef;
+            const PREFIX: [u8; 19] = [
+                0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02,
+                0x01, 0x05, 0x00, 0x04, 0x20,
+            ];
+            let public = RsaPublicKey::try_from(
+                certificate
+                    .tbs_certificate
+                    .subject_public_key_info
+                    .owned_to_ref(),
+            )
+            .map_err(|_| ())?;
+            let mut digest_info = Vec::with_capacity(PREFIX.len() + digest.len());
+            digest_info.extend_from_slice(&PREFIX);
+            digest_info.extend_from_slice(digest);
+            public
+                .verify(Pkcs1v15Sign::new_unprefixed(), &digest_info, &raw.signature)
+                .map_err(|_| ())
+        }
+        chancela_csc::SignatureAlgorithm::EcdsaP256Sha256 => {
+            use p256::ecdsa::signature::hazmat::PrehashVerifier;
+            use p256::ecdsa::{Signature, VerifyingKey};
+            use p256::pkcs8::DecodePublicKey;
+            let spki = certificate
+                .tbs_certificate
+                .subject_public_key_info
+                .to_der()
+                .map_err(|_| ())?;
+            let key = VerifyingKey::from_public_key_der(&spki).map_err(|_| ())?;
+            let signature = Signature::from_der(&raw.signature).map_err(|_| ())?;
+            key.verify_prehash(digest, &signature).map_err(|_| ())
+        }
+        _ => Err(()),
+    }
+}
 
 fn parse_body<T: for<'de> Deserialize<'de>>(body: &Bytes) -> Result<T, ApiError> {
     serde_json::from_slice(body)
@@ -831,7 +1923,9 @@ mod tests {
     use crate::actor::SESSION_TTL_SECS;
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
-    use chancela_authz::{OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId};
+    use chancela_authz::{
+        OWNER_ROLE_ID, Permission, READER_ROLE_ID, Role, RoleAssignment, RoleCatalog, RoleId,
+    };
     use serde_json::{Value, json};
     use std::path::{Path as StdPath, PathBuf};
     use std::sync::Arc;
@@ -919,6 +2013,17 @@ mod tests {
         token
     }
 
+    async fn seed_configure_only_token(state: &AppState) -> String {
+        let role_id = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: role_id,
+            name: "Signing configuration probe test".to_owned(),
+            permission_set: [Permission::SigningConfigure].into_iter().collect(),
+            protected: false,
+        });
+        seed_token(state, role_id).await
+    }
+
     async fn send_with(
         state: AppState,
         req: Request<Body>,
@@ -998,6 +2103,290 @@ mod tests {
         let owner = seed_token(&state, OWNER_ROLE_ID).await;
         let (status, b) = send_with(state, body_req("POST", uri, body), Some(&owner)).await;
         assert_eq!(status, StatusCode::CREATED, "{b}");
+    }
+
+    #[tokio::test]
+    async fn probe_requires_signing_configure_and_cmd_is_honestly_interactive_only() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        let owner = seed_token(&state, OWNER_ROLE_ID).await;
+        let reader = seed_token(&state, READER_ROLE_ID).await;
+        let create_uri = "/v1/signature/provider-credentials/cmd/_/entries";
+        let (status, created) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                create_uri,
+                json!({ "label": "CMD principal", "set": { "application_id": "configured" } }),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        let entry_id = created["entry"]["entry_id"].as_str().expect("entry id");
+        let probe_uri =
+            format!("/v1/signature/provider-credentials/cmd/_/entries/{entry_id}/probe");
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("POST", &probe_uri, json!({})),
+            Some(&reader),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("POST", &probe_uri, json!({})),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "interactive_required", "{body}");
+        assert_eq!(body["provider_contacted"], false, "{body}");
+        assert_eq!(body["private_key_operation_performed"], false, "{body}");
+        assert_eq!(body["signer_authorization_requested"], false, "{body}");
+        assert_eq!(body["document_signed"], false, "{body}");
+        assert_eq!(body["legal_validity_claimed"], false, "{body}");
+        assert_eq!(body["qualified_status_determined"], false, "{body}");
+        assert_eq!(body["error"], "interactive_required", "{body}");
+        {
+            let ledger = state.ledger.read().await;
+            let kinds: Vec<&str> = ledger
+                .events()
+                .iter()
+                .rev()
+                .take(2)
+                .map(|event| event.kind.as_str())
+                .collect();
+            assert_eq!(
+                kinds,
+                [
+                    "provider.credentials.entry.probed",
+                    "provider.credentials.entry.probe_requested"
+                ]
+            );
+        }
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("POST", &probe_uri, json!({ "unexpected": true })),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+        let oversized = "x".repeat(256);
+        let mut request = body_req("POST", &probe_uri, json!({ "unexpected": oversized }));
+        request
+            .headers_mut()
+            .insert("x-chancela-session", owner.parse().unwrap());
+        let response = crate::router(state)
+            .oneshot(request)
+            .await
+            .expect("router responds");
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn csc_probe_fails_closed_before_contacting_an_unsafe_endpoint() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        let owner = seed_token(&state, OWNER_ROLE_ID).await;
+        let create_uri = "/v1/signature/provider-credentials/csc/example-qtsp/entries";
+        let (status, created) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                create_uri,
+                json!({
+                    "endpoint": "http://169.254.169.254/latest/meta-data",
+                    "selectors": { "authorization": "service" },
+                    "set": { "client_id": "client", "client_secret": "secret" }
+                }),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        let entry_id = created["entry"]["entry_id"].as_str().expect("entry id");
+        let probe_uri =
+            format!("/v1/signature/provider-credentials/csc/example-qtsp/entries/{entry_id}/probe");
+        let (status, body) =
+            send_with(state, body_req("POST", &probe_uri, json!({})), Some(&owner)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "failed", "{body}");
+        assert_eq!(body["error"], "unsafe_endpoint", "{body}");
+        assert_eq!(body["provider_contacted"], false, "{body}");
+        assert_eq!(body["document_signed"], false, "{body}");
+    }
+
+    #[test]
+    fn csc_probe_uses_one_cumulative_deadline() {
+        let future = Instant::now() + PROBE_HTTP_TIMEOUT;
+        let remaining = remaining_csc_probe_timeout(future).expect("deadline remains");
+        assert!(remaining <= PROBE_HTTP_TIMEOUT);
+        assert!(remaining > Duration::ZERO);
+
+        let elapsed = Instant::now() - Duration::from_millis(1);
+        assert!(remaining_csc_probe_timeout(elapsed).is_err());
+    }
+
+    #[tokio::test]
+    async fn credential_bearing_probes_refuse_plain_http_before_sending_secrets() {
+        for (mode, provider, selectors, fields) in [
+            (
+                "csc",
+                "public-http",
+                json!({ "authorization": "service" }),
+                json!({ "client_id": "client", "client_secret": "secret" }),
+            ),
+            (
+                "scap",
+                "_",
+                json!({ "environment": "prod" }),
+                json!({ "application_id": "application", "secret": "secret" }),
+            ),
+        ] {
+            let tmp = TempDir::new();
+            let state = state_with_store(&tmp.dir);
+            let owner = seed_token(&state, OWNER_ROLE_ID).await;
+            let create_uri =
+                format!("/v1/signature/provider-credentials/{mode}/{provider}/entries");
+            let (status, created) = send_with(
+                state.clone(),
+                body_req(
+                    "POST",
+                    &create_uri,
+                    json!({
+                        "endpoint": "http://example.com/provider-api",
+                        "selectors": selectors,
+                        "set": fields
+                    }),
+                ),
+                Some(&owner),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED, "{created}");
+            let entry_id = created["entry"]["entry_id"].as_str().expect("entry id");
+            let probe_uri = format!("{create_uri}/{entry_id}/probe");
+            let (status, body) =
+                send_with(state, body_req("POST", &probe_uri, json!({})), Some(&owner)).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "failed", "{body}");
+            assert_eq!(body["error"], "insecure_endpoint", "{body}");
+            assert_eq!(body["provider_contacted"], false, "{body}");
+            assert_eq!(body["private_key_operation_performed"], false, "{body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn pkcs12_probe_requires_perform_permission_and_explicit_confirmation() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        let owner = seed_token(&state, OWNER_ROLE_ID).await;
+        let configure_only = seed_configure_only_token(&state).await;
+        let create_uri = "/v1/signature/provider-credentials/pkcs12/local/entries";
+        let (status, created) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                create_uri,
+                json!({ "set": { "pfx_der": "AQID", "passphrase": "secret" } }),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        let entry_id = created["entry"]["entry_id"].as_str().expect("entry id");
+        let probe_uri = format!("{create_uri}/{entry_id}/probe");
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                &probe_uri,
+                json!({ "confirm_private_key_operation": true }),
+            ),
+            Some(&configure_only),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+        let (status, body) =
+            send_with(state, body_req("POST", &probe_uri, json!({})), Some(&owner)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            body.to_string().contains("confirm_private_key_operation"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn changing_endpoint_origin_requires_replacing_every_stored_field() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        let owner = seed_token(&state, OWNER_ROLE_ID).await;
+        let base = "/v1/signature/provider-credentials/scap/_/entries";
+        let (status, created) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                base,
+                json!({
+                    "endpoint": "https://old.example/scap",
+                    "set": {
+                        "application_id": "app",
+                        "secret": "secret",
+                        "http_basic_username": "gateway",
+                        "http_basic_password": "gateway-secret"
+                    }
+                }),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        let entry_id = created["entry"]["entry_id"].as_str().expect("entry id");
+        let update_uri = format!("{base}/{entry_id}");
+        let (status, body) = send_with(
+            state.clone(),
+            body_req(
+                "PATCH",
+                &update_uri,
+                json!({
+                    "endpoint": "https://new.example/scap",
+                    "set": { "application_id": "new-app", "secret": "new-secret" }
+                }),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(body.to_string().contains("re-entering every"), "{body}");
+        assert!(!body.to_string().contains("gateway-secret"), "{body}");
+
+        let (status, body) = send_with(
+            state,
+            body_req(
+                "PATCH",
+                &update_uri,
+                json!({
+                    "endpoint": "https://new.example/scap",
+                    "set": {
+                        "application_id": "new-app",
+                        "secret": "new-secret",
+                        "http_basic_username": "new-gateway",
+                        "http_basic_password": "new-gateway-secret"
+                    }
+                }),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["entry"]["endpoint"], "https://new.example/scap");
+        assert!(!body.to_string().contains("new-gateway-secret"), "{body}");
     }
 
     /// The reported bug: saving a credential on a server with no data directory. The refusal must

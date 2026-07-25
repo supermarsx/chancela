@@ -250,6 +250,7 @@ import type {
   ProviderCredentialsListView,
   ProviderCredentialEntryMutationResponse,
   ProviderCredentialEntryListResponse,
+  ProviderCredentialProbeResponse,
   CreateProviderCredentialEntryBody,
   UpdateProviderCredentialEntryBody,
   ReorderProviderCredentialEntriesBody,
@@ -1656,6 +1657,11 @@ export const api = {
     post<ProviderCredentialEntryListResponse>(
       `/v1/signature/provider-credentials/${mode}/${providerSegment(providerId)}/entries/reorder`,
       body,
+    ),
+  probeProviderCredentialEntry: (mode: CredentialMode, providerId: string, entryId: string) =>
+    post<ProviderCredentialProbeResponse>(
+      `/v1/signature/provider-credentials/${mode}/${providerSegment(providerId)}/entries/${encodeURIComponent(entryId)}/probe`,
+      mode === 'pkcs12' ? { confirm_private_key_operation: true } : {},
     ),
   // Sign a sealed act with a STORED PKCS#12 identity (no secret in the request body).
   signStoredPkcs12: (actId: string, body: SignStoredPkcs12Body) =>

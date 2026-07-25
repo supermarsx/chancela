@@ -1376,6 +1376,51 @@ impl ProviderCredentialStore {
         self.read_entries_inner(mode, provider_id, true)
     }
 
+    /// Runtime read of one exact entry. Unlike [`Self::read_entries_runtime`], this decrypts only
+    /// the requested entry's fields, limiting plaintext exposure for diagnostics and other
+    /// single-entry consumers while preserving the same strict-mode guard.
+    pub fn read_entry_runtime(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+        entry_id: &str,
+    ) -> Result<Option<DecryptedCredentialEntry>, ProviderCredentialError> {
+        let key = (mode.as_str().to_owned(), provider_id.to_owned());
+        let record = self.with_records(|records| Ok(records.get(&key).cloned()))?;
+        let Some(entry) = record
+            .as_ref()
+            .and_then(|record| record.entries.iter().find(|entry| entry.id == entry_id))
+        else {
+            return Ok(None);
+        };
+        let store = self.secretstore()?;
+        if self.strict && store.protection_level() != ProtectionLevel::Confidential {
+            return Err(ProviderCredentialError::RuntimeStrictModeUnprotected {
+                level: store.protection_level(),
+            });
+        }
+        let mut fields = BTreeMap::new();
+        for (name, stored) in &entry.fields {
+            let plaintext = store.unwrap(
+                mode.as_str(),
+                provider_id,
+                &entry.id,
+                name,
+                &stored.envelope,
+            )?;
+            fields.insert(name.clone(), plaintext);
+        }
+        Ok(Some(DecryptedCredentialEntry {
+            entry_id: entry.id.clone(),
+            label: entry.label.clone(),
+            priority: entry.priority,
+            enabled: entry.enabled,
+            endpoint: entry.endpoint.clone(),
+            selectors: entry.selectors.clone(),
+            fields,
+        }))
+    }
+
     fn read_entries_inner(
         &self,
         mode: CredentialMode,

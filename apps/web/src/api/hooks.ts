@@ -3926,11 +3926,27 @@ export function useDegradedHealth() {
 // duration of the request — they are never written into the query cache.
 
 /** The provider-credential management list (`GET /v1/signature/provider-credentials`). */
-export function useProviderCredentials() {
+export function useProviderCredentials(enabled = true) {
   return useQuery({
     queryKey: keys.providerCredentials,
     queryFn: () => api.listProviderCredentials(),
+    enabled,
     retry: false,
+  });
+}
+
+/** Test one exact stored entry using only the provider's safe non-document operation. */
+export function useProbeProviderCredentialEntry() {
+  return useMutation({
+    mutationFn: ({
+      mode,
+      providerId,
+      entryId,
+    }: {
+      mode: CredentialMode;
+      providerId: string;
+      entryId: string;
+    }) => api.probeProviderCredentialEntry(mode, providerId, entryId),
   });
 }
 

@@ -27,8 +27,8 @@
  * now require since the cluster moved into Administração and was re-permissioned (t50). It is
  * grandfathered to every prior `settings.manage` holder, so no current operator loses the pane.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type {
   CredentialMode,
   CredentialProtectionLevel,
@@ -36,6 +36,7 @@ import type {
   CreateProviderCredentialEntryBody,
   ProviderCredentialEntryView,
   ProviderCredentialGroupView,
+  ProviderCredentialProbeResponse,
   UpdateProviderCredentialEntryBody,
 } from '../../api/types';
 import {
@@ -44,9 +45,12 @@ import {
   useUpdateProviderCredentialEntry,
   useDeleteProviderCredentialEntry,
   useReorderProviderCredentialEntries,
+  useProbeProviderCredentialEntry,
 } from '../../api/hooks';
 import { useT, type TFunction } from '../../i18n';
 import type { MessageKey } from '../../i18n';
+import { useProviderCredentialsT } from '../../i18n/providerCredentialsFallback';
+import { allowNextNavigation, useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import {
   Badge,
   Button,
@@ -69,24 +73,14 @@ import {
 import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
 import { GateButton, GateIconButton, useCan } from '../session/permissions';
 import { providerCredentialsFieldHelp, providerCredentialFieldHelp } from './fieldHelp';
+import {
+  providerCredentialCreatePath,
+  providerCredentialEditPath,
+} from './providerCredentialRoutes';
 
 /** The modes an operator can configure, in display order. */
 const MODES: CredentialMode[] = ['cmd', 'csc', 'scap', 'pkcs12'];
-
-/**
- * Credential modes reachable by the trust-services Actions deep-link (`?configure=<mode>`),
- * the frozen URL contract with the "Modos de prestador" table (t12). Only these three have a
- * provider-modes table row that routes here: `scap` has no table row and Cartão de Cidadão has
- * no web configuration at all, so neither is a deep-link target. Any other value is ignored.
- */
-const DEEP_LINK_MODES: readonly CredentialMode[] = ['cmd', 'csc', 'pkcs12'];
-
-/** The query-param key the trust-services Actions column navigates with. */
-const CONFIGURE_PARAM = 'configure';
-
-function isDeepLinkMode(value: string | null): value is CredentialMode {
-  return value !== null && (DEEP_LINK_MODES as readonly string[]).includes(value);
-}
+const LEGACY_CONFIGURE_MODES: readonly CredentialMode[] = ['cmd', 'csc', 'pkcs12'];
 
 /** Modes that carry a per-entry endpoint / base_url override. */
 const ENDPOINT_MODES: readonly CredentialMode[] = ['csc', 'scap'];
@@ -274,7 +268,7 @@ export function canStoreSecrets(view: {
   return view.can_store ?? view.protection_level !== undefined;
 }
 
-function ProtectionBanner({
+export function ProtectionBanner({
   strict,
   level,
   storable,
@@ -350,7 +344,7 @@ function emptyForm(mode: CredentialMode): EntryFormState {
   };
 }
 
-function EntryForm({
+export function ProviderCredentialEntryForm({
   mode,
   providerId,
   existing,
@@ -372,6 +366,8 @@ function EntryForm({
   const update = useUpdateProviderCredentialEntry();
   const isEdit = !!existing;
 
+  const baselineRef = useRef<EntryFormState | null>(null);
+  const savedRef = useRef(false);
   const [form, setForm] = useState<EntryFormState>(() => {
     const base = emptyForm(mode);
     if (existing) {
@@ -381,8 +377,11 @@ function EntryForm({
       base.selectors = { ...existing.selectors };
     }
     if (providerId !== undefined) base.providerId = providerId;
+    baselineRef.current = base;
     return base;
   });
+  const dirty = JSON.stringify(form) !== JSON.stringify(baselineRef.current);
+  useUnsavedChanges(dirty && !savedRef.current);
 
   // A top-level create form may switch credential modes. Existing groups and
   // entries remain pinned to the mode supplied by their parent card.
@@ -449,6 +448,8 @@ function EntryForm({
             clearSecrets();
             update.reset();
             toast.success(t('settings.providerCredentials.updatedToast'));
+            savedRef.current = true;
+            allowNextNavigation();
             onDone();
           },
           onError: (e) => toast.error(e),
@@ -470,6 +471,8 @@ function EntryForm({
           clearSecrets();
           create.reset();
           toast.success(t('settings.providerCredentials.createdToast'));
+          savedRef.current = true;
+          allowNextNavigation();
           onDone();
         },
         onError: (e) => toast.error(e),
@@ -722,6 +725,130 @@ function EntryForm({
   );
 }
 
+export function ProviderCredentialProbeResult({
+  result,
+}: {
+  result: ProviderCredentialProbeResponse;
+}) {
+  const pt = useProviderCredentialsT();
+  const statusLabel =
+    result.status === 'ok'
+      ? pt('providerCredentials.probe.ok')
+      : result.status === 'interactive_required'
+        ? pt('providerCredentials.probe.interactive')
+        : pt('providerCredentials.probe.failed');
+  const yesNo = (value: boolean) =>
+    pt(value ? 'providerCredentials.probe.yes' : 'providerCredentials.probe.no');
+  return (
+    <Card
+      title={pt('providerCredentials.probe.title')}
+      actions={
+        <Badge tone={result.status === 'ok' ? 'ok' : result.status === 'failed' ? 'error' : 'warn'}>
+          {statusLabel}
+        </Badge>
+      }
+    >
+      <p className="field__hint">{pt('providerCredentials.probe.disclaimer')}</p>
+      <dl className="detail-grid">
+        <div>
+          <dt>{pt('providerCredentials.probe.contacted')}</dt>
+          <dd>{yesNo(result.provider_contacted)}</dd>
+        </div>
+        <div>
+          <dt>{pt('providerCredentials.probe.keyOperation')}</dt>
+          <dd>{yesNo(result.private_key_operation_performed)}</dd>
+        </div>
+        <div>
+          <dt>{pt('providerCredentials.probe.signerAuthorization')}</dt>
+          <dd>{yesNo(result.signer_authorization_requested)}</dd>
+        </div>
+        <div>
+          <dt>{pt('providerCredentials.probe.documentSigned')}</dt>
+          <dd>{yesNo(result.document_signed)}</dd>
+        </div>
+        <div>
+          <dt>{pt('providerCredentials.probe.legalValidity')}</dt>
+          <dd>{yesNo(result.legal_validity_claimed)}</dd>
+        </div>
+        <div>
+          <dt>{pt('providerCredentials.probe.qualifiedStatus')}</dt>
+          <dd>{yesNo(result.qualified_status_determined)}</dd>
+        </div>
+      </dl>
+      <ul className="stack">
+        {result.checks.map((probeCheck, index) => (
+          <li key={`${probeCheck.name}:${index}`}>
+            <Badge
+              tone={
+                probeCheck.status === 'passed'
+                  ? 'ok'
+                  : probeCheck.status === 'failed'
+                    ? 'error'
+                    : 'neutral'
+              }
+            >
+              {pt(`providerCredentials.probe.check.${probeCheck.status}`)}
+            </Badge>{' '}
+            <strong>{probeCheck.name}</strong> — {probeCheck.detail}
+          </li>
+        ))}
+      </ul>
+      <p className="field__hint">
+        {pt('providerCredentials.probe.duration', {
+          duration: result.duration_ms,
+          timestamp: result.tested_at,
+        })}
+      </p>
+    </Card>
+  );
+}
+
+function ProviderCredentialProbeSummary({ result }: { result: ProviderCredentialProbeResponse }) {
+  const pt = useProviderCredentialsT();
+  const statusLabel =
+    result.status === 'ok'
+      ? pt('providerCredentials.probe.ok')
+      : result.status === 'interactive_required'
+        ? pt('providerCredentials.probe.interactive')
+        : pt('providerCredentials.probe.failed');
+  const failed = result.checks.find((probeCheck) => probeCheck.status === 'failed');
+  return (
+    <div className="stack stack--tight" role="status">
+      <Badge tone={result.status === 'ok' ? 'ok' : result.status === 'failed' ? 'error' : 'warn'}>
+        {statusLabel}
+      </Badge>
+      {failed ? <span className="field__hint">{failed.detail}</span> : null}
+      <span className="field__hint">{pt('providerCredentials.probe.disclaimer')}</span>
+    </div>
+  );
+}
+
+export function Pkcs12ProbeConfirmModal({
+  open,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const pt = useProviderCredentialsT();
+  return (
+    <ConfirmActionModal
+      open={open}
+      onClose={onClose}
+      title={pt('providerCredentials.probe.pkcs12.confirmTitle')}
+      intro={pt('providerCredentials.probe.pkcs12.confirmIntro')}
+      confirmLabel={pt('providerCredentials.probe.pkcs12.confirm')}
+      pendingLabel={pt('providerCredentials.probe.pkcs12.pending')}
+      pending={pending}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
 function EntryRow({
   group,
   entry,
@@ -740,9 +867,21 @@ function EntryRow({
   const reorder = useReorderProviderCredentialEntries();
   const update = useUpdateProviderCredentialEntry();
   const del = useDeleteProviderCredentialEntry();
+  const probe = useProbeProviderCredentialEntry();
+  const pt = useProviderCredentialsT();
+  const can = useCan();
   const [confirming, setConfirming] = useState(false);
+  const [confirmingProbe, setConfirmingProbe] = useState(false);
 
   const providerId = group.provider_id;
+  const canPerformProbe = group.mode !== 'pkcs12' || can('signing.perform');
+
+  function runProbe() {
+    probe.mutate(
+      { mode: group.mode, providerId, entryId: entry.entry_id },
+      { onError: (error) => toast.error(error) },
+    );
+  }
 
   function toggleEnabled(enabled: boolean) {
     update.mutate(
@@ -772,7 +911,7 @@ function EntryRow({
     );
   }
 
-  const busy = reorder.isPending || del.isPending || update.isPending;
+  const busy = reorder.isPending || del.isPending || update.isPending || probe.isPending;
   const label = entry.label || t('settings.providerCredentials.entry.unlabeled');
 
   return (
@@ -859,6 +998,18 @@ function EntryRow({
             perm="signing.configure"
             type="button"
             variant="ghost"
+            disabled={busy || !canPerformProbe}
+            title={canPerformProbe ? undefined : pt('providerCredentials.probe.pkcs12.permission')}
+            onClick={() => (group.mode === 'pkcs12' ? setConfirmingProbe(true) : runProbe())}
+          >
+            {probe.isPending
+              ? pt('providerCredentials.action.testing')
+              : pt('providerCredentials.action.test')}
+          </GateButton>
+          <GateButton
+            perm="signing.configure"
+            type="button"
+            variant="ghost"
             icon={<Icon.Trash />}
             disabled={busy}
             onClick={() => setConfirming(true)}
@@ -884,6 +1035,17 @@ function EntryRow({
             setConfirming(false);
           }}
         />
+        <Pkcs12ProbeConfirmModal
+          open={group.mode === 'pkcs12' && confirmingProbe}
+          pending={probe.isPending}
+          onClose={() => setConfirmingProbe(false)}
+          onConfirm={async () => {
+            await probe.mutateAsync({ mode: group.mode, providerId, entryId: entry.entry_id });
+            setConfirmingProbe(false);
+          }}
+        />
+        {probe.data ? <ProviderCredentialProbeSummary result={probe.data} /> : null}
+        {probe.error ? <ErrorNote error={probe.error} /> : null}
       </td>
     </tr>
   );
@@ -891,8 +1053,7 @@ function EntryRow({
 
 function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
   const t = useT();
-  const [adding, setAdding] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const entries = useMemo(
     () => [...group.entries].sort((a, b) => a.priority - b.priority),
     [group.entries],
@@ -902,7 +1063,6 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
     group.provider_id === ''
       ? modeLabel(t, group.mode)
       : `${modeLabel(t, group.mode)} · ${group.provider_id}`;
-  const editing = entries.find((entry) => entry.entry_id === editingId);
 
   return (
     <Card
@@ -912,40 +1072,13 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
           perm="signing.configure"
           variant="secondary"
           icon={<Icon.Plus />}
-          onClick={() => {
-            setEditingId(null);
-            setAdding((v) => !v);
-          }}
+          onClick={() => navigate(providerCredentialCreatePath(group.mode, group.provider_id))}
         >
           {t('settings.providerCredentials.provider.addEntry')}
         </GateButton>
       }
     >
       <p className="field__hint">{t('settings.providerCredentials.failoverHint')}</p>
-
-      {/* The add/edit form sits ABOVE the grid rather than replacing a row: a form is a column of
-          labelled inputs and a row is a scanline, and swapping one for the other made the table
-          jump. The row being edited stays visible for comparison. */}
-      {adding ? (
-        <EntryForm
-          mode={group.mode}
-          providerId={group.provider_id}
-          disabled={false}
-          onDone={() => setAdding(false)}
-          onCancel={() => setAdding(false)}
-        />
-      ) : null}
-      {editing ? (
-        <EntryForm
-          key={editing.entry_id}
-          mode={group.mode}
-          providerId={group.provider_id}
-          existing={editing}
-          disabled={false}
-          onDone={() => setEditingId(null)}
-          onCancel={() => setEditingId(null)}
-        />
-      ) : null}
 
       {entries.length === 0 ? (
         <EmptyState title={t('settings.providerCredentials.provider.noEntries')} />
@@ -970,10 +1103,9 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
               entry={entry}
               index={index}
               count={entries.length}
-              onEdit={() => {
-                setAdding(false);
-                setEditingId(entry.entry_id);
-              }}
+              onEdit={() =>
+                navigate(providerCredentialEditPath(group.mode, group.provider_id, entry.entry_id))
+              }
             />
           ))}
         </Table>
@@ -984,31 +1116,23 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
 
 export function ProviderCredentialsSection() {
   const t = useT();
-  const can = useCan();
-  const credentials = useProviderCredentials();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [creating, setCreating] = useState(false);
-  // The mode the top-level create form opens on. Defaults to 'csc' (the historical default);
-  // a deep-link may preselect another mode before the form is shown.
-  const [createMode, setCreateMode] = useState<CredentialMode>('csc');
+  const credentials = useProviderCredentials();
 
-  // Deep-link target: the trust-services "Configurar" action routes here with
-  // `?configure=<mode>` so an operator lands on the create form for the mode they picked. We
-  // consume the param once — preselecting the mode when it names one we can configure in the
-  // web app — then strip it (replace) so a refresh or Back does not reopen the form. An unknown
-  // or absent value leaves the section in its normal state; the param is still cleared so no
-  // stale `?configure=` lingers in the address bar.
+  // Pre-dedicated-page bookmarks used `?configure=<mode>` on this list. Preserve them as a
+  // redirect, never by reviving the inline form. Unknown/retired values are simply stripped.
   useEffect(() => {
-    const requested = searchParams.get(CONFIGURE_PARAM);
+    const requested = searchParams.get('configure');
     if (requested === null) return;
-    if (isDeepLinkMode(requested)) {
-      setCreateMode(requested);
-      setCreating(true);
+    if ((LEGACY_CONFIGURE_MODES as readonly string[]).includes(requested)) {
+      navigate(providerCredentialCreatePath(requested as CredentialMode), { replace: true });
+      return;
     }
     const next = new URLSearchParams(searchParams);
-    next.delete(CONFIGURE_PARAM);
+    next.delete('configure');
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [navigate, searchParams, setSearchParams]);
 
   // Six columns per provider group: entry, priority, state, endpoint, fields, actions.
   if (credentials.isLoading)
@@ -1039,37 +1163,27 @@ export function ProviderCredentialsSection() {
         failure={data?.storage_failure}
       />
 
-      {creating ? (
-        <EntryForm
-          key={createMode}
-          mode={createMode}
-          disabled={!can('signing.configure') || !storable}
-          onDone={() => setCreating(false)}
-          onCancel={() => setCreating(false)}
-        />
-      ) : (
-        <Card
-          title={t('settings.providerCredentials.cardTitle')}
-          actions={
-            <GateButton
-              perm="signing.configure"
-              variant="primary"
-              icon={<Icon.Plus />}
-              disabled={!storable}
-              onClick={() => setCreating(true)}
-            >
-              {t('settings.providerCredentials.newEntry')}
-            </GateButton>
-          }
-        >
-          <p className="field__hint">{t('settings.providerCredentials.lede')}</p>
-          {providers.length === 0 ? (
-            <EmptyState title={t('settings.providerCredentials.empty')}>
-              <p>{t('settings.providerCredentials.emptyBody')}</p>
-            </EmptyState>
-          ) : null}
-        </Card>
-      )}
+      <Card
+        title={t('settings.providerCredentials.cardTitle')}
+        actions={
+          <GateButton
+            perm="signing.configure"
+            variant="primary"
+            icon={<Icon.Plus />}
+            disabled={!storable}
+            onClick={() => navigate(providerCredentialCreatePath())}
+          >
+            {t('settings.providerCredentials.newEntry')}
+          </GateButton>
+        }
+      >
+        <p className="field__hint">{t('settings.providerCredentials.lede')}</p>
+        {providers.length === 0 ? (
+          <EmptyState title={t('settings.providerCredentials.empty')}>
+            <p>{t('settings.providerCredentials.emptyBody')}</p>
+          </EmptyState>
+        ) : null}
+      </Card>
 
       {providers.map((group) => (
         <ProviderGroupCard key={`${group.mode}:${group.provider_id}`} group={group} />

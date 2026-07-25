@@ -141,13 +141,13 @@ export function LegacySettingsOperationsRedirect() {
 /**
  * `/settings/signing/:sub?` → `/admin/signing/:sub?` (t50). The signature-policy cluster (providers,
  * policy, tsl, tsa, trust-services, cmd) left Configurações for the Administração surface, so its
- * literal address is forwarded at the router level — a static `settings/signing` outranks the generic
- * `settings/:sec?/:sub?`, so SettingsPage never renders for it. The provider table's `?configure=`
- * deep link (and any fragment) is preserved verbatim so a `/settings/signing/providers?configure=csc`
- * bookmark lands on the moved create form. Bare `/settings/signing` lands on `/admin/signing` (its
- * Fornecedores default). The single-segment retired alias `/settings/signing-providers` and the pt-PT
- * `/configuracoes/assinaturas` slug do NOT match this route — they reach SettingsPage and are
- * forwarded in-page (t50), the same disjoint split the operations move uses.
+ * literal address is forwarded at the router level — a static `settings/signing` outranks the
+ * generic `settings/:sec?/:sub?`, so SettingsPage never renders for it. The provider list preserves
+ * the older `?configure=` bookmark as a redirect to its dedicated create page. Bare
+ * `/settings/signing` lands on `/admin/signing` (its Fornecedores default). The single-segment
+ * retired alias `/settings/signing-providers` and the pt-PT `/configuracoes/assinaturas` slug do NOT
+ * match this route — they reach SettingsPage and are forwarded in-page (t50), the same disjoint split
+ * the operations move uses.
  */
 export function LegacySettingsSigningRedirect() {
   const { sub } = useParams();
@@ -178,6 +178,7 @@ export const routeModuleLoaders = {
   templateDetail: () => import('../features/templates/TemplateDetailPage'),
   ledger: () => import('../features/ledger/LedgerPage'),
   notifications: () => import('../features/notifications/NotificationsPage'),
+  providerCredential: () => import('../features/settings/ProviderCredentialPage'),
   admin: () => import('../features/admin/AdminPage'),
   tools: () => import('../features/tools/ToolsPage'),
   settings: () => import('../features/settings/SettingsPage'),
@@ -320,6 +321,14 @@ export const router = createBrowserRouter([
       // Operações section keeps reading its sub off `/admin/:sub`; no operations sub is named
       // `signing`, so the resolver keys the section on segment 1 === `signing` without collision.
       {
+        path: 'admin/signing/providers/new',
+        element: lazyRoute(routeModuleLoaders.providerCredential, 'ProviderCredentialPage'),
+      },
+      {
+        path: 'admin/signing/providers/:mode/:providerId/:entryId/edit',
+        element: lazyRoute(routeModuleLoaders.providerCredential, 'ProviderCredentialPage'),
+      },
+      {
         path: 'admin/:sub?/:detail?',
         handle: { navDepth: 1 },
         element: lazyRoute(routeModuleLoaders.admin, 'AdminPage'),
@@ -333,7 +342,8 @@ export const router = createBrowserRouter([
       // Assinaturas left Configurações for the Administração surface too (t50). Same pattern as the
       // operations redirect above: the literal `settings/signing/:sub?` is forwarded to
       // `/admin/signing/:sub?`, ranked above the generic `settings/:sec?/:sub?` so SettingsPage never
-      // renders for it, and the `?configure=` provider deep link + fragment travel through untouched.
+      // renders for it; the provider list converts an older `?configure=` bookmark into the new
+      // dedicated create-page address.
       { path: 'settings/signing/:sub?', element: <LegacySettingsSigningRedirect /> },
       // Two levels: the tool, then that tool's own sub-tab — the PDF validator spelled its
       // second level `?sec=` and Legislação spelled it `?leg=`, and both are the same

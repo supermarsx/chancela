@@ -2442,6 +2442,10 @@ pub fn router(state: AppState) -> Router {
             post(provider_credentials_write::reorder_entries),
         )
         .route(
+            "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/{entry_id}/probe",
+            post(provider_credentials_write::probe_entry).layer(DefaultBodyLimit::max(128)),
+        )
+        .route(
             "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/{entry_id}",
             patch(provider_credentials_write::update_entry)
                 .delete(provider_credentials_write::delete_entry),

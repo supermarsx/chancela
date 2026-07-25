@@ -96,6 +96,7 @@ import { ConnectorEgressSection, parseAllowedHosts } from './ConnectorEgressSect
 import { EmailSection } from './EmailSection';
 import { LanguagePreferenceSection } from './LanguagePreferenceSection';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
+import { providerCredentialCreatePath } from './providerCredentialRoutes';
 import { PairingPanel } from '../pairing/PairingPanel';
 import { ApiServerSection } from './ApiServerSection';
 import { ServerEnvSection } from './ServerEnvSection';
@@ -930,8 +931,8 @@ function providerModeLabel(provider: SigningProviderMetadata, t: ReturnType<type
  *  or `null` when the mode has no in-app configuration. Cartão de Cidadão is configured on the
  *  operator's own machine (a card reader plus the Autenticação.gov middleware), so its row
  *  carries a muted note rather than a navigating control — there is no route to invent. The
- *  `configure` value is the URL contract consumed by `ProviderCredentialsSection` (t12-e3):
- *  `/admin/signing/providers?configure=<mode>` since the cluster moved to Administração (t50),
+ *  `configure` value is the URL contract consumed by the dedicated credential-create page:
+ *  `/admin/signing/providers/new?mode=<mode>` since create/edit left the provider list,
  *  mode ∈ {cmd, csc, pkcs12}. */
 function providerConfigureMode(provider: SigningProviderMetadata): 'cmd' | 'csc' | 'pkcs12' | null {
   switch (provider.mode) {
@@ -2457,9 +2458,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                                   aria-label={t('settings.signing.providers.action.configureAria', {
                                     mode: providerModeLabel(provider, t),
                                   })}
-                                  onClick={() =>
-                                    navigate(`/admin/signing/providers?configure=${configure}`)
-                                  }
+                                  onClick={() => navigate(providerCredentialCreatePath(configure))}
                                 >
                                   {t('settings.signing.providers.action.configure')}
                                 </Button>

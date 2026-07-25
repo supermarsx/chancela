@@ -4299,6 +4299,34 @@ export interface ReorderProviderCredentialEntriesBody {
   order: string[];
 }
 
+export interface ProviderCredentialProbeCheck {
+  name: string;
+  status: 'passed' | 'failed' | 'skipped';
+  detail: string;
+}
+
+/**
+ * `POST …/entries/{entry_id}/probe` — an honest non-document provider test.
+ * The three legal-status fields are always false: connectivity or a local key operation is not a
+ * qualified-signature determination.
+ */
+export interface ProviderCredentialProbeResponse {
+  mode: CredentialMode;
+  provider_id: string;
+  entry_id: string;
+  status: 'ok' | 'failed' | 'interactive_required';
+  provider_contacted: boolean;
+  private_key_operation_performed: boolean;
+  signer_authorization_requested: boolean;
+  document_signed: false;
+  legal_validity_claimed: false;
+  qualified_status_determined: false;
+  checks: ProviderCredentialProbeCheck[];
+  error?: string;
+  tested_at: string;
+  duration_ms: number;
+}
+
 /** `POST /v1/acts/{id}/signature/local/pkcs12/sign-stored` body — carries NO secret material. */
 export interface SignStoredPkcs12Body {
   provider_id: string;

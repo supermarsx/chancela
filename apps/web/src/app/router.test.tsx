@@ -1,8 +1,8 @@
 import { Suspense, lazy } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { RouterProvider, createMemoryRouter } from 'react-router-dom';
-import { RouteCrash, routeModuleLoaders } from './router';
+import { RouterProvider, createMemoryRouter, matchRoutes } from 'react-router-dom';
+import { RouteCrash, routeModuleLoaders, router } from './router';
 
 const BrokenLazyRoute = lazy(async () => {
   throw new Error('lazy chunk unavailable');
@@ -30,11 +30,25 @@ afterEach(() => {
 describe('route error fallback', () => {
   it('keeps every lazy route chunk importable', async () => {
     expect(routeModuleLoaders).toHaveProperty('admin');
+    expect(routeModuleLoaders).toHaveProperty('providerCredential');
     const modules = await Promise.all(Object.values(routeModuleLoaders).map((load) => load()));
 
     expect(modules).toHaveLength(Object.keys(routeModuleLoaders).length);
     expect(modules.every((module) => Object.keys(module).length > 0)).toBe(true);
   }, 15_000);
+
+  it('ranks dedicated provider create/edit pages ahead of the generic admin route', () => {
+    const create = matchRoutes(router.routes, '/admin/signing/providers/new');
+    const edit = matchRoutes(
+      router.routes,
+      '/admin/signing/providers/csc/encosto-qtsp/entry-a/edit',
+    );
+
+    expect(create?.at(-1)?.route.path).toBe('admin/signing/providers/new');
+    expect(edit?.at(-1)?.route.path).toBe(
+      'admin/signing/providers/:mode/:providerId/:entryId/edit',
+    );
+  });
 
   it('renders CrashScreen for a lazy route rejection instead of React Router default UI', async () => {
     const router = createMemoryRouter(

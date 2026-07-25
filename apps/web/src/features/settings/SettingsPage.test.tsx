@@ -5753,11 +5753,8 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    // Record every location the router renders. The producer navigates to
-    // `…/providers?configure=csc`; the co-mounted consumer (ProviderCredentialsSection, t12-e3)
-    // reads that param on mount and immediately clears it, so the FINAL location has no query.
-    // Recording each rendered location captures the emitted URL regardless of that clearing —
-    // this asserts the producer's contract, not the consumer's cleanup.
+    // Record every location the router renders. The producer navigates straight to the dedicated
+    // create page with its non-secret mode selector in the query.
     const seen: string[] = [];
     function LocationRecorder() {
       const location = useLocation();
@@ -5784,9 +5781,9 @@ describe('SettingsPage', () => {
       screen.queryByRole('button', { name: 'Configurar o modo Cartão de Cidadão' }),
     ).toBeNull();
 
-    // Clicking one navigates to the frozen deep-link contract ProviderCredentialsSection consumes.
+    // Clicking one navigates to the dedicated credential-create page.
     fireEvent.click(screen.getByRole('button', { name: 'Configurar o modo CSC/QTSP' }));
-    expect(seen).toContain('/admin/signing/providers?configure=csc');
+    expect(seen).toContain('/admin/signing/providers/new?mode=csc');
   });
 
   it('explains what each signing mode is for below the table', async () => {

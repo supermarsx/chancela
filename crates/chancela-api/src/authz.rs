@@ -794,6 +794,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // POST signing.configure@Global (t50)
     (
+        "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/{entry_id}/probe",
+        RouteClass::Gated,
+    ), // POST signing.configure@Global; PKCS#12 challenge also requires signing.perform@Global
+    (
         "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/{entry_id}",
         RouteClass::Gated,
     ), // PATCH/DELETE signing.configure@Global (t50)
