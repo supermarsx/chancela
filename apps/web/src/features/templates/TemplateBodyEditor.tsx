@@ -10,7 +10,7 @@
  * markdown source is mounted. The PDF is visibly classified as structural and unresolved; it is
  * never presented as the final context-filled ata.
  */
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { TemplateSpec } from '../../api/types';
 import { useTemplateBodyPreview } from '../../api/hooks';
 import { ApiError } from '../../api/client';
@@ -43,6 +43,7 @@ export function TemplateBodyEditor({
   disabled,
   idPrefix = 'tpl',
   showPreview = true,
+  showHeading = true,
 }: {
   /** The current spec is read only to check whether it places the narrative body. */
   spec: TemplateSpec;
@@ -57,6 +58,8 @@ export function TemplateBodyEditor({
   idPrefix?: string;
   /** The document editor mounts the shared preview once, after the complete ordered block flow. */
   showPreview?: boolean;
+  /** Embedded read-only placement mirrors provide their own compact heading. */
+  showHeading?: boolean;
 }) {
   const bt = useTemplatesEditorT();
   const abt = useActBodyT();
@@ -118,8 +121,12 @@ export function TemplateBodyEditor({
   return (
     <section className="stack template-body-composer">
       <div className="stack--tight template-body-composer__editor">
-        <h3 className="panel__title">{bt('templates.editor.body.title')}</h3>
-        <p className="field__hint">{bt('templates.editor.body.hint')}</p>
+        {showHeading ? (
+          <>
+            <h3 className="panel__title">{bt('templates.editor.body.title')}</h3>
+            <p className="field__hint">{bt('templates.editor.body.hint')}</p>
+          </>
+        ) : null}
 
         {!hasAnchor ? (
           <InlineWarning tone="info" title={bt('templates.editor.noAnchor.title')}>
@@ -171,6 +178,27 @@ export function TemplateBodyPreview({
   const [previewMode, setPreviewMode] = useState<PreviewMode>('pdf');
   const previewId = useId();
   const request = { source: 'draft' as const, spec, body_markdown: value };
+  const previewModes: PreviewMode[] = ['pdf', 'markdown'];
+
+  function handlePreviewTabKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    mode: PreviewMode,
+  ) {
+    let nextIndex: number | null = null;
+    const currentIndex = previewModes.indexOf(mode);
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % previewModes.length;
+    if (event.key === 'ArrowLeft')
+      nextIndex = (currentIndex - 1 + previewModes.length) % previewModes.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = previewModes.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    setPreviewMode(previewModes[nextIndex]);
+    const tabs =
+      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    tabs?.[nextIndex]?.focus();
+  }
 
   return (
     <section className="stack--tight template-preview" aria-labelledby={`${previewId}-title`}>
@@ -186,7 +214,7 @@ export function TemplateBodyPreview({
           role="tablist"
           aria-label={bt('templates.editor.preview.tabs.aria')}
         >
-          {(['pdf', 'markdown'] as const).map((mode) => (
+          {previewModes.map((mode) => (
             <button
               key={mode}
               id={`${previewId}-${mode}-tab`}
@@ -195,7 +223,9 @@ export function TemplateBodyPreview({
               className={previewMode === mode ? 'is-active' : undefined}
               aria-selected={previewMode === mode}
               aria-controls={`${previewId}-${mode}-panel`}
+              tabIndex={previewMode === mode ? 0 : -1}
               onClick={() => setPreviewMode(mode)}
+              onKeyDown={(event) => handlePreviewTabKeyDown(event, mode)}
             >
               {bt(
                 mode === 'pdf'

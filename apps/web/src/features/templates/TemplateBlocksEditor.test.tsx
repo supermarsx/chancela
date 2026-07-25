@@ -38,13 +38,34 @@ const ALL_BLOCKS: TemplateBlockSpec[] = [
   { kind: 'NarrativeBody' },
 ];
 
-function Harness({ initial }: { initial: TemplateBlockSpec[] | string }) {
+function Harness({
+  initial,
+  presentation = 'cards',
+  disabled = false,
+}: {
+  initial: TemplateBlockSpec[] | string;
+  presentation?: 'cards' | 'document';
+  disabled?: boolean;
+}) {
   const [value, setValue] = useState(
     typeof initial === 'string' ? initial : JSON.stringify(initial, null, 2),
   );
   return (
     <>
-      <TemplateBlocksEditor value={value} onChange={setValue} />
+      <TemplateBlocksEditor
+        value={value}
+        onChange={setValue}
+        presentation={presentation}
+        disabled={disabled}
+        renderNarrativeBody={({ occurrence, primary }) => (
+          <textarea
+            aria-label={primary ? 'Corpo narrativo em linha' : `Espelho narrativo ${occurrence}`}
+            data-narrative-placement={occurrence}
+            defaultValue="Prosa da ata"
+            readOnly={!primary}
+          />
+        )}
+      />
       <output aria-label="current-json">{value}</output>
     </>
   );
@@ -77,6 +98,70 @@ describe('TemplateBlocksEditor', () => {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(currentBlocks()).toEqual(ALL_BLOCKS);
+  });
+
+  it('composes document mode as one paper flow and paginates only at explicit page breaks', () => {
+    const { container } = renderWithProviders(
+      <Harness initial={ALL_BLOCKS} presentation="document" />,
+    );
+
+    const flow = container.querySelector('[data-template-document-flow]');
+    expect(flow).toBeTruthy();
+    expect(flow?.querySelectorAll('[data-template-document-page]')).toHaveLength(2);
+    expect(
+      Array.from(flow?.querySelectorAll('[data-template-block-kind]') ?? []).map((element) =>
+        element.getAttribute('data-template-block-kind'),
+      ),
+    ).toEqual(ALL_BLOCKS.map((block) => block.kind));
+
+    expect(screen.getByRole('group', { name: 'Bloco 1: Título' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Controlos dos blocos do documento' })).toBeTruthy();
+    expect(screen.getByLabelText('Corpo narrativo em linha')).toBeTruthy();
+    expect(container.querySelector('.template-document-block__toolbar')).toBeNull();
+    expect(currentBlocks()).toEqual(ALL_BLOCKS);
+  });
+
+  it('renders later narrative placements as explicit read-only mirrors of the editable source', () => {
+    const { container } = renderWithProviders(
+      <Harness
+        initial={[
+          { kind: 'NarrativeBody' },
+          { kind: 'Paragraph', template: 'Intermédio' },
+          { kind: 'NarrativeBody' },
+        ]}
+        presentation="document"
+      />,
+    );
+
+    const primary = screen.getByLabelText('Corpo narrativo em linha') as HTMLTextAreaElement;
+    const mirror = screen.getByLabelText('Espelho narrativo 2') as HTMLTextAreaElement;
+    expect(primary.readOnly).toBe(false);
+    expect(mirror.readOnly).toBe(true);
+    expect(primary.value).toBe(mirror.value);
+    expect(container.querySelectorAll('[data-narrative-placement]')).toHaveLength(2);
+  });
+
+  it('locks every structured and advanced mutation while disabled', () => {
+    renderWithProviders(
+      <Harness
+        initial={[
+          { kind: 'Heading', level: 1, template: 'Título' },
+          { kind: 'Paragraph', template: 'Texto' },
+        ]}
+        presentation="document"
+        disabled
+      />,
+    );
+
+    expect(screen.getAllByLabelText('Tipo de bloco')[0].matches(':disabled')).toBe(true);
+    expect(screen.getAllByLabelText('Texto do modelo')[0].matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Descer bloco 1' }).matches(':disabled')).toBe(true);
+    expect(screen.getByLabelText('Tipo do novo bloco').matches(':disabled')).toBe(true);
+    expect(screen.getByLabelText('JSON avançado').matches(':disabled')).toBe(true);
+    expect(currentBlocks()).toEqual([
+      { kind: 'Heading', level: 1, template: 'Título' },
+      { kind: 'Paragraph', template: 'Texto' },
+    ]);
   });
 
   it('adds one narrative placement without overwriting blocks or invalid advanced JSON', () => {
@@ -195,6 +280,7 @@ describe('TemplateBlocksEditor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Descer bloco 1' }));
     expect(currentBlocks().map((block) => block.kind)).toEqual(['Paragraph', 'Heading']);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Subir bloco 2' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Remover bloco 2' }));
     const dialog = screen.getByRole('dialog', { name: 'Remover este bloco?' });
@@ -210,6 +296,33 @@ describe('TemplateBlocksEditor', () => {
       { kind: 'NarrativeBody' },
     ]);
   });
+
+  it.each(['cards', 'document'] as const)(
+    'keeps focus with the moved block and falls back at a boundary in %s mode',
+    async (presentation) => {
+      renderWithProviders(
+        <Harness
+          initial={[
+            { kind: 'Heading', level: 1, template: 'Primeiro' },
+            { kind: 'Paragraph', template: 'Segundo' },
+            { kind: 'Rule' },
+          ]}
+          presentation={presentation}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Descer bloco 1' }));
+      await waitFor(() => {
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Descer bloco 2' }));
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Descer bloco 2' }));
+      expect(currentBlocks().map((block) => block.kind)).toEqual(['Paragraph', 'Rule', 'Heading']);
+      await waitFor(() => {
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Subir bloco 3' }));
+      });
+    },
+  );
 
   it('keeps the required last block in friendly editing instead of producing an invalid empty array', () => {
     renderWithProviders(<Harness initial={[{ kind: 'Paragraph', template: 'Único' }]} />);
