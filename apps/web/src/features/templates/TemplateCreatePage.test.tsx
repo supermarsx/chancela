@@ -244,7 +244,7 @@ describe('TemplateCreatePage', () => {
     ).toEqual([{ kind: 'NarrativeBody' }]);
   });
 
-  it('keeps editor tabs left-aligned and the paper and preview full-width in scoped CSS', async () => {
+  it('keeps editor tabs, continuous document surface, prose, and preview full-width', async () => {
     const css = await editorCss();
 
     expectCssRule(
@@ -256,6 +256,24 @@ describe('TemplateCreatePage', () => {
       css,
       /\.template-body-composer \.markdown-body-editor__surface\.ProseMirror\s*\{([^}]*)\}/,
       ['width: 100%;', 'min-height: 28rem;', 'font: 1rem/1.72 var(--font-body);'],
+    );
+    expectCssRule(css, /\.template-document-surface\s*\{([^}]*)\}/, [
+      'width: 100%;',
+      'min-width: 0;',
+      'border-radius: var(--radius);',
+    ]);
+    expectCssRule(css, /\.template-document-block\s*\{([^}]*)\}/, [
+      'grid-template-columns: clamp(10rem, 18vw, 12rem) minmax(0, 1fr);',
+    ]);
+    expectCssRule(
+      css,
+      /\.template-document-block--narrativebody \.template-body-composer \.markdown-body-editor__host\s*\{([^}]*)\}/,
+      ['overflow: visible;'],
+    );
+    expectCssRule(
+      css,
+      /\.template-document-block--narrativebody\s+\.template-body-composer\s+\.markdown-body-editor__surface\.ProseMirror\s*\{([^}]*)\}/,
+      ['max-height: none;', 'overflow: visible;'],
     );
     expectCssRule(css, /\.template-preview__heading\s*\{([^}]*)\}/, [
       'display: grid;',

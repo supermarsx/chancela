@@ -100,19 +100,26 @@ describe('TemplateBlocksEditor', () => {
     expect(currentBlocks()).toEqual(ALL_BLOCKS);
   });
 
-  it('composes document mode as one paper flow and paginates only at explicit page breaks', () => {
+  it('composes document mode as one continuous surface with an inline page-break marker', () => {
     const { container } = renderWithProviders(
       <Harness initial={ALL_BLOCKS} presentation="document" />,
     );
 
     const flow = container.querySelector('[data-template-document-flow]');
     expect(flow).toBeTruthy();
-    expect(flow?.querySelectorAll('[data-template-document-page]')).toHaveLength(2);
+    expect(flow?.querySelectorAll('[data-template-document-surface]')).toHaveLength(1);
+    expect(flow?.querySelector('[data-template-document-page]')).toBeNull();
+    expect(flow?.querySelector('.template-document-page__folio')).toBeNull();
     expect(
       Array.from(flow?.querySelectorAll('[data-template-block-kind]') ?? []).map((element) =>
         element.getAttribute('data-template-block-kind'),
       ),
     ).toEqual(ALL_BLOCKS.map((block) => block.kind));
+    expect(
+      flow
+        ?.querySelector('[data-template-block-kind="PageBreak"]')
+        ?.querySelector('.template-document-block__marker'),
+    ).toBeTruthy();
 
     expect(screen.getByRole('group', { name: 'Bloco 1: Título' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Controlos dos blocos do documento' })).toBeTruthy();
@@ -140,6 +147,10 @@ describe('TemplateBlocksEditor', () => {
       '.template-document-block__inspector',
     ) as HTMLDetailsElement;
     expect(inspector.open).toBe(false);
+    expect(inspector.querySelector('.field-table')).toBeTruthy();
+    expect(firstBlock?.querySelector('.template-document-block__action-label')?.textContent).toBe(
+      'Inserir parágrafo depois do bloco',
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Duplicar bloco 1' }));
     expect(currentBlocks()).toEqual([initial[0], initial[0], initial[1]]);

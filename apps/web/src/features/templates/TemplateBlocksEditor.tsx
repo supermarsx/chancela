@@ -214,25 +214,6 @@ function blockSummary(block: TemplateBlockSpec): string {
   }
 }
 
-interface DocumentPageBlock {
-  block: TemplateBlockSpec;
-  index: number;
-}
-
-/**
- * Explicit page-break blocks are the only honest pagination boundary available before rendering.
- * Grouping around those markers gives the author a paper flow without pretending browser height
- * is the PDF renderer's final pagination.
- */
-function paginateDocumentBlocks(blocks: TemplateBlockSpec[]): DocumentPageBlock[][] {
-  const pages: DocumentPageBlock[][] = [[]];
-  blocks.forEach((block, index) => {
-    pages[pages.length - 1].push({ block, index });
-    if (block.kind === 'PageBreak' && index < blocks.length - 1) pages.push([]);
-  });
-  return pages;
-}
-
 function withoutBlankOptional<T extends TemplateBlockSpec, K extends keyof T>(
   block: T,
   key: K,
@@ -503,7 +484,7 @@ function DocumentBlockInspector({
   return (
     <details className="template-document-block__inspector">
       <summary>{bt('templates.editor.blocks.inspector')}</summary>
-      <div className="form template-document-block__inspector-fields">
+      <div className="form field-table template-document-block__inspector-fields">
         <Field label={bt('templates.editor.blocks.kind')} htmlFor={`${idPrefix}-${index}-kind`}>
           <Select
             id={`${idPrefix}-${index}-kind`}
@@ -770,6 +751,15 @@ function DocumentBlockFields({
 
     case 'PageBreak':
     case 'Rule':
+      return (
+        <>
+          <div className="template-document-block__marker" aria-hidden="true">
+            <span>{bt(kindCopyKey[block.kind])}</span>
+          </div>
+          {inspector()}
+        </>
+      );
+
     case 'NarrativeBody':
       return (
         <>
@@ -922,7 +912,11 @@ export function TemplateBlocksEditor({
             data-template-block-action="insert"
             aria-label={`${bt('templates.editor.blocks.insertAfter')} ${index + 1}`}
             onClick={() => insertAfter(index)}
-          />
+          >
+            <span className="template-document-block__action-label">
+              {bt('templates.editor.blocks.insertAfter')}
+            </span>
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -931,7 +925,11 @@ export function TemplateBlocksEditor({
             data-template-block-action="up"
             aria-label={`${bt('templates.editor.blocks.moveUp')} ${index + 1}`}
             onClick={() => swap(index, index - 1, 'up')}
-          />
+          >
+            <span className="template-document-block__action-label">
+              {bt('templates.editor.blocks.moveUp')}
+            </span>
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -940,7 +938,11 @@ export function TemplateBlocksEditor({
             data-template-block-action="down"
             aria-label={`${bt('templates.editor.blocks.moveDown')} ${index + 1}`}
             onClick={() => swap(index, index + 1, 'down')}
-          />
+          >
+            <span className="template-document-block__action-label">
+              {bt('templates.editor.blocks.moveDown')}
+            </span>
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -948,7 +950,11 @@ export function TemplateBlocksEditor({
             data-template-block-action="duplicate"
             aria-label={`${bt('templates.editor.blocks.duplicate')} ${index + 1}`}
             onClick={() => duplicate(index)}
-          />
+          >
+            <span className="template-document-block__action-label">
+              {bt('templates.editor.blocks.duplicate')}
+            </span>
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -956,7 +962,11 @@ export function TemplateBlocksEditor({
             disabled={blockCount === 1}
             aria-label={`${bt('templates.editor.blocks.remove')} ${index + 1}`}
             onClick={() => setPendingRemove(index)}
-          />
+          >
+            <span className="template-document-block__action-label">
+              {bt('templates.editor.blocks.remove')}
+            </span>
+          </Button>
         </div>
       </div>
       <div className="template-document-block__content">
@@ -1012,18 +1022,9 @@ export function TemplateBlocksEditor({
         {blocks ? (
           presentation === 'document' ? (
             <div className="template-document-page-flow" data-template-document-flow>
-              {paginateDocumentBlocks(blocks).map((page, pageIndex) => (
-                <div
-                  key={pageIndex}
-                  className="template-document-page"
-                  data-template-document-page={pageIndex + 1}
-                >
-                  {page.map(({ block, index }) => renderDocumentBlock(block, index))}
-                  <span className="template-document-page__folio" aria-hidden="true">
-                    {pageIndex + 1}
-                  </span>
-                </div>
-              ))}
+              <div className="template-document-surface" data-template-document-surface>
+                {blocks.map(renderDocumentBlock)}
+              </div>
             </div>
           ) : (
             <div className="template-block-editor__list">

@@ -144,38 +144,28 @@
 
 .template-document-page-flow {
   display: grid;
-  gap: clamp(1rem, 3vw, 2rem);
-  padding: clamp(0.65rem, 2vw, 1.5rem);
+  width: 100%;
+  min-width: 0;
+  padding: clamp(0.4rem, 1.5vw, 0.9rem);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg) 88%, var(--surface));
+  background: color-mix(in srgb, var(--bg) 92%, var(--surface));
 }
 
-.template-document-page {
+.template-document-surface {
   position: relative;
-  width: min(100%, 58rem);
+  width: 100%;
   min-width: 0;
-  margin-inline: auto;
-  padding: clamp(1.25rem, 4vw, 2.75rem) clamp(0.85rem, 3vw, 2.3rem) clamp(2.15rem, 5vw, 3.25rem);
-  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--text));
-  border-radius: 2px;
+  padding: clamp(1rem, 3vw, 2rem) clamp(0.65rem, 3vw, 1.8rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: 0 0.7rem 1.8rem color-mix(in srgb, #000 13%, transparent);
-}
-
-.template-document-page__folio {
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0.75rem;
-  color: var(--muted);
-  font: 600 0.68rem/1 var(--font-sans);
-  text-align: center;
 }
 
 .template-document-block {
   position: relative;
   display: grid;
-  grid-template-columns: clamp(5.4rem, 14vw, 7.5rem) minmax(0, 1fr);
+  grid-template-columns: clamp(10rem, 18vw, 12rem) minmax(0, 1fr);
   gap: clamp(0.65rem, 2vw, 1.15rem);
   min-width: 0;
   padding-block: 0.8rem;
@@ -354,18 +344,25 @@
   text-align: center;
 }
 
-.template-document-block--rule .template-document-block__content::before {
-  display: block;
-  margin: 0.85rem 0 0.65rem;
+.template-document-block__marker {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 2rem;
+  color: var(--muted);
+  font: 650 0.68rem/1 var(--font-sans);
+}
+
+.template-document-block__marker::before,
+.template-document-block__marker::after {
+  flex: 1;
   border-top: 1px solid var(--rule);
   content: '';
 }
 
-.template-document-block--pagebreak .template-document-block__content::before {
-  display: block;
-  margin: 0.85rem 0 0.65rem;
-  border-top: 1px dashed var(--border-strong, var(--border));
-  content: '';
+.template-document-block--pagebreak .template-document-block__marker::before,
+.template-document-block--pagebreak .template-document-block__marker::after {
+  border-top-style: dashed;
 }
 
 .template-document-block--narrativebody .template-body-composer {
@@ -392,20 +389,27 @@
   background: color-mix(in srgb, var(--surface) 88%, var(--bg));
 }
 
-.template-document-block--narrativebody .markdown-body-editor__host {
+.template-document-block--narrativebody .template-body-composer .markdown-body-editor__host {
   padding: 0;
+  overflow: visible;
   background: transparent;
 }
 
-.template-document-block--narrativebody .markdown-body-editor__surface.ProseMirror {
+.template-document-block--narrativebody
+  .template-body-composer
+  .markdown-body-editor__surface.ProseMirror {
+  max-height: none;
   min-height: 12rem;
   padding: 1rem 0.5rem;
+  overflow: visible;
   border: 0;
   background: transparent;
   box-shadow: none;
 }
 
-.template-document-block--narrativebody .markdown-body-editor__surface.ProseMirror:focus {
+.template-document-block--narrativebody
+  .template-body-composer
+  .markdown-body-editor__surface.ProseMirror:focus {
   border: 0;
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
 }
@@ -429,22 +433,9 @@
   background: color-mix(in srgb, var(--surface) 80%, var(--bg));
 }
 
-/* Gutenberg-like document flow: the paper is continuous; each block is a lightweight editable
-   fragment with a narrow type/action rail, never an autonomous full-width form card. */
-.template-document-page-flow {
-  gap: 1rem;
-  padding: clamp(0.4rem, 1.5vw, 0.9rem);
-  border: 0;
-  background: color-mix(in srgb, var(--bg) 92%, var(--surface));
-}
-
-.template-document-page {
-  padding: clamp(1rem, 3vw, 2rem) clamp(0.65rem, 3vw, 1.8rem) 2.2rem;
-  box-shadow: 0 0.45rem 1.25rem color-mix(in srgb, #000 10%, transparent);
-}
-
+/* Gutenberg-like document flow: one continuous full-width writing surface. Each block is a
+   lightweight editable fragment with a usable management rail, never an autonomous form card. */
 .template-document-block {
-  grid-template-columns: clamp(3.1rem, 8vw, 4.25rem) minmax(0, 1fr);
   gap: clamp(0.45rem, 1.5vw, 0.75rem);
   padding-block: 0.48rem;
 }
@@ -462,8 +453,8 @@
 .template-document-block__gutter {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
-  padding-right: 0.4rem;
+  gap: 0.4rem;
+  padding-right: 0.75rem;
 }
 
 .template-document-block__number {
@@ -474,21 +465,31 @@
 
 .template-document-block__kind {
   color: var(--accent);
-  font: 700 0.61rem/1.2 var(--font-sans);
+  font: 700 0.72rem/1.25 var(--font-sans);
   overflow-wrap: anywhere;
 }
 
 .template-document-block__gutter .template-block-editor__actions {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.08rem;
-  margin-top: 0.12rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.18rem;
+  margin-top: 0.2rem;
 }
 
 .template-document-block__gutter .template-block-editor__actions .btn {
+  justify-content: flex-start;
   min-width: 0;
-  min-height: 1.55rem;
-  padding: 0.12rem;
+  min-height: 1.9rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.035em;
+  text-align: start;
+}
+
+.template-document-block__action-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .template-document-block__content {
@@ -549,30 +550,26 @@
 
 .template-document-block__inspector[open] {
   width: 100%;
-  padding-inline-start: 0.55rem;
-  border-inline-start: 2px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+  padding-top: 0.25rem;
 }
 
 .template-document-block__inspector-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
-  padding: 0.3rem 0 0.15rem;
+  width: 100%;
 }
 
 .template-document-block__inspector-fields .field {
-  gap: 0.18rem;
+  gap: 0.3rem 0.75rem;
 }
 
 .template-document-block__inspector-fields .field__label {
   margin: 0;
-  font-size: 0.6rem;
+  font-size: 0.68rem;
 }
 
 .template-document-block__inspector-fields .control {
-  min-height: 1.85rem;
-  padding: 0.25rem 0.35rem;
-  font-size: 0.72rem;
+  min-height: 2rem;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.76rem;
 }
 
 .template-document-block__kv-table {
@@ -601,17 +598,6 @@
 
 .template-document-block__signature-lines .control {
   text-align: center;
-}
-
-.template-document-block--rule .template-document-block__content::before,
-.template-document-block--pagebreak .template-document-block__content::before {
-  margin: 0.5rem 0 0.2rem;
-}
-
-.template-document-block--pagebreak .field__hint,
-.template-document-block--rule .field__hint {
-  margin: 0;
-  font-size: 0.68rem;
 }
 
 .template-block-editor--document .template-block-editor__add {
@@ -983,7 +969,7 @@
     padding: 0.45rem;
   }
 
-  .template-document-page {
+  .template-document-surface {
     padding-inline: 0.7rem;
   }
 
@@ -993,8 +979,10 @@
   }
 
   .template-document-block__gutter {
-    grid-template-columns: auto minmax(8rem, 1fr) auto;
-    align-items: end;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.35rem 0.6rem;
     padding: 0 0 0.45rem;
     border-right: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
@@ -1004,14 +992,33 @@
     align-self: center;
   }
 
+  .template-document-block__gutter .template-block-editor__actions {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin-top: 0;
+  }
+
+  .template-document-block__gutter .template-block-editor__actions .btn {
+    justify-content: center;
+    padding: 0.35rem;
+  }
+
+  .template-document-block__action-label {
+    display: none;
+  }
+
   .template-document-block--heading .template-document-block__fields,
   .template-document-block--votetable .template-document-block__fields,
   .template-document-block--signatureblock .template-document-block__fields {
     grid-template-columns: 1fr;
   }
 
-  .template-document-block__inspector-fields,
   .template-document-block__signature-lines {
+    grid-template-columns: 1fr;
+  }
+
+  .template-document-block__inspector-fields > .field {
     grid-template-columns: 1fr;
   }
 
