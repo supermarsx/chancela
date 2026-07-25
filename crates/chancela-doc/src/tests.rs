@@ -4,7 +4,10 @@
 //!
 //! Fixtures use the fictional "Encosto Estratégico Lda" / "Amélia Marques" — never a real entity.
 
-use chancela_core::{Block, DocumentModel, KvRow, Run, SignatureSlot, VoteRow};
+use chancela_core::{
+    Block, DocumentFontFamily, DocumentLayoutPolicy, DocumentModel, DocumentOrientation,
+    DocumentPageSize, KvRow, Run, SignatureSlot, VoteRow,
+};
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use crate::{font::Font, pdfa, selfcheck};
@@ -135,6 +138,35 @@ fn content_stream_text(parsed: &Document) -> String {
         bytes.extend_from_slice(&content.content);
     }
     String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn first_page(parsed: &Document) -> &Dictionary {
+    let page_id = parsed.page_iter().next().expect("first page");
+    parsed
+        .get_object(page_id)
+        .and_then(Object::as_dict)
+        .expect("first page dictionary")
+}
+
+fn number(object: &Object) -> f32 {
+    match object {
+        Object::Real(value) => *value,
+        Object::Integer(value) => *value as f32,
+        other => panic!("expected PDF number, got {other:?}"),
+    }
+}
+
+fn media_box(parsed: &Document) -> [f32; 4] {
+    let values = first_page(parsed)
+        .get(b"MediaBox")
+        .and_then(Object::as_array)
+        .expect("page MediaBox");
+    [
+        number(&values[0]),
+        number(&values[1]),
+        number(&values[2]),
+        number(&values[3]),
+    ]
 }
 
 fn content_text_fragments(parsed: &Document) -> Vec<String> {
@@ -618,6 +650,214 @@ fn output_is_deterministic() {
     assert_eq!(
         a, b,
         "same DocumentModel must produce byte-identical output"
+    );
+}
+
+#[test]
+fn legacy_model_without_layout_uses_the_product_default_deterministically() {
+    let legacy = r#"{
+        "title":"Compatibilidade",
+        "entity_name":"Encosto Estratégico Lda",
+        "entity_nipc":null,
+        "subject":"Modelo anterior",
+        "language":"pt-PT",
+        "created_at":null,
+        "blocks":[{"type":"Paragraph","runs":[{"text":"Texto estável.","bold":false,"italic":false}]}]
+    }"#;
+    let from_legacy: DocumentModel = serde_json::from_str(legacy).expect("legacy model parses");
+    assert_eq!(from_legacy.document_layout, DocumentLayoutPolicy::default());
+
+    let a = pdfa::write(&from_legacy).expect("write legacy model");
+    let b = pdfa::write(&from_legacy).expect("rewrite legacy model");
+    assert_eq!(a, b);
+
+    let parsed = Document::load_mem(&a).expect("parse");
+    assert_eq!(media_box(&parsed), [0.0, 0.0, 595.28, 841.89]);
+    assert!(!first_page(&parsed).has(b"Rotate"));
+}
+
+#[test]
+fn page_size_and_orientation_are_physical_media_boxes_without_rotate() {
+    let cases = [
+        (DocumentPageSize::A4, 595.28, 841.89),
+        (DocumentPageSize::A5, 419.53, 595.28),
+        (DocumentPageSize::Letter, 612.0, 792.0),
+        (DocumentPageSize::Legal, 612.0, 1008.0),
+    ];
+    for (size, portrait_width, portrait_height) in cases {
+        for (orientation, width, height) in [
+            (
+                DocumentOrientation::Portrait,
+                portrait_width,
+                portrait_height,
+            ),
+            (
+                DocumentOrientation::Landscape,
+                portrait_height,
+                portrait_width,
+            ),
+        ] {
+            let mut doc = fixture();
+            doc.document_layout.page.size = size;
+            doc.document_layout.page.orientation = orientation;
+            let bytes = pdfa::write(&doc).expect("write configured page");
+            let parsed = Document::load_mem(&bytes).expect("parse");
+            assert_eq!(media_box(&parsed), [0.0, 0.0, width, height]);
+            assert!(
+                !first_page(&parsed).has(b"Rotate"),
+                "{size:?} {orientation:?} must use a physical MediaBox swap"
+            );
+        }
+    }
+}
+
+#[test]
+fn margins_and_vertical_rhythm_change_content_geometry_and_page_count() {
+    let mut narrow = DocumentModel::new("Margens", "Encosto Estratégico Lda", "Ritmo");
+    narrow.blocks = (0..90)
+        .map(|index| Block::Paragraph {
+            runs: vec![Run {
+                text: format!(
+                    "Parágrafo {index} com texto suficiente para medir a paginação configurável."
+                ),
+                bold: false,
+                italic: false,
+            }],
+        })
+        .collect();
+    narrow.document_layout.page.margins_mm.top = 5;
+    narrow.document_layout.page.margins_mm.right = 5;
+    narrow.document_layout.page.margins_mm.bottom = 5;
+    narrow.document_layout.page.margins_mm.left = 15;
+    narrow.document_layout.regions.footer_gap_mm = 0;
+    narrow.document_layout.typography.line_spacing_percent = 100;
+    narrow.document_layout.typography.paragraph_spacing_pt = 0;
+
+    let narrow_bytes = pdfa::write(&narrow).expect("write compact layout");
+    let narrow_pdf = Document::load_mem(&narrow_bytes).expect("parse");
+    let narrow_content = content_stream_text(&narrow_pdf);
+    let first_td = narrow_content
+        .lines()
+        .find(|line| line.ends_with(" Td"))
+        .expect("first positioned text");
+    assert!(
+        first_td.starts_with("42.52 "),
+        "15 mm left margin must become 42.52 pt, got {first_td}"
+    );
+
+    let mut spacious = narrow.clone();
+    spacious.document_layout.page.margins_mm.top = 40;
+    spacious.document_layout.page.margins_mm.right = 40;
+    spacious.document_layout.page.margins_mm.bottom = 40;
+    spacious.document_layout.page.margins_mm.left = 40;
+    spacious.document_layout.regions.footer_gap_mm = 20;
+    spacious.document_layout.typography.line_spacing_percent = 200;
+    spacious.document_layout.typography.paragraph_spacing_pt = 24;
+    assert!(
+        pdfa::page_count(&spacious).expect("spacious count")
+            > pdfa::page_count(&narrow).expect("compact count"),
+        "larger margins and rhythm must consume more pages"
+    );
+}
+
+#[test]
+fn typography_selects_only_needed_embedded_type0_fonts() {
+    let mut sans = fixture();
+    sans.document_layout.typography.body_font_family = DocumentFontFamily::NotoSans;
+    sans.document_layout.typography.header_font_family = DocumentFontFamily::NotoSans;
+    sans.document_layout.typography.body_font_size_pt = 13;
+    sans.document_layout.typography.header_font_size_pt = 12;
+    let sans_bytes = pdfa::write(&sans).expect("write all-sans document");
+    let sans_pdf = Document::load_mem(&sans_bytes).expect("parse");
+    let page_id = sans_pdf.page_iter().next().expect("first page");
+    let page_fonts = sans_pdf.get_page_fonts(page_id).expect("page fonts");
+    assert_eq!(page_fonts.len(), 1, "same selected family must be shared");
+    assert_eq!(
+        page_fonts
+            .values()
+            .next()
+            .expect("one page font")
+            .get(b"BaseFont")
+            .and_then(Object::as_name)
+            .expect("BaseFont"),
+        b"NotoSans"
+    );
+    let content = content_stream_text(&sans_pdf);
+    assert!(content.contains("/F1 13.00 Tf"));
+    assert!(
+        content.contains("/F1 18.55 Tf"),
+        "12 pt header policy must scale the document title deterministically"
+    );
+    assert!(
+        content.contains("/F1 20.09 Tf"),
+        "13 pt body policy must feed the level-one heading scale"
+    );
+    assert!(!content.contains("/F2 "));
+
+    let mut scaled = sans.clone();
+    scaled.document_layout.typography.heading_scale_percent = 150;
+    let scaled_pdf =
+        Document::load_mem(&pdfa::write(&scaled).expect("write scaled headings")).expect("parse");
+    assert!(
+        content_stream_text(&scaled_pdf).contains("/F1 30.14 Tf"),
+        "150% heading scale must multiply the configured body-derived heading size"
+    );
+
+    let mut mixed = sans;
+    mixed.document_layout.typography.header_font_family = DocumentFontFamily::NotoSerif;
+    let mixed_bytes = pdfa::write(&mixed).expect("write mixed-font document");
+    let mixed_pdf = Document::load_mem(&mixed_bytes).expect("parse");
+    let page_id = mixed_pdf.page_iter().next().expect("first page");
+    let page_fonts = mixed_pdf.get_page_fonts(page_id).expect("page fonts");
+    assert_eq!(page_fonts.len(), 2);
+    for (_, font) in page_fonts {
+        assert_eq!(
+            font.get(b"Subtype").and_then(Object::as_name).unwrap(),
+            b"Type0"
+        );
+        assert!(font.has(b"ToUnicode"));
+    }
+    let content = content_stream_text(&mixed_pdf);
+    assert!(content.contains("/F1 13.00 Tf"));
+    assert!(
+        content.contains("/F2 "),
+        "header text must use the second face"
+    );
+
+    let mut header_only = DocumentModel::new("Cabeçalho", "Entidade", "Sem corpo");
+    header_only.document_layout.typography.body_font_family = DocumentFontFamily::NotoSans;
+    header_only.document_layout.typography.header_font_family = DocumentFontFamily::NotoSerif;
+    let bytes = pdfa::write(&header_only).expect("write header-only document");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let page_id = parsed.page_iter().next().expect("first page");
+    let page_fonts = parsed.get_page_fonts(page_id).expect("page fonts");
+    assert_eq!(
+        page_fonts.len(),
+        1,
+        "an unused body face must not be embedded"
+    );
+    assert_eq!(
+        page_fonts
+            .values()
+            .next()
+            .expect("header font")
+            .get(b"BaseFont")
+            .and_then(Object::as_name)
+            .expect("BaseFont"),
+        b"NotoSerif"
+    );
+}
+
+#[test]
+fn unusable_page_policy_fails_before_pdf_assembly() {
+    let mut doc = fixture();
+    doc.document_layout.page.size = DocumentPageSize::A5;
+    doc.document_layout.page.margins_mm.left = 60;
+    doc.document_layout.page.margins_mm.right = 60;
+    let error = pdfa::write(&doc).expect_err("28 mm usable width must be rejected");
+    assert!(
+        error.to_string().contains("leaves only 28x170 mm usable"),
+        "unexpected validation error: {error}"
     );
 }
 
@@ -2124,7 +2364,7 @@ fn selfcheck_rejects_a_page_font_that_is_not_a_composite_type0_font() {
     // interpret. Rejecting it outright is what stops a simple font becoming the one place a font
     // escapes that check.
     let err = mutant(|bytes| replace_once(bytes, b"/Subtype/Type0", b"/Subtype/Type1"));
-    assert_diagnostic(&err, "the writer emits a single Type0");
+    assert_diagnostic(&err, "the writer emits only Type0");
 }
 
 #[test]

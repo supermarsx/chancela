@@ -9,18 +9,109 @@
 
 use std::collections::BTreeMap;
 
-use chancela_core::{Block, DocumentModel, Run};
+use chancela_core::{
+    Block, DocumentLayoutPolicy, DocumentModel, DocumentOrientation, DocumentPageSize, Run,
+};
 
+use crate::DocError;
 use crate::font::Font;
 
-// A4 in PostScript points.
-const PAGE_W: f32 = 595.28;
-const PAGE_H: f32 = 841.89;
-const MARGIN: f32 = 56.0;
-
-const BODY: f32 = 11.0;
+const PT_PER_MM: f32 = 72.0 / 25.4;
 /// Text-matrix shear for synthesized italics (~12°).
 const ITALIC_SHEAR: f32 = 0.2126;
+
+#[derive(Clone, Copy)]
+enum FontSlot {
+    Body,
+    Header,
+}
+
+/// Approved fonts needed by a concrete policy. Equal body/header families share one object.
+pub struct FontCatalog {
+    pub fonts: Vec<Font>,
+    body_index: usize,
+    header_index: usize,
+}
+
+impl FontCatalog {
+    pub fn load(policy: &DocumentLayoutPolicy) -> Result<Self, DocError> {
+        policy
+            .validate()
+            .map_err(|error| DocError::Layout(error.to_string()))?;
+        let body_family = policy.typography.body_font_family;
+        let header_family = policy.typography.header_font_family;
+        let mut fonts = vec![Font::load_family(body_family)?];
+        let header_index = if header_family == body_family {
+            0
+        } else {
+            fonts.push(Font::load_family(header_family)?);
+            1
+        };
+        Ok(Self {
+            fonts,
+            body_index: 0,
+            header_index,
+        })
+    }
+
+    fn index(&self, slot: FontSlot) -> usize {
+        match slot {
+            FontSlot::Body => self.body_index,
+            FontSlot::Header => self.header_index,
+        }
+    }
+
+    fn get(&self, slot: FontSlot) -> &Font {
+        &self.fonts[self.index(slot)]
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Metrics {
+    page_w: f32,
+    page_h: f32,
+    margin_top: f32,
+    margin_right: f32,
+    margin_bottom: f32,
+    margin_left: f32,
+    body_size: f32,
+    header_size: f32,
+    line_spacing: f32,
+    paragraph_spacing: f32,
+    heading_scale: f32,
+    header_gap: f32,
+    footer_gap: f32,
+}
+
+impl Metrics {
+    fn from_policy(policy: &DocumentLayoutPolicy) -> Self {
+        let (portrait_w, portrait_h) = match policy.page.size {
+            DocumentPageSize::A4 => (595.28, 841.89),
+            DocumentPageSize::A5 => (419.53, 595.28),
+            DocumentPageSize::Letter => (612.0, 792.0),
+            DocumentPageSize::Legal => (612.0, 1008.0),
+        };
+        let (page_w, page_h) = match policy.page.orientation {
+            DocumentOrientation::Portrait => (portrait_w, portrait_h),
+            DocumentOrientation::Landscape => (portrait_h, portrait_w),
+        };
+        Self {
+            page_w,
+            page_h,
+            margin_top: f32::from(policy.page.margins_mm.top) * PT_PER_MM,
+            margin_right: f32::from(policy.page.margins_mm.right) * PT_PER_MM,
+            margin_bottom: f32::from(policy.page.margins_mm.bottom) * PT_PER_MM,
+            margin_left: f32::from(policy.page.margins_mm.left) * PT_PER_MM,
+            body_size: f32::from(policy.typography.body_font_size_pt),
+            header_size: f32::from(policy.typography.header_font_size_pt),
+            line_spacing: f32::from(policy.typography.line_spacing_percent) / 100.0,
+            paragraph_spacing: f32::from(policy.typography.paragraph_spacing_pt),
+            heading_scale: f32::from(policy.typography.heading_scale_percent) / 100.0,
+            header_gap: f32::from(policy.regions.header_gap_mm) * PT_PER_MM,
+            footer_gap: f32::from(policy.regions.footer_gap_mm) * PT_PER_MM,
+        }
+    }
+}
 
 /// One styled word (the atom of line breaking).
 struct Word {
@@ -35,7 +126,11 @@ pub struct Laid {
     /// Uncompressed content-stream bytes, one entry per page (never empty).
     pub pages: Vec<Vec<u8>>,
     /// glyph id → a representative Unicode scalar (for the `/ToUnicode` CMap and `/W` widths).
-    pub used: BTreeMap<u16, u32>,
+    pub used: Vec<BTreeMap<u16, u32>>,
+    /// Physical page width in PostScript points.
+    pub page_width: f32,
+    /// Physical page height in PostScript points.
+    pub page_height: f32,
     /// Semantic structure elements in reading order.
     pub structure_elements: Vec<TaggedElement>,
 }
@@ -83,12 +178,13 @@ pub enum StructureRole {
 }
 
 struct Layouter<'f> {
-    font: &'f Font,
+    fonts: &'f FontCatalog,
+    metrics: Metrics,
     pages: Vec<Vec<u8>>,
     cur: Vec<u8>,
     /// Top of the remaining free area on the current page.
     y: f32,
-    used: BTreeMap<u16, u32>,
+    used: Vec<BTreeMap<u16, u32>>,
     structure_elements: Vec<TaggedElement>,
     current_element: Option<usize>,
     next_mcids: Vec<i64>,
@@ -101,13 +197,15 @@ fn num(x: f32) -> String {
 }
 
 impl<'f> Layouter<'f> {
-    fn new(font: &'f Font) -> Self {
+    fn new(fonts: &'f FontCatalog, policy: &DocumentLayoutPolicy) -> Self {
+        let metrics = Metrics::from_policy(policy);
         Layouter {
-            font,
+            fonts,
+            metrics,
             pages: Vec::new(),
             cur: Vec::new(),
-            y: PAGE_H - MARGIN,
-            used: BTreeMap::new(),
+            y: metrics.page_h - metrics.margin_top,
+            used: (0..fonts.fonts.len()).map(|_| BTreeMap::new()).collect(),
             structure_elements: Vec::new(),
             current_element: None,
             next_mcids: Vec::new(),
@@ -115,16 +213,22 @@ impl<'f> Layouter<'f> {
     }
 
     fn content_x0(&self) -> f32 {
-        MARGIN
+        self.metrics.margin_left
     }
     fn content_x1(&self) -> f32 {
-        PAGE_W - MARGIN
+        self.metrics.page_w - self.metrics.margin_right
+    }
+    fn body_size(&self) -> f32 {
+        self.metrics.body_size
+    }
+    fn bottom_y(&self) -> f32 {
+        self.metrics.margin_bottom + self.metrics.footer_gap
     }
 
     fn new_page(&mut self) {
         let done = std::mem::take(&mut self.cur);
         self.pages.push(done);
-        self.y = PAGE_H - MARGIN;
+        self.y = self.metrics.page_h - self.metrics.margin_top;
     }
 
     fn current_page_index(&self) -> usize {
@@ -169,14 +273,14 @@ impl<'f> Layouter<'f> {
 
     /// Reserve vertical space `h`; break the page if it would not fit.
     fn ensure(&mut self, h: f32) {
-        if self.y - h < MARGIN {
+        if self.y - h < self.bottom_y() {
             self.new_page();
         }
     }
 
     /// Take one text line of the given font size: reserve space and return the baseline y.
     fn take_line(&mut self, size: f32) -> f32 {
-        let gap = size * 1.4;
+        let gap = size * self.metrics.line_spacing;
         self.ensure(gap);
         let baseline = self.y - size;
         self.y -= gap;
@@ -187,23 +291,37 @@ impl<'f> Layouter<'f> {
         self.y -= h;
     }
 
-    fn text_w(&self, s: &str, size: f32) -> f32 {
-        s.chars().map(|c| self.font.char_width_1000(c)).sum::<f32>() * size / 1000.0
+    fn text_w(&self, font: FontSlot, s: &str, size: f32) -> f32 {
+        s.chars()
+            .map(|c| self.fonts.get(font).char_width_1000(c))
+            .sum::<f32>()
+            * size
+            / 1000.0
     }
 
-    fn space_w(&self, size: f32) -> f32 {
-        self.text_w(" ", size)
+    fn space_w(&self, font: FontSlot, size: f32) -> f32 {
+        self.text_w(font, " ", size)
     }
 
     /// Emit one positioned text fragment (its own `BT…ET`), recording used glyphs.
-    fn frag(&mut self, x: f32, baseline: f32, size: f32, bold: bool, italic: bool, s: &str) {
+    fn frag(
+        &mut self,
+        font_slot: FontSlot,
+        x: f32,
+        baseline: f32,
+        size: f32,
+        bold: bool,
+        italic: bool,
+        s: &str,
+    ) {
         if s.is_empty() {
             return;
         }
         let mut hex = String::with_capacity(s.len() * 4);
+        let font_index = self.fonts.index(font_slot);
         for c in s.chars() {
-            let gid = self.font.glyph_id(c);
-            self.used.entry(gid).or_insert(c as u32);
+            let gid = self.fonts.fonts[font_index].glyph_id(c);
+            self.used[font_index].entry(gid).or_insert(c as u32);
             hex.push_str(&format!("{gid:04X}"));
         }
         let marked = if let Some(element_index) = self.current_element {
@@ -224,7 +342,7 @@ impl<'f> Layouter<'f> {
         }
         self.cur.extend_from_slice(b"BT\n");
         self.cur
-            .extend_from_slice(format!("/F1 {} Tf\n", num(size)).as_bytes());
+            .extend_from_slice(format!("/F{} {} Tf\n", font_index + 1, num(size)).as_bytes());
         self.cur.extend_from_slice(b"0 g\n");
         if bold {
             let lw = size * 0.03;
@@ -273,20 +391,20 @@ impl<'f> Layouter<'f> {
 
     /// Greedy word-wrap `words` into the column `[x0, x1]` at `size`, drawing each line and paging
     /// as needed.
-    fn flow(&mut self, words: &[Word], size: f32, x0: f32, x1: f32) {
+    fn flow(&mut self, font: FontSlot, words: &[Word], size: f32, x0: f32, x1: f32) {
         let col_w = x1 - x0;
-        let space = self.space_w(size);
+        let space = self.space_w(font, size);
         let mut line: Vec<(f32, &Word)> = Vec::new();
         let mut width = 0.0f32;
         for w in words {
-            let ww = self.text_w(&w.text, size);
+            let ww = self.text_w(font, &w.text, size);
             let add = if line.is_empty() {
                 ww
             } else {
                 width + space + ww
             };
             if !line.is_empty() && add > col_w {
-                self.flush_line(&line, size, x0);
+                self.flush_line(font, &line, size, x0);
                 line.clear();
                 width = 0.0;
             }
@@ -299,34 +417,41 @@ impl<'f> Layouter<'f> {
             };
         }
         if !line.is_empty() {
-            self.flush_line(&line, size, x0);
+            self.flush_line(font, &line, size, x0);
         }
     }
 
-    fn flush_line(&mut self, line: &[(f32, &Word)], size: f32, x0: f32) {
+    fn flush_line(&mut self, font: FontSlot, line: &[(f32, &Word)], size: f32, x0: f32) {
         let baseline = self.take_line(size);
-        let space = self.space_w(size);
+        let space = self.space_w(font, size);
         for (index, (xoff, w)) in line.iter().enumerate() {
             if index > 0 {
-                self.frag(x0 + xoff - space, baseline, size, false, false, " ");
+                self.frag(font, x0 + xoff - space, baseline, size, false, false, " ");
             }
-            self.frag(x0 + xoff, baseline, size, w.bold, w.italic, &w.text);
+            self.frag(font, x0 + xoff, baseline, size, w.bold, w.italic, &w.text);
         }
     }
 
     // --- Block renderers -------------------------------------------------------------------------
 
     fn heading(&mut self, level: u8, text: &str) {
-        let size = match level {
-            1 => 17.0,
-            2 => 14.0,
-            3 => 12.0,
-            _ => BODY,
+        let ratio = match level {
+            1 => 17.0 / 11.0,
+            2 => 14.0 / 11.0,
+            3 => 12.0 / 11.0,
+            _ => 1.0,
         };
+        let size = self.body_size() * ratio * self.metrics.heading_scale;
         self.tagged_element(StructureRole::Heading(level), |l| {
             l.gap(size * 0.5);
             let words = split_words(text, true, false);
-            l.flow(&words, size, l.content_x0(), l.content_x1());
+            l.flow(
+                FontSlot::Header,
+                &words,
+                size,
+                l.content_x0(),
+                l.content_x1(),
+            );
             l.gap(size * 0.25);
         });
     }
@@ -339,55 +464,81 @@ impl<'f> Layouter<'f> {
         if words.is_empty() {
             return;
         }
+        let body_size = self.body_size();
+        let paragraph_spacing = self.metrics.paragraph_spacing;
         self.tagged_element(StructureRole::Paragraph, |l| {
-            l.flow(&words, BODY, l.content_x0(), l.content_x1());
-            l.gap(BODY * 0.5);
+            l.flow(
+                FontSlot::Body,
+                &words,
+                body_size,
+                l.content_x0(),
+                l.content_x1(),
+            );
+            l.gap(paragraph_spacing);
         });
     }
 
     fn key_value(&mut self, rows: &[(String, String)]) {
         self.tagged_element(StructureRole::KeyValueTable, |l| {
             let x0 = l.content_x0();
-            let val_x = x0 + 150.0;
             let val_x1 = l.content_x1();
+            let content_width = val_x1 - x0;
+            let val_x = x0 + (content_width * 0.36).clamp(80.0, 150.0);
             for (k, v) in rows {
                 l.draw_kv_row(k, v, x0, val_x, val_x1);
             }
-            l.gap(BODY * 0.3);
+            l.gap(l.body_size() * 0.3);
         });
     }
 
     fn draw_kv_row(&mut self, k: &str, v: &str, x0: f32, val_x: f32, val_x1: f32) {
         self.tagged_element(StructureRole::TableRow, |l| {
-            let baseline = l.take_line(BODY);
+            let body_size = l.body_size();
+            let baseline = l.take_line(body_size);
             l.tagged_element(StructureRole::TableHeaderCell(TableHeaderScope::Row), |l| {
-                l.frag(x0, baseline, BODY, true, false, k);
+                l.frag(FontSlot::Body, x0, baseline, body_size, true, false, k);
             });
             l.tagged_element(StructureRole::TableDataCell, |l| {
                 // value wrapped within [val_x, val_x1]; first line shares the key's baseline.
                 let vwords = split_words(v, false, false);
                 let col_w = val_x1 - val_x;
-                let space = l.space_w(BODY);
+                let space = l.space_w(FontSlot::Body, body_size);
                 let mut cur_base = baseline;
                 let mut line_w = 0.0f32;
                 let mut line_started = false;
                 for w in &vwords {
-                    let ww = l.text_w(&w.text, BODY);
+                    let ww = l.text_w(FontSlot::Body, &w.text, body_size);
                     let add = if line_started {
                         line_w + space + ww
                     } else {
                         ww
                     };
                     if line_started && add > col_w {
-                        cur_base = l.take_line(BODY);
+                        cur_base = l.take_line(body_size);
                         line_w = 0.0;
                         line_started = false;
                     }
                     if line_started {
-                        l.frag(val_x + line_w, cur_base, BODY, false, false, " ");
+                        l.frag(
+                            FontSlot::Body,
+                            val_x + line_w,
+                            cur_base,
+                            body_size,
+                            false,
+                            false,
+                            " ",
+                        );
                         line_w += space;
                     }
-                    l.frag(val_x + line_w, cur_base, BODY, false, false, &w.text);
+                    l.frag(
+                        FontSlot::Body,
+                        val_x + line_w,
+                        cur_base,
+                        body_size,
+                        false,
+                        false,
+                        &w.text,
+                    );
                     line_w += ww;
                     line_started = true;
                 }
@@ -399,7 +550,9 @@ impl<'f> Layouter<'f> {
         self.tagged_element(StructureRole::VoteTable, |l| {
             let x0 = l.content_x0();
             let x1 = l.content_x1();
-            let num_w = 72.0f32;
+            let body_size = l.body_size();
+            let content_width = x1 - x0;
+            let num_w = 72.0f32.min(content_width * 0.17);
             let c3_r = x1;
             let c2_r = x1 - num_w;
             let c1_r = x1 - 2.0 * num_w;
@@ -407,30 +560,38 @@ impl<'f> Layouter<'f> {
 
             l.gap(4.0);
             // Header row.
-            let base = l.take_line(BODY);
+            let base = l.take_line(body_size);
             l.tagged_element(StructureRole::TableRow, |l| {
                 l.tagged_element(
                     StructureRole::TableHeaderCell(TableHeaderScope::Column),
                     |l| {
-                        l.frag(x0, base, BODY, true, false, "Deliberação");
+                        l.frag(
+                            FontSlot::Body,
+                            x0,
+                            base,
+                            body_size,
+                            true,
+                            false,
+                            "Deliberação",
+                        );
                     },
                 );
                 l.tagged_element(
                     StructureRole::TableHeaderCell(TableHeaderScope::Column),
                     |l| {
-                        l.right(c1_r, base, BODY, true, "A favor");
+                        l.right(FontSlot::Body, c1_r, base, body_size, true, "A favor");
                     },
                 );
                 l.tagged_element(
                     StructureRole::TableHeaderCell(TableHeaderScope::Column),
                     |l| {
-                        l.right(c2_r, base, BODY, true, "Contra");
+                        l.right(FontSlot::Body, c2_r, base, body_size, true, "Contra");
                     },
                 );
                 l.tagged_element(
                     StructureRole::TableHeaderCell(TableHeaderScope::Column),
                     |l| {
-                        l.right(c3_r, base, BODY, true, "Abstenção");
+                        l.right(FontSlot::Body, c3_r, base, body_size, true, "Abstenção");
                     },
                 );
             });
@@ -438,20 +599,41 @@ impl<'f> Layouter<'f> {
             l.gap(3.0);
             for r in rows {
                 // Each row is atomic; `take_line` page-breaks if it will not fit.
-                let base = l.take_line(BODY);
+                let base = l.take_line(body_size);
                 l.tagged_element(StructureRole::TableRow, |l| {
                     l.tagged_element(StructureRole::TableHeaderCell(TableHeaderScope::Row), |l| {
                         // wrap-free label (truncation avoided by column width being generous)
-                        l.frag_clip(x0, base, BODY, &r.label, label_x1 - x0);
+                        l.frag_clip(FontSlot::Body, x0, base, body_size, &r.label, label_x1 - x0);
                     });
                     l.tagged_element(StructureRole::TableDataCell, |l| {
-                        l.right(c1_r, base, BODY, false, &r.favor.to_string());
+                        l.right(
+                            FontSlot::Body,
+                            c1_r,
+                            base,
+                            body_size,
+                            false,
+                            &r.favor.to_string(),
+                        );
                     });
                     l.tagged_element(StructureRole::TableDataCell, |l| {
-                        l.right(c2_r, base, BODY, false, &r.against.to_string());
+                        l.right(
+                            FontSlot::Body,
+                            c2_r,
+                            base,
+                            body_size,
+                            false,
+                            &r.against.to_string(),
+                        );
                     });
                     l.tagged_element(StructureRole::TableDataCell, |l| {
-                        l.right(c3_r, base, BODY, false, &r.abstain.to_string());
+                        l.right(
+                            FontSlot::Body,
+                            c3_r,
+                            base,
+                            body_size,
+                            false,
+                            &r.abstain.to_string(),
+                        );
                     });
                 });
             }
@@ -462,34 +644,43 @@ impl<'f> Layouter<'f> {
     }
 
     /// Draw right-aligned text ending at `x_right`.
-    fn right(&mut self, x_right: f32, baseline: f32, size: f32, bold: bool, s: &str) {
-        let x = x_right - self.text_w(s, size);
-        self.frag(x, baseline, size, bold, false, s);
+    fn right(
+        &mut self,
+        font: FontSlot,
+        x_right: f32,
+        baseline: f32,
+        size: f32,
+        bold: bool,
+        s: &str,
+    ) {
+        let x = x_right - self.text_w(font, s, size);
+        self.frag(font, x, baseline, size, bold, false, s);
     }
 
     /// Draw plain (non-bold, non-italic) text, dropping trailing characters that would exceed
     /// `max_w` (simple clip for table labels).
-    fn frag_clip(&mut self, x: f32, baseline: f32, size: f32, s: &str, max_w: f32) {
-        if self.text_w(s, size) <= max_w {
-            self.frag(x, baseline, size, false, false, s);
+    fn frag_clip(&mut self, font: FontSlot, x: f32, baseline: f32, size: f32, s: &str, max_w: f32) {
+        if self.text_w(font, s, size) <= max_w {
+            self.frag(font, x, baseline, size, false, false, s);
             return;
         }
         let mut acc = String::new();
         for c in s.chars() {
             let trial = format!("{acc}{c}…");
-            if self.text_w(&trial, size) > max_w {
+            if self.text_w(font, &trial, size) > max_w {
                 break;
             }
             acc.push(c);
         }
         acc.push('…');
-        self.frag(x, baseline, size, false, false, &acc);
+        self.frag(font, x, baseline, size, false, false, &acc);
     }
 
     fn signature_block(&mut self, slots: &[chancela_core::SignatureSlot]) {
         self.tagged_element(StructureRole::SignatureBlock, |l| {
             let x0 = l.content_x0();
-            let line_w = 220.0f32;
+            let line_w = 220.0f32.min(l.content_x1() - x0);
+            let body_size = l.body_size();
             l.gap(10.0);
             for slot in slots {
                 // Reserve the whole slot (signature gap + rule + two text lines) as a unit.
@@ -498,10 +689,10 @@ impl<'f> Layouter<'f> {
                 let rule_y = l.y;
                 l.rule_at(x0, x0 + line_w, rule_y, 0.6);
                 l.gap(2.0);
-                let b1 = l.take_line(BODY);
-                l.frag(x0, b1, BODY, true, false, &slot.role);
-                let b2 = l.take_line(BODY);
-                l.frag(x0, b2, BODY, false, false, &slot.name);
+                let b1 = l.take_line(body_size);
+                l.frag(FontSlot::Body, x0, b1, body_size, true, false, &slot.role);
+                let b2 = l.take_line(body_size);
+                l.frag(FontSlot::Body, x0, b2, body_size, false, false, &slot.name);
                 l.gap(8.0);
             }
         });
@@ -516,10 +707,17 @@ impl<'f> Layouter<'f> {
     }
 
     fn header_prologue(&mut self, doc: &DocumentModel) {
+        let header_size = self.metrics.header_size;
         // Title.
         self.tagged_element(StructureRole::DocumentTitle, |l| {
             let title_words = split_words(&doc.title, true, false);
-            l.flow(&title_words, 17.0, l.content_x0(), l.content_x1());
+            l.flow(
+                FontSlot::Header,
+                &title_words,
+                header_size * (17.0 / 11.0),
+                l.content_x0(),
+                l.content_x1(),
+            );
             l.gap(3.0);
         });
         // Entity line.
@@ -529,17 +727,33 @@ impl<'f> Layouter<'f> {
         };
         self.tagged_element(StructureRole::HeaderMetadata, |l| {
             let ewords = split_words(&entity, false, false);
-            l.flow(&ewords, BODY, l.content_x0(), l.content_x1());
+            l.flow(
+                FontSlot::Header,
+                &ewords,
+                header_size,
+                l.content_x0(),
+                l.content_x1(),
+            );
         });
         // Subject.
         if !doc.subject.is_empty() {
             self.tagged_element(StructureRole::HeaderMetadata, |l| {
                 l.gap(2.0);
                 let swords = split_words(&doc.subject, false, true);
-                l.flow(&swords, 12.0, l.content_x0(), l.content_x1());
+                l.flow(
+                    FontSlot::Header,
+                    &swords,
+                    header_size * (12.0 / 11.0),
+                    l.content_x0(),
+                    l.content_x1(),
+                );
             });
         }
-        self.horizontal_rule();
+        self.gap(4.0);
+        self.ensure(4.0);
+        let y = self.y;
+        self.rule_at(self.content_x0(), self.content_x1(), y, 0.6);
+        self.gap(self.metrics.header_gap);
     }
 }
 
@@ -573,8 +787,11 @@ fn split_words(text: &str, bold: bool, italic: bool) -> Vec<Word> {
 }
 
 /// Lay a whole document out into page content streams.
-pub fn lay_out(doc: &DocumentModel, font: &Font) -> Laid {
-    let mut l = Layouter::new(font);
+pub fn lay_out(doc: &DocumentModel, fonts: &FontCatalog) -> Result<Laid, DocError> {
+    doc.document_layout
+        .validate()
+        .map_err(|error| DocError::Layout(error.to_string()))?;
+    let mut l = Layouter::new(fonts, &doc.document_layout);
     l.header_prologue(doc);
     for block in &doc.blocks {
         match block {
@@ -599,9 +816,11 @@ pub fn lay_out(doc: &DocumentModel, font: &Font) -> Laid {
     if l.pages.is_empty() {
         l.pages.push(Vec::new());
     }
-    Laid {
+    Ok(Laid {
         pages: l.pages,
         used: l.used,
         structure_elements: l.structure_elements,
-    }
+        page_width: l.metrics.page_w,
+        page_height: l.metrics.page_h,
+    })
 }

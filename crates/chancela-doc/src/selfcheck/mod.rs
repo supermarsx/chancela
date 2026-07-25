@@ -572,12 +572,12 @@ fn verify_fonts(
             Ok(f) => f,
             Err(_) => continue,
         };
-        for (_name, font) in fonts {
+        for (resource_name, font) in fonts {
             let subtype = font.get(b"Subtype").and_then(Object::as_name).ok();
             if subtype != Some(b"Type0") {
                 return Err(fail(format!(
-                    "a page font has /Subtype /{} — the writer emits a single Type0 / Identity-H \
-                     composite font, so any simple font came from elsewhere",
+                    "a page font has /Subtype /{} — the writer emits only Type0 / Identity-H \
+                     composite fonts, so any simple font came from elsewhere",
                     subtype
                         .map(|s| String::from_utf8_lossy(s).to_string())
                         .unwrap_or_else(|| "(none)".into())
@@ -629,6 +629,7 @@ fn verify_fonts(
                 .collect();
             glyphs::verify(
                 "page content",
+                Some(&resource_name),
                 &program.content,
                 program.dict.get(b"Length1").and_then(Object::as_i64).ok(),
                 &to_unicode.content,

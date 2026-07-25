@@ -12,8 +12,9 @@
 //! round-trip.
 //!
 //! **Implemented by t48-e2 / e2a.** The writer lowers the model through a bounded layout engine
-//! (`layout`), embeds the bundled Noto Serif face (`font`, `assets/fonts/`) as a Type0 / Identity-H
-//! font with a `/ToUnicode` CMap, attaches the sRGB OutputIntent (`assets/icc/`) and the XMP
+//! (`layout`), embeds only the selected bundled Noto Serif/Sans faces (`font`, `assets/fonts/`) as
+//! Type0 / Identity-H fonts with `/ToUnicode` CMaps, attaches the sRGB OutputIntent
+//! (`assets/icc/`) and the XMP
 //! metadata packet (`xmp`), forces a classic cross-reference table, and structurally self-verifies
 //! (`selfcheck`) — all deterministically (no clock/RNG), so the same model reproduces identical
 //! bytes and a stable `pdf_digest`. The writer also exposes an accessibility report (`pdfa`) and

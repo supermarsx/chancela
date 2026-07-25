@@ -372,6 +372,7 @@ fn verify_seal_font(
     let subject = format!("{where_} /AP /N seal");
     glyphs::verify(
         &subject,
+        None,
         &program_bytes,
         length1,
         &to_unicode.content,

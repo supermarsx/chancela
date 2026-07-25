@@ -4,8 +4,8 @@
 //! rule and none of its point: the "u" in 2u means text can be reliably extracted, and a CMap that
 //! is present but maps the wrong scalars extracts the wrong text while passing every presence
 //! check. This module closes that gap for the glyphs the document actually shows, which is
-//! tractable precisely because the writer controls the font: one embedded face, Identity-H, one
-//! glyph id per code point.
+//! tractable precisely because the writer controls each font resource: an approved embedded face,
+//! Identity-H, and one glyph id per code point.
 //!
 //! Five things are asserted, each of which can fail independently:
 //!
@@ -38,6 +38,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// to extract like any other.
 pub(super) fn verify(
     subject: &str,
+    resource_name: Option<&[u8]>,
     program: &[u8],
     length1: Option<i64>,
     to_unicode: &[u8],
@@ -56,7 +57,7 @@ pub(super) fn verify(
 
     let mut shown = BTreeSet::new();
     for (label, content) in contents {
-        for gid in shown_glyph_ids(content).map_err(|e| format!("{label}: {e}"))? {
+        for gid in shown_glyph_ids(content, resource_name).map_err(|e| format!("{label}: {e}"))? {
             shown.insert(gid);
         }
     }
@@ -273,9 +274,11 @@ fn parse_utf16be(hex: &str) -> Result<Vec<u32>, String> {
 
 /// Recover the glyph ids a content stream shows, by tracking hex-string operands of the
 /// text-showing operators.
-fn shown_glyph_ids(content: &[u8]) -> Result<BTreeSet<u16>, String> {
+fn shown_glyph_ids(content: &[u8], resource_name: Option<&[u8]>) -> Result<BTreeSet<u16>, String> {
     let mut shown = BTreeSet::new();
     let mut pending: Vec<Vec<u8>> = Vec::new();
+    let mut pending_name: Option<Vec<u8>> = None;
+    let mut active_font: Option<Vec<u8>> = None;
     let mut index = 0usize;
 
     while index < content.len() {
@@ -307,9 +310,11 @@ fn shown_glyph_ids(content: &[u8]) -> Result<BTreeSet<u16>, String> {
             b'/' | b'{' | b'}' => {
                 index += 1;
                 if byte == b'/' {
+                    let start = index;
                     while index < content.len() && is_regular(content[index]) {
                         index += 1;
                     }
+                    pending_name = Some(content[start..index].to_vec());
                 }
             }
             _ => {
@@ -321,11 +326,22 @@ fn shown_glyph_ids(content: &[u8]) -> Result<BTreeSet<u16>, String> {
                     return Err(format!("unparseable byte {byte:#04x} at offset {start}"));
                 }
                 let token = &content[start..index];
-                if matches!(token, b"Tj" | b"TJ" | b"'" | b"\"") {
-                    for hex in pending.drain(..) {
-                        for gid in decode_identity_h(&hex)? {
-                            shown.insert(gid);
+                if token == b"Tf" {
+                    active_font = pending_name.take();
+                    pending.clear();
+                } else if matches!(token, b"Tj" | b"TJ" | b"'" | b"\"") {
+                    if resource_name.is_none_or(|expected| {
+                        active_font
+                            .as_deref()
+                            .is_some_and(|actual| actual == expected)
+                    }) {
+                        for hex in pending.drain(..) {
+                            for gid in decode_identity_h(&hex)? {
+                                shown.insert(gid);
+                            }
                         }
+                    } else {
+                        pending.clear();
                     }
                 } else if !matches!(token, b"true" | b"false" | b"null")
                     && !token.iter().all(|b| {

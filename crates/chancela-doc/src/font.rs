@@ -1,4 +1,4 @@
-//! Minimal, dependency-free TrueType (`glyf`) parser for the one bundled serif face.
+//! Minimal, dependency-free TrueType (`glyf`) parser for the approved bundled Noto faces.
 //!
 //! We only read what a PDF/A composite-font embed needs: the table directory, `head`
 //! (`unitsPerEm`, font bbox), `hhea`/`maxp`/`hmtx` (advance widths), `OS/2`/`post` (descriptor
@@ -8,12 +8,19 @@
 //! All values are read at load time; parsing is pure and deterministic.
 
 use crate::DocError;
+use chancela_core::DocumentFontFamily;
 
 /// The bundled Noto Serif Regular program (SIL OFL 1.1; see `assets/fonts/PROVENANCE.md`).
 pub const NOTO_SERIF_REGULAR: &[u8] = include_bytes!("../assets/fonts/NotoSerif-Regular.ttf");
+/// The bundled Noto Sans Regular program (SIL OFL 1.1; see `assets/fonts/PROVENANCE.md`).
+pub const NOTO_SANS_REGULAR: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
 
 /// A parsed TrueType face, holding just enough to lay out text and emit the PDF font objects.
 pub struct Font {
+    /// PostScript name used by the PDF Type0/CID font dictionaries.
+    pub base_name: &'static str,
+    /// PDF FontDescriptor flags for this face.
+    pub descriptor_flags: i64,
     /// The raw font program (embedded as `/FontFile2`).
     pub data: &'static [u8],
     /// Font design units per em (Noto Serif = 1000, i.e. already in PDF glyph space).
@@ -58,16 +65,30 @@ fn be32(b: &[u8], i: usize) -> u32 {
 }
 
 impl Font {
-    /// Parse the bundled Noto Serif Regular face.
+    /// Parse the bundled Noto Serif Regular face (the historical/default writer font).
+    #[cfg(test)]
     pub fn load() -> Result<Font, DocError> {
-        Self::parse(NOTO_SERIF_REGULAR)
+        Self::load_family(DocumentFontFamily::NotoSerif)
+    }
+
+    /// Parse one of the renderer-owned approved embedded faces.
+    pub fn load_family(family: DocumentFontFamily) -> Result<Font, DocError> {
+        let (data, base_name, descriptor_flags) = match family {
+            DocumentFontFamily::NotoSerif => (NOTO_SERIF_REGULAR, "NotoSerif", 34),
+            DocumentFontFamily::NotoSans => (NOTO_SANS_REGULAR, "NotoSans", 32),
+        };
+        Self::parse(data, base_name, descriptor_flags)
     }
 
     fn err(m: &str) -> DocError {
         DocError::Font(m.to_string())
     }
 
-    fn parse(data: &'static [u8]) -> Result<Font, DocError> {
+    fn parse(
+        data: &'static [u8],
+        base_name: &'static str,
+        descriptor_flags: i64,
+    ) -> Result<Font, DocError> {
         if data.len() < 12 {
             return Err(Self::err("font too small for an sfnt header"));
         }
@@ -132,6 +153,8 @@ impl Font {
         let cmap = Self::parse_cmap(data, find(b"cmap"))?;
 
         Ok(Font {
+            base_name,
+            descriptor_flags,
             data,
             units_per_em,
             advances,

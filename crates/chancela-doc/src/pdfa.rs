@@ -2,9 +2,9 @@
 //!
 //! Object graph (§4 of the conformance cheatsheet): a classic-xref file with a catalog referencing
 //! an uncompressed XMP `/Metadata` stream and an sRGB `/OutputIntents` entry, a Type0 / Identity-H /
-//! CIDFontType2 font with the whole Noto Serif program embedded as `/FontFile2` plus a `/ToUnicode`
-//! CMap, and one content stream per laid-out page. No Info dict, no AcroForm, no encryption — the
-//! exact shape `chancela-pades::sign_pdf` appends to.
+//! CIDFontType2 fonts with only the selected Noto programs embedded as `/FontFile2` plus
+//! `/ToUnicode` CMaps, and one content stream per laid-out page. No Info dict, no AcroForm, no
+//! encryption — the exact shape `chancela-pades::sign_pdf` appends to.
 
 use std::collections::BTreeMap;
 
@@ -26,14 +26,92 @@ pub use crate::accessibility::{
 /// The bundled sRGB OutputIntent profile (CC0; see `assets/icc/PROVENANCE.md`).
 const SRGB_ICC: &[u8] = include_bytes!("../assets/icc/sRGB-v2-micro.icc");
 
-/// PostScript name for the embedded face. No subset prefix: the **whole** program is embedded.
-const BASE_FONT: &str = "NotoSerif";
-
 fn name(s: &str) -> Object {
     Object::Name(s.as_bytes().to_vec())
 }
 fn lit(s: &str) -> Object {
     Object::String(s.as_bytes().to_vec(), StringFormat::Literal)
+}
+
+#[derive(Clone, Copy)]
+struct EmbeddedFontIds {
+    fontfile2: ObjectId,
+    tounicode: ObjectId,
+    descriptor: ObjectId,
+    cidfont: ObjectId,
+    type0: ObjectId,
+}
+
+fn emit_embedded_font(
+    pdf: &mut Document,
+    font: &Font,
+    used: &BTreeMap<u16, u32>,
+    ids: EmbeddedFontIds,
+) {
+    // FontFile2: the whole TrueType program, uncompressed (deterministic; /Length1 == /Length).
+    let mut ff_dict = Dictionary::new();
+    ff_dict.set("Length1", font.data.len() as i64);
+    pdf.set_object(
+        ids.fontfile2,
+        Object::Stream(Stream::new(ff_dict, font.data.to_vec())),
+    );
+
+    // ToUnicode CMap (mandatory for the PDF/A-2u Unicode guarantee).
+    let mut tu_dict = Dictionary::new();
+    let tu = to_unicode_cmap(used);
+    tu_dict.set("Length", tu.len() as i64);
+    pdf.set_object(ids.tounicode, Object::Stream(Stream::new(tu_dict, tu)));
+
+    let mut descriptor = Dictionary::new();
+    descriptor.set("Type", name("FontDescriptor"));
+    descriptor.set("FontName", name(font.base_name));
+    descriptor.set("Flags", Object::Integer(font.descriptor_flags));
+    descriptor.set(
+        "FontBBox",
+        Object::Array(
+            font.bbox
+                .iter()
+                .map(|&value| Object::Integer(font.scale_1000(value)))
+                .collect(),
+        ),
+    );
+    descriptor.set("ItalicAngle", Object::Integer(font.italic_angle as i64));
+    descriptor.set("Ascent", Object::Integer(font.scale_1000(font.ascent)));
+    descriptor.set("Descent", Object::Integer(font.scale_1000(font.descent)));
+    descriptor.set(
+        "CapHeight",
+        Object::Integer(font.scale_1000(font.cap_height)),
+    );
+    descriptor.set("StemV", Object::Integer(80));
+    descriptor.set("FontFile2", Object::Reference(ids.fontfile2));
+    pdf.set_object(ids.descriptor, Object::Dictionary(descriptor));
+
+    let mut descendant = Dictionary::new();
+    descendant.set("Type", name("Font"));
+    descendant.set("Subtype", name("CIDFontType2"));
+    descendant.set("BaseFont", name(font.base_name));
+    let mut system_info = Dictionary::new();
+    system_info.set("Registry", lit("Adobe"));
+    system_info.set("Ordering", lit("Identity"));
+    system_info.set("Supplement", Object::Integer(0));
+    descendant.set("CIDSystemInfo", Object::Dictionary(system_info));
+    descendant.set("FontDescriptor", Object::Reference(ids.descriptor));
+    descendant.set("CIDToGIDMap", name("Identity"));
+    descendant.set("DW", Object::Integer(500));
+    descendant.set("W", widths_array(used, font));
+    pdf.set_object(ids.cidfont, Object::Dictionary(descendant));
+
+    let mut type0 = Dictionary::new();
+    type0.set("Type", name("Font"));
+    type0.set("Subtype", name("Type0"));
+    type0.set("BaseFont", name(font.base_name));
+    type0.set("Encoding", name("Identity-H"));
+    type0.set(
+        "DescendantFonts",
+        Object::Array(vec![Object::Reference(ids.cidfont)]),
+    );
+    type0.set("ToUnicode", Object::Reference(ids.tounicode));
+    pdf.set_object(ids.type0, Object::Dictionary(type0));
 }
 
 /// Report the accessibility features and PDF/UA blockers the current writer can assert.
@@ -49,15 +127,15 @@ pub fn accessibility_report<'a>(input: impl Into<AccessibilityInput<'a>>) -> Acc
 /// rendered page count is both knowable and permanently stable. Never fewer than one page (an
 /// empty document still lays out a single blank page, mirroring [`write`]).
 pub fn page_count(doc: &DocumentModel) -> Result<usize, DocError> {
-    let font = Font::load()?;
-    Ok(layout::lay_out(doc, &font).pages.len())
+    let fonts = layout::FontCatalog::load(&doc.document_layout)?;
+    Ok(layout::lay_out(doc, &fonts)?.pages.len())
 }
 
 /// Write `doc` as PDF/A-2u bytes and self-verify them before returning.
 pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     let accessibility = accessibility::report(doc);
-    let font = Font::load()?;
-    let laid = layout::lay_out(doc, &font);
+    let fonts = layout::FontCatalog::load(&doc.document_layout)?;
+    let laid = layout::lay_out(doc, &fonts)?;
 
     let mut pdf = Document::with_version("1.7");
     // lopdf 0.43 defaults `new()`/`with_version` to a cross-reference STREAM; PAdES and PDF/A
@@ -65,83 +143,34 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     pdf.reference_table.cross_reference_type = XrefType::CrossReferenceTable;
 
     // --- Font objects (allocate ids first so page Resources can reference the Type0 font) --------
-    let fontfile2_id = pdf.new_object_id();
-    let tounicode_id = pdf.new_object_id();
-    let descriptor_id = pdf.new_object_id();
-    let cidfont_id = pdf.new_object_id();
-    let type0_id = pdf.new_object_id();
+    let font_ids: Vec<Option<EmbeddedFontIds>> = laid
+        .used
+        .iter()
+        .map(|used| {
+            (!used.is_empty()).then(|| EmbeddedFontIds {
+                fontfile2: pdf.new_object_id(),
+                tounicode: pdf.new_object_id(),
+                descriptor: pdf.new_object_id(),
+                cidfont: pdf.new_object_id(),
+                type0: pdf.new_object_id(),
+            })
+        })
+        .collect();
     let icc_id = pdf.new_object_id();
     let oi_id = pdf.new_object_id();
     let meta_id = pdf.new_object_id();
     let pages_id = pdf.new_object_id();
 
-    // FontFile2: the whole TrueType program, uncompressed (deterministic; /Length1 == /Length).
-    let mut ff_dict = Dictionary::new();
-    ff_dict.set("Length1", font.data.len() as i64);
-    pdf.set_object(
-        fontfile2_id,
-        Object::Stream(Stream::new(ff_dict, font.data.to_vec())),
-    );
-
-    // ToUnicode CMap (mandatory for the "u").
-    let mut tu_dict = Dictionary::new();
-    let tu = to_unicode_cmap(&laid.used);
-    tu_dict.set("Length", tu.len() as i64);
-    pdf.set_object(tounicode_id, Object::Stream(Stream::new(tu_dict, tu)));
-
-    // FontDescriptor.
-    let mut fd = Dictionary::new();
-    fd.set("Type", name("FontDescriptor"));
-    fd.set("FontName", name(BASE_FONT));
-    fd.set("Flags", Object::Integer(34)); // Serif (2) + Nonsymbolic (32)
-    fd.set(
-        "FontBBox",
-        Object::Array(
-            font.bbox
-                .iter()
-                .map(|&v| Object::Integer(font.scale_1000(v)))
-                .collect(),
-        ),
-    );
-    fd.set("ItalicAngle", Object::Integer(font.italic_angle as i64));
-    fd.set("Ascent", Object::Integer(font.scale_1000(font.ascent)));
-    fd.set("Descent", Object::Integer(font.scale_1000(font.descent)));
-    fd.set(
-        "CapHeight",
-        Object::Integer(font.scale_1000(font.cap_height)),
-    );
-    fd.set("StemV", Object::Integer(80));
-    fd.set("FontFile2", Object::Reference(fontfile2_id));
-    pdf.set_object(descriptor_id, Object::Dictionary(fd));
-
-    // CIDFontType2 (descendant).
-    let mut cid = Dictionary::new();
-    cid.set("Type", name("Font"));
-    cid.set("Subtype", name("CIDFontType2"));
-    cid.set("BaseFont", name(BASE_FONT));
-    let mut csi = Dictionary::new();
-    csi.set("Registry", lit("Adobe"));
-    csi.set("Ordering", lit("Identity"));
-    csi.set("Supplement", Object::Integer(0));
-    cid.set("CIDSystemInfo", Object::Dictionary(csi));
-    cid.set("FontDescriptor", Object::Reference(descriptor_id));
-    cid.set("CIDToGIDMap", name("Identity"));
-    cid.set("DW", Object::Integer(500));
-    cid.set("W", widths_array(&laid.used, &font));
-    pdf.set_object(cidfont_id, Object::Dictionary(cid));
-
-    // Type0 root font.
-    let mut t0 = Dictionary::new();
-    t0.set("Type", name("Font"));
-    t0.set("Subtype", name("Type0"));
-    t0.set("BaseFont", name(BASE_FONT));
-    t0.set("Encoding", name("Identity-H"));
-    t0.set(
-        "DescendantFonts",
-        Object::Array(vec![Object::Reference(cidfont_id)]),
-    );
-    t0.set("ToUnicode", Object::Reference(tounicode_id));
-    pdf.set_object(type0_id, Object::Dictionary(t0));
+    for ((font, used), ids) in fonts
+        .fonts
+        .iter()
+        .zip(&laid.used)
+        .zip(font_ids.iter().copied())
+    {
+        if let Some(ids) = ids {
+            emit_embedded_font(&mut pdf, font, used, ids);
+        }
+    }
 
     // --- OutputIntent + ICC ----------------------------------------------------------------------
     let mut icc_dict = Dictionary::new();
@@ -184,7 +213,11 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
         let page_id = pdf.new_object_id();
 
         let mut fonts = Dictionary::new();
-        fonts.set("F1", Object::Reference(type0_id));
+        for (index, ids) in font_ids.iter().enumerate() {
+            if let Some(ids) = ids {
+                fonts.set(format!("F{}", index + 1), Object::Reference(ids.type0));
+            }
+        }
         let mut resources = Dictionary::new();
         resources.set("Font", Object::Dictionary(fonts));
 
@@ -196,8 +229,8 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
             Object::Array(vec![
                 Object::Real(0.0),
                 Object::Real(0.0),
-                Object::Real(595.28),
-                Object::Real(841.89),
+                Object::Real(laid.page_width),
+                Object::Real(laid.page_height),
             ]),
         );
         page.set("Resources", Object::Dictionary(resources));
