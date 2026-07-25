@@ -51,6 +51,27 @@ claim.
 
 ## Recent Landed Areas
 
+The current substantive checkpoint is `16000bb` (2026-07-25). It adds two
+bounded web concerns to this guard:
+
+- `50c255d` uses the official pdfjs legacy main module and matching legacy
+  worker, with compatibility unit coverage, while the blocking core Playwright
+  list includes `apps/web/e2e/template-pdf-preview.spec.ts`. That focused test
+  exercises the real server PDF/A preview response through a non-empty pdf.js
+  canvas and proves PDF/Markdown exclusivity.
+- `16000bb` pins the continuous paper/page template editor, explicit
+  `PageBreak` pagination, document-like controls, first-placement WYSIWYG
+  `NarrativeBody` editing with read-only repeated placements, invalid JSON
+  proof pause, deterministic post-reorder focus for document and card views,
+  save-time mutation locking, keyboard preview tabs, and bounded mobile CSS.
+
+Recorded validation is the full web Vitest suite (176 files / 2121 tests), web
+lint (0 errors / 1 unrelated existing warning), web format check, production
+web build, and focused Chromium proof (1 passed). This checkpoint does not
+claim interactive visual QA, live WebView/device testing, exhaustive browser
+coverage, PDF/A certification, legal/template correctness, or spec completion.
+The spec matrix remains `PARTIAL=11`.
+
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
 recently landed work that crosses Rust API tests, data key preflight guards,
 key-custody readiness UI/contract surfacing for
@@ -632,7 +653,7 @@ It intentionally reuses existing test surfaces:
   qualified-status determination, legal trust certification, live provider
   approval, or full trust implementation.
 - Signing DSS/trust-validation checkpoint: `63df508` is the signing validation
-  implementation checkpoint inside the current `b557cfbb` snapshot. Static markers pin
+  implementation checkpoint inside the current `16000bb` snapshot. Static markers pin
   `6292d75` revocation cache plus graceful offline fallback, `ead1aaa`
   full-chain PAdES DSS evidence assembly from validated chain plus revocation
   material, `9be5e00` live end-entity signer-path validation with TSL-resolved
@@ -1105,7 +1126,7 @@ workflow evidence only; it does not claim physical deletion, anonymization,
 backup/archive rewrite, legal GDPR compliance or completion, legal disposal
 approval, production key custody, or full spec completion.
 GDPR sealed-record annotation/remedy markers pin only `58b7e55` append-only API
-annotation and remedy-classification evidence plus the current `b557cfbb` snapshot's privacy
+annotation and remedy-classification evidence plus the current `16000bb` snapshot's privacy
 documentation framing for statutory-retention cases: subject rectification and
 processing-restriction annotations can be appended while prior sealed/signed
 event bytes, hashes, and payload digests remain frozen and ledger verification

@@ -1,8 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-25 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `b557cfbb`,
-including coverage notes for the mobile companion foundation docs/scripts,
+and implementation snapshot `16000bb`,
+including coverage notes for the official pdfjs legacy main/worker
+compatibility path, the blocking core template PDF preview proof, the
+continuous template document editor, and the mobile companion foundation docs/scripts,
 destructive erasure preflight/approve/execute route wiring plus local gate
 evidence, append-only rectification/restriction ledger annotation routes and
 remedy classification framing, tenant-chain ledger membership and
@@ -997,17 +999,35 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `b557cfbb`
+## Focused Gate Snapshot Through `16000bb`
 
 Historical focused checks from the active director loop, refreshed on
-2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `b557cfbb`. This is not an exhaustive current
+2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-25 for
+current implementation head `16000bb`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
 signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
+
+- Current template PDF/editor checks through `16000bb`: `50c255d` uses the
+  official `pdfjs-dist/legacy/build/pdf.mjs` module and matching legacy worker,
+  with compatibility unit coverage. The blocking core Playwright command now
+  includes `e2e/template-pdf-preview.spec.ts`; its focused Chromium run passed
+  1 test while exercising the real server PDF/A response through a non-empty
+  pdf.js canvas and proving that PDF and Markdown panels are mutually
+  exclusive. `16000bb` adds the continuous paper/page block editor, explicit
+  `PageBreak` pagination, document-like friendly controls, first-placement
+  WYSIWYG `NarrativeBody` plus read-only repeated placements, invalid JSON
+  proof pause, deterministic reorder focus in document/card presentations,
+  save-time mutation locking, keyboard preview tabs, and bounded mobile CSS.
+  The full web Vitest suite passed 176 files / 2121 tests; web lint passed with
+  0 errors and 1 unrelated existing warning; web format check and production
+  web build passed. These are bounded automated checks, not interactive visual
+  QA, live WebView/device testing, exhaustive browser coverage, PDF/A
+  certification, legal/template correctness, or a spec-completion claim. The
+  matrix remains `PARTIAL=11`.
 
 - `actionlint .github/workflows/ci.yml`, `npx prettier --check
 .github/workflows/ci.yml`, and `git diff --check -- .github/workflows/ci.yml
@@ -2446,7 +2466,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `b557cfb`
+- Current checkpoint metadata/static checks through `16000bb`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

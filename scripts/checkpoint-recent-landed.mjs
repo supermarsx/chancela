@@ -457,6 +457,9 @@ const checks = [
       "src/features/recovery/LivrosIntegridadeSection.test.tsx",
       "src/features/settings/SettingsPage.test.tsx",
       "src/features/signing/SigningPanel.test.tsx",
+      "src/features/signing/seal-designer/usePdfPage.test.tsx",
+      "src/features/templates/TemplateBlocksEditor.test.tsx",
+      "src/features/templates/TemplateDocumentEditor.test.tsx",
       "src/features/templates/TemplatesCatalogPage.test.tsx",
       "src/i18n/i18n.test.ts",
       "src/ui/SubNav.test.tsx",
@@ -4061,6 +4064,96 @@ function assertCheckpointMap() {
     "apps/web/src/features/templates/TemplateMarkdownPreview.test.tsx",
     "renders and copies the complete server-generated document, including block-authored prose",
     "web complete template Markdown preview coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/seal-designer/usePdfPage.ts",
+    "pdfjs-dist/legacy/build/pdf.mjs",
+    "official pdfjs legacy main compatibility marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/seal-designer/usePdfPage.ts",
+    "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url",
+    "official pdfjs legacy worker compatibility marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/seal-designer/usePdfPage.test.tsx",
+    "uses the compatibility build when Map.getOrInsertComputed is unavailable",
+    "pdfjs missing Map compatibility coverage",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "e2e/template-pdf-preview.spec.ts",
+    "blocking core template PDF preview browser marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/template-pdf-preview.spec.ts",
+    "template PDF/A preview renders through real pdf.js and remains exclusive with Markdown",
+    "real-server template PDF canvas and exclusive representation browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/template-pdf-preview.spec.ts",
+    "canvas.evaluate",
+    "template PDF preview non-empty canvas assertion marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
+    "composes document mode as one paper flow and paginates only at explicit page breaks",
+    "continuous template paper and explicit PageBreak coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
+    "renders later narrative placements as explicit read-only mirrors of the editable source",
+    "repeated NarrativeBody read-only mirror coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
+    "locks every structured and advanced mutation while disabled",
+    "template save-time mutation lock coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
+    "keeps focus with the moved block and falls back at a boundary in %s mode",
+    "deterministic template reorder focus coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateDocumentEditor.test.tsx",
+    "edits the first narrative placement, mirrors later placements, and keeps one keyboardable proof",
+    "WYSIWYG NarrativeBody and keyboard preview-tab coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateDocumentEditor.test.tsx",
+    "uses current valid blocks for proof and pauses every proof while Advanced JSON is invalid",
+    "invalid Advanced JSON proof-pause coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/templateEditor.css",
+    "@media (max-width: 720px)",
+    "template editor bounded mobile CSS marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `16000bb` keeps Template Catalog/Documents/UX/CI **PARTIAL**",
+    "spec coverage template PDF/editor checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "The current substantive checkpoint is `16000bb` (2026-07-25)",
+    "CI checkpoints template PDF/editor substantive marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current template PDF/editor checks through `16000bb`",
+    "CI/E2E hardening template PDF/editor validation marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "does not claim interactive visual QA, live WebView/device testing, exhaustive browser coverage, PDF/A certification, legal/template correctness, or completion of any top-level spec area; statuses remain PARTIAL=11",
+    "spec coverage template PDF/editor no-claim boundary",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "not interactive visual QA, live WebView/device testing, exhaustive browser coverage, PDF/A certification, legal/template correctness, or a spec-completion claim. The matrix remains `PARTIAL=11`",
+    "CI/E2E hardening template PDF/editor no-claim boundary",
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
@@ -11093,12 +11186,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-25 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b557cfbb`",
+    "Updated 2026-07-25 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `16000bb`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `b557cfbb`",
+    "Focused Gate Snapshot Through `16000bb`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11778,7 +11871,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b557cfb`",
+    "Current checkpoint metadata/static checks through `16000bb`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12368,12 +12461,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `b557cfbbd61364ef782a73983385a7941d6c55b9`",
+    "implementation snapshot `16000bbe30cc2e1281a8d59b49125d85256f2627`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `b557cfb` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
+    "Current `16000bb` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
     "spec coverage erasure workflow current checkpoint marker",
   );
   assertFileContains(
@@ -12408,7 +12501,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `b557cfbb` snapshot",
+    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `16000bb` snapshot",
     "CI checkpoints signing validation snapshot marker",
   );
   assertFileContains(
@@ -12458,7 +12551,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b557cfb`",
+    "Current checkpoint metadata/static checks through `16000bb`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(

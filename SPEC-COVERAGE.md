@@ -1,7 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-25 from current implementation snapshot `b557cfbbd61364ef782a73983385a7941d6c55b9`,
-with committed evidence refreshes for mobile API base URL indirection and
+*Updated 2026-07-25 from current implementation snapshot `16000bbe30cc2e1281a8d59b49125d85256f2627`,
+with committed evidence refreshes for the official pdfjs legacy main/worker
+compatibility path, its blocking core browser proof, the continuous template
+document editor, mobile/keyboard behavior, and mobile API base URL indirection and
 shell detection, the mobile companion foundation docs/scripts, destructive
 erasure preflight/approve/execute route wiring plus local gate evidence,
 append-only rectification/restriction ledger annotation routes and remedy
@@ -320,6 +322,28 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `16000bb` keeps Template Catalog/Documents/UX/CI **PARTIAL**:
+  `50c255d` moves runtime PDF rendering to the official
+  `pdfjs-dist/legacy/build/pdf.mjs` main module and matching legacy worker URL,
+  with unit coverage for environments without `Map.getOrInsertComputed`.
+  The blocking core Playwright list includes
+  `apps/web/e2e/template-pdf-preview.spec.ts`, which uses the real server
+  PDF/A preview path, requires a non-empty pdf.js canvas, and proves PDF and
+  Markdown representations remain mutually exclusive. `16000bb` then makes
+  template blocks one continuous paper flow with pagination only at explicit
+  `PageBreak` blocks, document-like friendly controls, the WYSIWYG
+  `NarrativeBody` editor at the first placement, read-only repeated placements,
+  invalid-Advanced-JSON proof pause, deterministic post-reorder focus in both
+  document/card presentations, mutation locking while saves are pending,
+  keyboard-operable PDF/Markdown tabs, and bounded mobile CSS. Validation for
+  this snapshot passed the full web Vitest suite (176 files / 2121 tests), web
+  lint (0 errors / 1 unrelated existing warning), web format check, production
+  web build, and focused Chromium proof (1 passed). This is bounded automated
+  implementation evidence only: it does not claim interactive visual QA, live
+  WebView/device testing, exhaustive browser coverage, PDF/A certification,
+  legal/template correctness, or completion of any top-level spec area;
+  statuses remain PARTIAL=11.
 
 - Current `6bba291` keeps Data/Roles/UX/CI **PARTIAL**: Data Management can
   save/export the already-loaded `GET /v1/sync/handoff-preflight` report as
@@ -1951,7 +1975,7 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
-- Current `b557cfb` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**: the implementation
+- Current `16000bb` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**: the implementation
   snapshot includes the prior `842b7f2` mobile API base URL/shell-detection
   slice, `d43b82a` mobile companion foundation docs plus inert desktop package
   Android companion scripts, `33e70bb` subject-DEK secret-store binding,
