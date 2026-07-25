@@ -4284,8 +4284,10 @@ mod tests {
 
     #[tokio::test]
     async fn citizen_card_bridge_routes_require_auth_and_keep_the_probe_bodyless() {
-        let mut state = AppState::default();
-        state.local_signing = false;
+        let state = AppState {
+            local_signing: false,
+            ..AppState::default()
+        };
         let status_uri = "/v1/signature/cc/bridge/status";
         let test_uri = "/v1/signature/cc/bridge/test";
 
