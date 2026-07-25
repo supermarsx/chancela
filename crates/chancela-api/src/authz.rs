@@ -616,7 +616,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // --- Books ----------------------------------------------------------------------------------
     ("/v1/books", RouteClass::Gated), // GET book.read@Global · POST book.open@Entity
     ("/v1/books/page", RouteClass::Gated), // GET book.read per visible row
-    ("/v1/books/{id}", RouteClass::Gated), // GET book.read@Book
+    ("/v1/books/{id}", RouteClass::Gated), // GET book.read@Book · PATCH book.open@Book
     ("/v1/books/{id}/close", RouteClass::Gated), // POST book.close@Book
     ("/v1/books/{id}/acts", RouteClass::Gated), // GET book.read@Book
     ("/v1/books/{id}/termo/abertura", RouteClass::Gated), // GET book.read@Book · PATCH book.open@Book

@@ -35,10 +35,10 @@ use chancela_core::termo::{
 use chancela_core::{
     Act, ActBody, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
     Block, BodyFormat, Book, BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient,
-    ConveningWaiver, DeliberationItem, DispatchChannel, DocumentReference, Entity, EntityFamily,
-    EntityKind, LegalBasis, LegalBasisVerification, MeetingChannel, MemberStatement, Mesa,
-    NoConveningBasis, NumberingScheme, PresenceMode, SealMetadata, SecondCall, Severity,
-    SignatoryCapacity, SignatorySlot, SignaturePolicyHint, StatuteOverrides,
+    ConveningWaiver, DeliberationItem, DispatchChannel, DocumentLayoutOverrides, DocumentReference,
+    Entity, EntityFamily, EntityKind, LegalBasis, LegalBasisVerification, MeetingChannel,
+    MemberStatement, Mesa, NoConveningBasis, NumberingScheme, PresenceMode, SealMetadata,
+    SecondCall, Severity, SignatoryCapacity, SignatorySlot, SignaturePolicyHint, StatuteOverrides,
     SupersededSigningSnapshot, VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY,
     WrittenResolutionEvidence, WrittenResolutionEvidenceItem, WrittenResolutionEvidenceSummary,
     profile_for, written_resolution_evidence_summary,
@@ -170,6 +170,17 @@ where
     D: Deserializer<'de>,
 {
     Ok(Some(Option::deserialize(de)?))
+}
+
+/// Keep inheritance canonical on the wire and in durable aggregate rows.
+///
+/// An empty override object has no explicit leaves, so it is semantically identical to `null`.
+/// Normalizing it to `None` prevents `{}` from becoming a second persisted spelling of the
+/// default "inherit everything" state.
+pub(crate) fn normalize_document_layout_override(
+    value: Option<DocumentLayoutOverrides>,
+) -> Option<DocumentLayoutOverrides> {
+    value.filter(|layout| !layout.is_empty())
 }
 
 fn default_actor() -> String {
@@ -325,6 +336,8 @@ pub struct EntityView {
     pub profile: EntityProfileView,
     /// The per-entity statute overlay (ENT-03), or `null`. Additive.
     pub statute: Option<StatuteOverrides>,
+    /// Optional per-entity document-layout layer. Missing leaves inherit the instance policy.
+    pub document_layout_override: Option<DocumentLayoutOverrides>,
 }
 
 /// List-only activity rollup for one entity. This is computed by the API from the full book state
@@ -403,6 +416,7 @@ impl From<&Entity> for EntityView {
             fiscal_year_end: e.fiscal_year_end.clone(),
             profile: EntityProfileView::from(e.kind),
             statute: e.statute.clone(),
+            document_layout_override: e.document_layout_override.clone(),
         }
     }
 }
@@ -512,6 +526,8 @@ pub struct BookView {
     /// this flag is the signal to draw up the termo de encerramento. **ASSURANCE**, never a legal
     /// assertion.
     pub capacity_exhausted: bool,
+    /// Optional per-book document-layout layer. Missing leaves inherit entity and instance values.
+    pub document_layout_override: Option<DocumentLayoutOverrides>,
 }
 
 impl From<&Book> for BookView {
@@ -543,6 +559,7 @@ impl From<&Book> for BookView {
             pages_reserved: b.pages_reserved,
             remaining_pages: b.pages_remaining(),
             capacity_exhausted: b.is_capacity_exhausted(),
+            document_layout_override: b.document_layout_override.clone(),
         }
     }
 }
@@ -959,6 +976,10 @@ pub struct CreateBook {
     /// otherwise. Assurance; never asserted as a legal book class.
     #[serde(default)]
     pub kind_label: Option<String>,
+    /// Optional initial book layout layer, persisted before either opening workflow creates its
+    /// termo. Every absent leaf inherits the entity and instance policy.
+    #[serde(default)]
+    pub document_layout_override: Option<DocumentLayoutOverrides>,
     /// D2 — when `true` (the default, preserving today's behaviour byte-for-byte) the book is
     /// created **and opened** in one commit with a static termo. When `false`, only a `Created`
     /// book plus a `Draft` [`chancela_core::termo::TermoInstrument`] are minted; nothing enters the
@@ -967,6 +988,14 @@ pub struct CreateBook {
     pub one_shot: bool,
     #[serde(default = "default_actor")]
     pub actor: String,
+}
+
+/// Body of `PATCH /v1/books/{id}`. An omitted key preserves the current layer, `null` clears it,
+/// and an object replaces it.
+#[derive(Deserialize)]
+pub struct PatchBook {
+    #[serde(default, deserialize_with = "double_option")]
+    pub document_layout_override: Option<Option<DocumentLayoutOverrides>>,
 }
 
 fn default_one_shot() -> bool {

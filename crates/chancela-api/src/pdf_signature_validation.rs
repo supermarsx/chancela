@@ -463,16 +463,19 @@ pub async fn validate_pdf_signature_report(
     let generated_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_default();
-    let instance_name = state
-        .settings
-        .read()
-        .await
-        .organization
-        .name
-        .clone()
-        .unwrap_or_else(|| "Chancela".to_owned());
+    let (instance_name, document_layout) = {
+        let settings = state.settings.read().await;
+        (
+            settings
+                .organization
+                .name
+                .clone()
+                .unwrap_or_else(|| "Chancela".to_owned()),
+            settings.documents.layout_defaults.clone(),
+        )
+    };
 
-    let model = build_pdf_validation_report_document(
+    let mut model = build_pdf_validation_report_document(
         &report,
         &ValidationReportContext {
             generated_at: &generated_at,
@@ -480,6 +483,7 @@ pub async fn validate_pdf_signature_report(
             app_version: env!("CARGO_PKG_VERSION"),
         },
     );
+    model.document_layout = document_layout;
     let bytes = chancela_doc::pdfa::write(&model)
         .map_err(|e| ApiError::Internal(format!("PDF/A generation failed: {e}")))?;
 

@@ -2981,6 +2981,7 @@ mod tests {
             created_at: OffsetDateTime::now_utc(),
             pdf_bytes,
             template_spec_json: None,
+            document_layout_json: None,
         };
         let policy_id = RetentionPolicyId(Uuid::new_v4());
         let policy = RetentionPolicyRecord {

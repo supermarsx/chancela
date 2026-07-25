@@ -357,6 +357,7 @@ pub async fn advance_abertura(
 ) -> Result<Json<TermoInstrumentView>, ApiError> {
     let book_id = BookId(id);
     require_permission(&state, &actor, Permission::BookOpen, scope_of_book(book_id)).await?;
+    let instance_layout = crate::documents::current_instance_document_layout(&state).await;
 
     // Resolve the family (to pin the template) and confirm the book is still `Created`, snapshotting
     // the entity + book the canonical unsigned termo PDF is rendered from. Lock order: entities → books.
@@ -395,8 +396,13 @@ pub async fn advance_abertura(
     let numbering_scheme = termo
         .numbering_scheme
         .unwrap_or(NumberingScheme::Sequential);
-    let snapshot =
-        crate::documents::generate_termo_snapshot(&termo, &book, &entity, numbering_scheme)?;
+    let snapshot = crate::documents::generate_termo_snapshot(
+        &termo,
+        &book,
+        &entity,
+        numbering_scheme,
+        &instance_layout,
+    )?;
 
     // Persist the frozen termo + (if the family has a template) its unsigned snapshot in one durable
     // commit. NO ledger append — a Signing termo is not yet on the hash chain (t23 invariant); its
@@ -1221,6 +1227,7 @@ pub async fn advance_encerramento(
         scope_of_book(book_id),
     )
     .await?;
+    let instance_layout = crate::documents::current_instance_document_layout(&state).await;
 
     // Resolve the entity/book to render from; the book must be Open to close. The book-derived facts
     // (F18/F16) are materialized here exactly as `Book::close` derives them. Lock order: entities →
@@ -1261,6 +1268,7 @@ pub async fn advance_encerramento(
         &entity,
         ata_count,
         pages_used_at_close,
+        &instance_layout,
     )?;
 
     // Persist the frozen termo + (if the family has a template) its unsigned snapshot in one durable
@@ -1409,6 +1417,13 @@ pub async fn close_from_termo(
         None => Vec::new(),
     };
     let snapshot = crate::documents::load_document(&state, subject).await?;
+    // Layout is part of the signed snapshot. Once frozen, stale-fact verification must never
+    // consult mutable instance/entity/book layout settings. Pre-binding rows were necessarily
+    // rendered with the immutable product default and remain honestly unbound.
+    let snapshot_layout = snapshot
+        .as_ref()
+        .map(crate::documents::pinned_document_layout_or_product_default)
+        .transpose()?;
 
     // Seal the termo (checks the completion policy) on a clone — discarded if any later precondition
     // fails, leaving the stored Signing termo retriable.
@@ -1439,12 +1454,15 @@ pub async fn close_from_termo(
     // bytes differ from the signed snapshot — refuse to seal a signed document that would contradict
     // the ledger. A signed false fact is unrecoverable; discarding this attempt is the lesser evil.
     if let Some(snapshot_doc) = &snapshot
-        && let Some(rederived) = crate::documents::generate_encerramento_snapshot(
+        && let Some(rederived) = crate::documents::generate_encerramento_snapshot_with_layout(
             &termo,
             book,
             entity,
             ata_count,
             pages_used_at_close,
+            snapshot_layout
+                .as_ref()
+                .expect("snapshot layout exists whenever snapshot document exists"),
         )?
         && rederived.stored.pdf_digest != snapshot_doc.pdf_digest
     {

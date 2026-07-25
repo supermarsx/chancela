@@ -321,15 +321,18 @@ pub async fn export_archive_document(
     };
     if format == ArchiveExportFormat::Pdfa {
         let sources = label_sources(&state).await;
-        let instance_name = state
-            .settings
-            .read()
-            .await
-            .organization
-            .name
-            .clone()
-            .unwrap_or_else(|| "Chancela".to_owned());
-        let model = build_archive_document(ArchiveDocumentInput {
+        let (instance_name, document_layout) = {
+            let settings = state.settings.read().await;
+            (
+                settings
+                    .organization
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "Chancela".to_owned()),
+                settings.documents.layout_defaults.clone(),
+            )
+        };
+        let mut model = build_archive_document(ArchiveDocumentInput {
             chain: &chain,
             status: &status,
             records: &records,
@@ -341,6 +344,7 @@ pub async fn export_archive_document(
             generated_at: &generated_at,
             filter_summary: &filter_summary,
         });
+        model.document_layout = document_layout;
         let bytes = chancela_doc::pdfa::write(&model)
             .map_err(|e| ApiError::Internal(format!("PDF/A generation failed: {e}")))?;
 
@@ -1323,6 +1327,7 @@ fn build_archive_document(input: ArchiveDocumentInput<'_>) -> DocumentModel {
         language: "pt-PT".to_owned(),
         created_at: Some(input.generated_at.to_owned()),
         blocks,
+        document_layout: Default::default(),
     }
 }
 

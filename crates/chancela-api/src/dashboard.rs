@@ -3512,6 +3512,7 @@ mod tests {
             created_at: OffsetDateTime::UNIX_EPOCH,
             pdf_bytes: b"%PDF-1.7\nabsent-owner-communication".to_vec(),
             template_spec_json: None,
+            document_layout_json: None,
         };
         let evidence = if evidence_recipients.is_empty() {
             Vec::new()
@@ -3588,6 +3589,7 @@ mod tests {
             created_at: OffsetDateTime::UNIX_EPOCH,
             pdf_bytes: b"%PDF-1.7\ngenerated-convening-notice".to_vec(),
             template_spec_json: None,
+            document_layout_json: None,
         };
         let evidence = if evidence_recipients.is_empty() {
             Vec::new()

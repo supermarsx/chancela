@@ -11,8 +11,9 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_core::{
-    Book, BookId, BookKind, BookState, EntityId, LegalHold, TermoDeAbertura, TermoDeEncerramento,
-    open_and_seal_book,
+    Book, BookId, BookKind, BookState, DEFAULT_TENANT_ID, DocumentLayoutOverrides, Entity,
+    EntityId, LegalHold, TermoDeAbertura, TermoDeEncerramento, open_and_seal_book,
+    resolve_document_layout,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -29,8 +30,9 @@ use crate::collection_page::{
     query_fingerprint,
 };
 use crate::dto::{
-    ActView, BookView, BooksQuery, CloseBook, CreateBook, EntityView, normalize_termo_signatories,
-    parse_date, read_redaction_for_actor,
+    ActView, BookView, BooksQuery, CloseBook, CreateBook, EntityView, PatchBook,
+    normalize_document_layout_override, normalize_termo_signatories, parse_date,
+    read_redaction_for_actor,
 };
 use crate::error::ApiError;
 
@@ -116,6 +118,40 @@ fn build_created_book(
     Ok(book)
 }
 
+const BOOK_LAYOUT_SET_JUSTIFICATION: &str = "book document layout override set";
+const BOOK_LAYOUT_CLEAR_JUSTIFICATION: &str = "book document layout override cleared";
+
+fn validate_effective_layout(
+    instance: &chancela_core::DocumentLayoutPolicy,
+    entity: Option<&DocumentLayoutOverrides>,
+    book: Option<&DocumentLayoutOverrides>,
+) -> Result<(), ApiError> {
+    resolve_document_layout(instance, None, entity, book)
+        .map(|_| ())
+        .map_err(|error| {
+            ApiError::Unprocessable(format!("invalid document_layout_override: {error}"))
+        })
+}
+
+/// Keep `book.opened` as the mandatory genesis of a book chain.
+///
+/// A two-phase book is persisted in `Created` before its signed termo opens it. Layout edits made
+/// during that phase are still audited, but only on the tenant/company chains; once the book is
+/// open, the event also joins its now-existing book chain.
+fn document_layout_audit_scope(book: &Book, entity: &Entity) -> String {
+    if book.state == BookState::Created {
+        return format!("tenant:{}/entity:{}", entity.tenant_id, book.entity_id);
+    }
+    if entity.tenant_id == DEFAULT_TENANT_ID {
+        format!("entity:{}/book:{}", book.entity_id, book.id)
+    } else {
+        format!(
+            "tenant:{}/entity:{}/book:{}",
+            entity.tenant_id, book.entity_id, book.id
+        )
+    }
+}
+
 /// `POST /v1/books` — create a book and, by default (`one_shot: true`, D2), open it in one commit
 /// with a termo de abertura (WFL-10/11). With `one_shot: false`, create only a `Created` book plus a
 /// `Draft` termo de abertura for the two-phase flow (nothing enters the hash chain until the termo is
@@ -136,9 +172,11 @@ pub async fn create_book(
         predecessor,
         predecessor_note,
         kind_label,
+        document_layout_override,
         one_shot,
         actor: req_actor,
     } = req;
+    let document_layout_override = normalize_document_layout_override(document_layout_override);
     let entity_id = EntityId(entity_id);
     // RBAC (t64-E3): opening a book is scoped to the owning entity (resolved from the body).
     require_permission(
@@ -162,6 +200,7 @@ pub async fn create_book(
             required_signatories,
             predecessor,
             predecessor_note,
+            document_layout_override,
             &actor,
         )
         .await;
@@ -177,9 +216,21 @@ pub async fn create_book(
         .map(chancela_core::book::TermoSignatory::legacy_label)
         .collect();
 
+    let instance_layout = state
+        .settings
+        .read()
+        .await
+        .documents
+        .layout_defaults
+        .clone();
     // entities → books → ledger.
     let entities = state.entities.read().await;
     let entity = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
+    validate_effective_layout(
+        &instance_layout,
+        entity.document_layout_override.as_ref(),
+        document_layout_override.as_ref(),
+    )?;
     let mut books = state.books.write().await;
     let mut ledger = state.ledger.write().await;
 
@@ -196,6 +247,7 @@ pub async fn create_book(
         ..Default::default()
     };
     let mut book = build_created_book(entity_id, kind, kind_label, predecessor, predecessor_note)?;
+    book.document_layout_override = document_layout_override;
     // Appends the `book.opened` genesis event; a fresh book always opens cleanly.
     open_and_seal_book(&mut book, entity, termo, &actor, &mut ledger)?;
 
@@ -208,13 +260,14 @@ pub async fn create_book(
         .termo_abertura
         .as_ref()
         .expect("termo present immediately after open");
-    let generated = match crate::documents::generate_for_termo(termo_ref, &book, entity.family) {
-        Ok(g) => g,
-        Err(e) => {
-            AppState::rollback_ledger_events(&mut ledger, 1);
-            return Err(e);
-        }
-    };
+    let generated =
+        match crate::documents::generate_for_termo(termo_ref, &book, entity, &instance_layout) {
+            Ok(g) => g,
+            Err(e) => {
+                AppState::rollback_ledger_events(&mut ledger, 1);
+                return Err(e);
+            }
+        };
     match generated {
         Some(made) => {
             let scope = format!("entity:{}/book:{}", book.entity_id, book.id);
@@ -272,6 +325,7 @@ async fn create_book_two_phase(
     required_signatories: Vec<crate::dto::TermoSignatoryInput>,
     predecessor: Option<Uuid>,
     predecessor_note: Option<String>,
+    document_layout_override: Option<DocumentLayoutOverrides>,
     actor: &str,
 ) -> Result<(StatusCode, Json<BookView>), ApiError> {
     let _ = actor; // no ledger append at this phase; kept for signature symmetry with one-shot.
@@ -318,14 +372,27 @@ async fn create_book_two_phase(
         initial_slots.push(slot);
     }
 
+    let instance_layout = state
+        .settings
+        .read()
+        .await
+        .documents
+        .layout_defaults
+        .clone();
     // entities → books → ledger (ledger held only to serialize the durable write, no append).
     let entities = state.entities.read().await;
     let entity = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
     let family = entity.family;
+    validate_effective_layout(
+        &instance_layout,
+        entity.document_layout_override.as_ref(),
+        document_layout_override.as_ref(),
+    )?;
     let mut books = state.books.write().await;
     let mut ledger = state.ledger.write().await;
 
-    let book = build_created_book(entity_id, kind, kind_label, predecessor, predecessor_note)?;
+    let mut book = build_created_book(entity_id, kind, kind_label, predecessor, predecessor_note)?;
+    book.document_layout_override = document_layout_override;
 
     // Seed the Draft termo from the family's template `default_body`; the operator may revise all
     // mutable fields via PATCH. The creation choices are retained rather than silently discarded.
@@ -357,6 +424,78 @@ async fn create_book_two_phase(
     let view = BookView::from(&book);
     books.insert(book.id, book);
     Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `PATCH /v1/books/{id}` — replace or clear the book's document-layout override.
+///
+/// Authorization deliberately reuses `book.open` at the addressed book scope: changing how future
+/// instruments render is part of book operation, not a new or wider RBAC vocabulary.
+pub async fn patch_book(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PatchBook>,
+) -> Result<Json<BookView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(&state, &actor, Permission::BookOpen, scope_of_book(book_id)).await?;
+
+    let instance_layout = state
+        .settings
+        .read()
+        .await
+        .documents
+        .layout_defaults
+        .clone();
+    let actor = actor.resolve("api");
+    // entities → books → ledger, matching the global aggregate lock order.
+    let entities = state.entities.read().await;
+    let mut books = state.books.write().await;
+    let book = books.get_mut(&book_id).ok_or(ApiError::NotFound)?;
+    let entity = entities
+        .get(&book.entity_id)
+        .ok_or_else(|| ApiError::Internal("book references an absent entity".to_owned()))?;
+
+    let mut next = book.clone();
+    if let Some(document_layout_override) = req.document_layout_override {
+        next.document_layout_override =
+            normalize_document_layout_override(document_layout_override);
+    } else {
+        return Ok(Json(BookView::from(&*book)));
+    }
+    validate_effective_layout(
+        &instance_layout,
+        entity.document_layout_override.as_ref(),
+        next.document_layout_override.as_ref(),
+    )?;
+
+    let scope = document_layout_audit_scope(&next, entity);
+    let payload = serde_json::to_vec(&serde_json::json!({
+        "book_id": next.id,
+        "document_layout_override": next.document_layout_override.clone(),
+    }))?;
+    let justification = if next.document_layout_override.is_some() {
+        BOOK_LAYOUT_SET_JUSTIFICATION
+    } else {
+        BOOK_LAYOUT_CLEAR_JUSTIFICATION
+    };
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &actor,
+        &scope,
+        "book.document_layout_updated",
+        Some(justification),
+        &payload,
+    )?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_book(&next_for_store))
+        .await?;
+    state.attest_latest(&attestor, &ledger).await;
+    *book = next;
+
+    Ok(Json(BookView::from(&*book)))
 }
 
 /// `GET /v1/books?entity_id=` — list books the caller may read (RBAC list-filtering, plan §3.3
@@ -704,6 +843,7 @@ pub async fn close_book(
         .map(chancela_core::book::TermoSignatory::legacy_label)
         .collect();
     let actor = actor.resolve(&req_actor);
+    let instance_layout = crate::documents::current_instance_document_layout(&state).await;
 
     // entities → books → ledger (entities read so the family selects the encerramento template).
     let entities = state.entities.read().await;
@@ -743,7 +883,12 @@ pub async fn close_book(
         .expect("termo present immediately after close");
     let generated = match entities.get(&next.entity_id) {
         Some(entity) => {
-            match crate::documents::generate_for_encerramento(termo_ref, &next, entity) {
+            match crate::documents::generate_for_encerramento(
+                termo_ref,
+                &next,
+                entity,
+                &instance_layout,
+            ) {
                 Ok(g) => g,
                 Err(e) => {
                     AppState::rollback_ledger_events(&mut ledger, 1);

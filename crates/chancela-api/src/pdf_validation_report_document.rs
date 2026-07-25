@@ -685,6 +685,7 @@ pub fn build_pdf_validation_report_document(
         language: "pt-PT".to_owned(),
         created_at: Some(ctx.generated_at.to_owned()),
         blocks,
+        document_layout: Default::default(),
     }
 }
 

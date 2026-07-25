@@ -9,8 +9,9 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{
-    Book, BookId, BookKind, BookState, ClosingReason, DEFAULT_TENANT_ID, Entity, EntityFamily,
-    EntityId, EntityKind, Nipc, StatuteOverrides, TenantId,
+    Book, BookId, BookKind, BookState, ClosingReason, DEFAULT_TENANT_ID, DocumentLayoutOverrides,
+    Entity, EntityFamily, EntityId, EntityKind, Nipc, StatuteOverrides, TenantId,
+    resolve_document_layout,
 };
 use chancela_ledger::{ChainId, Event};
 use serde::Deserialize;
@@ -141,6 +142,8 @@ pub async fn create_entity(
 /// Justification recorded on the `entity.statute_updated` event (ENT-03 audit trail). Frozen
 /// wording so a statute-overlay edit is greppable in the ledger.
 const STATUTE_UPDATE_JUSTIFICATION: &str = "entity statute overlay updated";
+const LAYOUT_SET_JUSTIFICATION: &str = "entity document layout override set";
+const LAYOUT_CLEAR_JUSTIFICATION: &str = "entity document layout override cleared";
 
 /// Request body for `PATCH /v1/entities/{id}`. Currently the statute overlay only (ENT-03); the
 /// body is extendable. Uses [`double_option`](crate::dto::double_option) so an absent key leaves
@@ -151,6 +154,8 @@ pub struct PatchEntity {
     statute: Option<Option<StatuteOverrides>>,
     #[serde(default, deserialize_with = "crate::dto::double_option")]
     fiscal_year_end: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::dto::double_option")]
+    document_layout_override: Option<Option<DocumentLayoutOverrides>>,
 }
 
 /// `PATCH /v1/entities/{id}` — edit the per-entity statute overlay (ENT-03), append an
@@ -172,34 +177,106 @@ pub async fn patch_entity(
     )
     .await?;
     let actor = actor.resolve("api");
+    let instance_layout = state
+        .settings
+        .read()
+        .await
+        .documents
+        .layout_defaults
+        .clone();
     // entities → ledger (the global lock order); attestation sidecar acquired last.
     let mut entities = state.entities.write().await;
-    let mut ledger = state.ledger.write().await;
+    let books = state.books.read().await;
 
     let entity = entities.get_mut(&EntityId(id)).ok_or(ApiError::NotFound)?;
 
     // Apply to a clone so the in-memory map is mutated only after the durable write commits (a
     // store failure rolls back the appended event and leaves the entity untouched).
     let mut next = entity.clone();
+    let statute_changed = req.statute.is_some();
+    let fiscal_year_end_changed = req.fiscal_year_end.is_some();
+    let layout_changed = req.document_layout_override.is_some();
+    if !statute_changed && !fiscal_year_end_changed && !layout_changed {
+        return Ok(Json(EntityView::from(&*entity)));
+    }
     if let Some(statute) = req.statute {
         next.statute = statute;
     }
     if let Some(fiscal_year_end) = req.fiscal_year_end {
         next.fiscal_year_end = normalize_fiscal_year_end(fiscal_year_end)?;
     }
+    if let Some(document_layout_override) = req.document_layout_override {
+        next.document_layout_override =
+            crate::dto::normalize_document_layout_override(document_layout_override);
+        let mut found_book = false;
+        for book in books.values().filter(|book| book.entity_id == next.id) {
+            found_book = true;
+            resolve_document_layout(
+                &instance_layout,
+                None,
+                next.document_layout_override.as_ref(),
+                book.document_layout_override.as_ref(),
+            )
+            .map_err(|error| {
+                ApiError::Unprocessable(format!(
+                    "invalid document_layout_override for book {}: {error}",
+                    book.id
+                ))
+            })?;
+        }
+        if !found_book {
+            resolve_document_layout(
+                &instance_layout,
+                None,
+                next.document_layout_override.as_ref(),
+                None,
+            )
+            .map_err(|error| {
+                ApiError::Unprocessable(format!("invalid document_layout_override: {error}"))
+            })?;
+        }
+    }
 
-    let scope = next.id.to_string();
-    let payload = serde_json::to_vec(&next)?;
-    ledger.append(
-        &actor,
-        &scope,
-        "entity.statute_updated",
-        Some(STATUTE_UPDATE_JUSTIFICATION),
-        &payload,
-    );
+    let entity_scope = next.id.to_string();
+    let layout_scope = format!("tenant:{}/entity:{}", next.tenant_id, next.id);
+    let entity_payload = serde_json::to_vec(&next)?;
+    let mut ledger = state.ledger.write().await;
+    let mut appended = 0;
+    if layout_changed {
+        let layout_payload = serde_json::to_vec(&serde_json::json!({
+            "entity_id": next.id,
+            "document_layout_override": next.document_layout_override.clone(),
+        }))?;
+        let justification = if next.document_layout_override.is_some() {
+            LAYOUT_SET_JUSTIFICATION
+        } else {
+            LAYOUT_CLEAR_JUSTIFICATION
+        };
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &layout_scope,
+            "entity.document_layout_updated",
+            Some(justification),
+            &layout_payload,
+        )?;
+        appended += 1;
+    }
+    if statute_changed || fiscal_year_end_changed {
+        ledger.append(
+            &actor,
+            &entity_scope,
+            "entity.statute_updated",
+            Some(STATUTE_UPDATE_JUSTIFICATION),
+            &entity_payload,
+        );
+        appended += 1;
+    }
     let next_for_store = next.clone();
     state
-        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_entity(&next_for_store))
+        .persist_write_through(&mut ledger, appended, move |tx| {
+            tx.upsert_entity(&next_for_store)
+        })
         .await?;
     state.attest_latest(&attestor, &ledger).await;
     *entity = next;
@@ -442,8 +519,10 @@ fn activity_kind_search_labels(kind: &str) -> String {
         "registry.auto_update.attempted" => "Atualização automática do registo comercial tentada",
         "entity.created" => "Entidade criada",
         "entity.statute_updated" => "Estatutos da entidade atualizados",
+        "entity.document_layout_updated" => "Formato dos documentos da entidade atualizado",
         "book.opened" => "Livro aberto",
         "book.closed" => "Livro encerrado",
+        "book.document_layout_updated" => "Formato dos documentos do livro atualizado",
         "book.legal_hold.set" => "Retenção legal do livro aplicada",
         "book.legal_hold.cleared" => "Retenção legal do livro levantada",
         "act.advanced" => "Ata avançada de estado",
@@ -1073,6 +1152,34 @@ mod tests {
             .header("content-type", "application/json")
             .body(Body::from(body.to_string()))
             .expect("request builds")
+    }
+
+    fn patch_layout_json(uri: &str, body: Value) -> Request<Body> {
+        Request::builder()
+            .method("PATCH")
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .expect("request builds")
+    }
+
+    struct LayoutTempDir {
+        path: std::path::PathBuf,
+    }
+
+    impl LayoutTempDir {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("chancela-layout-api-test-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("temporary data directory created");
+            Self { path }
+        }
+    }
+
+    impl Drop for LayoutTempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
     }
 
     async fn token_for_role(state: &AppState, username: &str, role_id: RoleId) -> String {
@@ -1723,5 +1830,477 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn document_layout_override_set_omit_clear_and_restart_are_durable_and_audited() {
+        let temp = LayoutTempDir::new();
+        let (entity_id, book_id) = {
+            let state = AppState::with_data_dir(temp.path.clone());
+            let owner = token_for_role(&state, "layout.owner", OWNER_ROLE_ID).await;
+
+            let (status, entity) = send_raw(
+                state.clone(),
+                with_session(
+                    post_json(
+                        "/v1/entities",
+                        json!({
+                            "name": "Layout Persistente, Lda",
+                            "nipc": "503004642",
+                            "seat": "Lisboa",
+                            "kind": "SociedadePorQuotas"
+                        }),
+                    ),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED, "{entity}");
+            assert!(entity["document_layout_override"].is_null());
+            let entity_id = entity["id"].as_str().expect("entity id").to_owned();
+
+            let (status, inherited) = send_raw(
+                state.clone(),
+                with_session(
+                    patch_layout_json(
+                        &format!("/v1/entities/{entity_id}"),
+                        json!({ "document_layout_override": {} }),
+                    ),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{inherited}");
+            assert!(
+                inherited["document_layout_override"].is_null(),
+                "an override with no explicit leaves is canonical inheritance"
+            );
+
+            let (status, set) = send_raw(
+                state.clone(),
+                with_session(
+                    patch_layout_json(
+                        &format!("/v1/entities/{entity_id}"),
+                        json!({
+                            "document_layout_override": {
+                                "page": { "orientation": "Landscape" },
+                                "typography": { "heading_scale_percent": 115 }
+                            }
+                        }),
+                    ),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{set}");
+            assert_eq!(
+                set["document_layout_override"]["page"]["orientation"],
+                "Landscape"
+            );
+
+            let ledger_len = state.ledger.read().await.len();
+            let (status, omitted) = send_raw(
+                state.clone(),
+                with_session(
+                    patch_layout_json(&format!("/v1/entities/{entity_id}"), json!({})),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{omitted}");
+            assert_eq!(
+                omitted["document_layout_override"],
+                set["document_layout_override"]
+            );
+            assert_eq!(state.ledger.read().await.len(), ledger_len);
+
+            let (status, cleared) = send_raw(
+                state.clone(),
+                with_session(
+                    patch_layout_json(
+                        &format!("/v1/entities/{entity_id}"),
+                        json!({ "document_layout_override": null }),
+                    ),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{cleared}");
+            assert!(cleared["document_layout_override"].is_null());
+
+            let (status, entity_final) = send_raw(
+                state.clone(),
+                with_session(
+                    patch_layout_json(
+                        &format!("/v1/entities/{entity_id}"),
+                        json!({
+                            "document_layout_override": {
+                                "page": { "margins_mm": { "top": 21 } }
+                            }
+                        }),
+                    ),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{entity_final}");
+
+            let (status, book) = send_raw(
+                state.clone(),
+                with_session(
+                    post_json(
+                        "/v1/books",
+                        json!({
+                            "entity_id": entity_id,
+                            "kind": "AssembleiaGeral",
+                            "purpose": "Livro de atas",
+                            "opening_date": "",
+                            "required_signatories": [],
+                            "one_shot": false,
+                            "document_layout_override": {
+                                "typography": { "body_font_size_pt": 12 }
+                            }
+                        }),
+                    ),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED, "{book}");
+            assert_eq!(
+                book["document_layout_override"]["typography"]["body_font_size_pt"],
+                12
+            );
+            let book_id = book["id"].as_str().expect("book id").to_owned();
+
+            let ledger_len = state.ledger.read().await.len();
+            let (status, omitted) = send_raw(
+                state.clone(),
+                with_session(
+                    patch_layout_json(&format!("/v1/books/{book_id}"), json!({})),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{omitted}");
+            assert_eq!(
+                omitted["document_layout_override"],
+                book["document_layout_override"]
+            );
+            assert_eq!(state.ledger.read().await.len(), ledger_len);
+
+            let (status, cleared) = send_raw(
+                state.clone(),
+                with_session(
+                    patch_layout_json(
+                        &format!("/v1/books/{book_id}"),
+                        json!({ "document_layout_override": null }),
+                    ),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{cleared}");
+            assert!(cleared["document_layout_override"].is_null());
+
+            let (status, book_final) = send_raw(
+                state.clone(),
+                with_session(
+                    patch_layout_json(
+                        &format!("/v1/books/{book_id}"),
+                        json!({
+                            "document_layout_override": {
+                                "regions": { "header_gap_mm": 7 }
+                            }
+                        }),
+                    ),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{book_final}");
+            assert_eq!(
+                book_final["document_layout_override"]["regions"]["header_gap_mm"],
+                7
+            );
+
+            let ledger = state.ledger.read().await;
+            assert!(ledger.events().iter().any(|event| {
+                event.kind == "entity.document_layout_updated"
+                    && event.justification.as_deref()
+                        == Some("entity document layout override cleared")
+            }));
+            assert!(ledger.events().iter().any(|event| {
+                event.kind == "book.document_layout_updated"
+                    && event.justification.as_deref() == Some("book document layout override set")
+            }));
+            assert!(ledger.events().iter().any(|event| {
+                event.kind == "book.document_layout_updated"
+                    && event.justification.as_deref()
+                        == Some("book document layout override cleared")
+            }));
+            let book_layout_events: Vec<_> = ledger
+                .events()
+                .iter()
+                .filter(|event| event.kind == "book.document_layout_updated")
+                .collect();
+            assert!(
+                book_layout_events.iter().all(|event| event
+                    .links
+                    .iter()
+                    .all(|link| !matches!(&link.chain, ChainId::Book(_)))),
+                "a Created book must not join its book chain before book.opened"
+            );
+            assert!(
+                ledger.verify().is_ok(),
+                "layout edits must preserve all ledger genesis/link invariants"
+            );
+
+            (entity_id, book_id)
+        };
+
+        let restarted = AppState::with_data_dir(temp.path.clone());
+        let entity_id = EntityId(Uuid::parse_str(&entity_id).expect("entity UUID"));
+        let book_id = BookId(Uuid::parse_str(&book_id).expect("book UUID"));
+        let entities = restarted.entities.read().await;
+        assert_eq!(
+            entities[&entity_id]
+                .document_layout_override
+                .as_ref()
+                .and_then(|layout| layout.page.margins_mm.top),
+            Some(21)
+        );
+        drop(entities);
+        let books = restarted.books.read().await;
+        assert_eq!(
+            books[&book_id]
+                .document_layout_override
+                .as_ref()
+                .and_then(|layout| layout.regions.header_gap_mm),
+            Some(7)
+        );
+    }
+
+    #[tokio::test]
+    async fn document_layout_override_validation_is_atomic_across_inherited_layers() {
+        let state = AppState::default();
+        let owner = token_for_role(&state, "layout.validator", OWNER_ROLE_ID).await;
+        let entity = Entity::new(
+            "Layout Validation, Lda",
+            Nipc::unvalidated("layout-validation"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        );
+        let entity_id = entity.id;
+        let book = Book::new(entity_id, BookKind::AssembleiaGeral);
+        let book_id = book.id;
+        state.entities.write().await.insert(entity_id, entity);
+        state.books.write().await.insert(book_id, book);
+        state
+            .ledger
+            .write()
+            .await
+            .try_append(
+                "layout.fixture",
+                &format!("tenant:{DEFAULT_TENANT_ID}/entity:{entity_id}"),
+                "entity.created",
+                None,
+                b"{}",
+            )
+            .expect("fixture entity genesis");
+
+        let before_events = state.ledger.read().await.len();
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                patch_layout_json(
+                    &format!("/v1/entities/{entity_id}"),
+                    json!({
+                        "document_layout_override": {
+                            "page": { "margins_mm": { "top": 1 } }
+                        }
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            state.entities.read().await[&entity_id]
+                .document_layout_override
+                .is_none()
+        );
+        assert_eq!(state.ledger.read().await.len(), before_events);
+
+        let (status, entity_view) = send_raw(
+            state.clone(),
+            with_session(
+                patch_layout_json(
+                    &format!("/v1/entities/{entity_id}"),
+                    json!({
+                        "document_layout_override": {
+                            "page": { "size": "A5" }
+                        }
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{entity_view}");
+
+        let before_events = state.ledger.read().await.len();
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                patch_layout_json(
+                    &format!("/v1/books/{book_id}"),
+                    json!({
+                        "document_layout_override": {
+                            "page": {
+                                "margins_mm": { "left": 30, "right": 30 }
+                            }
+                        }
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            state.books.read().await[&book_id]
+                .document_layout_override
+                .is_none()
+        );
+        assert_eq!(state.ledger.read().await.len(), before_events);
+    }
+
+    #[tokio::test]
+    async fn document_layout_override_patch_is_tenant_scoped_and_non_enumerating() {
+        let state = AppState::default();
+        let tenant_a = TenantId::new();
+        let tenant_b = TenantId::new();
+        let entity_a = Entity::new(
+            "Tenant A Layout",
+            Nipc::unvalidated("tenant-a-layout"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        )
+        .in_tenant(tenant_a);
+        let entity_b = Entity::new(
+            "Tenant B Layout",
+            Nipc::unvalidated("tenant-b-layout"),
+            "Porto",
+            EntityKind::SociedadePorQuotas,
+        )
+        .in_tenant(tenant_b);
+        let entity_a_id = entity_a.id;
+        let entity_b_id = entity_b.id;
+        let book_a = Book::new(entity_a_id, BookKind::AssembleiaGeral);
+        let book_b = Book::new(entity_b_id, BookKind::AssembleiaGeral);
+        let book_a_id = book_a.id;
+        let book_b_id = book_b.id;
+        state
+            .entities
+            .write()
+            .await
+            .extend([(entity_a_id, entity_a), (entity_b_id, entity_b)]);
+        state
+            .books
+            .write()
+            .await
+            .extend([(book_a_id, book_a), (book_b_id, book_b)]);
+        {
+            let mut ledger = state.ledger.write().await;
+            for (tenant_id, entity_id) in [(tenant_a, entity_a_id), (tenant_b, entity_b_id)] {
+                ledger
+                    .try_append(
+                        "layout.fixture",
+                        &format!("tenant:{tenant_id}/entity:{entity_id}"),
+                        "entity.created",
+                        None,
+                        b"{}",
+                    )
+                    .expect("fixture entity genesis");
+            }
+        }
+
+        let tenant_owner = token_for_role_at(
+            &state,
+            "layout.tenant-owner",
+            OWNER_ROLE_ID,
+            scope_of_tenant(tenant_a),
+        )
+        .await;
+        let global_owner = token_for_role(&state, "layout.global-owner", OWNER_ROLE_ID).await;
+        let reader = token_for_role(&state, "layout.reader", READER_ROLE_ID).await;
+        let body = json!({
+            "document_layout_override": {
+                "typography": { "paragraph_spacing_pt": 8 }
+            }
+        });
+
+        for uri in [
+            format!("/v1/entities/{entity_a_id}"),
+            format!("/v1/books/{book_a_id}"),
+        ] {
+            let (status, response) = send_raw(
+                state.clone(),
+                with_session(patch_layout_json(&uri, body.clone()), &tenant_owner),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{uri}: {response}");
+        }
+
+        for uri in [
+            format!("/v1/entities/{entity_b_id}"),
+            format!("/v1/books/{book_b_id}"),
+        ] {
+            let (status, _) = send_raw(
+                state.clone(),
+                with_session(patch_layout_json(&uri, body.clone()), &tenant_owner),
+            )
+            .await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+        }
+
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                patch_layout_json(&format!("/v1/books/{book_a_id}"), body.clone()),
+                &reader,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        for uri in [
+            format!("/v1/entities/{}", Uuid::new_v4()),
+            format!("/v1/books/{}", Uuid::new_v4()),
+        ] {
+            let (status, _) = send_raw(
+                state.clone(),
+                with_session(patch_layout_json(&uri, body.clone()), &global_owner),
+            )
+            .await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+        }
+
+        let ledger = state.ledger.read().await;
+        let tenant_a_layout_events: Vec<_> = ledger
+            .events()
+            .iter()
+            .filter(|event| event.kind.ends_with(".document_layout_updated"))
+            .collect();
+        assert_eq!(tenant_a_layout_events.len(), 2);
+        assert!(tenant_a_layout_events.iter().all(|event| {
+            event.scope == format!("tenant:{tenant_a}/entity:{entity_a_id}")
+                && event.links.iter().any(
+                    |link| matches!(&link.chain, ChainId::Tenant(id) if id == &tenant_a.to_string()),
+                )
+        }));
+        assert!(ledger.verify().is_ok());
     }
 }

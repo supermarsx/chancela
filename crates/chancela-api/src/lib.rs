@@ -2045,7 +2045,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/books", get(books::list_books).post(books::create_book))
         .route("/v1/books/page", get(books::list_books_page))
-        .route("/v1/books/{id}", get(books::get_book))
+        .route(
+            "/v1/books/{id}",
+            get(books::get_book).patch(books::patch_book),
+        )
         .route("/v1/books/{id}/close", post(books::close_book))
         .route("/v1/books/{id}/acts", get(books::list_book_acts))
         .route(
@@ -7259,6 +7262,7 @@ mod tests {
                 created_at: time::OffsetDateTime::UNIX_EPOCH,
                 pdf_bytes: b"%PDF-1.7\n".to_vec(),
                 template_spec_json: None,
+                document_layout_json: None,
             },
         );
 
@@ -10883,7 +10887,29 @@ mod tests {
         json!({
             "schema_version": 1,
             "organization": { "name": "Encosto Estratégico, S.A.", "default_actor": "amelia.marques" },
-            "documents": { "locale": "en-US", "numbering_scheme_default": "LooseLeaf" },
+            "documents": {
+                "locale": "en-US",
+                "numbering_scheme_default": "LooseLeaf",
+                "layout_defaults": {
+                    "page": {
+                        "size": "Letter",
+                        "orientation": "Landscape",
+                        "margins_mm": { "top": 18, "right": 16, "bottom": 19, "left": 17 }
+                    },
+                    "typography": {
+                        "body_font_family": "NotoSans",
+                        "body_font_size_pt": 12,
+                        "header_font_family": "NotoSerif",
+                        "header_font_size_pt": 13,
+                        "footer_font_family": "NotoSans",
+                        "footer_font_size_pt": 9,
+                        "line_spacing_percent": 150,
+                        "paragraph_spacing_pt": 8,
+                        "heading_scale_percent": 120
+                    },
+                    "regions": { "header_gap_mm": 5, "footer_gap_mm": 6 }
+                }
+            },
             "catalog": {
                 "cae_update_url": "https://catalog.example.pt/cae.json",
                 "cae_sources": [

@@ -406,6 +406,7 @@ pub async fn advance_act(
     let actor = actor.resolve(&req.actor);
     let target_state = req.to;
     let template_id = req.template_id;
+    let instance_layout = crate::documents::current_instance_document_layout(&state).await;
 
     // A canonical Ata may only be created once, exactly as the act enters Signing. Pre-existing Ata
     // rows are never silently replaced or reinterpreted as the new snapshot.
@@ -490,14 +491,19 @@ pub async fn advance_act(
 
     let signing_snapshot = if target_state == ActState::Signing {
         Some(
-            crate::documents::generate_for_act(&next, entity, template_id.as_deref())?.ok_or_else(
-                || {
-                    ApiError::Conflict(
-                        "no canonical Ata template is available for this act; signing cannot start"
-                            .to_owned(),
-                    )
-                },
-            )?,
+            crate::documents::generate_for_act(
+                &next,
+                &book_next,
+                entity,
+                template_id.as_deref(),
+                &instance_layout,
+            )?
+            .ok_or_else(|| {
+                ApiError::Conflict(
+                    "no canonical Ata template is available for this act; signing cannot start"
+                        .to_owned(),
+                )
+            })?,
         )
     } else {
         None
@@ -1284,6 +1290,7 @@ pub async fn seal_act_handler(
         )));
     }
     validate_canonical_signing_snapshot(&canonical)?;
+    let instance_layout = crate::documents::current_instance_document_layout(&state).await;
 
     // entities → books → acts → ledger (the full order; seal touches all four).
     let entities = state.entities.read().await;
@@ -1381,7 +1388,10 @@ pub async fn seal_act_handler(
             let mut generated_docs = Vec::new();
             if should_generate_condominium_absent_owner_communication(&act_next, entity) {
                 match crate::documents::generate_condominium_absent_owner_communication(
-                    &act_next, &book_next, entity,
+                    &act_next,
+                    &book_next,
+                    entity,
+                    &instance_layout,
                 ) {
                     Ok(made) => generated_docs.push(made),
                     Err(e) => {

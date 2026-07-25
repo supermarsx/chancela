@@ -506,6 +506,7 @@ pub async fn start_over_book(
         .map(chancela_core::book::TermoSignatory::legacy_label)
         .collect();
     let actor = actor.resolve(&req_actor);
+    let instance_layout = crate::documents::current_instance_document_layout(&state).await;
     let old_book_id = BookId(id);
 
     let Some(store) = state.store.clone() else {
@@ -594,8 +595,12 @@ pub async fn start_over_book(
         .termo_abertura
         .as_ref()
         .expect("termo present immediately after open");
-    let generated = match crate::documents::generate_for_termo(termo_ref, &new_book, entity.family)
-    {
+    let generated = match crate::documents::generate_for_termo(
+        termo_ref,
+        &new_book,
+        entity,
+        &instance_layout,
+    ) {
         Ok(g) => g,
         Err(e) => {
             AppState::rollback_ledger_events(&mut ledger, 1);

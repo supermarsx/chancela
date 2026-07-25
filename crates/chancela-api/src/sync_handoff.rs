@@ -854,6 +854,7 @@ mod tests {
                 created_at: OffsetDateTime::now_utc(),
                 pdf_bytes: b"%PDF-1.7\n".to_vec(),
                 template_spec_json: None,
+                document_layout_json: None,
             },
         );
     }
