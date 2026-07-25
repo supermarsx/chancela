@@ -10366,29 +10366,31 @@ input[type='radio']:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: min(22rem, calc(100vw - 3rem));
-  gap: 1.25rem;
+  width: min(18rem, calc(100vw - 2.5rem));
+  gap: clamp(0.75rem, 2.5vw, 1rem);
   color: var(--text-muted);
   font-family: var(--font-sans);
 }
 
 .gate-boot__brand {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 0.8rem;
+  justify-content: center;
+  gap: clamp(0.45rem, 1.5vw, 0.65rem);
   color: var(--accent);
 }
 
 .gate-boot__crest {
   display: grid;
   place-items: center;
-  width: 3rem;
-  height: 3rem;
+  flex: 0 0 auto;
+  width: clamp(1.55rem, 6vw, 1.9rem);
+  height: clamp(1.55rem, 6vw, 1.9rem);
   border: 1px solid var(--accent-strong);
   border-radius: 50%;
   font-family: var(--font-display);
-  font-size: 1.4rem;
+  font-size: clamp(0.78rem, 2.8vw, 0.94rem);
   font-weight: 700;
   line-height: 1;
 }
@@ -10396,14 +10398,15 @@ input[type='radio']:disabled {
 .gate-boot__wordmark {
   color: var(--text);
   font-family: var(--font-display);
-  font-size: clamp(1.8rem, 6vw, 2.4rem);
+  font-size: clamp(1rem, 4.5vw, 1.3rem);
   font-weight: 600;
-  letter-spacing: 0.1em;
+  line-height: 1;
+  letter-spacing: clamp(0.06em, 0.8vw, 0.1em);
 }
 
 .gate-boot__progress {
   position: relative;
-  width: min(15rem, 70vw);
+  width: min(13rem, calc(100vw - 4rem));
   height: 3px;
   overflow: hidden;
   border-radius: 999px;

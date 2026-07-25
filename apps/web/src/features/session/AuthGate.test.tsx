@@ -14,6 +14,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
+import { readFileSync } from 'node:fs';
 import { renderWithProviders } from '../../test/utils';
 import { AuthGate } from './AuthGate';
 import { clearSessionToken } from '../../api/session';
@@ -70,6 +71,17 @@ function renderGate() {
   );
 }
 
+function themeCss(): string {
+  return readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
+}
+
+function cssRule(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css);
+  expect(match, `expected ${selector} in theme.css`).toBeTruthy();
+  return match?.[1] ?? '';
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -95,6 +107,29 @@ describe('AuthGate', () => {
     expect(status.querySelector('.skeleton')).toBeNull();
     expect(screen.queryByText('APP CHROME')).toBeNull();
     expect(screen.queryByText('Iniciar sessão')).toBeNull();
+  });
+
+  it('keeps the boot identity compact, balanced and responsive without weakening progress motion', () => {
+    const css = themeCss();
+    const inner = cssRule(css, '.gate-boot__inner');
+    const brand = cssRule(css, '.gate-boot__brand');
+    const crest = cssRule(css, '.gate-boot__crest');
+    const wordmark = cssRule(css, '.gate-boot__wordmark');
+    const progress = cssRule(css, '.gate-boot__progress');
+    const progressBar = cssRule(css, '.gate-boot__progress-bar');
+
+    expect(inner).toMatch(/width:\s*min\(18rem,\s*calc\(100vw - 2\.5rem\)\)/);
+    expect(brand).toMatch(/flex-direction:\s*row/);
+    expect(brand).toMatch(/justify-content:\s*center/);
+    expect(crest).toMatch(/width:\s*clamp\(1\.55rem,\s*6vw,\s*1\.9rem\)/);
+    expect(crest).toMatch(/height:\s*clamp\(1\.55rem,\s*6vw,\s*1\.9rem\)/);
+    expect(wordmark).toMatch(/font-size:\s*clamp\(1rem,\s*4\.5vw,\s*1\.3rem\)/);
+    expect(progress).toMatch(/width:\s*min\(13rem,\s*calc\(100vw - 4rem\)\)/);
+    expect(progressBar).toMatch(/animation:\s*gate-boot-progress/);
+
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.gate-boot__progress-bar\s*\{[^}]*animation:\s*none/s,
+    );
   });
 
   it('passes through to the guarded children when a user is signed in', async () => {
