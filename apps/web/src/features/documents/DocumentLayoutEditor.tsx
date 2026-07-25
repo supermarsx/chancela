@@ -5,6 +5,7 @@ import type {
   DocumentOrientation,
   DocumentPageSize,
 } from '../../api/types';
+import { useT, type MessageKey, type TFunction } from '../../i18n';
 import { Button, Field, Input, Select } from '../../ui';
 import './documentLayoutEditor.css';
 
@@ -15,37 +16,37 @@ type LayoutPath = readonly string[];
 interface LayoutLeaf {
   key: string;
   section: LayoutSection;
-  label: string;
+  label: MessageKey;
   path: LayoutPath;
   kind: 'select' | 'number';
-  options?: { value: string; label: string }[];
+  options?: { value: string; label: MessageKey }[];
   min?: number;
   max?: number;
   unit?: string;
 }
 
-const PAGE_SIZE_OPTIONS: { value: DocumentPageSize; label: string }[] = [
-  { value: 'A4', label: 'A4 · 210 × 297 mm' },
-  { value: 'A5', label: 'A5 · 148 × 210 mm' },
-  { value: 'Letter', label: 'Letter · 216 × 279 mm' },
-  { value: 'Legal', label: 'Legal · 216 × 356 mm' },
+const PAGE_SIZE_OPTIONS: { value: DocumentPageSize; label: MessageKey }[] = [
+  { value: 'A4', label: 'documentLayout.option.pageSize.A4' },
+  { value: 'A5', label: 'documentLayout.option.pageSize.A5' },
+  { value: 'Letter', label: 'documentLayout.option.pageSize.Letter' },
+  { value: 'Legal', label: 'documentLayout.option.pageSize.Legal' },
 ];
 
-const ORIENTATION_OPTIONS: { value: DocumentOrientation; label: string }[] = [
-  { value: 'Portrait', label: 'Vertical' },
-  { value: 'Landscape', label: 'Horizontal' },
+const ORIENTATION_OPTIONS: { value: DocumentOrientation; label: MessageKey }[] = [
+  { value: 'Portrait', label: 'documentLayout.option.orientation.Portrait' },
+  { value: 'Landscape', label: 'documentLayout.option.orientation.Landscape' },
 ];
 
-const FONT_OPTIONS: { value: DocumentFontFamily; label: string }[] = [
-  { value: 'NotoSerif', label: 'Noto Serif' },
-  { value: 'NotoSans', label: 'Noto Sans' },
+const FONT_OPTIONS: { value: DocumentFontFamily; label: MessageKey }[] = [
+  { value: 'NotoSerif', label: 'documentLayout.option.font.NotoSerif' },
+  { value: 'NotoSans', label: 'documentLayout.option.font.NotoSans' },
 ];
 
 const LEAVES: LayoutLeaf[] = [
   {
     key: 'page-size',
     section: 'page',
-    label: 'Formato da página',
+    label: 'documentLayout.field.pageSize',
     path: ['page', 'size'],
     kind: 'select',
     options: PAGE_SIZE_OPTIONS,
@@ -53,7 +54,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'page-orientation',
     section: 'page',
-    label: 'Orientação',
+    label: 'documentLayout.field.orientation',
     path: ['page', 'orientation'],
     kind: 'select',
     options: ORIENTATION_OPTIONS,
@@ -61,7 +62,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'margin-top',
     section: 'page',
-    label: 'Margem superior',
+    label: 'documentLayout.field.marginTop',
     path: ['page', 'margins_mm', 'top'],
     kind: 'number',
     min: 5,
@@ -71,7 +72,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'margin-right',
     section: 'page',
-    label: 'Margem direita',
+    label: 'documentLayout.field.marginRight',
     path: ['page', 'margins_mm', 'right'],
     kind: 'number',
     min: 5,
@@ -81,7 +82,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'margin-bottom',
     section: 'page',
-    label: 'Margem inferior',
+    label: 'documentLayout.field.marginBottom',
     path: ['page', 'margins_mm', 'bottom'],
     kind: 'number',
     min: 5,
@@ -91,7 +92,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'margin-left',
     section: 'page',
-    label: 'Margem esquerda',
+    label: 'documentLayout.field.marginLeft',
     path: ['page', 'margins_mm', 'left'],
     kind: 'number',
     min: 5,
@@ -101,7 +102,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'body-font',
     section: 'typography',
-    label: 'Tipo de letra do corpo',
+    label: 'documentLayout.field.bodyFont',
     path: ['typography', 'body_font_family'],
     kind: 'select',
     options: FONT_OPTIONS,
@@ -109,7 +110,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'body-size',
     section: 'typography',
-    label: 'Tamanho do corpo',
+    label: 'documentLayout.field.bodySize',
     path: ['typography', 'body_font_size_pt'],
     kind: 'number',
     min: 8,
@@ -119,7 +120,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'header-font',
     section: 'typography',
-    label: 'Tipo de letra do cabeçalho',
+    label: 'documentLayout.field.headerFont',
     path: ['typography', 'header_font_family'],
     kind: 'select',
     options: FONT_OPTIONS,
@@ -127,7 +128,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'header-size',
     section: 'typography',
-    label: 'Tamanho do cabeçalho',
+    label: 'documentLayout.field.headerSize',
     path: ['typography', 'header_font_size_pt'],
     kind: 'number',
     min: 8,
@@ -137,7 +138,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'footer-font',
     section: 'typography',
-    label: 'Tipo de letra do rodapé',
+    label: 'documentLayout.field.footerFont',
     path: ['typography', 'footer_font_family'],
     kind: 'select',
     options: FONT_OPTIONS,
@@ -145,7 +146,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'footer-size',
     section: 'typography',
-    label: 'Tamanho do rodapé',
+    label: 'documentLayout.field.footerSize',
     path: ['typography', 'footer_font_size_pt'],
     kind: 'number',
     min: 7,
@@ -155,7 +156,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'line-spacing',
     section: 'typography',
-    label: 'Entrelinha',
+    label: 'documentLayout.field.lineSpacing',
     path: ['typography', 'line_spacing_percent'],
     kind: 'number',
     min: 100,
@@ -165,7 +166,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'paragraph-spacing',
     section: 'typography',
-    label: 'Espaço entre parágrafos',
+    label: 'documentLayout.field.paragraphSpacing',
     path: ['typography', 'paragraph_spacing_pt'],
     kind: 'number',
     min: 0,
@@ -175,7 +176,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'heading-scale',
     section: 'typography',
-    label: 'Escala dos títulos',
+    label: 'documentLayout.field.headingScale',
     path: ['typography', 'heading_scale_percent'],
     kind: 'number',
     min: 75,
@@ -185,7 +186,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'header-gap',
     section: 'regions',
-    label: 'Espaço após o cabeçalho',
+    label: 'documentLayout.field.headerGap',
     path: ['regions', 'header_gap_mm'],
     kind: 'number',
     min: 0,
@@ -195,7 +196,7 @@ const LEAVES: LayoutLeaf[] = [
   {
     key: 'footer-gap',
     section: 'regions',
-    label: 'Espaço antes do rodapé',
+    label: 'documentLayout.field.footerGap',
     path: ['regions', 'footer_gap_mm'],
     kind: 'number',
     min: 0,
@@ -204,18 +205,18 @@ const LEAVES: LayoutLeaf[] = [
   },
 ];
 
-const SECTION_COPY: Record<LayoutSection, { title: string; description: string }> = {
+const SECTION_COPY: Record<LayoutSection, { title: MessageKey; description: MessageKey }> = {
   page: {
-    title: 'Página',
-    description: 'Formato, orientação e margens físicas do PDF/A.',
+    title: 'documentLayout.section.page.title',
+    description: 'documentLayout.section.page.description',
   },
   typography: {
-    title: 'Tipografia',
-    description: 'Tipos de letra incorporados, tamanhos e ritmo do texto.',
+    title: 'documentLayout.section.typography.title',
+    description: 'documentLayout.section.typography.description',
   },
   regions: {
-    title: 'Cabeçalho e rodapé',
-    description: 'Separação segura entre o conteúdo e as regiões fixas.',
+    title: 'documentLayout.section.regions.title',
+    description: 'documentLayout.section.regions.description',
   },
 };
 
@@ -293,9 +294,9 @@ function numberValue(raw: string, leaf: LayoutLeaf): number {
   return Math.min(leaf.max ?? Number.MAX_SAFE_INTEGER, Math.max(fallback, parsed || fallback));
 }
 
-function formatValue(value: LayoutValue, leaf: LayoutLeaf): string {
+function formatValue(value: LayoutValue, leaf: LayoutLeaf, t: TFunction): string {
   const option = leaf.options?.find((item) => item.value === value);
-  if (option) return option.label;
+  if (option) return t(option.label);
   return `${value}${leaf.unit ? ` ${leaf.unit}` : ''}`;
 }
 
@@ -312,13 +313,17 @@ function LeafControl({
   disabled?: boolean;
   onChange: (value: LayoutValue) => void;
 }) {
+  const t = useT();
   if (leaf.kind === 'select') {
     return (
       <Select
         id={id}
         value={String(value)}
         disabled={disabled}
-        options={leaf.options ?? []}
+        options={(leaf.options ?? []).map((option) => ({
+          value: option.value,
+          label: t(option.label),
+        }))}
         onChange={(event) => onChange(event.target.value)}
       />
     );
@@ -346,12 +351,13 @@ function LayoutSectionPanel({
   section: LayoutSection;
   children: React.ReactNode;
 }) {
+  const t = useT();
   const copy = SECTION_COPY[section];
   return (
     <section className="stack--tight document-layout-editor__section">
       <header className="stack--tight">
-        <h4>{copy.title}</h4>
-        <p className="field__hint">{copy.description}</p>
+        <h4>{t(copy.title)}</h4>
+        <p className="field__hint">{t(copy.description)}</p>
       </header>
       {children}
     </section>
@@ -371,6 +377,7 @@ export function DocumentLayoutDefaultsEditor({
   disabled?: boolean;
   idPrefix?: string;
 }) {
+  const t = useT();
   return (
     <div className="stack document-layout-editor" data-document-layout-mode="defaults">
       {(['page', 'typography', 'regions'] as const).map((section) => (
@@ -381,7 +388,7 @@ export function DocumentLayoutDefaultsEditor({
               if (current === undefined) return null;
               const id = `${idPrefix}-${leaf.key}`;
               return (
-                <Field key={leaf.key} label={leaf.label} htmlFor={id}>
+                <Field key={leaf.key} label={t(leaf.label)} htmlFor={id}>
                   <LeafControl
                     leaf={leaf}
                     value={current}
@@ -398,7 +405,7 @@ export function DocumentLayoutDefaultsEditor({
       {onRequestReset ? (
         <div className="document-layout-editor__actions">
           <Button type="button" variant="ghost" disabled={disabled} onClick={onRequestReset}>
-            Repor predefinições do produto
+            {t('documentLayout.action.resetProduct')}
           </Button>
         </div>
       ) : null}
@@ -423,11 +430,12 @@ export function DocumentLayoutOverridesEditor({
   disabled?: boolean;
   idPrefix?: string;
 }) {
+  const t = useT();
   return (
     <div className="stack document-layout-editor" data-document-layout-mode="inherit">
       <div className="document-layout-editor__inheritance">
-        <span>Modo predefinido</span>
-        <strong>Herdar</strong>
+        <span>{t('documentLayout.mode.default')}</span>
+        <strong>{t('documentLayout.mode.inherit')}</strong>
         <span>{inheritanceLabel}</span>
       </div>
 
@@ -444,26 +452,28 @@ export function DocumentLayoutOverridesEditor({
               return (
                 <Field
                   key={leaf.key}
-                  label={leaf.label}
+                  label={t(leaf.label)}
                   htmlFor={isOverride ? id : modeId}
                   hint={
                     isOverride
-                      ? `Substitui o valor ${inheritanceLabel}.`
-                      : `${inheritedValueLabel ?? `Valor ${inheritanceLabel}`}: ${formatValue(
-                          inheritedValue,
-                          leaf,
-                        )}.`
+                      ? t('documentLayout.hint.override', { source: inheritanceLabel })
+                      : t('documentLayout.hint.inherited', {
+                          label:
+                            inheritedValueLabel ??
+                            t('documentLayout.value.inherited', { source: inheritanceLabel }),
+                          value: formatValue(inheritedValue, leaf, t),
+                        })
                   }
                 >
                   <div className="document-layout-editor__override-control">
                     <Select
                       id={modeId}
-                      aria-label={`Modo de ${leaf.label}`}
+                      aria-label={t('documentLayout.mode.aria', { label: t(leaf.label) })}
                       value={isOverride ? 'override' : 'inherit'}
                       disabled={disabled}
                       options={[
-                        { value: 'inherit', label: 'Herdar' },
-                        { value: 'override', label: 'Substituir' },
+                        { value: 'inherit', label: t('documentLayout.mode.inherit') },
+                        { value: 'override', label: t('documentLayout.mode.override') },
                       ]}
                       onChange={(event) => {
                         if (event.target.value === 'inherit') {
@@ -493,7 +503,7 @@ export function DocumentLayoutOverridesEditor({
                       />
                     ) : (
                       <output className="document-layout-editor__effective" htmlFor={modeId}>
-                        {formatValue(inheritedValue, leaf)}
+                        {formatValue(inheritedValue, leaf, t)}
                       </output>
                     )}
                   </div>
@@ -511,7 +521,7 @@ export function DocumentLayoutOverridesEditor({
           disabled={disabled || !hasOverrides(value)}
           onClick={() => onChange(undefined)}
         >
-          Repor tudo para herdado
+          {t('documentLayout.action.resetInherited')}
         </Button>
       </div>
     </div>

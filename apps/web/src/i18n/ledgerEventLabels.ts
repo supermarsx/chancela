@@ -45,6 +45,7 @@ export const ledgerEventLabelsPtPT = {
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Eliminação arquivística do livro registada',
   'enum.ledgerEventKind.book.closed': 'Livro encerrado',
+  'enum.ledgerEventKind.book.document_layout_updated': 'Formato documental do livro atualizado',
   'enum.ledgerEventKind.book.legal_hold.cleared': 'Retenção legal do livro levantada',
   'enum.ledgerEventKind.book.legal_hold.set': 'Retenção legal do livro aplicada',
   'enum.ledgerEventKind.book.opened': 'Livro aberto',
@@ -91,6 +92,8 @@ export const ledgerEventLabelsPtPT = {
   'enum.ledgerEventKind.email.password.updated': 'Palavra-passe do servidor de email guardada',
   'enum.ledgerEventKind.email.test_sent': 'Teste de envio de email efetuado',
   'enum.ledgerEventKind.entity.created': 'Entidade criada',
+  'enum.ledgerEventKind.entity.document_layout_updated':
+    'Formato documental da entidade atualizado',
   'enum.ledgerEventKind.entity.statute_updated': 'Estatutos da entidade atualizados',
   'enum.ledgerEventKind.follow_up.completed': 'Seguimento concluído',
   'enum.ledgerEventKind.follow_up.created': 'Seguimento criado',
@@ -234,6 +237,7 @@ export const ledgerEventLabelsEnglish: LedgerEventLabels = {
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Book archival disposal recorded',
   'enum.ledgerEventKind.book.closed': 'Book closed',
+  'enum.ledgerEventKind.book.document_layout_updated': 'Book document layout updated',
   'enum.ledgerEventKind.book.legal_hold.cleared': 'Book legal hold lifted',
   'enum.ledgerEventKind.book.legal_hold.set': 'Book legal hold applied',
   'enum.ledgerEventKind.book.opened': 'Book opened',
@@ -273,6 +277,7 @@ export const ledgerEventLabelsEnglish: LedgerEventLabels = {
   'enum.ledgerEventKind.email.password.updated': 'Email server password saved',
   'enum.ledgerEventKind.email.test_sent': 'Email delivery test performed',
   'enum.ledgerEventKind.entity.created': 'Entity created',
+  'enum.ledgerEventKind.entity.document_layout_updated': 'Entity document layout updated',
   'enum.ledgerEventKind.entity.statute_updated': 'Entity statutes updated',
   'enum.ledgerEventKind.follow_up.completed': 'Follow-up completed',
   'enum.ledgerEventKind.follow_up.created': 'Follow-up created',
@@ -381,6 +386,7 @@ export const ledgerEventLabelsEnglish: LedgerEventLabels = {
 
 /** pt-BR — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsPtBR: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Posição verificável na cadeia do registro',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Evidência de expedição a interessado ausente registrada',
@@ -568,6 +574,7 @@ export const ledgerEventLabelsPtBR: LedgerEventLabels = {
 
 /** da-DK — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsDaDK: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Verificerbar position i registerkæden',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Forsendelsesbevis til fraværende part registreret',
@@ -752,6 +759,7 @@ export const ledgerEventLabelsDaDK: LedgerEventLabels = {
 
 /** de-DE — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsDeDE: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Überprüfbare Position in der Registerkette',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Versandnachweis an abwesenden Beteiligten erfasst',
@@ -942,6 +950,7 @@ export const ledgerEventLabelsDeDE: LedgerEventLabels = {
 
 /** es-ES — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsEsES: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Posición verificable en la cadena del registro',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Evidencia de envío a interesado ausente registrada',
@@ -1126,6 +1135,7 @@ export const ledgerEventLabelsEsES: LedgerEventLabels = {
 
 /** fi-FI — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsFiFI: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Todennettavissa oleva sijainti rekisteriketjussa',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Lähetystodiste poissa olevalle osapuolelle kirjattu',
@@ -1307,6 +1317,7 @@ export const ledgerEventLabelsFiFI: LedgerEventLabels = {
 
 /** fr-FR — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsFrFR: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Position vérifiable dans la chaîne du registre',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     "Preuve d'envoi à un intéressé absent enregistrée",
@@ -1500,6 +1511,7 @@ export const ledgerEventLabelsFrFR: LedgerEventLabels = {
 
 /** it-IT — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsItIT: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Posizione verificabile nella catena del registro',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Prova di invio a interessato assente registrata',
@@ -1684,6 +1696,7 @@ export const ledgerEventLabelsItIT: LedgerEventLabels = {
 
 /** nl-NL — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsNlNL: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Verifieerbare positie in de registerketen',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Verzendbewijs aan afwezige belanghebbende vastgelegd',
@@ -1871,6 +1884,7 @@ export const ledgerEventLabelsNlNL: LedgerEventLabels = {
 
 /** pl-PL — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsPlPL: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Weryfikowalna pozycja w łańcuchu rejestru',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Dowód wysyłki do nieobecnego zainteresowanego zapisany',
@@ -2062,6 +2076,7 @@ export const ledgerEventLabelsPlPL: LedgerEventLabels = {
 
 /** sv-FI — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsSvFI: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Verifierbar position i registerkedjan',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Bevis på utskick till frånvarande part registrerat',
@@ -2236,6 +2251,7 @@ export const ledgerEventLabelsSvFI: LedgerEventLabels = {
 
 /** sv-SE — machine-authored, pending native review (see TRANSLATIONS.md). */
 export const ledgerEventLabelsSvSE: LedgerEventLabels = {
+  ...ledgerEventLabelsEnglish,
   'dashboard.activity.sequence.title': 'Verifierbar position i registerkedjan',
   'enum.ledgerEventKind.absent_owner_communication.dispatch_evidence_recorded':
     'Bevis på utskick till frånvarande part registrerat',

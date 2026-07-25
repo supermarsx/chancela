@@ -211,15 +211,13 @@ export function TemplateSpecFields({
 
       <section className="stack--tight">
         <header className="stack--tight">
-          <h3>Formato e tipografia</h3>
-          <p className="field__hint">
-            Herdar é o modo predefinido. O modelo guarda apenas as propriedades que substitui.
-          </p>
+          <h3>{t('documentLayout.template.title')}</h3>
+          <p className="field__hint">{t('documentLayout.template.inheritance.body')}</p>
         </header>
         <DocumentLayoutOverridesEditor
           value={spec.document_layout_override}
           inherited={inheritedLayout}
-          inheritanceLabel="da instância"
+          inheritanceLabel={t('documentLayout.source.instance')}
           idPrefix={`${idPrefix}-layout`}
           onChange={(document_layout_override) =>
             onSpecChange((current) => {

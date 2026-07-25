@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useEntity, useSettings, useUpdateBook, useUpdateEntity } from '../../api/hooks';
 import type { BookView, DocumentLayoutOverrides, Entity } from '../../api/types';
 import { DEFAULT_SETTINGS } from '../../api/types';
+import { useT } from '../../i18n';
 import { Card, ErrorNote, Icon, InlineWarning, SkeletonDeflist, useToast } from '../../ui';
 import { GateButton, scopeBook, scopeEntity, useCan } from '../session/permissions';
 import {
@@ -17,6 +18,7 @@ function sameOverrides(
 }
 
 export function EntityDocumentLayoutPanel({ entity }: { entity: Entity }) {
+  const t = useT();
   const settings = useSettings();
   const update = useUpdateEntity(entity.id);
   const toast = useToast();
@@ -38,7 +40,7 @@ export function EntityDocumentLayoutPanel({ entity }: { entity: Entity }) {
       {
         onSuccess: (saved) => {
           setDraft(saved.document_layout_override ?? undefined);
-          toast.success('Formato documental da entidade atualizado.');
+          toast.success(t('documentLayout.entity.saved'));
         },
         onError: (error) => toast.error(error),
       },
@@ -46,11 +48,9 @@ export function EntityDocumentLayoutPanel({ entity }: { entity: Entity }) {
   }
 
   return (
-    <Card title="Formato e tipografia dos documentos">
-      <InlineWarning tone="info" title="Herança previsível">
-        A entidade herda por predefinição. O modelo escolhido pode substituir a instância antes
-        deste nível; apenas as propriedades marcadas como «Substituir» ficam guardadas na entidade e
-        prevalecem sobre o modelo.
+    <Card title={t('documentLayout.title')}>
+      <InlineWarning tone="info" title={t('documentLayout.inheritance.title')}>
+        {t('documentLayout.entity.inheritance.body')}
       </InlineWarning>
       {settings.isLoading ? <SkeletonDeflist /> : null}
       {settings.error ? <ErrorNote error={settings.error} /> : null}
@@ -61,8 +61,8 @@ export function EntityDocumentLayoutPanel({ entity }: { entity: Entity }) {
             idPrefix={`entity-${entity.id}-document-layout`}
             value={draft}
             inherited={inherited}
-            inheritanceLabel="dos níveis anteriores"
-            inheritedValueLabel="Valor-base da instância"
+            inheritanceLabel={t('documentLayout.source.previousLevels')}
+            inheritedValueLabel={t('documentLayout.baseline.instance')}
             disabled={update.isPending}
             onChange={setDraft}
           />
@@ -76,7 +76,9 @@ export function EntityDocumentLayoutPanel({ entity }: { entity: Entity }) {
               disabled={!dirty || update.isPending}
               onClick={save}
             >
-              {update.isPending ? 'A guardar…' : 'Guardar formato da entidade'}
+              {update.isPending
+                ? t('documentLayout.action.saving')
+                : t('documentLayout.action.saveEntity')}
             </GateButton>
           </div>
         </>
@@ -86,6 +88,7 @@ export function EntityDocumentLayoutPanel({ entity }: { entity: Entity }) {
 }
 
 export function BookDocumentLayoutPanel({ book }: { book: BookView }) {
+  const t = useT();
   const settings = useSettings();
   const can = useCan();
   const canReadEntity = can('entity.read', scopeEntity(book.entity_id));
@@ -115,7 +118,7 @@ export function BookDocumentLayoutPanel({ book }: { book: BookView }) {
       {
         onSuccess: (saved) => {
           setDraft(saved.document_layout_override ?? undefined);
-          toast.success('Formato documental do livro atualizado.');
+          toast.success(t('documentLayout.book.saved'));
         },
         onError: (error) => toast.error(error),
       },
@@ -123,15 +126,13 @@ export function BookDocumentLayoutPanel({ book }: { book: BookView }) {
   }
 
   return (
-    <Card title="Formato e tipografia dos documentos">
-      <InlineWarning tone="info" title="Herança previsível">
-        O livro herda por predefinição. A resolução final segue instância → modelo → entidade →
-        livro; apenas as propriedades marcadas como «Substituir» ficam guardadas neste livro.
+    <Card title={t('documentLayout.title')}>
+      <InlineWarning tone="info" title={t('documentLayout.inheritance.title')}>
+        {t('documentLayout.book.inheritance.body')}
       </InlineWarning>
       {!canReadEntity ? (
-        <InlineWarning tone="warn" title="Entidade não visível">
-          A base abaixo mostra a instância. As substituições da entidade continuam a ser aplicadas
-          pelo servidor, mesmo sem permissão para as consultar aqui.
+        <InlineWarning tone="warn" title={t('documentLayout.entity.hidden.title')}>
+          {t('documentLayout.entity.hidden.body')}
         </InlineWarning>
       ) : null}
       {loading ? <SkeletonDeflist /> : null}
@@ -144,8 +145,8 @@ export function BookDocumentLayoutPanel({ book }: { book: BookView }) {
             idPrefix={`book-${book.id}-document-layout`}
             value={draft}
             inherited={inherited}
-            inheritanceLabel="dos níveis anteriores"
-            inheritedValueLabel="Valor-base da instância e da entidade"
+            inheritanceLabel={t('documentLayout.source.previousLevels')}
+            inheritedValueLabel={t('documentLayout.baseline.instanceEntity')}
             disabled={update.isPending}
             onChange={setDraft}
           />
@@ -159,7 +160,9 @@ export function BookDocumentLayoutPanel({ book }: { book: BookView }) {
               disabled={!dirty || update.isPending}
               onClick={save}
             >
-              {update.isPending ? 'A guardar…' : 'Guardar formato do livro'}
+              {update.isPending
+                ? t('documentLayout.action.saving')
+                : t('documentLayout.action.saveBook')}
             </GateButton>
           </div>
         </>

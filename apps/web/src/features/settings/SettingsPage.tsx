@@ -2061,12 +2061,9 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   </Field>
                 </div>
               </Card>
-              <Card title="Formato e tipografia dos documentos">
+              <Card title={t('documentLayout.title')}>
                 <div className="stack--tight">
-                  <p className="field__hint">
-                    Base concreta da instância. Os modelos, entidades e livros herdam estes valores
-                    e guardam apenas as propriedades que substituem explicitamente.
-                  </p>
+                  <p className="field__hint">{t('documentLayout.settings.base')}</p>
                   <DocumentLayoutDefaultsEditor
                     value={draft.documents.layout_defaults}
                     onChange={(layout) => setDocuments('layout_defaults', layout)}
