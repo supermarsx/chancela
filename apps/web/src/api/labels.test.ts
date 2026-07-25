@@ -60,6 +60,41 @@ describe('ledgerEventKindLabel', () => {
     expect(ledgerEventKindLabel('template.version.renamed')).toBe('Versão da minuta renomeada');
   });
 
+  it('distinguishes probe requests from recorded outcomes without claiming success', () => {
+    const providerRequested = 'provider.credentials.entry.probe_requested';
+    const providerProbed = 'provider.credentials.entry.probed';
+    const bridgeRequested = 'signature.cc_bridge.probe_requested';
+    const bridgeProbed = 'signature.cc_bridge.probed';
+
+    expect(ledgerEventKindLabel(providerRequested)).toBe(
+      'Teste da credencial de fornecedor pedido',
+    );
+    expect(ledgerEventKindLabel(providerProbed)).toBe(
+      'Resultado do teste da credencial de fornecedor registado',
+    );
+    expect(ledgerEventKindLabel(bridgeRequested)).toBe(
+      'Teste da ligação ao Cartão de Cidadão pedido',
+    );
+    expect(ledgerEventKindLabel(bridgeProbed)).toBe(
+      'Resultado do teste da ligação ao Cartão de Cidadão registado',
+    );
+
+    const keys = [providerRequested, providerProbed, bridgeRequested, bridgeProbed].map(
+      (kind) => `enum.ledgerEventKind.${kind}`,
+    );
+    expect(Object.keys(ALL_CATALOGS).length).toBe(14);
+    for (const [locale, catalog] of Object.entries(ALL_CATALOGS)) {
+      const labels = keys.map((key) => (catalog as Record<string, string>)[key]);
+      expect(labels.every(Boolean), `${locale} must localize every probe event`).toBe(true);
+      expect(labels[0], `${locale} must distinguish provider request from outcome`).not.toBe(
+        labels[1],
+      );
+      expect(labels[2], `${locale} must distinguish bridge request from outcome`).not.toBe(
+        labels[3],
+      );
+    }
+  });
+
   it('falls back to the raw identifier for a kind a newer server introduces', () => {
     // Never blank, never "undefined": the id is a usable Arquivo filter value.
     expect(ledgerEventKindLabel('act.teleported')).toBe('act.teleported');
@@ -102,6 +137,17 @@ describe('ledgerEventKindLabel', () => {
     // A floor just under the current count, so a partially broken sweep is caught too.
     expect(emitted.kinds.size).toBeGreaterThanOrEqual(130);
 
+    const probeKinds = [
+      'provider.credentials.entry.probe_requested',
+      'provider.credentials.entry.probed',
+      'signature.cc_bridge.probe_requested',
+      'signature.cc_bridge.probed',
+    ];
+    expect(
+      probeKinds.filter((kind) => !emitted.kinds.has(kind)),
+      'the source scanner must see both probe intent and outcome events',
+    ).toEqual([]);
+
     const unlabelled = [...emitted.kinds].filter((kind) => !LABELLED_LEDGER_EVENT_KINDS.has(kind));
     expect(unlabelled.sort()).toEqual([]);
   });
@@ -111,10 +157,11 @@ describe('ledgerEventKindLabel', () => {
  * Every ledger event kind the Rust crates can append, read out of the crate sources.
  *
  * There is no single `kind` literal position to grep: a kind reaches `Ledger::append` through
- * `try_append_event`, a per-module `record_*`/`audit`/`persist_*` helper, a `*_KIND` constant, a
- * `fn *kind()` match, or a `let kind = …` binding. All five shapes are swept; a literal is taken
- * as a kind only if it looks like one (`a.b`, lowercase dotted). Test code is excluded, so a
- * fixture kind never becomes a label obligation.
+ * `try_append_event`, a per-module `record_*`/`audit`/`persist_*` helper, a local `*_KIND` /
+ * `*_EVENT` constant passed to one of those helpers, a `fn *kind()` match, or a `let kind = …`
+ * binding. All five shapes are swept; a literal is taken as a kind only if it looks like one
+ * (`a.b`, lowercase dotted). Test code is excluded, so a fixture kind never becomes a label
+ * obligation.
  */
 async function ledgerEventKindsEmittedByCrates(): Promise<{
   kinds: Set<string>;
@@ -144,6 +191,7 @@ async function ledgerEventKindsEmittedByCrates(): Promise<{
   const LITERAL = /"([^"\n]+)"/gu;
   const byRule: Record<string, Set<string>> = {
     emitCall: new Set(),
+    emitConst: new Set(),
     kindFn: new Set(),
     kindLet: new Set(),
     kindConst: new Set(),
@@ -156,6 +204,12 @@ async function ledgerEventKindsEmittedByCrates(): Promise<{
 
   for (const file of files) {
     const source = stripRustTestModules(readFileSync(file, 'utf8'));
+    const localEventConstants = new Map<string, string>();
+    for (const match of source.matchAll(
+      /(?:const|static)\s+([A-Z_0-9]*(?:KIND|EVENT))\b\s*:\s*&(?:'static\s+)?str\s*=\s*"([^"]+)"\s*;/gu,
+    )) {
+      if (KIND.test(match[2])) localEventConstants.set(match[1], match[2]);
+    }
 
     // 1. Any call whose name carries append/record/audit/persist — the emit funnels. The
     //    structured-logging helper is excluded by name: its `target` field is a log channel
@@ -164,7 +218,12 @@ async function ledgerEventKindsEmittedByCrates(): Promise<{
       /(?<![a-z_0-9])([a-z_0-9]*(?:append|record|audit|persist)[a-z_0-9]*)\s*\(/gu,
     )) {
       if (match[1] === 'record_platform_log') continue;
-      take('emitCall', balancedBlock(source, match.index + match[0].length));
+      const call = balancedBlock(source, match.index + match[0].length);
+      take('emitCall', call);
+      for (const identifier of call.matchAll(/\b([A-Z][A-Z_0-9]+)\b/gu)) {
+        const kind = localEventConstants.get(identifier[1]);
+        if (kind) byRule.emitConst.add(kind);
+      }
     }
     // 2. `fn event_kind(self) -> &'static str { match … }`.
     for (const match of source.matchAll(/fn\s+[a-z_0-9]*kind[a-z_0-9]*\s*\([^)]*\)[^{]*\{/gu)) {

@@ -150,6 +150,10 @@ export const ledgerEventLabelsPtPT = {
     'Credenciais de fornecedor reordenadas',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Credencial de fornecedor criada',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Credencial de fornecedor eliminada',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Teste da credencial de fornecedor pedido',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Resultado do teste da credencial de fornecedor registado',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Credencial de fornecedor atualizada',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Atualização automática do registo comercial tentada',
@@ -161,6 +165,10 @@ export const ledgerEventLabelsPtPT = {
   'enum.ledgerEventKind.role.unassigned': 'Função retirada',
   'enum.ledgerEventKind.role.updated': 'Função atualizada',
   'enum.ledgerEventKind.settings.updated': 'Definições atualizadas',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Teste da ligação ao Cartão de Cidadão pedido',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Resultado do teste da ligação ao Cartão de Cidadão registado',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Envelope de assinatura externa criado',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -315,6 +323,10 @@ export const ledgerEventLabelsEnglish: LedgerEventLabels = {
   'enum.ledgerEventKind.provider.credentials.entries.reordered': 'Provider credentials reordered',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Provider credential created',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Provider credential deleted',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Provider credential test requested',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Provider credential test result recorded',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Provider credential updated',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Automatic commercial registry update attempted',
@@ -326,6 +338,9 @@ export const ledgerEventLabelsEnglish: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Role unassigned',
   'enum.ledgerEventKind.role.updated': 'Role updated',
   'enum.ledgerEventKind.settings.updated': 'Settings updated',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Citizen Card connection test requested',
+  'enum.ledgerEventKind.signature.cc_bridge.probed': 'Citizen Card connection test result recorded',
   'enum.ledgerEventKind.signature.external_envelope.created': 'External signing envelope created',
   'enum.ledgerEventKind.signature.external_envelope.updated': 'External signing envelope updated',
   'enum.ledgerEventKind.signature.external_invite.accepted': 'External signing invite accepted',
@@ -489,6 +504,10 @@ export const ledgerEventLabelsPtBR: LedgerEventLabels = {
     'Credenciais de provedor reordenadas',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Credencial de provedor criada',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Credencial de provedor excluída',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Teste da credencial de provedor solicitado',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Resultado do teste da credencial de provedor registrado',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Credencial de provedor atualizada',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Atualização automática do registro comercial tentada',
@@ -501,6 +520,10 @@ export const ledgerEventLabelsPtBR: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Função removida',
   'enum.ledgerEventKind.role.updated': 'Função atualizada',
   'enum.ledgerEventKind.settings.updated': 'Configurações atualizadas',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Teste da conexão com o Cartão de Cidadão solicitado',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Resultado do teste da conexão com o Cartão de Cidadão registrado',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Envelope de assinatura externa criado',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -663,6 +686,10 @@ export const ledgerEventLabelsDaDK: LedgerEventLabels = {
     'Udbyderlegitimationsoplysning oprettet',
   'enum.ledgerEventKind.provider.credentials.entry.deleted':
     'Udbyderlegitimationsoplysning slettet',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Test af udbyderlegitimationsoplysning anmodet',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Resultat af test af udbyderlegitimationsoplysning registreret',
   'enum.ledgerEventKind.provider.credentials.entry.updated':
     'Udbyderlegitimationsoplysning opdateret',
   'enum.ledgerEventKind.registry.auto_update.attempted':
@@ -675,6 +702,10 @@ export const ledgerEventLabelsDaDK: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Rolle frataget',
   'enum.ledgerEventKind.role.updated': 'Rolle opdateret',
   'enum.ledgerEventKind.settings.updated': 'Indstillinger opdateret',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Test af forbindelse til Borgerkort anmodet',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Resultat af test af forbindelse til Borgerkort registreret',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Kuvert til ekstern signering oprettet',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -844,6 +875,10 @@ export const ledgerEventLabelsDeDE: LedgerEventLabels = {
     'Anbieter-Zugangsdaten neu geordnet',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Anbieter-Zugangsdaten erstellt',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Anbieter-Zugangsdaten gelöscht',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Test der Anbieter-Zugangsdaten angefordert',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Testergebnis der Anbieter-Zugangsdaten erfasst',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Anbieter-Zugangsdaten aktualisiert',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Automatische Aktualisierung des Handelsregisters versucht',
@@ -855,6 +890,10 @@ export const ledgerEventLabelsDeDE: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Rolle entzogen',
   'enum.ledgerEventKind.role.updated': 'Rolle aktualisiert',
   'enum.ledgerEventKind.settings.updated': 'Einstellungen aktualisiert',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Verbindungstest der Bürgerkarte angefordert',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Ergebnis des Verbindungstests der Bürgerkarte erfasst',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Umschlag für externe Signatur erstellt',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -1027,6 +1066,10 @@ export const ledgerEventLabelsEsES: LedgerEventLabels = {
     'Credenciales de proveedor reordenadas',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Credencial de proveedor creada',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Credencial de proveedor eliminada',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Prueba de la credencial del proveedor solicitada',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Resultado de la prueba de la credencial del proveedor registrado',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Credencial de proveedor actualizada',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Actualización automática del registro mercantil intentada',
@@ -1038,6 +1081,10 @@ export const ledgerEventLabelsEsES: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Rol retirado',
   'enum.ledgerEventKind.role.updated': 'Rol actualizado',
   'enum.ledgerEventKind.settings.updated': 'Ajustes actualizados',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Prueba de conexión con la Tarjeta de Ciudadano solicitada',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Resultado de la prueba de conexión con la Tarjeta de Ciudadano registrado',
   'enum.ledgerEventKind.signature.external_envelope.created': 'Sobre de firma externa creado',
   'enum.ledgerEventKind.signature.external_envelope.updated': 'Sobre de firma externa actualizado',
   'enum.ledgerEventKind.signature.external_invite.accepted': 'Invitación de firma externa aceptada',
@@ -1196,6 +1243,10 @@ export const ledgerEventLabelsFiFI: LedgerEventLabels = {
     'Palveluntarjoajan tunnistetieto luotu',
   'enum.ledgerEventKind.provider.credentials.entry.deleted':
     'Palveluntarjoajan tunnistetieto poistettu',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Palveluntarjoajan tunnistetiedon testi pyydetty',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Palveluntarjoajan tunnistetiedon testitulos kirjattu',
   'enum.ledgerEventKind.provider.credentials.entry.updated':
     'Palveluntarjoajan tunnistetieto päivitetty',
   'enum.ledgerEventKind.registry.auto_update.attempted':
@@ -1208,6 +1259,9 @@ export const ledgerEventLabelsFiFI: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Rooli peruutettu',
   'enum.ledgerEventKind.role.updated': 'Rooli päivitetty',
   'enum.ledgerEventKind.settings.updated': 'Asetukset päivitetty',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Kansalaiskortin yhteystesti pyydetty',
+  'enum.ledgerEventKind.signature.cc_bridge.probed': 'Kansalaiskortin yhteystestin tulos kirjattu',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Ulkoisen allekirjoituksen kuori luotu',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -1379,6 +1433,10 @@ export const ledgerEventLabelsFrFR: LedgerEventLabels = {
     'Identifiants de fournisseur réordonnés',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Identifiant de fournisseur créé',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Identifiant de fournisseur supprimé',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    "Test de l'identifiant du fournisseur demandé",
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    "Résultat du test de l'identifiant du fournisseur enregistré",
   'enum.ledgerEventKind.provider.credentials.entry.updated':
     'Identifiant de fournisseur mis à jour',
   'enum.ledgerEventKind.registry.auto_update.attempted':
@@ -1391,6 +1449,10 @@ export const ledgerEventLabelsFrFR: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Rôle retiré',
   'enum.ledgerEventKind.role.updated': 'Rôle mis à jour',
   'enum.ledgerEventKind.settings.updated': 'Paramètres mis à jour',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Test de connexion à la Carte de citoyen demandé',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Résultat du test de connexion à la Carte de citoyen enregistré',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Enveloppe de signature externe créée',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -1563,6 +1625,10 @@ export const ledgerEventLabelsItIT: LedgerEventLabels = {
     'Credenziali del fornitore riordinate',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Credenziale del fornitore creata',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Credenziale del fornitore eliminata',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Test della credenziale del fornitore richiesto',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Risultato del test della credenziale del fornitore registrato',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Credenziale del fornitore aggiornata',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Aggiornamento automatico del registro delle imprese tentato',
@@ -1574,6 +1640,10 @@ export const ledgerEventLabelsItIT: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Ruolo revocato',
   'enum.ledgerEventKind.role.updated': 'Ruolo aggiornato',
   'enum.ledgerEventKind.settings.updated': 'Impostazioni aggiornate',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Test di connessione alla Carta di Cittadino richiesto',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Risultato del test di connessione alla Carta di Cittadino registrato',
   'enum.ledgerEventKind.signature.external_envelope.created': 'Busta di firma esterna creata',
   'enum.ledgerEventKind.signature.external_envelope.updated': 'Busta di firma esterna aggiornata',
   'enum.ledgerEventKind.signature.external_invite.accepted': 'Invito alla firma esterna accettato',
@@ -1736,6 +1806,10 @@ export const ledgerEventLabelsNlNL: LedgerEventLabels = {
     'Aanbiederreferenties opnieuw geordend',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Aanbiederreferentie aangemaakt',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Aanbiederreferentie verwijderd',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Test van aanbiederreferentie aangevraagd',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Testresultaat van aanbiederreferentie vastgelegd',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Aanbiederreferentie bijgewerkt',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Automatische bijwerking van het handelsregister geprobeerd',
@@ -1747,6 +1821,10 @@ export const ledgerEventLabelsNlNL: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Rol ingetrokken',
   'enum.ledgerEventKind.role.updated': 'Rol bijgewerkt',
   'enum.ledgerEventKind.settings.updated': 'Instellingen bijgewerkt',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Verbindingstest met Burgerkaart aangevraagd',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Resultaat van verbindingstest met Burgerkaart vastgelegd',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Envelop voor externe ondertekening aangemaakt',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -1916,6 +1994,10 @@ export const ledgerEventLabelsPlPL: LedgerEventLabels = {
     'Poświadczenia dostawcy uporządkowane',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Poświadczenie dostawcy utworzone',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Poświadczenie dostawcy usunięte',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Zażądano testu poświadczenia dostawcy',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Wynik testu poświadczenia dostawcy zapisany',
   'enum.ledgerEventKind.provider.credentials.entry.updated':
     'Poświadczenie dostawcy zaktualizowane',
   'enum.ledgerEventKind.registry.auto_update.attempted':
@@ -1928,6 +2010,10 @@ export const ledgerEventLabelsPlPL: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Rola odebrana',
   'enum.ledgerEventKind.role.updated': 'Rola zaktualizowana',
   'enum.ledgerEventKind.settings.updated': 'Ustawienia zaktualizowane',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Zażądano testu połączenia z Kartą obywatela',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Wynik testu połączenia z Kartą obywatela zapisany',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Koperta podpisu zewnętrznego utworzona',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -2087,6 +2173,10 @@ export const ledgerEventLabelsSvFI: LedgerEventLabels = {
   'enum.ledgerEventKind.provider.credentials.entries.reordered': 'Leverantörsuppgifter omordnade',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Leverantörsuppgift skapad',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Leverantörsuppgift borttagen',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Test av leverantörsuppgift begärt',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Resultat av test av leverantörsuppgift registrerat',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Leverantörsuppgift uppdaterad',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Automatisk uppdatering av handelsregistret försökt',
@@ -2098,6 +2188,10 @@ export const ledgerEventLabelsSvFI: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Roll fråntagen',
   'enum.ledgerEventKind.role.updated': 'Roll uppdaterad',
   'enum.ledgerEventKind.settings.updated': 'Inställningar uppdaterade',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Anslutningstest för Medborgarkort begärt',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Resultat av anslutningstest för Medborgarkort registrerat',
   'enum.ledgerEventKind.signature.external_envelope.created': 'Kuvert för extern signering skapat',
   'enum.ledgerEventKind.signature.external_envelope.updated':
     'Kuvert för extern signering uppdaterat',
@@ -2253,6 +2347,10 @@ export const ledgerEventLabelsSvSE: LedgerEventLabels = {
   'enum.ledgerEventKind.provider.credentials.entries.reordered': 'Leverantörsuppgifter omordnade',
   'enum.ledgerEventKind.provider.credentials.entry.created': 'Leverantörsuppgift skapad',
   'enum.ledgerEventKind.provider.credentials.entry.deleted': 'Leverantörsuppgift borttagen',
+  'enum.ledgerEventKind.provider.credentials.entry.probe_requested':
+    'Test av leverantörsuppgift begärt',
+  'enum.ledgerEventKind.provider.credentials.entry.probed':
+    'Resultat av test av leverantörsuppgift registrerat',
   'enum.ledgerEventKind.provider.credentials.entry.updated': 'Leverantörsuppgift uppdaterad',
   'enum.ledgerEventKind.registry.auto_update.attempted':
     'Automatisk uppdatering av handelsregistret försökt',
@@ -2264,6 +2362,10 @@ export const ledgerEventLabelsSvSE: LedgerEventLabels = {
   'enum.ledgerEventKind.role.unassigned': 'Roll fråntagen',
   'enum.ledgerEventKind.role.updated': 'Roll uppdaterad',
   'enum.ledgerEventKind.settings.updated': 'Inställningar uppdaterade',
+  'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
+    'Anslutningstest för Medborgarkort begärt',
+  'enum.ledgerEventKind.signature.cc_bridge.probed':
+    'Resultat av anslutningstest för Medborgarkort registrerat',
   'enum.ledgerEventKind.signature.external_envelope.created': 'Kuvert för extern signering skapat',
   'enum.ledgerEventKind.signature.external_envelope.updated':
     'Kuvert för extern signering uppdaterat',
