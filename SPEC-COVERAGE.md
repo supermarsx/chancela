@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-25 from current implementation snapshot `cf4a157c297fde97409fbb32db9fe3ce98a473c5`,
+*Updated 2026-07-25 from current implementation snapshot `f460859985bcde1e518e60a539a2d3508ae83164`,
 with committed evidence refreshes for mobile API base URL indirection and
 shell detection, the mobile companion foundation docs/scripts, destructive
 erasure preflight/approve/execute route wiring plus local gate evidence,
@@ -1951,7 +1951,7 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
-- Current `cf4a157` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**: the implementation
+- Current `f460859` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**: the implementation
   snapshot includes the prior `842b7f2` mobile API base URL/shell-detection
   slice, `d43b82a` mobile companion foundation docs plus inert desktop package
   Android companion scripts, `33e70bb` subject-DEK secret-store binding,
