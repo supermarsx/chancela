@@ -40,6 +40,7 @@
     "test:browser:matrix": "npm run test:browser:matrix --workspace apps/web",
     "test:desktop:rust": "npm run test:rust --prefix apps/desktop",
     "test:desktop:smoke": "npm run test:smoke --prefix apps/desktop",
+    "measure:rust-build": "node scripts/measure-rust-build.mjs",
     "build": "npm run build:rust && npm run build:web",
     "build:rust": "cargo build --workspace --release --locked --features chancela-server/sqlcipher,chancela-cli/sqlcipher",
     "build:web": "npm run build --workspace apps/web",
