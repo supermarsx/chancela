@@ -11053,6 +11053,9 @@ mod tests {
             },
             "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
             "ui": {
+                "external_signature_notice_snooze_days": 90,
+                "phone_pairing_share_email_enabled": true,
+                "phone_pairing_share_whatsapp_enabled": true,
                 "registered_entity_columns": ["Name", "Nipc", "Type", "LastActivity", "Actions"]
             },
             "workflow": {

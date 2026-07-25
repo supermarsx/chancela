@@ -41,6 +41,8 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -133,13 +135,29 @@ impl UserPreferencesStore {
 pub struct UserPreferences {
     /// Per-table visible-column choices.
     pub table_columns: TableColumnPreferences,
+    /// This user's dismissal of the external-signature information notice. `None` means visible;
+    /// clearing/restoring the notice is therefore an ordinary whole-document PUT with this omitted
+    /// or `null`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_signature_notice_dismissal: Option<ExternalSignatureNoticeDismissal>,
 }
 
 impl UserPreferences {
     /// Validate the whole document for a `PUT` — every present table must be well-formed, or the
     /// request is refused (`422`) rather than silently trimmed.
     fn validate(&self) -> Result<(), ApiError> {
-        self.table_columns.validate()
+        self.table_columns.validate()?;
+        if let Some(ExternalSignatureNoticeDismissal::Snoozed { until }) =
+            &self.external_signature_notice_dismissal
+        {
+            OffsetDateTime::parse(until, &Rfc3339).map_err(|_| {
+                ApiError::Unprocessable(
+                    "external_signature_notice_dismissal.until must be an RFC 3339 timestamp"
+                        .to_owned(),
+                )
+            })?;
+        }
+        Ok(())
     }
 
     /// A defensively cleaned copy: each present table's ids trimmed, bad ids dropped, duplicates
@@ -147,6 +165,31 @@ impl UserPreferences {
     fn sanitized(&self) -> Self {
         UserPreferences {
             table_columns: self.table_columns.sanitized(),
+            external_signature_notice_dismissal: self
+                .external_signature_notice_dismissal
+                .as_ref()
+                .filter(|dismissal| dismissal.is_well_formed())
+                .cloned(),
+        }
+    }
+}
+
+/// Durable personal state for the external-signature information notice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum ExternalSignatureNoticeDismissal {
+    /// Hide until an absolute instant. Elapsed deadlines remain stored evidence of the user's last
+    /// choice but are interpreted by the client as visible.
+    Snoozed { until: String },
+    /// Hide until the user explicitly restores the notice.
+    Permanent,
+}
+
+impl ExternalSignatureNoticeDismissal {
+    fn is_well_formed(&self) -> bool {
+        match self {
+            Self::Snoozed { until } => OffsetDateTime::parse(until, &Rfc3339).is_ok(),
+            Self::Permanent => true,
         }
     }
 }
@@ -329,13 +372,20 @@ async fn resolve_self(state: &AppState, actor: &CurrentActor) -> Result<UserId, 
             "uma chave API não abre uma sessão interativa com preferências pessoais".to_owned(),
         ));
     };
-    state
-        .users
-        .read()
-        .await
+    let users = state.users.read().await;
+    if let Some(user_id) = actor.session_user_id() {
+        return users
+            .get(&user_id)
+            .filter(|user| user.active && user.username == username)
+            .map(|user| user.id)
+            .ok_or_else(|| ApiError::Unauthorized("sessão inválida".to_owned()));
+    }
+    // Bootstrap/test-constructed actors carry only a username. Production session extraction always
+    // carries the stable id and takes the keyed path above.
+    users
         .values()
-        .find(|u| u.username == username)
-        .map(|u| u.id)
+        .find(|user| user.active && user.username == username)
+        .map(|user| user.id)
         .ok_or_else(|| ApiError::Unauthorized("sessão inválida".to_owned()))
 }
 
@@ -410,6 +460,7 @@ mod tests {
                 books: to_vec(books),
                 templates: None,
             },
+            external_signature_notice_dismissal: None,
         }
     }
 
@@ -498,6 +549,7 @@ mod tests {
                 books: None,
                 templates: None,
             },
+            external_signature_notice_dismissal: None,
         };
         assert!(over.validate().is_err());
         let _ = many;
@@ -523,6 +575,7 @@ mod tests {
                 books: Some(vec![]),
                 templates: None,
             },
+            external_signature_notice_dismissal: None,
         };
         let clean = raw.sanitized();
         assert_eq!(
@@ -656,5 +709,87 @@ mod tests {
         // The file exists and reloads to the same content.
         let reloaded = load_user_preferences(&path).expect("reload");
         assert_eq!(reloaded, *state.user_preferences.read().await);
+    }
+
+    #[tokio::test]
+    async fn notice_dismissal_round_trips_and_clear_restores_visibility() {
+        let state = AppState::default();
+        let uid = seed_user(&state, "notice.user").await;
+        let actor = CurrentActor::from_session_username(Some("notice.user".to_owned()));
+        let body = serde_json::json!({
+            "external_signature_notice_dismissal": {
+                "mode": "snoozed",
+                "until": "2027-01-02T03:04:05Z"
+            }
+        });
+        let stored = put_me_preferences(
+            State(state.clone()),
+            actor.clone(),
+            serde_json::to_vec(&body).unwrap().into(),
+        )
+        .await
+        .expect("dismissal stores")
+        .0;
+        assert_eq!(
+            stored.external_signature_notice_dismissal,
+            Some(ExternalSignatureNoticeDismissal::Snoozed {
+                until: "2027-01-02T03:04:05Z".to_owned()
+            })
+        );
+        assert_eq!(
+            get_me_preferences(State(state.clone()), actor.clone())
+                .await
+                .unwrap()
+                .0,
+            stored
+        );
+
+        let cleared = put_me_preferences(State(state.clone()), actor, Bytes::from_static(b"{}"))
+            .await
+            .expect("clear succeeds")
+            .0;
+        assert_eq!(cleared, UserPreferences::default());
+        assert!(
+            !state
+                .user_preferences
+                .read()
+                .await
+                .users
+                .contains_key(&uid.to_string()),
+            "clear removes the personal row and restores defaults"
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_notice_deadline_is_rejected_without_mutation() {
+        let state = AppState::default();
+        seed_user(&state, "notice.invalid").await;
+        let actor = CurrentActor::from_session_username(Some("notice.invalid".to_owned()));
+        let body = serde_json::json!({
+            "external_signature_notice_dismissal": {
+                "mode": "snoozed",
+                "until": "tomorrow"
+            }
+        });
+        let error = put_me_preferences(
+            State(state.clone()),
+            actor,
+            serde_json::to_vec(&body).unwrap().into(),
+        )
+        .await
+        .expect_err("malformed timestamp refused");
+        assert!(matches!(error, ApiError::Unprocessable(_)));
+        assert!(state.user_preferences.read().await.users.is_empty());
+    }
+
+    #[test]
+    fn permanent_notice_dismissal_has_the_stable_tagged_shape() {
+        let value =
+            serde_json::to_value(ExternalSignatureNoticeDismissal::Permanent).expect("serialize");
+        assert_eq!(value, serde_json::json!({ "mode": "permanent" }));
+        assert_eq!(
+            serde_json::from_value::<ExternalSignatureNoticeDismissal>(value).unwrap(),
+            ExternalSignatureNoticeDismissal::Permanent
+        );
     }
 }

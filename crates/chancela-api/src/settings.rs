@@ -300,6 +300,8 @@ pub const DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES: u32 = 4 * 60;
 
 const MAX_WORKFLOW_REMINDER_DASHBOARD_LIMIT: u16 = 50;
 const MAX_WORKFLOW_REMINDER_DAYS: u16 = 365;
+const DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS: u16 = 90;
+const MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS: u16 = 3650;
 const MAX_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS: u16 = 3650;
 const MAX_RETAINED_EXPORT_CLEANUP_KEEP_LATEST: u16 = 100;
 const MAX_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS: u16 = 3650;
@@ -1471,12 +1473,25 @@ pub struct OnboardingSettings {
 pub struct UiSettings {
     /// Visible columns on the registered entities list, in display order.
     pub registered_entity_columns: Vec<RegisteredEntityColumn>,
+    /// Default length of a user's temporary dismissal of the external-signature information notice.
+    /// The personal preference stores the resulting absolute RFC 3339 deadline; changing this value
+    /// therefore affects future snoozes only.
+    pub external_signature_notice_snooze_days: u16,
+    /// Whether the pairing UI may offer the operator's configured email client as a share target.
+    /// This is an administrative UI capability switch, not proof that email delivery succeeded.
+    pub phone_pairing_share_email_enabled: bool,
+    /// Whether the pairing UI may offer WhatsApp as a share target. The server never sends the
+    /// pairing material to WhatsApp itself.
+    pub phone_pairing_share_whatsapp_enabled: bool,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
         UiSettings {
             registered_entity_columns: default_registered_entity_columns(),
+            external_signature_notice_snooze_days: DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS,
+            phone_pairing_share_email_enabled: true,
+            phone_pairing_share_whatsapp_enabled: true,
         }
     }
 }
@@ -2358,6 +2373,15 @@ impl Settings {
     /// values are already validated by deserialization; this covers `texture_intensity`'s
     /// numeric range and the trust-service URLs. Returns `422` on any violation.
     pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        if !(1..=MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS)
+            .contains(&self.ui.external_signature_notice_snooze_days)
+        {
+            return Err(ApiError::Unprocessable(format!(
+                "ui.external_signature_notice_snooze_days must be between 1 and \
+                 {MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS}, got {}",
+                self.ui.external_signature_notice_snooze_days
+            )));
+        }
         if self.appearance.texture_intensity > 100 {
             return Err(ApiError::Unprocessable(format!(
                 "appearance.texture_intensity must be between 0 and 100, got {}",
@@ -3310,6 +3334,28 @@ pub async fn put_settings(
     {
         settings.platform.public_base_url = previous.platform.public_base_url.clone();
     }
+    let raw_ui = raw.get("ui");
+    if raw_ui
+        .and_then(|ui| ui.get("external_signature_notice_snooze_days"))
+        .is_none()
+    {
+        settings.ui.external_signature_notice_snooze_days =
+            previous.ui.external_signature_notice_snooze_days;
+    }
+    if raw_ui
+        .and_then(|ui| ui.get("phone_pairing_share_email_enabled"))
+        .is_none()
+    {
+        settings.ui.phone_pairing_share_email_enabled =
+            previous.ui.phone_pairing_share_email_enabled;
+    }
+    if raw_ui
+        .and_then(|ui| ui.get("phone_pairing_share_whatsapp_enabled"))
+        .is_none()
+    {
+        settings.ui.phone_pairing_share_whatsapp_enabled =
+            previous.ui.phone_pairing_share_whatsapp_enabled;
+    }
 
     // Always stamp the current schema version regardless of what the client sent.
     settings.schema_version = SETTINGS_SCHEMA_VERSION;
@@ -4181,5 +4227,43 @@ mod tests {
         settings
             .validate()
             .expect("with the relay on it is accepted");
+    }
+}
+#[cfg(test)]
+mod ui_contract_tests {
+    use super::*;
+
+    #[test]
+    fn ui_notice_and_pairing_share_defaults_are_backward_compatible() {
+        let settings: Settings = serde_json::from_str("{}").expect("old empty settings load");
+        assert_eq!(
+            settings.ui.external_signature_notice_snooze_days,
+            DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS
+        );
+        assert!(settings.ui.phone_pairing_share_email_enabled);
+        assert!(settings.ui.phone_pairing_share_whatsapp_enabled);
+
+        let json = serde_json::to_value(settings).expect("serialize settings");
+        assert_eq!(
+            json["ui"]["external_signature_notice_snooze_days"],
+            DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS
+        );
+        assert_eq!(json["ui"]["phone_pairing_share_email_enabled"], true);
+        assert_eq!(json["ui"]["phone_pairing_share_whatsapp_enabled"], true);
+    }
+
+    #[test]
+    fn external_signature_notice_snooze_days_is_bounded() {
+        for (days, valid) in [
+            (0, false),
+            (1, true),
+            (90, true),
+            (MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS, true),
+            (MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS + 1, false),
+        ] {
+            let mut settings = Settings::default();
+            settings.ui.external_signature_notice_snooze_days = days;
+            assert_eq!(settings.validate().is_ok(), valid, "days={days}");
+        }
     }
 }
