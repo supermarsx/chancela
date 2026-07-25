@@ -95,6 +95,7 @@ import { ZkObjectRootSection } from '../recovery/ZkObjectRootSection';
 import { RolesSection } from '../rbac/RolesSection';
 import { DelegationsSection } from '../rbac/DelegationsSection';
 import { AdminIntegrationsPanel } from '../admin/AdminIntegrationsPanel';
+import { AdminConfigurationFinder } from '../admin/AdminConfigurationFinder';
 import { ApiKeysSection } from './ApiKeysSection';
 import { ConnectorEgressSection, parseAllowedHosts } from './ConnectorEgressSection';
 import { EmailSection } from './EmailSection';
@@ -1753,7 +1754,10 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           level (Operações | Assinaturas) into ONE flat subtab strip below — rendered where the
           second-level strip used to be. The Configurações section strip is unchanged and still
           renders on the settings surface. */}
-      <PageHeader title={isAdmin ? at('admin.title') : t('settings.page.title')}>
+      <PageHeader
+        title={isAdmin ? at('admin.title') : t('settings.page.title')}
+        actions={isAdmin ? <AdminConfigurationFinder /> : undefined}
+      >
         {isAdmin ? null : (
           <SubNav
             items={SETTINGS_SECTIONS.map((s) => ({
