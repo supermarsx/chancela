@@ -9,8 +9,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{
-    Book, BookId, BookState, DEFAULT_TENANT_ID, Entity, EntityFamily, EntityId, EntityKind, Nipc,
-    StatuteOverrides, TenantId,
+    Book, BookId, BookKind, BookState, ClosingReason, DEFAULT_TENANT_ID, Entity, EntityFamily,
+    EntityId, EntityKind, Nipc, StatuteOverrides, TenantId,
 };
 use chancela_ledger::{ChainId, Event};
 use serde::Deserialize;
@@ -349,6 +349,152 @@ fn activity_category(kind: &str) -> &'static str {
     }
 }
 
+fn entity_family_search_labels(family: EntityFamily) -> &'static str {
+    match family {
+        EntityFamily::CommercialCompany => "Sociedade comercial Commercial Company",
+        EntityFamily::Condominium => "Condomínio Condominio Condominium",
+        EntityFamily::Association => "Associação Associacao Association",
+        EntityFamily::Foundation => "Fundação Fundacao Foundation",
+        EntityFamily::Cooperative => "Cooperativa Cooperative",
+    }
+}
+
+fn entity_kind_search_labels(kind: EntityKind) -> &'static str {
+    match kind {
+        EntityKind::SociedadeEmNomeColetivo => "Sociedade em Nome Coletivo General Partnership",
+        EntityKind::SociedadePorQuotas => "Sociedade por Quotas Private Limited Company",
+        EntityKind::SociedadeUnipessoalPorQuotas => {
+            "Sociedade Unipessoal por Quotas Single Member Private Limited Company"
+        }
+        EntityKind::SociedadeAnonima => {
+            "Sociedade Anónima Sociedade Anonima Public Limited Company"
+        }
+        EntityKind::SociedadeEmComanditaSimples => {
+            "Sociedade em Comandita Simples Limited Partnership"
+        }
+        EntityKind::SociedadeEmComanditaPorAcoes => {
+            "Sociedade em Comandita por Ações Sociedade em Comandita por Acoes Partnership Limited by Shares"
+        }
+        EntityKind::Condominio => "Condomínio Condominio Condominium",
+        EntityKind::Associacao => "Associação Associacao Association",
+        EntityKind::Fundacao => "Fundação Fundacao Foundation",
+        EntityKind::Cooperativa => "Cooperativa Cooperative",
+    }
+}
+
+fn book_kind_search_labels(kind: BookKind) -> &'static str {
+    match kind {
+        BookKind::AssembleiaGeral => "Assembleia Geral General Meeting",
+        BookKind::GerenciaAdministracao => {
+            "Gerência Administração Gerencia Administracao Management Administration"
+        }
+        BookKind::ConselhoFiscal => "Conselho Fiscal Audit Board",
+        BookKind::Condominio => "Condomínio Condominio Condominium",
+        BookKind::Other => "Outro Other",
+    }
+}
+
+fn book_state_search_labels(state: BookState) -> &'static str {
+    match state {
+        BookState::Created => "Criado Created",
+        BookState::Open => "Aberto Open",
+        BookState::Closed => "Encerrado Closed",
+    }
+}
+
+fn closing_reason_search_labels(reason: &ClosingReason) -> &'static str {
+    match reason {
+        ClosingReason::BookFull => "Livro completo Book full",
+        ClosingReason::EntityDissolved => "Entidade dissolvida Entity dissolved",
+        ClosingReason::MigrationToSuccessor => {
+            "Migração para livro sucessor Migracao para livro sucessor Migration to successor"
+        }
+        ClosingReason::Other { .. } => "Outro Other",
+    }
+}
+
+fn spaced_identifier(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 8);
+    let mut previous_was_lowercase = false;
+    for character in value.chars() {
+        if matches!(character, '.' | '_' | '-') {
+            if !out.ends_with(' ') {
+                out.push(' ');
+            }
+            previous_was_lowercase = false;
+            continue;
+        }
+        if character.is_uppercase() && previous_was_lowercase {
+            out.push(' ');
+        }
+        previous_was_lowercase = character.is_lowercase();
+        out.push(character);
+    }
+    out
+}
+
+/// Practical primary-locale aliases for the activity labels surfaced in the entity registry.
+/// Unknown/new kinds still receive a canonical spaced identifier, so paging never depends on the
+/// web bundle's translation catalog and newer servers remain searchable by readable machine words.
+fn activity_kind_search_labels(kind: &str) -> String {
+    let localized = match kind {
+        "registry.imported" => "Certidão do registo comercial importada Registo importado",
+        "registry.auto_update.attempted" => "Atualização automática do registo comercial tentada",
+        "entity.created" => "Entidade criada",
+        "entity.statute_updated" => "Estatutos da entidade atualizados",
+        "book.opened" => "Livro aberto",
+        "book.closed" => "Livro encerrado",
+        "book.legal_hold.set" => "Retenção legal do livro aplicada",
+        "book.legal_hold.cleared" => "Retenção legal do livro levantada",
+        "act.advanced" => "Ata avançada de estado",
+        "act.archived" => "Ata arquivada",
+        "act.drafted" => "Ata rascunhada",
+        "act.reopened" => "Ata reaberta para correção",
+        "act.reverted" => "Ata revertida para estado anterior",
+        "act.sealed" => "Ata selada",
+        "act.updated" => "Ata atualizada",
+        "convening.dispatched" => "Convocatória expedida",
+        "document.generated" => "Documento gerado",
+        "document.imported" => "Documento importado",
+        "document.signed" => "Documento assinado",
+        _ => "",
+    };
+    format!("{localized} {}", spaced_identifier(kind))
+}
+
+fn entity_search_aliases(
+    entity: &EntityView,
+    books: &[BookView],
+    activity: Option<&Event>,
+    has_registry_extract: bool,
+) -> String {
+    let mut aliases = vec![
+        entity_family_search_labels(entity.family).to_owned(),
+        entity_kind_search_labels(entity.kind).to_owned(),
+        if entity.nipc_validated {
+            "NIPC validado".to_owned()
+        } else {
+            "NIPC por validar NIPC não validado".to_owned()
+        },
+        if has_registry_extract {
+            "Registo importado".to_owned()
+        } else {
+            "Registo não importado".to_owned()
+        },
+    ];
+    for book in books {
+        aliases.push(book_kind_search_labels(book.kind).to_owned());
+        aliases.push(book_state_search_labels(book.state).to_owned());
+        if let Some(reason) = book.closing_reason.as_ref() {
+            aliases.push(closing_reason_search_labels(reason).to_owned());
+        }
+    }
+    if let Some(activity) = activity {
+        aliases.push(activity_kind_search_labels(&activity.kind));
+    }
+    aliases.join(" ")
+}
+
 pub async fn list_entities_page(
     State(state): State<AppState>,
     Query(query): Query<EntityPageQuery>,
@@ -598,8 +744,10 @@ pub async fn list_entities_page(
             let registry_view =
                 extract.map(|extract| EntityRegistrySummaryView::build(extract, &cae, today));
             let activity_view = activity.map(LedgerEventView::from);
+            let aliases =
+                entity_search_aliases(&entity_view, &book_views, activity, extract.is_some());
             serde_json::to_string(&(entity_view, book_views, registry_view, activity_view))
-                .is_ok_and(|text| fold_search(&text).contains(needle))
+                .is_ok_and(|text| fold_search(&format!("{text} {aliases}")).contains(needle))
         });
         registry_matches
             && freshness_matches
@@ -1497,5 +1645,83 @@ mod tests {
         assert_eq!(body["limit"], 1);
         assert_eq!(body["has_more"], false);
         assert!(body.get("total").is_none(), "RBAC page exposes no total");
+    }
+
+    #[tokio::test]
+    async fn entity_page_search_preserves_primary_portuguese_labels() {
+        let state = AppState::default();
+        let token = token_for_role(&state, "owner.search-labels", OWNER_ROLE_ID).await;
+        let alpha = Entity::new(
+            "Alpha Participações",
+            Nipc::unvalidated("alpha-labels"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        );
+        let beta = Entity::new(
+            "Beta Participações",
+            Nipc::unvalidated("beta-labels"),
+            "Porto",
+            EntityKind::SociedadePorQuotas,
+        );
+        let alpha_id = alpha.id;
+        let beta_id = beta.id;
+        state
+            .entities
+            .write()
+            .await
+            .extend([alpha, beta].map(|entity| (entity.id, entity)));
+
+        let mut closed_book = Book::new(alpha_id, BookKind::AssembleiaGeral);
+        closed_book.state = BookState::Closed;
+        closed_book.termo_encerramento = Some(TermoDeEncerramento::default());
+        state
+            .books
+            .write()
+            .await
+            .insert(closed_book.id, closed_book);
+        state.ledger.write().await.append(
+            "owner.search-labels",
+            &format!("entity:{beta_id}"),
+            "entity.created",
+            None,
+            b"{}",
+        );
+
+        for (term, expected_ids) in [
+            (
+                "sociedade%20por%20quotas",
+                vec![alpha_id.to_string(), beta_id.to_string()],
+            ),
+            (
+                "sociedade%20comercial",
+                vec![alpha_id.to_string(), beta_id.to_string()],
+            ),
+            ("assembleia%20geral", vec![alpha_id.to_string()]),
+            ("encerrado", vec![alpha_id.to_string()]),
+            ("livro%20completo", vec![alpha_id.to_string()]),
+            ("entidade%20criada", vec![beta_id.to_string()]),
+        ] {
+            let (status, body) = send_raw(
+                state.clone(),
+                with_session(
+                    get(&format!("/v1/entities/page?q={term}&sort=name&limit=10")),
+                    &token,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "query {term}");
+            let found: Vec<_> = body["items"]
+                .as_array()
+                .expect("page items")
+                .iter()
+                .map(|item| item["id"].as_str().expect("entity id").to_owned())
+                .collect();
+            for expected in expected_ids {
+                assert!(
+                    found.contains(&expected),
+                    "query {term} did not include expected entity {expected}; found {found:?}"
+                );
+            }
+        }
     }
 }
