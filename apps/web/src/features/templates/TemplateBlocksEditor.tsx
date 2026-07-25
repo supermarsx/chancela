@@ -10,7 +10,7 @@
  * of truth passed to the create/edit pages so half-typed JSON is never discarded; the structured
  * controls are suspended and explain the validation error until that JSON is valid again.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { TemplateBlockSpec, TemplateKvRowSpec } from '../../api/types';
 import {
   useTemplatesEditorT,
@@ -455,17 +455,28 @@ export function TemplateBlocksEditor({
   value,
   onChange,
   idPrefix = 'template-blocks',
+  presentation = 'cards',
+  renderNarrativeBody,
 }: {
   value: string;
   onChange: (next: string) => void;
   idPrefix?: string;
+  /**
+   * `document` keeps every block open in authored order. The legacy `cards` presentation remains
+   * useful for focused component tests and any compact embedding outside the full-page editor.
+   */
+  presentation?: 'cards' | 'document';
+  /** Mount the real prose editor at the first NarrativeBody placement marker. */
+  renderNarrativeBody?: () => ReactNode;
 }) {
   const bt = useTemplatesEditorT();
   const [addKind, setAddKind] = useState<BlockKind>('Paragraph');
   const [openBlocks, setOpenBlocks] = useState<Record<number, boolean>>({ 0: true });
   const [pendingKindChange, setPendingKindChange] = useState<PendingKindChange | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const parsed = useMemo(() => parseTemplateBlocksText(value), [value]);
   const blocks = parsed.blocks;
+  const narrativeBodyIndex = blocks?.findIndex((block) => block.kind === 'NarrativeBody') ?? -1;
   const kindOptions = BLOCK_KINDS.map((kind) => ({ value: kind, label: bt(kindCopyKey[kind]) }));
 
   const write = (next: TemplateBlockSpec[]) => onChange(JSON.stringify(next, null, 2));
@@ -502,6 +513,76 @@ export function TemplateBlocksEditor({
         <div className="template-block-editor__list">
           {blocks.map((block, index) => {
             const summary = blockSummary(block);
+            if (presentation === 'document') {
+              return (
+                <section
+                  key={`${block.kind}:${index}`}
+                  className={`template-document-block template-document-block--${block.kind.toLowerCase()}`}
+                  data-template-block-kind={block.kind}
+                  aria-label={`${bt('templates.editor.blocks.item', { number: index + 1 })}: ${bt(
+                    kindCopyKey[block.kind],
+                  )}`}
+                >
+                  <div className="template-document-block__toolbar">
+                    <strong>{bt('templates.editor.blocks.item', { number: index + 1 })}</strong>
+                    <Field
+                      label={bt('templates.editor.blocks.kind')}
+                      htmlFor={`${idPrefix}-${index}-kind`}
+                    >
+                      <Select
+                        id={`${idPrefix}-${index}-kind`}
+                        value={block.kind}
+                        options={kindOptions}
+                        onChange={(event) =>
+                          changeKind(index, block, event.target.value as BlockKind)
+                        }
+                      />
+                    </Field>
+                    <div className="row-wrap template-block-editor__actions">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.ArrowUp />}
+                        disabled={index === 0}
+                        aria-label={`${bt('templates.editor.blocks.moveUp')} ${index + 1}`}
+                        onClick={() => swap(index, index - 1)}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.ArrowDown />}
+                        disabled={index === blocks.length - 1}
+                        aria-label={`${bt('templates.editor.blocks.moveDown')} ${index + 1}`}
+                        onClick={() => swap(index, index + 1)}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Trash />}
+                        disabled={blocks.length === 1}
+                        aria-label={`${bt('templates.editor.blocks.remove')} ${index + 1}`}
+                        onClick={() => setPendingRemove(index)}
+                      />
+                    </div>
+                  </div>
+                  <div className="template-document-block__content">
+                    {block.kind === 'NarrativeBody' &&
+                    index === narrativeBodyIndex &&
+                    renderNarrativeBody ? (
+                      renderNarrativeBody()
+                    ) : (
+                      <div className="form field-table">
+                        <BlockFields
+                          block={block}
+                          index={index}
+                          onChange={(next) => update(index, next)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </section>
+              );
+            }
             return (
               <details
                 key={`${block.kind}:${index}`}
@@ -563,9 +644,7 @@ export function TemplateBlocksEditor({
                       icon={<Icon.Trash />}
                       disabled={blocks.length === 1}
                       aria-label={`${bt('templates.editor.blocks.remove')} ${index + 1}`}
-                      onClick={() =>
-                        write(blocks.filter((_, currentIndex) => currentIndex !== index))
-                      }
+                      onClick={() => setPendingRemove(index)}
                     />
                   </div>
                 </div>
@@ -637,6 +716,19 @@ export function TemplateBlocksEditor({
           const current = blocks[pendingKindChange.index];
           if (!current || current.kind !== pendingKindChange.fromKind) return;
           update(pendingKindChange.index, newTemplateBlock(pendingKindChange.toKind));
+        }}
+      />
+      <ConfirmActionModal
+        open={pendingRemove !== null}
+        onClose={() => setPendingRemove(null)}
+        title={bt('templates.editor.blocks.removeConfirm.title')}
+        intro={<p>{bt('templates.editor.blocks.removeConfirm.intro')}</p>}
+        confirmLabel={bt('templates.editor.blocks.removeConfirm.confirm')}
+        pendingLabel={bt('templates.editor.blocks.removeConfirm.pending')}
+        danger
+        onConfirm={async () => {
+          if (pendingRemove === null || !blocks || blocks.length === 1) return;
+          write(blocks.filter((_, currentIndex) => currentIndex !== pendingRemove));
         }}
       />
     </section>

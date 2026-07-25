@@ -49,12 +49,8 @@ import {
 } from '../../ui';
 import { mappedTemplateError } from './templateErrors';
 import { TemplateSpecFields } from './TemplateSpecFields';
-import {
-  TemplateBlocksEditor,
-  parseTemplateBlocksText,
-  withNarrativeBodyPlacement,
-} from './TemplateBlocksEditor';
-import { TemplateBodyEditor } from './TemplateBodyEditor';
+import { parseTemplateBlocksText, withNarrativeBodyPlacement } from './TemplateBlocksEditor';
+import { TemplateDocumentEditor } from './TemplateDocumentEditor';
 import { TemplateEditorTabs, type UserTemplateEditorTab } from './TemplateEditorTabs';
 import { TemplateVersionHistory } from './TemplateVersionHistory';
 import { normalizeTemplateVersionName } from './templateVersionNames';
@@ -349,10 +345,12 @@ export function TemplateEditPage() {
               <form className="form" onSubmit={submit}>
                 <div className="route-transition stack" key={tab}>
                   {tab === 'content' ? (
-                    <TemplateBodyEditor
+                    <TemplateDocumentEditor
                       spec={authoredSpec}
-                      value={body}
-                      onChange={setBody}
+                      blocksText={blocksText}
+                      onBlocksChange={setBlocksText}
+                      bodyMarkdown={body}
+                      onBodyChange={setBody}
                       onAddBodyPlacement={addBodyPlacement}
                       disabled={updateTemplate.isPending}
                       idPrefix="tpl-page"
@@ -367,17 +365,6 @@ export function TemplateEditPage() {
                         idLocked
                         idPrefix="tpl-page"
                       />
-                      <details className="template-editor__document-structure">
-                        <summary>{et('templates.editor.structure.summary')}</summary>
-                        <div className="stack--tight template-editor__document-structure-body">
-                          <p className="field__hint">{et('templates.editor.structure.hint')}</p>
-                          <TemplateBlocksEditor
-                            value={blocksText}
-                            onChange={setBlocksText}
-                            idPrefix="tpl-page-blocks"
-                          />
-                        </div>
-                      </details>
                     </>
                   )}
                 </div>

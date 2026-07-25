@@ -46,7 +46,10 @@ export const templatesEditorPtPT = {
 
   // — Structured block editor ——————————————————————————————————————————————————————
   'templates.editor.blocks.intro':
-    'Construa o documento por blocos. Abra um bloco para editar os respetivos campos; a ordem apresentada é a ordem do documento.',
+    'Construa o documento por blocos. A ordem apresentada é a ordem do documento; o JSON completo fica disponível apenas na opção avançada.',
+  'templates.editor.document.title': 'Documento da ata',
+  'templates.editor.document.hint':
+    'Edite o texto e os elementos estruturados diretamente pela ordem em que aparecem no documento. Os campos entre chavetas mantêm-se como variáveis do modelo.',
   'templates.editor.blocks.item': 'Bloco {number}',
   'templates.editor.blocks.kind': 'Tipo de bloco',
   'templates.editor.blocks.addKind': 'Tipo do novo bloco',
@@ -54,6 +57,11 @@ export const templatesEditorPtPT = {
   'templates.editor.blocks.moveUp': 'Subir bloco',
   'templates.editor.blocks.moveDown': 'Descer bloco',
   'templates.editor.blocks.remove': 'Remover bloco',
+  'templates.editor.blocks.removeConfirm.title': 'Remover este bloco?',
+  'templates.editor.blocks.removeConfirm.intro':
+    'O bloco e todos os seus campos serão removidos do documento. Esta ação não pode ser anulada depois de guardar.',
+  'templates.editor.blocks.removeConfirm.confirm': 'Remover bloco',
+  'templates.editor.blocks.removeConfirm.pending': 'A remover…',
   'templates.editor.blocks.changeKind.title': 'Alterar o tipo deste bloco?',
   'templates.editor.blocks.changeKind.intro':
     'Alterar de {from} para {to} remove todos os campos atuais deste bloco. A alteração só será aplicada depois de confirmar.',
@@ -165,7 +173,10 @@ export const templatesEditorEnglish = {
   'templates.editor.saveName.tooLong': 'The name cannot be longer than 200 characters.',
 
   'templates.editor.blocks.intro':
-    'Build the document from blocks. Open a block to edit its fields; the displayed order is the document order.',
+    'Build the document from blocks. The displayed order is the document order; complete JSON remains available only in the advanced option.',
+  'templates.editor.document.title': 'Minutes document',
+  'templates.editor.document.hint':
+    'Edit prose and structured elements directly in document order. Fields between braces remain template variables.',
   'templates.editor.blocks.item': 'Block {number}',
   'templates.editor.blocks.kind': 'Block type',
   'templates.editor.blocks.addKind': 'New block type',
@@ -173,6 +184,11 @@ export const templatesEditorEnglish = {
   'templates.editor.blocks.moveUp': 'Move block up',
   'templates.editor.blocks.moveDown': 'Move block down',
   'templates.editor.blocks.remove': 'Remove block',
+  'templates.editor.blocks.removeConfirm.title': 'Remove this block?',
+  'templates.editor.blocks.removeConfirm.intro':
+    'The block and all its fields will be removed from the document. This action cannot be undone after saving.',
+  'templates.editor.blocks.removeConfirm.confirm': 'Remove block',
+  'templates.editor.blocks.removeConfirm.pending': 'Removing…',
   'templates.editor.blocks.changeKind.title': 'Change this block type?',
   'templates.editor.blocks.changeKind.intro':
     'Changing from {from} to {to} removes every current field in this block. The change is only applied after you confirm.',

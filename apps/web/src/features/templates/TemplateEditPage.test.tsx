@@ -179,21 +179,6 @@ function renderEdit(id: string, permissions?: PermissionsContextValue) {
   );
 }
 
-async function openPropertiesStructure(): Promise<HTMLDetailsElement> {
-  const properties = await screen.findByRole('button', { name: 'Propriedades' });
-  if (properties.getAttribute('aria-pressed') !== 'true') fireEvent.click(properties);
-  const summary = await screen.findByText('Estrutura avançada do documento');
-  const details = summary.closest('details') as HTMLDetailsElement | null;
-  if (!details) throw new Error('advanced document structure disclosure missing');
-  if (!details.open) fireEvent.click(summary);
-  return details;
-}
-
-function openContent() {
-  const content = screen.getByRole('button', { name: 'Editor e pré-visualização' });
-  if (content.getAttribute('aria-pressed') !== 'true') fireEvent.click(content);
-}
-
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -245,15 +230,16 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
-    await openPropertiesStructure();
     const blockTemplate = (await screen.findByLabelText('Texto do modelo')) as HTMLTextAreaElement;
     expect(blockTemplate.value).toBe('Ata de {{ entity.name }}.');
     fireEvent.change(blockTemplate, { target: { value: 'Reescrito.' } });
 
-    // Metadata and advanced document structure share Properties, while the body remains separate.
+    // Metadata stays in Properties while the document blocks remain on the Content tab.
+    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
     const id = screen.getByLabelText('Identificador') as HTMLInputElement;
     expect(id.disabled).toBe(true);
     expect(id.closest('.field-table')).toBeTruthy();
+    expect(screen.queryByText('JSON avançado')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
@@ -316,8 +302,8 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
-    const structure = await openPropertiesStructure();
-    fireEvent.click(within(structure).getByText('JSON avançado'));
+    await screen.findByText('JSON avançado');
+    fireEvent.click(screen.getByText('JSON avançado'));
     fireEvent.change(screen.getByLabelText('JSON avançado'), { target: { value: '[]' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 
@@ -422,17 +408,16 @@ describe('TemplateEditPage', () => {
     // The narrative body rides the bundle envelope as `body_markdown` and hydrates the editor.
     const body = (await screen.findByLabelText('corpo-markdown')) as HTMLTextAreaElement;
     expect(body.value).toBe('## Corpo\n\nTexto com {{ campo }}.');
-    // Content is body-first. Structured blocks move to a collapsed Properties disclosure.
-    expect(screen.queryByText('Bloco 1')).toBeNull();
+    // Content loads the real block prose alongside the narrative-body editor.
+    expect(screen.getByText('Bloco 1')).toBeTruthy();
+    expect((screen.getByLabelText('Texto do modelo') as HTMLTextAreaElement).value).toBe(
+      'Ata de {{ entity.name }}.',
+    );
     expect(screen.queryByLabelText('Identificador')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
-    const structure = (await screen.findByText('Estrutura avançada do documento')).closest(
-      'details',
-    ) as HTMLDetailsElement;
-    expect(structure.open).toBe(false);
-    fireEvent.click(within(structure).getByText('Estrutura avançada do documento'));
-    expect(await within(structure).findByText('Bloco 1')).toBeTruthy();
-    expect(within(structure).getByText('JSON avançado')).toBeTruthy();
+    expect(await screen.findByLabelText('Identificador')).toBeTruthy();
+    expect(screen.queryByText('Bloco 1')).toBeNull();
+    expect(screen.queryByText('JSON avançado')).toBeNull();
   });
 
   it('renders one exclusive preview and exposes tags as exact markdown source', async () => {
@@ -466,7 +451,7 @@ describe('TemplateEditPage', () => {
     );
   });
 
-  it('updates advanced structured controls without moving them back into Content', async () => {
+  it('updates ordered structured controls directly in Content without leaking them into Properties', async () => {
     const fullPreviewBundle = {
       ...BUNDLE_EXPORT,
       spec: {
@@ -497,14 +482,12 @@ describe('TemplateEditPage', () => {
 
     renderEdit(USER_TEMPLATE.id);
 
-    await openPropertiesStructure();
-    const firstBlock = (await screen.findByText('Bloco 1')).closest('details');
-    const secondBlock = screen.getByText('Bloco 2').closest('details');
+    const firstBlock = await screen.findByLabelText(/^Bloco 1:/);
+    const secondBlock = screen.getByLabelText(/^Bloco 2:/);
     if (!firstBlock || !secondBlock) throw new Error('structured block controls missing');
     fireEvent.change(within(firstBlock).getByLabelText('Texto do modelo'), {
       target: { value: 'Título depois' },
     });
-    fireEvent.click(within(secondBlock).getByText('Bloco 2'));
     fireEvent.change(within(secondBlock).getByLabelText('Valor 1'), {
       target: { value: '{{ entity.legal_name }}' },
     });
@@ -522,15 +505,19 @@ describe('TemplateEditPage', () => {
       { kind: 'Paragraph', template: 'Texto depois do corpo.' },
     ]);
 
-    openContent();
     expect(await screen.findByLabelText('corpo-markdown')).toBeTruthy();
-    expect(screen.queryByText('Bloco 1')).toBeNull();
+    expect(screen.getByText('Bloco 1')).toBeTruthy();
     expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
     expect(screen.getByLabelText('Origem body_markdown').textContent).toBe(
       '## Corpo\n\nTexto com {{ campo }}.',
     );
     expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
+    expect(await screen.findByLabelText('Identificador')).toBeTruthy();
+    expect(screen.queryByText('Bloco 1')).toBeNull();
+    expect(screen.queryByText('JSON avançado')).toBeNull();
   });
 
   it('saves the narrative body through the bundle envelope', async () => {
@@ -562,8 +549,7 @@ describe('TemplateEditPage', () => {
     await waitFor(() =>
       expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull(),
     );
-    const structure = await openPropertiesStructure();
-    fireEvent.click(within(structure).getByText('JSON avançado'));
+    fireEvent.click(screen.getByText('JSON avançado'));
     expect(
       JSON.parse((screen.getByLabelText('JSON avançado') as HTMLTextAreaElement).value),
     ).toContainEqual({ kind: 'NarrativeBody' });
@@ -696,7 +682,6 @@ describe('TemplateEditPage', () => {
     ).toBe('true');
     await waitFor(() => expect(hasUnsavedChanges()).toBe(false));
 
-    await openPropertiesStructure();
     const restoredBlock = (await screen.findByLabelText('Texto do modelo')) as HTMLTextAreaElement;
     expect(restoredBlock.value).toBe('Conteúdo reposto.');
   });

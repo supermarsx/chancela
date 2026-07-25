@@ -28,7 +28,6 @@ import { useCreateTemplate, useTemplateBundle, useTemplates } from '../../api/ho
 import { ApiError } from '../../api/client';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useT } from '../../i18n';
-import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
 import {
   Button,
   ButtonLink,
@@ -43,12 +42,8 @@ import {
 } from '../../ui';
 import { mappedTemplateError } from './templateErrors';
 import { TemplateSpecFields } from './TemplateSpecFields';
-import {
-  TemplateBlocksEditor,
-  parseTemplateBlocksText,
-  withNarrativeBodyPlacement,
-} from './TemplateBlocksEditor';
-import { TemplateBodyEditor } from './TemplateBodyEditor';
+import { parseTemplateBlocksText, withNarrativeBodyPlacement } from './TemplateBlocksEditor';
+import { TemplateDocumentEditor } from './TemplateDocumentEditor';
 import { TemplateEditorTabs, type TemplateEditorTab } from './TemplateEditorTabs';
 import { forkTemplateSpec, forkedTemplateId } from './templateFork';
 import { templateDetailPath } from './templateRoutes';
@@ -70,7 +65,6 @@ function blankSpec(): TemplateSpec {
 
 export function TemplateCreatePage() {
   const t = useT();
-  const et = useTemplatesEditorT();
   const toast = useToast();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -284,10 +278,12 @@ export function TemplateCreatePage() {
 
             <div className="route-transition stack" key={tab}>
               {tab === 'content' ? (
-                <TemplateBodyEditor
+                <TemplateDocumentEditor
                   spec={authoredSpec}
-                  value={body}
-                  onChange={setBody}
+                  blocksText={blocksText}
+                  onBlocksChange={setBlocksText}
+                  bodyMarkdown={body}
+                  onBodyChange={setBody}
                   onAddBodyPlacement={addBodyPlacement}
                   disabled={createTemplate.isPending}
                   idPrefix="tpl-new"
@@ -302,17 +298,6 @@ export function TemplateCreatePage() {
                     idLocked={false}
                     idPrefix="tpl-new"
                   />
-                  <details className="template-editor__document-structure">
-                    <summary>{et('templates.editor.structure.summary')}</summary>
-                    <div className="stack--tight template-editor__document-structure-body">
-                      <p className="field__hint">{et('templates.editor.structure.hint')}</p>
-                      <TemplateBlocksEditor
-                        value={blocksText}
-                        onChange={setBlocksText}
-                        idPrefix="tpl-new-blocks"
-                      />
-                    </div>
-                  </details>
                 </>
               )}
             </div>

@@ -197,6 +197,8 @@ describe('TemplateBlocksEditor', () => {
     expect(currentBlocks().map((block) => block.kind)).toEqual(['Paragraph', 'Heading']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Remover bloco 2' }));
+    const dialog = screen.getByRole('dialog', { name: 'Remover este bloco?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover bloco' }));
     expect(currentBlocks().map((block) => block.kind)).toEqual(['Paragraph']);
 
     fireEvent.change(screen.getByLabelText('Tipo do novo bloco'), {

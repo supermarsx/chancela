@@ -162,16 +162,6 @@ function renderCreate(search = '', permissions?: PermissionsContextValue) {
   );
 }
 
-async function openPropertiesStructure(): Promise<HTMLDetailsElement> {
-  const properties = await screen.findByRole('button', { name: 'Propriedades' });
-  if (properties.getAttribute('aria-pressed') !== 'true') fireEvent.click(properties);
-  const summary = await screen.findByText('Estrutura avançada do documento');
-  const details = summary.closest('details') as HTMLDetailsElement | null;
-  if (!details) throw new Error('advanced document structure disclosure missing');
-  if (!details.open) fireEvent.click(summary);
-  return details;
-}
-
 function openContent() {
   const content = screen.getByRole('button', { name: 'Editor e pré-visualização' });
   if (content.getAttribute('aria-pressed') !== 'true') fireEvent.click(content);
@@ -229,12 +219,10 @@ describe('TemplateCreatePage', () => {
     await screen.findByLabelText('Identificador');
     expect(container.querySelector('.field-table')).toBeTruthy();
     expect(screen.queryByLabelText('corpo-markdown')).toBeNull();
-    const structure = screen
-      .getByText('Estrutura avançada do documento')
-      .closest('details') as HTMLDetailsElement;
-    expect(structure.open).toBe(false);
-    fireEvent.click(within(structure).getByText('Estrutura avançada do documento'));
-    fireEvent.click(within(structure).getByText('JSON avançado'));
+    expect(screen.queryByText('JSON avançado')).toBeNull();
+
+    openContent();
+    fireEvent.click(screen.getByText('JSON avançado'));
     expect(
       JSON.parse((screen.getByLabelText('JSON avançado') as HTMLTextAreaElement).value),
     ).toEqual([{ kind: 'NarrativeBody' }]);
@@ -327,6 +315,65 @@ describe('TemplateCreatePage', () => {
     expect(screen.getByText('Modelo de origem: csc-ata-ag/v1')).toBeTruthy();
   });
 
+  it('loads and saves a realistic block-authored fork when body_markdown is empty', async () => {
+    const sourceWithBlockProse = {
+      ...SOURCE_BUNDLE,
+      spec: {
+        ...SOURCE_BUNDLE.spec,
+        blocks: [
+          { kind: 'Heading', level: 1, template: 'ATA DA ASSEMBLEIA GERAL' },
+          {
+            kind: 'Paragraph',
+            template: 'Aos {{ meeting_date }}, reuniu a assembleia.',
+            legacy_annotation: 'preserve-me',
+          },
+          { kind: 'Rule' },
+          {
+            kind: 'SignatureBlock',
+            source: 'signatories',
+            role: '{{ capacity }}',
+            name: '{{ name }}',
+          },
+        ],
+      },
+      body_markdown: '',
+    };
+    const { fn, calls } = stubFetch([BUILTIN], { exportBody: sourceWithBlockProse });
+    vi.stubGlobal('fetch', fn);
+
+    renderCreate('?fork=csc-ata-ag%2Fv1');
+
+    const heading = (await screen.findByDisplayValue(
+      'ATA DA ASSEMBLEIA GERAL',
+    )) as HTMLTextAreaElement;
+    const paragraph = screen.getByDisplayValue(
+      'Aos {{ meeting_date }}, reuniu a assembleia.',
+    ) as HTMLTextAreaElement;
+    expect((screen.getByLabelText('corpo-markdown') as HTMLTextAreaElement).value).toBe('');
+    expect(
+      Array.from(document.querySelectorAll('[data-template-block-kind]'), (node) =>
+        node.getAttribute('data-template-block-kind'),
+      ),
+    ).toEqual(['Heading', 'Paragraph', 'Rule', 'SignatureBlock']);
+
+    fireEvent.change(heading, { target: { value: 'ATA DA REUNIÃO' } });
+    fireEvent.change(paragraph, { target: { value: 'Texto da ata revisto.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(writePosts(calls)).toHaveLength(1));
+    const saved = JSON.parse(String(writePosts(calls)[0]?.body)) as {
+      spec: { blocks: Array<Record<string, unknown>> };
+      body_markdown: string;
+    };
+    expect(saved.body_markdown).toBe('');
+    expect(saved.spec.blocks[0]).toMatchObject({ kind: 'Heading', template: 'ATA DA REUNIÃO' });
+    expect(saved.spec.blocks[1]).toMatchObject({
+      kind: 'Paragraph',
+      template: 'Texto da ata revisto.',
+      legacy_annotation: 'preserve-me',
+    });
+  });
+
   it('saves a fork as a NEW user template carrying the source body — never a PUT', async () => {
     const { fn, calls } = stubFetch([BUILTIN]);
     vi.stubGlobal('fetch', fn);
@@ -354,8 +401,7 @@ describe('TemplateCreatePage', () => {
     await waitFor(() =>
       expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull(),
     );
-    const structure = await openPropertiesStructure();
-    fireEvent.click(within(structure).getByText('JSON avançado'));
+    fireEvent.click(screen.getByText('JSON avançado'));
     expect(
       JSON.parse((screen.getByLabelText('JSON avançado') as HTMLTextAreaElement).value),
     ).toContainEqual({ kind: 'NarrativeBody' });
@@ -415,7 +461,7 @@ describe('TemplateCreatePage', () => {
     expect(screen.getByRole('button', { name: 'Markdown copiado' })).toBeTruthy();
   });
 
-  it('keeps all structured variants under Properties while Content remains body-only', async () => {
+  it('edits every structured variant in document order while Properties stays metadata-only', async () => {
     const blocks: TemplateBlockSpec[] = [
       { kind: 'Heading', level: 1, template: 'Título inicial' },
       { kind: 'Paragraph', items: 'agenda_items', template: 'Ponto {{ item.text }}' },
@@ -455,23 +501,21 @@ describe('TemplateCreatePage', () => {
     renderCreate();
 
     expect(await screen.findByLabelText('corpo-markdown')).toBeTruthy();
-    expect(screen.queryByText('Bloco 1')).toBeNull();
+    expect(screen.getByText('Bloco 1')).toBeTruthy();
 
-    const structure = await openPropertiesStructure();
-    const rawDisclosure = within(structure).getByText('JSON avançado').closest('details');
+    const rawDisclosure = screen.getByText('JSON avançado').closest('details');
     if (!rawDisclosure) throw new Error('advanced JSON disclosure missing');
     fireEvent.click(within(rawDisclosure).getByText('JSON avançado'));
     fireEvent.change(screen.getByLabelText('JSON avançado'), {
       target: { value: JSON.stringify(blocks, null, 2) },
     });
 
-    const firstBlock = screen.getByText('Bloco 1').closest('details');
-    const thirdBlock = screen.getByText('Bloco 3').closest('details');
+    const firstBlock = screen.getByLabelText(/^Bloco 1:/);
+    const thirdBlock = screen.getByLabelText(/^Bloco 3:/);
     if (!firstBlock || !thirdBlock) throw new Error('structured block controls missing');
     fireEvent.change(within(firstBlock).getByLabelText('Texto do modelo'), {
       target: { value: 'Título editado' },
     });
-    fireEvent.click(within(thirdBlock).getByText('Bloco 3'));
     fireEvent.change(within(thirdBlock).getByLabelText('Rótulo 1'), {
       target: { value: 'Entidade atualizada' },
     });
@@ -494,12 +538,16 @@ describe('TemplateCreatePage', () => {
       rows: [{ key: 'Entidade atualizada', value: '{{ entity.name }}' }],
     });
 
-    openContent();
     fireEvent.change(screen.getByLabelText('corpo-markdown'), {
       target: { value: '## Corpo compilado' },
     });
     fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
     expect(screen.getByLabelText('Origem body_markdown').textContent).toBe('## Corpo compilado');
     expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));
+    expect(await screen.findByLabelText('Identificador')).toBeTruthy();
+    expect(screen.queryByText('JSON avançado')).toBeNull();
+    expect(screen.queryByText('Bloco 1')).toBeNull();
   });
 });
