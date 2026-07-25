@@ -2631,8 +2631,27 @@ describe('SettingsPage', () => {
     setColor('Secundária', '#445566');
     setColor('Fundo', '#778899');
     expect(colorStore.hasOverrides()).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Repor predefinições do tema' }));
-    expect(colorStore.get()).toEqual({});
+
+    const resetTheme = screen.getByRole('button', { name: 'Repor predefinições do tema' });
+    resetTheme.focus();
+    fireEvent.click(resetTheme);
+    let dialog = screen.getByRole('dialog', {
+      name: 'Repor cores predefinidas do tema?',
+    });
+    // Opening the confirmation is side-effect free and initial focus moves inside the modal.
+    expect(colorStore.hasOverrides()).toBe(true);
+    const cancel = within(dialog).getByRole('button', { name: 'Cancelar' });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    fireEvent.click(cancel);
+    expect(screen.queryByRole('dialog', { name: 'Repor cores predefinidas do tema?' })).toBeNull();
+    expect(colorStore.hasOverrides()).toBe(true);
+    expect(document.activeElement).toBe(resetTheme);
+
+    fireEvent.click(resetTheme);
+    dialog = screen.getByRole('dialog', { name: 'Repor cores predefinidas do tema?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Repor cores' }));
+    await waitFor(() => expect(colorStore.get()).toEqual({}));
+    expect(screen.queryByRole('dialog', { name: 'Repor cores predefinidas do tema?' })).toBeNull();
     expect(screen.getByText('A usar as cores predefinidas do tema')).toBeTruthy();
   });
 
@@ -5736,32 +5755,55 @@ describe('SettingsPage', () => {
     expect(denied.calls.some((c) => c.url.includes('/v1/privacy/'))).toBe(false);
   });
 
-  it('resets a signing URL to its default via the icon-only reset button', async () => {
-    const { fn } = settingsFetch();
-    vi.stubGlobal('fetch', fn);
+  it.each([
+    {
+      sub: 'tsl',
+      fieldLabel: 'URL da lista de confiança (TSL)',
+      edited: 'https://exemplo.pt/tsl',
+      dialogTitle: 'Repor URL predefinido da lista de confiança?',
+      confirmLabel: 'Repor URL da TSL',
+      expected: DEFAULT_SETTINGS.signing.tsl_url ?? '',
+    },
+    {
+      sub: 'tsa',
+      fieldLabel: 'URL da autoridade de selo temporal (TSA)',
+      edited: 'https://exemplo.pt/tsa',
+      dialogTitle: 'Repor URL predefinido da autoridade de selo temporal?',
+      confirmLabel: 'Repor URL da TSA',
+      expected: DEFAULT_SETTINGS.signing.tsa_url ?? '',
+    },
+  ])(
+    'confirms before resetting the $sub signing URL to its default',
+    async ({ sub, fieldLabel, edited, dialogTitle, confirmLabel, expected }) => {
+      const { fn } = settingsFetch();
+      vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsa']);
+      renderWithProviders(<SettingsPage surface="admin" />, [`/admin/signing/${sub}`]);
 
-    const tsa = (await screen.findByLabelText(
-      'URL da autoridade de selo temporal (TSA)',
-    )) as HTMLInputElement;
-    // The reset control is an icon-only button; its accessible name comes from the Tooltip
-    // `label` (aria-label), so `getByRole(..., { name })` still resolves it. Since t73 the TSL
-    // and TSA grids are separate sub-tabs, so this panel holds exactly one default-URL reset.
-    const reset = () =>
-      screen.getByRole('button', { name: 'Repor predefinição' }) as HTMLButtonElement;
+      const input = (await screen.findByLabelText(fieldLabel)) as HTMLInputElement;
+      // The reset control remains icon-only; its Tooltip label is its accessible name.
+      const reset = () =>
+        screen.getByRole('button', { name: 'Repor predefinição' }) as HTMLButtonElement;
 
-    // At the default value the reset is inert…
-    expect(reset().disabled).toBe(true);
+      expect(reset().disabled).toBe(true);
 
-    // …editing away from the default enables it…
-    fireEvent.change(tsa, { target: { value: 'https://exemplo.pt/tsa' } });
-    expect(reset().disabled).toBe(false);
+      fireEvent.change(input, { target: { value: edited } });
+      expect(reset().disabled).toBe(false);
 
-    // …and clicking it restores the committed default.
-    fireEvent.click(reset());
-    expect(tsa.value).toBe(DEFAULT_SETTINGS.signing.tsa_url ?? '');
-  });
+      fireEvent.click(reset());
+      let dialog = screen.getByRole('dialog', { name: dialogTitle });
+      expect(input.value).toBe(edited);
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+      expect(screen.queryByRole('dialog', { name: dialogTitle })).toBeNull();
+      expect(input.value).toBe(edited);
+
+      fireEvent.click(reset());
+      dialog = screen.getByRole('dialog', { name: dialogTitle });
+      fireEvent.click(within(dialog).getByRole('button', { name: confirmLabel }));
+      await waitFor(() => expect(input.value).toBe(expected));
+      expect(screen.queryByRole('dialog', { name: dialogTitle })).toBeNull();
+    },
+  );
 
   it('surfaces signing provider modes without secret inputs', async () => {
     const { fn } = settingsFetch();

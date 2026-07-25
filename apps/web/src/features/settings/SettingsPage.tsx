@@ -80,6 +80,10 @@ import type { MessageKey } from '../../i18n';
 import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { useAdminT } from '../../i18n/adminFallback';
+import {
+  type ReminderSettingsCopyKey,
+  useReminderSettingsT,
+} from '../../i18n/reminderSettingsFallback';
 import { grainStore } from '../../theme/grainStore';
 import { colorStore } from '../../theme/colorStore';
 import { applyAppearance, applyLocale, COLOR_OVERRIDE_FIELDS } from '../../theme/appearance';
@@ -111,6 +115,7 @@ import { McpSection } from './McpSection';
 import { MCP_TAB_PATH, PlatformOperationsSection } from './PlatformOperationsSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
+import { ReminderSettingsCard } from './ReminderSettingsCard';
 import { useCitizenCardBridgeT } from '../signing/CitizenCardBridgeFallback';
 import { useCan } from '../session/permissions';
 import {
@@ -119,6 +124,7 @@ import {
   ButtonLink,
   Card,
   ColumnHead,
+  ConfirmActionModal,
   DateTime,
   ErrorNote,
   Field,
@@ -175,6 +181,33 @@ const RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS = 3650;
 const RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST = 100;
 const BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS = 3650;
 const BACKUP_RECOVERY_MAX_TARGET_MINUTES = 60 * 24 * 365;
+
+type SettingsResetDefaultsTarget = 'theme' | 'tsl' | 'tsa';
+
+const SETTINGS_RESET_DEFAULTS_COPY: Record<
+  SettingsResetDefaultsTarget,
+  {
+    title: ReminderSettingsCopyKey;
+    body: ReminderSettingsCopyKey;
+    confirm: ReminderSettingsCopyKey;
+  }
+> = {
+  theme: {
+    title: 'settings.restore.theme.title',
+    body: 'settings.restore.theme.body',
+    confirm: 'settings.restore.theme.confirm',
+  },
+  tsl: {
+    title: 'settings.restore.tsl.title',
+    body: 'settings.restore.tsl.body',
+    confirm: 'settings.restore.tsl.confirm',
+  },
+  tsa: {
+    title: 'settings.restore.tsa.title',
+    body: 'settings.restore.tsa.body',
+    confirm: 'settings.restore.tsa.confirm',
+  },
+};
 
 function normalizeConfigId(value: string): string {
   const normalized = value
@@ -1235,6 +1268,7 @@ export interface SettingsPageProps {
 
 export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const t = useT();
+  const rt = useReminderSettingsT();
   const ccBridgeT = useCitizenCardBridgeT();
   // The "Ambiente do servidor" sub-tab label is the one strip entry whose copy lives in the
   // serverEnvFallback module rather than the frozen catalog (t14) — resolved here for the strip.
@@ -1390,6 +1424,8 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
 
   // Full working copy, seeded once when the document first loads.
   const [draft, setDraft] = useState<Settings | null>(null);
+  const [resetDefaultsTarget, setResetDefaultsTarget] =
+    useState<SettingsResetDefaultsTarget | null>(null);
   useEffect(() => {
     if (settings.data && !draft) setDraft(withSettingsDefaults(settings.data));
   }, [settings.data, draft]);
@@ -1603,6 +1639,19 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           }
         : d,
     );
+
+  const resetDefaultsCopy = SETTINGS_RESET_DEFAULTS_COPY[resetDefaultsTarget ?? 'theme'];
+
+  async function restoreDefaults() {
+    if (resetDefaultsTarget === 'theme') {
+      colorStore.reset();
+    } else if (resetDefaultsTarget === 'tsl') {
+      setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '');
+    } else if (resetDefaultsTarget === 'tsa') {
+      setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '');
+    }
+    await Promise.resolve();
+  }
 
   const updateTslSource = (id: string, patch: Partial<TslSourceSettings>) =>
     setTslSources((sources) =>
@@ -1879,7 +1928,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                         variant="ghost"
                         icon={<Icon.Refresh />}
                         disabled={!hasColorOverrides}
-                        onClick={() => colorStore.reset()}
+                        onClick={() => setResetDefaultsTarget('theme')}
                       >
                         {t('settings.appearance.colors.reset')}
                       </Button>
@@ -2051,9 +2100,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                             (draft.signing.tsl_url ?? '') ===
                             (DEFAULT_SETTINGS.signing.tsl_url ?? '')
                           }
-                          onClick={() =>
-                            setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '')
-                          }
+                          onClick={() => setResetDefaultsTarget('tsl')}
                         />
                       </div>
                     </Field>
@@ -2230,9 +2277,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                             (draft.signing.tsa_url ?? '') ===
                             (DEFAULT_SETTINGS.signing.tsa_url ?? '')
                           }
-                          onClick={() =>
-                            setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '')
-                          }
+                          onClick={() => setResetDefaultsTarget('tsa')}
                         />
                       </div>
                     </Field>
@@ -2625,112 +2670,11 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   </div>
                 </div>
               </Card>
-              <Card title={t('settings.reminders.cardTitle')}>
-                <div className="form settings-rows">
-                  <Toggle
-                    label={t('settings.reminders.enabled.label')}
-                    checked={reminderPolicy.enabled}
-                    onChange={(enabled) => setWorkflowReminder('enabled', enabled)}
-                  />
-                  <p className="field__hint">{t('settings.reminders.note')}</p>
-
-                  <div className="registry-auto-update-grid">
-                    <Field
-                      label={t('settings.reminders.dashboardLimit.label')}
-                      htmlFor="workflow-reminders-dashboard-limit"
-                      hint={t('settings.reminders.dashboardLimit.hint')}
-                    >
-                      <Input
-                        id="workflow-reminders-dashboard-limit"
-                        type="number"
-                        min={0}
-                        max={50}
-                        value={reminderPolicy.dashboard_limit}
-                        onChange={(e) =>
-                          setWorkflowReminder(
-                            'dashboard_limit',
-                            numberValue(e.target.value, reminderPolicy.dashboard_limit),
-                          )
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label={t('settings.reminders.dueSoon.label')}
-                      htmlFor="workflow-reminders-due-soon-days"
-                      hint={t('settings.reminders.dueSoon.hint')}
-                    >
-                      <Input
-                        id="workflow-reminders-due-soon-days"
-                        type="number"
-                        min={0}
-                        max={365}
-                        value={reminderPolicy.due_soon_days}
-                        onChange={(e) =>
-                          setWorkflowReminder(
-                            'due_soon_days',
-                            numberValue(e.target.value, reminderPolicy.due_soon_days),
-                          )
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label={t('settings.reminders.attendanceLookahead.label')}
-                      htmlFor="workflow-reminders-attendance-lookahead-days"
-                      hint={t('settings.reminders.attendanceLookahead.hint')}
-                    >
-                      <Input
-                        id="workflow-reminders-attendance-lookahead-days"
-                        type="number"
-                        min={0}
-                        max={365}
-                        value={reminderPolicy.attendance_lookahead_days}
-                        onChange={(e) =>
-                          setWorkflowReminder(
-                            'attendance_lookahead_days',
-                            numberValue(e.target.value, reminderPolicy.attendance_lookahead_days),
-                          )
-                        }
-                      />
-                    </Field>
-                  </div>
-
-                  <div className="stack--tight">
-                    <p className="card__label">{t('settings.reminders.sources.title')}</p>
-                    <div
-                      className="checkbox-grid"
-                      role="group"
-                      aria-label={t('settings.reminders.sources.aria')}
-                    >
-                      <Toggle
-                        label={t('settings.reminders.sources.profileCalendar')}
-                        checked={reminderPolicy.sources.profile_calendar}
-                        onChange={(checked) =>
-                          setWorkflowReminderSource('profile_calendar', checked)
-                        }
-                      />
-                      <Toggle
-                        label={t('settings.reminders.sources.actFollowUps')}
-                        checked={reminderPolicy.sources.act_follow_ups}
-                        onChange={(checked) => setWorkflowReminderSource('act_follow_ups', checked)}
-                      />
-                      <Toggle
-                        label={t('settings.reminders.sources.attendanceHygiene')}
-                        checked={reminderPolicy.sources.attendance_hygiene}
-                        onChange={(checked) =>
-                          setWorkflowReminderSource('attendance_hygiene', checked)
-                        }
-                      />
-                      <Toggle
-                        label={t('settings.reminders.sources.privacyReviews')}
-                        checked={reminderPolicy.sources.privacy_control_reviews}
-                        onChange={(checked) =>
-                          setWorkflowReminderSource('privacy_control_reviews', checked)
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-              </Card>
+              <ReminderSettingsCard
+                value={reminderPolicy}
+                onChange={setWorkflowReminder}
+                onSourceChange={setWorkflowReminderSource}
+              />
               {/* The retained-export-cleanup and backup-recovery policy editors moved to the
                   Operações › Armazenamento and Cópias e recuperação subtabs respectively (t28), next
                   to the export-cleanup action and the recovery-freshness readout they govern. They
@@ -3154,6 +3098,16 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           ) : null}
         </div>
       </fieldset>
+
+      <ConfirmActionModal
+        open={resetDefaultsTarget !== null}
+        onClose={() => setResetDefaultsTarget(null)}
+        title={rt(resetDefaultsCopy.title)}
+        intro={<p>{rt(resetDefaultsCopy.body)}</p>}
+        confirmLabel={rt(resetDefaultsCopy.confirm)}
+        pendingLabel={rt('settings.restore.pending')}
+        onConfirm={restoreDefaults}
+      />
 
       {/* Save bar ------------------------------------------------------------------ */}
       {/* Edits across every sub-tab persist automatically (debounced whole-document PUT).
