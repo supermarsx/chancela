@@ -27,6 +27,15 @@ import { DelegationsSection } from './DelegationsSection';
 
 afterEach(() => cleanup());
 
+const nodeFs = ['node', 'fs'].join(':');
+
+async function themeCss(): Promise<string> {
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8').replace(/\r\n/gu, '\n');
+}
+
 // --- fetch mock (method + substring aware, captures calls) ----------------------
 
 interface Handler {
@@ -407,6 +416,57 @@ describe('RolesSection — editing and deleting a função', () => {
     return calls;
   }
 
+  it('keeps icon, gated and worded confirmation controls in one stable action row', async () => {
+    stubRoles();
+    renderRbac(
+      <RolesSection />,
+      value((permission) => permission !== 'role.manage'),
+    );
+
+    const row = (await screen.findByText('Secretário')).closest('tr')!;
+    const cell = within(row).getByRole('button', { name: 'Editar' }).closest('td')!;
+    const actions = cell.querySelector('.rbac-actions')!;
+    const edit = within(row).getByRole('button', { name: 'Editar' });
+    const remove = within(row).getByRole('button', { name: 'Eliminar' });
+
+    expect(cell.classList.contains('rbac-action-cell')).toBe(true);
+    expect(actions.contains(edit)).toBe(true);
+    expect(edit.classList.contains('btn--iconOnly')).toBe(true);
+    expect(remove.classList.contains('btn--iconOnly')).toBe(true);
+    expect(edit.getAttribute('aria-disabled')).toBe('true');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps loading confirmation controls in the same action geometry', async () => {
+    const { fn } = mockFetch([
+      { method: 'GET', match: '/v1/roles', body: [ROLE] },
+      { method: 'GET', match: '/v1/permissions', body: CATALOG },
+    ]);
+    let finishDelete!: (response: Response) => void;
+    const pendingDelete = new Promise<Response>((resolve) => {
+      finishDelete = resolve;
+    });
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET').toUpperCase() === 'DELETE') return pendingDelete;
+      return fn(input, init);
+    }) as typeof fetch);
+    renderRbac(<RolesSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' }));
+    const confirm = screen.getByRole('button', { name: 'Confirmar eliminação' });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(true));
+    const cancel = screen.getByRole('button', { name: 'Cancelar' });
+    expect((cancel as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm.closest('.rbac-actions')).toBe(cancel.closest('.rbac-actions'));
+
+    finishDelete(new Response(null, { status: 204 }));
+    await screen.findByText('Função eliminada');
+    vi.unstubAllGlobals();
+  });
+
   it('opens the editor pre-ticked with what the função already carries, and PATCHes the whole set', async () => {
     const calls = stubRoles([
       { method: 'PATCH', match: '/v1/roles/r7', body: { ...ROLE, permissions: ['entity.read'] } },
@@ -642,6 +702,39 @@ describe('RolesSection — editing and deleting a função', () => {
 // --- Scoped role assignment -----------------------------------------------------
 
 describe('RoleAssignmentManager — scoped assignment + last-Owner 409', () => {
+  it('uses the same standard icon action row for per-user assignments', async () => {
+    const { fn } = mockFetch([
+      {
+        method: 'GET',
+        match: '/v1/roles',
+        body: [{ id: 'owner', name: 'Proprietário', permissions: [], protected: true }],
+      },
+      { method: 'GET', match: '/v1/entities', body: [] },
+      { method: 'GET', match: '/v1/books', body: [] },
+      {
+        method: 'GET',
+        match: '/v1/session/permissions',
+        body: {
+          user_id: 'u1',
+          username: 'amelia.marques',
+          role_assignments: [{ role_id: 'owner', scope: { kind: 'global' } }],
+          permissions: [],
+        },
+      },
+      { method: 'GET', match: '/v1/session', body: { user: { id: 'u1' }, permissions: [] } },
+    ]);
+    vi.stubGlobal('fetch', fn);
+
+    renderRbac(<RoleAssignmentManager user={USER} />);
+
+    const remove = await screen.findByRole('button', { name: 'Remover' });
+    const cell = remove.closest('td')!;
+    expect(cell.classList.contains('rbac-action-cell')).toBe(true);
+    expect(remove.closest('.rbac-actions')).toBeTruthy();
+    expect(remove.classList.contains('btn--iconOnly')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
   it('assigns a role scoped to an entity (POST /v1/users/{id}/roles)', async () => {
     const { fn, calls } = mockFetch([
       {
@@ -723,6 +816,33 @@ describe('RoleAssignmentManager — scoped assignment + last-Owner 409', () => {
     // The assignment row (scoped away from the role-picker option) is still present.
     expect(within(screen.getByRole('table')).getByText('Proprietário')).toBeTruthy();
     vi.unstubAllGlobals();
+  });
+});
+
+describe('RBAC table action layout', () => {
+  it('pins default button height, square icons, wrapping and mobile alignment only in RBAC rows', async () => {
+    const css = await themeCss();
+    const start = css.indexOf('/* --- Role catalog + per-user role assignments');
+    const end = css.indexOf(
+      '/* --------------------------------------------------------------------------',
+      start,
+    );
+    const rules = css.slice(start, end);
+
+    expect(rules).toMatch(
+      /\.rbac-actions\s*\{[^}]*flex-wrap:\s*wrap;[^}]*align-items:\s*center;[^}]*justify-content:\s*flex-end;/s,
+    );
+    expect(rules).toMatch(/\.rbac-actions \.btn\s*\{[^}]*min-height:\s*2\.25rem;/s);
+    expect(rules).toMatch(
+      /\.rbac-actions \.btn--iconOnly\s*\{[^}]*width:\s*2\.25rem;[^}]*min-width:\s*2\.25rem;/s,
+    );
+    expect(rules).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*\.rbac-actions\s*\{[^}]*justify-content:\s*flex-start;/,
+    );
+    expect(rules).toMatch(
+      /\.rbac-actions \.btn:not\(\.btn--iconOnly\)\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s,
+    );
+    expect(rules).not.toMatch(/\.users-actions\s+\.btn/);
   });
 });
 

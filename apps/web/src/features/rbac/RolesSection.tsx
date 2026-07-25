@@ -234,11 +234,13 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
       <td>
         <RoleDriftStatus role={role} />
       </td>
-      <td className="users-actions">
+      <td className="rbac-action-cell">
         {role.protected ? (
-          <span className="muted">{t('rbac.roles.readonly')}</span>
+          <span className="rbac-actions">
+            <span className="muted">{t('rbac.roles.readonly')}</span>
+          </span>
         ) : confirming ? (
-          <span className="row-wrap">
+          <span className="rbac-actions">
             <Button
               type="button"
               variant="ghost"
@@ -258,7 +260,7 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
             </GateButton>
           </span>
         ) : reviewedReconciliation ? (
-          <span className="row-wrap">
+          <span className="rbac-actions">
             <span className="muted">
               {' '}
               {t('uiLiteral.funcoesSection.adicionarSo')}{' '}
@@ -284,7 +286,7 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
             </GateButton>
           </span>
         ) : (
-          <span className="row-wrap">
+          <span className="rbac-actions">
             <GateIconButton
               perm="role.manage"
               variant="secondary"

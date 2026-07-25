@@ -175,15 +175,17 @@ export function RoleAssignmentManager({ user }: { user: UserView }) {
                 <td>
                   <Badge tone="neutral">{scopeLabel(a.scope)}</Badge>
                 </td>
-                <td className="users-actions">
-                  <GateIconButton
-                    perm="role.assign"
-                    scope={a.scope}
-                    icon={<Icon.Trash />}
-                    label={t('rbac.assign.remove')}
-                    disabled={busy}
-                    onClick={() => remove(a)}
-                  />
+                <td className="rbac-action-cell">
+                  <span className="rbac-actions">
+                    <GateIconButton
+                      perm="role.assign"
+                      scope={a.scope}
+                      icon={<Icon.Trash />}
+                      label={t('rbac.assign.remove')}
+                      disabled={busy}
+                      onClick={() => remove(a)}
+                    />
+                  </span>
                 </td>
               </tr>
             ))}

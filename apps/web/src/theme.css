@@ -10423,6 +10423,56 @@ input[type='radio']:disabled {
   gap: 0.4rem;
 }
 
+/* --- Role catalog + per-user role assignments ---------------------------------
+   Keep the table cell a real table cell: `.users-actions` is an older generic helper that
+   changes a `<td>` to `display:flex`, which makes row geometry depend on the action currently
+   shown. Role rows can switch from compact icon actions to worded confirmation/pending actions,
+   so their dedicated inner action row gives every shared `.btn` the app's standard 2.25rem
+   control height while icon-only actions remain square. The same geometry therefore survives
+   allowed, gated, native-disabled and mutation-pending states without overriding global button
+   chrome. */
+.rbac-action-cell {
+  text-align: right;
+}
+
+.rbac-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.rbac-actions .tooltip {
+  flex: 0 0 auto;
+}
+
+.rbac-actions .btn {
+  min-height: 2.25rem;
+  max-width: 100%;
+}
+
+.rbac-actions .btn--iconOnly {
+  width: 2.25rem;
+  min-width: 2.25rem;
+}
+
+@media (max-width: 720px) {
+  .rbac-action-cell {
+    text-align: left;
+  }
+
+  .rbac-actions {
+    justify-content: flex-start;
+  }
+
+  .rbac-actions .btn:not(.btn--iconOnly) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* --------------------------------------------------------------------------
  * Utilizadores roster filter bar (t89) — the same shape every list page uses
  * (`.entities-filterbar`, `.books-filterbar`, `.ledger-filterbar`). Three controls,
