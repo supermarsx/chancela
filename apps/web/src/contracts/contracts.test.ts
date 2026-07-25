@@ -4844,6 +4844,7 @@ describe('contract fixtures parse through the real client', () => {
       left: 20,
     });
     expect(documents.layout_defaults.typography.body_font_family).toBe('NotoSerif');
+    expect(documents.layout_defaults.typography.body_font_size_pt).toBe(10);
     expect(documents.layout_defaults.typography.header_font_family).toBe('NotoSerif');
     expect(documents.layout_defaults.regions.header_gap_mm).toBe(4);
     const ui = assertExactKeys<UiSettings>(

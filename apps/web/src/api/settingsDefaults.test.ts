@@ -9,6 +9,12 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS } from './types';
 
+describe('DEFAULT_SETTINGS.documents', () => {
+  it('mirrors the canonical 10 pt product body font default', () => {
+    expect(DEFAULT_SETTINGS.documents.layout_defaults.typography.body_font_size_pt).toBe(10);
+  });
+});
+
 describe('DEFAULT_SETTINGS.signing', () => {
   it('keeps the TSA URL on plain http (RFC 3161; matches the backend/contract default)', () => {
     expect(DEFAULT_SETTINGS.signing.tsa_url).toBe('http://ts.cartaodecidadao.pt/tsa/server');

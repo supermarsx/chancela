@@ -137,7 +137,7 @@ pub struct DocumentLayoutPolicy {
 
 impl Default for DocumentLayoutPolicy {
     /// Product defaults corresponding to the existing deterministic writer: A4 portrait,
-    /// approximately 20 mm margins, Noto Serif, 11 pt body, and 140% leading.
+    /// approximately 20 mm margins, Noto Serif, 10 pt body, and 140% leading.
     fn default() -> Self {
         Self {
             page: DocumentPageLayout {
@@ -152,7 +152,7 @@ impl Default for DocumentLayoutPolicy {
             },
             typography: DocumentTypography {
                 body_font_family: DocumentFontFamily::NotoSerif,
-                body_font_size_pt: 11,
+                body_font_size_pt: 10,
                 header_font_family: DocumentFontFamily::NotoSerif,
                 header_font_size_pt: 11,
                 footer_font_family: DocumentFontFamily::NotoSerif,
@@ -775,7 +775,7 @@ mod tests {
             policy.typography.body_font_family,
             DocumentFontFamily::NotoSerif
         );
-        assert_eq!(policy.typography.body_font_size_pt, 11);
+        assert_eq!(policy.typography.body_font_size_pt, 10);
         assert_eq!(policy.typography.line_spacing_percent, 140);
         assert_eq!(policy.usable_page_dimensions_mm(), Some((170, 257)));
         policy.validate().expect("product policy is valid");

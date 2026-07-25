@@ -2354,6 +2354,16 @@ mod tests {
 
     #[test]
     fn standalone_render_resolves_the_template_layout_over_product_defaults() {
+        let product_document = render(&ata_spec(), &ata_ctx()).expect("product render resolves");
+        assert_eq!(
+            product_document
+                .document_layout
+                .typography
+                .body_font_size_pt,
+            10,
+            "templates without an authored override inherit the canonical product body size"
+        );
+
         let mut spec = ata_spec();
         spec.document_layout_override = Some(
             serde_json::from_value(json!({

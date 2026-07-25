@@ -30,9 +30,10 @@ use chancela_core::book::BookId;
 use chancela_core::termo::{TermoClause, TermoInstrument, TermoKind};
 use chancela_core::{
     Act, ActBody, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel,
-    DocumentLayoutPolicy, DocumentModel, Entity, EntityFamily, KvRow, LifecycleStage,
-    MeetingChannel, NumberingScheme, PresenceMode, Run, SignaturePolicyHint, SignatureSlot,
-    TermoDeAbertura, TermoDeEncerramento,
+    DocumentFontFamily, DocumentLayoutPolicy, DocumentModel, DocumentOrientation,
+    DocumentPageLayout, DocumentPageMargins, DocumentPageSize, DocumentRegions, DocumentTypography,
+    Entity, EntityFamily, KvRow, LifecycleStage, MeetingChannel, NumberingScheme, PresenceMode,
+    Run, SignaturePolicyHint, SignatureSlot, TermoDeAbertura, TermoDeEncerramento,
 };
 use chancela_signing::{
     BaselineProfile, EvidentiaryLevel, SignatureArtifact, SignatureFormat, SigningFamily,
@@ -487,8 +488,8 @@ pub(crate) async fn current_instance_document_layout(state: &AppState) -> Docume
 ///
 /// `None` is a legitimate historical state: rows created before layout binding did not persist a
 /// policy and remain honestly unbound. Callers that must reproduce those old bytes may use
-/// [`pinned_document_layout_or_product_default`], because the pre-binding writer always used the
-/// immutable product default.
+/// [`pinned_document_layout_or_legacy_default`], because the pre-binding writer always used the
+/// frozen legacy policy.
 pub(crate) fn stored_document_layout(
     document: &StoredDocument,
 ) -> Result<Option<DocumentLayoutPolicy>, ApiError> {
@@ -510,13 +511,46 @@ pub(crate) fn stored_document_layout(
     Ok(Some(policy))
 }
 
+/// The renderer policy used before per-document layout binding existed. Keep this fully concrete
+/// and frozen: changing today's product defaults must never change bytes re-derived for an
+/// historical unbound document.
+fn frozen_legacy_unbound_document_layout() -> DocumentLayoutPolicy {
+    DocumentLayoutPolicy {
+        page: DocumentPageLayout {
+            size: DocumentPageSize::A4,
+            orientation: DocumentOrientation::Portrait,
+            margins_mm: DocumentPageMargins {
+                top: 20,
+                right: 20,
+                bottom: 20,
+                left: 20,
+            },
+        },
+        typography: DocumentTypography {
+            body_font_family: DocumentFontFamily::NotoSerif,
+            body_font_size_pt: 11,
+            header_font_family: DocumentFontFamily::NotoSerif,
+            header_font_size_pt: 11,
+            footer_font_family: DocumentFontFamily::NotoSerif,
+            footer_font_size_pt: 9,
+            line_spacing_percent: 140,
+            paragraph_spacing_pt: 6,
+            heading_scale_percent: 100,
+        },
+        regions: DocumentRegions {
+            header_gap_mm: 4,
+            footer_gap_mm: 4,
+        },
+    }
+}
+
 /// Return the immutable renderer policy for reproducing a stored document. Historical rows with
-/// no snapshot predate configurable layouts, so product-default is their only honest byte
-/// interpretation; they remain unbound because no layout digest was recorded.
-pub(crate) fn pinned_document_layout_or_product_default(
+/// no snapshot predate configurable layouts and use the frozen legacy policy; they remain unbound
+/// because no layout digest was recorded.
+pub(crate) fn pinned_document_layout_or_legacy_default(
     document: &StoredDocument,
 ) -> Result<DocumentLayoutPolicy, ApiError> {
-    Ok(stored_document_layout(document)?.unwrap_or_default())
+    Ok(stored_document_layout(document)?.unwrap_or_else(frozen_legacy_unbound_document_layout))
 }
 
 /// What a stored document's template binding proves (t74 §8).
@@ -6562,7 +6596,7 @@ async fn render_persisted_act_document_model(
 
     let mut model = chancela_templates::render(spec, &ctx)
         .map_err(|e| ApiError::Internal(format!("template render failed: {e}")))?;
-    model.document_layout = pinned_document_layout_or_product_default(document)?;
+    model.document_layout = pinned_document_layout_or_legacy_default(document)?;
     Ok(model)
 }
 
@@ -6882,7 +6916,7 @@ fn working_copy_odt(
             "content.xml",
             odt_content_xml(act_id, doc, model).into_bytes(),
         ),
-        ("styles.xml", odt_styles_xml().as_bytes().to_vec()),
+        ("styles.xml", odt_styles_xml(model).into_bytes()),
         ("meta.xml", odt_meta_xml(model).into_bytes()),
         (
             "META-INF/manifest.xml",
@@ -7024,9 +7058,12 @@ fn odt_text(value: &str) -> String {
     out
 }
 
-fn odt_styles_xml() -> &'static str {
-    r#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2"><office:styles><style:default-style style:family="paragraph"><style:paragraph-properties fo:margin-top="0pt" fo:margin-bottom="6pt"/><style:text-properties fo:font-size="11pt"/></style:default-style></office:styles></office:document-styles>"#
+fn odt_styles_xml(model: &DocumentModel) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2"><office:styles><style:default-style style:family="paragraph"><style:paragraph-properties fo:margin-top="0pt" fo:margin-bottom="6pt"/><style:text-properties fo:font-size="{}pt"/></style:default-style></office:styles></office:document-styles>"#,
+        model.document_layout.typography.body_font_size_pt
+    )
 }
 
 fn odt_meta_xml(model: &DocumentModel) -> String {
@@ -10861,6 +10898,10 @@ mod tests {
             serde_json::from_str(stored_json).expect("stored layout parses");
         assert_eq!(stored_policy, expected);
         assert_eq!(
+            stored_policy.typography.body_font_size_pt, 10,
+            "unoverridden generated documents freeze the product body size"
+        );
+        assert_eq!(
             serde_json::to_string(&stored_policy).expect("layout reserializes"),
             stored_json,
             "stored policy is the canonical compact struct serialization"
@@ -10906,6 +10947,17 @@ mod tests {
                 .is_none(),
             "absence remains an honest unbound state rather than an invented policy snapshot"
         );
+        let legacy =
+            pinned_document_layout_or_legacy_default(&historical).expect("legacy layout resolves");
+        assert_eq!(
+            legacy.typography.body_font_size_pt, 11,
+            "pre-binding rows retain the frozen historical renderer policy"
+        );
+        assert_eq!(
+            DocumentLayoutPolicy::default().typography.body_font_size_pt,
+            10,
+            "new documents use the current product default"
+        );
     }
 
     #[test]
@@ -10927,7 +10979,7 @@ mod tests {
                 .expect("snapshot generation")
                 .expect("encerramento template");
         let pinned =
-            pinned_document_layout_or_product_default(&frozen.stored).expect("pinned layout");
+            pinned_document_layout_or_legacy_default(&frozen.stored).expect("pinned layout");
 
         let mut changed_instance = initial_instance.clone();
         changed_instance.typography.body_font_size_pt = 14;
@@ -11650,6 +11702,20 @@ mod tests {
         assert!(
             !html.starts_with("%PDF-"),
             "working-copy HTML is not canonical PDF bytes"
+        );
+    }
+
+    #[test]
+    fn odt_working_copy_uses_the_resolved_document_body_size() {
+        let (_, _, mut model) = export_fixture();
+        let styles = odt_styles_xml(&model);
+        assert!(styles.contains(r#"fo:font-size="10pt""#), "{styles}");
+
+        model.document_layout.typography.body_font_size_pt = 14;
+        let overridden = odt_styles_xml(&model);
+        assert!(
+            overridden.contains(r#"fo:font-size="14pt""#),
+            "ODT styles must honor the resolved document override: {overridden}"
         );
     }
 

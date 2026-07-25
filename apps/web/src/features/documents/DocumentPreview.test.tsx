@@ -43,9 +43,22 @@ const doc: DocumentModel = {
   ],
 };
 
+async function documentsCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/features/documents/documents.css', 'utf8');
+}
+
 afterEach(cleanup);
 
 describe('DocumentPreview', () => {
+  it('prints the canonical document body at 10 pt', async () => {
+    const css = await documentsCss();
+    expect(css).toMatch(/body\.printing-doc \.doc-preview\s*\{[^}]*font-size:\s*10pt;/su);
+  });
+
   it('renders the document metadata header', () => {
     const { container } = render(<DocumentPreview doc={doc} />);
     expect(screen.getByText('Ata número um')).toBeTruthy();

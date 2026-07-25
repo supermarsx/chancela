@@ -251,7 +251,7 @@
     padding: 0;
     background: #fff;
     color: #000;
-    font-size: 11pt;
+    font-size: 10pt;
   }
   body.printing-doc .doc-pagebreak {
     page-break-after: always;

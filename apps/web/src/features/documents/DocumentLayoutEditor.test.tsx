@@ -65,6 +65,7 @@ describe('DocumentLayoutEditor', () => {
   it('edits concrete instance defaults and offers an explicit product reset', () => {
     const onChange = vi.fn();
     const onReset = vi.fn();
+    expect(PRODUCT.typography.body_font_size_pt).toBe(10);
     renderWithProviders(
       <DocumentLayoutDefaultsEditor value={PRODUCT} onChange={onChange} onRequestReset={onReset} />,
     );

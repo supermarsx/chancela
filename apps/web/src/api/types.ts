@@ -8126,7 +8126,7 @@ export const DEFAULT_SETTINGS: Settings = {
       },
       typography: {
         body_font_family: 'NotoSerif',
-        body_font_size_pt: 11,
+        body_font_size_pt: 10,
         header_font_family: 'NotoSerif',
         header_font_size_pt: 11,
         footer_font_family: 'NotoSerif',

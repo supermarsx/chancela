@@ -1419,10 +1419,10 @@ pub async fn close_from_termo(
     let snapshot = crate::documents::load_document(&state, subject).await?;
     // Layout is part of the signed snapshot. Once frozen, stale-fact verification must never
     // consult mutable instance/entity/book layout settings. Pre-binding rows were necessarily
-    // rendered with the immutable product default and remain honestly unbound.
+    // rendered with the frozen legacy default and remain honestly unbound.
     let snapshot_layout = snapshot
         .as_ref()
-        .map(crate::documents::pinned_document_layout_or_product_default)
+        .map(crate::documents::pinned_document_layout_or_legacy_default)
         .transpose()?;
 
     // Seal the termo (checks the completion policy) on a clone — discarded if any later precondition

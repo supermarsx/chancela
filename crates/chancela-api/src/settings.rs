@@ -3632,7 +3632,7 @@ mod tests {
                 .layout_defaults
                 .typography
                 .body_font_size_pt,
-            11,
+            10,
             "serde alone applies the product default"
         );
         carry_forward_omitted_document_layout(&stale_raw, &previous, &mut stale_next);
