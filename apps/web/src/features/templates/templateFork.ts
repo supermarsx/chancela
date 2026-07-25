@@ -70,5 +70,8 @@ export function forkTemplateSpec(spec: TemplateSpec, id: string): TemplateSpec {
     rule_pack_id: spec.rule_pack_id,
     blocks: spec.blocks,
     locale: spec.locale,
+    ...(spec.document_layout_override
+      ? { document_layout_override: spec.document_layout_override }
+      : {}),
   };
 }

@@ -24,6 +24,7 @@ import {
   useStartOverInstance,
   useUnassignRole,
   useUpdatePaperBookImportOcrStatus,
+  useUpdateBook,
   useUpdateTemplate,
 } from './hooks';
 
@@ -49,6 +50,28 @@ async function mutate(result: { current: { mutateAsync: unknown } }, value?: unk
 }
 
 describe('API hooks execute mutations and maintain authoritative caches', () => {
+  it('updates a book layout override and refreshes book collections', async () => {
+    const { qc, wrapper } = harness();
+    const saved = {
+      id: 'B1',
+      entity_id: 'E1',
+      document_layout_override: { page: { size: 'A5' } },
+    };
+    vi.spyOn(api, 'updateBook').mockResolvedValue(saved as never);
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+
+    await mutate(renderHook(() => useUpdateBook('B1'), { wrapper }).result, {
+      document_layout_override: saved.document_layout_override,
+    });
+
+    expect(api.updateBook).toHaveBeenCalledWith('B1', {
+      document_layout_override: { page: { size: 'A5' } },
+    });
+    expect(qc.getQueryData(keys.book('B1'))).toEqual(saved);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['books'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['ledger'] });
+  });
+
   it('runs the remaining mutation wrappers and their invalidation paths', async () => {
     const { wrapper } = harness();
     vi.spyOn(api, 'updateTemplate').mockResolvedValue({} as never);

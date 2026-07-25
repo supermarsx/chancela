@@ -116,6 +116,7 @@ import { MCP_TAB_PATH, PlatformOperationsSection } from './PlatformOperationsSec
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
 import { ReminderSettingsCard } from './ReminderSettingsCard';
+import { DocumentLayoutDefaultsEditor } from '../documents/DocumentLayoutEditor';
 import { useCitizenCardBridgeT } from '../signing/CitizenCardBridgeFallback';
 import { useCan } from '../session/permissions';
 import {
@@ -182,10 +183,10 @@ const RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST = 100;
 const BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS = 3650;
 const BACKUP_RECOVERY_MAX_TARGET_MINUTES = 60 * 24 * 365;
 
-type SettingsResetDefaultsTarget = 'theme' | 'tsl' | 'tsa';
+type SettingsResetDefaultsTarget = 'theme' | 'tsl' | 'tsa' | 'document-layout';
 
 const SETTINGS_RESET_DEFAULTS_COPY: Record<
-  SettingsResetDefaultsTarget,
+  Exclude<SettingsResetDefaultsTarget, 'document-layout'>,
   {
     title: ReminderSettingsCopyKey;
     body: ReminderSettingsCopyKey;
@@ -338,6 +339,7 @@ type SettingsWithMaybeAi = Omit<
   | 'data_management'
   | 'connectors'
   | 'email'
+  | 'documents'
 > & {
   ai?: Partial<AiSettings> | null;
   // Absent on a server predating t23; defaulted to "mail off, STARTTLS" rather than assumed.
@@ -364,6 +366,8 @@ type SettingsWithMaybeAi = Omit<
     | null;
   signing: Omit<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'> &
     Partial<Pick<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'>>;
+  documents: Omit<DocumentSettings, 'layout_defaults'> &
+    Partial<Pick<DocumentSettings, 'layout_defaults'>>;
 };
 
 function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
@@ -377,6 +381,30 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
   const backupRecovery = dataManagement.backup_recovery ?? {};
   return {
     ...settings,
+    documents: {
+      ...DEFAULT_SETTINGS.documents,
+      ...settings.documents,
+      layout_defaults: {
+        ...DEFAULT_SETTINGS.documents.layout_defaults,
+        ...(settings.documents.layout_defaults ?? {}),
+        page: {
+          ...DEFAULT_SETTINGS.documents.layout_defaults.page,
+          ...(settings.documents.layout_defaults?.page ?? {}),
+          margins_mm: {
+            ...DEFAULT_SETTINGS.documents.layout_defaults.page.margins_mm,
+            ...(settings.documents.layout_defaults?.page?.margins_mm ?? {}),
+          },
+        },
+        typography: {
+          ...DEFAULT_SETTINGS.documents.layout_defaults.typography,
+          ...(settings.documents.layout_defaults?.typography ?? {}),
+        },
+        regions: {
+          ...DEFAULT_SETTINGS.documents.layout_defaults.regions,
+          ...(settings.documents.layout_defaults?.regions ?? {}),
+        },
+      },
+    },
     signing: {
       ...DEFAULT_SETTINGS.signing,
       ...settings.signing,
@@ -1640,7 +1668,18 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
         : d,
     );
 
-  const resetDefaultsCopy = SETTINGS_RESET_DEFAULTS_COPY[resetDefaultsTarget ?? 'theme'];
+  const resetDefaultsCopy =
+    resetDefaultsTarget === 'document-layout'
+      ? {
+          title: 'Repor formato e tipografia',
+          body: 'O formato, as margens e a tipografia da instância regressam às predefinições do produto.',
+          confirm: 'Repor predefinições',
+        }
+      : {
+          title: rt(SETTINGS_RESET_DEFAULTS_COPY[resetDefaultsTarget ?? 'theme'].title),
+          body: rt(SETTINGS_RESET_DEFAULTS_COPY[resetDefaultsTarget ?? 'theme'].body),
+          confirm: rt(SETTINGS_RESET_DEFAULTS_COPY[resetDefaultsTarget ?? 'theme'].confirm),
+        };
 
   async function restoreDefaults() {
     if (resetDefaultsTarget === 'theme') {
@@ -1649,6 +1688,8 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
       setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '');
     } else if (resetDefaultsTarget === 'tsa') {
       setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '');
+    } else if (resetDefaultsTarget === 'document-layout') {
+      setDocuments('layout_defaults', structuredClone(DEFAULT_SETTINGS.documents.layout_defaults));
     }
     await Promise.resolve();
   }
@@ -2018,6 +2059,20 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                       onChange={(e) => setCatalog('cae_update_url', e.target.value)}
                     />
                   </Field>
+                </div>
+              </Card>
+              <Card title="Formato e tipografia dos documentos">
+                <div className="stack--tight">
+                  <p className="field__hint">
+                    Base concreta da instância. Os modelos, entidades e livros herdam estes valores
+                    e guardam apenas as propriedades que substituem explicitamente.
+                  </p>
+                  <DocumentLayoutDefaultsEditor
+                    value={draft.documents.layout_defaults}
+                    onChange={(layout) => setDocuments('layout_defaults', layout)}
+                    onRequestReset={() => setResetDefaultsTarget('document-layout')}
+                    disabled={!canManageSettings}
+                  />
                 </div>
               </Card>
             </div>
@@ -3102,9 +3157,9 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
       <ConfirmActionModal
         open={resetDefaultsTarget !== null}
         onClose={() => setResetDefaultsTarget(null)}
-        title={rt(resetDefaultsCopy.title)}
-        intro={<p>{rt(resetDefaultsCopy.body)}</p>}
-        confirmLabel={rt(resetDefaultsCopy.confirm)}
+        title={resetDefaultsCopy.title}
+        intro={<p>{resetDefaultsCopy.body}</p>}
+        confirmLabel={resetDefaultsCopy.confirm}
         pendingLabel={rt('settings.restore.pending')}
         onConfirm={restoreDefaults}
       />

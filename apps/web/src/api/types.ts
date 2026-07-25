@@ -326,6 +326,88 @@ export interface StatuteOverrides {
   convocation_notice_days: number | null;
 }
 
+/** Allowlisted, embedded document-layout values shared with `chancela-core`. */
+export type DocumentPageSize = 'A4' | 'A5' | 'Letter' | 'Legal';
+export type DocumentOrientation = 'Portrait' | 'Landscape';
+export type DocumentFontFamily = 'NotoSerif' | 'NotoSans';
+
+export interface DocumentPageMargins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface DocumentPageLayout {
+  size: DocumentPageSize;
+  orientation: DocumentOrientation;
+  margins_mm: DocumentPageMargins;
+}
+
+export interface DocumentTypography {
+  body_font_family: DocumentFontFamily;
+  body_font_size_pt: number;
+  header_font_family: DocumentFontFamily;
+  header_font_size_pt: number;
+  footer_font_family: DocumentFontFamily;
+  footer_font_size_pt: number;
+  line_spacing_percent: number;
+  paragraph_spacing_pt: number;
+  heading_scale_percent: number;
+}
+
+export interface DocumentRegions {
+  header_gap_mm: number;
+  footer_gap_mm: number;
+}
+
+/** Fully concrete renderer input. Only instance settings store this shape directly. */
+export interface DocumentLayoutPolicy {
+  page: DocumentPageLayout;
+  typography: DocumentTypography;
+  regions: DocumentRegions;
+}
+
+export interface DocumentPageMarginsOverrides {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+}
+
+export interface DocumentPageLayoutOverrides {
+  size?: DocumentPageSize;
+  orientation?: DocumentOrientation;
+  margins_mm?: DocumentPageMarginsOverrides;
+}
+
+export interface DocumentTypographyOverrides {
+  body_font_family?: DocumentFontFamily;
+  body_font_size_pt?: number;
+  header_font_family?: DocumentFontFamily;
+  header_font_size_pt?: number;
+  footer_font_family?: DocumentFontFamily;
+  footer_font_size_pt?: number;
+  line_spacing_percent?: number;
+  paragraph_spacing_pt?: number;
+  heading_scale_percent?: number;
+}
+
+export interface DocumentRegionsOverrides {
+  header_gap_mm?: number;
+  footer_gap_mm?: number;
+}
+
+/**
+ * Per-leaf inheriting layer. Missing leaves mean “inherit”; an empty object is equivalent to no
+ * override and should normally be omitted from writes.
+ */
+export interface DocumentLayoutOverrides {
+  page?: DocumentPageLayoutOverrides;
+  typography?: DocumentTypographyOverrides;
+  regions?: DocumentRegionsOverrides;
+}
+
 export interface EntityBookStateCounts {
   created: number;
   open: number;
@@ -376,6 +458,8 @@ export interface Entity {
   profile: EntityProfile;
   /** Statute overlay, or `null` when the entity uses the family default (t31). */
   statute: StatuteOverrides | null;
+  /** Optional per-field document layout overrides; absent/null means inherit. */
+  document_layout_override?: DocumentLayoutOverrides | null;
   /** Present on `GET /v1/entities`; omitted by create/detail responses. */
   activity_summary?: EntityActivitySummary;
   /** Present on GET /v1/entities; null when no certidão has been imported. */
@@ -544,6 +628,8 @@ export interface BookView {
   pages_reserved?: number;
   remaining_pages?: number | null;
   capacity_exhausted?: boolean;
+  /** Optional per-field document layout overrides; absent/null means inherit. */
+  document_layout_override?: DocumentLayoutOverrides | null;
 }
 
 /** Page-only book row enriched with an entity name only when the caller may read that entity. */
@@ -1354,6 +1440,8 @@ export interface TemplateSpec {
   rule_pack_id: string;
   blocks: TemplateBlockSpec[];
   locale: string;
+  /** Optional per-field page/typography overrides; absent means inherit from the instance. */
+  document_layout_override?: DocumentLayoutOverrides;
 }
 
 /**
@@ -5616,6 +5704,7 @@ export interface CreateEntityBody {
 export interface UpdateEntityBody {
   statute?: StatuteOverrides | null;
   fiscal_year_end?: string | null;
+  document_layout_override?: DocumentLayoutOverrides | null;
 }
 
 export interface OpenBookBody {
@@ -5625,6 +5714,8 @@ export interface OpenBookBody {
   numbering_scheme?: NumberingScheme;
   opening_date: string;
   required_signatories: BookTermoSignatoryInput[];
+  /** Initial book-level layout overrides; omitted/null means inherit. */
+  document_layout_override?: DocumentLayoutOverrides | null;
   predecessor?: string;
   /**
    * D5 — free-text reference to a paper/legacy predecessor book not in the system. ASSURANCE only;
@@ -5646,6 +5737,11 @@ export interface OpenBookBody {
    * to accept `true`/omitted only as a backwards-compatibility path for historical API clients.
    */
   one_shot?: boolean;
+}
+
+/** `PATCH /v1/books/{id}` — set or clear book-level inheriting document layout overrides. */
+export interface UpdateBookBody {
+  document_layout_override?: DocumentLayoutOverrides | null;
 }
 
 export interface CloseBookBody {
@@ -6250,6 +6346,8 @@ export interface OrganizationSettings {
 export interface DocumentSettings {
   locale: Locale;
   numbering_scheme_default: NumberingScheme;
+  /** Concrete instance-wide base; templates, entities, and books inherit from this. */
+  layout_defaults: DocumentLayoutPolicy;
 }
 
 /**
@@ -8017,7 +8115,29 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   schema_version: 1,
   organization: { name: null, default_actor: 'api' },
-  documents: { locale: 'pt-PT', numbering_scheme_default: 'Sequential' },
+  documents: {
+    locale: 'pt-PT',
+    numbering_scheme_default: 'Sequential',
+    layout_defaults: {
+      page: {
+        size: 'A4',
+        orientation: 'Portrait',
+        margins_mm: { top: 20, right: 20, bottom: 20, left: 20 },
+      },
+      typography: {
+        body_font_family: 'NotoSerif',
+        body_font_size_pt: 11,
+        header_font_family: 'NotoSerif',
+        header_font_size_pt: 11,
+        footer_font_family: 'NotoSerif',
+        footer_font_size_pt: 9,
+        line_spacing_percent: 140,
+        paragraph_spacing_pt: 6,
+        heading_scale_percent: 100,
+      },
+      regions: { header_gap_mm: 4, footer_gap_mm: 4 },
+    },
+  },
   catalog: {
     cae_update_url: null,
     cae_sources: [],

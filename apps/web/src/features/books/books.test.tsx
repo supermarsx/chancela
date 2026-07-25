@@ -284,6 +284,7 @@ function bookDetailFetch(
   extra?: (url: string, method: string, body: Record<string, unknown> | null) => Response | null,
 ) {
   const calls: RecordedCall[] = [];
+  let currentBook = BOOK;
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
@@ -292,7 +293,19 @@ function bookDetailFetch(
 
     const custom = extra?.(url, method, body);
     if (custom) return Promise.resolve(custom);
-    if (url === '/v1/books/book-1') return Promise.resolve(jsonResponse(BOOK));
+    if (url === '/v1/books/book-1' && method === 'PATCH') {
+      currentBook = {
+        ...currentBook,
+        document_layout_override: Object.prototype.hasOwnProperty.call(
+          body ?? {},
+          'document_layout_override',
+        )
+          ? (body?.document_layout_override as BookView['document_layout_override'])
+          : currentBook.document_layout_override,
+      };
+      return Promise.resolve(jsonResponse(currentBook));
+    }
+    if (url === '/v1/books/book-1') return Promise.resolve(jsonResponse(currentBook));
     if (url === '/v1/books/book-1/acts') return Promise.resolve(jsonResponse([]));
     // A legacy/one-shot book has no separately editable termo de abertura: the endpoint 404s and
     // the termo editor renders the honest "no separately editable termo" note (t23).
@@ -300,6 +313,7 @@ function bookDetailFetch(
       return Promise.resolve(jsonResponse({ error: 'no draft termo' }, 404));
     }
     if (url === '/v1/entities/ent-1') return Promise.resolve(jsonResponse(ENTITY));
+    if (url === '/v1/settings') return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
     if (url === '/v1/books/paper-import?book_ref=book-1') return Promise.resolve(jsonResponse([]));
     if (method === 'GET' && /^\/v1\/books\/paper-import\/[^/]+\/conversion-dossiers$/.test(url)) {
       return Promise.resolve(jsonResponse([]));
@@ -2522,7 +2536,7 @@ describe('BookDetailPage — sub-tabs', () => {
     );
   }
 
-  it('reuses the shared SubNav pill with the four sections in the requested order', async () => {
+  it('reuses the shared SubNav pill with the five sections in the requested order', async () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
     renderAtBook();
 
@@ -2531,7 +2545,28 @@ describe('BookDetailPage — sub-tabs', () => {
       within(subnav)
         .getAllByRole('button')
         .map((b) => b.textContent),
-    ).toEqual(['Atas', 'Termo de abertura', 'Retenção legal', 'Importações']);
+    ).toEqual(['Atas', 'Termo de abertura', 'Documentos', 'Retenção legal', 'Importações']);
+  });
+
+  it('stores only explicit book layout leaves while inherit remains the default', async () => {
+    const { fn, calls } = bookDetailFetch();
+    vi.stubGlobal('fetch', fn);
+    renderAtBook('/books/book-1/layout');
+
+    const modes = await screen.findAllByRole('combobox', { name: /^Modo de / });
+    expect(modes).toHaveLength(17);
+    for (const mode of modes) expect((mode as HTMLSelectElement).value).toBe('inherit');
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Modo de Orientação' }), {
+      target: { value: 'override' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar formato do livro' }));
+
+    await waitFor(() =>
+      expect(
+        calls.find((call) => call.url === '/v1/books/book-1' && call.method === 'PATCH')?.body,
+      ).toEqual({ document_layout_override: { page: { orientation: 'Portrait' } } }),
+    );
   });
 
   it('lands on Atas with no section segment, and marks only that tab pressed', async () => {

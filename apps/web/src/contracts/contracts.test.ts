@@ -3739,7 +3739,7 @@ describe('contract fixtures parse through the real client', () => {
         statute: true,
       },
       'Entity',
-      ['fiscal_year_end'],
+      ['fiscal_year_end', 'document_layout_override'],
     );
     expect(entity, 'Entity should expose fiscal_year_end on the wire').toHaveProperty(
       'fiscal_year_end',
@@ -3902,6 +3902,7 @@ describe('contract fixtures parse through the real client', () => {
         'pages_reserved',
         'remaining_pages',
         'capacity_exhausted',
+        'document_layout_override',
       ],
     );
     inEnum(BOOK_KINDS, book.kind, 'BookView.kind');
@@ -4829,11 +4830,22 @@ describe('contract fixtures parse through the real client', () => {
     );
     const documents = assertExactKeys<DocumentSettings>(
       settings.documents,
-      { locale: true, numbering_scheme_default: true },
+      { locale: true, numbering_scheme_default: true, layout_defaults: true },
       'Settings.documents',
     );
     inEnum(LOCALES, documents.locale, 'Settings.documents.locale');
     inEnum(NUMBERING_SCHEMES, documents.numbering_scheme_default, 'numbering_scheme_default');
+    expect(documents.layout_defaults.page.size).toBe('A4');
+    expect(documents.layout_defaults.page.orientation).toBe('Portrait');
+    expect(documents.layout_defaults.page.margins_mm).toEqual({
+      top: 20,
+      right: 20,
+      bottom: 20,
+      left: 20,
+    });
+    expect(documents.layout_defaults.typography.body_font_family).toBe('NotoSerif');
+    expect(documents.layout_defaults.typography.header_font_family).toBe('NotoSerif');
+    expect(documents.layout_defaults.regions.header_gap_mm).toBe(4);
     const ui = assertExactKeys<UiSettings>(
       settings.ui,
       {

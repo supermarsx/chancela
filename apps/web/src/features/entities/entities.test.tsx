@@ -82,13 +82,25 @@ function entityDetailFetch(initial: Entity) {
     if (url.includes('/v1/books')) {
       return Promise.resolve(jsonResponse([]));
     }
+    if (url.includes('/v1/settings')) {
+      return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+    }
     if (url.includes(`/v1/entities/${current.id}`) && method === 'PATCH') {
-      const patch = body as { fiscal_year_end?: string | null };
+      const patch = body as {
+        fiscal_year_end?: string | null;
+        document_layout_override?: Entity['document_layout_override'];
+      };
       current = {
         ...current,
         fiscal_year_end: Object.prototype.hasOwnProperty.call(patch, 'fiscal_year_end')
           ? patch.fiscal_year_end
           : current.fiscal_year_end,
+        document_layout_override: Object.prototype.hasOwnProperty.call(
+          patch,
+          'document_layout_override',
+        )
+          ? patch.document_layout_override
+          : current.document_layout_override,
       };
       return Promise.resolve(jsonResponse(current));
     }
@@ -1035,6 +1047,7 @@ describe('EntityDetailPage — sub-tabs', () => {
     'Livros',
     'Identificação',
     'Exercício fiscal',
+    'Documentos',
     'Registo comercial',
     'Inscrições e averbamentos',
     'Cronologia e grafo',
@@ -1133,7 +1146,7 @@ describe('EntityDetailPage — sub-tabs', () => {
     );
   }
 
-  it('reuses the shared SubNav pill with the six sections in the requested order', async () => {
+  it('reuses the shared SubNav pill with the seven sections in the requested order', async () => {
     vi.stubGlobal('fetch', detailFetch().fn);
     renderAtEntity();
 
@@ -1143,6 +1156,28 @@ describe('EntityDetailPage — sub-tabs', () => {
         .getAllByRole('button')
         .map((b) => b.textContent),
     ).toEqual(TAB_LABELS);
+  });
+
+  it('stores only explicit entity layout leaves while inherit remains the default', async () => {
+    const { fn, calls } = detailFetch();
+    vi.stubGlobal('fetch', fn);
+    renderAtEntity('/entities/new-ent-1/documents');
+
+    const modes = await screen.findAllByRole('combobox', { name: /^Modo de / });
+    expect(modes).toHaveLength(17);
+    for (const mode of modes) expect((mode as HTMLSelectElement).value).toBe('inherit');
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Modo de Formato da página' }), {
+      target: { value: 'override' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar formato da entidade' }));
+
+    await waitFor(() =>
+      expect(
+        calls.find((call) => call.url.includes('/v1/entities/new-ent-1') && call.method === 'PATCH')
+          ?.body,
+      ).toEqual({ document_layout_override: { page: { size: 'A4' } } }),
+    );
   });
 
   it('lands on Livros with no section segment, and marks only that tab pressed', async () => {

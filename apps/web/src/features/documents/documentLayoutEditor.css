@@ -1,0 +1,68 @@
+.document-layout-editor {
+  min-width: 0;
+}
+
+.document-layout-editor__section > header h4 {
+  margin: 0;
+}
+
+.document-layout-editor__inheritance {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) auto minmax(0, 1fr);
+  gap: 0.5rem 0.8rem;
+  align-items: baseline;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font: 0.76rem/1.4 var(--font-sans);
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+}
+
+.document-layout-editor__inheritance strong {
+  color: var(--accent);
+}
+
+.document-layout-editor__override-control {
+  display: grid;
+  grid-template-columns: minmax(7rem, 9rem) minmax(9rem, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.document-layout-editor__number {
+  display: grid;
+  grid-template-columns: minmax(5rem, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.document-layout-editor__number > span {
+  color: var(--muted);
+  font: 0.74rem/1 var(--font-sans);
+}
+
+.document-layout-editor__effective {
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  overflow-wrap: anywhere;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font: 0.78rem/1.35 var(--font-sans);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+}
+
+.document-layout-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 48rem) {
+  .document-layout-editor__inheritance,
+  .document-layout-editor__override-control {
+    grid-template-columns: 1fr;
+  }
+}

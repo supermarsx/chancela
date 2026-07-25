@@ -199,6 +199,9 @@ export function TemplateCreatePage() {
       rule_pack_id: draft.rule_pack_id.trim(),
       blocks,
       locale: draft.locale,
+      ...(draft.document_layout_override
+        ? { document_layout_override: draft.document_layout_override }
+        : {}),
     };
 
     try {

@@ -112,6 +112,7 @@ import type {
   IssueRecoveryBody,
   TotpConfirmBody,
   UpdateActBody,
+  UpdateBookBody,
   UpdateEntityBody,
   UpdateUserBody,
   VerifyAiHumanReviewBody,
@@ -341,8 +342,12 @@ export function useEntitiesPage(params: EntityPageParams) {
   });
 }
 
-export function useEntity(id: string) {
-  return useQuery({ queryKey: keys.entity(id), queryFn: () => api.getEntity(id), enabled: !!id });
+export function useEntity(id: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.entity(id),
+    queryFn: () => api.getEntity(id),
+    enabled: enabled && !!id,
+  });
 }
 
 export function useEntityChronology(id: string) {
@@ -520,6 +525,21 @@ export function useOpenBook() {
     onSuccess: (book) => {
       void qc.invalidateQueries({ queryKey: ['books'] });
       void qc.invalidateQueries({ queryKey: keys.entity(book.entity_id) });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+/** Persist or clear the book-level document-layout override. */
+export function useUpdateBook(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateBookBody) => api.updateBook(id, body),
+    onSuccess: (book) => {
+      qc.setQueryData(keys.book(id), book);
+      void qc.invalidateQueries({ queryKey: keys.book(id) });
+      void qc.invalidateQueries({ queryKey: ['books'] });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });

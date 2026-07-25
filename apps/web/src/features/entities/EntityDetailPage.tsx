@@ -53,6 +53,7 @@ import { NipcBadge } from './NipcBadge';
 import { PrintButton } from './PrintButton';
 import { EntityPrintDocument } from './EntityPrintDocument';
 import { entityFieldHelp } from './fieldHelp';
+import { EntityDocumentLayoutPanel } from '../documents/DocumentLayoutOverridePanels';
 
 /**
  * The entity sub-tabs, in the order the operator asked for. Labels reuse the section titles
@@ -60,12 +61,14 @@ import { entityFieldHelp } from './fieldHelp';
  * averbamentos" gets a shorter label than its card, whose title is the full
  * "Inscrições, averbamentos e anotações".
  */
-type EntitySection = 'books' | 'identification' | 'fiscal' | 'registry' | 'filings' | 'chronology';
+type EntitySection =
+  'books' | 'identification' | 'fiscal' | 'documents' | 'registry' | 'filings' | 'chronology';
 
 const ENTITY_SECTIONS: { id: EntitySection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'books', label: 'entities.booksCard', icon: <Icon.BookClosed /> },
   { id: 'identification', label: 'entities.identificationCard', icon: <Icon.IdCard /> },
   { id: 'fiscal', label: 'entities.fiscalYearEnd.cardTitle', icon: <Icon.Calendar /> },
+  { id: 'documents', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'registry', label: 'entities.registrySection', icon: <Icon.Seal /> },
   { id: 'filings', label: 'entities.subnav.inscricoes', icon: <Icon.Layers /> },
   { id: 'chronology', label: 'entities.chronology.title', icon: <Icon.Shuffle /> },
@@ -343,6 +346,8 @@ export function EntityDetailPage() {
         ) : null}
 
         {section === 'fiscal' ? <FiscalYearEndEditor entity={ent} /> : null}
+
+        {section === 'documents' ? <EntityDocumentLayoutPanel entity={ent} /> : null}
 
         {section === 'registry' ? (
           <section className="stack">

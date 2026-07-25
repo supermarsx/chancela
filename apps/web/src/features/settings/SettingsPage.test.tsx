@@ -2576,7 +2576,7 @@ describe('SettingsPage', () => {
     expect(within(about).queryByText('servidor desatualizado')).toBeNull();
   });
 
-  it('persists document locale and numbering edits through the whole settings document', async () => {
+  it('persists document locale, numbering, and concrete layout defaults through the whole document', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
     renderWithProviders(<SettingsPage />, ['/settings/documents']);
@@ -2587,6 +2587,9 @@ describe('SettingsPage', () => {
     fireEvent.change(screen.getByLabelText('Esquema de numeração predefinido'), {
       target: { value: 'LooseLeaf' },
     });
+    fireEvent.change(screen.getByLabelText('Orientação'), {
+      target: { value: 'Landscape' },
+    });
 
     await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
       timeout: 3000,
@@ -2596,6 +2599,25 @@ describe('SettingsPage', () => {
     ) as typeof DEFAULT_SETTINGS;
     expect(body.documents.locale).toBe('en-GB');
     expect(body.documents.numbering_scheme_default).toBe('LooseLeaf');
+    expect(body.documents.layout_defaults.page.orientation).toBe('Landscape');
+  });
+
+  it('resets document layout defaults through the shared confirmation modal', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage />, ['/settings/documents']);
+
+    fireEvent.change(await screen.findByLabelText('Orientação'), {
+      target: { value: 'Landscape' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Repor predefinições do produto' }));
+    const dialog = screen.getByRole('dialog', { name: 'Repor formato e tipografia' });
+    expect(within(dialog).getByText(/regressam às predefinições do produto/i)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Repor predefinições' }));
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Orientação') as HTMLSelectElement).value).toBe('Portrait'),
+    );
   });
 
   it('previews texture and custom-colour controls and can restore theme defaults', async () => {

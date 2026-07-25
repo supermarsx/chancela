@@ -106,16 +106,18 @@ import { BookActsList, type OpeningTermRecord } from './BookActsList';
 import { TermoAberturaEditor } from './TermoAberturaEditor';
 import { TermoEncerramentoEditor } from './TermoEncerramentoEditor';
 import { useEncerramentoT } from './termoEncerramentoStrings';
+import { BookDocumentLayoutPanel } from '../documents/DocumentLayoutOverridePanels';
 
 /**
  * The book sub-tabs, in the order the operator asked for. Labels reuse the section titles
  * they head (identical text), exactly as the Configurações sub-nav does.
  */
-type BookSection = 'acts' | 'opening' | 'retention' | 'imports';
+type BookSection = 'acts' | 'opening' | 'layout' | 'retention' | 'imports';
 
 const BOOK_SECTIONS: { id: BookSection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'acts', label: 'books.atas', icon: <Icon.Layers /> },
   { id: 'opening', label: 'books.termoAbertura', icon: <Icon.BookPlus /> },
+  { id: 'layout', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'retention', label: 'books.detail.legalHold.title', icon: <Icon.Scale /> },
   // Short label: the imports card title is a full sentence, too long for a pill.
   { id: 'imports', label: 'books.detail.subnav.imports', icon: <Icon.Tray /> },
@@ -2352,6 +2354,8 @@ export function BookDetailPage() {
             <BookRetentionPanel bookId={b.id} />
           </>
         ) : null}
+
+        {section === 'layout' ? <BookDocumentLayoutPanel book={b} /> : null}
 
         {section === 'imports' ? <PaperBookImportsPanel book={b} /> : null}
 
