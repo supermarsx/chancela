@@ -131,6 +131,57 @@ describe('RegistryAutoUpdateSection', () => {
     expect(screen.getByRole('button', { name: 'Pedir tentativa' })).toBeTruthy();
   });
 
+  it('renders each editable configuration as a direct table-like settings row', () => {
+    vi.stubGlobal('fetch', registryFetch().fn);
+    const onChange = vi.fn();
+    const { container } = renderWithProviders(
+      <RegistryAutoUpdateSection value={BASE_SETTINGS} onChange={onChange} />,
+    );
+
+    const settingsRows = container.querySelector('.settings-rows');
+    expect(settingsRows).toBeTruthy();
+    expect(container.querySelector('.registry-auto-update-grid')).toBeNull();
+
+    const worker = screen.getByRole('switch', { name: 'Ativar trabalhador de atualização' });
+    const workerRow = worker.closest('.toggle');
+    expect(workerRow?.parentElement).toBe(settingsRows);
+    expect(worker.getAttribute('aria-describedby')).toBe('registry-auto-update-enabled-hint');
+    expect(workerRow?.nextElementSibling?.id).toBe('registry-auto-update-enabled-hint');
+
+    [
+      'registry-auto-cadence',
+      'registry-auto-hours',
+      'registry-auto-stale',
+      'registry-auto-min-backoff',
+      'registry-auto-max-backoff',
+      'registry-auto-max-attempts',
+    ].forEach((controlId) => {
+      expect(container.querySelector(`#${controlId}`)?.closest('.field')?.parentElement).toBe(
+        settingsRows,
+      );
+    });
+
+    const entityDefault = screen.getByRole('switch', {
+      name: 'Novas entidades elegíveis por omissão',
+    });
+    const entityDefaultRow = entityDefault.closest('.toggle');
+    expect(entityDefaultRow?.parentElement).toBe(settingsRows);
+    expect(entityDefault.getAttribute('aria-describedby')).toBe(
+      'registry-auto-update-entity-default-hint',
+    );
+    expect(entityDefaultRow?.nextElementSibling?.id).toBe(
+      'registry-auto-update-entity-default-hint',
+    );
+
+    const profiles = screen.getByRole('group', { name: 'Perfil' });
+    expect(profiles.classList.contains('field')).toBe(true);
+    expect(profiles.parentElement).toBe(settingsRows);
+    expect(profiles.getAttribute('aria-describedby')).toBe(
+      'registry-auto-update-entity-default-hint',
+    );
+    expect(profiles.querySelector('.registry-auto-update-profiles')).toBeTruthy();
+  });
+
   it('toggles the enabled flag through onChange', async () => {
     vi.stubGlobal('fetch', registryFetch().fn);
     const onChange = vi.fn();
@@ -167,7 +218,7 @@ describe('RegistryAutoUpdateSection', () => {
   it('renders the daily cadence field and edits its hour', async () => {
     vi.stubGlobal('fetch', registryFetch().fn);
     const onChange = vi.fn();
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <RegistryAutoUpdateSection
         value={withCadence({ kind: 'daily', hour_utc: 2 })}
         onChange={onChange}
@@ -176,6 +227,9 @@ describe('RegistryAutoUpdateSection', () => {
 
     const hourInput = screen.getByLabelText('Hora UTC') as HTMLInputElement;
     expect(hourInput).toBeTruthy();
+    expect(hourInput.closest('.field')?.parentElement).toBe(
+      container.querySelector('.settings-rows'),
+    );
     fireEvent.change(hourInput, { target: { value: '5' } });
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ cadence: { kind: 'daily', hour_utc: 5 } }),
@@ -185,16 +239,18 @@ describe('RegistryAutoUpdateSection', () => {
   it('renders the weekly cadence fields and edits the weekday', async () => {
     vi.stubGlobal('fetch', registryFetch().fn);
     const onChange = vi.fn();
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <RegistryAutoUpdateSection
         value={withCadence({ kind: 'weekly', weekday: 'monday', hour_utc: 2 })}
         onChange={onChange}
       />,
     );
 
-    expect(screen.getByLabelText('Hora UTC')).toBeTruthy();
+    const settingsRows = container.querySelector('.settings-rows');
+    expect(screen.getByLabelText('Hora UTC').closest('.field')?.parentElement).toBe(settingsRows);
     const weekdaySelect = screen.getByLabelText('Dia da semana') as HTMLSelectElement;
     expect(weekdaySelect.value).toBe('monday');
+    expect(weekdaySelect.closest('.field')?.parentElement).toBe(settingsRows);
     fireEvent.change(weekdaySelect, { target: { value: 'friday' } });
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({

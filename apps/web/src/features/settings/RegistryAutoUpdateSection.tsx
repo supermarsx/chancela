@@ -278,109 +278,121 @@ export function RegistryAutoUpdateSection({
       <div className="stack">
         <div className="form settings-rows">
           <Toggle
+            id="registry-auto-update-enabled"
             label={t('settings.registryAutoUpdate.enabled.label')}
             checked={value.enabled}
             onChange={(enabled) => set('enabled', enabled)}
+            aria-describedby="registry-auto-update-enabled-hint"
           />
-          <p className="field__hint">{t('settings.registryAutoUpdate.enabled.hint')}</p>
+          <p className="field__hint" id="registry-auto-update-enabled-hint">
+            {t('settings.registryAutoUpdate.enabled.hint')}
+          </p>
 
-          <div className="registry-auto-update-grid">
-            <Field
-              label={t('settings.registryAutoUpdate.cadence.label')}
-              htmlFor="registry-auto-cadence"
-              hint={cadenceLabel(value.cadence, t)}
-              help={t('settings.registryAutoUpdate.cadence.help')}
-            >
-              <Select
-                id="registry-auto-cadence"
-                value={cadenceKind(value.cadence)}
-                options={cadenceOptions}
-                onChange={(e) => setCadenceKind(e.target.value as CadenceKind)}
-              />
-            </Field>
-
-            {cadenceFields}
-
-            <Field
-              label={t('settings.registryAutoUpdate.staleThreshold.label')}
-              htmlFor="registry-auto-stale"
-              hint={t('settings.registryAutoUpdate.staleThreshold.hint')}
-            >
-              <Input
-                id="registry-auto-stale"
-                type="number"
-                min={1}
-                max={8760}
-                value={value.stale_threshold_hours}
-                onChange={(e) =>
-                  set(
-                    'stale_threshold_hours',
-                    numberValue(e.target.value, value.stale_threshold_hours),
-                  )
-                }
-              />
-            </Field>
-
-            <Field
-              label={t('settings.registryAutoUpdate.minBackoff.label')}
-              htmlFor="registry-auto-min-backoff"
-            >
-              <Input
-                id="registry-auto-min-backoff"
-                type="number"
-                min={1}
-                max={10080}
-                value={value.min_backoff_minutes}
-                onChange={(e) =>
-                  set('min_backoff_minutes', numberValue(e.target.value, value.min_backoff_minutes))
-                }
-              />
-            </Field>
-
-            <Field
-              label={t('settings.registryAutoUpdate.maxBackoff.label')}
-              htmlFor="registry-auto-max-backoff"
-            >
-              <Input
-                id="registry-auto-max-backoff"
-                type="number"
-                min={1}
-                max={10080}
-                value={value.max_backoff_minutes}
-                onChange={(e) =>
-                  set('max_backoff_minutes', numberValue(e.target.value, value.max_backoff_minutes))
-                }
-              />
-            </Field>
-
-            <Field
-              label={t('settings.registryAutoUpdate.maxAttempts.label')}
-              htmlFor="registry-auto-max-attempts"
-              hint={t('settings.registryAutoUpdate.maxAttempts.hint')}
-            >
-              <Input
-                id="registry-auto-max-attempts"
-                type="number"
-                min={1}
-                max={100}
-                value={value.max_attempts_per_run}
-                onChange={(e) =>
-                  set(
-                    'max_attempts_per_run',
-                    numberValue(e.target.value, value.max_attempts_per_run),
-                  )
-                }
-              />
-            </Field>
-          </div>
-
-          <div className="stack--tight">
-            <Toggle
-              label={t('settings.registryAutoUpdate.entityDefaults.enabled')}
-              checked={value.entity_defaults.enabled}
-              onChange={(enabled) => setEntityDefaults('enabled', enabled)}
+          <Field
+            label={t('settings.registryAutoUpdate.cadence.label')}
+            htmlFor="registry-auto-cadence"
+            hint={cadenceLabel(value.cadence, t)}
+            help={t('settings.registryAutoUpdate.cadence.help')}
+          >
+            <Select
+              id="registry-auto-cadence"
+              value={cadenceKind(value.cadence)}
+              options={cadenceOptions}
+              onChange={(e) => setCadenceKind(e.target.value as CadenceKind)}
             />
-            <p className="field__hint">{t('settings.registryAutoUpdate.entityDefaults.hint')}</p>
+          </Field>
+
+          {cadenceFields}
+
+          <Field
+            label={t('settings.registryAutoUpdate.staleThreshold.label')}
+            htmlFor="registry-auto-stale"
+            hint={t('settings.registryAutoUpdate.staleThreshold.hint')}
+          >
+            <Input
+              id="registry-auto-stale"
+              type="number"
+              min={1}
+              max={8760}
+              value={value.stale_threshold_hours}
+              onChange={(e) =>
+                set(
+                  'stale_threshold_hours',
+                  numberValue(e.target.value, value.stale_threshold_hours),
+                )
+              }
+            />
+          </Field>
+
+          <Field
+            label={t('settings.registryAutoUpdate.minBackoff.label')}
+            htmlFor="registry-auto-min-backoff"
+          >
+            <Input
+              id="registry-auto-min-backoff"
+              type="number"
+              min={1}
+              max={10080}
+              value={value.min_backoff_minutes}
+              onChange={(e) =>
+                set('min_backoff_minutes', numberValue(e.target.value, value.min_backoff_minutes))
+              }
+            />
+          </Field>
+
+          <Field
+            label={t('settings.registryAutoUpdate.maxBackoff.label')}
+            htmlFor="registry-auto-max-backoff"
+          >
+            <Input
+              id="registry-auto-max-backoff"
+              type="number"
+              min={1}
+              max={10080}
+              value={value.max_backoff_minutes}
+              onChange={(e) =>
+                set('max_backoff_minutes', numberValue(e.target.value, value.max_backoff_minutes))
+              }
+            />
+          </Field>
+
+          <Field
+            label={t('settings.registryAutoUpdate.maxAttempts.label')}
+            htmlFor="registry-auto-max-attempts"
+            hint={t('settings.registryAutoUpdate.maxAttempts.hint')}
+          >
+            <Input
+              id="registry-auto-max-attempts"
+              type="number"
+              min={1}
+              max={100}
+              value={value.max_attempts_per_run}
+              onChange={(e) =>
+                set('max_attempts_per_run', numberValue(e.target.value, value.max_attempts_per_run))
+              }
+            />
+          </Field>
+
+          <Toggle
+            id="registry-auto-update-entity-default-enabled"
+            label={t('settings.registryAutoUpdate.entityDefaults.enabled')}
+            checked={value.entity_defaults.enabled}
+            onChange={(enabled) => setEntityDefaults('enabled', enabled)}
+            aria-describedby="registry-auto-update-entity-default-hint"
+          />
+          <p className="field__hint" id="registry-auto-update-entity-default-hint">
+            {t('settings.registryAutoUpdate.entityDefaults.hint')}
+          </p>
+
+          <div
+            className="field"
+            role="group"
+            aria-labelledby="registry-auto-update-profiles-label"
+            aria-describedby="registry-auto-update-entity-default-hint"
+          >
+            <span className="field__label" id="registry-auto-update-profiles-label">
+              {t('settings.registryAutoUpdate.table.profile')}
+            </span>
             <div className="registry-auto-update-profiles">
               <label className="api-key-permission">
                 <input
