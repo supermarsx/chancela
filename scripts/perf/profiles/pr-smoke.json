@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "name": "pr-smoke",
+  "seed": 20260725,
+  "dataset": {
+    "users": 4,
+    "entities": 8,
+    "books": 16,
+    "signatures": 6
+  },
+  "seed_concurrency": 2,
+  "workload": {
+    "mode": "steady",
+    "duration_seconds": 8,
+    "clients": 2,
+    "request_timeout_seconds": 15,
+    "max_latency_samples_per_operation": 10000,
+    "weights": {
+      "health": 2,
+      "entity_list": 2,
+      "entity_get": 4,
+      "book_list": 1,
+      "book_get": 4,
+      "user_list": 1,
+      "auth_login": 1,
+      "entity_write": 1,
+      "signature_status": 3
+    }
+  }
+}

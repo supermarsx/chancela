@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "global": {
+    "max_error_rate": null,
+    "min_throughput_per_second": null
+  },
+  "operations": {
+    "entity_list": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
+    "book_list": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
+    "user_list": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
+    "signature_status": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    }
+  },
+  "resources": {
+    "max_container_memory_bytes": null,
+    "max_container_cpu_percent": null
+  }
+}

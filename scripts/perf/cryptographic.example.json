@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "provider": "local-pkcs12",
+  "count": 10000,
+  "concurrency": 4,
+  "pkcs12_path": ".perf-work/test-signing-identity.p12",
+  "passphrase_env": "CHANCELA_PERF_PKCS12_PASSPHRASE",
+  "friendly_name": "Chancela ephemeral performance identity"
+}

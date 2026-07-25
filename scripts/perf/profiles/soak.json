@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "name": "soak",
+  "seed": 20260725,
+  "dataset": {
+    "users": 15000,
+    "entities": 10000,
+    "books": 50000,
+    "signatures": 10000
+  },
+  "seed_concurrency": 16,
+  "workload": {
+    "mode": "soak",
+    "duration_seconds": 10800,
+    "clients": 64,
+    "request_timeout_seconds": 30,
+    "max_latency_samples_per_operation": 200000,
+    "weights": {
+      "health": 1,
+      "entity_list": 4,
+      "entity_get": 20,
+      "book_list": 4,
+      "book_get": 20,
+      "user_list": 2,
+      "auth_login": 4,
+      "entity_write": 5,
+      "signature_status": 20
+    }
+  }
+}

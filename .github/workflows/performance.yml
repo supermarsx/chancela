@@ -1,0 +1,155 @@
+name: Performance evidence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/performance.yml"
+      - "scripts/perf/**"
+      - "scripts/ha-soak/**"
+      - "docs/performance-capacity.md"
+      - "docker/docker-compose.yml"
+      - "docker/docker-compose.cluster.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/performance.yml"
+      - "scripts/perf/**"
+      - "scripts/ha-soak/**"
+      - "docs/performance-capacity.md"
+      - "docker/docker-compose.yml"
+      - "docker/docker-compose.cluster.yml"
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Exact-volume profile. pr-smoke is not capacity proof.
+        required: true
+        type: choice
+        options:
+          - capacity
+          - soak
+          - pr-smoke
+        default: capacity
+      slo_path:
+        description: Optional reviewed SLO JSON path in this checkout. Blank means not_configured, never pass.
+        required: false
+        type: string
+        default: ""
+      cryptographic_signatures:
+        description: Opt-in count of real local PKCS#12 signatures (0 disables; manual runs only).
+        required: false
+        type: number
+        default: 0
+      keep_failed_topology:
+        description: Retain containers until job cleanup for live inspection.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  harness-self-test:
+    name: Harness self-test (not capacity proof)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Compile and unit-test the harness
+        run: |
+          python -m compileall -q scripts/perf
+          python -m unittest discover -s scripts/perf/tests -v
+      - name: Generate and verify only the tiny PR fixture
+        run: |
+          python scripts/perf/harness.py generate \
+            --profile scripts/perf/profiles/pr-smoke.json \
+            --output-dir .perf-work/pr-smoke/dataset
+          python scripts/perf/harness.py validate \
+            --dataset-dir .perf-work/pr-smoke/dataset
+      - name: Upload PR smoke fixture evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: performance-pr-smoke-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .perf-work/pr-smoke/dataset/
+          if-no-files-found: error
+          retention-days: 7
+
+  exact-volume-run:
+    name: >-
+      ${{ github.event_name == 'schedule'
+          && 'Scheduled exact capacity run'
+          || format('Manual {0} run', inputs.profile) }}
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PERF_PROFILE: ${{ github.event_name == 'schedule' && 'capacity' || inputs.profile }}
+      PERF_SLO_PATH: ${{ github.event_name == 'workflow_dispatch' && inputs.slo_path || '' }}
+      CRYPTO_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.cryptographic_signatures || 0 }}
+      CHANCELA_PERF_PASSWORD: Perf-Only-Password-2026!
+      CHANCELA_PERF_PKCS12_PASSPHRASE: Ephemeral-Perf-PKCS12-2026!
+      CHANCELA_PERF_KEEP: ${{ github.event_name == 'workflow_dispatch' && inputs.keep_failed_topology && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Select optional cryptographic workload
+        id: crypto
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .perf-work
+          if [[ "$CRYPTO_COUNT" =~ ^[0-9]+$ ]] && (( CRYPTO_COUNT > 0 )); then
+            sh scripts/perf/generate-test-pkcs12.sh .perf-work/test-signing-identity.p12
+            jq -n \
+              --argjson count "$CRYPTO_COUNT" \
+              '{
+                schema_version: 1,
+                provider: "local-pkcs12",
+                count: $count,
+                concurrency: 4,
+                pkcs12_path: ".perf-work/test-signing-identity.p12",
+                passphrase_env: "CHANCELA_PERF_PKCS12_PASSPHRASE",
+                friendly_name: "Chancela ephemeral performance identity"
+              }' > .perf-work/cryptographic.json
+            echo "config=.perf-work/cryptographic.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "config=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run exact-volume topology and workload
+        shell: bash
+        run: |
+          bash scripts/perf/run-compose.sh \
+            "$PERF_PROFILE" \
+            ".perf-work/$PERF_PROFILE" \
+            "$PERF_SLO_PATH" \
+            "${{ steps.crypto.outputs.config }}"
+      - name: Explain non-threshold runs
+        if: always() && env.PERF_SLO_PATH == ''
+        run: |
+          echo "::notice::No reviewed SLO file was supplied. The report must say not_configured and is not a performance pass."
+      - name: Upload exact-volume evidence, reports, and failure logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: performance-${{ env.PERF_PROFILE }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .perf-work/${{ env.PERF_PROFILE }}/dataset/
+            .perf-work/${{ env.PERF_PROFILE }}/report/
+            .perf-work/${{ env.PERF_PROFILE }}/logs/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Tear down retained topology
+        if: always() && env.CHANCELA_PERF_KEEP == '1'
+        shell: bash
+        run: |
+          docker compose \
+            -f docker/docker-compose.yml \
+            -f docker/docker-compose.cluster.yml \
+            -f scripts/perf/docker-compose.perf.yml \
+            --profile postgres --profile cluster --profile performance \
+            down -v --remove-orphans

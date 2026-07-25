@@ -1,0 +1,53 @@
+# Performance-only overlay. Use with docker/docker-compose.yml and
+# docker/docker-compose.cluster.yml. This is a reproducible test topology, not a
+# production deployment manifest.
+services:
+  chancela-cluster:
+    environment:
+      # Required only for the explicitly opt-in local PKCS#12 workload.
+      CHANCELA_LOCAL_SIGNING: "1"
+      # The values are test inputs and are recorded by the workflow/runbook.
+      # They avoid measuring the default edge throttle instead of application
+      # capacity during an exact-volume seed. Rate-limit behavior needs its own
+      # profile and must not be inferred from this run.
+      CHANCELA_RATE_LIMIT_PER_SECOND: ${CHANCELA_PERF_RATE_LIMIT_PER_SECOND:-1000}
+      CHANCELA_RATE_LIMIT_BURST: ${CHANCELA_PERF_RATE_LIMIT_BURST:-2000}
+      CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR: "true"
+
+  perf-gateway:
+    profiles: [performance]
+    image: python:3.12-alpine
+    command: ["python", "/app/gateway.py"]
+    environment:
+      CHANCELA_PERF_UPSTREAM: chancela-cluster
+      CHANCELA_PERF_UPSTREAM_PORT: "8080"
+      CHANCELA_PERF_GATEWAY_PORT: "8081"
+    volumes:
+      # Compose resolves every relative path from the first compose file
+      # (`docker/docker-compose.yml`), hence the leading `..`.
+      - ../scripts/perf/gateway.py:/app/gateway.py:ro
+    ports:
+      - target: 8081
+        published: "${CHANCELA_PERF_HOST_PORT:-18081}"
+        host_ip: 127.0.0.1
+    depends_on:
+      chancela-cluster:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256m
+    restart: unless-stopped

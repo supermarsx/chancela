@@ -16,6 +16,7 @@ apps/web/dist/
 
 # Orchestration scratch (not part of the shipped repo)
 .orchestration/
+.perf-work/
 
 # Local environment / secrets
 .env
