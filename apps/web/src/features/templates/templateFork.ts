@@ -61,5 +61,14 @@ export function forkedTemplateId(sourceId: string, taken: Iterable<string> = [])
  * make the fork behave unlike the template it was copied from.
  */
 export function forkTemplateSpec(spec: TemplateSpec, id: string): TemplateSpec {
-  return { ...spec, id };
+  return {
+    id,
+    family: spec.family,
+    stage: spec.stage,
+    channels: spec.channels,
+    signature_policy: spec.signature_policy,
+    rule_pack_id: spec.rule_pack_id,
+    blocks: spec.blocks,
+    locale: spec.locale,
+  };
 }

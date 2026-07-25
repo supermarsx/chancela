@@ -13,7 +13,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, screen, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { TemplateDetailPage } from './TemplateDetailPage';
-import { forkedTemplateId, templateIdBase, templateIdVersion } from './templateFork';
+import {
+  forkedTemplateId,
+  forkTemplateSpec,
+  templateIdBase,
+  templateIdVersion,
+} from './templateFork';
 import { templatePlaceholders } from './templatePlaceholders';
 import {
   DEFAULT_TEMPLATE_COLUMNS,
@@ -362,6 +367,39 @@ describe('templateFork', () => {
     ).toBe('user-assoc-ata-direcao-3/v1');
     // Every id it produces matches the server's own rule.
     expect(forkedTemplateId('Condomínio — Ata/v2')).toMatch(/^user-[a-z0-9-]+\/v[0-9]+$/);
+  });
+
+  it('projects a fork onto authored fields instead of copying runtime metadata', () => {
+    const source = {
+      id: 'csc-ata-ag/v1',
+      family: 'CommercialCompany',
+      stage: 'Ata',
+      channels: ['Physical'],
+      signature_policy: 'QualifiedPreferred',
+      rule_pack_id: 'csc-art63/v2',
+      blocks: [{ kind: 'NarrativeBody' }],
+      locale: 'pt-PT',
+      law_references: [{ source_id: 'csc', citation: 'Artigo 63.º' }],
+      default_body: [{ text: 'runtime-only seed' }],
+    };
+
+    const fork = forkTemplateSpec(
+      source as Parameters<typeof forkTemplateSpec>[0],
+      'user-csc-ata-ag/v1',
+    );
+
+    expect(fork).toEqual({
+      id: 'user-csc-ata-ag/v1',
+      family: 'CommercialCompany',
+      stage: 'Ata',
+      channels: ['Physical'],
+      signature_policy: 'QualifiedPreferred',
+      rule_pack_id: 'csc-art63/v2',
+      blocks: [{ kind: 'NarrativeBody' }],
+      locale: 'pt-PT',
+    });
+    expect(fork).not.toHaveProperty('law_references');
+    expect(fork).not.toHaveProperty('default_body');
   });
 });
 

@@ -1555,19 +1555,37 @@ export function useTemplateSpec(id: string, enabled = true) {
  * the export text MUST go through here rather than casting `JSON.parse(text)` straight to
  * `TemplateSpec`: the envelope has no `rule_pack_id`/`blocks` at its top level, so a raw cast yields
  * a "spec" whose required fields are `undefined` (the fork editor then crashed on
- * `spec.rule_pack_id.trim()`). This is a read for the block/field views only; the stripped seed
- * (`default_body`) is not needed here.
+ * `spec.rule_pack_id.trim()`). Exported runtime catalog specs from older servers may also contain
+ * server-derived fields such as `law_references`; return an exact authored-field projection so
+ * those fields can never poison an editor save or strict draft preview. This is a read for the
+ * block/field views only; the stripped seed (`default_body`) is not needed here.
  */
 export function templateSpecFromExport(raw: unknown): TemplateSpec {
+  let candidate = raw;
   if (
     raw !== null &&
     typeof raw === 'object' &&
     (raw as { format?: unknown }).format === 'chancela.template-bundle' &&
     'spec' in raw
   ) {
-    return (raw as { spec: TemplateSpec }).spec;
+    candidate = (raw as { spec: unknown }).spec;
   }
-  return raw as TemplateSpec;
+
+  if (candidate === null || typeof candidate !== 'object') {
+    return candidate as TemplateSpec;
+  }
+
+  const spec = candidate as Record<string, unknown>;
+  return {
+    id: spec.id,
+    family: spec.family,
+    stage: spec.stage,
+    channels: spec.channels,
+    signature_policy: spec.signature_policy,
+    rule_pack_id: spec.rule_pack_id,
+    blocks: spec.blocks,
+    locale: spec.locale,
+  } as TemplateSpec;
 }
 
 /**

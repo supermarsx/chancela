@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from './client';
+import { templateSpecFromExport } from './hooks';
 import type { TemplateSpec } from './types';
 
 const SPEC: TemplateSpec = {
@@ -51,6 +52,49 @@ describe('template document PDF preview API', () => {
     expect(new TextDecoder().decode(result.data)).toBe('%PDF-1.7 structural');
     expect(result.content_type).toBe('application/pdf; profile=PDF/A-2u');
     expect(result.preview_kind).toBe('structural-unresolved');
+  });
+
+  it('strips runtime-only fields from an older built-in export before draft preview', async () => {
+    const exported = {
+      format: 'chancela.template-bundle',
+      format_version: 1,
+      spec: {
+        ...SPEC,
+        id: 'csc-ata-ag/v1',
+        law_references: [
+          {
+            source_id: 'csc',
+            source: 'Código das Sociedades Comerciais',
+            article: '63',
+            citation: 'Código das Sociedades Comerciais, Artigo 63.º',
+          },
+        ],
+        default_body: [{ heading: 'Abertura', text: 'Texto derivado.' }],
+      },
+      body_markdown: '## Abertura\n\nTexto derivado.',
+    };
+    const normalized = templateSpecFromExport(exported);
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new TextEncoder().encode('%PDF-1.7 normalized'), {
+        headers: { 'Content-Type': 'application/pdf' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.previewTemplateDocumentPdf({
+      source: 'draft',
+      spec: normalized,
+      body_markdown: exported.body_markdown,
+    });
+
+    expect(normalized).toEqual({ ...SPEC, id: 'csc-ata-ag/v1' });
+    expect(normalized).not.toHaveProperty('law_references');
+    expect(normalized).not.toHaveProperty('default_body');
+    const request = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as {
+      spec: Record<string, unknown>;
+    };
+    expect(request.spec).not.toHaveProperty('law_references');
+    expect(request.spec).not.toHaveProperty('default_body');
   });
 
   it('posts a catalog source and preserves structured validation failures', async () => {

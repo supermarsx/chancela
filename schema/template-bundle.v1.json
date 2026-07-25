@@ -30,6 +30,7 @@
   "$defs": {
     "templateSpec": {
       "type": "object",
+      "additionalProperties": false,
       "description": "A Chancela template spec. The digested render identity of a template; the seed (default_body) is deliberately NOT part of it and is carried by the bundle's body_markdown instead.",
       "required": [
         "id",

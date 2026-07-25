@@ -8684,9 +8684,10 @@ enum PreparedImport {
 ///
 /// A body carrying a `format` key is an envelope: its `format`/`format_version` are gated (unknown
 /// major ⇒ reject, never transform), its `body_markdown` is checked as representable `md-block/v1`
-/// and folded into the spec's `default_body`. A body without a `format` key is a legacy bare spec,
-/// passed through unchanged. The seed non-empty/no-minijinja bar is applied downstream, uniformly
-/// for both shapes, on the resulting spec's `default_body`.
+/// and folded into the spec's `default_body`. Historical v1 exporters accidentally included the
+/// runtime-only `law_references`; v1 normalization discards them so validation recomputes the
+/// references from trusted authored fields. A body without a `format` key is a legacy bare spec,
+/// passed through unchanged (and therefore remains strict about unknown fields).
 fn prepare_template_import(body: &[u8]) -> PreparedImport {
     let raw = match std::str::from_utf8(body) {
         Ok(raw) => raw,
@@ -8778,6 +8779,10 @@ fn prepare_template_import(body: &[u8]) -> PreparedImport {
             message: "bundle spec must be a JSON object".to_owned(),
         });
     };
+    // Compatibility for bundles emitted by older v1 servers. These values were server-derived and
+    // are never trusted: discard them before the strict DTO parse, which recomputes them from the
+    // authored rule pack and blocks. Legacy bare specs do not receive this compatibility transform.
+    map.remove("law_references");
     if clauses.is_empty() {
         map.remove("default_body");
     } else {
@@ -9388,9 +9393,12 @@ pub async fn export_template(
             (value, clauses)
         };
 
-    // One seed representation: drop `default_body` from `spec`; it rides `body_markdown` alone.
+    // Export only the authored DTO shape. Runtime catalog specs additionally carry
+    // server-derived `law_references`, which the strict authoring DTO deliberately rejects and
+    // must never treat as trusted input. The seed likewise rides `body_markdown` alone.
     if let Value::Object(map) = &mut spec_value {
         map.remove("default_body");
+        map.remove("law_references");
     }
     let bundle = TemplateBundle {
         format: TEMPLATE_BUNDLE_FORMAT.to_owned(),
@@ -15129,8 +15137,8 @@ mod tests {
         assert_eq!(err.field.as_deref(), Some("body_markdown"));
     }
 
-    /// A built-in template exports a bundle whose seed rides `body_markdown` (the runtime spec
-    /// drops `default_body` on serialize), never inside `spec`.
+    /// A built-in template exports only the strict authored spec shape: the seed rides
+    /// `body_markdown`, and server-derived law references never enter the authoring/import path.
     #[tokio::test]
     async fn export_builtin_emits_bundle_carrying_the_seed() {
         let tmp = TempDir::new();
@@ -15157,6 +15165,16 @@ mod tests {
             bundle["spec"].get("default_body").is_none(),
             "the seed must not ride the spec half"
         );
+        assert!(
+            bundle["spec"].get("law_references").is_none(),
+            "server-derived law references must not ride the authored spec half"
+        );
+        let mut authored_spec = bundle["spec"].clone();
+        authored_spec["id"] = Value::String("user-exported-builtin/v1".to_owned());
+        validate_user_template(
+            &serde_json::to_string(&authored_spec).expect("serialize exported authored spec"),
+        )
+        .expect("the exported built-in spec enters strict authored validation");
         let md = bundle["body_markdown"]
             .as_str()
             .expect("body_markdown string");
@@ -15289,6 +15307,89 @@ mod tests {
             resp.status(),
             StatusCode::CREATED,
             "a legacy bare spec still imports"
+        );
+    }
+
+    /// Older v1 servers leaked runtime-derived legal references into the bundle spec. Accept that
+    /// historical envelope shape, discard the untrusted values, and let strict validation derive
+    /// the authoritative references again. A bare authored spec remains strict.
+    #[tokio::test]
+    async fn historical_v1_bundle_discards_runtime_law_references() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let mut spec: Value = serde_json::from_str(&valid_user_template_json()).expect("spec json");
+        spec["law_references"] = serde_json::json!([{
+            "source_id": "forged",
+            "source": "Untrusted",
+            "article": "999",
+            "citation": "Forged citation"
+        }]);
+
+        let bare_resp = import_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
+            Bytes::from(spec.to_string()),
+        )
+        .await
+        .expect("bare authored import returns a response");
+        assert_eq!(
+            bare_resp.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "bare authored JSON remains strict about runtime-only fields"
+        );
+
+        let bundle = serde_json::json!({
+            "format": "chancela.template-bundle",
+            "format_version": 1,
+            "spec": spec,
+            "body_markdown": ""
+        });
+        let resp = import_template(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery {
+                dry_run: false,
+                ..Default::default()
+            }),
+            Bytes::from(bundle.to_string()),
+        )
+        .await
+        .expect("historical v1 import");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template("user-encosto-ata/v1")
+            .expect("store read")
+            .expect("template row");
+        assert!(
+            !stored.contains("law_references"),
+            "runtime-only legal references are never persisted"
+        );
+        let validated = validate_user_template(&stored).expect("stored authored spec validates");
+        assert!(
+            validated
+                .law_references
+                .iter()
+                .any(|reference| reference.source_id == "csc"),
+            "authoritative references are recomputed from the rule pack"
+        );
+        assert!(
+            validated
+                .law_references
+                .iter()
+                .all(|reference| reference.source_id != "forged"),
+            "untrusted historical values are discarded"
         );
     }
 
@@ -15876,6 +15977,10 @@ mod tests {
         assert_eq!(
             props["format_version"]["const"],
             TEMPLATE_BUNDLE_FORMAT_VERSION
+        );
+        assert_eq!(
+            schema["$defs"]["templateSpec"]["additionalProperties"], false,
+            "the schema must advertise the authored DTO's strict unknown-field contract"
         );
 
         // A real exported bundle carries only keys the schema declares, and all required ones.
