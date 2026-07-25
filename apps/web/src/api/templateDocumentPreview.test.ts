@@ -54,6 +54,40 @@ describe('template document PDF preview API', () => {
     expect(result.preview_kind).toBe('structural-unresolved');
   });
 
+  it('returns complete server Markdown with the same proof classification', async () => {
+    const markdown = '# Ata n.º {{ ata_number }}\n\n## Ordem de trabalhos\n';
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(markdown, {
+        headers: {
+          'Content-Type': 'text/markdown; charset=utf-8',
+          'X-Chancela-Template-Preview': 'structural-unresolved',
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await api.previewTemplateDocumentMarkdown({
+      source: 'catalog',
+      template_id: 'csc-ata-ag/v1',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v1/templates/document/preview/markdown',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          source: 'catalog',
+          template_id: 'csc-ata-ag/v1',
+        }),
+      }),
+    );
+    expect(result).toEqual({
+      markdown,
+      content_type: 'text/markdown; charset=utf-8',
+      preview_kind: 'structural-unresolved',
+    });
+  });
+
   it('strips runtime-only fields from an older built-in export before draft preview', async () => {
     const exported = {
       format: 'chancela.template-bundle',

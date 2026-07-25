@@ -86,6 +86,7 @@ import type {
   TemplateBundleInput,
   PreviewTemplateBody,
   TemplateBodyPreviewResponse,
+  TemplateDocumentMarkdownPreviewResult,
   TemplateDocumentPreviewRequest,
   TemplateDocumentPreviewResult,
   ImportFromRegistryBody,
@@ -768,6 +769,27 @@ export async function postJsonArrayBuffer(
   return { data: await res.arrayBuffer(), headers: res.headers };
 }
 
+/** POST JSON and retain a successful UTF-8 text response plus its classification headers. */
+export async function postJsonText(
+  path: string,
+  body: unknown,
+): Promise<{ text: string; headers: Headers }> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(resolveApiUrl(path), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  handleUnauthorized(res, path);
+  if (!res.ok) {
+    await parseResponse<never>(res, path);
+    throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) });
+  }
+  return { text: await res.text(), headers: res.headers };
+}
+
 /**
  * The provider path segment for a credential record. Single-instance providers (CMD/SCAP)
  * are keyed by the empty provider id and use the literal `_` sentinel; CSC/PKCS#12 carry a
@@ -1251,6 +1273,16 @@ export const api = {
     return {
       data: response.data,
       content_type: response.headers.get('Content-Type') ?? 'application/pdf; profile=PDF/A-2u',
+      preview_kind: response.headers.get('X-Chancela-Template-Preview') ?? 'structural-unresolved',
+    };
+  },
+  previewTemplateDocumentMarkdown: async (
+    body: TemplateDocumentPreviewRequest,
+  ): Promise<TemplateDocumentMarkdownPreviewResult> => {
+    const response = await postJsonText('/v1/templates/document/preview/markdown', body);
+    return {
+      markdown: response.text,
+      content_type: response.headers.get('Content-Type') ?? 'text/markdown; charset=utf-8',
       preview_kind: response.headers.get('X-Chancela-Template-Preview') ?? 'structural-unresolved',
     };
   },

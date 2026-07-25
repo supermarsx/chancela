@@ -1346,6 +1346,13 @@ export interface TemplateDocumentPreviewResult {
   preview_kind: 'structural-unresolved' | string;
 }
 
+/** Complete Markdown emitted from the same unresolved document model as the PDF/A proof. */
+export interface TemplateDocumentMarkdownPreviewResult {
+  markdown: string;
+  content_type: string;
+  preview_kind: 'structural-unresolved' | string;
+}
+
 /**
  * The read model `useTemplateBundle` yields for the editor: the authored {@link TemplateSpec} (read
  * via `templateSpecFromExport`, which preserves the t48 fork crash-fix) plus the seed narrative

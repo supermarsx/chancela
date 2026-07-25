@@ -2491,6 +2491,12 @@ pub fn router(state: AppState) -> Router {
                 documents::TEMPLATE_DOCUMENT_PREVIEW_ENVELOPE_BYTES,
             )),
         )
+        .route(
+            "/v1/templates/document/preview/markdown",
+            post(documents::preview_template_document_markdown).layer(DefaultBodyLimit::max(
+                documents::TEMPLATE_DOCUMENT_PREVIEW_ENVELOPE_BYTES,
+            )),
+        )
         .route("/v1/ledger/events", get(ledger::list_ledger_events))
         .route(
             "/v1/ledger/events/page",

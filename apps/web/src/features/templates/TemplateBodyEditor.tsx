@@ -22,6 +22,7 @@ import {
 import { useActBodyT, bodyDiagnosticKey } from '../../i18n/actBodyFallback';
 import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
 import { Button, Icon, InlineWarning } from '../../ui';
+import { TemplateMarkdownPreview } from './TemplateMarkdownPreview';
 import { TemplatePdfPreview } from './TemplatePdfPreview';
 
 /** The narrative-body byte ceiling — the server's cap for a template body seed (mirrors the ata). */
@@ -33,7 +34,6 @@ export function placesNarrativeBody(blocks: TemplateSpec['blocks']): boolean {
 }
 
 type PreviewMode = 'pdf' | 'markdown';
-type CopyState = 'idle' | 'copied' | 'failed';
 
 export function TemplateBodyEditor({
   spec,
@@ -169,18 +169,8 @@ export function TemplateBodyPreview({
 }) {
   const bt = useTemplatesEditorT();
   const [previewMode, setPreviewMode] = useState<PreviewMode>('pdf');
-  const [copyState, setCopyState] = useState<CopyState>('idle');
   const previewId = useId();
-
-  async function copyMarkdown() {
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
-      await navigator.clipboard.writeText(value);
-      setCopyState('copied');
-    } catch {
-      setCopyState('failed');
-    }
-  }
+  const request = { source: 'draft' as const, spec, body_markdown: value };
 
   return (
     <section className="stack--tight template-preview" aria-labelledby={`${previewId}-title`}>
@@ -225,7 +215,7 @@ export function TemplateBodyPreview({
           aria-labelledby={`${previewId}-pdf-tab`}
         >
           <TemplatePdfPreview
-            request={{ source: 'draft', spec, body_markdown: value }}
+            request={request}
             idPrefix={`${idPrefix}-pdf`}
             downloadFilename={`${spec.id || 'template'}-structural-preview.pdf`}
           />
@@ -237,30 +227,7 @@ export function TemplateBodyPreview({
           role="tabpanel"
           aria-labelledby={`${previewId}-markdown-tab`}
         >
-          <div className="template-preview__markdown-head">
-            <p className="field__hint">{bt('templates.editor.preview.markdown.note')}</p>
-            <Button
-              type="button"
-              variant="secondary"
-              icon={<Icon.Copy />}
-              onClick={() => void copyMarkdown()}
-            >
-              {bt(
-                copyState === 'copied'
-                  ? 'templates.editor.preview.markdown.copied'
-                  : copyState === 'failed'
-                    ? 'templates.editor.preview.markdown.copyFailed'
-                    : 'templates.editor.preview.markdown.copy',
-              )}
-            </Button>
-          </div>
-          <pre
-            className="template-preview__markdown-source"
-            aria-label={bt('templates.editor.preview.markdown.sourceLabel')}
-            tabIndex={0}
-          >
-            <code>{value}</code>
-          </pre>
+          <TemplateMarkdownPreview request={request} idPrefix={`${idPrefix}-markdown`} />
         </div>
       )}
     </section>

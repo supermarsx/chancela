@@ -45,6 +45,18 @@ vi.mock('./TemplatePdfPreview', () => ({
   ),
 }));
 
+vi.mock('./TemplateMarkdownPreview', () => ({
+  TemplateMarkdownPreview: ({ request }: { request: unknown }) => (
+    <pre
+      aria-label="Pré-visualização Markdown estrutural completa"
+      data-testid="real-template-markdown-preview"
+      data-request={JSON.stringify(request)}
+    >
+      # Documento estrutural completo
+    </pre>
+  ),
+}));
+
 const BUILTIN: TemplateSummary = {
   id: 'assoc-convocatoria-ga/v1',
   family: 'Association',
@@ -187,7 +199,7 @@ describe('TemplateDetailPage', () => {
     expect(await screen.findByText('Pré-visualização do modelo')).toBeTruthy();
     expect(
       screen.getByText(
-        'Escolha uma vista de cada vez: o PDF é a prova estrutural real gerada pelo servidor e o Markdown é a origem exata guardada. Os campos substituíveis permanecem por preencher.',
+        'Escolha uma vista de cada vez: PDF e Markdown são provas estruturais completas geradas pelo servidor a partir do mesmo modelo. Os campos substituíveis permanecem por preencher.',
       ),
     ).toBeTruthy();
     const pdf = await screen.findByTestId('real-template-pdf-preview');
@@ -199,11 +211,11 @@ describe('TemplateDetailPage', () => {
       'assoc-convocatoria-ga/v1-structural-preview.pdf',
     );
     expect(screen.getByRole('tab', { name: 'PDF' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.queryByLabelText('Origem body_markdown')).toBeNull();
+    expect(screen.queryByLabelText('Pré-visualização Markdown estrutural completa')).toBeNull();
     expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
   });
 
-  it('switches exclusively to the exact stored Markdown source', async () => {
+  it('switches exclusively to the complete server Markdown representation', async () => {
     const bodyMarkdown =
       '# Corpo de {{ entity.name }}\n\nTexto para **{{ meeting_date | long_date }}**.';
     const bundleStub = ((input: RequestInfo | URL) => {
@@ -235,9 +247,13 @@ describe('TemplateDetailPage', () => {
 
     screen.getByRole('tab', { name: 'Markdown' }).click();
 
-    const source = await screen.findByLabelText('Origem body_markdown');
+    const source = await screen.findByLabelText('Pré-visualização Markdown estrutural completa');
     expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
-    expect(source.textContent).toBe(bodyMarkdown);
+    expect(source.textContent).toContain('Documento estrutural completo');
+    expect(JSON.parse(source.getAttribute('data-request') ?? '{}')).toEqual({
+      source: 'catalog',
+      template_id: BUILTIN.id,
+    });
     expect(screen.getByRole('tab', { name: 'Markdown' }).getAttribute('aria-selected')).toBe(
       'true',
     );

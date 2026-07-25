@@ -9761,6 +9761,73 @@ async fn resolve_catalog_template_preview(
     Ok((spec, body_markdown))
 }
 
+/// Prepare the one unresolved [`DocumentModel`] shared by every template-document preview format.
+///
+/// The outer `Result` carries authorization/store failures. The inner response carries the same
+/// save-equivalent `422` diagnostics already returned by the PDF preview, so adding another
+/// representation cannot accidentally accept a draft the PDF path rejects.
+async fn prepare_template_document_preview_model(
+    state: &AppState,
+    request: PreviewTemplateDocument,
+) -> Result<Result<DocumentModel, Response>, ApiError> {
+    let (spec, body_markdown) = match request {
+        PreviewTemplateDocument::Draft {
+            spec,
+            body_markdown,
+        } => match prepare_draft_template_preview(spec, body_markdown) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                return Ok(Err(
+                    (StatusCode::UNPROCESSABLE_ENTITY, Json(error)).into_response()
+                ));
+            }
+        },
+        PreviewTemplateDocument::Catalog { template_id } => {
+            resolve_catalog_template_preview(state, template_id).await?
+        }
+    };
+
+    let narrative = match chancela_templates::markdown::compile_markdown(&body_markdown) {
+        Ok(blocks) => blocks,
+        Err(error) => {
+            return Ok(Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(TemplateBodyPreviewError {
+                    code: error.code(),
+                    offset: error.offset(),
+                    message: error.to_string(),
+                }),
+            )
+                .into_response()));
+        }
+    };
+
+    Ok(Ok(structural_template_preview_model(&spec, &narrative)))
+}
+
+/// Render the unresolved template proof as a complete Markdown document.
+///
+/// Every user-authored value is escaped by the same hardened emitter used for working-copy
+/// exports. In particular, raw HTML, headings, lists, table delimiters and emphasis supplied by a
+/// template cannot inject Markdown structure. `append_blocks_markdown` preserves the prepared
+/// model's block order and typed representation, including tables, signature slots, rules and page
+/// breaks.
+fn structural_template_preview_markdown(model: &DocumentModel) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("# {}\n\n", escape_markdown_text(&model.title)));
+    if !model.subject.trim().is_empty() {
+        out.push_str(&format!("_{}_\n\n", escape_markdown_text(&model.subject)));
+    }
+    if !model.entity_name.trim().is_empty() {
+        out.push_str(&format!(
+            "**Modelo:** {}\n\n",
+            escape_markdown_text(&model.entity_name)
+        ));
+    }
+    append_blocks_markdown(&mut out, &model.blocks);
+    out
+}
+
 /// `POST /v1/templates/document/preview` — produce a real, ephemeral PDF/A-2u proof from either an
 /// unsaved draft or a catalog template.
 ///
@@ -9781,36 +9848,10 @@ pub async fn preview_template_document(
 ) -> Result<Response, ApiError> {
     require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
 
-    let (spec, body_markdown) = match request {
-        PreviewTemplateDocument::Draft {
-            spec,
-            body_markdown,
-        } => match prepare_draft_template_preview(spec, body_markdown) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(error)).into_response());
-            }
-        },
-        PreviewTemplateDocument::Catalog { template_id } => {
-            resolve_catalog_template_preview(&state, template_id).await?
-        }
+    let model = match prepare_template_document_preview_model(&state, request).await? {
+        Ok(model) => model,
+        Err(response) => return Ok(response),
     };
-
-    let narrative = match chancela_templates::markdown::compile_markdown(&body_markdown) {
-        Ok(blocks) => blocks,
-        Err(error) => {
-            return Ok((
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(TemplateBodyPreviewError {
-                    code: error.code(),
-                    offset: error.offset(),
-                    message: error.to_string(),
-                }),
-            )
-                .into_response());
-        }
-    };
-    let model = structural_template_preview_model(&spec, &narrative);
     let bytes = chancela_doc::pdfa::write(&model)
         .map_err(|error| ApiError::Internal(format!("template PDF/A preview failed: {error}")))?;
 
@@ -9826,6 +9867,43 @@ pub async fn preview_template_document(
         .body(Body::from(bytes))
         .map_err(|error| {
             ApiError::Internal(format!("template PDF/A preview response failed: {error}"))
+        })
+}
+
+/// `POST /v1/templates/document/preview/markdown` — render the same complete, unresolved template
+/// [`DocumentModel`] used by [`preview_template_document`] as Markdown.
+///
+/// The request body, validation, `act.read@Global` permission and structural-proof classification
+/// are identical to the PDF endpoint. The successful body is UTF-8 `text/markdown`, not a JSON
+/// wrapper, so it can be displayed or downloaded without interpreting user-controlled HTML. Empty
+/// `body_markdown` does not imply an empty response: authored prose in `spec.blocks` remains present.
+pub async fn preview_template_document_markdown(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(request): Json<PreviewTemplateDocument>,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
+
+    let model = match prepare_template_document_preview_model(&state, request).await? {
+        Ok(model) => model,
+        Err(response) => return Ok(response),
+    };
+    let markdown = structural_template_preview_markdown(&model);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/markdown; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(
+            header::CONTENT_DISPOSITION,
+            "inline; filename=\"template-structural-preview.md\"",
+        )
+        .header("x-chancela-template-preview", TEMPLATE_PREVIEW_KIND)
+        .body(Body::from(markdown))
+        .map_err(|error| {
+            ApiError::Internal(format!(
+                "template Markdown preview response failed: {error}"
+            ))
         })
 }
 
@@ -11066,6 +11144,54 @@ mod tests {
         assert!(
             !html.starts_with("%PDF-"),
             "working-copy HTML is not canonical PDF bytes"
+        );
+    }
+
+    #[test]
+    fn structural_template_markdown_escapes_content_and_preserves_typed_block_order() {
+        let (_, _, mut model) = export_fixture();
+        model.blocks.push(Block::Rule);
+        model.blocks.push(Block::PageBreak);
+
+        let markdown = structural_template_preview_markdown(&model);
+
+        assert!(markdown.contains("# Ata \\<Especial>"));
+        assert!(
+            markdown.contains("**\\<script>alert(1)\\</script>**"),
+            "raw HTML-looking prose is escaped before Markdown emission"
+        );
+        assert!(
+            !markdown.contains("<script>alert(1)</script>"),
+            "template prose cannot inject raw HTML"
+        );
+        assert!(markdown.contains("| Field | Value |"));
+        assert!(markdown.contains("| Item | Favor | Against | Abstain |"));
+        assert!(markdown.contains("## Signature slots"));
+        assert!(markdown.contains("---\n\n<!-- page break -->"));
+
+        let heading = markdown.find("## Deliberação").expect("heading emitted");
+        let paragraph = markdown.find("Aprovado por").expect("paragraph emitted");
+        let key_value = markdown
+            .find("| Field | Value |")
+            .expect("key/value emitted");
+        let vote = markdown
+            .find("| Item | Favor | Against | Abstain |")
+            .expect("vote table emitted");
+        let signatures = markdown
+            .find("## Signature slots")
+            .expect("signature slots emitted");
+        let rule = markdown.rfind("---\n\n").expect("rule emitted");
+        let page_break = markdown
+            .find("<!-- page break -->")
+            .expect("page break emitted");
+        assert!(
+            heading < paragraph
+                && paragraph < key_value
+                && key_value < vote
+                && vote < signatures
+                && signatures < rule
+                && rule < page_break,
+            "Markdown follows the DocumentModel block order"
         );
     }
 
@@ -15886,6 +16012,74 @@ mod tests {
         .await
         .expect_err("an actor without act.read may not preview");
         assert!(matches!(forbidden, ApiError::Forbidden(_)));
+    }
+
+    #[tokio::test]
+    async fn template_document_markdown_preview_renders_block_authored_catalog_template() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_reader_actor(&state).await;
+        let shipped = registry()
+            .get("csc-ata-ag/v1")
+            .expect("normal ATA template ships");
+        let body_markdown = seed_clauses_to_markdown(shipped.default_body());
+        assert!(
+            body_markdown.is_empty(),
+            "this regression requires a real block-authored template with no narrative seed"
+        );
+
+        let response = preview_template_document_markdown(
+            State(state),
+            actor,
+            Json(PreviewTemplateDocument::Catalog {
+                template_id: shipped.id.clone(),
+            }),
+        )
+        .await
+        .expect("catalog Markdown preview succeeds");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/markdown; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get("x-chancela-template-preview")
+                .unwrap(),
+            TEMPLATE_PREVIEW_KIND
+        );
+
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("Markdown response bytes");
+        let markdown = String::from_utf8(bytes.to_vec()).expect("UTF-8 Markdown");
+        assert!(!markdown.trim().is_empty());
+        assert!(
+            markdown.contains("# Ata n.º {{ ata\\_number }}"),
+            "raw Markdown escapes the underscore while rendering the unresolved token visibly"
+        );
+        assert!(markdown.contains("Ordem de trabalhos"));
+        assert!(markdown.contains("Deliberações"));
+        assert!(markdown.contains("Nada mais havendo a tratar"));
+        assert!(markdown.contains("## Signature slots"));
+        assert!(
+            markdown.contains("Tabela de votação (dados por resolver)"),
+            "the unresolved vote structure remains visible without invented counts"
+        );
+
+        let narrative =
+            chancela_templates::markdown::compile_markdown(&body_markdown).expect("empty body");
+        let model = structural_template_preview_model(shipped, &narrative);
+        assert_eq!(
+            markdown,
+            structural_template_preview_markdown(&model),
+            "Markdown and PDF consume the same unresolved DocumentModel"
+        );
     }
 
     #[tokio::test]

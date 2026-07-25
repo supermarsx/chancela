@@ -1657,6 +1657,14 @@ export function useTemplateDocumentPdfPreview() {
   });
 }
 
+/** Produce the complete Markdown representation from the PDF preview's unresolved model. */
+export function useTemplateDocumentMarkdownPreview() {
+  return useMutation({
+    mutationFn: (request: TemplateDocumentPreviewRequest) =>
+      api.previewTemplateDocumentMarkdown(request),
+  });
+}
+
 /**
  * Import a template (`POST /v1/templates/import`, wp23). `dryRun` returns a validation verdict
  * WITHOUT persisting (the import dialog's preflight); a committed import behaves like create

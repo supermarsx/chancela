@@ -61,6 +61,22 @@ vi.mock('./TemplatePdfPreview', () => ({
   ),
 }));
 
+vi.mock('./TemplateMarkdownPreview', () => ({
+  TemplateMarkdownPreview: ({
+    request,
+  }: {
+    request: { source: string; spec: { id: string }; body_markdown: string };
+  }) => (
+    <pre
+      aria-label="Pré-visualização Markdown estrutural completa"
+      data-template-id={request.spec.id}
+      data-body-markdown={request.body_markdown}
+    >
+      {`# Documento completo\n\n${request.body_markdown}`}
+    </pre>
+  ),
+}));
+
 const BUILTIN: TemplateSummary = {
   id: 'csc-ata-ag/v1',
   family: 'CommercialCompany',
@@ -423,7 +439,7 @@ describe('TemplateCreatePage', () => {
     expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull();
   });
 
-  it('mounts one honest preview at a time and exposes the exact markdown source with Copy', async () => {
+  it('mounts one honest preview at a time and sends the complete draft to Markdown rendering', async () => {
     const { fn } = stubFetch([], {
       previewBlocks: [{ type: 'Heading', level: 2, text: 'Ata n.º {{ ata_number }}' }],
     });
@@ -450,15 +466,10 @@ describe('TemplateCreatePage', () => {
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Markdown' }));
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
     expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
-    const source = screen.getByLabelText('Origem body_markdown');
-    expect(source.textContent).toBe('## Ata\n\nTexto {{ literal }}.');
-    expect(screen.getByText(/exatamente a origem body_markdown guardada/)).toBeTruthy();
-
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
-    fireEvent.click(screen.getByRole('button', { name: 'Copiar Markdown' }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('## Ata\n\nTexto {{ literal }}.'));
-    expect(screen.getByRole('button', { name: 'Markdown copiado' })).toBeTruthy();
+    const source = screen.getByLabelText('Pré-visualização Markdown estrutural completa');
+    expect(source.textContent).toContain('# Documento completo');
+    expect(source.textContent).toContain('## Ata\n\nTexto {{ literal }}.');
+    expect(source.getAttribute('data-body-markdown')).toBe('## Ata\n\nTexto {{ literal }}.');
   });
 
   it('edits every structured variant in document order while Properties stays metadata-only', async () => {
@@ -542,7 +553,9 @@ describe('TemplateCreatePage', () => {
       target: { value: '## Corpo compilado' },
     });
     fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
-    expect(screen.getByLabelText('Origem body_markdown').textContent).toBe('## Corpo compilado');
+    expect(
+      screen.getByLabelText('Pré-visualização Markdown estrutural completa').textContent,
+    ).toContain('## Corpo compilado');
     expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));

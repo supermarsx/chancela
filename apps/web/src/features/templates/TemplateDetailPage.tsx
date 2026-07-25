@@ -52,6 +52,7 @@ import { TemplateEditPage } from './TemplateEditPage';
 import { templateIdBase, templateIdVersion } from './templateFork';
 import { hasTemplateName, templateDisplayName } from './templateNames';
 import { templatePlaceholders } from './templatePlaceholders';
+import { TemplateMarkdownPreview } from './TemplateMarkdownPreview';
 import { TemplatePdfPreview } from './TemplatePdfPreview';
 import { useTemplateEditor } from './useTemplateEditor';
 import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
@@ -123,17 +124,7 @@ function blockSummary(block: TemplateBlockSpec): string {
 }
 
 /** One read-only representation at a time: the real server PDF/A proof or exact Markdown source. */
-function TemplateDetailPreview({
-  template,
-  bodyMarkdown,
-  markdownLoading,
-  markdownError,
-}: {
-  template: TemplateSummary;
-  bodyMarkdown: string | undefined;
-  markdownLoading: boolean;
-  markdownError: unknown;
-}) {
+function TemplateDetailPreview({ template }: { template: TemplateSummary }) {
   const bt = useTemplatesEditorT();
   const [mode, setMode] = useState<'pdf' | 'markdown'>('pdf');
   const previewId = useId();
@@ -187,24 +178,11 @@ function TemplateDetailPreview({
           role="tabpanel"
           aria-labelledby={`${previewId}-markdown-tab`}
         >
-          <div className="template-preview__markdown-head">
-            <p className="field__hint">{bt('templates.editor.preview.markdown.note')}</p>
-          </div>
-          {markdownLoading ? (
-            <Skeleton height="14rem" />
-          ) : markdownError ? (
-            <p className="muted">{String(markdownError)}</p>
-          ) : bodyMarkdown ? (
-            <pre
-              className="template-preview__markdown-source"
-              aria-label={bt('templates.editor.preview.markdown.sourceLabel')}
-              tabIndex={0}
-            >
-              <code>{bodyMarkdown}</code>
-            </pre>
-          ) : (
-            <p className="muted">{bt('templates.editor.preview.empty')}</p>
-          )}
+          <TemplateMarkdownPreview
+            request={{ source: 'catalog', template_id: template.id }}
+            debounceMs={0}
+            idPrefix={`${previewId}-catalog-markdown`}
+          />
         </div>
       )}
     </section>
@@ -397,12 +375,7 @@ export function TemplateDetailPage() {
         {section === 'preview' ? (
           <Card title={ct('templates.catalog.preview.title')}>
             <p className="field__hint">{ct('templates.catalog.preview.hint')}</p>
-            <TemplateDetailPreview
-              template={template}
-              bodyMarkdown={bundle.data?.body_markdown}
-              markdownLoading={bundle.isLoading}
-              markdownError={bundle.error}
-            />
+            <TemplateDetailPreview template={template} />
           </Card>
         ) : null}
 
