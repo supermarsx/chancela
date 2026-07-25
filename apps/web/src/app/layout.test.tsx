@@ -136,9 +136,11 @@ describe('Layout', () => {
       ['/'],
     );
 
-    // The masthead is gone; the brand now lives in the fixed secondary tab bar (rendered
-    // once the AuthGate resolves the active session).
-    expect(await screen.findByText('Chancela')).toBeTruthy();
+    // Wait for guarded content, not merely the wordmark: the compact boot screen also carries
+    // "Chancela" while the session resolves.
+    expect(await screen.findByText('painel')).toBeTruthy();
+    // The masthead is gone; the brand now lives in the fixed secondary tab bar.
+    expect(screen.getByText('Chancela')).toBeTruthy();
     // Eight pinned surfaces: four text tabs plus the four utility glyphs. The standalone Operações
     // text tab is gone — its surface folded into Administração (t36) — and the Administração glyph
     // appears here because the standard test context grants every permission (see canAdmin).

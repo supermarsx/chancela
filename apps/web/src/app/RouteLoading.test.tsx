@@ -113,7 +113,7 @@ describe('RouteLoading', () => {
 });
 
 describe('AuthGate boot', () => {
-  it('skeletons the boot panel and announces it exactly once', () => {
+  it('shows the compact branded progress bar and announces it exactly once', () => {
     render(
       <Wrapper>
         <AuthGate>
@@ -127,6 +127,8 @@ describe('AuthGate boot', () => {
     const regions = screen.getAllByRole('status');
     expect(regions.length).toBe(1);
     expect(regions[0].getAttribute('aria-busy')).toBe('true');
-    expect(regions[0].querySelector('.skeleton')).toBeTruthy();
+    expect(regions[0].querySelector('.gate-boot__brand')).toBeTruthy();
+    expect(regions[0].querySelector('.skeleton')).toBeNull();
+    expect(screen.getByRole('progressbar', { name: 'A carregar…' })).toBeTruthy();
   });
 });
