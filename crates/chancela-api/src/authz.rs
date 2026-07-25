@@ -818,10 +818,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/templates/import", RouteClass::Gated), // POST template.manage@Global (dry_run preflight = read-only)
     ("/v1/templates/body/preview", RouteClass::Gated), // POST act.read@Global (stateless md-block compile, never writes)
     ("/v1/templates/document/preview", RouteClass::Gated), // POST act.read@Global (stateless PDF/A proof, never writes)
-    (
-        "/v1/templates/document/preview/markdown",
-        RouteClass::Gated,
-    ), // POST act.read@Global (same unresolved model rendered as Markdown, never writes)
+    ("/v1/templates/document/preview/markdown", RouteClass::Gated), // POST act.read@Global (same unresolved model rendered as Markdown, never writes)
     // --- Ledger ---------------------------------------------------------------------------------
     ("/v1/ledger/events", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/events/page", RouteClass::Gated), // GET ledger.read@Global
