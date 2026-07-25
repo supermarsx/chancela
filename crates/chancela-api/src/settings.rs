@@ -32,7 +32,7 @@ use chancela_cmd::{CmdBasicAuth, CmdConfig, CmdEnv};
 use chancela_connectors::{
     ALLOWED_HOSTS_ENV, MAX_RUNTIME_ALLOWLIST_ENTRIES, NetworkPolicy, RuntimeAllowlist,
 };
-use chancela_core::NumberingScheme;
+use chancela_core::{DocumentLayoutPolicy, NumberingScheme};
 use chancela_csc::{CscAuthorization, CscConfig, CscSecrets};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -1552,6 +1552,9 @@ pub struct DocumentSettings {
     pub locale: Locale,
     /// Default numbering scheme proposed when opening a new book.
     pub numbering_scheme_default: NumberingScheme,
+    /// Concrete instance-wide document layout. Templates and future entity/book policies inherit
+    /// from these product-reset values unless they author a bounded override.
+    pub layout_defaults: DocumentLayoutPolicy,
 }
 
 impl Default for DocumentSettings {
@@ -1559,6 +1562,7 @@ impl Default for DocumentSettings {
         DocumentSettings {
             locale: Locale::default(),
             numbering_scheme_default: NumberingScheme::Sequential,
+            layout_defaults: DocumentLayoutPolicy::default(),
         }
     }
 }
@@ -2373,6 +2377,9 @@ impl Settings {
     /// values are already validated by deserialization; this covers `texture_intensity`'s
     /// numeric range and the trust-service URLs. Returns `422` on any violation.
     pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        self.documents.layout_defaults.validate().map_err(|error| {
+            ApiError::Unprocessable(format!("documents.layout_defaults: {error}"))
+        })?;
         if !(1..=MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS)
             .contains(&self.ui.external_signature_notice_snooze_days)
         {
@@ -3284,6 +3291,25 @@ fn signing_policy_changed(previous: &SigningSettings, next: &SigningSettings) ->
     policy(previous) != policy(next)
 }
 
+/// Preserve a newly-added nested setting when an older whole-document client omits it.
+///
+/// `DocumentSettings` must still serde-default an old persisted JSON document to the product
+/// policy. A live stale client is different: it read a concrete configured policy before an
+/// upgrade, cannot echo the unknown key, and must not reset it merely by saving another tab.
+fn carry_forward_omitted_document_layout(
+    raw: &serde_json::Value,
+    previous: &Settings,
+    next: &mut Settings,
+) {
+    if raw
+        .get("documents")
+        .and_then(|documents| documents.get("layout_defaults"))
+        .is_none()
+    {
+        next.documents.layout_defaults = previous.documents.layout_defaults.clone();
+    }
+}
+
 /// `PUT /v1/settings` — replace the whole settings document.
 ///
 /// The body is the entire [`Settings`] document. It is parsed leniently (missing fields
@@ -3334,6 +3360,7 @@ pub async fn put_settings(
     {
         settings.platform.public_base_url = previous.platform.public_base_url.clone();
     }
+    carry_forward_omitted_document_layout(&raw, &previous, &mut settings);
     let raw_ui = raw.get("ui");
     if raw_ui
         .and_then(|ui| ui.get("external_signature_notice_snooze_days"))
@@ -3555,6 +3582,99 @@ mod tests {
             count, 14,
             "the shipped locale set changed; update the email catalogs too"
         );
+    }
+
+    #[test]
+    fn document_layout_defaults_are_concrete_and_backward_compatible() {
+        let product = DocumentLayoutPolicy::default();
+        let settings: Settings =
+            serde_json::from_str(r#"{"schema_version":1}"#).expect("legacy settings");
+
+        assert_eq!(settings.documents.layout_defaults, product);
+        settings
+            .documents
+            .layout_defaults
+            .validate()
+            .expect("product layout validates");
+
+        let wire = serde_json::to_value(settings).expect("settings serialize");
+        assert_eq!(
+            wire["documents"]["layout_defaults"],
+            serde_json::to_value(DocumentLayoutPolicy::default()).expect("layout serializes")
+        );
+    }
+
+    #[test]
+    fn stale_settings_clients_carry_forward_layout_but_explicit_values_replace_it() {
+        let mut previous = Settings::default();
+        previous
+            .documents
+            .layout_defaults
+            .typography
+            .body_font_size_pt = 12;
+        previous
+            .documents
+            .layout_defaults
+            .validate()
+            .expect("configured prior policy validates");
+
+        let stale_raw = serde_json::json!({
+            "documents": {
+                "locale": "pt-PT",
+                "numbering_scheme_default": "Sequential"
+            }
+        });
+        let mut stale_next: Settings =
+            serde_json::from_value(stale_raw.clone()).expect("stale client document parses");
+        assert_eq!(
+            stale_next
+                .documents
+                .layout_defaults
+                .typography
+                .body_font_size_pt,
+            11,
+            "serde alone applies the product default"
+        );
+        carry_forward_omitted_document_layout(&stale_raw, &previous, &mut stale_next);
+        assert_eq!(
+            stale_next.documents.layout_defaults, previous.documents.layout_defaults,
+            "an omitted unknown field carries the stored concrete policy forward"
+        );
+
+        let explicit_raw = serde_json::json!({
+            "documents": {
+                "layout_defaults": DocumentLayoutPolicy::default()
+            }
+        });
+        let mut explicit_next: Settings =
+            serde_json::from_value(explicit_raw.clone()).expect("explicit policy parses");
+        carry_forward_omitted_document_layout(&explicit_raw, &previous, &mut explicit_next);
+        assert_eq!(
+            explicit_next.documents.layout_defaults,
+            DocumentLayoutPolicy::default(),
+            "an explicit product reset must not be mistaken for omission"
+        );
+    }
+
+    #[test]
+    fn settings_reject_invalid_document_layout_policy_through_core_validation() {
+        let mut settings = Settings::default();
+        settings
+            .documents
+            .layout_defaults
+            .typography
+            .body_font_size_pt = 7;
+
+        let error = settings
+            .validate()
+            .expect_err("core-bounded body font size must be rejected");
+        match error {
+            ApiError::Unprocessable(message) => {
+                assert!(message.contains("documents.layout_defaults"), "{message}");
+                assert!(message.contains("BodyFontSizePt"), "{message}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

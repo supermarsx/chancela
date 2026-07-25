@@ -26,8 +26,9 @@
 //! the same `spec` + `ctx` always serialize byte-identically (regeneration/re-verification, D3).
 
 use chancela_core::{
-    Block, DocumentModel, EntityFamily, KvRow, LifecycleStage, MeetingChannel, Run,
-    SignaturePolicyHint, SignatureSlot, VoteRow,
+    Block, DocumentLayoutOverrides, DocumentLayoutPolicy, DocumentLayoutValidationError,
+    DocumentModel, EntityFamily, KvRow, LifecycleStage, MeetingChannel, Run, SignaturePolicyHint,
+    SignatureSlot, VoteRow, resolve_document_layout,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -76,6 +77,11 @@ pub struct TemplateSpec {
     pub blocks: Vec<BlockSpec>,
     /// The locale the prose is authored in (v1: `"pt-PT"`, UX-21).
     pub locale: String,
+    /// Optional authored document-layout delta. Absence means the template inherits the concrete
+    /// instance defaults; it is omitted from JSON so every pre-layout canonical spec stays
+    /// byte-identical. When present it is part of the template's render identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_layout_override: Option<DocumentLayoutOverrides>,
     /// The editable **seed body** an instrument (a termo — and, later, an ata) is drafted with
     /// before an operator fills it in. Empty for templates with no fillable body.
     ///
@@ -350,6 +356,9 @@ struct TemplateSpecDto {
     rule_pack_id: String,
     blocks: Vec<BlockSpec>,
     locale: String,
+    /// Optional authored layout delta. Missing in every historical/built-in asset means inherit.
+    #[serde(default)]
+    document_layout_override: Option<DocumentLayoutOverrides>,
     /// The editable seed body. Optional in the asset: a template with no fillable body simply
     /// omits it and gets an empty seed.
     #[serde(default)]
@@ -369,6 +378,7 @@ impl From<TemplateSpecDto> for TemplateSpec {
             law_references,
             blocks: dto.blocks,
             locale: dto.locale,
+            document_layout_override: dto.document_layout_override,
             default_body: dto.default_body,
         }
     }
@@ -598,6 +608,15 @@ pub enum RegistryError {
         #[source]
         source: serde_json::Error,
     },
+    /// A parsed asset authored an override that cannot resolve over the product base.
+    #[error("template asset {asset} has an invalid document layout: {source}")]
+    InvalidDocumentLayout {
+        /// Asset name from the generated manifest.
+        asset: String,
+        /// The bounded core-policy failure.
+        #[source]
+        source: DocumentLayoutValidationError,
+    },
 }
 
 /// Errors from rendering a [`TemplateSpec`] into a [`DocumentModel`].
@@ -609,6 +628,9 @@ pub enum RenderError {
     /// The record context was missing a field the renderer required (e.g. the document title).
     #[error("missing context field: {0}")]
     MissingField(String),
+    /// The template's authored document-layout override was outside the bounded core policy.
+    #[error("invalid document layout: {0}")]
+    InvalidDocumentLayout(String),
 }
 
 /// Load the embedded template catalog (§3.2): parse every `assets/*.json`, reject duplicate ids,
@@ -628,6 +650,16 @@ fn registry_from(assets: &[(&str, &str)]) -> Result<Registry, RegistryError> {
                 source,
             })?;
         let spec: TemplateSpec = dto.into();
+        resolve_document_layout(
+            &DocumentLayoutPolicy::default(),
+            spec.document_layout_override.as_ref(),
+            None,
+            None,
+        )
+        .map_err(|source| RegistryError::InvalidDocumentLayout {
+            asset: (*name).to_string(),
+            source,
+        })?;
         if specs.iter().any(|s| s.id == spec.id) {
             return Err(RegistryError::DuplicateId(spec.id));
         }
@@ -702,6 +734,14 @@ pub fn render_with_body(
         .get("created_at")
         .and_then(Value::as_str)
         .map(str::to_string);
+    let document_layout = resolve_document_layout(
+        &DocumentLayoutPolicy::default(),
+        spec.document_layout_override.as_ref(),
+        None,
+        None,
+    )
+    .map_err(|error| RenderError::InvalidDocumentLayout(error.to_string()))?
+    .policy;
 
     let mut doc = DocumentModel {
         title,
@@ -710,6 +750,7 @@ pub fn render_with_body(
         subject,
         language: spec.locale.clone(),
         created_at,
+        document_layout,
         blocks: Vec::new(),
     };
 
@@ -1207,6 +1248,74 @@ mod tests {
         assert!(
             !canonical.contains("default_body"),
             "the seed body must not enter the canonical (digested) spec: {canonical}"
+        );
+    }
+
+    #[test]
+    fn shipped_templates_without_layout_overrides_keep_their_canonical_shape() {
+        let registry = load_registry().expect("registry loads");
+        for spec in registry.specs() {
+            assert!(
+                spec.document_layout_override.is_none(),
+                "{} unexpectedly authors a layout override",
+                spec.id
+            );
+            let canonical = canonical_spec_json(spec).expect("canonical spec serializes");
+            assert!(
+                !canonical.contains("document_layout_override"),
+                "{}: an absent additive layout field must not drift existing canonical bytes",
+                spec.id
+            );
+        }
+    }
+
+    #[test]
+    fn template_bundle_schema_describes_the_additive_layout_override() {
+        let schema: Value =
+            serde_json::from_str(include_str!("../../../schema/template-bundle.v1.json"))
+                .expect("published template bundle schema is valid JSON");
+        assert!(
+            schema["$defs"]["templateSpec"]["required"]
+                .as_array()
+                .expect("required list")
+                .iter()
+                .all(|field| field != "document_layout_override"),
+            "the additive override must remain optional"
+        );
+        assert_eq!(
+            schema["$defs"]["templateSpec"]["properties"]["document_layout_override"]["oneOf"][0]["$ref"],
+            "#/$defs/documentLayoutOverride"
+        );
+        assert_eq!(
+            schema["$defs"]["documentTypographyOverride"]["properties"]["body_font_size_pt"]["minimum"],
+            8
+        );
+        assert_eq!(
+            schema["$defs"]["documentTypographyOverride"]["properties"]["body_font_size_pt"]["maximum"],
+            18
+        );
+        assert_eq!(
+            schema["$defs"]["documentLayoutOverride"]["additionalProperties"],
+            false
+        );
+
+        let mut spec = load_registry()
+            .expect("registry loads")
+            .get("csc-ata-ag/v1")
+            .expect("template exists")
+            .clone();
+        spec.document_layout_override = Some(
+            serde_json::from_value(serde_json::json!({
+                "typography": { "body_font_size_pt": 12 }
+            }))
+            .expect("schema example parses through the core DTO"),
+        );
+        assert_eq!(
+            serde_json::to_value(spec)
+                .expect("template serializes")
+                .pointer("/document_layout_override/typography/body_font_size_pt"),
+            Some(&serde_json::json!(12)),
+            "the published property is the one emitted by TemplateSpec"
         );
     }
 
@@ -1725,6 +1834,20 @@ mod tests {
     }
 
     #[test]
+    fn loader_rejects_a_builtin_asset_with_an_invalid_layout_override() {
+        let invalid = r#"{"id":"invalid-layout/v1","family":"Association","stage":"Ata",
+            "channels":[],"signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1",
+            "locale":"pt-PT","document_layout_override":{
+                "page":{"size":"A5","margins_mm":{"left":30,"right":30}}
+            },"blocks":[{"kind":"Paragraph","template":"Ata."}]}"#;
+        let error = registry_from(&[("invalid-layout", invalid)]).expect_err("layout must fail");
+        assert!(matches!(
+            error,
+            RegistryError::InvalidDocumentLayout { asset, .. } if asset == "invalid-layout"
+        ));
+    }
+
+    #[test]
     fn authored_catalog_has_required_metadata_and_law_reference_anchors() {
         let issues = validate_catalog_metadata(ASSET_FILES);
         assert!(
@@ -2227,6 +2350,53 @@ mod tests {
         ctx.as_object_mut().unwrap().remove("title");
         let err = render(&ata_spec(), &ctx).unwrap_err();
         assert!(matches!(err, RenderError::MissingField(f) if f == "title"));
+    }
+
+    #[test]
+    fn standalone_render_resolves_the_template_layout_over_product_defaults() {
+        let mut spec = ata_spec();
+        spec.document_layout_override = Some(
+            serde_json::from_value(json!({
+                "page": { "orientation": "Landscape" },
+                "typography": {
+                    "body_font_family": "NotoSans",
+                    "body_font_size_pt": 12
+                }
+            }))
+            .expect("layout override parses"),
+        );
+
+        let document = render(&spec, &ata_ctx()).expect("render resolves layout");
+        assert_eq!(
+            document.document_layout.page.orientation,
+            chancela_core::DocumentOrientation::Landscape
+        );
+        assert_eq!(
+            document.document_layout.typography.body_font_family,
+            chancela_core::DocumentFontFamily::NotoSans
+        );
+        assert_eq!(document.document_layout.typography.body_font_size_pt, 12);
+        assert_eq!(
+            document.document_layout.page.margins_mm,
+            DocumentLayoutPolicy::default().page.margins_mm,
+            "un-authored leaves inherit the product policy in standalone rendering"
+        );
+    }
+
+    #[test]
+    fn standalone_render_rejects_an_invalid_template_layout() {
+        let mut spec = ata_spec();
+        spec.document_layout_override = Some(
+            serde_json::from_value(json!({
+                "typography": { "body_font_size_pt": 7 }
+            }))
+            .expect("shape parses before policy validation"),
+        );
+
+        let error = render(&spec, &ata_ctx()).expect_err("invalid layout must fail closed");
+        assert!(
+            matches!(error, RenderError::InvalidDocumentLayout(message) if message.contains("BodyFontSizePt"))
+        );
     }
 
     #[test]

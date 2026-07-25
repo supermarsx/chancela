@@ -6,7 +6,34 @@
   },
   "documents": {
     "locale": "pt-PT",
-    "numbering_scheme_default": "Sequential"
+    "numbering_scheme_default": "Sequential",
+    "layout_defaults": {
+      "page": {
+        "size": "A4",
+        "orientation": "Portrait",
+        "margins_mm": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        }
+      },
+      "typography": {
+        "body_font_family": "NotoSerif",
+        "body_font_size_pt": 11,
+        "header_font_family": "NotoSerif",
+        "header_font_size_pt": 11,
+        "footer_font_family": "NotoSerif",
+        "footer_font_size_pt": 9,
+        "line_spacing_percent": 140,
+        "paragraph_spacing_pt": 6,
+        "heading_scale_percent": 100
+      },
+      "regions": {
+        "header_gap_mm": 4,
+        "footer_gap_mm": 4
+      }
+    }
   },
   "catalog": {
     "cae_update_url": null,

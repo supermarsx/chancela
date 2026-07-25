@@ -78,6 +78,112 @@
         "locale": {
           "type": "string",
           "description": "The locale the prose is authored in (v1: `pt-PT`)."
+        },
+        "document_layout_override": {
+          "oneOf": [
+            { "$ref": "#/$defs/documentLayoutOverride" },
+            { "type": "null" }
+          ],
+          "description": "Optional bounded layout delta. Missing or null means inherit the instance policy. Authored leaves participate in the canonical template spec."
+        }
+      }
+    },
+    "documentLayoutOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A field-by-field document layout override. Every group and leaf is optional; omission means inherit.",
+      "properties": {
+        "page": { "$ref": "#/$defs/documentPageOverride" },
+        "typography": { "$ref": "#/$defs/documentTypographyOverride" },
+        "regions": { "$ref": "#/$defs/documentRegionsOverride" }
+      }
+    },
+    "documentPageOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "size": {
+          "type": ["string", "null"],
+          "enum": ["A4", "A5", "Letter", "Legal", null]
+        },
+        "orientation": {
+          "type": ["string", "null"],
+          "enum": ["Portrait", "Landscape", null]
+        },
+        "margins_mm": { "$ref": "#/$defs/documentMarginsOverride" }
+      }
+    },
+    "documentMarginsOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "top": { "type": ["integer", "null"], "minimum": 5, "maximum": 60 },
+        "right": { "type": ["integer", "null"], "minimum": 5, "maximum": 60 },
+        "bottom": { "type": ["integer", "null"], "minimum": 5, "maximum": 60 },
+        "left": { "type": ["integer", "null"], "minimum": 5, "maximum": 60 }
+      }
+    },
+    "documentTypographyOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "body_font_family": {
+          "type": ["string", "null"],
+          "enum": ["NotoSerif", "NotoSans", null]
+        },
+        "body_font_size_pt": {
+          "type": ["integer", "null"],
+          "minimum": 8,
+          "maximum": 18
+        },
+        "header_font_family": {
+          "type": ["string", "null"],
+          "enum": ["NotoSerif", "NotoSans", null]
+        },
+        "header_font_size_pt": {
+          "type": ["integer", "null"],
+          "minimum": 8,
+          "maximum": 24
+        },
+        "footer_font_family": {
+          "type": ["string", "null"],
+          "enum": ["NotoSerif", "NotoSans", null]
+        },
+        "footer_font_size_pt": {
+          "type": ["integer", "null"],
+          "minimum": 7,
+          "maximum": 16
+        },
+        "line_spacing_percent": {
+          "type": ["integer", "null"],
+          "minimum": 100,
+          "maximum": 200
+        },
+        "paragraph_spacing_pt": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 24
+        },
+        "heading_scale_percent": {
+          "type": ["integer", "null"],
+          "minimum": 75,
+          "maximum": 200
+        }
+      }
+    },
+    "documentRegionsOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header_gap_mm": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 30
+        },
+        "footer_gap_mm": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 30
         }
       }
     }

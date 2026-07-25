@@ -27,6 +27,8 @@
 //! 6. every `threshold("<id>")` reference resolves in the threshold registry →
 //!    [`TemplateValidationError::UnknownThreshold`]
 //! 7. `locale` non-empty and in the allow-list → [`TemplateValidationError::UnsupportedLocale`]
+//! 8. optional document-layout override satisfies core's bounded policy →
+//!    [`TemplateValidationError::InvalidDocumentLayout`]
 //!
 //! Messages are neutral and technical: this guard checks *shape*, not legal validity, and makes no
 //! claim about the evidentiary weight of any document a template might produce.
@@ -34,7 +36,8 @@
 use std::fmt;
 
 use crate::{
-    BlockSpec, TemplateSpec, compile_template_str, find_threshold, scan_threshold_references,
+    BlockSpec, DocumentLayoutPolicy, TemplateSpec, compile_template_str, find_threshold,
+    resolve_document_layout, scan_threshold_references,
 };
 
 /// Maximum size, in bytes, of the whole authored template JSON.
@@ -95,6 +98,11 @@ pub enum TemplateValidationError {
         /// The rejected locale.
         locale: String,
     },
+    /// The authored document-layout override violates the bounded core policy.
+    InvalidDocumentLayout {
+        /// Core's precise, stable validation explanation.
+        msg: String,
+    },
 }
 
 impl TemplateValidationError {
@@ -109,6 +117,7 @@ impl TemplateValidationError {
             TemplateValidationError::BadTemplate { .. } => "bad_template",
             TemplateValidationError::UnknownThreshold { .. } => "unknown_threshold",
             TemplateValidationError::UnsupportedLocale { .. } => "unsupported_locale",
+            TemplateValidationError::InvalidDocumentLayout { .. } => "invalid_document_layout",
         }
     }
 
@@ -124,6 +133,9 @@ impl TemplateValidationError {
             }
             TemplateValidationError::UnknownThreshold { .. } => None,
             TemplateValidationError::UnsupportedLocale { .. } => Some("locale".to_string()),
+            TemplateValidationError::InvalidDocumentLayout { .. } => {
+                Some("document_layout_override".to_string())
+            }
         }
     }
 }
@@ -153,6 +165,9 @@ impl fmt::Display for TemplateValidationError {
             }
             TemplateValidationError::UnsupportedLocale { locale } => {
                 write!(f, "unsupported locale: {locale:?}")
+            }
+            TemplateValidationError::InvalidDocumentLayout { msg } => {
+                write!(f, "invalid document layout override: {msg}")
             }
         }
     }
@@ -253,6 +268,20 @@ pub fn validate_user_template(json: &str) -> Result<TemplateSpec, TemplateValida
         });
     }
 
+    // 8. Layout bounds and cross-field invariants are owned by core, shared with settings and the
+    // eventual entity/book overlays. Deserialization alone cannot enforce numeric policy.
+    if let Some(layout) = &spec.document_layout_override {
+        layout
+            .validate()
+            .map_err(|error| TemplateValidationError::InvalidDocumentLayout {
+                msg: error.to_string(),
+            })?;
+        resolve_document_layout(&DocumentLayoutPolicy::default(), Some(layout), None, None)
+            .map_err(|error| TemplateValidationError::InvalidDocumentLayout {
+                msg: error.to_string(),
+            })?;
+    }
+
     Ok(spec)
 }
 
@@ -351,6 +380,89 @@ mod tests {
     fn user_template_without_a_seed_body_defaults_to_empty() {
         let spec = validate_user_template(&valid_json()).expect("valid template");
         assert!(spec.default_body().is_empty());
+        assert!(spec.document_layout_override.is_none());
+        assert!(
+            !crate::canonical_spec_json(&spec)
+                .expect("canonical spec")
+                .contains("document_layout_override"),
+            "absence must preserve the pre-layout canonical bytes"
+        );
+    }
+
+    #[test]
+    fn user_template_round_trips_an_authored_document_layout_override() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(&valid_json()).expect("valid fixture json");
+        value["document_layout_override"] = serde_json::json!({
+            "page": {
+                "orientation": "Landscape",
+                "margins_mm": { "left": 18 }
+            },
+            "typography": {
+                "body_font_family": "NotoSans",
+                "body_font_size_pt": 12,
+                "line_spacing_percent": 150
+            },
+            "regions": { "header_gap_mm": 6 }
+        });
+
+        let spec =
+            validate_user_template(&value.to_string()).expect("bounded layout override validates");
+        let layout = spec
+            .document_layout_override
+            .as_ref()
+            .expect("authored override survives parsing");
+        assert_eq!(layout.page.margins_mm.left, Some(18));
+        assert_eq!(layout.typography.body_font_size_pt, Some(12));
+
+        let serialized = serde_json::to_value(&spec).expect("runtime spec serializes");
+        assert_eq!(
+            serialized["document_layout_override"], value["document_layout_override"],
+            "the authored override round-trips through the user-template DTO"
+        );
+        let canonical = crate::canonical_spec_json(&spec).expect("canonical spec");
+        assert!(
+            canonical.contains("\"document_layout_override\""),
+            "an authored layout changes the canonical render identity"
+        );
+    }
+
+    #[test]
+    fn user_template_rejects_an_out_of_policy_document_layout_override() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(&valid_json()).expect("valid fixture json");
+        value["document_layout_override"] = serde_json::json!({
+            "typography": { "body_font_size_pt": 7 }
+        });
+
+        let error = validate_user_template(&value.to_string())
+            .expect_err("core policy must reject an undersized body font");
+        assert_eq!(error.code(), "invalid_document_layout");
+        assert_eq!(error.field().as_deref(), Some("document_layout_override"));
+        assert!(
+            error.to_string().contains("BodyFontSizePt"),
+            "core validation detail should survive: {error}"
+        );
+    }
+
+    #[test]
+    fn user_template_rejects_an_override_that_resolves_to_unusable_page_geometry() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(&valid_json()).expect("valid fixture json");
+        value["document_layout_override"] = serde_json::json!({
+            "page": {
+                "size": "A5",
+                "margins_mm": { "left": 30, "right": 30 }
+            }
+        });
+
+        let error = validate_user_template(&value.to_string())
+            .expect_err("resolved A5 content width below the core floor must fail");
+        assert_eq!(error.code(), "invalid_document_layout");
+        assert!(
+            error.to_string().contains("usable"),
+            "resolved geometry detail should survive: {error}"
+        );
     }
 
     /// **Portability foundation (t43).** A user-authored template may carry an editable **seed body**
